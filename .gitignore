@@ -79,3 +79,8 @@ openspec/
 
 # Local MCP server config
 .mcp.json
+
+# Local Claude Code config (permissions, dev-server launch config) —
+# kept on disk for convenience, never committed. Skills/CLAUDE.md live
+# in ~/.claude/skills/ and openspec/CLAUDE.md instead.
+.claude/
