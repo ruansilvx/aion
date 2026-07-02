@@ -371,7 +371,7 @@ class TypeChip extends StatelessWidget {
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: typeColor.withOpacity(t.fillAlpha),
+        color: typeColor.withValues(alpha: t.fillAlpha),
         borderRadius: BorderRadius.circular(5),
       ),
       child: Padding(

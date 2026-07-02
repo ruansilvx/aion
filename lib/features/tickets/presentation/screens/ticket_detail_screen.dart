@@ -355,7 +355,9 @@ class CommentTile extends StatelessWidget {
                       ),
                       color: isAi ? c.primarySubtle : c.surface,
                       border: Border.all(
-                        color: isAi ? c.primary.withOpacity(t.isDark ? 0.42 : 0.28) : c.border,
+                        color: isAi
+                            ? c.primary.withValues(alpha: t.isDark ? 0.42 : 0.28)
+                            : c.border,
                         width: 1,
                       ),
                     ),

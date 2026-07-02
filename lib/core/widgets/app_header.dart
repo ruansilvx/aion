@@ -82,7 +82,7 @@ class AppHeader extends StatelessWidget {
                 style: AionText.h2.copyWith(color: c.textPrimary),
               ),
             ),
-            if (trailing != null) trailing!,
+            ?trailing,
           ],
         ),
       ),

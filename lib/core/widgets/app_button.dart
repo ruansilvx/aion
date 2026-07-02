@@ -211,7 +211,7 @@ class _AppButtonState extends State<AppButton> {
     if (widget.variant == AppButtonVariant.primary) {
       return [
         BoxShadow(
-          color: c.primary.withOpacity(isDark ? 0.60 : 0.45),
+          color: c.primary.withValues(alpha: isDark ? 0.60 : 0.45),
           blurRadius: 18,
           spreadRadius: -9,
         ),

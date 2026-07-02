@@ -14,7 +14,7 @@ abstract final class AionShadows {
     if (isDark) return const [];
     return [
       BoxShadow(
-        color: c.textPrimary.withOpacity(0.07),
+        color: c.textPrimary.withValues(alpha: 0.07),
         blurRadius: 2,
         spreadRadius: 0,
         offset: const Offset(0, 1),
@@ -26,7 +26,7 @@ abstract final class AionShadows {
   static List<BoxShadow> fab(AionColors c, bool isDark) {
     return [
       BoxShadow(
-        color: c.primary.withOpacity(isDark ? 0.60 : 0.45),
+        color: c.primary.withValues(alpha: isDark ? 0.60 : 0.45),
         blurRadius: 28,
         spreadRadius: -8,
         offset: const Offset(0, 14),
@@ -39,7 +39,7 @@ abstract final class AionShadows {
   static List<BoxShadow> focus(AionColors c, bool isDark) {
     return [
       BoxShadow(
-        color: c.primary.withOpacity(isDark ? 0.30 : 0.16),
+        color: c.primary.withValues(alpha: isDark ? 0.30 : 0.16),
         blurRadius: 0,
         spreadRadius: 3,
       ),
@@ -50,7 +50,7 @@ abstract final class AionShadows {
   static List<BoxShadow> aiGlow(AionColors c, bool isDark) {
     return [
       BoxShadow(
-        color: c.primary.withOpacity(isDark ? 0.60 : 0.45),
+        color: c.primary.withValues(alpha: isDark ? 0.60 : 0.45),
         blurRadius: 14,
       ),
     ];
