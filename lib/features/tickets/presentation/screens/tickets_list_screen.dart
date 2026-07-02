@@ -1,3 +1,5 @@
+// presentation/screens/tickets_list_screen.dart — Ticket list screen and row widgets (presentation layer).
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -16,7 +18,11 @@ import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 
+/// The `/tickets` route: eyebrow + title header, search bar, the ticket
+/// list body driven by [TicketsCubit], and an [AppFab] to create a new
+/// ticket. Loads the list in [State.initState].
 class TicketsListScreen extends StatefulWidget {
+  /// Creates a [TicketsListScreen].
   const TicketsListScreen({super.key});
 
   @override
@@ -161,9 +167,12 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
   }
 }
 
+/// The extended-pill floating action button used to start ticket creation.
 class AppFab extends StatelessWidget {
+  /// Creates an [AppFab] that calls [onTap] when pressed.
   const AppFab({super.key, required this.onTap});
 
+  /// Called when the FAB is tapped.
   final VoidCallback onTap;
 
   @override
@@ -209,9 +218,14 @@ class AppFab extends StatelessWidget {
   }
 }
 
+/// A single row in [TicketsListScreen]'s list: ID badge, title, priority
+/// badge, type chip, and status indicator. Navigates to the ticket's detail
+/// screen when tapped or activated via keyboard.
 class TicketListTile extends StatelessWidget {
+  /// Creates a [TicketListTile] rendering [ticket].
   const TicketListTile({super.key, required this.ticket});
 
+  /// The ticket this row represents.
   final Ticket ticket;
 
   @override
@@ -288,10 +302,18 @@ class TicketListTile extends StatelessWidget {
   }
 }
 
+/// A small badge showing a ticket's priority. Renders nothing when
+/// [priority] is [TicketPriority.none] — priority is hidden, not shown as
+/// an empty slot.
 class PriorityBadge extends StatelessWidget {
+  /// Creates a [PriorityBadge] for [priority].
   const PriorityBadge({super.key, required this.priority, this.isRow = true});
 
+  /// The priority to render.
   final TicketPriority priority;
+
+  /// Whether to use the compact ticket-row sizing (`true`, default) or the
+  /// larger ticket-detail sizing (`false`).
   final bool isRow;
 
   @override
@@ -323,10 +345,18 @@ class PriorityBadge extends StatelessWidget {
   }
 }
 
+/// A small chip showing a ticket's type as a colored square + uppercase
+/// label. Color is derived from [type] via [AionColors.typeTask]/
+/// [AionColors.typeStory]/[AionColors.typeEpic].
 class TypeChip extends StatelessWidget {
+  /// Creates a [TypeChip] for [type].
   const TypeChip({super.key, required this.type, this.isRow = true});
 
+  /// The ticket type to render.
   final TicketType type;
+
+  /// Whether to use the compact ticket-row sizing (`true`, default) or the
+  /// larger ticket-detail sizing (`false`).
   final bool isRow;
 
   @override
@@ -367,9 +397,12 @@ class TypeChip extends StatelessWidget {
   }
 }
 
+/// A dot + label showing a ticket's workflow status.
 class StatusIndicator extends StatelessWidget {
+  /// Creates a [StatusIndicator] for [status].
   const StatusIndicator({super.key, required this.status});
 
+  /// The status to render.
   final TicketStatus status;
 
   @override

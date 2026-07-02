@@ -1,3 +1,5 @@
+// core/widgets/app_dropdown.dart — AppDropdown primitive widget (core layer).
+
 import 'package:flutter/widgets.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
@@ -6,7 +8,11 @@ import 'package:aion/core/theme/aion_shadows.dart';
 import 'package:aion/core/theme/aion_text.dart';
 import 'package:aion/core/theme/theme_scope.dart';
 
+/// Aion's dropdown/select primitive — replaces `DropdownButton` with a
+/// tap target that opens an [OverlayEntry] of selectable items. No Material
+/// widget or overlay involvement.
 class AppDropdown<T> extends StatefulWidget {
+  /// Creates an [AppDropdown].
   const AppDropdown({
     super.key,
     required this.value,
@@ -18,12 +24,26 @@ class AppDropdown<T> extends StatefulWidget {
     this.focusNode,
   });
 
+  /// The currently selected value. Must be one of [items].
   final T value;
+
+  /// The full list of selectable values.
   final List<T> items;
+
+  /// Called with the newly selected value when the user picks an item.
   final ValueChanged<T> onChanged;
+
+  /// Converts a value of type [T] to its display string.
   final String Function(T) itemLabel;
+
+  /// Optional label rendered above the field.
   final String? labelText;
+
+  /// Whether to render a required-field marker next to [labelText].
   final bool isRequired;
+
+  /// Optional focus node for keyboard/tab navigation. If omitted, an
+  /// internal one is created and disposed automatically.
   final FocusNode? focusNode;
 
   @override

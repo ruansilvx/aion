@@ -1,3 +1,5 @@
+// core/widgets/app_button.dart — AppButton primitive widget (core layer).
+
 import 'package:flutter/widgets.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
@@ -6,9 +8,27 @@ import 'package:aion/core/theme/aion_radius.dart';
 import 'package:aion/core/theme/aion_text.dart';
 import 'package:aion/core/theme/theme_scope.dart';
 
-enum AppButtonVariant { primary, secondary, ghost, destructive }
+/// Visual style of an [AppButton].
+enum AppButtonVariant {
+  /// Filled with [AionColors.primary]; white text. The default.
+  primary,
 
+  /// Filled with [AionColors.surfaceHover] and a border; used for secondary
+  /// actions.
+  secondary,
+
+  /// Transparent fill, [AionColors.primary] text; lowest-emphasis action.
+  ghost,
+
+  /// Filled with [AionColors.danger]; white text. For destructive actions.
+  destructive,
+}
+
+/// Aion's button primitive — replaces `ElevatedButton`/`TextButton` with a
+/// `GestureDetector` + `DecoratedBox` built entirely from [AionColors]/
+/// [AionText]/[AionRadius] tokens. No Material widget involvement.
 class AppButton extends StatefulWidget {
+  /// Creates an [AppButton].
   const AppButton({
     super.key,
     required this.label,
@@ -18,10 +38,21 @@ class AppButton extends StatefulWidget {
     this.isFullWidth = false,
   });
 
+  /// The button's text label.
   final String label;
+
+  /// Called when the button is activated. `null` renders the button disabled
+  /// (reduced opacity, no press/hover feedback).
   final VoidCallback? onPressed;
+
+  /// Which visual style to render. Defaults to [AppButtonVariant.primary].
   final AppButtonVariant variant;
+
+  /// Optional leading icon, rendered before [label].
   final PhosphorIconData? icon;
+
+  /// Whether to render the full-width submit variant (used for primary form
+  /// actions like "Create ticket").
   final bool isFullWidth;
 
   @override

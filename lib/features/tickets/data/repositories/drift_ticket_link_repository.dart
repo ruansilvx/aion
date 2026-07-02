@@ -1,10 +1,14 @@
+// data/repositories/drift_ticket_link_repository.dart — Drift implementation of TicketLinkRepository (data layer).
+
 import 'package:uuid/uuid.dart';
 
 import 'package:aion/core/database/app_database.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_link_repository.dart';
 
+/// Drift-backed implementation of [TicketLinkRepository].
 class DriftTicketLinkRepository implements TicketLinkRepository {
+  /// Creates a [DriftTicketLinkRepository] backed by [_db].
   DriftTicketLinkRepository(this._db);
 
   final AppDatabase _db;

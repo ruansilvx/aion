@@ -1,9 +1,18 @@
+// core/theme/aion_text.dart — Typography token definitions (core/theme layer).
+
 import 'package:flutter/painting.dart';
 
+/// Aion's typography scale. All styles are colorless — apply color at the
+/// use site via `.copyWith(color: ...)` using an [AionColors] token, never
+/// a raw [Color]. No `TextTheme` or `ThemeData` involvement.
 abstract final class AionText {
+  /// Manrope — UI and display text.
   static const _ui = 'Manrope';
+
+  /// JetBrains Mono — keys, captions, and code-like text.
   static const _mono = 'JetBrainsMono';
 
+  /// Largest display heading.
   static const display = TextStyle(
     fontFamily: _ui,
     fontSize: 32,
@@ -12,6 +21,7 @@ abstract final class AionText {
     height: 1.1,
   );
 
+  /// Page-level heading (e.g. the "Tickets" list-screen title).
   static const h1 = TextStyle(
     fontFamily: _ui,
     fontSize: 25,
@@ -20,6 +30,7 @@ abstract final class AionText {
     height: 1.15,
   );
 
+  /// Screen-header heading (e.g. "New ticket", ticket detail title).
   static const h2 = TextStyle(
     fontFamily: _ui,
     fontSize: 22,
@@ -28,6 +39,7 @@ abstract final class AionText {
     height: 1.25,
   );
 
+  /// Primary body text, e.g. multiline description fields.
   static const body = TextStyle(
     fontFamily: _ui,
     fontSize: 15,
@@ -35,6 +47,7 @@ abstract final class AionText {
     height: 1.5,
   );
 
+  /// Smaller body text, e.g. hints and single-line field values.
   static const bodySm = TextStyle(
     fontFamily: _ui,
     fontSize: 13.5,
@@ -42,6 +55,7 @@ abstract final class AionText {
     height: 1.6,
   );
 
+  /// Ticket-row and comment-header title text.
   static const cardTitle = TextStyle(
     fontFamily: _ui,
     fontSize: 14,
@@ -49,18 +63,22 @@ abstract final class AionText {
     height: 1.45,
   );
 
+  /// Form field label text.
   static const label = TextStyle(
     fontFamily: _ui,
     fontSize: 12,
     fontWeight: FontWeight.w700,
   );
 
+  /// Button label text.
   static const button = TextStyle(
     fontFamily: _ui,
     fontSize: 14,
     fontWeight: FontWeight.w700,
   );
 
+  /// Type-chip label text. Rendered as a pre-uppercased string, not a CSS
+  /// text-transform.
   static const chip = TextStyle(
     fontFamily: _ui,
     fontSize: 10.5,
@@ -68,6 +86,7 @@ abstract final class AionText {
     letterSpacing: 0.53,
   );
 
+  /// Priority-badge label text for the detail-screen (larger) variant.
   static const priorityBig = TextStyle(
     fontFamily: _ui,
     fontSize: 10.5,
@@ -75,6 +94,7 @@ abstract final class AionText {
     letterSpacing: 0.53,
   );
 
+  /// Priority-badge label text for the ticket-row (smaller) variant.
   static const prioritySm = TextStyle(
     fontFamily: _ui,
     fontSize: 8.5,
@@ -82,6 +102,7 @@ abstract final class AionText {
     letterSpacing: 0.43,
   );
 
+  /// Monospace style for human-readable ticket IDs (e.g. "AIO-3").
   static const key = TextStyle(
     fontFamily: _mono,
     fontSize: 11,
@@ -89,6 +110,7 @@ abstract final class AionText {
     letterSpacing: 0.11,
   );
 
+  /// Monospace, uppercase eyebrow/section-label style (e.g. "COMMENTS · 3").
   static const caption = TextStyle(
     fontFamily: _mono,
     fontSize: 11,
@@ -96,6 +118,7 @@ abstract final class AionText {
     letterSpacing: 1.54,
   );
 
+  /// Monospace style for timestamps.
   static const time = TextStyle(
     fontFamily: _mono,
     fontSize: 11,

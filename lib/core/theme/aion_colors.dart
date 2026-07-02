@@ -1,18 +1,39 @@
+// core/theme/aion_colors.dart — Color token definitions (core/theme layer).
+
 import 'dart:ui';
 
 import 'package:meta/meta.dart';
 
+/// The four-level priority color scale (background + foreground pairs).
+/// Deliberately distinct from [AionColors.primary]/[AionColors.secondary]
+/// so priority never gets confused with an action color.
 @immutable
 class AionPriorityColors {
+  /// Background for a critical-priority badge.
   final Color criticalBg;
+
+  /// Text/foreground for a critical-priority badge.
   final Color criticalFg;
+
+  /// Background for a high-priority badge.
   final Color highBg;
+
+  /// Text/foreground for a high-priority badge.
   final Color highFg;
+
+  /// Background for a medium-priority badge.
   final Color mediumBg;
+
+  /// Text/foreground for a medium-priority badge.
   final Color mediumFg;
+
+  /// Background for a low-priority badge.
   final Color lowBg;
+
+  /// Text/foreground for a low-priority badge.
   final Color lowFg;
 
+  /// Creates an [AionPriorityColors] palette. All eight colors are required.
   const AionPriorityColors({
     required this.criticalBg,
     required this.criticalFg,
@@ -25,28 +46,72 @@ class AionPriorityColors {
   });
 }
 
+/// A complete Aion color palette for one theme variant (Arctic or Obsidian).
+///
+/// This is the sole source of color in Aion — there is no `ThemeData`,
+/// `ColorScheme`, or Material color token anywhere in the app. Widgets read
+/// an [AionColors] instance via `ThemeScope.of(context).colors`. See the
+/// design.md token-role table for what each field is used for.
 @immutable
 class AionColors {
+  /// Main app canvas color.
   final Color background;
+
+  /// Cards, panels, inputs, list body.
   final Color surface;
+
+  /// Raised/hovered surface, ID badge fill, icon buttons.
   final Color surfaceHover;
+
+  /// Buttons, links, focus rings, active icons, selected state.
   final Color primary;
+
+  /// [primary] on hover/press.
   final Color primaryHover;
+
+  /// Selection tint, AI comment bubble, AI badge background.
   final Color primarySubtle;
+
+  /// Secondary avatars, secondary action text.
   final Color secondary;
+
+  /// Success states, "Done" status.
   final Color success;
+
+  /// Destructive actions, errors, required-field asterisk.
   final Color danger;
+
+  /// Warning states only — kept separate from priority colors.
   final Color warning;
+
+  /// Body and heading text.
   final Color textPrimary;
+
+  /// Supporting text, secondary labels, default icon color.
   final Color textSecondary;
+
+  /// Placeholder, captions, timestamps, "Backlog" status.
   final Color textMuted;
+
+  /// Default hairline (1px) border.
   final Color border;
+
+  /// Emphasized border, outlined-avatar/swatch ring.
   final Color borderStrong;
+
+  /// The four-level priority badge palette for this theme.
   final AionPriorityColors priority;
+
+  /// Base accent color for [TicketType.task] chips.
   final Color typeTask;
+
+  /// Base accent color for [TicketType.story] chips.
   final Color typeStory;
+
+  /// Base accent color for [TicketType.epic] chips.
   final Color typeEpic;
 
+  /// Creates an [AionColors] palette. All fields are required.
   const AionColors({
     required this.background,
     required this.surface,
@@ -70,6 +135,7 @@ class AionColors {
   });
 }
 
+/// Priority palette for [arctic] (light theme).
 const AionPriorityColors arcticPriority = AionPriorityColors(
   criticalBg: Color(0xFFFBE0E5),
   criticalFg: Color(0xFFB22A41),
@@ -81,6 +147,7 @@ const AionPriorityColors arcticPriority = AionPriorityColors(
   lowFg: Color(0xFF6C7A8B),
 );
 
+/// Priority palette for [obsidian] (dark theme).
 const AionPriorityColors obsidianPriority = AionPriorityColors(
   criticalBg: Color(0xFF351A22),
   criticalFg: Color(0xFFFF6B80),
@@ -92,6 +159,7 @@ const AionPriorityColors obsidianPriority = AionPriorityColors(
   lowFg: Color(0xFF94A1BD),
 );
 
+/// Arctic — the light, celestial theme palette.
 const AionColors arctic = AionColors(
   background: Color(0xFFEDF2F8),
   surface: Color(0xFFFBFCFE),
@@ -114,6 +182,7 @@ const AionColors arctic = AionColors(
   typeEpic: Color(0xFF6A5AD0),
 );
 
+/// Obsidian — the dark, abyssal theme palette.
 const AionColors obsidian = AionColors(
   background: Color(0xFF0A0E18),
   surface: Color(0xFF131A29),
@@ -136,5 +205,11 @@ const AionColors obsidian = AionColors(
   typeEpic: Color(0xFF5C7CF5),
 );
 
+/// Opacity applied to tinted chip fills (e.g. `c.typeTask.withOpacity(a)`)
+/// when [arctic] is active.
 const double fillAlphaArctic = 0.11;
+
+/// Opacity applied to tinted chip fills when [obsidian] is active. Higher
+/// than [fillAlphaArctic] because dark surfaces need more fill to read as
+/// tinted.
 const double fillAlphaObsidian = 0.16;

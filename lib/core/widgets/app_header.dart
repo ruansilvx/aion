@@ -1,3 +1,5 @@
+// core/widgets/app_header.dart — AppHeader primitive widget (core layer).
+
 import 'package:flutter/widgets.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
@@ -5,7 +7,11 @@ import 'package:aion/core/theme/aion_radius.dart';
 import 'package:aion/core/theme/aion_text.dart';
 import 'package:aion/core/theme/theme_scope.dart';
 
+/// Aion's screen-header primitive — back button + title + optional trailing
+/// widget. Replaces `AppBar`/`Scaffold` chrome; used by the create and
+/// detail screens. The list screen composes its own header layout instead.
 class AppHeader extends StatelessWidget {
+  /// Creates an [AppHeader].
   const AppHeader({
     super.key,
     required this.title,
@@ -15,10 +21,20 @@ class AppHeader extends StatelessWidget {
     this.padding = const EdgeInsets.fromLTRB(20, 6, 20, 14),
   });
 
+  /// The header title text.
   final String title;
+
+  /// Whether to render the back button.
   final bool showBack;
+
+  /// Called when the back button is tapped. Ignored if [showBack] is false.
   final VoidCallback? onBack;
+
+  /// Optional widget rendered at the trailing edge (e.g. an avatar or a
+  /// more-actions icon).
   final Widget? trailing;
+
+  /// Outer padding. Callers pass screen-specific values (see design.md §3).
   final EdgeInsets padding;
 
   @override

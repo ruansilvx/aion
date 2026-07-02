@@ -1,3 +1,5 @@
+// data/repositories/drift_ticket_repository.dart — Drift implementation of TicketRepository (data layer).
+
 import 'package:drift/drift.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -8,12 +10,19 @@ import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
 
+/// Drift-backed implementation of [TicketRepository]. Maps between the
+/// generated `TicketData` row and the [Ticket] domain entity, and resolves
+/// the configured ticket-ID prefix from [SharedPreferences].
 class DriftTicketRepository implements TicketRepository {
+  /// Creates a [DriftTicketRepository] backed by [_db].
   DriftTicketRepository(this._db);
 
   final AppDatabase _db;
 
+  /// SharedPreferences key for the configured ticket-ID prefix.
   static const _prefixKey = 'ticket_id_prefix';
+
+  /// Prefix used when no `ticket_id_prefix` preference is set.
   static const _defaultPrefix = 'AIO';
 
   @override
@@ -52,6 +61,8 @@ class DriftTicketRepository implements TicketRepository {
     await _db.ticketDao.insertTicket(companion, prefix);
   }
 
+  /// Maps a generated [TicketData] row to the [Ticket] domain entity,
+  /// falling back to safe defaults for unrecognised enum strings.
   Ticket _toEntity(TicketData row) {
     return Ticket(
       id: row.id,

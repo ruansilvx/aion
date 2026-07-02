@@ -1,3 +1,5 @@
+// data/repositories/drift_comment_repository.dart — Drift implementation of CommentRepository (data layer).
+
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
@@ -6,7 +8,10 @@ import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
 import 'package:aion/features/tickets/domain/enums/comment_author_type.dart';
 import 'package:aion/features/tickets/domain/repositories/comment_repository.dart';
 
+/// Drift-backed implementation of [CommentRepository]. No UPDATE/DELETE path
+/// is exposed, mirroring the append-only contract of [CommentRepository].
 class DriftCommentRepository implements CommentRepository {
+  /// Creates a [DriftCommentRepository] backed by [_db].
   DriftCommentRepository(this._db);
 
   final AppDatabase _db;
@@ -34,6 +39,9 @@ class DriftCommentRepository implements CommentRepository {
     await _db.commentDao.insertComment(companion);
   }
 
+  /// Maps a generated [TicketCommentData] row to the [TicketComment] domain
+  /// entity, falling back to [CommentAuthorType.human] for an unrecognised
+  /// author-type string.
   TicketComment _toEntity(TicketCommentData row) {
     return TicketComment(
       id: row.id,

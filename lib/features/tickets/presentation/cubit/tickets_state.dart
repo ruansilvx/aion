@@ -1,7 +1,10 @@
+// presentation/cubit/tickets_state.dart — TicketsState sealed hierarchy (presentation layer).
+
 import 'package:equatable/equatable.dart';
 
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 
+/// The state emitted by [TicketsCubit].
 sealed class TicketsState extends Equatable {
   const TicketsState();
 
@@ -9,53 +12,76 @@ sealed class TicketsState extends Equatable {
   List<Object?> get props => [];
 }
 
+/// Before [TicketsCubit.loadTickets] or [TicketsCubit.getTicketById] has
+/// been called. Nothing to render but an empty shell.
 class TicketsInitial extends TicketsState {
+  /// Creates a [TicketsInitial] state.
   const TicketsInitial();
 }
 
+/// A list or detail fetch is in flight. UI should show [AppSpinner].
 class TicketsLoading extends TicketsState {
+  /// Creates a [TicketsLoading] state.
   const TicketsLoading();
 }
 
+/// The ticket list loaded successfully. Carries the full list to render.
 class TicketsLoaded extends TicketsState {
+  /// Creates a [TicketsLoaded] state carrying [tickets].
   const TicketsLoaded(this.tickets);
 
+  /// All tickets, most recently created first.
   final List<Ticket> tickets;
 
   @override
   List<Object?> get props => [tickets];
 }
 
+/// A list, detail, or create operation failed. Carries a user-facing
+/// error message.
 class TicketsError extends TicketsState {
+  /// Creates a [TicketsError] state carrying [message].
   const TicketsError(this.message);
 
+  /// A user-facing description of what went wrong.
   final String message;
 
   @override
   List<Object?> get props => [message];
 }
 
+/// A [TicketsCubit.createTicket] call is in flight. Carries the
+/// previously-loaded list so the list screen stays visible during creation.
 class TicketCreating extends TicketsState {
+  /// Creates a [TicketCreating] state carrying the in-flight [tickets] list.
   const TicketCreating(this.tickets);
 
+  /// The list as it was before this creation started.
   final List<Ticket> tickets;
 
   @override
   List<Object?> get props => [tickets];
 }
 
+/// A ticket was created successfully. Carries the refreshed list (including
+/// the new ticket) so the UI can navigate back and show it immediately.
 class TicketCreated extends TicketsState {
+  /// Creates a [TicketCreated] state carrying the refreshed [tickets] list.
   const TicketCreated(this.tickets);
 
+  /// The full list, including the newly created ticket.
   final List<Ticket> tickets;
 
   @override
   List<Object?> get props => [tickets];
 }
 
+/// A single ticket's detail loaded successfully. Carries that ticket.
 class TicketDetailLoaded extends TicketsState {
+  /// Creates a [TicketDetailLoaded] state carrying [ticket].
   const TicketDetailLoaded(this.ticket);
 
+  /// The loaded ticket.
   final Ticket ticket;
 
   @override

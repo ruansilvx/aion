@@ -1,3 +1,5 @@
+// core/database/app_database.dart — AppDatabase Drift database (core layer).
+
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 
@@ -10,10 +12,12 @@ import 'package:aion/features/tickets/data/models/ticket_model.dart';
 
 part 'app_database.g.dart';
 
-// drift_flutter's `driftDatabase` picks the right QueryExecutor per platform
-// via conditional imports: NativeDatabase (dart:io) on desktop/mobile, and
-// WasmDatabase (drift/wasm) on web. The `web` option is only consulted by the
-// web implementation; it is ignored on native.
+/// Opens the platform-appropriate [QueryExecutor].
+///
+/// drift_flutter's `driftDatabase` picks the right implementation per
+/// platform via conditional imports: `NativeDatabase` (dart:io) on
+/// desktop/mobile, and `WasmDatabase` (drift/wasm) on web. The `web` option
+/// is only consulted by the web implementation; it is ignored on native.
 QueryExecutor _openConnection() {
   return driftDatabase(
     name: 'aion',
@@ -24,11 +28,16 @@ QueryExecutor _openConnection() {
   );
 }
 
+/// Aion's local SQLite database. Schema version 1, seeding
+/// [TicketIdSequenceTable] with a single `(id: 1, seq: 0)` row on creation.
 @DriftDatabase(
   tables: [TicketsTable, TicketIdSequenceTable, TicketLinksTable, TicketCommentsTable],
   daos: [TicketDao, TicketLinkDao, CommentDao],
 )
 class AppDatabase extends _$AppDatabase {
+  /// Creates an [AppDatabase]. Pass [executor] to use a custom connection
+  /// (e.g. `NativeDatabase.memory()` in tests); otherwise opens the normal
+  /// platform-appropriate connection via [_openConnection].
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override

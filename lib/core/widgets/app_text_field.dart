@@ -1,3 +1,5 @@
+// core/widgets/app_text_field.dart — AppTextField primitive widget (core layer).
+
 import 'package:flutter/material.dart'
     show Material, MaterialType, TextField, InputDecoration, OutlineInputBorder;
 import 'package:flutter/services.dart' show TextInputAction;
@@ -8,7 +10,14 @@ import 'package:aion/core/theme/aion_shadows.dart';
 import 'package:aion/core/theme/aion_text.dart';
 import 'package:aion/core/theme/theme_scope.dart';
 
+/// Aion's text-field primitive — an optional label above a token-styled
+/// input. Wraps Flutter's `TextField` (the one Material widget permitted in
+/// the widget layer, see design.md's Material Coupling Audit) with every
+/// `InputDecoration` value supplied explicitly from [AionColors]/[AionText]
+/// tokens, and a transparent [Material] ancestor since `TextField` requires
+/// one even outside `MaterialApp`.
 class AppTextField extends StatefulWidget {
+  /// Creates an [AppTextField].
   const AppTextField({
     super.key,
     required this.controller,
@@ -22,14 +31,33 @@ class AppTextField extends StatefulWidget {
     this.isOptional = false,
   });
 
+  /// Controls and reads the field's text.
   final TextEditingController controller;
+
+  /// Optional focus node for keyboard/tab navigation. If omitted, an
+  /// internal one is created and disposed automatically.
   final FocusNode? focusNode;
+
+  /// Optional label rendered above the field.
   final String? labelText;
+
+  /// Placeholder text shown when [controller] is empty.
   final String? hintText;
+
+  /// Number of visible lines. `1` renders the single-line style; anything
+  /// greater renders the multiline style with a 5-line minimum height.
   final int maxLines;
+
+  /// Which action the on-screen keyboard's action key performs.
   final TextInputAction? textInputAction;
+
+  /// Called when the field is submitted (e.g. via the keyboard action key).
   final ValueChanged<String>? onSubmitted;
+
+  /// Whether to render a required-field marker (`*`) next to [labelText].
   final bool isRequired;
+
+  /// Whether to render an "Optional" marker next to [labelText].
   final bool isOptional;
 
   @override

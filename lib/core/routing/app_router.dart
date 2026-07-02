@@ -1,3 +1,5 @@
+// core/routing/app_router.dart — go_router configuration (core layer).
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
@@ -7,11 +9,13 @@ import 'package:aion/features/tickets/presentation/screens/create_ticket_screen.
 import 'package:aion/features/tickets/presentation/screens/ticket_detail_screen.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_list_screen.dart';
 
-// Clean (path-based, no `#`) URLs are go_router's default. Deploying the web
-// build to Firebase Hosting requires a catch-all rewrite rule
-// (`"source": "**"`, `"destination": "/index.html"`) in firebase.json so
-// deep links and manual URL entry resolve to the Flutter app instead of a
-// 404 — see openspec/project.md "Web URL Strategy".
+/// The app's route table: `/tickets`, `/tickets/new`, `/tickets/:id`.
+///
+/// Clean (path-based, no `#`) URLs are go_router's default. Deploying the
+/// web build to Firebase Hosting requires a catch-all rewrite rule
+/// (`"source": "**"`, `"destination": "/index.html"`) in firebase.json so
+/// deep links and manual URL entry resolve to the Flutter app instead of a
+/// 404 — see openspec/project.md "Web URL Strategy".
 final appRouter = GoRouter(
   initialLocation: '/tickets',
   redirect: (context, state) {

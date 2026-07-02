@@ -1,3 +1,5 @@
+// presentation/screens/create_ticket_screen.dart — Create-ticket form screen (presentation layer).
+
 import 'package:flutter/services.dart' show TextInputAction;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -15,7 +17,11 @@ import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 
+/// The `/tickets/new` route: title, type, priority, and description fields
+/// followed by a full-width submit button. Reads [TicketsCubit] from the
+/// root-level provider and navigates back to `/tickets` on success.
 class CreateTicketScreen extends StatefulWidget {
+  /// Creates a [CreateTicketScreen].
   const CreateTicketScreen({super.key});
 
   @override

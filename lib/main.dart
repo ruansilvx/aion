@@ -1,3 +1,5 @@
+// main.dart — App entry point: database init, repository/BLoC providers, theme, router.
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -14,14 +16,20 @@ import 'package:aion/features/tickets/domain/repositories/ticket_link_repository
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 
+/// App entry point. Opens the [AppDatabase] and runs [AionApp].
 void main() {
   final database = AppDatabase();
   runApp(AionApp(database: database));
 }
 
+/// The Aion app root. Wires repository providers, the root-level
+/// [TicketsCubit], [ThemeScope] (tracking system brightness), and the
+/// `WidgetsApp.router` shell — no `MaterialApp`, no `ThemeData`.
 class AionApp extends StatefulWidget {
+  /// Creates the [AionApp] root widget, backed by [database].
   const AionApp({super.key, required this.database});
 
+  /// The already-opened database, shared by all repositories.
   final AppDatabase database;
 
   @override

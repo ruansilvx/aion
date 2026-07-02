@@ -1,3 +1,5 @@
+// presentation/screens/ticket_detail_screen.dart — Ticket detail screen and comment widgets (presentation layer).
+
 import 'package:flutter/material.dart' show Material, MaterialType, TextField, InputDecoration;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -19,9 +21,16 @@ import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_list_screen.dart';
 
+/// The `/tickets/:id` route: ticket meta (priority, title, type, status,
+/// description, timestamps), a comment thread, and a pinned comment
+/// composer. [TicketsCubit] is read from the root-level provider;
+/// [CommentsCubit] is provided per-route by [appRouter](../../../../core/routing/app_router.dart)
+/// since comments are screen-scoped.
 class TicketDetailScreen extends StatefulWidget {
+  /// Creates a [TicketDetailScreen] for the ticket with internal id [ticketId].
   const TicketDetailScreen({super.key, required this.ticketId});
 
+  /// Internal UUID of the ticket to display.
   final String ticketId;
 
   @override
@@ -269,9 +278,15 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   }
 }
 
+/// A single comment bubble: avatar, author label, timestamp, and content.
+/// Visually distinguishes [CommentAuthorType.ai] comments (primary-tinted
+/// bubble, sparkle avatar, "AI" tag, `via <model>` footer) from
+/// [CommentAuthorType.human] ones.
 class CommentTile extends StatelessWidget {
+  /// Creates a [CommentTile] rendering [comment].
   const CommentTile({super.key, required this.comment});
 
+  /// The comment this tile represents.
   final TicketComment comment;
 
   @override

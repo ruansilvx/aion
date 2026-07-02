@@ -1,12 +1,18 @@
+// core/widgets/app_spinner.dart — AppSpinner primitive widget (core layer).
+
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 
 import 'package:aion/core/theme/theme_scope.dart';
 
+/// Aion's loading-indicator primitive — a sweeping arc drawn via
+/// [CustomPaint], replacing `CircularProgressIndicator`.
 class AppSpinner extends StatefulWidget {
+  /// Creates an [AppSpinner] of [size] logical pixels (default `20.0`).
   const AppSpinner({super.key, this.size = 20.0});
 
+  /// The spinner's width and height in logical pixels.
   final double size;
 
   @override
