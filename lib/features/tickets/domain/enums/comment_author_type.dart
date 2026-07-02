@@ -1,0 +1,1 @@
+enum CommentAuthorType { human, ai }
