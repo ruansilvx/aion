@@ -76,3 +76,6 @@ openspec/
 
 # Web
 /web/sqlite3.wasm
+
+# Local MCP server config
+.mcp.json
