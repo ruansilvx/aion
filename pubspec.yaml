@@ -9,6 +9,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # Required only because Flutter's TextField (the one Material widget the
+  # design allows, see design.md Material Coupling Audit) reads
+  # MaterialLocalizations internally even without MaterialApp/Scaffold.
+  flutter_localizations:
+    sdk: flutter
 
   # State management
   flutter_bloc: ^9.1.1
@@ -23,12 +28,25 @@ dependencies:
   shared_preferences: ^2.3.3
   flutter_secure_storage: ^10.3.1
 
+  # IDs
+  uuid: ^4.5.1
+
+  # Icons
+  # phosphor_flutter is unmaintained against Flutter SDKs where IconData is a
+  # final class; phosphoricons_flutter is a Dart 3.x-compatible replacement
+  # with the same icon set and a near-identical PhosphorIcon/PhosphorIcons API.
+  phosphoricons_flutter: ^1.0.0
+
   # Serialization (data layer models)
   json_annotation: ^4.9.0
+
+  # Used directly by AionColors/AionThemeData for @immutable
+  meta: ^1.15.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  flutter_lints: ^6.0.0
 
   build_runner: ^2.4.13
   drift_dev: ^2.22.1
@@ -38,3 +56,13 @@ dev_dependencies:
   bloc_test: ^10.0.0
   mocktail: ^1.0.4
 
+flutter:
+  fonts:
+    - family: Manrope
+      fonts:
+        - asset: assets/fonts/Manrope-VariableFont_wght.ttf
+    - family: JetBrainsMono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono-VariableFont_wght.ttf
+        - asset: assets/fonts/JetBrainsMono-Italic-VariableFont_wght.ttf
+          style: italic
