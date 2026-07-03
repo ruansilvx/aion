@@ -133,4 +133,35 @@ void main() {
 
     expect(found!.ticketId, 'AIO-1');
   });
+
+  test('updateTicketStatus changes the stored status column', () async {
+    await repository.createTicket(buildTicket(id: '1'));
+    await repository.updateTicketStatus('1', TicketStatus.done);
+
+    final found = await repository.getTicketById('1');
+    expect(found!.status, TicketStatus.done);
+  });
+
+  test('updateTicketStatus does not change other fields', () async {
+    await repository.createTicket(
+      buildTicket(id: '1', title: 'Unchanged title', priority: TicketPriority.high),
+    );
+    await repository.updateTicketStatus('1', TicketStatus.done);
+
+    final found = await repository.getTicketById('1');
+    expect(found!.title, 'Unchanged title');
+    expect(found.priority, TicketPriority.high);
+    expect(found.type, TicketType.task);
+    expect(found.parentId, isNull);
+  });
+
+  test('updateTicketStatus sets updatedAt to a timestamp at or after the original', () async {
+    await repository.createTicket(buildTicket(id: '1'));
+    final before = (await repository.getTicketById('1'))!.updatedAt;
+
+    await repository.updateTicketStatus('1', TicketStatus.done);
+    final after = (await repository.getTicketById('1'))!.updatedAt;
+
+    expect(after.isAtSameMomentAs(before) || after.isAfter(before), isTrue);
+  });
 }

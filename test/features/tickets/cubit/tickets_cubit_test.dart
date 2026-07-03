@@ -26,6 +26,7 @@ void main() {
 
   setUpAll(() {
     registerFallbackValue(ticket);
+    registerFallbackValue(TicketStatus.backlog);
   });
 
   setUp(() {
@@ -82,6 +83,36 @@ void main() {
       act: (cubit) => cubit.createTicket(type: TicketType.task, title: 'New ticket'),
       expect: () => [
         const TicketCreating([]),
+        isA<TicketsError>(),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'updateTicketStatus emits [TicketStatusUpdating, TicketStatusUpdated] on success',
+      setUp: () {
+        when(() => repository.updateTicketStatus(any(), any())).thenAnswer((_) async {});
+        when(() => repository.getAllTickets())
+            .thenAnswer((_) async => [ticket.copyWith(status: TicketStatus.done)]);
+      },
+      build: () => TicketsCubit(repository),
+      seed: () => TicketsLoaded([ticket]),
+      act: (cubit) => cubit.updateTicketStatus(ticket.id, TicketStatus.done),
+      expect: () => [
+        TicketStatusUpdating([ticket.copyWith(status: TicketStatus.done)]),
+        TicketStatusUpdated([ticket.copyWith(status: TicketStatus.done)]),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'updateTicketStatus emits [TicketStatusUpdating, TicketsError] on exception',
+      setUp: () {
+        when(() => repository.updateTicketStatus(any(), any())).thenThrow(Exception('boom'));
+      },
+      build: () => TicketsCubit(repository),
+      seed: () => TicketsLoaded([ticket]),
+      act: (cubit) => cubit.updateTicketStatus(ticket.id, TicketStatus.done),
+      expect: () => [
+        TicketStatusUpdating([ticket.copyWith(status: TicketStatus.done)]),
         isA<TicketsError>(),
       ],
     );

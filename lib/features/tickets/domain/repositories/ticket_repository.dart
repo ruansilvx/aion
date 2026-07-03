@@ -1,6 +1,7 @@
 // domain/repositories/ticket_repository.dart — TicketRepository interface (domain layer).
 
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 
 /// Read/write access to [Ticket] persistence. Implemented by the data layer
 /// ([DriftTicketRepository]); UI and domain code depend only on this
@@ -16,4 +17,8 @@ abstract interface class TicketRepository {
   /// [Ticket.ticketId] (prefix + sequence) at insert time, so
   /// [ticket.ticketId] on the argument is ignored.
   Future<void> createTicket(Ticket ticket);
+
+  /// Updates only the [status] (and `updatedAt`) of the ticket with id
+  /// [id]. Does not touch any other field. Throws if [id] does not exist.
+  Future<void> updateTicketStatus(String id, TicketStatus status);
 }
