@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:aion/core/database/app_database.dart';
 import 'package:aion/core/theme/aion_radius.dart';
 import 'package:aion/core/theme/aion_shadows.dart';
 import 'package:aion/core/theme/aion_text.dart';
@@ -15,6 +16,7 @@ import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
+import 'package:aion/features/tickets/domain/repositories/ticket_link_repository.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 
@@ -290,6 +292,7 @@ class TicketListTile extends StatelessWidget {
                       TypeChip(type: ticket.type),
                       const SizedBox(width: AionSpacing.sp12),
                       StatusIndicator(status: ticket.status),
+                      LinkCountLabel(ticketId: ticket.id),
                     ],
                   ),
                 ],
@@ -445,5 +448,49 @@ class StatusIndicator extends StatelessWidget {
       TicketStatus.done => 'Done',
       TicketStatus.cancelled => 'Cancelled',
     };
+  }
+}
+
+/// A meta-row indicator showing how many other tickets [ticketId] is linked
+/// to (via `ticket_links`, [TicketLinkRepository.getLinksForTicket]).
+/// Renders nothing while the count is loading or is zero.
+class LinkCountLabel extends StatelessWidget {
+  /// Creates a [LinkCountLabel] for the ticket with internal id [ticketId].
+  const LinkCountLabel({super.key, required this.ticketId});
+
+  /// Internal UUID of the ticket to count links for.
+  final String ticketId;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+
+    return FutureBuilder<List<TicketLinkData>>(
+      future: context.read<TicketLinkRepository>().getLinksForTicket(ticketId),
+      builder: (context, snapshot) {
+        final count = snapshot.data?.length ?? 0;
+        if (count == 0) return const SizedBox.shrink();
+
+        return Padding(
+          padding: const EdgeInsets.only(left: AionSpacing.sp12),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              PhosphorIcon(PhosphorIcons.linkLight, size: 11, color: c.textMuted),
+              const SizedBox(width: 3),
+              Text(
+                '$count',
+                style: AionText.label.copyWith(
+                  color: c.textSecondary,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 }
