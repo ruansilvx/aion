@@ -19,6 +19,7 @@ import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_link_repository.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
+import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart';
 
 /// The `/tickets` route: eyebrow + title header, search bar, the ticket
 /// list body driven by [TicketsCubit], and an [AppFab] to create a new
@@ -31,11 +32,52 @@ class TicketsListScreen extends StatefulWidget {
   State<TicketsListScreen> createState() => _TicketsListScreenState();
 }
 
+/// Which rendering [_TicketsListScreenState] uses for the loaded ticket
+/// list. Local, non-persisted UI state — the screen always opens in
+/// [list].
+enum _TicketViewMode {
+  /// The flat, chronologically-sorted [ListView] of every ticket.
+  list,
+
+  /// [TicketBoardView], grouped by status and filtered to task/story
+  /// tickets.
+  board,
+}
+
 class _TicketsListScreenState extends State<TicketsListScreen> {
+  _TicketViewMode _viewMode = _TicketViewMode.list;
+
   @override
   void initState() {
     super.initState();
     context.read<TicketsCubit>().loadTickets();
+  }
+
+  /// Renders the loaded [tickets] as either the flat list or the board,
+  /// depending on [_viewMode]. An empty (unfiltered) [tickets] list always
+  /// shows the "No tickets yet" message regardless of view mode.
+  Widget _buildTicketsBody(BuildContext context, List<Ticket> tickets) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+
+    if (tickets.isEmpty) {
+      return Center(
+        child: Text('No tickets yet', style: AionText.body.copyWith(color: c.textMuted)),
+      );
+    }
+
+    if (_viewMode == _TicketViewMode.board) {
+      final boardTickets = tickets
+          .where((ticket) => ticket.type == TicketType.task || ticket.type == TicketType.story)
+          .toList();
+      return TicketBoardView(tickets: boardTickets);
+    }
+
+    return ListView.separated(
+      itemCount: tickets.length,
+      separatorBuilder: (context, index) => Container(color: c.border, height: 1),
+      itemBuilder: (context, index) => TicketListTile(ticket: tickets[index]),
+    );
   }
 
   @override
@@ -61,6 +103,11 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                         Expanded(
                           child: Text('Tickets', style: AionText.h1.copyWith(color: c.textPrimary)),
                         ),
+                        _ViewModeToggle(
+                          mode: _viewMode,
+                          onChanged: (mode) => setState(() => _viewMode = mode),
+                        ),
+                        const SizedBox(width: AionSpacing.sp12),
                         DecoratedBox(
                           decoration: BoxDecoration(
                             color: c.surfaceHover,
@@ -130,25 +177,12 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                                 ],
                               ),
                             ),
-                          TicketsLoaded(:final tickets) when tickets.isEmpty => Center(
-                              child: Text(
-                                'No tickets yet',
-                                style: AionText.body.copyWith(color: c.textMuted),
-                              ),
-                            ),
-                          TicketsLoaded(:final tickets) => ListView.separated(
-                              itemCount: tickets.length,
-                              separatorBuilder: (context, index) =>
-                                  Container(color: c.border, height: 1),
-                              itemBuilder: (context, index) => TicketListTile(ticket: tickets[index]),
-                            ),
-                          TicketCreating(:final tickets) || TicketCreated(:final tickets) =>
-                            ListView.separated(
-                              itemCount: tickets.length,
-                              separatorBuilder: (context, index) =>
-                                  Container(color: c.border, height: 1),
-                              itemBuilder: (context, index) => TicketListTile(ticket: tickets[index]),
-                            ),
+                          TicketsLoaded(:final tickets) ||
+                          TicketCreating(:final tickets) ||
+                          TicketCreated(:final tickets) ||
+                          TicketStatusUpdating(:final tickets) ||
+                          TicketStatusUpdated(:final tickets) =>
+                            _buildTicketsBody(context, tickets),
                           _ => const SizedBox.shrink(),
                         };
                       },
@@ -212,6 +246,89 @@ class AppFab extends StatelessWidget {
                   style: AionText.button.copyWith(color: const Color(0xFFFFFFFF)),
                 ),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The list/board view switcher in [TicketsListScreen]'s header: two icon
+/// buttons, the active one tinted [AionColors.primary]/`primarySubtle`.
+class _ViewModeToggle extends StatelessWidget {
+  const _ViewModeToggle({required this.mode, required this.onChanged});
+
+  /// The currently active view mode.
+  final _TicketViewMode mode;
+
+  /// Called with the newly selected mode when the user taps an icon.
+  final ValueChanged<_TicketViewMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _ViewModeIcon(
+          icon: PhosphorIcons.listLight,
+          label: 'Switch to list view',
+          isActive: mode == _TicketViewMode.list,
+          onTap: () => onChanged(_TicketViewMode.list),
+        ),
+        const SizedBox(width: AionSpacing.sp4),
+        _ViewModeIcon(
+          icon: PhosphorIcons.hexagonLight,
+          label: 'Switch to board view',
+          isActive: mode == _TicketViewMode.board,
+          onTap: () => onChanged(_TicketViewMode.board),
+        ),
+      ],
+    );
+  }
+}
+
+/// A single icon button used by [_ViewModeToggle].
+class _ViewModeIcon extends StatelessWidget {
+  const _ViewModeIcon({
+    required this.icon,
+    required this.label,
+    required this.isActive,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool isActive;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+
+    return Semantics(
+      button: true,
+      label: label,
+      child: FocusableActionDetector(
+        actions: {
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              onTap();
+              return null;
+            },
+          ),
+        },
+        child: GestureDetector(
+          onTap: onTap,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: isActive ? c.primarySubtle : null,
+              borderRadius: BorderRadius.all(AionRadius.sm),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(6),
+              child: PhosphorIcon(icon, size: 18, color: isActive ? c.primary : c.textMuted),
             ),
           ),
         ),
@@ -428,7 +545,7 @@ class StatusIndicator extends StatelessWidget {
         ),
         const SizedBox(width: 7),
         Text(
-          _statusLabel(status),
+          ticketStatusLabel(status),
           style: AionText.label.copyWith(
             color: c.textSecondary,
             fontWeight: FontWeight.w600,
@@ -437,17 +554,6 @@ class StatusIndicator extends StatelessWidget {
         ),
       ],
     );
-  }
-
-  String _statusLabel(TicketStatus status) {
-    return switch (status) {
-      TicketStatus.backlog => 'Backlog',
-      TicketStatus.todo => 'To do',
-      TicketStatus.inProgress => 'In progress',
-      TicketStatus.inReview => 'In review',
-      TicketStatus.done => 'Done',
-      TicketStatus.cancelled => 'Cancelled',
-    };
   }
 }
 

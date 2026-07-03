@@ -61,6 +61,17 @@ class DriftTicketRepository implements TicketRepository {
     await _db.ticketDao.insertTicket(companion, prefix);
   }
 
+  @override
+  Future<void> updateTicketStatus(String id, TicketStatus status) {
+    return _db.ticketDao.updateStatus(
+      id,
+      TicketsTableCompanion(
+        status: Value(status.name),
+        updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
+  }
+
   /// Maps a generated [TicketData] row to the [Ticket] domain entity,
   /// falling back to safe defaults for unrecognised enum strings.
   Ticket _toEntity(TicketData row) {

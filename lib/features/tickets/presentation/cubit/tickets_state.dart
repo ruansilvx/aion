@@ -76,6 +76,37 @@ class TicketCreated extends TicketsState {
   List<Object?> get props => [tickets];
 }
 
+/// A [TicketsCubit.updateTicketStatus] call is in flight. Carries the
+/// ticket list with the in-flight ticket's status already replaced
+/// locally (optimistic), so a board drag/move reflects instantly instead
+/// of waiting on the repository round trip.
+class TicketStatusUpdating extends TicketsState {
+  /// Creates a [TicketStatusUpdating] state carrying the optimistically
+  /// updated [tickets] list.
+  const TicketStatusUpdating(this.tickets);
+
+  /// The list with the moved ticket's status already changed locally.
+  final List<Ticket> tickets;
+
+  @override
+  List<Object?> get props => [tickets];
+}
+
+/// A ticket's status change persisted successfully. Carries the list
+/// re-fetched from the repository, which supersedes the optimistic copy
+/// carried by the preceding [TicketStatusUpdating] state.
+class TicketStatusUpdated extends TicketsState {
+  /// Creates a [TicketStatusUpdated] state carrying the refreshed
+  /// [tickets] list.
+  const TicketStatusUpdated(this.tickets);
+
+  /// The full list, re-fetched after the status change persisted.
+  final List<Ticket> tickets;
+
+  @override
+  List<Object?> get props => [tickets];
+}
+
 /// A single ticket's detail loaded successfully. Carries that ticket.
 class TicketDetailLoaded extends TicketsState {
   /// Creates a [TicketDetailLoaded] state carrying [ticket].

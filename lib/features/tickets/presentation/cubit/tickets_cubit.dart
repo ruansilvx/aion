@@ -47,6 +47,8 @@ class TicketsCubit extends Cubit<TicketsState> {
     final currentTickets = switch (state) {
       TicketsLoaded(:final tickets) => tickets,
       TicketCreating(:final tickets) => tickets,
+      TicketStatusUpdating(:final tickets) => tickets,
+      TicketStatusUpdated(:final tickets) => tickets,
       _ => <Ticket>[],
     };
 
@@ -69,6 +71,34 @@ class TicketsCubit extends Cubit<TicketsState> {
       await _repository.createTicket(ticket);
       final tickets = await _repository.getAllTickets();
       emit(TicketCreated(tickets));
+    } catch (e) {
+      emit(TicketsError(e.toString()));
+    }
+  }
+
+  /// Moves ticket [id] to [status]. Emits [TicketStatusUpdating] (carrying
+  /// the list with [id]'s status optimistically replaced) immediately,
+  /// then [TicketStatusUpdated] (carrying the re-fetched list) once the
+  /// repository call succeeds, or [TicketsError] if it throws.
+  Future<void> updateTicketStatus(String id, TicketStatus status) async {
+    final currentTickets = switch (state) {
+      TicketsLoaded(:final tickets) => tickets,
+      TicketCreated(:final tickets) => tickets,
+      TicketStatusUpdating(:final tickets) => tickets,
+      TicketStatusUpdated(:final tickets) => tickets,
+      _ => <Ticket>[],
+    };
+
+    final optimistic = [
+      for (final t in currentTickets)
+        if (t.id == id) t.copyWith(status: status) else t,
+    ];
+    emit(TicketStatusUpdating(optimistic));
+
+    try {
+      await _repository.updateTicketStatus(id, status);
+      final tickets = await _repository.getAllTickets();
+      emit(TicketStatusUpdated(tickets));
     } catch (e) {
       emit(TicketsError(e.toString()));
     }

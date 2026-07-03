@@ -89,4 +89,26 @@ class Ticket extends Equatable {
         createdAt,
         updatedAt,
       ];
+
+  /// Returns a copy of this ticket with [status] and/or [updatedAt]
+  /// replaced. Intentionally scoped to only these two fields (not a
+  /// general-purpose copyWith) — extend with more parameters only when a
+  /// future change needs them.
+  Ticket copyWith({TicketStatus? status, DateTime? updatedAt}) {
+    return Ticket(
+      id: id,
+      ticketId: ticketId,
+      type: type,
+      title: title,
+      description: description,
+      status: status ?? this.status,
+      priority: priority,
+      parentId: parentId,
+      embedding: embedding,
+      estimate: estimate,
+      timeSpent: timeSpent,
+      createdAt: createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
 }
