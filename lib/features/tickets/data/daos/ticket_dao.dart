@@ -59,9 +59,11 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
     });
   }
 
-  /// Applies [companion] (expected to carry only `status` and `updatedAt`)
-  /// to the ticket row with primary key [id].
-  Future<void> updateStatus(String id, TicketsTableCompanion companion) {
+  /// Applies [companion] to the ticket row with primary key [id]. Generic —
+  /// [companion] may cover any subset of columns; both status-only updates
+  /// ([DriftTicketRepository.updateTicketStatus]) and general field updates
+  /// ([DriftTicketRepository.updateTicket]) go through this one method.
+  Future<void> updateFields(String id, TicketsTableCompanion companion) {
     return (update(ticketsTable)..where((t) => t.id.equals(id))).write(companion);
   }
 }

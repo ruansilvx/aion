@@ -116,5 +116,31 @@ void main() {
         isA<TicketsError>(),
       ],
     );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'updateTicket emits [TicketDetailLoaded] with the refreshed ticket on success',
+      setUp: () {
+        when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+        when(() => repository.getTicketById(ticket.id))
+            .thenAnswer((_) async => ticket.copyWith(title: 'Updated title'));
+      },
+      build: () => TicketsCubit(repository),
+      act: (cubit) => cubit.updateTicket(ticket.copyWith(title: 'Updated title')),
+      expect: () => [
+        TicketDetailLoaded(ticket.copyWith(title: 'Updated title')),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'updateTicket emits [TicketsError] when the repository throws',
+      setUp: () {
+        when(() => repository.updateTicket(any())).thenThrow(Exception('boom'));
+      },
+      build: () => TicketsCubit(repository),
+      act: (cubit) => cubit.updateTicket(ticket),
+      expect: () => [
+        isA<TicketsError>(),
+      ],
+    );
   });
 }

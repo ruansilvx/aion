@@ -104,6 +104,26 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
   }
 
+  /// Persists every editable field of [ticket] via
+  /// [TicketRepository.updateTicket], then re-fetches and emits
+  /// [TicketDetailLoaded] with the refreshed ticket. Emits [TicketsError]
+  /// on failure. Unlike [updateTicketStatus], this does not emit an
+  /// optimistic intermediate state — the calling `InlineEditableField`/
+  /// `SelectionMenu` already renders the new value locally before the
+  /// repository round trip completes, so no separate "Updating" state is
+  /// needed here.
+  Future<void> updateTicket(Ticket ticket) async {
+    try {
+      await _repository.updateTicket(ticket);
+      final refreshed = await _repository.getTicketById(ticket.id);
+      if (refreshed != null) {
+        emit(TicketDetailLoaded(refreshed));
+      }
+    } catch (e) {
+      emit(TicketsError(e.toString()));
+    }
+  }
+
   /// Fetches the ticket with internal id [id]. Emits [TicketsLoading] then
   /// [TicketDetailLoaded] on success, or [TicketsError] if not found or the
   /// repository call throws.

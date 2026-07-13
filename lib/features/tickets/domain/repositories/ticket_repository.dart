@@ -21,4 +21,10 @@ abstract interface class TicketRepository {
   /// Updates only the [status] (and `updatedAt`) of the ticket with id
   /// [id]. Does not touch any other field. Throws if [id] does not exist.
   Future<void> updateTicketStatus(String id, TicketStatus status);
+
+  /// Persists [ticket]'s `title`, `description`, `priority`, `type`,
+  /// `estimate`, and `timeSpent`, plus a fresh `updatedAt`. Does not touch
+  /// `status` (use [updateTicketStatus]), `parentId`, `embedding`, `id`, or
+  /// `ticketId`. Throws if `ticket.id` does not exist.
+  Future<void> updateTicket(Ticket ticket);
 }
