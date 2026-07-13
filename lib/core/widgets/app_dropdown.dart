@@ -57,7 +57,8 @@ class _AppDropdownState<T> extends State<AppDropdown<T>> {
   bool _isOpen = false;
   FocusNode? _ownedFocusNode;
 
-  FocusNode get _focusNode => widget.focusNode ?? (_ownedFocusNode ??= FocusNode());
+  FocusNode get _focusNode =>
+      widget.focusNode ?? (_ownedFocusNode ??= FocusNode());
 
   @override
   void dispose() {
@@ -113,7 +114,10 @@ class _AppDropdownState<T> extends State<AppDropdown<T>> {
                       },
                       child: Container(
                         color: selected ? c.primarySubtle : null,
-                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 12,
+                          horizontal: 14,
+                        ),
                         child: Text(
                           widget.itemLabel(item),
                           style: AionText.bodySm.copyWith(
@@ -189,13 +193,18 @@ class _AppDropdownState<T> extends State<AppDropdown<T>> {
                     ),
                   ),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
                     child: Row(
                       children: [
                         Expanded(
                           child: Text(
                             widget.itemLabel(widget.value),
-                            style: AionText.bodySm.copyWith(color: c.textPrimary),
+                            style: AionText.bodySm.copyWith(
+                              color: c.textPrimary,
+                            ),
                           ),
                         ),
                         PhosphorIcon(

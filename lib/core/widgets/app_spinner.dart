@@ -20,7 +20,8 @@ class AppSpinner extends StatefulWidget {
   State<AppSpinner> createState() => _AppSpinnerState();
 }
 
-class _AppSpinnerState extends State<AppSpinner> with SingleTickerProviderStateMixin {
+class _AppSpinnerState extends State<AppSpinner>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 900),
@@ -74,7 +75,13 @@ class _SpinnerPainter extends CustomPainter {
     final startAngle = -math.pi / 2 + progress * 2 * math.pi;
     const sweepAngle = 270 * math.pi / 180;
 
-    canvas.drawArc(rect.deflate(paint.strokeWidth / 2), startAngle, sweepAngle, false, paint);
+    canvas.drawArc(
+      rect.deflate(paint.strokeWidth / 2),
+      startAngle,
+      sweepAngle,
+      false,
+      paint,
+    );
   }
 
   @override

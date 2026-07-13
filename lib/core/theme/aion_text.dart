@@ -39,6 +39,17 @@ abstract final class AionText {
     height: 1.25,
   );
 
+  /// Dialog headline text — confirmation/alert dialog titles. Sits between
+  /// [h2] (22px, screen headers) and [cardTitle] (14px, row titles); a
+  /// dialog needs headline weight without dominating a small centered card.
+  static const dialogTitle = TextStyle(
+    fontFamily: _ui,
+    fontSize: 18,
+    fontWeight: FontWeight.w800,
+    letterSpacing: -0.18,
+    height: 1.3,
+  );
+
   /// Primary body text, e.g. multiline description fields.
   static const body = TextStyle(
     fontFamily: _ui,

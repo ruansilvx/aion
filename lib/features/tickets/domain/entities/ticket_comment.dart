@@ -40,5 +40,12 @@ class TicketComment extends Equatable {
   });
 
   @override
-  List<Object?> get props => [id, ticketId, content, authorType, aiModel, createdAt];
+  List<Object?> get props => [
+    id,
+    ticketId,
+    content,
+    authorType,
+    aiModel,
+    createdAt,
+  ];
 }

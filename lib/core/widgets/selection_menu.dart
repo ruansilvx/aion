@@ -79,7 +79,9 @@ class _SelectionMenuState<T> extends State<SelectionMenu<T>> {
     final t = ThemeScope.of(context);
     final c = t.colors;
     final overlay = Overlay.of(context);
-    final selectable = widget.items.where((i) => i != widget.currentValue).toList();
+    final selectable = widget.items
+        .where((i) => i != widget.currentValue)
+        .toList();
 
     _overlayEntry = OverlayEntry(
       builder: (context) {
@@ -112,7 +114,10 @@ class _SelectionMenuState<T> extends State<SelectionMenu<T>> {
                         _removeOverlay();
                       },
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 13),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 9,
+                          horizontal: 13,
+                        ),
                         child: Text(
                           widget.itemLabel(item),
                           style: AionText.bodySm.copyWith(
@@ -163,10 +168,7 @@ class _SelectionMenuState<T> extends State<SelectionMenu<T>> {
               },
             ),
           },
-          child: GestureDetector(
-            onTap: _toggleOverlay,
-            child: widget.trigger,
-          ),
+          child: GestureDetector(onTap: _toggleOverlay, child: widget.trigger),
         ),
       ),
     );

@@ -27,4 +27,13 @@ abstract interface class TicketRepository {
   /// `status` (use [updateTicketStatus]), `parentId`, `embedding`, `id`, or
   /// `ticketId`. Throws if `ticket.id` does not exist.
   Future<void> updateTicket(Ticket ticket);
+
+  /// Deletes the ticket with internal id [id], cascading to its comments
+  /// and any `ticket_links` rows that reference it in either direction.
+  ///
+  /// Throws [StateError] if [id] does not exist. Throws
+  /// [TicketHasChildrenException] — without deleting anything — if any
+  /// other ticket has `parentId == id`; the caller must reparent or delete
+  /// those children first. Structural children are never cascade-deleted.
+  Future<void> deleteTicket(String id);
 }

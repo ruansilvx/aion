@@ -174,7 +174,9 @@ class _InlineEditableFieldState<T> extends State<InlineEditableField<T>> {
                 controller: _controller,
                 focusNode: _focusNode,
                 maxLines: widget.maxLines,
-                textInputAction: _isMultiline ? TextInputAction.newline : TextInputAction.done,
+                textInputAction: _isMultiline
+                    ? TextInputAction.newline
+                    : TextInputAction.done,
                 onSubmitted: _isMultiline ? null : (_) => _commit(),
               ),
               if (_isMultiline) ...[

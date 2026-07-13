@@ -7,6 +7,7 @@ import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
+import 'package:aion/features/tickets/domain/exceptions/ticket_has_children_exception.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 
@@ -134,6 +135,42 @@ class TicketsCubit extends Cubit<TicketsState> {
       if (ticket == null) {
         emit(const TicketsError('', reason: TicketsErrorReason.notFound));
       } else {
+        emit(TicketDetailLoaded(ticket));
+      }
+    } catch (e) {
+      emit(TicketsError(e.toString()));
+    }
+  }
+
+  /// Deletes the ticket with internal id [id] via
+  /// [TicketRepository.deleteTicket]. Emits [TicketDeleting] immediately,
+  /// then [TicketDeleted] on success.
+  ///
+  /// On failure from [TicketHasChildrenException], emits
+  /// [TicketsError(reason: TicketsErrorReason.hasChildren)] (carrying the
+  /// blocking child count) — solely so a listener (e.g. `AppToast`) can
+  /// react — then immediately re-fetches and emits [TicketDetailLoaded]
+  /// with the unchanged ticket, so the detail screen's body never falls
+  /// into the generic error rendering for this case; the delete is
+  /// blocked, not "confirmed but failed." Any other failure emits a
+  /// generic [TicketsError] — including "not found," which by this point
+  /// would only happen from a concurrent delete elsewhere, not a normal
+  /// user path.
+  Future<void> deleteTicket(String id) async {
+    emit(const TicketDeleting());
+    try {
+      await _repository.deleteTicket(id);
+      emit(const TicketDeleted());
+    } on TicketHasChildrenException catch (e) {
+      emit(
+        TicketsError(
+          '',
+          reason: TicketsErrorReason.hasChildren,
+          childCount: e.childCount,
+        ),
+      );
+      final ticket = await _repository.getTicketById(id);
+      if (ticket != null) {
         emit(TicketDetailLoaded(ticket));
       }
     } catch (e) {

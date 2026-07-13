@@ -56,11 +56,13 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
   void _submit() {
     setState(() => _isSubmitting = true);
     context.read<TicketsCubit>().createTicket(
-          type: _selectedType,
-          title: _titleController.text.trim(),
-          description: _descController.text.trim().isEmpty ? null : _descController.text.trim(),
-          priority: _selectedPriority,
-        );
+      type: _selectedType,
+      title: _titleController.text.trim(),
+      description: _descController.text.trim().isEmpty
+          ? null
+          : _descController.text.trim(),
+      priority: _selectedPriority,
+    );
   }
 
   @override

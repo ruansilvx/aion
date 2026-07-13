@@ -16,15 +16,16 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
 
   /// Returns all tickets, most recently created first.
   Future<List<TicketData>> getAllTickets() {
-    return (select(ticketsTable)
-          ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
-        .get();
+    return (select(
+      ticketsTable,
+    )..orderBy([(t) => OrderingTerm.desc(t.createdAt)])).get();
   }
 
   /// Returns the ticket row with primary key [id], or `null` if none exists.
   Future<TicketData?> getTicketById(String id) {
-    return (select(ticketsTable)..where((t) => t.id.equals(id)))
-        .getSingleOrNull();
+    return (select(
+      ticketsTable,
+    )..where((t) => t.id.equals(id))).getSingleOrNull();
   }
 
   /// Inserts [entry] with a freshly generated human-readable ticket ID.
@@ -35,25 +36,21 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
   /// single-writer model.
   ///
   /// Returns the generated ticket ID (e.g. `"AIO-3"`).
-  Future<String> insertTicket(
-    TicketsTableCompanion entry,
-    String prefix,
-  ) {
+  Future<String> insertTicket(TicketsTableCompanion entry, String prefix) {
     return transaction<String>(() async {
-      final current = await (select(ticketIdSequenceTable)
-            ..where((t) => t.id.equals(1)))
-          .getSingleOrNull();
+      final current = await (select(
+        ticketIdSequenceTable,
+      )..where((t) => t.id.equals(1))).getSingleOrNull();
       final newSeq = (current?.seq ?? 0) + 1;
 
       await into(ticketIdSequenceTable).insertOnConflictUpdate(
-        TicketIdSequenceTableCompanion(
-          id: const Value(1),
-          seq: Value(newSeq),
-        ),
+        TicketIdSequenceTableCompanion(id: const Value(1), seq: Value(newSeq)),
       );
 
       final ticketId = '$prefix-$newSeq';
-      await into(ticketsTable).insert(entry.copyWith(ticketId: Value(ticketId)));
+      await into(
+        ticketsTable,
+      ).insert(entry.copyWith(ticketId: Value(ticketId)));
 
       return ticketId;
     });
@@ -64,6 +61,26 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
   /// ([DriftTicketRepository.updateTicketStatus]) and general field updates
   /// ([DriftTicketRepository.updateTicket]) go through this one method.
   Future<void> updateFields(String id, TicketsTableCompanion companion) {
-    return (update(ticketsTable)..where((t) => t.id.equals(id))).write(companion);
+    return (update(
+      ticketsTable,
+    )..where((t) => t.id.equals(id))).write(companion);
+  }
+
+  /// Returns how many tickets have `parent_id == parentId`. Used by
+  /// [DriftTicketRepository.deleteTicket] to block deletion of tickets
+  /// with structural children.
+  Future<int> countChildTickets(String parentId) {
+    final query = selectOnly(ticketsTable)
+      ..addColumns([ticketsTable.id.count()])
+      ..where(ticketsTable.parentId.equals(parentId));
+    return query
+        .map((row) => row.read(ticketsTable.id.count()) ?? 0)
+        .getSingle();
+  }
+
+  /// Deletes the ticket row with primary key [id]. Callers are responsible
+  /// for cascading to dependent rows (comments, links) first.
+  Future<void> deleteTicketRow(String id) {
+    return (delete(ticketsTable)..where((t) => t.id.equals(id))).go();
   }
 }

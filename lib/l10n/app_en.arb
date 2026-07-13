@@ -97,5 +97,18 @@
     "placeholders": {
       "input": { "type": "String" }
     }
-  }
+  },
+
+  "ticketDetailOverflowMenuLabel": "More actions",
+  "ticketDeleteMenuItem": "Delete ticket",
+  "ticketDeleteConfirmTitle": "Delete this ticket?",
+  "ticketDeleteConfirmMessage": "This cannot be undone.",
+  "ticketDeleteConfirmAction": "Delete",
+  "ticketDeleteBlockedByChildren": "This ticket has {count, plural, one{1 subticket} other{{count} subtickets}} — delete or reparent them first.",
+  "@ticketDeleteBlockedByChildren": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "ticketDeleteBlockedByChildrenGeneric": "Can't delete — this ticket has subtickets. Delete or reparent them first."
 }

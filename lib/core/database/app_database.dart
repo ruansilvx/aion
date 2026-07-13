@@ -31,7 +31,12 @@ QueryExecutor _openConnection() {
 /// Aion's local SQLite database. Schema version 1, seeding
 /// [TicketIdSequenceTable] with a single `(id: 1, seq: 0)` row on creation.
 @DriftDatabase(
-  tables: [TicketsTable, TicketIdSequenceTable, TicketLinksTable, TicketCommentsTable],
+  tables: [
+    TicketsTable,
+    TicketIdSequenceTable,
+    TicketLinksTable,
+    TicketCommentsTable,
+  ],
   daos: [TicketDao, TicketLinkDao, CommentDao],
 )
 class AppDatabase extends _$AppDatabase {
@@ -45,14 +50,11 @@ class AppDatabase extends _$AppDatabase {
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
-        onCreate: (Migrator m) async {
-          await m.createAll();
-          await into(ticketIdSequenceTable).insert(
-            const TicketIdSequenceTableCompanion(
-              id: Value(1),
-              seq: Value(0),
-            ),
-          );
-        },
+    onCreate: (Migrator m) async {
+      await m.createAll();
+      await into(ticketIdSequenceTable).insert(
+        const TicketIdSequenceTableCompanion(id: Value(1), seq: Value(0)),
       );
+    },
+  );
 }

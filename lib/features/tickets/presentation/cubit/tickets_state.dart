@@ -45,6 +45,11 @@ class TicketsLoaded extends TicketsState {
 enum TicketsErrorReason {
   /// The requested ticket does not exist.
   notFound,
+
+  /// Deletion was blocked because the ticket has structural children.
+  /// The widget layer reads [TicketsError.childCount] to build a
+  /// count-aware message.
+  hasChildren,
 }
 
 /// A list, detail, or create operation failed. Carries either a classified
@@ -54,8 +59,10 @@ enum TicketsErrorReason {
 /// for display whenever it's non-null.
 class TicketsError extends TicketsState {
   /// Creates a [TicketsError] state. Pass [reason] for a classified,
-  /// localizable error; otherwise [message] is shown as-is.
-  const TicketsError(this.message, {this.reason});
+  /// localizable error; otherwise [message] is shown as-is. Pass
+  /// [childCount] alongside [TicketsErrorReason.hasChildren] so the widget
+  /// layer can build a count-aware message.
+  const TicketsError(this.message, {this.reason, this.childCount});
 
   /// A raw, unlocalized description of what went wrong. Ignored in favor
   /// of [reason] when [reason] is non-null.
@@ -65,8 +72,12 @@ class TicketsError extends TicketsState {
   /// localizable case. `null` for generic/forwarded exceptions.
   final TicketsErrorReason? reason;
 
+  /// How many structural children blocked deletion. Only set when [reason]
+  /// is [TicketsErrorReason.hasChildren]; `null` otherwise.
+  final int? childCount;
+
   @override
-  List<Object?> get props => [message, reason];
+  List<Object?> get props => [message, reason, childCount];
 }
 
 /// A [TicketsCubit.createTicket] call is in flight. Carries the
@@ -136,4 +147,19 @@ class TicketDetailLoaded extends TicketsState {
 
   @override
   List<Object?> get props => [ticket];
+}
+
+/// A [TicketsCubit.deleteTicket] call is in flight for the ticket
+/// currently shown on [TicketDetailScreen].
+class TicketDeleting extends TicketsState {
+  /// Creates a [TicketDeleting] state.
+  const TicketDeleting();
+}
+
+/// A ticket was deleted successfully. Carries no data — the UI responds
+/// by navigating back to `/tickets`, where [TicketsCubit.loadTickets]
+/// re-fetches the now-shorter list.
+class TicketDeleted extends TicketsState {
+  /// Creates a [TicketDeleted] state.
+  const TicketDeleted();
 }

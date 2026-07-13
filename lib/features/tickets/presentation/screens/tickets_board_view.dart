@@ -67,10 +67,18 @@ String ticketTypeLabel(BuildContext context, TicketType type) {
 
 /// Returns the localized display message for a classified [reason]. See
 /// [TicketsErrorReason].
+///
+/// [TicketsErrorReason.hasChildren] is handled here only for switch
+/// exhaustiveness — [TicketsCubit.deleteTicket] always follows that
+/// error with a [TicketDetailLoaded] re-emission, so in practice the
+/// screen never stays on this generic (non-count-aware) fallback text;
+/// the count-aware message is shown via `AppToast` instead, driven
+/// directly by [TicketsError.childCount].
 String ticketsErrorMessage(BuildContext context, TicketsErrorReason reason) {
   final l10n = context.l10n;
   return switch (reason) {
     TicketsErrorReason.notFound => l10n.ticketsErrorNotFound,
+    TicketsErrorReason.hasChildren => l10n.ticketDeleteBlockedByChildrenGeneric,
   };
 }
 
@@ -95,9 +103,13 @@ class TicketBoardView extends StatelessWidget {
 
     return ListView.separated(
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: AionSpacing.sp20, vertical: AionSpacing.sp16),
+      padding: const EdgeInsets.symmetric(
+        horizontal: AionSpacing.sp20,
+        vertical: AionSpacing.sp16,
+      ),
       itemCount: TicketStatus.values.length,
-      separatorBuilder: (context, index) => const SizedBox(width: AionSpacing.sp12),
+      separatorBuilder: (context, index) =>
+          const SizedBox(width: AionSpacing.sp12),
       itemBuilder: (context, index) {
         final status = TicketStatus.values[index];
         return SizedBox(
@@ -131,7 +143,10 @@ class BoardColumn extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AionSpacing.sp4, vertical: AionSpacing.sp8),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AionSpacing.sp4,
+            vertical: AionSpacing.sp8,
+          ),
           child: Row(
             children: [
               Text(
@@ -140,12 +155,21 @@ class BoardColumn extends StatelessWidget {
               ),
               const SizedBox(width: AionSpacing.sp8),
               DecoratedBox(
-                decoration: BoxDecoration(color: c.surfaceHover, borderRadius: BorderRadius.circular(5)),
+                decoration: BoxDecoration(
+                  color: c.surfaceHover,
+                  borderRadius: BorderRadius.circular(5),
+                ),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 1,
+                  ),
                   child: Text(
                     '${tickets.length}',
-                    style: AionText.key.copyWith(color: c.textSecondary, fontSize: 10.5),
+                    style: AionText.key.copyWith(
+                      color: c.textSecondary,
+                      fontSize: 10.5,
+                    ),
                   ),
                 ),
               ),
@@ -158,7 +182,10 @@ class BoardColumn extends StatelessWidget {
             onWillAcceptWithDetails: (details) => true,
             onAcceptWithDetails: (details) {
               if (details.data.status != status) {
-                context.read<TicketsCubit>().updateTicketStatus(details.data.id, status);
+                context.read<TicketsCubit>().updateTicketStatus(
+                  details.data.id,
+                  status,
+                );
               }
             },
             builder: (context, candidateData, rejectedData) {
@@ -177,10 +204,14 @@ class BoardColumn extends StatelessWidget {
                           ),
                         )
                       : ListView.separated(
-                          padding: const EdgeInsets.symmetric(vertical: AionSpacing.sp4),
+                          padding: const EdgeInsets.symmetric(
+                            vertical: AionSpacing.sp4,
+                          ),
                           itemCount: tickets.length,
-                          separatorBuilder: (context, index) => const SizedBox(height: AionSpacing.sp8),
-                          itemBuilder: (context, index) => TicketBoardCard(ticket: tickets[index]),
+                          separatorBuilder: (context, index) =>
+                              const SizedBox(height: AionSpacing.sp8),
+                          itemBuilder: (context, index) =>
+                              TicketBoardCard(ticket: tickets[index]),
                         ),
                 ),
               );
@@ -217,7 +248,8 @@ class TicketBoardCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final card = Semantics(
-      label: '${ticket.ticketId} ${ticket.title}, status: ${ticketStatusLabel(context, ticket.status)}',
+      label:
+          '${ticket.ticketId} ${ticket.title}, status: ${ticketStatusLabel(context, ticket.status)}',
       button: true,
       child: FocusableActionDetector(
         actions: {
@@ -266,7 +298,11 @@ class TicketBoardCard extends StatelessWidget {
 /// The visual card body shared by [TicketBoardCard]'s in-place, drag
 /// feedback, and drag-placeholder renderings.
 class _CardVisual extends StatelessWidget {
-  const _CardVisual({required this.ticket, required this.elevated, this.interactive = true});
+  const _CardVisual({
+    required this.ticket,
+    required this.elevated,
+    this.interactive = true,
+  });
 
   /// The ticket to render.
   final Ticket ticket;
@@ -289,7 +325,9 @@ class _CardVisual extends StatelessWidget {
         color: c.surface,
         borderRadius: BorderRadius.all(AionRadius.lg),
         border: Border.all(color: c.border, width: 1),
-        boxShadow: elevated ? AionShadows.fab(c, t.isDark) : AionShadows.card(c, t.isDark),
+        boxShadow: elevated
+            ? AionShadows.fab(c, t.isDark)
+            : AionShadows.card(c, t.isDark),
       ),
       child: Padding(
         padding: const EdgeInsets.all(AionSpacing.sp12),
@@ -299,12 +337,21 @@ class _CardVisual extends StatelessWidget {
             Row(
               children: [
                 DecoratedBox(
-                  decoration: BoxDecoration(color: c.surfaceHover, borderRadius: BorderRadius.circular(5)),
+                  decoration: BoxDecoration(
+                    color: c.surfaceHover,
+                    borderRadius: BorderRadius.circular(5),
+                  ),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
                     child: Text(
                       ticket.ticketId,
-                      style: AionText.key.copyWith(color: c.textSecondary, fontSize: 10.5),
+                      style: AionText.key.copyWith(
+                        color: c.textSecondary,
+                        fontSize: 10.5,
+                      ),
                     ),
                   ),
                 ),
@@ -371,7 +418,9 @@ class _MoveToStatusMenuState extends State<MoveToStatusMenu> {
     final t = ThemeScope.of(context);
     final c = t.colors;
     final overlay = Overlay.of(context);
-    final otherStatuses = TicketStatus.values.where((s) => s != widget.ticket.status).toList();
+    final otherStatuses = TicketStatus.values
+        .where((s) => s != widget.ticket.status)
+        .toList();
 
     _overlayEntry = OverlayEntry(
       builder: (context) {
@@ -401,11 +450,17 @@ class _MoveToStatusMenuState extends State<MoveToStatusMenu> {
                   children: otherStatuses.map((status) {
                     return GestureDetector(
                       onTap: () {
-                        context.read<TicketsCubit>().updateTicketStatus(widget.ticket.id, status);
+                        context.read<TicketsCubit>().updateTicketStatus(
+                          widget.ticket.id,
+                          status,
+                        );
                         _removeOverlay();
                       },
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 10,
+                          horizontal: 14,
+                        ),
                         child: Text(
                           ticketStatusLabel(context, status),
                           style: AionText.bodySm.copyWith(color: c.textPrimary),
@@ -450,7 +505,11 @@ class _MoveToStatusMenuState extends State<MoveToStatusMenu> {
           },
           child: GestureDetector(
             onTap: _showOverlay,
-            child: PhosphorIcon(PhosphorIcons.dotsThreeLight, size: 16, color: c.textMuted),
+            child: PhosphorIcon(
+              PhosphorIcons.dotsThreeLight,
+              size: 16,
+              color: c.textMuted,
+            ),
           ),
         ),
       ),

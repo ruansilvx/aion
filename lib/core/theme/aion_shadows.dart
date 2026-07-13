@@ -55,4 +55,18 @@ abstract final class AionShadows {
       ),
     ];
   }
+
+  /// Confirmation/alert dialog card shadow — a larger, softer float than
+  /// [card] since a dialog sits centered above a dimming scrim rather than
+  /// inline in the page layout.
+  static List<BoxShadow> dialog(AionColors c, bool isDark) {
+    return [
+      BoxShadow(
+        color: const Color(0xFF000000).withValues(alpha: isDark ? 0.60 : 0.18),
+        blurRadius: 40,
+        spreadRadius: -6,
+        offset: const Offset(0, 20),
+      ),
+    ];
+  }
 }

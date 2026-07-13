@@ -59,7 +59,9 @@ void main() {
   });
 
   test('authorType round-trip: human and ai survive write/read', () async {
-    await repository.addComment(buildComment(authorType: CommentAuthorType.human));
+    await repository.addComment(
+      buildComment(authorType: CommentAuthorType.human),
+    );
     await repository.addComment(
       buildComment(
         authorType: CommentAuthorType.ai,
@@ -74,30 +76,43 @@ void main() {
     expect(comments[1].authorType, CommentAuthorType.ai);
   });
 
-  test('aiModel field: null for human, non-null for ai, both survive write/read', () async {
-    await repository.addComment(buildComment(authorType: CommentAuthorType.human));
-    await repository.addComment(
-      buildComment(
-        authorType: CommentAuthorType.ai,
-        aiModel: 'claude-sonnet-5',
-        createdAt: DateTime(2026, 1, 2),
-      ),
-    );
+  test(
+    'aiModel field: null for human, non-null for ai, both survive write/read',
+    () async {
+      await repository.addComment(
+        buildComment(authorType: CommentAuthorType.human),
+      );
+      await repository.addComment(
+        buildComment(
+          authorType: CommentAuthorType.ai,
+          aiModel: 'claude-sonnet-5',
+          createdAt: DateTime(2026, 1, 2),
+        ),
+      );
 
-    final comments = await repository.getCommentsForTicket('ticket-1');
+      final comments = await repository.getCommentsForTicket('ticket-1');
 
-    expect(comments[0].aiModel, isNull);
-    expect(comments[1].aiModel, 'claude-sonnet-5');
-  });
+      expect(comments[0].aiModel, isNull);
+      expect(comments[1].aiModel, 'claude-sonnet-5');
+    },
+  );
 
-  test('human and AI comments on the same ticket are both returned together', () async {
-    await repository.addComment(buildComment(authorType: CommentAuthorType.human));
-    await repository.addComment(
-      buildComment(authorType: CommentAuthorType.ai, createdAt: DateTime(2026, 1, 2)),
-    );
+  test(
+    'human and AI comments on the same ticket are both returned together',
+    () async {
+      await repository.addComment(
+        buildComment(authorType: CommentAuthorType.human),
+      );
+      await repository.addComment(
+        buildComment(
+          authorType: CommentAuthorType.ai,
+          createdAt: DateTime(2026, 1, 2),
+        ),
+      );
 
-    final comments = await repository.getCommentsForTicket('ticket-1');
+      final comments = await repository.getCommentsForTicket('ticket-1');
 
-    expect(comments, hasLength(2));
-  });
+      expect(comments, hasLength(2));
+    },
+  );
 }
