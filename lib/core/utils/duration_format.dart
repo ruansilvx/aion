@@ -2,7 +2,9 @@
 
 /// Formats [minutes] as a short human label (e.g. `'2h 30m'`, `'45m'`,
 /// `'3h'`). Returns [placeholder] for `null` or non-positive input.
-String formatDurationMinutes(int? minutes, {String placeholder = 'Not set'}) {
+/// [placeholder] has no default so callers must supply localized text
+/// explicitly — this function has no [BuildContext] to resolve one itself.
+String formatDurationMinutes(int? minutes, {required String placeholder}) {
   if (minutes == null || minutes <= 0) return placeholder;
   final h = minutes ~/ 60;
   final m = minutes % 60;

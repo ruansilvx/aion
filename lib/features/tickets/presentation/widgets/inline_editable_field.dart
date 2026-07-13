@@ -3,6 +3,7 @@
 import 'package:flutter/services.dart' show LogicalKeyboardKey, TextInputAction;
 import 'package:flutter/widgets.dart';
 
+import 'package:aion/core/localization/context_localizations_x.dart';
 import 'package:aion/core/theme/aion_radius.dart';
 import 'package:aion/core/theme/aion_text.dart';
 import 'package:aion/core/theme/theme_scope.dart';
@@ -181,9 +182,17 @@ class _InlineEditableFieldState<T> extends State<InlineEditableField<T>> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    AppButton(label: 'Cancel', variant: AppButtonVariant.ghost, onPressed: _cancel),
+                    AppButton(
+                      label: context.l10n.commonCancel,
+                      variant: AppButtonVariant.ghost,
+                      onPressed: _cancel,
+                    ),
                     const SizedBox(width: AionSpacing.sp12),
-                    AppButton(label: 'Save', variant: AppButtonVariant.primary, onPressed: _commit),
+                    AppButton(
+                      label: context.l10n.commonSave,
+                      variant: AppButtonVariant.primary,
+                      onPressed: _commit,
+                    ),
                   ],
                 ),
               ],

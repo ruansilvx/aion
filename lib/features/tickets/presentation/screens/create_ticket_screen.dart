@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:aion/core/localization/context_localizations_x.dart';
 import 'package:aion/core/theme/aion_radius.dart';
 import 'package:aion/core/theme/theme_scope.dart';
 import 'package:aion/core/widgets/app_button.dart';
@@ -16,6 +17,7 @@ import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
+import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart';
 
 /// The `/tickets/new` route: title, type, priority, and description fields
 /// followed by a full-width submit button. Reads [TicketsCubit] from the
@@ -71,7 +73,10 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
         if (state is TicketCreated) {
           context.go('/tickets');
         } else if (state is TicketsError) {
-          AppToast.show(context, state.message);
+          final message = state.reason != null
+              ? ticketsErrorMessage(context, state.reason!)
+              : state.message;
+          AppToast.show(context, message);
           setState(() => _isSubmitting = false);
         }
       },
@@ -80,7 +85,7 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
         child: Column(
           children: [
             AppHeader(
-              title: 'New ticket',
+              title: context.l10n.commonNewTicket,
               showBack: true,
               onBack: () => context.go('/tickets'),
               padding: const EdgeInsets.fromLTRB(20, 6, 20, 16),
@@ -92,9 +97,9 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     AppTextField(
-                      labelText: 'Title',
+                      labelText: context.l10n.createTicketTitleLabel,
                       isRequired: true,
-                      hintText: 'Ticket title',
+                      hintText: context.l10n.createTicketTitleHint,
                       controller: _titleController,
                       focusNode: _titleFocus,
                       textInputAction: TextInputAction.next,
@@ -102,27 +107,27 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                     ),
                     const SizedBox(height: AionSpacing.sp20),
                     AppDropdown<TicketType>(
-                      labelText: 'Type',
+                      labelText: context.l10n.createTicketTypeLabel,
                       value: _selectedType,
                       items: TicketType.values,
                       onChanged: (v) => setState(() => _selectedType = v),
-                      itemLabel: (v) => v.name,
+                      itemLabel: (v) => ticketTypeLabel(context, v),
                       focusNode: _typeFocus,
                     ),
                     const SizedBox(height: AionSpacing.sp20),
                     AppDropdown<TicketPriority>(
-                      labelText: 'Priority',
+                      labelText: context.l10n.createTicketPriorityLabel,
                       value: _selectedPriority,
                       items: TicketPriority.values,
                       onChanged: (v) => setState(() => _selectedPriority = v),
-                      itemLabel: (v) => v.name,
+                      itemLabel: (v) => ticketPriorityLabel(context, v),
                       focusNode: _priorityFocus,
                     ),
                     const SizedBox(height: AionSpacing.sp20),
                     AppTextField(
-                      labelText: 'Description',
+                      labelText: context.l10n.createTicketDescriptionLabel,
                       isOptional: true,
-                      hintText: 'Add details…',
+                      hintText: context.l10n.createTicketDescriptionHint,
                       controller: _descController,
                       focusNode: _descFocus,
                       maxLines: 6,
@@ -135,7 +140,7 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
               child: AppButton(
-                label: 'Create ticket',
+                label: context.l10n.commonCreateTicket,
                 variant: AppButtonVariant.primary,
                 isFullWidth: true,
                 onPressed: _isSubmitting ? null : _submit,

@@ -31,6 +31,9 @@ dependencies:
   # IDs
   uuid: ^4.5.1
 
+  # Localization (ARB-based, see aion-arch/changes/intl-string-retrofit)
+  intl: ^0.20.2
+
   # Icons
   # phosphor_flutter is unmaintained against Flutter SDKs where IconData is a
   # final class; phosphoricons_flutter is a Dart 3.x-compatible replacement
@@ -57,6 +60,7 @@ dev_dependencies:
   mocktail: ^1.0.4
 
 flutter:
+  generate: true
   fonts:
     - family: Manrope
       fonts:

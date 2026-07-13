@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:aion/core/localization/context_localizations_x.dart';
 import 'package:aion/core/theme/aion_radius.dart';
 import 'package:aion/core/theme/aion_shadows.dart';
 import 'package:aion/core/theme/aion_text.dart';
@@ -13,7 +14,9 @@ import 'package:aion/core/utils/platform_utils.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
+import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_list_screen.dart';
 
 /// Fixed width of a single [BoardColumn].
@@ -22,14 +25,52 @@ const double _kColumnWidth = 280.0;
 /// Returns the display label for [status] (e.g. `"In progress"`). Shared by
 /// [StatusIndicator] (`tickets_list_screen.dart`) and [BoardColumn]'s
 /// header so the 6-case status→label mapping lives in exactly one place.
-String ticketStatusLabel(TicketStatus status) {
+String ticketStatusLabel(BuildContext context, TicketStatus status) {
+  final l10n = context.l10n;
   return switch (status) {
-    TicketStatus.backlog => 'Backlog',
-    TicketStatus.todo => 'To do',
-    TicketStatus.inProgress => 'In progress',
-    TicketStatus.inReview => 'In review',
-    TicketStatus.done => 'Done',
-    TicketStatus.cancelled => 'Cancelled',
+    TicketStatus.backlog => l10n.ticketStatusBacklog,
+    TicketStatus.todo => l10n.ticketStatusToDo,
+    TicketStatus.inProgress => l10n.ticketStatusInProgress,
+    TicketStatus.inReview => l10n.ticketStatusInReview,
+    TicketStatus.done => l10n.ticketStatusDone,
+    TicketStatus.cancelled => l10n.ticketStatusCancelled,
+  };
+}
+
+/// Returns the display label for [priority] (e.g. `"Critical"`). Same
+/// one-place-mapping rationale as [ticketStatusLabel]; callers that need
+/// the all-caps badge treatment apply `.toUpperCase()` themselves.
+String ticketPriorityLabel(BuildContext context, TicketPriority priority) {
+  final l10n = context.l10n;
+  return switch (priority) {
+    TicketPriority.critical => l10n.ticketPriorityCritical,
+    TicketPriority.high => l10n.ticketPriorityHigh,
+    TicketPriority.medium => l10n.ticketPriorityMedium,
+    TicketPriority.low => l10n.ticketPriorityLow,
+    TicketPriority.none => l10n.ticketPriorityNone,
+  };
+}
+
+/// Returns the display label for [type] (e.g. `"Story"`). Same
+/// one-place-mapping rationale as [ticketStatusLabel].
+String ticketTypeLabel(BuildContext context, TicketType type) {
+  final l10n = context.l10n;
+  return switch (type) {
+    TicketType.epic => l10n.ticketTypeEpic,
+    TicketType.story => l10n.ticketTypeStory,
+    TicketType.task => l10n.ticketTypeTask,
+    TicketType.resource => l10n.ticketTypeResource,
+    TicketType.page => l10n.ticketTypePage,
+    TicketType.chat => l10n.ticketTypeChat,
+  };
+}
+
+/// Returns the localized display message for a classified [reason]. See
+/// [TicketsErrorReason].
+String ticketsErrorMessage(BuildContext context, TicketsErrorReason reason) {
+  final l10n = context.l10n;
+  return switch (reason) {
+    TicketsErrorReason.notFound => l10n.ticketsErrorNotFound,
   };
 }
 
@@ -94,7 +135,7 @@ class BoardColumn extends StatelessWidget {
           child: Row(
             children: [
               Text(
-                ticketStatusLabel(status).toUpperCase(),
+                ticketStatusLabel(context, status).toUpperCase(),
                 style: AionText.caption.copyWith(color: c.textMuted),
               ),
               const SizedBox(width: AionSpacing.sp8),
@@ -131,7 +172,7 @@ class BoardColumn extends StatelessWidget {
                   child: tickets.isEmpty
                       ? Center(
                           child: Text(
-                            'No tickets',
+                            context.l10n.ticketsBoardEmptyColumn,
                             style: AionText.bodySm.copyWith(color: c.textMuted),
                           ),
                         )
@@ -176,7 +217,7 @@ class TicketBoardCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final card = Semantics(
-      label: '${ticket.ticketId} ${ticket.title}, status: ${ticketStatusLabel(ticket.status)}',
+      label: '${ticket.ticketId} ${ticket.title}, status: ${ticketStatusLabel(context, ticket.status)}',
       button: true,
       child: FocusableActionDetector(
         actions: {
@@ -366,7 +407,7 @@ class _MoveToStatusMenuState extends State<MoveToStatusMenu> {
                       child: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
                         child: Text(
-                          ticketStatusLabel(status),
+                          ticketStatusLabel(context, status),
                           style: AionText.bodySm.copyWith(color: c.textPrimary),
                         ),
                       ),
@@ -397,7 +438,7 @@ class _MoveToStatusMenuState extends State<MoveToStatusMenu> {
       link: _layerLink,
       child: Semantics(
         button: true,
-        label: 'Move ${widget.ticket.ticketId} to another status',
+        label: context.l10n.ticketsBoardMoveTicketLabel(widget.ticket.ticketId),
         child: FocusableActionDetector(
           actions: {
             ActivateIntent: CallbackAction<ActivateIntent>(

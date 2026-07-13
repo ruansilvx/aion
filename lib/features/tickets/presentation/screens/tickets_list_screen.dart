@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:aion/core/database/app_database.dart';
+import 'package:aion/core/localization/context_localizations_x.dart';
 import 'package:aion/core/theme/aion_radius.dart';
 import 'package:aion/core/theme/aion_shadows.dart';
 import 'package:aion/core/theme/aion_text.dart';
@@ -62,7 +63,10 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
 
     if (tickets.isEmpty) {
       return Center(
-        child: Text('No tickets yet', style: AionText.body.copyWith(color: c.textMuted)),
+        child: Text(
+          context.l10n.ticketsListEmptyState,
+          style: AionText.body.copyWith(color: c.textMuted),
+        ),
       );
     }
 
@@ -96,12 +100,18 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('AION · MAIN', style: AionText.caption.copyWith(color: c.textMuted)),
+                    Text(
+                      context.l10n.ticketsListEyebrow,
+                      style: AionText.caption.copyWith(color: c.textMuted),
+                    ),
                     const SizedBox(height: AionSpacing.sp4),
                     Row(
                       children: [
                         Expanded(
-                          child: Text('Tickets', style: AionText.h1.copyWith(color: c.textPrimary)),
+                          child: Text(
+                            context.l10n.ticketsListTitle,
+                            style: AionText.h1.copyWith(color: c.textPrimary),
+                          ),
                         ),
                         _ViewModeToggle(
                           mode: _viewMode,
@@ -146,7 +156,10 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                           color: c.textMuted,
                         ),
                         const SizedBox(width: AionSpacing.sp8),
-                        Text('Search tickets', style: AionText.bodySm.copyWith(color: c.textMuted)),
+                        Text(
+                          context.l10n.ticketsListSearchHint,
+                          style: AionText.bodySm.copyWith(color: c.textMuted),
+                        ),
                       ],
                     ),
                   ),
@@ -164,14 +177,19 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                       builder: (context, state) {
                         return switch (state) {
                           TicketsLoading() => const Center(child: AppSpinner()),
-                          TicketsError(:final message) => Center(
+                          TicketsError(:final message, :final reason) => Center(
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Text(message, style: AionText.body.copyWith(color: c.textSecondary)),
+                                  Text(
+                                    reason != null
+                                        ? ticketsErrorMessage(context, reason)
+                                        : message,
+                                    style: AionText.body.copyWith(color: c.textSecondary),
+                                  ),
                                   const SizedBox(height: AionSpacing.sp12),
                                   AppButton(
-                                    label: 'Retry',
+                                    label: context.l10n.commonRetry,
                                     onPressed: () => context.read<TicketsCubit>().loadTickets(),
                                   ),
                                 ],
@@ -218,7 +236,7 @@ class AppFab extends StatelessWidget {
 
     return Semantics(
       button: true,
-      label: 'Create ticket',
+      label: context.l10n.commonCreateTicket,
       child: GestureDetector(
         onTap: onTap,
         child: DecoratedBox(
@@ -242,7 +260,7 @@ class AppFab extends StatelessWidget {
                 ),
                 const SizedBox(width: AionSpacing.sp8),
                 Text(
-                  'New ticket',
+                  context.l10n.commonNewTicket,
                   style: AionText.button.copyWith(color: const Color(0xFFFFFFFF)),
                 ),
               ],
@@ -272,14 +290,14 @@ class _ViewModeToggle extends StatelessWidget {
       children: [
         _ViewModeIcon(
           icon: PhosphorIcons.listLight,
-          label: 'Switch to list view',
+          label: context.l10n.ticketsListSwitchToListView,
           isActive: mode == _TicketViewMode.list,
           onTap: () => onChanged(_TicketViewMode.list),
         ),
         const SizedBox(width: AionSpacing.sp4),
         _ViewModeIcon(
           icon: PhosphorIcons.hexagonLight,
-          label: 'Switch to board view',
+          label: context.l10n.ticketsListSwitchToBoardView,
           isActive: mode == _TicketViewMode.board,
           onTap: () => onChanged(_TicketViewMode.board),
         ),
@@ -457,7 +475,7 @@ class PriorityBadge extends StatelessWidget {
             ? const EdgeInsets.symmetric(horizontal: 7, vertical: 3)
             : const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
         child: Text(
-          priority.name.toUpperCase(),
+          ticketPriorityLabel(context, priority).toUpperCase(),
           style: (isRow ? AionText.prioritySm : AionText.priorityBig).copyWith(color: fg),
         ),
       ),
@@ -507,7 +525,7 @@ class TypeChip extends StatelessWidget {
             ),
             const SizedBox(width: 5),
             Text(
-              type.name.toUpperCase(),
+              ticketTypeLabel(context, type).toUpperCase(),
               style: AionText.chip.copyWith(color: typeColor),
             ),
           ],
@@ -545,7 +563,7 @@ class StatusIndicator extends StatelessWidget {
         ),
         const SizedBox(width: 7),
         Text(
-          ticketStatusLabel(status),
+          ticketStatusLabel(context, status),
           style: AionText.label.copyWith(
             color: c.textSecondary,
             fontWeight: FontWeight.w600,

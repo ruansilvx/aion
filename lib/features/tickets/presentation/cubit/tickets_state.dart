@@ -37,17 +37,36 @@ class TicketsLoaded extends TicketsState {
   List<Object?> get props => [tickets];
 }
 
-/// A list, detail, or create operation failed. Carries a user-facing
-/// error message.
-class TicketsError extends TicketsState {
-  /// Creates a [TicketsError] state carrying [message].
-  const TicketsError(this.message);
+/// Categorizes a [TicketsError] so it can be localized at the widget layer
+/// (via `ticketsErrorMessage` in `tickets_board_view.dart`) without
+/// [TicketsCubit] needing a [BuildContext]. `null` on [TicketsError.reason]
+/// means the error carries only a raw, unlocalized [TicketsError.message]
+/// (e.g. a forwarded repository exception) — see [TicketsError].
+enum TicketsErrorReason {
+  /// The requested ticket does not exist.
+  notFound,
+}
 
-  /// A user-facing description of what went wrong.
+/// A list, detail, or create operation failed. Carries either a classified
+/// [reason] — resolved to localized text at the widget layer — or a raw,
+/// unlocalized [message] (e.g. a forwarded repository exception) when no
+/// more specific reason applies. [reason] takes precedence over [message]
+/// for display whenever it's non-null.
+class TicketsError extends TicketsState {
+  /// Creates a [TicketsError] state. Pass [reason] for a classified,
+  /// localizable error; otherwise [message] is shown as-is.
+  const TicketsError(this.message, {this.reason});
+
+  /// A raw, unlocalized description of what went wrong. Ignored in favor
+  /// of [reason] when [reason] is non-null.
   final String message;
 
+  /// A classified error reason, if this error corresponds to a known,
+  /// localizable case. `null` for generic/forwarded exceptions.
+  final TicketsErrorReason? reason;
+
   @override
-  List<Object?> get props => [message];
+  List<Object?> get props => [message, reason];
 }
 
 /// A [TicketsCubit.createTicket] call is in flight. Carries the

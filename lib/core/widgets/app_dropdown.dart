@@ -3,6 +3,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:aion/core/localization/context_localizations_x.dart';
 import 'package:aion/core/theme/aion_radius.dart';
 import 'package:aion/core/theme/aion_shadows.dart';
 import 'package:aion/core/theme/aion_text.dart';
@@ -165,7 +166,10 @@ class _AppDropdownState<T> extends State<AppDropdown<T>> {
                     style: AionText.label.copyWith(color: c.textSecondary),
                   ),
                   if (widget.isRequired)
-                    Text(' *', style: AionText.label.copyWith(color: c.danger)),
+                    Text(
+                      context.l10n.commonRequiredMarker,
+                      style: AionText.label.copyWith(color: c.danger),
+                    ),
                 ],
               ),
             ),
