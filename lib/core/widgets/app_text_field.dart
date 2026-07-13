@@ -5,6 +5,7 @@ import 'package:flutter/material.dart'
 import 'package:flutter/services.dart' show TextInputAction;
 import 'package:flutter/widgets.dart';
 
+import 'package:aion/core/localization/context_localizations_x.dart';
 import 'package:aion/core/theme/aion_radius.dart';
 import 'package:aion/core/theme/aion_shadows.dart';
 import 'package:aion/core/theme/aion_text.dart';
@@ -106,10 +107,13 @@ class _AppTextFieldState extends State<AppTextField> {
                   style: AionText.label.copyWith(color: c.textSecondary),
                 ),
                 if (widget.isRequired)
-                  Text(' *', style: AionText.label.copyWith(color: c.danger)),
+                  Text(
+                    context.l10n.commonRequiredMarker,
+                    style: AionText.label.copyWith(color: c.danger),
+                  ),
                 if (widget.isOptional)
                   Text(
-                    '  Optional',
+                    context.l10n.commonOptionalMarker,
                     style: AionText.bodySm.copyWith(
                       color: c.textMuted,
                       fontWeight: FontWeight.w500,

@@ -1,0 +1,101 @@
+{
+  "@@locale": "en",
+
+  "commonBack": "Back",
+  "commonLoading": "Loading",
+  "commonRequiredMarker": " *",
+  "commonOptionalMarker": "  Optional",
+  "commonCancel": "Cancel",
+  "commonSave": "Save",
+  "commonRetry": "Retry",
+  "commonNewTicket": "New ticket",
+  "commonCreateTicket": "Create ticket",
+
+  "ticketsListEyebrow": "AION · MAIN",
+  "ticketsListTitle": "Tickets",
+  "ticketsListEmptyState": "No tickets yet",
+  "ticketsListSearchHint": "Search tickets",
+  "ticketsListSwitchToListView": "Switch to list view",
+  "ticketsListSwitchToBoardView": "Switch to board view",
+
+  "ticketsBoardEmptyColumn": "No tickets",
+  "ticketsBoardMoveTicketLabel": "Move {ticketId} to another status",
+  "@ticketsBoardMoveTicketLabel": {
+    "placeholders": {
+      "ticketId": { "type": "String" }
+    }
+  },
+
+  "ticketStatusBacklog": "Backlog",
+  "ticketStatusToDo": "To do",
+  "ticketStatusInProgress": "In progress",
+  "ticketStatusInReview": "In review",
+  "ticketStatusDone": "Done",
+  "ticketStatusCancelled": "Cancelled",
+
+  "ticketPriorityCritical": "Critical",
+  "ticketPriorityHigh": "High",
+  "ticketPriorityMedium": "Medium",
+  "ticketPriorityLow": "Low",
+  "ticketPriorityNone": "None",
+
+  "ticketTypeEpic": "Epic",
+  "ticketTypeStory": "Story",
+  "ticketTypeTask": "Task",
+  "ticketTypeResource": "Resource",
+  "ticketTypePage": "Page",
+  "ticketTypeChat": "Chat",
+
+  "ticketDetailAddPriority": "+ PRIORITY",
+  "ticketDetailChangePriority": "Change priority",
+  "ticketDetailChangeType": "Change type",
+  "ticketDetailEditTitle": "Edit title",
+  "ticketDetailTitleEmptyError": "Title can't be empty",
+  "ticketDetailEstimateCaption": "ESTIMATE",
+  "ticketDetailEstimatePlaceholder": "Add an estimate…",
+  "ticketDetailEditEstimate": "Edit estimate",
+  "ticketDetailTimeSpentCaption": "TIME SPENT",
+  "ticketDetailTimeSpentPlaceholder": "Add time spent…",
+  "ticketDetailEditTimeSpent": "Edit time spent",
+  "ticketDetailDescriptionCaption": "DESCRIPTION",
+  "ticketDetailDescriptionPlaceholder": "Add a description…",
+  "ticketDetailEditDescription": "Edit description",
+  "ticketDetailCreatedOn": "Created {date}",
+  "@ticketDetailCreatedOn": {
+    "placeholders": {
+      "date": { "type": "String" }
+    }
+  },
+  "ticketDetailCommentsCount": "COMMENTS · {count}",
+  "@ticketDetailCommentsCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "ticketDetailCommentHint": "Add a comment…",
+  "ticketDetailSendComment": "Send comment",
+  "ticketDetailAiAuthor": "Aion AI",
+  "ticketDetailAiTag": "AI",
+  "ticketDetailYouAuthor": "You",
+  "ticketDetailViaModel": "via {model}",
+  "@ticketDetailViaModel": {
+    "placeholders": {
+      "model": { "type": "String" }
+    }
+  },
+
+  "createTicketTitleLabel": "Title",
+  "createTicketTitleHint": "Ticket title",
+  "createTicketTypeLabel": "Type",
+  "createTicketPriorityLabel": "Priority",
+  "createTicketDescriptionLabel": "Description",
+  "createTicketDescriptionHint": "Add details…",
+
+  "ticketsErrorNotFound": "Ticket not found",
+  "durationInvalidFormat": "Not a valid duration: \"{input}\"",
+  "@durationInvalidFormat": {
+    "placeholders": {
+      "input": { "type": "String" }
+    }
+  }
+}

@@ -3,6 +3,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:aion/core/localization/context_localizations_x.dart';
 import 'package:aion/core/theme/aion_radius.dart';
 import 'package:aion/core/theme/aion_text.dart';
 import 'package:aion/core/theme/theme_scope.dart';
@@ -50,7 +51,7 @@ class AppHeader extends StatelessWidget {
           children: [
             if (showBack) ...[
               Semantics(
-                label: 'Back',
+                label: context.l10n.commonBack,
                 button: true,
                 child: GestureDetector(
                   onTap: onBack,

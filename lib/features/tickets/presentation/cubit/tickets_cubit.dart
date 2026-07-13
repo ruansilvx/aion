@@ -132,7 +132,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     try {
       final ticket = await _repository.getTicketById(id);
       if (ticket == null) {
-        emit(const TicketsError('Ticket not found'));
+        emit(const TicketsError('', reason: TicketsErrorReason.notFound));
       } else {
         emit(TicketDetailLoaded(ticket));
       }

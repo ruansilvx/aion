@@ -6,6 +6,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:intl/intl.dart' show DateFormat;
+
+import 'package:aion/core/localization/context_localizations_x.dart';
 import 'package:aion/core/theme/aion_colors.dart';
 import 'package:aion/core/theme/aion_radius.dart';
 import 'package:aion/core/theme/aion_shadows.dart';
@@ -23,6 +26,7 @@ import 'package:aion/features/tickets/presentation/cubit/comments_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/comments_state.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
+import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_list_screen.dart';
 import 'package:aion/features/tickets/presentation/widgets/inline_editable_field.dart';
 
@@ -104,8 +108,10 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                             builder: (context, state) {
                               return switch (state) {
                                 TicketsLoading() => const Center(child: AppSpinner()),
-                                TicketsError(:final message) => Text(
-                                    message,
+                                TicketsError(:final message, :final reason) => Text(
+                                    reason != null
+                                        ? ticketsErrorMessage(context, reason)
+                                        : message,
                                     style: AionText.body.copyWith(color: c.danger),
                                   ),
                                 TicketDetailLoaded(:final ticket) => Semantics(
@@ -121,17 +127,17 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                           // for the first time from this screen.
                                           trigger: ticket.priority == TicketPriority.none
                                               ? Text(
-                                                  '+ PRIORITY',
+                                                  context.l10n.ticketDetailAddPriority,
                                                   style: AionText.label.copyWith(color: c.textMuted),
                                                 )
                                               : PriorityBadge(priority: ticket.priority, isRow: false),
                                           items: TicketPriority.values,
-                                          itemLabel: (p) => p.name,
+                                          itemLabel: (p) => ticketPriorityLabel(context, p),
                                           currentValue: ticket.priority,
                                           onSelected: (p) => context
                                               .read<TicketsCubit>()
                                               .updateTicket(ticket.copyWith(priority: p)),
-                                          semanticsLabel: 'Change priority',
+                                          semanticsLabel: context.l10n.ticketDetailChangePriority,
                                         ),
                                         const SizedBox(height: AionSpacing.sp8),
                                         InlineEditableField<String>(
@@ -139,11 +145,13 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                           editText: ticket.title,
                                           maxLines: 1,
                                           textStyle: AionText.h2.copyWith(color: c.textPrimary),
-                                          semanticsLabel: 'Edit title',
+                                          semanticsLabel: context.l10n.ticketDetailEditTitle,
                                           parser: (raw) {
                                             final trimmed = raw.trim();
                                             if (trimmed.isEmpty) {
-                                              throw const FormatException("Title can't be empty");
+                                              throw FormatException(
+                                                context.l10n.ticketDetailTitleEmptyError,
+                                              );
                                             }
                                             return trimmed;
                                           },
@@ -157,12 +165,12 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                             SelectionMenu<TicketType>(
                                               trigger: TypeChip(type: ticket.type, isRow: false),
                                               items: TicketType.values,
-                                              itemLabel: (ty) => ty.name,
+                                              itemLabel: (ty) => ticketTypeLabel(context, ty),
                                               currentValue: ticket.type,
                                               onSelected: (ty) => context
                                                   .read<TicketsCubit>()
                                                   .updateTicket(ticket.copyWith(type: ty)),
-                                              semanticsLabel: 'Change type',
+                                              semanticsLabel: context.l10n.ticketDetailChangeType,
                                             ),
                                             const SizedBox(width: AionSpacing.sp8),
                                             StatusIndicator(status: ticket.status),
@@ -177,7 +185,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
                                                 Text(
-                                                  'ESTIMATE',
+                                                  context.l10n.ticketDetailEstimateCaption,
                                                   style: AionText.caption.copyWith(color: c.textMuted),
                                                 ),
                                                 const SizedBox(height: AionSpacing.sp4),
@@ -186,13 +194,21 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                                       formatDurationMinutes(ticket.estimate, placeholder: ''),
                                                   editText:
                                                       formatDurationMinutes(ticket.estimate, placeholder: ''),
-                                                  placeholder: 'Add an estimate…',
+                                                  placeholder: context.l10n.ticketDetailEstimatePlaceholder,
                                                   textStyle: AionText.bodySm.copyWith(
                                                     color: c.textPrimary,
                                                     fontWeight: FontWeight.w600,
                                                   ),
-                                                  semanticsLabel: 'Edit estimate',
-                                                  parser: parseDurationMinutes,
+                                                  semanticsLabel: context.l10n.ticketDetailEditEstimate,
+                                                  parser: (raw) {
+                                                    try {
+                                                      return parseDurationMinutes(raw);
+                                                    } on FormatException {
+                                                      throw FormatException(
+                                                        context.l10n.durationInvalidFormat(raw),
+                                                      );
+                                                    }
+                                                  },
                                                   onCommit: (v) => context
                                                       .read<TicketsCubit>()
                                                       .updateTicket(ticket.copyWith(estimate: () => v)),
@@ -205,7 +221,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
                                                 Text(
-                                                  'TIME SPENT',
+                                                  context.l10n.ticketDetailTimeSpentCaption,
                                                   style: AionText.caption.copyWith(color: c.textMuted),
                                                 ),
                                                 const SizedBox(height: AionSpacing.sp4),
@@ -214,13 +230,21 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                                       formatDurationMinutes(ticket.timeSpent, placeholder: ''),
                                                   editText:
                                                       formatDurationMinutes(ticket.timeSpent, placeholder: ''),
-                                                  placeholder: 'Add time spent…',
+                                                  placeholder: context.l10n.ticketDetailTimeSpentPlaceholder,
                                                   textStyle: AionText.bodySm.copyWith(
                                                     color: c.textPrimary,
                                                     fontWeight: FontWeight.w600,
                                                   ),
-                                                  semanticsLabel: 'Edit time spent',
-                                                  parser: parseDurationMinutes,
+                                                  semanticsLabel: context.l10n.ticketDetailEditTimeSpent,
+                                                  parser: (raw) {
+                                                    try {
+                                                      return parseDurationMinutes(raw);
+                                                    } on FormatException {
+                                                      throw FormatException(
+                                                        context.l10n.durationInvalidFormat(raw),
+                                                      );
+                                                    }
+                                                  },
                                                   onCommit: (v) => context
                                                       .read<TicketsCubit>()
                                                       .updateTicket(ticket.copyWith(timeSpent: () => v)),
@@ -233,7 +257,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                         Container(color: c.border, height: 1),
                                         const SizedBox(height: AionSpacing.sp16),
                                         Text(
-                                          'DESCRIPTION',
+                                          context.l10n.ticketDetailDescriptionCaption,
                                           style: AionText.caption.copyWith(color: c.textMuted),
                                         ),
                                         const SizedBox(height: AionSpacing.sp8),
@@ -241,9 +265,9 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                           displayText: ticket.description ?? '',
                                           editText: ticket.description ?? '',
                                           maxLines: 6,
-                                          placeholder: 'Add a description…',
+                                          placeholder: context.l10n.ticketDetailDescriptionPlaceholder,
                                           textStyle: AionText.body.copyWith(color: c.textSecondary),
-                                          semanticsLabel: 'Edit description',
+                                          semanticsLabel: context.l10n.ticketDetailEditDescription,
                                           parser: (raw) {
                                             final trimmed = raw.trim();
                                             return trimmed.isEmpty ? null : trimmed;
@@ -254,7 +278,9 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                         ),
                                         const SizedBox(height: AionSpacing.sp8),
                                         Text(
-                                          'Created ${_formatDate(ticket.createdAt)}',
+                                          context.l10n.ticketDetailCreatedOn(
+                                            DateFormat.yMMMd().format(ticket.createdAt),
+                                          ),
                                           style: AionText.time.copyWith(color: c.textMuted),
                                         ),
                                       ],
@@ -283,7 +309,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        'COMMENTS · ${comments.length}',
+                                        context.l10n.ticketDetailCommentsCount(comments.length),
                                         style: AionText.caption.copyWith(color: c.textMuted),
                                       ),
                                       const SizedBox(height: AionSpacing.sp12),
@@ -343,7 +369,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                   maxLines: 1,
                                   style: AionText.bodySm.copyWith(color: c.textPrimary, fontSize: 13),
                                   decoration: InputDecoration.collapsed(
-                                    hintText: 'Add a comment…',
+                                    hintText: context.l10n.ticketDetailCommentHint,
                                     hintStyle: AionText.bodySm.copyWith(color: c.textMuted, fontSize: 13),
                                   ),
                                 ),
@@ -354,7 +380,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                         const SizedBox(width: 10),
                         Semantics(
                           button: true,
-                          label: 'Send comment',
+                          label: context.l10n.ticketDetailSendComment,
                           child: GestureDetector(
                             onTap: _sendComment,
                             child: DecoratedBox(
@@ -389,9 +415,6 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     );
   }
 
-  String _formatDate(DateTime date) {
-    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-  }
 }
 
 /// A single comment bubble: avatar, author label, timestamp, and content.
@@ -429,7 +452,7 @@ class CommentTile extends StatelessWidget {
                     children: [
                       if (isAi) ...[
                         Text(
-                          'Aion AI',
+                          context.l10n.ticketDetailAiAuthor,
                           style: AionText.cardTitle.copyWith(
                             fontSize: 12.5,
                             color: c.primary,
@@ -444,12 +467,15 @@ class CommentTile extends StatelessWidget {
                           ),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            child: Text('AI', style: AionText.prioritySm.copyWith(color: c.primary)),
+                            child: Text(
+                              context.l10n.ticketDetailAiTag,
+                              style: AionText.prioritySm.copyWith(color: c.primary),
+                            ),
                           ),
                         ),
                       ] else
                         Text(
-                          'You',
+                          context.l10n.ticketDetailYouAuthor,
                           style: AionText.cardTitle.copyWith(
                             fontSize: 12.5,
                             color: c.textPrimary,
@@ -491,7 +517,10 @@ class CommentTile extends StatelessWidget {
                   ),
                   if (isAi && comment.aiModel != null) ...[
                     const SizedBox(height: AionSpacing.sp4),
-                    Text('via ${comment.aiModel}', style: AionText.time.copyWith(color: c.textMuted)),
+                    Text(
+                      context.l10n.ticketDetailViaModel(comment.aiModel!),
+                      style: AionText.time.copyWith(color: c.textMuted),
+                    ),
                   ],
                 ],
               ),

@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 
+import 'package:aion/core/localization/context_localizations_x.dart';
 import 'package:aion/core/theme/theme_scope.dart';
 
 /// Aion's loading-indicator primitive — a sweeping arc drawn via
@@ -35,7 +36,7 @@ class _AppSpinnerState extends State<AppSpinner> with SingleTickerProviderStateM
   Widget build(BuildContext context) {
     final t = ThemeScope.of(context);
     return Semantics(
-      label: 'Loading',
+      label: context.l10n.commonLoading,
       child: SizedBox(
         width: widget.size,
         height: widget.size,

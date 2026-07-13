@@ -8,6 +8,7 @@ import 'package:aion/core/database/app_database.dart';
 import 'package:aion/core/routing/app_router.dart';
 import 'package:aion/core/theme/aion_theme.dart';
 import 'package:aion/core/theme/theme_scope.dart';
+import 'package:aion/l10n/generated/app_localizations.dart';
 import 'package:aion/features/tickets/data/repositories/drift_comment_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_link_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_repository.dart';
@@ -91,11 +92,15 @@ class _AionAppState extends State<AionApp> with WidgetsBindingObserver {
             // TextField (the sole permitted Material widget, see design.md
             // Material Coupling Audit) reads MaterialLocalizations
             // internally regardless of MaterialApp/Scaffold usage.
+            // AppLocalizations.delegate is generated (see l10n.yaml) and
+            // resolves context.l10n (core/localization/context_localizations_x.dart)
+            // for every user-facing string in the app.
             localizationsDelegates: const [
+              AppLocalizations.delegate,
               GlobalMaterialLocalizations.delegate,
               GlobalWidgetsLocalizations.delegate,
             ],
-            supportedLocales: const [Locale('en', 'US')],
+            supportedLocales: AppLocalizations.supportedLocales,
           ),
         ),
       ),

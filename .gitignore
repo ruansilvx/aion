@@ -62,6 +62,9 @@ app.*.map.json
 
 *.g.dart
 
+# Generated localization output (flutter gen-l10n, see l10n.yaml)
+lib/l10n/generated/
+
 # CocoaPods (iOS/macOS)
 **/Pods/
 **/.symlinks/
