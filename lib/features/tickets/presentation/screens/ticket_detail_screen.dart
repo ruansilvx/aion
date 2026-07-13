@@ -11,15 +11,20 @@ import 'package:aion/core/theme/aion_radius.dart';
 import 'package:aion/core/theme/aion_shadows.dart';
 import 'package:aion/core/theme/aion_text.dart';
 import 'package:aion/core/theme/theme_scope.dart';
+import 'package:aion/core/utils/duration_format.dart';
 import 'package:aion/core/widgets/app_header.dart';
 import 'package:aion/core/widgets/app_spinner.dart';
+import 'package:aion/core/widgets/selection_menu.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
 import 'package:aion/features/tickets/domain/enums/comment_author_type.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/presentation/cubit/comments_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/comments_state.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_list_screen.dart';
+import 'package:aion/features/tickets/presentation/widgets/inline_editable_field.dart';
 
 /// The `/tickets/:id` route: ticket meta (priority, title, type, status,
 /// description, timestamps), a comment thread, and a pinned comment
@@ -108,34 +113,145 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        PriorityBadge(priority: ticket.priority, isRow: false),
+                                        SelectionMenu<TicketPriority>(
+                                          // PriorityBadge renders SizedBox.shrink() for
+                                          // TicketPriority.none, which would make the trigger
+                                          // untappable (zero hit-test area) — fall back to a
+                                          // visible placeholder so priority can still be set
+                                          // for the first time from this screen.
+                                          trigger: ticket.priority == TicketPriority.none
+                                              ? Text(
+                                                  '+ PRIORITY',
+                                                  style: AionText.label.copyWith(color: c.textMuted),
+                                                )
+                                              : PriorityBadge(priority: ticket.priority, isRow: false),
+                                          items: TicketPriority.values,
+                                          itemLabel: (p) => p.name,
+                                          currentValue: ticket.priority,
+                                          onSelected: (p) => context
+                                              .read<TicketsCubit>()
+                                              .updateTicket(ticket.copyWith(priority: p)),
+                                          semanticsLabel: 'Change priority',
+                                        ),
                                         const SizedBox(height: AionSpacing.sp8),
-                                        Text(
-                                          ticket.title,
-                                          style: AionText.h2.copyWith(color: c.textPrimary),
+                                        InlineEditableField<String>(
+                                          displayText: ticket.title,
+                                          editText: ticket.title,
+                                          maxLines: 1,
+                                          textStyle: AionText.h2.copyWith(color: c.textPrimary),
+                                          semanticsLabel: 'Edit title',
+                                          parser: (raw) {
+                                            final trimmed = raw.trim();
+                                            if (trimmed.isEmpty) {
+                                              throw const FormatException("Title can't be empty");
+                                            }
+                                            return trimmed;
+                                          },
+                                          onCommit: (v) => context
+                                              .read<TicketsCubit>()
+                                              .updateTicket(ticket.copyWith(title: v)),
                                         ),
                                         const SizedBox(height: AionSpacing.sp12),
                                         Row(
                                           children: [
-                                            TypeChip(type: ticket.type, isRow: false),
+                                            SelectionMenu<TicketType>(
+                                              trigger: TypeChip(type: ticket.type, isRow: false),
+                                              items: TicketType.values,
+                                              itemLabel: (ty) => ty.name,
+                                              currentValue: ticket.type,
+                                              onSelected: (ty) => context
+                                                  .read<TicketsCubit>()
+                                                  .updateTicket(ticket.copyWith(type: ty)),
+                                              semanticsLabel: 'Change type',
+                                            ),
                                             const SizedBox(width: AionSpacing.sp8),
                                             StatusIndicator(status: ticket.status),
                                           ],
                                         ),
+                                        const SizedBox(height: AionSpacing.sp12),
+                                        Row(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(
+                                                  'ESTIMATE',
+                                                  style: AionText.caption.copyWith(color: c.textMuted),
+                                                ),
+                                                const SizedBox(height: AionSpacing.sp4),
+                                                InlineEditableField<int?>(
+                                                  displayText:
+                                                      formatDurationMinutes(ticket.estimate, placeholder: ''),
+                                                  editText:
+                                                      formatDurationMinutes(ticket.estimate, placeholder: ''),
+                                                  placeholder: 'Add an estimate…',
+                                                  textStyle: AionText.bodySm.copyWith(
+                                                    color: c.textPrimary,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                  semanticsLabel: 'Edit estimate',
+                                                  parser: parseDurationMinutes,
+                                                  onCommit: (v) => context
+                                                      .read<TicketsCubit>()
+                                                      .updateTicket(ticket.copyWith(estimate: () => v)),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(width: AionSpacing.sp24),
+                                            Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(
+                                                  'TIME SPENT',
+                                                  style: AionText.caption.copyWith(color: c.textMuted),
+                                                ),
+                                                const SizedBox(height: AionSpacing.sp4),
+                                                InlineEditableField<int?>(
+                                                  displayText:
+                                                      formatDurationMinutes(ticket.timeSpent, placeholder: ''),
+                                                  editText:
+                                                      formatDurationMinutes(ticket.timeSpent, placeholder: ''),
+                                                  placeholder: 'Add time spent…',
+                                                  textStyle: AionText.bodySm.copyWith(
+                                                    color: c.textPrimary,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                  semanticsLabel: 'Edit time spent',
+                                                  parser: parseDurationMinutes,
+                                                  onCommit: (v) => context
+                                                      .read<TicketsCubit>()
+                                                      .updateTicket(ticket.copyWith(timeSpent: () => v)),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
                                         const SizedBox(height: AionSpacing.sp16),
-                                        if (ticket.description != null) ...[
-                                          Container(color: c.border, height: 1),
-                                          const SizedBox(height: AionSpacing.sp16),
-                                          Text(
-                                            'DESCRIPTION',
-                                            style: AionText.caption.copyWith(color: c.textMuted),
-                                          ),
-                                          const SizedBox(height: AionSpacing.sp8),
-                                          Text(
-                                            ticket.description!,
-                                            style: AionText.body.copyWith(color: c.textSecondary),
-                                          ),
-                                        ],
+                                        Container(color: c.border, height: 1),
+                                        const SizedBox(height: AionSpacing.sp16),
+                                        Text(
+                                          'DESCRIPTION',
+                                          style: AionText.caption.copyWith(color: c.textMuted),
+                                        ),
+                                        const SizedBox(height: AionSpacing.sp8),
+                                        InlineEditableField<String?>(
+                                          displayText: ticket.description ?? '',
+                                          editText: ticket.description ?? '',
+                                          maxLines: 6,
+                                          placeholder: 'Add a description…',
+                                          textStyle: AionText.body.copyWith(color: c.textSecondary),
+                                          semanticsLabel: 'Edit description',
+                                          parser: (raw) {
+                                            final trimmed = raw.trim();
+                                            return trimmed.isEmpty ? null : trimmed;
+                                          },
+                                          onCommit: (v) => context
+                                              .read<TicketsCubit>()
+                                              .updateTicket(ticket.copyWith(description: () => v)),
+                                        ),
                                         const SizedBox(height: AionSpacing.sp8),
                                         Text(
                                           'Created ${_formatDate(ticket.createdAt)}',

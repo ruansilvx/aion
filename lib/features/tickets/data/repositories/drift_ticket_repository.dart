@@ -63,10 +63,26 @@ class DriftTicketRepository implements TicketRepository {
 
   @override
   Future<void> updateTicketStatus(String id, TicketStatus status) {
-    return _db.ticketDao.updateStatus(
+    return _db.ticketDao.updateFields(
       id,
       TicketsTableCompanion(
         status: Value(status.name),
+        updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
+  }
+
+  @override
+  Future<void> updateTicket(Ticket ticket) {
+    return _db.ticketDao.updateFields(
+      ticket.id,
+      TicketsTableCompanion(
+        title: Value(ticket.title),
+        description: Value(ticket.description),
+        priority: Value(ticket.priority.name),
+        type: Value(ticket.type.name),
+        estimate: Value(ticket.estimate),
+        timeSpent: Value(ticket.timeSpent),
         updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
       ),
     );

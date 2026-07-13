@@ -164,4 +164,71 @@ void main() {
 
     expect(after.isAtSameMomentAs(before) || after.isAfter(before), isTrue);
   });
+
+  test('updateTicket persists title, description, priority, type, estimate, and timeSpent', () async {
+    await repository.createTicket(buildTicket(id: '1'));
+    final original = (await repository.getTicketById('1'))!;
+
+    await repository.updateTicket(
+      original.copyWith(
+        title: 'Updated title',
+        description: () => 'Updated description',
+        priority: TicketPriority.high,
+        type: TicketType.story,
+        estimate: () => 90,
+        timeSpent: () => 45,
+      ),
+    );
+
+    final found = await repository.getTicketById('1');
+    expect(found!.title, 'Updated title');
+    expect(found.description, 'Updated description');
+    expect(found.priority, TicketPriority.high);
+    expect(found.type, TicketType.story);
+    expect(found.estimate, 90);
+    expect(found.timeSpent, 45);
+  });
+
+  test('updateTicket leaves status, parentId, embedding, and createdAt untouched', () async {
+    await repository.createTicket(buildTicket(id: '1'));
+    final original = (await repository.getTicketById('1'))!;
+
+    await repository.updateTicket(original.copyWith(title: 'Changed title'));
+
+    final found = await repository.getTicketById('1');
+    expect(found!.status, original.status);
+    expect(found.parentId, original.parentId);
+    expect(found.embedding, original.embedding);
+    expect(found.createdAt, original.createdAt);
+  });
+
+  test('updateTicket sets updatedAt to a timestamp at or after the original', () async {
+    await repository.createTicket(buildTicket(id: '1'));
+    final before = (await repository.getTicketById('1'))!.updatedAt;
+
+    await repository.updateTicket((await repository.getTicketById('1'))!.copyWith(title: 'New'));
+    final after = (await repository.getTicketById('1'))!.updatedAt;
+
+    expect(after.isAtSameMomentAs(before) || after.isAfter(before), isTrue);
+  });
+
+  test('updateTicket can explicitly clear estimate, timeSpent, and description to null', () async {
+    await repository.createTicket(
+      buildTicket(id: '1', estimate: 60, timeSpent: 30)
+    );
+    final original = (await repository.getTicketById('1'))!;
+
+    await repository.updateTicket(
+      original.copyWith(
+        description: () => null,
+        estimate: () => null,
+        timeSpent: () => null,
+      ),
+    );
+
+    final found = await repository.getTicketById('1');
+    expect(found!.description, isNull);
+    expect(found.estimate, isNull);
+    expect(found.timeSpent, isNull);
+  });
 }

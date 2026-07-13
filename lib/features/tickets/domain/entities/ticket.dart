@@ -90,25 +90,46 @@ class Ticket extends Equatable {
         updatedAt,
       ];
 
-  /// Returns a copy of this ticket with [status] and/or [updatedAt]
-  /// replaced. Intentionally scoped to only these two fields (not a
-  /// general-purpose copyWith) — extend with more parameters only when a
-  /// future change needs them.
-  Ticket copyWith({TicketStatus? status, DateTime? updatedAt}) {
+  /// Returns a copy of this ticket with the given fields replaced.
+  /// [description], [estimate], and [timeSpent] are nullable and therefore
+  /// take a zero-arg setter instead of a bare value — pass `() => null` to
+  /// explicitly clear one of them, or omit the parameter entirely to leave
+  /// it unchanged. A plain `?? this.x` fallback can't tell "not passed"
+  /// apart from "explicitly set to null," since both look like `null` at
+  /// the call site. `id`, `ticketId`, `parentId`, `embedding`, and
+  /// `createdAt` are never mutated by this method.
+  Ticket copyWith({
+    String? title,
+    TicketFieldSetter<String?>? description,
+    TicketStatus? status,
+    TicketPriority? priority,
+    TicketType? type,
+    TicketFieldSetter<int?>? estimate,
+    TicketFieldSetter<int?>? timeSpent,
+    DateTime? updatedAt,
+  }) {
     return Ticket(
       id: id,
       ticketId: ticketId,
-      type: type,
-      title: title,
-      description: description,
+      type: type ?? this.type,
+      title: title ?? this.title,
+      description: description != null ? description() : this.description,
       status: status ?? this.status,
-      priority: priority,
+      priority: priority ?? this.priority,
       parentId: parentId,
       embedding: embedding,
-      estimate: estimate,
-      timeSpent: timeSpent,
+      estimate: estimate != null ? estimate() : this.estimate,
+      timeSpent: timeSpent != null ? timeSpent() : this.timeSpent,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 }
+
+/// A zero-arg setter used by [Ticket.copyWith] for nullable fields, so a
+/// caller can distinguish "leave unchanged" (omit the parameter) from
+/// "explicitly clear to null" (pass `() => null`). Plain Dart function
+/// type — no import needed, keeping the domain layer Flutter-free. Public
+/// (not a private typedef) since it appears in `copyWith`'s public
+/// signature.
+typedef TicketFieldSetter<T> = T Function();
