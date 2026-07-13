@@ -75,20 +75,20 @@ class Ticket extends Equatable {
 
   @override
   List<Object?> get props => [
-        id,
-        ticketId,
-        type,
-        title,
-        description,
-        status,
-        priority,
-        parentId,
-        embedding,
-        estimate,
-        timeSpent,
-        createdAt,
-        updatedAt,
-      ];
+    id,
+    ticketId,
+    type,
+    title,
+    description,
+    status,
+    priority,
+    parentId,
+    embedding,
+    estimate,
+    timeSpent,
+    createdAt,
+    updatedAt,
+  ];
 
   /// Returns a copy of this ticket with the given fields replaced.
   /// [description], [estimate], and [timeSpent] are nullable and therefore

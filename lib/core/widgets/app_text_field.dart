@@ -69,7 +69,8 @@ class _AppTextFieldState extends State<AppTextField> {
   FocusNode? _ownedFocusNode;
   bool _isFocused = false;
 
-  FocusNode get _focusNode => widget.focusNode ?? (_ownedFocusNode ??= FocusNode());
+  FocusNode get _focusNode =>
+      widget.focusNode ?? (_ownedFocusNode ??= FocusNode());
 
   @override
   void initState() {
@@ -139,13 +140,19 @@ class _AppTextFieldState extends State<AppTextField> {
               textAlignVertical: isMultiline ? TextAlignVertical.top : null,
               style: isMultiline
                   ? AionText.body.copyWith(color: c.textPrimary)
-                  : AionText.bodySm.copyWith(color: c.textPrimary, fontSize: 14),
+                  : AionText.bodySm.copyWith(
+                      color: c.textPrimary,
+                      fontSize: 14,
+                    ),
               decoration: InputDecoration(
                 fillColor: c.surface,
                 filled: true,
                 isDense: true,
                 isCollapsed: false,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
                 hintText: widget.hintText,
                 hintStyle: (isMultiline ? AionText.body : AionText.bodySm)
                     .copyWith(color: c.textMuted),

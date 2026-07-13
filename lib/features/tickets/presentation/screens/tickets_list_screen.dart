@@ -72,14 +72,19 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
 
     if (_viewMode == _TicketViewMode.board) {
       final boardTickets = tickets
-          .where((ticket) => ticket.type == TicketType.task || ticket.type == TicketType.story)
+          .where(
+            (ticket) =>
+                ticket.type == TicketType.task ||
+                ticket.type == TicketType.story,
+          )
           .toList();
       return TicketBoardView(tickets: boardTickets);
     }
 
     return ListView.separated(
       itemCount: tickets.length,
-      separatorBuilder: (context, index) => Container(color: c.border, height: 1),
+      separatorBuilder: (context, index) =>
+          Container(color: c.border, height: 1),
       itemBuilder: (context, index) => TicketListTile(ticket: tickets[index]),
     );
   }
@@ -128,7 +133,12 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                             width: 38,
                             height: 38,
                             child: Center(
-                              child: Text('U', style: AionText.key.copyWith(color: c.textSecondary)),
+                              child: Text(
+                                'U',
+                                style: AionText.key.copyWith(
+                                  color: c.textSecondary,
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -147,7 +157,10 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                     borderRadius: BorderRadius.all(AionRadius.lg),
                   ),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 13,
+                      vertical: 11,
+                    ),
                     child: Row(
                       children: [
                         PhosphorIcon(
@@ -171,36 +184,43 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                   color: c.surface,
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      border: Border(top: BorderSide(color: c.border, width: 1)),
+                      border: Border(
+                        top: BorderSide(color: c.border, width: 1),
+                      ),
                     ),
                     child: BlocBuilder<TicketsCubit, TicketsState>(
                       builder: (context, state) {
                         return switch (state) {
                           TicketsLoading() => const Center(child: AppSpinner()),
                           TicketsError(:final message, :final reason) => Center(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    reason != null
-                                        ? ticketsErrorMessage(context, reason)
-                                        : message,
-                                    style: AionText.body.copyWith(color: c.textSecondary),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  reason != null
+                                      ? ticketsErrorMessage(context, reason)
+                                      : message,
+                                  style: AionText.body.copyWith(
+                                    color: c.textSecondary,
                                   ),
-                                  const SizedBox(height: AionSpacing.sp12),
-                                  AppButton(
-                                    label: context.l10n.commonRetry,
-                                    onPressed: () => context.read<TicketsCubit>().loadTickets(),
-                                  ),
-                                ],
-                              ),
+                                ),
+                                const SizedBox(height: AionSpacing.sp12),
+                                AppButton(
+                                  label: context.l10n.commonRetry,
+                                  onPressed: () => context
+                                      .read<TicketsCubit>()
+                                      .loadTickets(),
+                                ),
+                              ],
                             ),
+                          ),
                           TicketsLoaded(:final tickets) ||
                           TicketCreating(:final tickets) ||
                           TicketCreated(:final tickets) ||
                           TicketStatusUpdating(:final tickets) ||
-                          TicketStatusUpdated(:final tickets) =>
-                            _buildTicketsBody(context, tickets),
+                          TicketStatusUpdated(
+                            :final tickets,
+                          ) => _buildTicketsBody(context, tickets),
                           _ => const SizedBox.shrink(),
                         };
                       },
@@ -261,7 +281,9 @@ class AppFab extends StatelessWidget {
                 const SizedBox(width: AionSpacing.sp8),
                 Text(
                   context.l10n.commonNewTicket,
-                  style: AionText.button.copyWith(color: const Color(0xFFFFFFFF)),
+                  style: AionText.button.copyWith(
+                    color: const Color(0xFFFFFFFF),
+                  ),
                 ),
               ],
             ),
@@ -346,7 +368,11 @@ class _ViewModeIcon extends StatelessWidget {
             ),
             child: Padding(
               padding: const EdgeInsets.all(6),
-              child: PhosphorIcon(icon, size: 18, color: isActive ? c.primary : c.textMuted),
+              child: PhosphorIcon(
+                icon,
+                size: 18,
+                color: isActive ? c.primary : c.textMuted,
+              ),
             ),
           ),
         ),
@@ -399,10 +425,16 @@ class TicketListTile extends StatelessWidget {
                           borderRadius: BorderRadius.circular(5),
                         ),
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           child: Text(
                             ticket.ticketId,
-                            style: AionText.key.copyWith(color: c.textSecondary, fontSize: 10.5),
+                            style: AionText.key.copyWith(
+                              color: c.textSecondary,
+                              fontSize: 10.5,
+                            ),
                           ),
                         ),
                       ),
@@ -410,7 +442,9 @@ class TicketListTile extends StatelessWidget {
                       Expanded(
                         child: Text(
                           ticket.title,
-                          style: AionText.cardTitle.copyWith(color: c.textPrimary),
+                          style: AionText.cardTitle.copyWith(
+                            color: c.textPrimary,
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -469,14 +503,19 @@ class PriorityBadge extends StatelessWidget {
     };
 
     return DecoratedBox(
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(5)),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(5),
+      ),
       child: Padding(
         padding: isRow
             ? const EdgeInsets.symmetric(horizontal: 7, vertical: 3)
             : const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
         child: Text(
           ticketPriorityLabel(context, priority).toUpperCase(),
-          style: (isRow ? AionText.prioritySm : AionText.priorityBig).copyWith(color: fg),
+          style: (isRow ? AionText.prioritySm : AionText.priorityBig).copyWith(
+            color: fg,
+          ),
         ),
       ),
     );
@@ -520,7 +559,10 @@ class TypeChip extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             DecoratedBox(
-              decoration: BoxDecoration(color: typeColor, borderRadius: BorderRadius.circular(2)),
+              decoration: BoxDecoration(
+                color: typeColor,
+                borderRadius: BorderRadius.circular(2),
+              ),
               child: SizedBox(width: isRow ? 9 : 11, height: isRow ? 9 : 11),
             ),
             const SizedBox(width: 5),
@@ -601,7 +643,11 @@ class LinkCountLabel extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              PhosphorIcon(PhosphorIcons.linkLight, size: 11, color: c.textMuted),
+              PhosphorIcon(
+                PhosphorIcons.linkLight,
+                size: 11,
+                color: c.textMuted,
+              ),
               const SizedBox(width: 3),
               Text(
                 '$count',

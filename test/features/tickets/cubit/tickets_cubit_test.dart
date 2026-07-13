@@ -5,6 +5,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
+import 'package:aion/features/tickets/domain/exceptions/ticket_has_children_exception.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
@@ -37,7 +38,9 @@ void main() {
     blocTest<TicketsCubit, TicketsState>(
       'loadTickets emits [TicketsLoading, TicketsLoaded] on success',
       setUp: () {
-        when(() => repository.getAllTickets()).thenAnswer((_) async => [ticket]);
+        when(
+          () => repository.getAllTickets(),
+        ).thenAnswer((_) async => [ticket]);
       },
       build: () => TicketsCubit(repository),
       act: (cubit) => cubit.loadTickets(),
@@ -54,20 +57,20 @@ void main() {
       },
       build: () => TicketsCubit(repository),
       act: (cubit) => cubit.loadTickets(),
-      expect: () => [
-        const TicketsLoading(),
-        isA<TicketsError>(),
-      ],
+      expect: () => [const TicketsLoading(), isA<TicketsError>()],
     );
 
     blocTest<TicketsCubit, TicketsState>(
       'createTicket emits [TicketCreating, TicketCreated] on success',
       setUp: () {
         when(() => repository.createTicket(any())).thenAnswer((_) async {});
-        when(() => repository.getAllTickets()).thenAnswer((_) async => [ticket]);
+        when(
+          () => repository.getAllTickets(),
+        ).thenAnswer((_) async => [ticket]);
       },
       build: () => TicketsCubit(repository),
-      act: (cubit) => cubit.createTicket(type: TicketType.task, title: 'New ticket'),
+      act: (cubit) =>
+          cubit.createTicket(type: TicketType.task, title: 'New ticket'),
       expect: () => [
         const TicketCreating([]),
         TicketCreated([ticket]),
@@ -80,19 +83,20 @@ void main() {
         when(() => repository.createTicket(any())).thenThrow(Exception('boom'));
       },
       build: () => TicketsCubit(repository),
-      act: (cubit) => cubit.createTicket(type: TicketType.task, title: 'New ticket'),
-      expect: () => [
-        const TicketCreating([]),
-        isA<TicketsError>(),
-      ],
+      act: (cubit) =>
+          cubit.createTicket(type: TicketType.task, title: 'New ticket'),
+      expect: () => [const TicketCreating([]), isA<TicketsError>()],
     );
 
     blocTest<TicketsCubit, TicketsState>(
       'updateTicketStatus emits [TicketStatusUpdating, TicketStatusUpdated] on success',
       setUp: () {
-        when(() => repository.updateTicketStatus(any(), any())).thenAnswer((_) async {});
-        when(() => repository.getAllTickets())
-            .thenAnswer((_) async => [ticket.copyWith(status: TicketStatus.done)]);
+        when(
+          () => repository.updateTicketStatus(any(), any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getAllTickets(),
+        ).thenAnswer((_) async => [ticket.copyWith(status: TicketStatus.done)]);
       },
       build: () => TicketsCubit(repository),
       seed: () => TicketsLoaded([ticket]),
@@ -106,7 +110,9 @@ void main() {
     blocTest<TicketsCubit, TicketsState>(
       'updateTicketStatus emits [TicketStatusUpdating, TicketsError] on exception',
       setUp: () {
-        when(() => repository.updateTicketStatus(any(), any())).thenThrow(Exception('boom'));
+        when(
+          () => repository.updateTicketStatus(any(), any()),
+        ).thenThrow(Exception('boom'));
       },
       build: () => TicketsCubit(repository),
       seed: () => TicketsLoaded([ticket]),
@@ -121,11 +127,13 @@ void main() {
       'updateTicket emits [TicketDetailLoaded] with the refreshed ticket on success',
       setUp: () {
         when(() => repository.updateTicket(any())).thenAnswer((_) async {});
-        when(() => repository.getTicketById(ticket.id))
-            .thenAnswer((_) async => ticket.copyWith(title: 'Updated title'));
+        when(
+          () => repository.getTicketById(ticket.id),
+        ).thenAnswer((_) async => ticket.copyWith(title: 'Updated title'));
       },
       build: () => TicketsCubit(repository),
-      act: (cubit) => cubit.updateTicket(ticket.copyWith(title: 'Updated title')),
+      act: (cubit) =>
+          cubit.updateTicket(ticket.copyWith(title: 'Updated title')),
       expect: () => [
         TicketDetailLoaded(ticket.copyWith(title: 'Updated title')),
       ],
@@ -138,9 +146,53 @@ void main() {
       },
       build: () => TicketsCubit(repository),
       act: (cubit) => cubit.updateTicket(ticket),
+      expect: () => [isA<TicketsError>()],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'deleteTicket emits [TicketDeleting, TicketDeleted] on success',
+      setUp: () {
+        when(() => repository.deleteTicket(ticket.id)).thenAnswer((_) async {});
+      },
+      build: () => TicketsCubit(repository),
+      act: (cubit) => cubit.deleteTicket(ticket.id),
+      expect: () => [const TicketDeleting(), const TicketDeleted()],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'deleteTicket emits [TicketDeleting, TicketsError(hasChildren), '
+      'TicketDetailLoaded] when blocked by structural children',
+      setUp: () {
+        when(
+          () => repository.deleteTicket(ticket.id),
+        ).thenThrow(const TicketHasChildrenException(2));
+        when(
+          () => repository.getTicketById(ticket.id),
+        ).thenAnswer((_) async => ticket);
+      },
+      build: () => TicketsCubit(repository),
+      act: (cubit) => cubit.deleteTicket(ticket.id),
       expect: () => [
-        isA<TicketsError>(),
+        const TicketDeleting(),
+        const TicketsError(
+          '',
+          reason: TicketsErrorReason.hasChildren,
+          childCount: 2,
+        ),
+        TicketDetailLoaded(ticket),
       ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'deleteTicket emits [TicketDeleting, TicketsError] on a generic failure',
+      setUp: () {
+        when(
+          () => repository.deleteTicket(ticket.id),
+        ).thenThrow(Exception('boom'));
+      },
+      build: () => TicketsCubit(repository),
+      act: (cubit) => cubit.deleteTicket(ticket.id),
+      expect: () => [const TicketDeleting(), isA<TicketsError>()],
     );
   });
 }

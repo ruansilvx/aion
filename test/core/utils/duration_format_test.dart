@@ -17,7 +17,10 @@ void main() {
     });
 
     test('uses a custom placeholder when given', () {
-      expect(formatDurationMinutes(null, placeholder: 'Add an estimate…'), 'Add an estimate…');
+      expect(
+        formatDurationMinutes(null, placeholder: 'Add an estimate…'),
+        'Add an estimate…',
+      );
     });
 
     test('formats minutes-only durations', () {

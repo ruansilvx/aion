@@ -105,7 +105,12 @@ class _AppButtonState extends State<AppButton> {
                   duration: const Duration(milliseconds: 80),
                   child: Opacity(
                     opacity: isDisabled ? 0.45 : 1.0,
-                    child: _buildDecoratedContent(c, hovered, isDisabled, t.isDark),
+                    child: _buildDecoratedContent(
+                      c,
+                      hovered,
+                      isDisabled,
+                      t.isDark,
+                    ),
                   ),
                 );
               },
@@ -116,7 +121,12 @@ class _AppButtonState extends State<AppButton> {
     );
   }
 
-  Widget _buildDecoratedContent(AionColors c, bool hovered, bool isDisabled, bool isDark) {
+  Widget _buildDecoratedContent(
+    AionColors c,
+    bool hovered,
+    bool isDisabled,
+    bool isDark,
+  ) {
     final fill = _fillColor(c, hovered, isDisabled);
     final textColor = _textColor(c);
     final border = _border(c);
@@ -125,9 +135,7 @@ class _AppButtonState extends State<AppButton> {
     final content = widget.isFullWidth
         ? Padding(
             padding: const EdgeInsets.all(15),
-            child: Center(
-              child: _label(textColor, fontSize: 15),
-            ),
+            child: Center(child: _label(textColor, fontSize: 15)),
           )
         : Padding(
             padding: _padding(),
@@ -155,7 +163,9 @@ class _AppButtonState extends State<AppButton> {
       child: content,
     );
 
-    return widget.isFullWidth ? SizedBox(width: double.infinity, child: decorated) : decorated;
+    return widget.isFullWidth
+        ? SizedBox(width: double.infinity, child: decorated)
+        : decorated;
   }
 
   Widget _label(Color color, {double? fontSize}) {
@@ -192,7 +202,9 @@ class _AppButtonState extends State<AppButton> {
     switch (widget.variant) {
       case AppButtonVariant.primary:
       case AppButtonVariant.destructive:
-        return const Color(0xFFFFFFFF); // white text on colored fill — no token for white
+        return const Color(
+          0xFFFFFFFF,
+        ); // white text on colored fill — no token for white
       case AppButtonVariant.secondary:
         return c.textPrimary;
       case AppButtonVariant.ghost:

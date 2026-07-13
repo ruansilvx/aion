@@ -21,8 +21,10 @@ int? parseDurationMinutes(String input) {
   final trimmed = input.trim();
   if (trimmed.isEmpty) return null;
 
-  final match = RegExp(r'^(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?$', caseSensitive: false)
-      .firstMatch(trimmed);
+  final match = RegExp(
+    r'^(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?$',
+    caseSensitive: false,
+  ).firstMatch(trimmed);
   if (match != null && (match.group(1) != null || match.group(2) != null)) {
     final hours = int.tryParse(match.group(1) ?? '0') ?? 0;
     final mins = int.tryParse(match.group(2) ?? '0') ?? 0;

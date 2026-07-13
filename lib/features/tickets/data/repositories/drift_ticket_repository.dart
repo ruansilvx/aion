@@ -8,6 +8,7 @@ import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
+import 'package:aion/features/tickets/domain/exceptions/ticket_has_children_exception.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
 
 /// Drift-backed implementation of [TicketRepository]. Maps between the
@@ -86,6 +87,25 @@ class DriftTicketRepository implements TicketRepository {
         updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
       ),
     );
+  }
+
+  @override
+  Future<void> deleteTicket(String id) async {
+    final existing = await _db.ticketDao.getTicketById(id);
+    if (existing == null) {
+      throw StateError('Ticket $id does not exist');
+    }
+
+    final childCount = await _db.ticketDao.countChildTickets(id);
+    if (childCount > 0) {
+      throw TicketHasChildrenException(childCount);
+    }
+
+    await _db.transaction(() async {
+      await _db.commentDao.deleteCommentsForTicket(id);
+      await _db.ticketLinkDao.deleteLinksForTicket(id);
+      await _db.ticketDao.deleteTicketRow(id);
+    });
   }
 
   /// Maps a generated [TicketData] row to the [Ticket] domain entity,
