@@ -125,6 +125,25 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
   }
 
+  /// Changes [ticket]'s status from the ticket-detail screen. Persists via
+  /// the same [TicketRepository.updateTicketStatus] the board's drag/
+  /// `MoveToStatusMenu` path calls, then re-fetches and emits
+  /// [TicketDetailLoaded] with the refreshed ticket — unlike
+  /// [updateTicketStatus], which emits list-shaped optimistic states built
+  /// for the board and would fall through `TicketDetailScreen`'s state
+  /// switch. Emits [TicketsError] on failure.
+  Future<void> changeTicketStatus(Ticket ticket, TicketStatus status) async {
+    try {
+      await _repository.updateTicketStatus(ticket.id, status);
+      final refreshed = await _repository.getTicketById(ticket.id);
+      if (refreshed != null) {
+        emit(TicketDetailLoaded(refreshed));
+      }
+    } catch (e) {
+      emit(TicketsError(e.toString()));
+    }
+  }
+
   /// Returns every ticket that [ticket] could validly be reparented under:
   /// all tickets except [ticket] itself and any of its descendants
   /// (reachable by walking `parentId` forward). Setting either as the new

@@ -27,6 +27,7 @@ import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
 import 'package:aion/features/tickets/domain/enums/comment_author_type.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/presentation/cubit/comments_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/comments_state.dart';
@@ -242,8 +243,26 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                             const SizedBox(
                                               width: AionSpacing.sp8,
                                             ),
-                                            StatusIndicator(
-                                              status: ticket.status,
+                                            SelectionMenu<TicketStatus>(
+                                              trigger: StatusIndicator(
+                                                status: ticket.status,
+                                              ),
+                                              items: TicketStatus.values,
+                                              itemLabel: (s) =>
+                                                  ticketStatusLabel(
+                                                    context,
+                                                    s,
+                                                  ),
+                                              currentValue: ticket.status,
+                                              onSelected: (s) => context
+                                                  .read<TicketsCubit>()
+                                                  .changeTicketStatus(
+                                                    ticket,
+                                                    s,
+                                                  ),
+                                              semanticsLabel: context
+                                                  .l10n
+                                                  .ticketDetailChangeStatus,
                                             ),
                                           ],
                                         ),
