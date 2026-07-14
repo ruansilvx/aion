@@ -150,6 +150,38 @@ void main() {
     );
 
     blocTest<TicketsCubit, TicketsState>(
+      'changeTicketStatus emits [TicketDetailLoaded] with the refreshed ticket on success',
+      setUp: () {
+        when(
+          () => repository.updateTicketStatus(ticket.id, TicketStatus.done),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(ticket.id),
+        ).thenAnswer((_) async => ticket.copyWith(status: TicketStatus.done));
+      },
+      build: () => TicketsCubit(repository),
+      act: (cubit) => cubit.changeTicketStatus(ticket, TicketStatus.done),
+      expect: () => [
+        TicketDetailLoaded(ticket.copyWith(status: TicketStatus.done)),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'changeTicketStatus emits [TicketsError] when the repository throws',
+      setUp: () {
+        when(
+          () => repository.updateTicketStatus(ticket.id, TicketStatus.done),
+        ).thenThrow(Exception('boom'));
+      },
+      build: () => TicketsCubit(repository),
+      act: (cubit) => cubit.changeTicketStatus(ticket, TicketStatus.done),
+      verify: (_) {
+        verifyNever(() => repository.getTicketById(any()));
+      },
+      expect: () => [isA<TicketsError>()],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
       'deleteTicket emits [TicketDeleting, TicketDeleted] on success',
       setUp: () {
         when(() => repository.deleteTicket(ticket.id)).thenAnswer((_) async {});

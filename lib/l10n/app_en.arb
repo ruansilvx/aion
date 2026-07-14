@@ -49,6 +49,7 @@
   "ticketDetailAddPriority": "+ PRIORITY",
   "ticketDetailChangePriority": "Change priority",
   "ticketDetailChangeType": "Change type",
+  "ticketDetailChangeStatus": "Change status",
   "ticketDetailAddParent": "+ PARENT",
   "ticketDetailChangeParent": "Change parent",
   "ticketDetailNoParentOption": "No parent",
