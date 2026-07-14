@@ -245,6 +245,15 @@ void main() {
       createdAt: ticket.createdAt,
       updatedAt: ticket.updatedAt,
     );
+    final epic = Ticket(
+      id: '5',
+      ticketId: 'AIO-5',
+      type: TicketType.epic,
+      title: 'Epic ticket',
+      status: TicketStatus.backlog,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
 
     group('getValidParentCandidates', () {
       test('excludes self and the full multi-level descendant chain', () async {
@@ -299,6 +308,24 @@ void main() {
         expect: () => [
           const TicketsError('', reason: TicketsErrorReason.invalidParent),
           TicketDetailLoaded(ticket),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'rejects reparenting an epic without calling the repository',
+        setUp: () {
+          when(
+            () => repository.getTicketById(epic.id),
+          ).thenAnswer((_) async => epic);
+        },
+        build: () => TicketsCubit(repository),
+        act: (cubit) => cubit.updateTicketParent(epic, unrelated.id),
+        verify: (_) {
+          verifyNever(() => repository.updateTicketParent(any(), any()));
+        },
+        expect: () => [
+          const TicketsError('', reason: TicketsErrorReason.invalidParent),
+          TicketDetailLoaded(epic),
         ],
       );
 

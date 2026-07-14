@@ -247,8 +247,12 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                             ),
                                           ],
                                         ),
-                                        const SizedBox(height: AionSpacing.sp8),
-                                        TicketParentPicker(ticket: ticket),
+                                        if (ticket.type != TicketType.epic) ...[
+                                          const SizedBox(
+                                            height: AionSpacing.sp8,
+                                          ),
+                                          TicketParentPicker(ticket: ticket),
+                                        ],
                                         const SizedBox(
                                           height: AionSpacing.sp12,
                                         ),

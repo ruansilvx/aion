@@ -146,12 +146,19 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [TicketsError] with [TicketsErrorReason.invalidParent] followed
   /// immediately by a re-emitted [TicketDetailLoaded] (same pattern as
   /// [deleteTicket]'s `hasChildren` handling), so the detail screen shows
-  /// a toast rather than collapsing to the generic error view. On a valid
-  /// reparent, persists via [TicketRepository.updateTicketParent] and
-  /// emits the refreshed [TicketDetailLoaded].
+  /// a toast rather than collapsing to the generic error view. Also
+  /// rejects any attempt to set a non-null parent on an [TicketType.epic]
+  /// ticket — epics are always subtree roots (see project.md's watcher
+  /// system) — via the same rejection path. On a valid reparent, persists
+  /// via [TicketRepository.updateTicketParent] and emits the refreshed
+  /// [TicketDetailLoaded].
   Future<void> updateTicketParent(Ticket ticket, String? newParentId) async {
     if (newParentId != null) {
       if (newParentId == ticket.id) {
+        await _emitInvalidParent(ticket.id);
+        return;
+      }
+      if (ticket.type == TicketType.epic) {
         await _emitInvalidParent(ticket.id);
         return;
       }
