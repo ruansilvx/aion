@@ -56,6 +56,21 @@ abstract final class AionShadows {
     ];
   }
 
+  /// Elevated overlay-panel shadow (e.g. `TicketParentPicker`'s search +
+  /// candidate-list panel) — heavier than [card], since these panels carry
+  /// more content than a simple floating menu.
+  static List<BoxShadow> overlay(AionColors c, bool isDark) {
+    return [
+      BoxShadow(
+        color: const Color(0xFF000000).withValues(
+          alpha: isDark ? 0.55 : 0.16,
+        ),
+        blurRadius: 28,
+        offset: const Offset(0, 12),
+      ),
+    ];
+  }
+
   /// Confirmation/alert dialog card shadow — a larger, softer float than
   /// [card] since a dialog sits centered above a dimming scrim rather than
   /// inline in the page layout.

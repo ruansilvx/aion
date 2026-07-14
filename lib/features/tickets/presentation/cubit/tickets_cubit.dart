@@ -125,6 +125,88 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
   }
 
+  /// Returns every ticket that [ticket] could validly be reparented under:
+  /// all tickets except [ticket] itself and any of its descendants
+  /// (reachable by walking `parentId` forward). Setting either as the new
+  /// parent would create a cycle. Performs a query only — does not emit a
+  /// state, since this feeds a picker overlay rather than driving the
+  /// detail screen's own render state.
+  Future<List<Ticket>> getValidParentCandidates(Ticket ticket) async {
+    final all = await _repository.getAllTickets();
+    final descendantIds = _descendantIds(ticket.id, all);
+    return all
+        .where((t) => t.id != ticket.id && !descendantIds.contains(t.id))
+        .toList();
+  }
+
+  /// Reassigns [ticket]'s parent to [newParentId] (`null` clears it).
+  /// Rejects self-parenting and cycles locally — without calling the
+  /// repository — by re-deriving the same descendant set
+  /// [getValidParentCandidates] would, then emits
+  /// [TicketsError] with [TicketsErrorReason.invalidParent] followed
+  /// immediately by a re-emitted [TicketDetailLoaded] (same pattern as
+  /// [deleteTicket]'s `hasChildren` handling), so the detail screen shows
+  /// a toast rather than collapsing to the generic error view. On a valid
+  /// reparent, persists via [TicketRepository.updateTicketParent] and
+  /// emits the refreshed [TicketDetailLoaded].
+  Future<void> updateTicketParent(Ticket ticket, String? newParentId) async {
+    if (newParentId != null) {
+      if (newParentId == ticket.id) {
+        await _emitInvalidParent(ticket.id);
+        return;
+      }
+      final all = await _repository.getAllTickets();
+      final descendantIds = _descendantIds(ticket.id, all);
+      if (descendantIds.contains(newParentId)) {
+        await _emitInvalidParent(ticket.id);
+        return;
+      }
+    }
+
+    try {
+      await _repository.updateTicketParent(ticket.id, newParentId);
+      final refreshed = await _repository.getTicketById(ticket.id);
+      if (refreshed != null) {
+        emit(TicketDetailLoaded(refreshed));
+      }
+    } catch (e) {
+      emit(TicketsError(e.toString()));
+    }
+  }
+
+  /// Emits the rejected-reparent error for ticket [ticketId], then
+  /// re-emits its unchanged [TicketDetailLoaded] so the detail screen
+  /// shows a toast instead of collapsing to the generic error view.
+  Future<void> _emitInvalidParent(String ticketId) async {
+    emit(const TicketsError('', reason: TicketsErrorReason.invalidParent));
+    final ticket = await _repository.getTicketById(ticketId);
+    if (ticket != null) {
+      emit(TicketDetailLoaded(ticket));
+    }
+  }
+
+  /// Builds the full descendant-id set of [rootId] by walking `parentId`
+  /// forward through [all]. Shared by [getValidParentCandidates] and
+  /// [updateTicketParent] so both apply the identical cycle definition.
+  Set<String> _descendantIds(String rootId, List<Ticket> all) {
+    final childrenByParent = <String, List<Ticket>>{};
+    for (final t in all) {
+      final p = t.parentId;
+      if (p != null) {
+        childrenByParent.putIfAbsent(p, () => []).add(t);
+      }
+    }
+    final result = <String>{};
+    void walk(String id) {
+      for (final child in childrenByParent[id] ?? const []) {
+        if (result.add(child.id)) walk(child.id);
+      }
+    }
+
+    walk(rootId);
+    return result;
+  }
+
   /// Fetches the ticket with internal id [id]. Emits [TicketsLoading] then
   /// [TicketDetailLoaded] on success, or [TicketsError] if not found or the
   /// repository call throws.

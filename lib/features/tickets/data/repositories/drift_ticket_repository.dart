@@ -73,6 +73,18 @@ class DriftTicketRepository implements TicketRepository {
     );
   }
 
+  /// Writes only `parent_id` and `updated_at` — no validation performed.
+  @override
+  Future<void> updateTicketParent(String id, String? parentId) {
+    return _db.ticketDao.updateFields(
+      id,
+      TicketsTableCompanion(
+        parentId: Value(parentId),
+        updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
+  }
+
   @override
   Future<void> updateTicket(Ticket ticket) {
     return _db.ticketDao.updateFields(

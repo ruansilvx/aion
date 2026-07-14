@@ -22,6 +22,13 @@ abstract interface class TicketRepository {
   /// [id]. Does not touch any other field. Throws if [id] does not exist.
   Future<void> updateTicketStatus(String id, TicketStatus status);
 
+  /// Updates only the [parentId] (and `updatedAt`) of the ticket with id
+  /// [id]. Does not touch any other field, and performs no validation —
+  /// callers (see `TicketsCubit.updateTicketParent`) are responsible for
+  /// rejecting self-parenting and cycles before calling this. Pass `null`
+  /// to clear the parent. Throws if [id] does not exist.
+  Future<void> updateTicketParent(String id, String? parentId);
+
   /// Persists [ticket]'s `title`, `description`, `priority`, `type`,
   /// `estimate`, and `timeSpent`, plus a fresh `updatedAt`. Does not touch
   /// `status` (use [updateTicketStatus]), `parentId`, `embedding`, `id`, or

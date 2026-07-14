@@ -194,5 +194,154 @@ void main() {
       act: (cubit) => cubit.deleteTicket(ticket.id),
       expect: () => [const TicketDeleting(), isA<TicketsError>()],
     );
+
+    // Multi-level hierarchy fixture: ticket (root) -> child -> grandchild,
+    // plus an unrelated ticket with no parent (a valid reparent target).
+    final child = Ticket(
+      id: '2',
+      ticketId: 'AIO-2',
+      type: TicketType.task,
+      title: 'Child ticket',
+      status: TicketStatus.backlog,
+      parentId: ticket.id,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final grandchild = Ticket(
+      id: '3',
+      ticketId: 'AIO-3',
+      type: TicketType.task,
+      title: 'Grandchild ticket',
+      status: TicketStatus.backlog,
+      parentId: child.id,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final unrelated = Ticket(
+      id: '4',
+      ticketId: 'AIO-4',
+      type: TicketType.task,
+      title: 'Unrelated ticket',
+      status: TicketStatus.backlog,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final reparented = Ticket(
+      id: ticket.id,
+      ticketId: ticket.ticketId,
+      type: ticket.type,
+      title: ticket.title,
+      status: ticket.status,
+      parentId: unrelated.id,
+      createdAt: ticket.createdAt,
+      updatedAt: ticket.updatedAt,
+    );
+    final cleared = Ticket(
+      id: ticket.id,
+      ticketId: ticket.ticketId,
+      type: ticket.type,
+      title: ticket.title,
+      status: ticket.status,
+      createdAt: ticket.createdAt,
+      updatedAt: ticket.updatedAt,
+    );
+
+    group('getValidParentCandidates', () {
+      test('excludes self and the full multi-level descendant chain', () async {
+        when(
+          () => repository.getAllTickets(),
+        ).thenAnswer((_) async => [ticket, child, grandchild, unrelated]);
+
+        final candidates = await TicketsCubit(
+          repository,
+        ).getValidParentCandidates(ticket);
+
+        expect(candidates.map((t) => t.id), [unrelated.id]);
+      });
+    });
+
+    group('updateTicketParent', () {
+      blocTest<TicketsCubit, TicketsState>(
+        'persists a valid reparent and emits [TicketDetailLoaded]',
+        setUp: () {
+          when(
+            () => repository.getAllTickets(),
+          ).thenAnswer((_) async => [ticket, child, unrelated]);
+          when(
+            () => repository.updateTicketParent(any(), any()),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(ticket.id),
+          ).thenAnswer((_) async => reparented);
+        },
+        build: () => TicketsCubit(repository),
+        act: (cubit) => cubit.updateTicketParent(ticket, unrelated.id),
+        verify: (_) {
+          verify(
+            () => repository.updateTicketParent(ticket.id, unrelated.id),
+          ).called(1);
+        },
+        expect: () => [TicketDetailLoaded(reparented)],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'rejects self-parenting without calling the repository',
+        setUp: () {
+          when(
+            () => repository.getTicketById(ticket.id),
+          ).thenAnswer((_) async => ticket);
+        },
+        build: () => TicketsCubit(repository),
+        act: (cubit) => cubit.updateTicketParent(ticket, ticket.id),
+        verify: (_) {
+          verifyNever(() => repository.updateTicketParent(any(), any()));
+        },
+        expect: () => [
+          const TicketsError('', reason: TicketsErrorReason.invalidParent),
+          TicketDetailLoaded(ticket),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'rejects reparenting onto a descendant without calling the repository',
+        setUp: () {
+          when(
+            () => repository.getAllTickets(),
+          ).thenAnswer((_) async => [ticket, child, unrelated]);
+          when(
+            () => repository.getTicketById(ticket.id),
+          ).thenAnswer((_) async => ticket);
+        },
+        build: () => TicketsCubit(repository),
+        act: (cubit) => cubit.updateTicketParent(ticket, child.id),
+        verify: (_) {
+          verifyNever(() => repository.updateTicketParent(any(), any()));
+        },
+        expect: () => [
+          const TicketsError('', reason: TicketsErrorReason.invalidParent),
+          TicketDetailLoaded(ticket),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'persists clearing the parent to null',
+        setUp: () {
+          when(
+            () => repository.updateTicketParent(any(), any()),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(ticket.id),
+          ).thenAnswer((_) async => cleared);
+        },
+        build: () => TicketsCubit(repository),
+        act: (cubit) => cubit.updateTicketParent(ticket, null),
+        verify: (_) {
+          verify(
+            () => repository.updateTicketParent(ticket.id, null),
+          ).called(1);
+        },
+        expect: () => [TicketDetailLoaded(cleared)],
+      );
+    });
   });
 }

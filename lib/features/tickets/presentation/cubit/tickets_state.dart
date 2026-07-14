@@ -50,6 +50,12 @@ enum TicketsErrorReason {
   /// The widget layer reads [TicketsError.childCount] to build a
   /// count-aware message.
   hasChildren,
+
+  /// Reassigning a ticket's parent was rejected because the chosen parent
+  /// is the ticket itself or one of its own descendants (would create a
+  /// cycle). The widget layer reads this via `ticketsErrorMessage` /
+  /// `AppToast`, same as [hasChildren].
+  invalidParent,
 }
 
 /// A list, detail, or create operation failed. Carries either a classified
