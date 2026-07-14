@@ -271,6 +271,58 @@ void main() {
     },
   );
 
+  test('updateTicketParent changes the stored parent_id column', () async {
+    await repository.createTicket(buildTicket(id: '1'));
+    await repository.createTicket(buildTicket(id: '2'));
+    await repository.updateTicketParent('1', '2');
+
+    final found = await repository.getTicketById('1');
+    expect(found!.parentId, '2');
+  });
+
+  test('updateTicketParent can clear parentId to null', () async {
+    await repository.createTicket(buildTicket(id: '1'));
+    await repository.createTicket(
+      buildTicket(id: '2', parentId: '1'),
+    );
+    await repository.updateTicketParent('2', null);
+
+    final found = await repository.getTicketById('2');
+    expect(found!.parentId, isNull);
+  });
+
+  test('updateTicketParent does not change other fields', () async {
+    await repository.createTicket(
+      buildTicket(
+        id: '1',
+        title: 'Unchanged title',
+        priority: TicketPriority.high,
+      ),
+    );
+    await repository.createTicket(buildTicket(id: '2'));
+    await repository.updateTicketParent('1', '2');
+
+    final found = await repository.getTicketById('1');
+    expect(found!.title, 'Unchanged title');
+    expect(found.priority, TicketPriority.high);
+    expect(found.status, TicketStatus.backlog);
+    expect(found.type, TicketType.task);
+  });
+
+  test(
+    'updateTicketParent sets updatedAt to a timestamp at or after the original',
+    () async {
+      await repository.createTicket(buildTicket(id: '1'));
+      await repository.createTicket(buildTicket(id: '2'));
+      final before = (await repository.getTicketById('1'))!.updatedAt;
+
+      await repository.updateTicketParent('1', '2');
+      final after = (await repository.getTicketById('1'))!.updatedAt;
+
+      expect(after.isAtSameMomentAs(before) || after.isAfter(before), isTrue);
+    },
+  );
+
   group('deleteTicket', () {
     test(
       'deletes a childless ticket, its comments, and its links (as source and target)',

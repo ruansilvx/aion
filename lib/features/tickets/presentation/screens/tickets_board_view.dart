@@ -79,6 +79,7 @@ String ticketsErrorMessage(BuildContext context, TicketsErrorReason reason) {
   return switch (reason) {
     TicketsErrorReason.notFound => l10n.ticketsErrorNotFound,
     TicketsErrorReason.hasChildren => l10n.ticketDeleteBlockedByChildrenGeneric,
+    TicketsErrorReason.invalidParent => l10n.ticketInvalidParentError,
   };
 }
 

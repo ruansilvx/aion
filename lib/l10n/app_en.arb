@@ -49,6 +49,11 @@
   "ticketDetailAddPriority": "+ PRIORITY",
   "ticketDetailChangePriority": "Change priority",
   "ticketDetailChangeType": "Change type",
+  "ticketDetailAddParent": "+ PARENT",
+  "ticketDetailChangeParent": "Change parent",
+  "ticketDetailNoParentOption": "No parent",
+  "ticketDetailParentSearchHint": "Search tickets…",
+  "ticketDetailParentNoResults": "No matching tickets",
   "ticketDetailEditTitle": "Edit title",
   "ticketDetailTitleEmptyError": "Title can't be empty",
   "ticketDetailEstimateCaption": "ESTIMATE",
@@ -110,5 +115,6 @@
       "count": { "type": "int" }
     }
   },
-  "ticketDeleteBlockedByChildrenGeneric": "Can't delete — this ticket has subtickets. Delete or reparent them first."
+  "ticketDeleteBlockedByChildrenGeneric": "Can't delete — this ticket has subtickets. Delete or reparent them first.",
+  "ticketInvalidParentError": "Can't set that ticket as its own parent or a descendant."
 }
