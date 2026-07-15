@@ -13,6 +13,7 @@ import 'package:aion/core/theme/aion_text.dart';
 import 'package:aion/core/theme/theme_scope.dart';
 import 'package:aion/core/widgets/app_button.dart';
 import 'package:aion/core/widgets/app_spinner.dart';
+import 'package:aion/core/widgets/app_toast.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
@@ -21,6 +22,7 @@ import 'package:aion/features/tickets/domain/repositories/ticket_link_repository
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart';
+import 'package:aion/features/tickets/presentation/widgets/ticket_overflow_menu.dart';
 
 /// The `/tickets` route: eyebrow + title header, search bar, the ticket
 /// list body driven by [TicketsCubit], and an [AppFab] to create a new
@@ -94,148 +96,166 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
     final t = ThemeScope.of(context);
     final c = t.colors;
 
-    return ColoredBox(
-      color: c.background,
-      child: Stack(
-        children: [
-          Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      context.l10n.ticketsListEyebrow,
-                      style: AionText.caption.copyWith(color: c.textMuted),
-                    ),
-                    const SizedBox(height: AionSpacing.sp4),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            context.l10n.ticketsListTitle,
-                            style: AionText.h1.copyWith(color: c.textPrimary),
+    return BlocListener<TicketsCubit, TicketsState>(
+      listener: (context, state) {
+        if (state is TicketsError &&
+            state.reason == TicketsErrorReason.hasChildren) {
+          AppToast.show(
+            context,
+            context.l10n.ticketDeleteBlockedByChildren(state.childCount ?? 0),
+          );
+        }
+      },
+      child: ColoredBox(
+        color: c.background,
+        child: Stack(
+          children: [
+            Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        context.l10n.ticketsListEyebrow,
+                        style: AionText.caption.copyWith(color: c.textMuted),
+                      ),
+                      const SizedBox(height: AionSpacing.sp4),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              context.l10n.ticketsListTitle,
+                              style: AionText.h1.copyWith(color: c.textPrimary),
+                            ),
                           ),
-                        ),
-                        _ViewModeToggle(
-                          mode: _viewMode,
-                          onChanged: (mode) => setState(() => _viewMode = mode),
-                        ),
-                        const SizedBox(width: AionSpacing.sp12),
-                        DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: c.surfaceHover,
-                            border: Border.all(color: c.border, width: 1),
-                            shape: BoxShape.circle,
+                          _ViewModeToggle(
+                            mode: _viewMode,
+                            onChanged: (mode) =>
+                                setState(() => _viewMode = mode),
                           ),
-                          child: SizedBox(
-                            width: 38,
-                            height: 38,
-                            child: Center(
-                              child: Text(
-                                'U',
-                                style: AionText.key.copyWith(
-                                  color: c.textSecondary,
+                          const SizedBox(width: AionSpacing.sp12),
+                          DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: c.surfaceHover,
+                              border: Border.all(color: c.border, width: 1),
+                              shape: BoxShape.circle,
+                            ),
+                            child: SizedBox(
+                              width: 38,
+                              height: 38,
+                              child: Center(
+                                child: Text(
+                                  'U',
+                                  style: AionText.key.copyWith(
+                                    color: c.textSecondary,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AionSpacing.sp12),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: c.surface,
-                    border: Border.all(color: c.border, width: 1),
-                    borderRadius: BorderRadius.all(AionRadius.lg),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 13,
-                      vertical: 11,
-                    ),
-                    child: Row(
-                      children: [
-                        PhosphorIcon(
-                          PhosphorIcons.magnifyingGlassLight,
-                          size: 16,
-                          color: c.textMuted,
-                        ),
-                        const SizedBox(width: AionSpacing.sp8),
-                        Text(
-                          context.l10n.ticketsListSearchHint,
-                          style: AionText.bodySm.copyWith(color: c.textMuted),
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
+                      const SizedBox(height: AionSpacing.sp12),
+                    ],
                   ),
                 ),
-              ),
-              const SizedBox(height: AionSpacing.sp4),
-              Expanded(
-                child: ColoredBox(
-                  color: c.surface,
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      border: Border(
-                        top: BorderSide(color: c.border, width: 1),
-                      ),
+                      color: c.surface,
+                      border: Border.all(color: c.border, width: 1),
+                      borderRadius: BorderRadius.all(AionRadius.lg),
                     ),
-                    child: BlocBuilder<TicketsCubit, TicketsState>(
-                      builder: (context, state) {
-                        return switch (state) {
-                          TicketsLoading() => const Center(child: AppSpinner()),
-                          TicketsError(:final message, :final reason) => Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  reason != null
-                                      ? ticketsErrorMessage(context, reason)
-                                      : message,
-                                  style: AionText.body.copyWith(
-                                    color: c.textSecondary,
-                                  ),
-                                ),
-                                const SizedBox(height: AionSpacing.sp12),
-                                AppButton(
-                                  label: context.l10n.commonRetry,
-                                  onPressed: () => context
-                                      .read<TicketsCubit>()
-                                      .loadTickets(),
-                                ),
-                              ],
-                            ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 13,
+                        vertical: 11,
+                      ),
+                      child: Row(
+                        children: [
+                          PhosphorIcon(
+                            PhosphorIcons.magnifyingGlassLight,
+                            size: 16,
+                            color: c.textMuted,
                           ),
-                          TicketsLoaded(:final tickets) ||
-                          TicketCreating(:final tickets) ||
-                          TicketCreated(:final tickets) ||
-                          TicketStatusUpdating(:final tickets) ||
-                          TicketStatusUpdated(
-                            :final tickets,
-                          ) => _buildTicketsBody(context, tickets),
-                          _ => const SizedBox.shrink(),
-                        };
-                      },
+                          const SizedBox(width: AionSpacing.sp8),
+                          Text(
+                            context.l10n.ticketsListSearchHint,
+                            style: AionText.bodySm.copyWith(color: c.textMuted),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
-          ),
-          Positioned(
-            right: 18,
-            bottom: 24,
-            child: AppFab(onTap: () => context.go('/tickets/new')),
-          ),
-        ],
+                const SizedBox(height: AionSpacing.sp4),
+                Expanded(
+                  child: ColoredBox(
+                    color: c.surface,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        border: Border(
+                          top: BorderSide(color: c.border, width: 1),
+                        ),
+                      ),
+                      child: BlocBuilder<TicketsCubit, TicketsState>(
+                        builder: (context, state) {
+                          return switch (state) {
+                            TicketsLoading() => const Center(
+                              child: AppSpinner(),
+                            ),
+                            TicketDeleting() => const Center(
+                              child: AppSpinner(),
+                            ),
+                            TicketsError(:final message, :final reason) =>
+                              Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      reason != null
+                                          ? ticketsErrorMessage(context, reason)
+                                          : message,
+                                      style: AionText.body.copyWith(
+                                        color: c.textSecondary,
+                                      ),
+                                    ),
+                                    const SizedBox(height: AionSpacing.sp12),
+                                    AppButton(
+                                      label: context.l10n.commonRetry,
+                                      onPressed: () => context
+                                          .read<TicketsCubit>()
+                                          .loadTickets(),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            TicketsLoaded(:final tickets) ||
+                            TicketCreating(:final tickets) ||
+                            TicketCreated(:final tickets) ||
+                            TicketStatusUpdating(:final tickets) ||
+                            TicketStatusUpdated(
+                              :final tickets,
+                            ) => _buildTicketsBody(context, tickets),
+                            _ => const SizedBox.shrink(),
+                          };
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            Positioned(
+              right: 18,
+              bottom: 24,
+              child: AppFab(onTap: () => context.go('/tickets/new')),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -382,8 +402,9 @@ class _ViewModeIcon extends StatelessWidget {
 }
 
 /// A single row in [TicketsListScreen]'s list: ID badge, title, priority
-/// badge, type chip, and status indicator. Navigates to the ticket's detail
-/// screen when tapped or activated via keyboard.
+/// badge, [TicketOverflowMenu] trigger, type chip, and status indicator.
+/// Navigates to the ticket's detail screen when tapped or activated via
+/// keyboard.
 class TicketListTile extends StatelessWidget {
   /// Creates a [TicketListTile] rendering [ticket].
   const TicketListTile({super.key, required this.ticket});
@@ -453,6 +474,8 @@ class TicketListTile extends StatelessWidget {
                         const SizedBox(width: AionSpacing.sp12),
                         PriorityBadge(priority: ticket.priority),
                       ],
+                      const SizedBox(width: AionSpacing.sp8),
+                      TicketOverflowMenu(ticket: ticket, compact: true),
                     ],
                   ),
                   const SizedBox(height: AionSpacing.sp8),

@@ -182,18 +182,21 @@ void main() {
     );
 
     blocTest<TicketsCubit, TicketsState>(
-      'deleteTicket emits [TicketDeleting, TicketDeleted] on success',
+      'deleteTicket from a TicketDetailLoaded previous state emits '
+      '[TicketDeleting, TicketDeleted] on success',
       setUp: () {
         when(() => repository.deleteTicket(ticket.id)).thenAnswer((_) async {});
       },
       build: () => TicketsCubit(repository),
+      seed: () => TicketDetailLoaded(ticket),
       act: (cubit) => cubit.deleteTicket(ticket.id),
       expect: () => [const TicketDeleting(), const TicketDeleted()],
     );
 
     blocTest<TicketsCubit, TicketsState>(
-      'deleteTicket emits [TicketDeleting, TicketsError(hasChildren), '
-      'TicketDetailLoaded] when blocked by structural children',
+      'deleteTicket from a TicketDetailLoaded previous state emits '
+      '[TicketDeleting, TicketsError(hasChildren), TicketDetailLoaded] '
+      'when blocked by structural children',
       setUp: () {
         when(
           () => repository.deleteTicket(ticket.id),
@@ -203,6 +206,7 @@ void main() {
         ).thenAnswer((_) async => ticket);
       },
       build: () => TicketsCubit(repository),
+      seed: () => TicketDetailLoaded(ticket),
       act: (cubit) => cubit.deleteTicket(ticket.id),
       expect: () => [
         const TicketDeleting(),
@@ -223,8 +227,48 @@ void main() {
         ).thenThrow(Exception('boom'));
       },
       build: () => TicketsCubit(repository),
+      seed: () => TicketDetailLoaded(ticket),
       act: (cubit) => cubit.deleteTicket(ticket.id),
       expect: () => [const TicketDeleting(), isA<TicketsError>()],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'deleteTicket from a TicketsLoaded previous state emits '
+      '[TicketDeleting, TicketsLoaded] with the refreshed list on success',
+      setUp: () {
+        when(() => repository.deleteTicket(ticket.id)).thenAnswer((_) async {});
+        when(() => repository.getAllTickets()).thenAnswer((_) async => []);
+      },
+      build: () => TicketsCubit(repository),
+      seed: () => TicketsLoaded([ticket]),
+      act: (cubit) => cubit.deleteTicket(ticket.id),
+      expect: () => [const TicketDeleting(), const TicketsLoaded([])],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'deleteTicket from a TicketsLoaded previous state emits '
+      '[TicketDeleting, TicketsError(hasChildren), TicketsLoaded] '
+      'when blocked by structural children',
+      setUp: () {
+        when(
+          () => repository.deleteTicket(ticket.id),
+        ).thenThrow(const TicketHasChildrenException(2));
+        when(
+          () => repository.getAllTickets(),
+        ).thenAnswer((_) async => [ticket]);
+      },
+      build: () => TicketsCubit(repository),
+      seed: () => TicketsLoaded([ticket]),
+      act: (cubit) => cubit.deleteTicket(ticket.id),
+      expect: () => [
+        const TicketDeleting(),
+        const TicketsError(
+          '',
+          reason: TicketsErrorReason.hasChildren,
+          childCount: 2,
+        ),
+        TicketsLoaded([ticket]),
+      ],
     );
 
     // Multi-level hierarchy fixture: ticket (root) -> child -> grandchild,
