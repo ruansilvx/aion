@@ -17,7 +17,6 @@ import 'package:aion/core/theme/aion_shadows.dart';
 import 'package:aion/core/theme/aion_text.dart';
 import 'package:aion/core/theme/theme_scope.dart';
 import 'package:aion/core/utils/duration_format.dart';
-import 'package:aion/core/widgets/app_confirm_dialog.dart';
 import 'package:aion/core/widgets/app_header.dart';
 import 'package:aion/core/widgets/app_spinner.dart';
 import 'package:aion/core/widgets/app_text_field.dart';
@@ -36,6 +35,7 @@ import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_list_screen.dart';
 import 'package:aion/features/tickets/presentation/widgets/inline_editable_field.dart';
+import 'package:aion/features/tickets/presentation/widgets/ticket_overflow_menu.dart';
 
 /// The `/tickets/:id` route: ticket meta (priority, title, type, status,
 /// description, timestamps), a comment thread, and a pinned comment
@@ -796,202 +796,6 @@ class CommentTile extends StatelessWidget {
     final hour = date.hour.toString().padLeft(2, '0');
     final minute = date.minute.toString().padLeft(2, '0');
     return '$hour:$minute';
-  }
-}
-
-/// [TicketDetailScreen]'s header `⋮` trigger: opens a small overlay
-/// listing "Delete ticket" (the only action today). Same
-/// `Overlay`/`LayerLink`/`CompositedTransformFollower`/`mounted`-guard
-/// mechanics as [MoveToStatusMenu] (`tickets_board_view.dart`) — a third
-/// instance of that pattern, since this is an *action list* rather than a
-/// *value picker* like [SelectionMenu], so it isn't built on top of that
-/// widget. Selecting "Delete ticket" opens [showAppConfirmDialog]; on
-/// confirmation, calls [TicketsCubit.deleteTicket].
-class TicketOverflowMenu extends StatefulWidget {
-  /// Creates a [TicketOverflowMenu] for [ticket].
-  const TicketOverflowMenu({super.key, required this.ticket});
-
-  /// The ticket this menu's actions apply to.
-  final Ticket ticket;
-
-  @override
-  State<TicketOverflowMenu> createState() => _TicketOverflowMenuState();
-}
-
-class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
-  final LayerLink _layerLink = LayerLink();
-  OverlayEntry? _overlayEntry;
-  bool _isOpen = false;
-
-  @override
-  void dispose() {
-    _overlayEntry?.remove();
-    _overlayEntry = null;
-    super.dispose();
-  }
-
-  void _toggleOverlay() {
-    if (_isOpen) {
-      _removeOverlay();
-    } else {
-      _showOverlay();
-    }
-  }
-
-  void _showOverlay() {
-    final t = ThemeScope.of(context);
-    final c = t.colors;
-    final overlay = Overlay.of(context);
-
-    _overlayEntry = OverlayEntry(
-      builder: (overlayContext) {
-        return Stack(
-          children: [
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTap: _removeOverlay,
-              ),
-            ),
-            CompositedTransformFollower(
-              link: _layerLink,
-              showWhenUnlinked: false,
-              offset: const Offset(0, 6),
-              targetAnchor: Alignment.bottomRight,
-              followerAnchor: Alignment.topRight,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: c.surface,
-                  border: Border.all(color: c.borderStrong, width: 1),
-                  borderRadius: BorderRadius.all(AionRadius.lg),
-                  boxShadow: AionShadows.card(c, t.isDark),
-                ),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    minWidth: 180,
-                    maxWidth: 240,
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Semantics(
-                          button: true,
-                          label: overlayContext.l10n.ticketDeleteMenuItem,
-                          child: GestureDetector(
-                            onTap: () {
-                              _removeOverlay();
-                              _onDeletePressed();
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 13,
-                                vertical: 9,
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  PhosphorIcon(
-                                    PhosphorIcons.trashLight,
-                                    size: 16,
-                                    color: c.danger,
-                                  ),
-                                  const SizedBox(width: AionSpacing.sp8),
-                                  Text(
-                                    overlayContext.l10n.ticketDeleteMenuItem,
-                                    style: AionText.bodySm.copyWith(
-                                      color: c.danger,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-
-    overlay.insert(_overlayEntry!);
-    setState(() => _isOpen = true);
-  }
-
-  void _removeOverlay() {
-    _overlayEntry?.remove();
-    _overlayEntry = null;
-    // Guards against setState-after-dispose — the same class of bug
-    // project.md's AppDropdown overlay-dismiss crash note warns about.
-    if (mounted) {
-      setState(() => _isOpen = false);
-    } else {
-      _isOpen = false;
-    }
-  }
-
-  Future<void> _onDeletePressed() async {
-    final confirmed = await showAppConfirmDialog(
-      context,
-      title: context.l10n.ticketDeleteConfirmTitle,
-      message: context.l10n.ticketDeleteConfirmMessage,
-      confirmLabel: context.l10n.ticketDeleteConfirmAction,
-      isDestructive: true,
-    );
-    if (confirmed && mounted) {
-      context.read<TicketsCubit>().deleteTicket(widget.ticket.id);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final t = ThemeScope.of(context);
-    final c = t.colors;
-
-    return CompositedTransformTarget(
-      link: _layerLink,
-      child: Semantics(
-        button: true,
-        label: context.l10n.ticketDetailOverflowMenuLabel,
-        child: FocusableActionDetector(
-          actions: {
-            ActivateIntent: CallbackAction<ActivateIntent>(
-              onInvoke: (_) {
-                _toggleOverlay();
-                return null;
-              },
-            ),
-          },
-          child: GestureDetector(
-            onTap: _toggleOverlay,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: _isOpen ? c.surfaceHover : const Color(0x00000000),
-                borderRadius: BorderRadius.all(AionRadius.iconBtn),
-              ),
-              child: SizedBox(
-                width: 37,
-                height: 37,
-                child: Center(
-                  child: PhosphorIcon(
-                    PhosphorIcons.dotsThreeLight,
-                    size: 20,
-                    color: c.textSecondary,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
   }
 }
 

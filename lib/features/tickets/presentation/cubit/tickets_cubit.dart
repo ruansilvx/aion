@@ -251,24 +251,38 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Deletes the ticket with internal id [id] via
-  /// [TicketRepository.deleteTicket]. Emits [TicketDeleting] immediately,
-  /// then [TicketDeleted] on success.
+  /// [TicketRepository.deleteTicket]. Emits [TicketDeleting] immediately.
+  ///
+  /// Recovery on both success and the "blocked by children" failure
+  /// branches on the state active *before* this call started
+  /// ([previousState]): if it was [TicketDetailLoaded] (the caller is
+  /// `TicketDetailScreen`), behavior is unchanged from before this
+  /// context-aware branching existed — [TicketDeleted] on success, or a
+  /// re-emitted [TicketDetailLoaded] with the unchanged ticket after the
+  /// classified error. For any other (list/board-shaped) previous state,
+  /// both branches instead re-fetch and emit [TicketsLoaded] with the
+  /// refreshed list, so `TicketsListScreen`/`TicketBoardView` never fall
+  /// into a blank or stale state when a delete is triggered from a list
+  /// row or board card.
   ///
   /// On failure from [TicketHasChildrenException], emits
   /// [TicketsError(reason: TicketsErrorReason.hasChildren)] (carrying the
   /// blocking child count) — solely so a listener (e.g. `AppToast`) can
-  /// react — then immediately re-fetches and emits [TicketDetailLoaded]
-  /// with the unchanged ticket, so the detail screen's body never falls
-  /// into the generic error rendering for this case; the delete is
-  /// blocked, not "confirmed but failed." Any other failure emits a
-  /// generic [TicketsError] — including "not found," which by this point
-  /// would only happen from a concurrent delete elsewhere, not a normal
-  /// user path.
+  /// react — before the state-dependent recovery emission above; the
+  /// delete is blocked, not "confirmed but failed." Any other failure
+  /// emits a generic [TicketsError] — including "not found," which by
+  /// this point would only happen from a concurrent delete elsewhere, not
+  /// a normal user path.
   Future<void> deleteTicket(String id) async {
+    final previousState = state;
     emit(const TicketDeleting());
     try {
       await _repository.deleteTicket(id);
-      emit(const TicketDeleted());
+      if (previousState is TicketDetailLoaded) {
+        emit(const TicketDeleted());
+      } else {
+        emit(TicketsLoaded(await _repository.getAllTickets()));
+      }
     } on TicketHasChildrenException catch (e) {
       emit(
         TicketsError(
@@ -277,9 +291,13 @@ class TicketsCubit extends Cubit<TicketsState> {
           childCount: e.childCount,
         ),
       );
-      final ticket = await _repository.getTicketById(id);
-      if (ticket != null) {
-        emit(TicketDetailLoaded(ticket));
+      if (previousState is TicketDetailLoaded) {
+        final ticket = await _repository.getTicketById(id);
+        if (ticket != null) {
+          emit(TicketDetailLoaded(ticket));
+        }
+      } else {
+        emit(TicketsLoaded(await _repository.getAllTickets()));
       }
     } catch (e) {
       emit(TicketsError(e.toString()));

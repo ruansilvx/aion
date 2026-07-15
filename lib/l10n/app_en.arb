@@ -105,7 +105,12 @@
     }
   },
 
-  "ticketDetailOverflowMenuLabel": "More actions",
+  "ticketOverflowMenuLabel": "More actions for {ticketId}",
+  "@ticketOverflowMenuLabel": {
+    "placeholders": {
+      "ticketId": { "type": "String" }
+    }
+  },
   "ticketDeleteMenuItem": "Delete ticket",
   "ticketDeleteConfirmTitle": "Delete this ticket?",
   "ticketDeleteConfirmMessage": "This cannot be undone.",

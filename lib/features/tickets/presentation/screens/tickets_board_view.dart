@@ -18,6 +18,7 @@ import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_list_screen.dart';
+import 'package:aion/features/tickets/presentation/widgets/ticket_overflow_menu.dart';
 
 /// Fixed width of a single [BoardColumn].
 const double _kColumnWidth = 280.0;
@@ -70,10 +71,11 @@ String ticketTypeLabel(BuildContext context, TicketType type) {
 ///
 /// [TicketsErrorReason.hasChildren] is handled here only for switch
 /// exhaustiveness — [TicketsCubit.deleteTicket] always follows that
-/// error with a [TicketDetailLoaded] re-emission, so in practice the
-/// screen never stays on this generic (non-count-aware) fallback text;
-/// the count-aware message is shown via `AppToast` instead, driven
-/// directly by [TicketsError.childCount].
+/// error with either a [TicketDetailLoaded] or [TicketsLoaded]
+/// re-emission (depending on the state active before the delete call),
+/// so in practice the screen never stays on this generic (non-count-aware)
+/// fallback text; the count-aware message is shown via `AppToast` instead,
+/// driven directly by [TicketsError.childCount].
 String ticketsErrorMessage(BuildContext context, TicketsErrorReason reason) {
   final l10n = context.l10n;
   return switch (reason) {
@@ -312,8 +314,9 @@ class _CardVisual extends StatelessWidget {
   /// of the resting card shadow.
   final bool elevated;
 
-  /// Whether to render [MoveToStatusMenu] — omitted for the drag feedback
-  /// and placeholder renderings, which aren't meant to be interactive.
+  /// Whether to render [TicketOverflowMenu] and [MoveToStatusMenu] —
+  /// omitted for the drag feedback and placeholder renderings, which
+  /// aren't meant to be interactive.
   final bool interactive;
 
   @override
@@ -357,7 +360,11 @@ class _CardVisual extends StatelessWidget {
                   ),
                 ),
                 const Spacer(),
-                if (interactive) MoveToStatusMenu(ticket: ticket),
+                if (interactive) ...[
+                  TicketOverflowMenu(ticket: ticket, compact: true),
+                  const SizedBox(width: AionSpacing.sp4),
+                  MoveToStatusMenu(ticket: ticket),
+                ],
               ],
             ),
             const SizedBox(height: AionSpacing.sp8),
@@ -388,7 +395,10 @@ class _CardVisual extends StatelessWidget {
 /// other than [ticket]'s current one. The keyboard/screen-reader-
 /// accessible equivalent of dragging a [TicketBoardCard] — selecting an
 /// item calls the exact same [TicketsCubit.updateTicketStatus] the drag
-/// path calls, so board status changes are never drag-only.
+/// path calls, so board status changes are never drag-only. Uses a
+/// status-swap glyph (not `dots-three`) so it reads distinctly from the
+/// adjacent [TicketOverflowMenu] trigger, which also renders on
+/// [TicketBoardCard].
 class MoveToStatusMenu extends StatefulWidget {
   /// Creates a [MoveToStatusMenu] that can move [ticket] to a different
   /// status.
@@ -507,7 +517,7 @@ class _MoveToStatusMenuState extends State<MoveToStatusMenu> {
           child: GestureDetector(
             onTap: _showOverlay,
             child: PhosphorIcon(
-              PhosphorIcons.dotsThreeLight,
+              PhosphorIcons.arrowsDownUpLight,
               size: 16,
               color: c.textMuted,
             ),

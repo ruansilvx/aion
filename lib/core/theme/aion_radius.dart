@@ -22,6 +22,11 @@ abstract final class AionRadius {
 
   /// Header icon buttons (e.g. the back button).
   static const iconBtn = Radius.circular(11);
+
+  /// Small inline icon-button triggers (e.g. the ticket-row and
+  /// board-card overflow triggers) — smaller footprint than [iconBtn],
+  /// which is reserved for header-level icon buttons.
+  static const iconBtnSm = Radius.circular(8);
 }
 
 /// Aion's spacing scale — a base-4px system. Every gap/padding value in the
