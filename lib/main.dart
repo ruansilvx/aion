@@ -4,18 +4,13 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
-import 'package:aion/core/database/app_database.dart';
-import 'package:aion/core/routing/app_router.dart';
-import 'package:aion/core/theme/aion_theme.dart';
-import 'package:aion/core/theme/theme_scope.dart';
+import 'package:aion/core/core.dart';
+import 'package:aion/core/design_system.dart';
 import 'package:aion/l10n/generated/app_localizations.dart';
 import 'package:aion/features/tickets/data/repositories/drift_comment_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_link_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_repository.dart';
-import 'package:aion/features/tickets/domain/repositories/comment_repository.dart';
-import 'package:aion/features/tickets/domain/repositories/ticket_link_repository.dart';
-import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
-import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
+import 'package:aion/features/tickets/tickets.dart';
 
 /// App entry point. Opens the [AppDatabase] and runs [AionApp].
 void main() {

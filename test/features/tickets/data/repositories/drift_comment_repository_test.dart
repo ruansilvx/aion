@@ -1,10 +1,9 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:aion/core/database/app_database.dart';
+import 'package:aion/core/core.dart';
 import 'package:aion/features/tickets/data/repositories/drift_comment_repository.dart';
-import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
-import 'package:aion/features/tickets/domain/enums/comment_author_type.dart';
+import 'package:aion/features/tickets/tickets.dart';
 
 void main() {
   late AppDatabase database;

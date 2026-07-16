@@ -10,18 +10,8 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:intl/intl.dart' show DateFormat;
 
-import 'package:aion/core/localization/context_localizations_x.dart';
-import 'package:aion/core/theme/aion_colors.dart';
-import 'package:aion/core/theme/aion_radius.dart';
-import 'package:aion/core/theme/aion_shadows.dart';
-import 'package:aion/core/theme/aion_text.dart';
-import 'package:aion/core/theme/theme_scope.dart';
-import 'package:aion/core/utils/duration_format.dart';
-import 'package:aion/core/widgets/app_header.dart';
-import 'package:aion/core/widgets/app_spinner.dart';
-import 'package:aion/core/widgets/app_text_field.dart';
-import 'package:aion/core/widgets/app_toast.dart';
-import 'package:aion/core/widgets/selection_menu.dart';
+import 'package:aion/core/core.dart';
+import 'package:aion/core/design_system.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
 import 'package:aion/features/tickets/domain/enums/comment_author_type.dart';

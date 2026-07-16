@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:aion/core/utils/duration_format.dart';
+import 'package:aion/core/core.dart';
 
 void main() {
   group('formatDurationMinutes', () {

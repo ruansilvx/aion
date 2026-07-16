@@ -3,11 +3,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:aion/features/tickets/domain/repositories/comment_repository.dart';
-import 'package:aion/features/tickets/presentation/cubit/comments_cubit.dart';
-import 'package:aion/features/tickets/presentation/screens/create_ticket_screen.dart';
-import 'package:aion/features/tickets/presentation/screens/ticket_detail_screen.dart';
-import 'package:aion/features/tickets/presentation/screens/tickets_list_screen.dart';
+import 'package:aion/features/tickets/tickets.dart';
 
 /// The app's route table: `/tickets`, `/tickets/new`, `/tickets/:id`.
 ///

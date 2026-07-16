@@ -2,13 +2,7 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
-import 'package:aion/features/tickets/domain/entities/ticket.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
-import 'package:aion/features/tickets/domain/exceptions/ticket_has_children_exception.dart';
-import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
-import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
-import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
+import 'package:aion/features/tickets/tickets.dart';
 
 class MockTicketRepository extends Mock implements TicketRepository {}
 

@@ -2,7 +2,7 @@
 
 import 'package:drift/drift.dart';
 
-import 'package:aion/core/database/app_database.dart';
+import 'package:aion/core/core.dart';
 import 'package:aion/features/tickets/data/models/ticket_comment_model.dart';
 
 part 'comment_dao.g.dart';

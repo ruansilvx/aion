@@ -2,7 +2,7 @@
 
 import 'package:uuid/uuid.dart';
 
-import 'package:aion/core/database/app_database.dart';
+import 'package:aion/core/core.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_link_repository.dart';
 
