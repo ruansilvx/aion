@@ -27,7 +27,6 @@ export 'presentation/screens/ticket_detail_screen.dart';
 export 'presentation/screens/tickets_board_view.dart';
 export 'presentation/screens/tickets_list_screen.dart';
 export 'presentation/screens/trash_screen.dart';
-export 'presentation/widgets/inline_editable_field.dart';
 export 'presentation/widgets/ticket_overflow_menu.dart';
 export 'presentation/widgets/ticket_selection_bar.dart';
 export 'presentation/widgets/trashed_ticket_tile.dart';

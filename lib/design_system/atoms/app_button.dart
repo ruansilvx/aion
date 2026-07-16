@@ -1,9 +1,12 @@
-// core/widgets/app_button.dart — AppButton primitive widget (core layer).
+// design_system/atoms/app_button.dart — AppButton primitive widget (design-system layer).
 
 import 'package:flutter/widgets.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
-import 'package:aion/core/design_system.dart';
+import 'package:aion/design_system/tokens/aion_colors.dart';
+import 'package:aion/design_system/tokens/aion_radius.dart';
+import 'package:aion/design_system/tokens/aion_text.dart';
+import 'package:aion/design_system/tokens/theme_scope.dart';
 
 /// Visual style of an [AppButton].
 enum AppButtonVariant {

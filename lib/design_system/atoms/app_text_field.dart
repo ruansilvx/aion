@@ -1,12 +1,15 @@
-// core/widgets/app_text_field.dart — AppTextField primitive widget (core layer).
+// design_system/atoms/app_text_field.dart — AppTextField primitive widget (design-system layer).
 
 import 'package:flutter/material.dart'
     show Material, MaterialType, TextField, InputDecoration, OutlineInputBorder;
 import 'package:flutter/services.dart' show TextInputAction;
 import 'package:flutter/widgets.dart';
 
-import 'package:aion/core/design_system.dart';
-import 'package:aion/core/localization/context_localizations_x.dart';
+import 'package:aion/core/core.dart';
+import 'package:aion/design_system/tokens/aion_radius.dart';
+import 'package:aion/design_system/tokens/aion_shadows.dart';
+import 'package:aion/design_system/tokens/aion_text.dart';
+import 'package:aion/design_system/tokens/theme_scope.dart';
 
 /// Aion's text-field primitive — an optional label above a token-styled
 /// input. Wraps Flutter's `TextField` (the one Material widget permitted in

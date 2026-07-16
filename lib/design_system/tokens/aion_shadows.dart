@@ -1,8 +1,8 @@
-// core/theme/aion_shadows.dart — Shadow/elevation token definitions (core/theme layer).
+// design_system/tokens/aion_shadows.dart — Shadow/elevation token definitions (design-system layer).
 
 import 'package:flutter/painting.dart';
 
-import 'package:aion/core/theme/aion_colors.dart';
+import 'package:aion/design_system/tokens/aion_colors.dart';
 
 /// Aion's elevation scale, expressed as [BoxShadow] lists derived from the
 /// active [AionColors] (shadow colors are theme-dependent, so these are

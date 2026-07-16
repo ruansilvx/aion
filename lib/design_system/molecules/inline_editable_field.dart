@@ -1,10 +1,15 @@
-// features/tickets/presentation/widgets/inline_editable_field.dart — InlineEditableField<T> tap-to-edit primitive (presentation layer).
+// design_system/molecules/inline_editable_field.dart — InlineEditableField<T> tap-to-edit primitive (design-system layer).
 
 import 'package:flutter/services.dart' show LogicalKeyboardKey, TextInputAction;
 import 'package:flutter/widgets.dart';
 
 import 'package:aion/core/core.dart';
-import 'package:aion/core/design_system.dart';
+import 'package:aion/design_system/atoms/app_button.dart';
+import 'package:aion/design_system/atoms/app_text_field.dart';
+import 'package:aion/design_system/molecules/app_toast.dart';
+import 'package:aion/design_system/tokens/aion_radius.dart';
+import 'package:aion/design_system/tokens/aion_text.dart';
+import 'package:aion/design_system/tokens/theme_scope.dart';
 
 /// Cancels an in-progress [InlineEditableField] edit. Dispatched via
 /// [Shortcuts]/[Actions] (not a directly-attached [FocusNode] listener)

@@ -1,8 +1,8 @@
-// core/theme/aion_theme.dart — AionThemeData plain Dart theme class (core/theme layer).
+// design_system/tokens/aion_theme.dart — AionThemeData plain Dart theme class (design-system layer).
 
 import 'package:meta/meta.dart';
 
-import 'package:aion/core/theme/aion_colors.dart';
+import 'package:aion/design_system/tokens/aion_colors.dart';
 
 /// The active theme: a color palette plus whether it's the dark variant.
 /// Deliberately not a `ThemeData` — Aion has no Material theming layer.

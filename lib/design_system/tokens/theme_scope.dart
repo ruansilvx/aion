@@ -1,8 +1,8 @@
-// core/theme/theme_scope.dart — ThemeScope InheritedWidget (core/theme layer).
+// design_system/tokens/theme_scope.dart — ThemeScope InheritedWidget (design-system layer).
 
 import 'package:flutter/widgets.dart';
 
-import 'package:aion/core/theme/aion_theme.dart';
+import 'package:aion/design_system/tokens/aion_theme.dart';
 
 /// Provides the active [AionThemeData] to the widget tree. This is Aion's
 /// sole theming mechanism — use `ThemeScope.of(context)`, never

@@ -1,4 +1,4 @@
-// core/widgets/app_confirm_dialog.dart — showAppConfirmDialog primitive (core layer).
+// design_system/molecules/app_confirm_dialog.dart — showAppConfirmDialog primitive (design-system layer).
 
 import 'dart:async';
 
@@ -6,9 +6,13 @@ import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter/widgets.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
-import 'package:aion/core/design_system.dart';
-import 'package:aion/core/localization/context_localizations_x.dart';
-import 'package:aion/core/widgets/app_button.dart';
+import 'package:aion/core/core.dart';
+import 'package:aion/design_system/atoms/app_button.dart';
+import 'package:aion/design_system/tokens/aion_colors.dart';
+import 'package:aion/design_system/tokens/aion_radius.dart';
+import 'package:aion/design_system/tokens/aion_shadows.dart';
+import 'package:aion/design_system/tokens/aion_text.dart';
+import 'package:aion/design_system/tokens/theme_scope.dart';
 
 /// Dismisses an open [showAppConfirmDialog] without confirming. Dispatched
 /// via [Shortcuts]/[Actions] (not a directly-attached [FocusNode] listener),

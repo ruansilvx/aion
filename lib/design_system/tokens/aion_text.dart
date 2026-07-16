@@ -1,4 +1,4 @@
-// core/theme/aion_text.dart — Typography token definitions (core/theme layer).
+// design_system/tokens/aion_text.dart — Typography token definitions (design-system layer).
 
 import 'package:flutter/painting.dart';
 

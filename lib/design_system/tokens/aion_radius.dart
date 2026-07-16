@@ -1,4 +1,4 @@
-// core/theme/aion_radius.dart — Radius and spacing token definitions (core/theme layer).
+// design_system/tokens/aion_radius.dart — Radius and spacing token definitions (design-system layer).
 
 import 'dart:ui';
 

@@ -1,8 +1,11 @@
-// core/widgets/selection_menu.dart — SelectionMenu<T> generic overlay picker (core layer).
+// design_system/molecules/selection_menu.dart — SelectionMenu<T> generic overlay picker (design-system layer).
 
 import 'package:flutter/widgets.dart';
 
-import 'package:aion/core/design_system.dart';
+import 'package:aion/design_system/tokens/aion_radius.dart';
+import 'package:aion/design_system/tokens/aion_shadows.dart';
+import 'package:aion/design_system/tokens/aion_text.dart';
+import 'package:aion/design_system/tokens/theme_scope.dart';
 
 /// A generic overlay-picker primitive: [trigger] stays visible at all
 /// times, and tapping it (or activating it via keyboard) opens an
