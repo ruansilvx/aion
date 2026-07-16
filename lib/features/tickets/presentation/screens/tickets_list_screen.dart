@@ -1,5 +1,7 @@
 // presentation/screens/tickets_list_screen.dart — Ticket list screen and row widgets (presentation layer).
 
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -12,7 +14,9 @@ import 'package:aion/core/theme/aion_shadows.dart';
 import 'package:aion/core/theme/aion_text.dart';
 import 'package:aion/core/theme/theme_scope.dart';
 import 'package:aion/core/widgets/app_button.dart';
+import 'package:aion/core/widgets/app_dropdown.dart';
 import 'package:aion/core/widgets/app_spinner.dart';
+import 'package:aion/core/widgets/app_text_field.dart';
 import 'package:aion/core/widgets/app_toast.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
@@ -24,9 +28,10 @@ import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_overflow_menu.dart';
 
-/// The `/tickets` route: eyebrow + title header, search bar, the ticket
-/// list body driven by [TicketsCubit], and an [AppFab] to create a new
-/// ticket. Loads the list in [State.initState].
+/// The `/tickets` route: eyebrow + title header, a functioning search
+/// field + status/type/priority filter row, the ticket list body driven
+/// by [TicketsCubit], and an [AppFab] to create a new ticket. Loads the
+/// unfiltered list in [State.initState].
 class TicketsListScreen extends StatefulWidget {
   /// Creates a [TicketsListScreen].
   const TicketsListScreen({super.key});
@@ -50,20 +55,144 @@ enum _TicketViewMode {
 class _TicketsListScreenState extends State<TicketsListScreen> {
   _TicketViewMode _viewMode = _TicketViewMode.list;
 
+  /// Controls and reads the search field's text.
+  final TextEditingController _searchController = TextEditingController();
+
+  /// Focus node for the search field, used only to drive the leading
+  /// icon's color per design.md §2's per-state treatment.
+  final FocusNode _searchFocusNode = FocusNode();
+
+  /// Currently selected status filter. `null` = "All statuses".
+  TicketStatus? _statusFilter;
+
+  /// Currently selected type filter. `null` = "All types".
+  TicketType? _typeFilter;
+
+  /// Currently selected priority filter. `null` = "All priorities".
+  TicketPriority? _priorityFilter;
+
+  /// Pending debounce timer for search-text-driven re-searches. Dropdown
+  /// filter changes re-search immediately and don't go through this.
+  Timer? _searchDebounce;
+
+  /// Whether a search query or a non-default filter is currently active —
+  /// used to pick between the "No tickets yet" and "No tickets match your
+  /// search" empty states, and to drive the search icon's "active" color.
+  bool get _hasActiveFilter =>
+      _searchController.text.trim().isNotEmpty ||
+      _statusFilter != null ||
+      _typeFilter != null ||
+      _priorityFilter != null;
+
   @override
   void initState() {
     super.initState();
-    context.read<TicketsCubit>().loadTickets();
+    _searchController.addListener(_handleSearchTextChanged);
+    _runSearch();
+  }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.removeListener(_handleSearchTextChanged);
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
+
+  /// Restarts the search debounce timer on every keystroke. Deliberately
+  /// does not `setState` on every keystroke — the search field's leading
+  /// icon (the only thing that needs to react per-keystroke) is handled
+  /// by the `AnimatedBuilder` in [build] that listens to
+  /// [_searchController]/[_searchFocusNode] directly, so typing doesn't
+  /// rebuild the whole screen (including the `BlocBuilder`-driven ticket
+  /// list) on every character.
+  ///
+  /// The debounced callback itself still calls `setState` once, before
+  /// [_runSearch]: `TicketsCubit.searchTickets` emits `TicketsLoaded`,
+  /// which is `Equatable`-based, so two consecutive searches that both
+  /// return an empty list are equal states — `Cubit.emit` silently skips
+  /// notifying `BlocBuilder` for a state equal to the current one. Without
+  /// this `setState`, going from "no filter, zero tickets" to "a filter
+  /// active, still zero matches" would leave [_buildTicketsBody] showing
+  /// the stale "No tickets yet" message instead of "No tickets match your
+  /// search", since [_hasActiveFilter] is widget-local state that
+  /// `BlocBuilder` has no reason to re-read on its own.
+  void _handleSearchTextChanged() {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 250), () {
+      setState(() {});
+      _runSearch();
+    });
+  }
+
+  /// Re-runs the ticket search/filter query against [TicketsCubit] using
+  /// every currently active local filter value. Called on init, after the
+  /// search-text debounce fires, immediately on any filter-dropdown
+  /// change, and by the error state's Retry button — so retrying re-applies
+  /// whatever search/filters were active rather than resetting them.
+  void _runSearch() {
+    context.read<TicketsCubit>().searchTickets(
+      query: _searchController.text,
+      status: _statusFilter,
+      type: _typeFilter,
+      priority: _priorityFilter,
+    );
   }
 
   /// Renders the loaded [tickets] as either the flat list or the board,
-  /// depending on [_viewMode]. An empty (unfiltered) [tickets] list always
-  /// shows the "No tickets yet" message regardless of view mode.
+  /// depending on [_viewMode]. An empty [tickets] list shows "No tickets
+  /// match your search" when [_hasActiveFilter], otherwise the generic
+  /// "No tickets yet" message.
   Widget _buildTicketsBody(BuildContext context, List<Ticket> tickets) {
     final t = ThemeScope.of(context);
     final c = t.colors;
 
     if (tickets.isEmpty) {
+      if (_hasActiveFilter) {
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 48),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: c.primary.withValues(alpha: t.fillAlpha),
+                    borderRadius: BorderRadius.all(AionRadius.xl),
+                  ),
+                  child: SizedBox(
+                    width: 56,
+                    height: 56,
+                    child: Center(
+                      child: PhosphorIcon(
+                        PhosphorIcons.magnifyingGlassLight,
+                        size: 28,
+                        color: c.primary,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AionSpacing.sp16),
+                Text(
+                  context.l10n.ticketsListNoResultsState,
+                  textAlign: TextAlign.center,
+                  style: AionText.body.copyWith(
+                    color: c.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  context.l10n.ticketsListNoResultsHint,
+                  textAlign: TextAlign.center,
+                  style: AionText.bodySm.copyWith(color: c.textMuted),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
       return Center(
         child: Text(
           context.l10n.ticketsListEmptyState,
@@ -163,32 +292,86 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: c.surface,
-                      border: Border.all(color: c.border, width: 1),
-                      borderRadius: BorderRadius.all(AionRadius.lg),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 13,
-                        vertical: 11,
+                  child: Column(
+                    children: [
+                      AnimatedBuilder(
+                        animation: Listenable.merge([
+                          _searchController,
+                          _searchFocusNode,
+                        ]),
+                        builder: (context, _) {
+                          return AppTextField(
+                            controller: _searchController,
+                            focusNode: _searchFocusNode,
+                            hintText: context.l10n.ticketsListSearchHint,
+                            prefixIcon: PhosphorIcon(
+                              PhosphorIcons.magnifyingGlassLight,
+                              size: 18,
+                              color: _searchFocusNode.hasFocus
+                                  ? c.primary
+                                  : (_searchController.text.trim().isNotEmpty
+                                        ? c.textSecondary
+                                        : c.textMuted),
+                            ),
+                          );
+                        },
                       ),
-                      child: Row(
+                      const SizedBox(height: 10),
+                      Row(
                         children: [
-                          PhosphorIcon(
-                            PhosphorIcons.magnifyingGlassLight,
-                            size: 16,
-                            color: c.textMuted,
+                          Expanded(
+                            child: AppDropdown<TicketStatus?>(
+                              value: _statusFilter,
+                              items: const [null, ...TicketStatus.values],
+                              isActive: _statusFilter != null,
+                              semanticsLabel:
+                                  context.l10n.ticketsListFilterStatusLabel,
+                              itemLabel: (s) => s == null
+                                  ? context.l10n.ticketsListFilterAllStatuses
+                                  : ticketStatusLabel(context, s),
+                              onChanged: (value) {
+                                setState(() => _statusFilter = value);
+                                _runSearch();
+                              },
+                            ),
                           ),
                           const SizedBox(width: AionSpacing.sp8),
-                          Text(
-                            context.l10n.ticketsListSearchHint,
-                            style: AionText.bodySm.copyWith(color: c.textMuted),
+                          Expanded(
+                            child: AppDropdown<TicketType?>(
+                              value: _typeFilter,
+                              items: const [null, ...TicketType.values],
+                              isActive: _typeFilter != null,
+                              semanticsLabel:
+                                  context.l10n.ticketsListFilterTypeLabel,
+                              itemLabel: (t) => t == null
+                                  ? context.l10n.ticketsListFilterAllTypes
+                                  : ticketTypeLabel(context, t),
+                              onChanged: (value) {
+                                setState(() => _typeFilter = value);
+                                _runSearch();
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: AionSpacing.sp8),
+                          Expanded(
+                            child: AppDropdown<TicketPriority?>(
+                              value: _priorityFilter,
+                              items: const [null, ...TicketPriority.values],
+                              isActive: _priorityFilter != null,
+                              semanticsLabel:
+                                  context.l10n.ticketsListFilterPriorityLabel,
+                              itemLabel: (p) => p == null
+                                  ? context.l10n.ticketsListFilterAllPriorities
+                                  : ticketPriorityLabel(context, p),
+                              onChanged: (value) {
+                                setState(() => _priorityFilter = value);
+                                _runSearch();
+                              },
+                            ),
                           ),
                         ],
                       ),
-                    ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: AionSpacing.sp4),
@@ -226,9 +409,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                                     const SizedBox(height: AionSpacing.sp12),
                                     AppButton(
                                       label: context.l10n.commonRetry,
-                                      onPressed: () => context
-                                          .read<TicketsCubit>()
-                                          .loadTickets(),
+                                      onPressed: _runSearch,
                                     ),
                                   ],
                                 ),
@@ -239,7 +420,18 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                             TicketStatusUpdating(:final tickets) ||
                             TicketStatusUpdated(
                               :final tickets,
-                            ) => _buildTicketsBody(context, tickets),
+                            ) =>
+                              AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 120),
+                                transitionBuilder: (child, anim) =>
+                                    FadeTransition(opacity: anim, child: child),
+                                child: KeyedSubtree(
+                                  key: ValueKey(
+                                    tickets.map((t) => t.id).join(','),
+                                  ),
+                                  child: _buildTicketsBody(context, tickets),
+                                ),
+                              ),
                             _ => const SizedBox.shrink(),
                           };
                         },

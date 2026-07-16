@@ -30,6 +30,7 @@ class AppTextField extends StatefulWidget {
     this.onSubmitted,
     this.isRequired = false,
     this.isOptional = false,
+    this.prefixIcon,
   });
 
   /// Controls and reads the field's text.
@@ -60,6 +61,11 @@ class AppTextField extends StatefulWidget {
 
   /// Whether to render an "Optional" marker next to [labelText].
   final bool isOptional;
+
+  /// Optional leading icon shown inside the field, before the text. Color
+  /// and any per-state styling are the caller's responsibility — this
+  /// widget renders whatever is passed as-is via [InputDecoration.prefixIcon].
+  final Widget? prefixIcon;
 
   @override
   State<AppTextField> createState() => _AppTextFieldState();
@@ -149,6 +155,7 @@ class _AppTextFieldState extends State<AppTextField> {
                 filled: true,
                 isDense: true,
                 isCollapsed: false,
+                prefixIcon: widget.prefixIcon,
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 14,
                   vertical: 12,
