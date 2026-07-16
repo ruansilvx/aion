@@ -4,8 +4,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 
+import 'package:aion/core/design_system.dart';
 import 'package:aion/core/localization/context_localizations_x.dart';
-import 'package:aion/core/theme/theme_scope.dart';
 
 /// Aion's loading-indicator primitive — a sweeping arc drawn via
 /// [CustomPaint], replacing `CircularProgressIndicator`.

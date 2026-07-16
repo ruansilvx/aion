@@ -3,10 +3,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
-import 'package:aion/core/theme/aion_colors.dart';
-import 'package:aion/core/theme/aion_radius.dart';
-import 'package:aion/core/theme/aion_text.dart';
-import 'package:aion/core/theme/theme_scope.dart';
+import 'package:aion/core/design_system.dart';
 
 /// Visual style of an [AppButton].
 enum AppButtonVariant {

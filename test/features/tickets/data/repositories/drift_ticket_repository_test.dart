@@ -4,18 +4,11 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:aion/core/database/app_database.dart';
+import 'package:aion/core/core.dart';
 import 'package:aion/features/tickets/data/repositories/drift_comment_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_link_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_repository.dart';
-import 'package:aion/features/tickets/domain/entities/ticket.dart';
-import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
-import 'package:aion/features/tickets/domain/enums/comment_author_type.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
-import 'package:aion/features/tickets/domain/exceptions/ticket_has_children_exception.dart';
+import 'package:aion/features/tickets/tickets.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

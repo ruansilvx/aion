@@ -3,7 +3,7 @@
 import 'package:drift/drift.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:aion/core/database/app_database.dart';
+import 'package:aion/core/core.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';

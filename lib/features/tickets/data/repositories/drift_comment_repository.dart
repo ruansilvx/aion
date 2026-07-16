@@ -3,7 +3,7 @@
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
-import 'package:aion/core/database/app_database.dart';
+import 'package:aion/core/core.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
 import 'package:aion/features/tickets/domain/enums/comment_author_type.dart';
 import 'package:aion/features/tickets/domain/repositories/comment_repository.dart';

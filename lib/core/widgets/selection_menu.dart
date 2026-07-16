@@ -2,10 +2,7 @@
 
 import 'package:flutter/widgets.dart';
 
-import 'package:aion/core/theme/aion_radius.dart';
-import 'package:aion/core/theme/aion_shadows.dart';
-import 'package:aion/core/theme/aion_text.dart';
-import 'package:aion/core/theme/theme_scope.dart';
+import 'package:aion/core/design_system.dart';
 
 /// A generic overlay-picker primitive: [trigger] stays visible at all
 /// times, and tapping it (or activating it via keyboard) opens an

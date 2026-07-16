@@ -1,9 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:aion/features/tickets/domain/entities/ticket.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
+import 'package:aion/features/tickets/tickets.dart';
 
 void main() {
   final baseTicket = Ticket(

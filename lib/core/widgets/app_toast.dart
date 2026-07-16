@@ -2,10 +2,7 @@
 
 import 'package:flutter/widgets.dart';
 
-import 'package:aion/core/theme/aion_radius.dart';
-import 'package:aion/core/theme/aion_shadows.dart';
-import 'package:aion/core/theme/aion_text.dart';
-import 'package:aion/core/theme/theme_scope.dart';
+import 'package:aion/core/design_system.dart';
 
 /// Aion's transient-message primitive — replaces `SnackBar`/
 /// `ScaffoldMessenger` with an [OverlayEntry] inserted directly into the
