@@ -17,10 +17,32 @@ class _DismissConfirmDialogIntent extends Intent {
   const _DismissConfirmDialogIntent();
 }
 
+/// Which of [showAppConfirmDialog]'s two visual treatments to use.
+///
+/// [reversible] signals a deliberate but safe, undoable action (e.g. moving
+/// a ticket to Trash): a rounded-square `primary`-tinted icon disc, a trash
+/// glyph, and a `primary` confirm button. [destructive] signals a genuinely
+/// irreversible action (e.g. permanently deleting from Trash): a circular
+/// `danger`-tinted icon disc, a warning glyph, and a `danger` confirm
+/// button. The two must never look alike, since the whole point of
+/// [reversible] is to de-escalate an action that isn't actually
+/// catastrophic.
+enum ConfirmDialogTone {
+  /// Safe/undoable — primary-colored rounded-square icon disc, trash icon,
+  /// primary confirm button.
+  reversible,
+
+  /// Irreversible — danger-colored circular icon disc, warning icon,
+  /// destructive confirm button.
+  destructive,
+}
+
 /// Shows a centered, non-Material confirmation dialog: a full-screen scrim
 /// (dismiss on tap) behind a card with [title], [message], and a
 /// Cancel/[confirmLabel] action row. Resolves `true` if the user confirms,
 /// `false` if they cancel, tap the scrim, or press Escape.
+///
+/// [tone] selects the dialog's severity styling — see [ConfirmDialogTone].
 ///
 /// Built the same way as [AppToast] — an [OverlayEntry] inserted into the
 /// nearest [Overlay] — so it needs no `Scaffold`/`Dialog` ancestor and
@@ -31,8 +53,8 @@ Future<bool> showAppConfirmDialog(
   required String title,
   required String message,
   required String confirmLabel,
+  required ConfirmDialogTone tone,
   String? cancelLabel,
-  bool isDestructive = false,
 }) {
   final t = ThemeScope.of(context);
   final c = t.colors;
@@ -55,7 +77,7 @@ Future<bool> showAppConfirmDialog(
         message: message,
         confirmLabel: confirmLabel,
         cancelLabel: resolvedCancelLabel,
-        isDestructive: isDestructive,
+        tone: tone,
         onResolve: resolve,
       );
     },
@@ -92,7 +114,7 @@ class _AppConfirmDialogOverlay extends StatelessWidget {
     required this.message,
     required this.confirmLabel,
     required this.cancelLabel,
-    required this.isDestructive,
+    required this.tone,
     required this.onResolve,
   });
 
@@ -102,7 +124,7 @@ class _AppConfirmDialogOverlay extends StatelessWidget {
   final String message;
   final String confirmLabel;
   final String cancelLabel;
-  final bool isDestructive;
+  final ConfirmDialogTone tone;
   final ValueChanged<bool> onResolve;
 
   @override
@@ -192,19 +214,21 @@ class _AppConfirmDialogOverlay extends StatelessWidget {
   }
 
   Widget _leadingIcon() {
-    final iconColor = isDestructive ? colors.danger : colors.primary;
+    final isReversible = tone == ConfirmDialogTone.reversible;
+    final iconColor = isReversible ? colors.primary : colors.danger;
     final fillAlpha = isDark ? fillAlphaObsidian : fillAlphaArctic;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: iconColor.withValues(alpha: fillAlpha),
-        shape: BoxShape.circle,
+        shape: isReversible ? BoxShape.rectangle : BoxShape.circle,
+        borderRadius: isReversible ? BorderRadius.all(AionRadius.lg) : null,
       ),
       child: SizedBox(
         width: 44,
         height: 44,
         child: Center(
           child: PhosphorIcon(
-            isDestructive
+            isReversible
                 ? PhosphorIcons.trashLight
                 : PhosphorIcons.warningCircleLight,
             size: 20,
@@ -227,7 +251,7 @@ class _AppConfirmDialogOverlay extends StatelessWidget {
   Widget _confirmButton({bool isFullWidth = false}) {
     return AppButton(
       label: confirmLabel,
-      variant: isDestructive
+      variant: tone == ConfirmDialogTone.destructive
           ? AppButtonVariant.destructive
           : AppButtonVariant.primary,
       isFullWidth: isFullWidth,
@@ -247,8 +271,9 @@ class _AppConfirmDialogOverlay extends StatelessWidget {
   }
 
   Widget _narrowActions() {
-    // Destructive action gets thumb-priority (top) position on narrow
-    // viewports, matching iOS/Android action-sheet convention.
+    // The confirm action gets thumb-priority (top) position on narrow
+    // viewports, matching iOS/Android action-sheet convention, regardless
+    // of tone.
     return Column(
       children: [
         SizedBox(

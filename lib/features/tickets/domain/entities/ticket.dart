@@ -56,6 +56,11 @@ class Ticket extends Equatable {
   /// When the ticket was last modified.
   final DateTime updatedAt;
 
+  /// When this ticket was moved to trash (soft-deleted). `null` means the
+  /// ticket is live. Set by [TicketRepository.trashTicket]/`trashTickets`,
+  /// cleared by [TicketRepository.restoreTicket].
+  final DateTime? deletedAt;
+
   /// Creates a [Ticket]. [priority] defaults to [TicketPriority.none].
   const Ticket({
     required this.id,
@@ -71,6 +76,7 @@ class Ticket extends Equatable {
     this.timeSpent,
     required this.createdAt,
     required this.updatedAt,
+    this.deletedAt,
   });
 
   @override
@@ -88,6 +94,7 @@ class Ticket extends Equatable {
     timeSpent,
     createdAt,
     updatedAt,
+    deletedAt,
   ];
 
   /// Returns a copy of this ticket with the given fields replaced.

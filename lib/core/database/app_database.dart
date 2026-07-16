@@ -28,11 +28,13 @@ QueryExecutor _openConnection() {
   );
 }
 
-/// Aion's local SQLite database. Schema version 2, seeding
+/// Aion's local SQLite database. Schema version 3, seeding
 /// [TicketIdSequenceTable] with a single `(id: 1, seq: 0)` row on creation.
 /// Version 2 adds ticket search/filter infrastructure (see
 /// [_createSearchInfrastructure]): indexes on `status`/`type`/`priority`
-/// and an external-content FTS5 index over `title`/`description`.
+/// and an external-content FTS5 index over `title`/`description`. Version 3
+/// adds [TicketsTable.deletedAt] for the trash/soft-delete model — see
+/// `TicketRepository.trashTicket`/`restoreTicket`.
 @DriftDatabase(
   tables: [
     TicketsTable,
@@ -49,7 +51,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -63,6 +65,9 @@ class AppDatabase extends _$AppDatabase {
     onUpgrade: (Migrator m, int from, int to) async {
       if (from < 2) {
         await _createSearchInfrastructure(m);
+      }
+      if (from < 3) {
+        await m.addColumn(ticketsTable, ticketsTable.deletedAt);
       }
     },
   );

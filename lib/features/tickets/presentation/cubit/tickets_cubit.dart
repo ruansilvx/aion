@@ -7,7 +7,6 @@ import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
-import 'package:aion/features/tickets/domain/exceptions/ticket_has_children_exception.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 
@@ -24,7 +23,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [TicketRepository.searchTickets]. Called with no arguments, this is
   /// equivalent to fetching every ticket (most recent first). Emits
   /// [TicketsLoading] first only when nothing is on screen yet
-  /// ([TicketsInitial]/[TicketsError]/[TicketDeleted]) — once a ticket
+  /// ([TicketsInitial]/[TicketsError]/[TicketTrashed]) — once a ticket
   /// list is already showing, the previous list stays visible until the
   /// new results arrive, so re-searching/re-filtering doesn't flash a
   /// spinner over the existing list on every keystroke. Emits
@@ -277,55 +276,55 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
   }
 
-  /// Deletes the ticket with internal id [id] via
-  /// [TicketRepository.deleteTicket]. Emits [TicketDeleting] immediately.
-  ///
-  /// Recovery on both success and the "blocked by children" failure
-  /// branches on the state active *before* this call started
-  /// ([previousState]): if it was [TicketDetailLoaded] (the caller is
-  /// `TicketDetailScreen`), behavior is unchanged from before this
-  /// context-aware branching existed — [TicketDeleted] on success, or a
-  /// re-emitted [TicketDetailLoaded] with the unchanged ticket after the
-  /// classified error. For any other (list/board-shaped) previous state,
-  /// both branches instead re-fetch and emit [TicketsLoaded] with the
-  /// refreshed list, so `TicketsListScreen`/`TicketBoardView` never fall
-  /// into a blank or stale state when a delete is triggered from a list
-  /// row or board card.
-  ///
-  /// On failure from [TicketHasChildrenException], emits
-  /// [TicketsError(reason: TicketsErrorReason.hasChildren)] (carrying the
-  /// blocking child count) — solely so a listener (e.g. `AppToast`) can
-  /// react — before the state-dependent recovery emission above; the
-  /// delete is blocked, not "confirmed but failed." Any other failure
-  /// emits a generic [TicketsError] — including "not found," which by
-  /// this point would only happen from a concurrent delete elsewhere, not
-  /// a normal user path.
-  Future<void> deleteTicket(String id) async {
+  /// Returns the total number of tickets that would move to trash if
+  /// every id in [ids] were trashed right now, via
+  /// [TicketRepository.previewTrashCount] — the exact same cascade
+  /// computation [trashTicket]/[trashTickets] themselves use (including
+  /// descendants that are already trashed, e.g. a child trashed
+  /// individually earlier whose still-live parent is being trashed now),
+  /// so the confirm dialog's preview always matches the actual outcome.
+  /// Query only, no state emitted. Used by both the single-ticket
+  /// (`TicketOverflowMenu`) and bulk (`TicketSelectionBar`) delete flows.
+  Future<int> previewTrashCount(List<String> ids) {
+    return _repository.previewTrashCount(ids);
+  }
+
+  /// Moves ticket [id] to trash via [TicketRepository.trashTicket].
+  /// Context-aware on the state active before the call: if it was
+  /// [TicketDetailLoaded] (the caller is `TicketDetailScreen`), emits
+  /// [TicketTrashed] on success; any other (list/board-shaped) previous
+  /// state re-fetches and emits [TicketsLoaded] instead, so
+  /// `TicketsListScreen`/`TicketBoardView` never fall into a blank state.
+  /// Trash never fails except on a genuine unexpected repository error,
+  /// which emits [TicketsError].
+  Future<void> trashTicket(String id) async {
     final previousState = state;
-    emit(const TicketDeleting());
+    emit(const TicketTrashing());
     try {
-      await _repository.deleteTicket(id);
+      await _repository.trashTicket(id);
       if (previousState is TicketDetailLoaded) {
-        emit(const TicketDeleted());
+        emit(const TicketTrashed());
       } else {
         emit(TicketsLoaded(await _repository.getAllTickets()));
       }
-    } on TicketHasChildrenException catch (e) {
-      emit(
-        TicketsError(
-          '',
-          reason: TicketsErrorReason.hasChildren,
-          childCount: e.childCount,
-        ),
-      );
-      if (previousState is TicketDetailLoaded) {
-        final ticket = await _repository.getTicketById(id);
-        if (ticket != null) {
-          emit(TicketDetailLoaded(ticket));
-        }
-      } else {
-        emit(TicketsLoaded(await _repository.getAllTickets()));
-      }
+    } catch (e) {
+      emit(TicketsError(e.toString()));
+    }
+  }
+
+  /// Moves every ticket in [ids] to trash via
+  /// [TicketRepository.trashTickets]. Always triggered from
+  /// `TicketsListScreen`'s selection mode (list or board rendering) — no
+  /// detail-screen caller to special-case, unlike [trashTicket]. Emits
+  /// [TicketsBatchTrashing] then [TicketsBatchTrashed] (refreshed list +
+  /// actual trashed count) on success, or [TicketsError] on an
+  /// unexpected failure.
+  Future<void> trashTickets(List<String> ids) async {
+    emit(const TicketsBatchTrashing());
+    try {
+      final trashedCount = await _repository.trashTickets(ids);
+      final tickets = await _repository.getAllTickets();
+      emit(TicketsBatchTrashed(tickets, trashedCount));
     } catch (e) {
       emit(TicketsError(e.toString()));
     }

@@ -9,7 +9,8 @@ part 'comment_dao.g.dart';
 
 /// Drift accessor for [TicketCommentsTable]. Append-only by construction —
 /// no UPDATE method is exposed, and the sole DELETE method exists only to
-/// cascade-delete a ticket's comments when the ticket itself is deleted.
+/// cascade-delete tickets' comments when the tickets themselves are
+/// permanently deleted.
 @DriftAccessor(tables: [TicketCommentsTable])
 class CommentDao extends DatabaseAccessor<AppDatabase> with _$CommentDaoMixin {
   /// Creates a [CommentDao] bound to [db].
@@ -28,12 +29,13 @@ class CommentDao extends DatabaseAccessor<AppDatabase> with _$CommentDaoMixin {
     return into(ticketCommentsTable).insert(entry);
   }
 
-  /// Deletes every comment row for [ticketId]. The one exception to this
-  /// DAO's append-only-by-construction rule (see class doc) — ticket
-  /// deletion is the sole caller.
-  Future<void> deleteCommentsForTicket(String ticketId) {
+  /// Deletes every comment row for any ticket in [ticketIds]. The one
+  /// exception to this DAO's append-only-by-construction rule (see class
+  /// doc) — permanent ticket deletion (a whole subtree's worth of ids at
+  /// once) is the sole caller.
+  Future<void> deleteCommentsForTickets(List<String> ticketIds) {
     return (delete(
       ticketCommentsTable,
-    )..where((t) => t.ticketId.equals(ticketId))).go();
+    )..where((t) => t.ticketId.isIn(ticketIds))).go();
   }
 }

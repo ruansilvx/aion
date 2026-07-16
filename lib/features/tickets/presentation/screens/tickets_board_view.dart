@@ -11,6 +11,7 @@ import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
+import 'package:aion/features/tickets/presentation/cubit/ticket_selection_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_list_screen.dart';
@@ -64,19 +65,10 @@ String ticketTypeLabel(BuildContext context, TicketType type) {
 
 /// Returns the localized display message for a classified [reason]. See
 /// [TicketsErrorReason].
-///
-/// [TicketsErrorReason.hasChildren] is handled here only for switch
-/// exhaustiveness — [TicketsCubit.deleteTicket] always follows that
-/// error with either a [TicketDetailLoaded] or [TicketsLoaded]
-/// re-emission (depending on the state active before the delete call),
-/// so in practice the screen never stays on this generic (non-count-aware)
-/// fallback text; the count-aware message is shown via `AppToast` instead,
-/// driven directly by [TicketsError.childCount].
 String ticketsErrorMessage(BuildContext context, TicketsErrorReason reason) {
   final l10n = context.l10n;
   return switch (reason) {
     TicketsErrorReason.notFound => l10n.ticketsErrorNotFound,
-    TicketsErrorReason.hasChildren => l10n.ticketDeleteBlockedByChildrenGeneric,
     TicketsErrorReason.invalidParent => l10n.ticketInvalidParentError,
   };
 }
@@ -237,6 +229,10 @@ class BoardColumn extends StatelessWidget {
 /// resolved by Flutter's gesture arena — verify this interactively via
 /// `flutter run` (see `tasks.md` T15); `flutter analyze`/`flutter test`
 /// cannot catch a gesture-arena regression here.
+///
+/// While `TicketsListScreen`'s selection mode ([TicketSelectionCubit]) is
+/// active, dragging is disabled outright — the card renders as a plain,
+/// non-draggable tap target that toggles selection instead of navigating.
 class TicketBoardCard extends StatelessWidget {
   /// Creates a [TicketBoardCard] rendering [ticket].
   const TicketBoardCard({super.key, required this.ticket});
@@ -246,6 +242,22 @@ class TicketBoardCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isSelectionActive = context.select(
+      (TicketSelectionCubit cubit) => cubit.state.isActive,
+    );
+    final isSelected = context.select(
+      (TicketSelectionCubit cubit) =>
+          cubit.state.selectedIds.contains(ticket.id),
+    );
+
+    void handleTap() {
+      if (isSelectionActive) {
+        context.read<TicketSelectionCubit>().toggle(ticket.id);
+      } else {
+        context.go('/tickets/${ticket.id}');
+      }
+    }
+
     final card = Semantics(
       label:
           '${ticket.ticketId} ${ticket.title}, status: ${ticketStatusLabel(context, ticket.status)}',
@@ -254,17 +266,29 @@ class TicketBoardCard extends StatelessWidget {
         actions: {
           ActivateIntent: CallbackAction<ActivateIntent>(
             onInvoke: (_) {
-              context.go('/tickets/${ticket.id}');
+              handleTap();
               return null;
             },
           ),
         },
         child: GestureDetector(
-          onTap: () => context.go('/tickets/${ticket.id}'),
-          child: _CardVisual(ticket: ticket, elevated: false),
+          onTap: handleTap,
+          child: _CardVisual(
+            ticket: ticket,
+            elevated: false,
+            isSelectionActive: isSelectionActive,
+            isSelected: isSelected,
+          ),
         ),
       ),
     );
+
+    // Dragging is disabled outright while selection mode is active — it
+    // shares mobile's long-press gesture with entering a drag, and the
+    // two must not compete.
+    if (isSelectionActive) {
+      return card;
+    }
 
     final feedback = SizedBox(
       width: _kColumnWidth - AionSpacing.sp16,
@@ -301,6 +325,8 @@ class _CardVisual extends StatelessWidget {
     required this.ticket,
     required this.elevated,
     this.interactive = true,
+    this.isSelectionActive = false,
+    this.isSelected = false,
   });
 
   /// The ticket to render.
@@ -315,6 +341,17 @@ class _CardVisual extends StatelessWidget {
   /// aren't meant to be interactive.
   final bool interactive;
 
+  /// Whether `TicketsListScreen`'s selection mode is active. When `true`,
+  /// a leading [AppCheckbox] replaces [TicketOverflowMenu]/
+  /// [MoveToStatusMenu] in the header row. Always `false` for the drag
+  /// feedback/placeholder renderings (never shown while selecting, since
+  /// [TicketBoardCard] disables dragging outright in that mode).
+  final bool isSelectionActive;
+
+  /// Whether [ticket] is currently selected — drives the selected-card
+  /// fill/border treatment.
+  final bool isSelected;
+
   @override
   Widget build(BuildContext context) {
     final t = ThemeScope.of(context);
@@ -322,9 +359,12 @@ class _CardVisual extends StatelessWidget {
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: c.surface,
+        color: isSelected ? c.primarySubtle : c.surface,
         borderRadius: BorderRadius.all(AionRadius.lg),
-        border: Border.all(color: c.border, width: 1),
+        border: Border.all(
+          color: isSelected ? c.primary : c.border,
+          width: isSelected ? 1.5 : 1,
+        ),
         boxShadow: elevated
             ? AionShadows.fab(c, t.isDark)
             : AionShadows.card(c, t.isDark),
@@ -336,6 +376,15 @@ class _CardVisual extends StatelessWidget {
           children: [
             Row(
               children: [
+                if (isSelectionActive) ...[
+                  AppCheckbox(
+                    value: isSelected,
+                    onChanged: (_) => context
+                        .read<TicketSelectionCubit>()
+                        .toggle(ticket.id),
+                  ),
+                  const SizedBox(width: AionSpacing.sp8),
+                ],
                 DecoratedBox(
                   decoration: BoxDecoration(
                     color: c.surfaceHover,
@@ -356,7 +405,7 @@ class _CardVisual extends StatelessWidget {
                   ),
                 ),
                 const Spacer(),
-                if (interactive) ...[
+                if (interactive && !isSelectionActive) ...[
                   TicketOverflowMenu(ticket: ticket, compact: true),
                   const SizedBox(width: AionSpacing.sp4),
                   MoveToStatusMenu(ticket: ticket),

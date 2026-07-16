@@ -76,14 +76,8 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
 
     return BlocListener<TicketsCubit, TicketsState>(
       listener: (context, state) {
-        if (state is TicketDeleted) {
+        if (state is TicketTrashed) {
           context.go('/tickets');
-        } else if (state is TicketsError &&
-            state.reason == TicketsErrorReason.hasChildren) {
-          AppToast.show(
-            context,
-            context.l10n.ticketDeleteBlockedByChildren(state.childCount ?? 0),
-          );
         } else if (state is TicketsError &&
             state.reason == TicketsErrorReason.invalidParent) {
           AppToast.show(context, context.l10n.ticketInvalidParentError);

@@ -14,10 +14,12 @@ import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_link_repository.dart';
+import 'package:aion/features/tickets/presentation/cubit/ticket_selection_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_overflow_menu.dart';
+import 'package:aion/features/tickets/presentation/widgets/ticket_selection_bar.dart';
 
 /// The `/tickets` route: eyebrow + title header, a functioning search
 /// field + status/type/priority filter row, the ticket list body driven
@@ -131,6 +133,36 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
     );
   }
 
+  /// Extracts the currently loaded ticket list from any list-shaped
+  /// [state], or an empty list otherwise. Shared by the header (Select
+  /// toggle visibility), the body switch, and the selection bar's
+  /// select-all wiring, so all three agree on "what's currently on
+  /// screen."
+  List<Ticket> _currentTickets(TicketsState state) => switch (state) {
+    TicketsLoaded(:final tickets) => tickets,
+    TicketCreating(:final tickets) => tickets,
+    TicketCreated(:final tickets) => tickets,
+    TicketStatusUpdating(:final tickets) => tickets,
+    TicketStatusUpdated(:final tickets) => tickets,
+    TicketsBatchTrashed(:final tickets) => tickets,
+    _ => const <Ticket>[],
+  };
+
+  /// Narrows [tickets] to whatever [_viewMode] actually renders as
+  /// selectable rows/cards — the board view only shows task/story types,
+  /// so "select all" while on the board must not silently include ids
+  /// for tickets that have no checkbox on screen.
+  List<Ticket> _visibleTickets(List<Ticket> tickets) {
+    if (_viewMode == _TicketViewMode.board) {
+      return tickets
+          .where(
+            (t) => t.type == TicketType.task || t.type == TicketType.story,
+          )
+          .toList();
+    }
+    return tickets;
+  }
+
   /// Renders the loaded [tickets] as either the flat list or the board,
   /// depending on [_viewMode]. An empty [tickets] list shows "No tickets
   /// match your search" when [_hasActiveFilter], otherwise the generic
@@ -211,6 +243,29 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
     );
   }
 
+  /// Previews the cascade (per [TicketsCubit.previewTrashCount]), confirms
+  /// via [showAppConfirmDialog], and — if confirmed — trashes every id in
+  /// [selectedIds] via [TicketsCubit.trashTickets]. Shared onDelete
+  /// handler for [TicketSelectionBar].
+  Future<void> _confirmAndTrashSelection(
+    BuildContext context,
+    Set<String> selectedIds,
+  ) async {
+    final ids = selectedIds.toList();
+    final total = await context.read<TicketsCubit>().previewTrashCount(ids);
+    if (!context.mounted) return;
+    final confirmed = await showAppConfirmDialog(
+      context,
+      title: context.l10n.ticketBulkTrashConfirmTitle(ids.length),
+      message: context.l10n.ticketTrashConfirmMessage(total),
+      confirmLabel: context.l10n.ticketSelectionDeleteAction,
+      tone: ConfirmDialogTone.reversible,
+    );
+    if (confirmed && context.mounted) {
+      context.read<TicketsCubit>().trashTickets(ids);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = ThemeScope.of(context);
@@ -218,170 +273,204 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
 
     return BlocListener<TicketsCubit, TicketsState>(
       listener: (context, state) {
-        if (state is TicketsError &&
-            state.reason == TicketsErrorReason.hasChildren) {
+        if (state is TicketsBatchTrashed) {
           AppToast.show(
             context,
-            context.l10n.ticketDeleteBlockedByChildren(state.childCount ?? 0),
+            context.l10n.ticketBulkTrashSummaryToast(state.trashedCount),
           );
+          context.read<TicketSelectionCubit>().clear();
         }
       },
-      child: ColoredBox(
-        color: c.background,
-        child: Stack(
-          children: [
-            Column(
+      child: BlocBuilder<TicketsCubit, TicketsState>(
+        builder: (context, state) {
+          final tickets = _currentTickets(state);
+          final visibleTickets = _visibleTickets(tickets);
+          final selection = context.watch<TicketSelectionCubit>().state;
+
+          return ColoredBox(
+            color: c.background,
+            child: Stack(
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        context.l10n.ticketsListEyebrow,
-                        style: AionText.caption.copyWith(color: c.textMuted),
-                      ),
-                      const SizedBox(height: AionSpacing.sp4),
-                      Row(
+                Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: Text(
-                              context.l10n.ticketsListTitle,
-                              style: AionText.h1.copyWith(color: c.textPrimary),
+                          Text(
+                            context.l10n.ticketsListEyebrow,
+                            style: AionText.caption.copyWith(
+                              color: c.textMuted,
                             ),
                           ),
-                          _ViewModeToggle(
-                            mode: _viewMode,
-                            onChanged: (mode) =>
-                                setState(() => _viewMode = mode),
-                          ),
-                          const SizedBox(width: AionSpacing.sp12),
-                          DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: c.surfaceHover,
-                              border: Border.all(color: c.border, width: 1),
-                              shape: BoxShape.circle,
-                            ),
-                            child: SizedBox(
-                              width: 38,
-                              height: 38,
-                              child: Center(
+                          const SizedBox(height: AionSpacing.sp4),
+                          Row(
+                            children: [
+                              Expanded(
                                 child: Text(
-                                  'U',
-                                  style: AionText.key.copyWith(
-                                    color: c.textSecondary,
+                                  context.l10n.ticketsListTitle,
+                                  style: AionText.h1.copyWith(
+                                    color: c.textPrimary,
                                   ),
                                 ),
                               ),
-                            ),
+                              _ViewModeToggle(
+                                mode: _viewMode,
+                                onChanged: (mode) =>
+                                    setState(() => _viewMode = mode),
+                              ),
+                              if (tickets.isNotEmpty) ...[
+                                const SizedBox(width: AionSpacing.sp8),
+                                const _SelectModeToggle(),
+                              ],
+                              const SizedBox(width: AionSpacing.sp8),
+                              const _TrashEntryButton(),
+                              const SizedBox(width: AionSpacing.sp12),
+                              DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: c.surfaceHover,
+                                  border: Border.all(
+                                    color: c.border,
+                                    width: 1,
+                                  ),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: SizedBox(
+                                  width: 38,
+                                  height: 38,
+                                  child: Center(
+                                    child: Text(
+                                      'U',
+                                      style: AionText.key.copyWith(
+                                        color: c.textSecondary,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
+                          const SizedBox(height: AionSpacing.sp12),
                         ],
                       ),
-                      const SizedBox(height: AionSpacing.sp12),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Column(
-                    children: [
-                      AnimatedBuilder(
-                        animation: Listenable.merge([
-                          _searchController,
-                          _searchFocusNode,
-                        ]),
-                        builder: (context, _) {
-                          return AppTextField(
-                            controller: _searchController,
-                            focusNode: _searchFocusNode,
-                            hintText: context.l10n.ticketsListSearchHint,
-                            prefixIcon: PhosphorIcon(
-                              PhosphorIcons.magnifyingGlassLight,
-                              size: 18,
-                              color: _searchFocusNode.hasFocus
-                                  ? c.primary
-                                  : (_searchController.text.trim().isNotEmpty
-                                        ? c.textSecondary
-                                        : c.textMuted),
-                            ),
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Column(
                         children: [
-                          Expanded(
-                            child: AppDropdown<TicketStatus?>(
-                              value: _statusFilter,
-                              items: const [null, ...TicketStatus.values],
-                              isActive: _statusFilter != null,
-                              semanticsLabel:
-                                  context.l10n.ticketsListFilterStatusLabel,
-                              itemLabel: (s) => s == null
-                                  ? context.l10n.ticketsListFilterAllStatuses
-                                  : ticketStatusLabel(context, s),
-                              onChanged: (value) {
-                                setState(() => _statusFilter = value);
-                                _runSearch();
-                              },
-                            ),
+                          AnimatedBuilder(
+                            animation: Listenable.merge([
+                              _searchController,
+                              _searchFocusNode,
+                            ]),
+                            builder: (context, _) {
+                              return AppTextField(
+                                controller: _searchController,
+                                focusNode: _searchFocusNode,
+                                hintText: context.l10n.ticketsListSearchHint,
+                                prefixIcon: PhosphorIcon(
+                                  PhosphorIcons.magnifyingGlassLight,
+                                  size: 18,
+                                  color: _searchFocusNode.hasFocus
+                                      ? c.primary
+                                      : (_searchController.text
+                                                .trim()
+                                                .isNotEmpty
+                                            ? c.textSecondary
+                                            : c.textMuted),
+                                ),
+                              );
+                            },
                           ),
-                          const SizedBox(width: AionSpacing.sp8),
-                          Expanded(
-                            child: AppDropdown<TicketType?>(
-                              value: _typeFilter,
-                              items: const [null, ...TicketType.values],
-                              isActive: _typeFilter != null,
-                              semanticsLabel:
-                                  context.l10n.ticketsListFilterTypeLabel,
-                              itemLabel: (t) => t == null
-                                  ? context.l10n.ticketsListFilterAllTypes
-                                  : ticketTypeLabel(context, t),
-                              onChanged: (value) {
-                                setState(() => _typeFilter = value);
-                                _runSearch();
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: AionSpacing.sp8),
-                          Expanded(
-                            child: AppDropdown<TicketPriority?>(
-                              value: _priorityFilter,
-                              items: const [null, ...TicketPriority.values],
-                              isActive: _priorityFilter != null,
-                              semanticsLabel:
-                                  context.l10n.ticketsListFilterPriorityLabel,
-                              itemLabel: (p) => p == null
-                                  ? context.l10n.ticketsListFilterAllPriorities
-                                  : ticketPriorityLabel(context, p),
-                              onChanged: (value) {
-                                setState(() => _priorityFilter = value);
-                                _runSearch();
-                              },
-                            ),
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: AppDropdown<TicketStatus?>(
+                                  value: _statusFilter,
+                                  items: const [
+                                    null,
+                                    ...TicketStatus.values,
+                                  ],
+                                  isActive: _statusFilter != null,
+                                  semanticsLabel: context
+                                      .l10n
+                                      .ticketsListFilterStatusLabel,
+                                  itemLabel: (s) => s == null
+                                      ? context
+                                            .l10n
+                                            .ticketsListFilterAllStatuses
+                                      : ticketStatusLabel(context, s),
+                                  onChanged: (value) {
+                                    setState(() => _statusFilter = value);
+                                    _runSearch();
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: AionSpacing.sp8),
+                              Expanded(
+                                child: AppDropdown<TicketType?>(
+                                  value: _typeFilter,
+                                  items: const [null, ...TicketType.values],
+                                  isActive: _typeFilter != null,
+                                  semanticsLabel:
+                                      context.l10n.ticketsListFilterTypeLabel,
+                                  itemLabel: (t) => t == null
+                                      ? context.l10n.ticketsListFilterAllTypes
+                                      : ticketTypeLabel(context, t),
+                                  onChanged: (value) {
+                                    setState(() => _typeFilter = value);
+                                    _runSearch();
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: AionSpacing.sp8),
+                              Expanded(
+                                child: AppDropdown<TicketPriority?>(
+                                  value: _priorityFilter,
+                                  items: const [
+                                    null,
+                                    ...TicketPriority.values,
+                                  ],
+                                  isActive: _priorityFilter != null,
+                                  semanticsLabel: context
+                                      .l10n
+                                      .ticketsListFilterPriorityLabel,
+                                  itemLabel: (p) => p == null
+                                      ? context
+                                            .l10n
+                                            .ticketsListFilterAllPriorities
+                                      : ticketPriorityLabel(context, p),
+                                  onChanged: (value) {
+                                    setState(() => _priorityFilter = value);
+                                    _runSearch();
+                                  },
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: AionSpacing.sp4),
-                Expanded(
-                  child: ColoredBox(
-                    color: c.surface,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        border: Border(
-                          top: BorderSide(color: c.border, width: 1),
-                        ),
-                      ),
-                      child: BlocBuilder<TicketsCubit, TicketsState>(
-                        builder: (context, state) {
-                          return switch (state) {
+                    ),
+                    const SizedBox(height: AionSpacing.sp4),
+                    Expanded(
+                      child: ColoredBox(
+                        color: c.surface,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            border: Border(
+                              top: BorderSide(color: c.border, width: 1),
+                            ),
+                          ),
+                          child: switch (state) {
                             TicketsLoading() => const Center(
                               child: AppSpinner(),
                             ),
-                            TicketDeleting() => const Center(
+                            TicketTrashing() => const Center(
+                              child: AppSpinner(),
+                            ),
+                            TicketsBatchTrashing() => const Center(
                               child: AppSpinner(),
                             ),
                             TicketsError(:final message, :final reason) =>
@@ -391,7 +480,10 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                                   children: [
                                     Text(
                                       reason != null
-                                          ? ticketsErrorMessage(context, reason)
+                                          ? ticketsErrorMessage(
+                                              context,
+                                              reason,
+                                            )
                                           : message,
                                       style: AionText.body.copyWith(
                                         color: c.textSecondary,
@@ -405,17 +497,19 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                                   ],
                                 ),
                               ),
-                            TicketsLoaded(:final tickets) ||
-                            TicketCreating(:final tickets) ||
-                            TicketCreated(:final tickets) ||
-                            TicketStatusUpdating(:final tickets) ||
-                            TicketStatusUpdated(
-                              :final tickets,
-                            ) =>
+                            TicketsLoaded() ||
+                            TicketCreating() ||
+                            TicketCreated() ||
+                            TicketStatusUpdating() ||
+                            TicketStatusUpdated() ||
+                            TicketsBatchTrashed() =>
                               AnimatedSwitcher(
                                 duration: const Duration(milliseconds: 120),
                                 transitionBuilder: (child, anim) =>
-                                    FadeTransition(opacity: anim, child: child),
+                                    FadeTransition(
+                                      opacity: anim,
+                                      child: child,
+                                    ),
                                 child: KeyedSubtree(
                                   key: ValueKey(
                                     tickets.map((t) => t.id).join(','),
@@ -424,21 +518,47 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                                 ),
                               ),
                             _ => const SizedBox.shrink(),
-                          };
-                        },
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (!selection.isActive)
+                  Positioned(
+                    right: 18,
+                    bottom: 24,
+                    child: AppFab(onTap: () => context.go('/tickets/new')),
+                  )
+                else
+                  Positioned(
+                    left: 12,
+                    right: 12,
+                    bottom: 16,
+                    child: TicketSelectionBar(
+                      selectedCount: selection.selectedIds.length,
+                      allSelected:
+                          visibleTickets.isNotEmpty &&
+                          visibleTickets.every(
+                            (t) => selection.selectedIds.contains(t.id),
+                          ),
+                      onCancel: () =>
+                          context.read<TicketSelectionCubit>().clear(),
+                      onSelectAll: () => context
+                          .read<TicketSelectionCubit>()
+                          .selectAll(
+                            visibleTickets.map((t) => t.id).toList(),
+                          ),
+                      onDelete: () => _confirmAndTrashSelection(
+                        context,
+                        selection.selectedIds,
                       ),
                     ),
                   ),
-                ),
               ],
             ),
-            Positioned(
-              right: 18,
-              bottom: 24,
-              child: AppFab(onTap: () => context.go('/tickets/new')),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -584,10 +704,195 @@ class _ViewModeIcon extends StatelessWidget {
   }
 }
 
+/// Header icon button toggling [TicketSelectionCubit]'s selection mode on.
+/// Not the exit path once active — [TicketSelectionBar]'s Cancel control
+/// handles that — so taps while already active are inert; the button
+/// simply renders in its active (`primarySubtle`-tinted) look.
+class _SelectModeToggle extends StatefulWidget {
+  const _SelectModeToggle();
+
+  @override
+  State<_SelectModeToggle> createState() => _SelectModeToggleState();
+}
+
+class _SelectModeToggleState extends State<_SelectModeToggle> {
+  bool _isHovered = false;
+  bool _isFocused = false;
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    final isActive = context.watch<TicketSelectionCubit>().state.isActive;
+
+    void enter() {
+      if (!isActive) context.read<TicketSelectionCubit>().enter();
+    }
+
+    final fill = _isPressed
+        ? c.border
+        : isActive
+        ? c.primarySubtle
+        : (_isHovered ? c.surfaceHover : const Color(0x00000000));
+    final iconColor = isActive
+        ? c.primary
+        : (_isHovered ? c.textPrimary : c.textSecondary);
+    final boxShadow = _isFocused
+        ? [
+            BoxShadow(
+              color: c.primary.withValues(alpha: t.isDark ? 0.30 : 0.16),
+              spreadRadius: 3,
+            ),
+          ]
+        : const <BoxShadow>[];
+
+    return Semantics(
+      button: true,
+      label: context.l10n.ticketSelectionToggleLabel,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: FocusableActionDetector(
+          actions: {
+            ActivateIntent: CallbackAction<ActivateIntent>(
+              onInvoke: (_) {
+                enter();
+                return null;
+              },
+            ),
+          },
+          onShowFocusHighlight: (value) =>
+              setState(() => _isFocused = value),
+          child: GestureDetector(
+            onTap: enter,
+            onTapDown: (_) => setState(() => _isPressed = true),
+            onTapUp: (_) => setState(() => _isPressed = false),
+            onTapCancel: () => setState(() => _isPressed = false),
+            child: AnimatedScale(
+              scale: _isPressed ? 0.96 : 1.0,
+              duration: const Duration(milliseconds: 80),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 100),
+                decoration: BoxDecoration(
+                  color: fill,
+                  borderRadius: BorderRadius.all(AionRadius.iconBtn),
+                  boxShadow: boxShadow,
+                ),
+                child: SizedBox(
+                  width: 37,
+                  height: 37,
+                  child: Center(
+                    child: PhosphorIcon(
+                      PhosphorIcons.checkSquareLight,
+                      size: 20,
+                      color: iconColor,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Header icon button navigating to the Trash screen (`/tickets/trash`).
+/// Neutral, not danger-colored — this is navigation, not a destructive
+/// action.
+class _TrashEntryButton extends StatefulWidget {
+  const _TrashEntryButton();
+
+  @override
+  State<_TrashEntryButton> createState() => _TrashEntryButtonState();
+}
+
+class _TrashEntryButtonState extends State<_TrashEntryButton> {
+  bool _isHovered = false;
+  bool _isFocused = false;
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+
+    final fill = (_isPressed || _isHovered)
+        ? c.surfaceHover
+        : const Color(0x00000000);
+    final iconColor = _isHovered ? c.textPrimary : c.textSecondary;
+    final boxShadow = _isFocused
+        ? [
+            BoxShadow(
+              color: c.primary.withValues(alpha: t.isDark ? 0.30 : 0.16),
+              spreadRadius: 3,
+            ),
+          ]
+        : const <BoxShadow>[];
+
+    return Semantics(
+      button: true,
+      label: context.l10n.ticketTrashEntryLabel,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: FocusableActionDetector(
+          actions: {
+            ActivateIntent: CallbackAction<ActivateIntent>(
+              onInvoke: (_) {
+                context.go('/tickets/trash');
+                return null;
+              },
+            ),
+          },
+          onShowFocusHighlight: (value) =>
+              setState(() => _isFocused = value),
+          child: GestureDetector(
+            onTap: () => context.go('/tickets/trash'),
+            onTapDown: (_) => setState(() => _isPressed = true),
+            onTapUp: (_) => setState(() => _isPressed = false),
+            onTapCancel: () => setState(() => _isPressed = false),
+            child: AnimatedScale(
+              scale: _isPressed ? 0.96 : 1.0,
+              duration: const Duration(milliseconds: 80),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 100),
+                decoration: BoxDecoration(
+                  color: fill,
+                  borderRadius: BorderRadius.all(AionRadius.iconBtn),
+                  boxShadow: boxShadow,
+                ),
+                child: SizedBox(
+                  width: 37,
+                  height: 37,
+                  child: Center(
+                    child: PhosphorIcon(
+                      PhosphorIcons.trashLight,
+                      size: 20,
+                      color: iconColor,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// A single row in [TicketsListScreen]'s list: ID badge, title, priority
-/// badge, [TicketOverflowMenu] trigger, type chip, and status indicator.
-/// Navigates to the ticket's detail screen when tapped or activated via
-/// keyboard.
+/// badge, [TicketOverflowMenu] trigger, type chip, and status indicator —
+/// or, while [TicketSelectionCubit]'s selection mode is active, a leading
+/// [AppCheckbox] in place of the overflow trigger, with tapping the row
+/// toggling selection instead of navigating. Navigates to the ticket's
+/// detail screen when tapped or activated via keyboard, when selection
+/// mode is inactive.
 class TicketListTile extends StatelessWidget {
   /// Creates a [TicketListTile] rendering [ticket].
   const TicketListTile({super.key, required this.ticket});
@@ -599,6 +904,21 @@ class TicketListTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = ThemeScope.of(context);
     final c = t.colors;
+    final isSelectionActive = context.select(
+      (TicketSelectionCubit cubit) => cubit.state.isActive,
+    );
+    final isSelected = context.select(
+      (TicketSelectionCubit cubit) =>
+          cubit.state.selectedIds.contains(ticket.id),
+    );
+
+    void handleTap() {
+      if (isSelectionActive) {
+        context.read<TicketSelectionCubit>().toggle(ticket.id);
+      } else {
+        context.go('/tickets/${ticket.id}');
+      }
+    }
 
     return Semantics(
       label: '${ticket.ticketId} ${ticket.title}',
@@ -607,22 +927,41 @@ class TicketListTile extends StatelessWidget {
         actions: {
           ActivateIntent: CallbackAction<ActivateIntent>(
             onInvoke: (_) {
-              context.go('/tickets/${ticket.id}');
+              handleTap();
               return null;
             },
           ),
         },
         child: GestureDetector(
-          onTap: () => context.go('/tickets/${ticket.id}'),
-          child: ColoredBox(
-            color: c.surface,
+          onTap: handleTap,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: isSelected ? c.primarySubtle : c.surface,
+              border: isSelected
+                  ? Border(left: BorderSide(color: c.primary, width: 3))
+                  : null,
+            ),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              padding: isSelectionActive
+                  ? const EdgeInsets.fromLTRB(16, 12, 20, 12)
+                  : const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
+                      if (isSelectionActive) ...[
+                        AppCheckbox(
+                          value: isSelected,
+                          onChanged: (_) => context
+                              .read<TicketSelectionCubit>()
+                              .toggle(ticket.id),
+                        ),
+                        const SizedBox(width: AionSpacing.sp12),
+                      ],
                       DecoratedBox(
                         decoration: BoxDecoration(
                           color: c.surfaceHover,
@@ -657,8 +996,10 @@ class TicketListTile extends StatelessWidget {
                         const SizedBox(width: AionSpacing.sp12),
                         PriorityBadge(priority: ticket.priority),
                       ],
-                      const SizedBox(width: AionSpacing.sp8),
-                      TicketOverflowMenu(ticket: ticket, compact: true),
+                      if (!isSelectionActive) ...[
+                        const SizedBox(width: AionSpacing.sp8),
+                        TicketOverflowMenu(ticket: ticket, compact: true),
+                      ],
                     ],
                   ),
                   const SizedBox(height: AionSpacing.sp8),

@@ -8,7 +8,6 @@ import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
-import 'package:aion/features/tickets/domain/exceptions/ticket_has_children_exception.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
 
 /// Drift-backed implementation of [TicketRepository]. Maps between the
@@ -118,22 +117,98 @@ class DriftTicketRepository implements TicketRepository {
   }
 
   @override
-  Future<void> deleteTicket(String id) async {
+  Future<void> trashTicket(String id) async {
+    final existing = await _db.ticketDao.getTicketById(id);
+    if (existing == null) {
+      throw StateError('Ticket $id does not exist');
+    }
+    await trashTickets([id]);
+  }
+
+  @override
+  Future<int> trashTickets(List<String> ids) async {
+    final affected = await _resolveTrashCascade(ids);
+    if (affected.isEmpty) return 0;
+    await _db.ticketDao.softDeleteByIds(
+      affected.toList(),
+      DateTime.now().millisecondsSinceEpoch,
+    );
+    return affected.length;
+  }
+
+  @override
+  Future<int> previewTrashCount(List<String> ids) async {
+    return (await _resolveTrashCascade(ids)).length;
+  }
+
+  /// Resolves the full set of ticket ids that trashing [ids] would touch:
+  /// every id in [ids] that actually exists, plus each one's full
+  /// structural descendant subtree (via [TicketDao.getDescendantIds],
+  /// which is not filtered by trash status). Shared by [trashTickets]
+  /// (which applies it) and [previewTrashCount] (which only reports its
+  /// size), so the cascade preview shown before a trash action always
+  /// matches exactly what the action itself will touch — including
+  /// descendants that are already trashed.
+  Future<Set<String>> _resolveTrashCascade(List<String> ids) async {
+    final existingIds = <String>[];
+    for (final id in ids) {
+      if (await _db.ticketDao.getTicketById(id) != null) {
+        existingIds.add(id);
+      }
+    }
+
+    final affected = <String>{...existingIds};
+    for (final id in existingIds) {
+      affected.addAll(await _db.ticketDao.getDescendantIds(id));
+    }
+    return affected;
+  }
+
+  @override
+  Future<void> restoreTicket(String id) async {
     final existing = await _db.ticketDao.getTicketById(id);
     if (existing == null) {
       throw StateError('Ticket $id does not exist');
     }
 
-    final childCount = await _db.ticketDao.countChildTickets(id);
-    if (childCount > 0) {
-      throw TicketHasChildrenException(childCount);
+    final toRestore = <String>{id};
+    toRestore.addAll(await _db.ticketDao.getAncestorIds(id));
+    toRestore.addAll(await _db.ticketDao.getDescendantIds(id));
+    await _db.ticketDao.restoreByIds(toRestore.toList());
+  }
+
+  @override
+  Future<void> permanentlyDeleteTicket(String id) async {
+    final existing = await _db.ticketDao.getTicketById(id);
+    if (existing == null) {
+      throw StateError('Ticket $id does not exist');
     }
 
+    final ids = <String>{id, ...await _db.ticketDao.getDescendantIds(id)}
+        .toList();
     await _db.transaction(() async {
-      await _db.commentDao.deleteCommentsForTicket(id);
-      await _db.ticketLinkDao.deleteLinksForTicket(id);
-      await _db.ticketDao.deleteTicketRow(id);
+      await _db.commentDao.deleteCommentsForTickets(ids);
+      await _db.ticketLinkDao.deleteLinksForTickets(ids);
+      await _db.ticketDao.deleteTicketRows(ids);
     });
+  }
+
+  @override
+  Future<void> emptyTrash() async {
+    final trashed = await _db.ticketDao.getTrashedTickets();
+    if (trashed.isEmpty) return;
+    final ids = trashed.map((t) => t.id).toList();
+    await _db.transaction(() async {
+      await _db.commentDao.deleteCommentsForTickets(ids);
+      await _db.ticketLinkDao.deleteLinksForTickets(ids);
+      await _db.ticketDao.deleteTicketRows(ids);
+    });
+  }
+
+  @override
+  Future<List<Ticket>> getTrashedTickets() async {
+    final rows = await _db.ticketDao.getTrashedTickets();
+    return rows.map(_toEntity).toList();
   }
 
   /// Maps a generated [TicketData] row to the [Ticket] domain entity,
@@ -162,6 +237,9 @@ class DriftTicketRepository implements TicketRepository {
       timeSpent: row.timeSpent,
       createdAt: DateTime.fromMillisecondsSinceEpoch(row.createdAt),
       updatedAt: DateTime.fromMillisecondsSinceEpoch(row.updatedAt),
+      deletedAt: row.deletedAt == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(row.deletedAt!),
     );
   }
 }
