@@ -21,8 +21,10 @@ class AppDropdown<T> extends StatefulWidget {
     required this.onChanged,
     required this.itemLabel,
     this.labelText,
+    this.semanticsLabel,
     this.isRequired = false,
     this.focusNode,
+    this.isActive = false,
   });
 
   /// The currently selected value. Must be one of [items].
@@ -40,12 +42,30 @@ class AppDropdown<T> extends StatefulWidget {
   /// Optional label rendered above the field.
   final String? labelText;
 
+  /// Optional label used only for the accessibility announcement
+  /// (`Semantics.label`), without rendering a visible caption above the
+  /// field. Falls back to [labelText], then to no label, when unset. Use
+  /// this when the visible design intentionally omits a caption (e.g. a
+  /// compact filter row) but the control still needs to announce what it
+  /// filters to assistive technology.
+  final String? semanticsLabel;
+
   /// Whether to render a required-field marker next to [labelText].
   final bool isRequired;
 
   /// Optional focus node for keyboard/tab navigation. If omitted, an
   /// internal one is created and disposed automatically.
   final FocusNode? focusNode;
+
+  /// Whether [value] represents an active, non-default selection (as
+  /// opposed to a "cleared"/reset sentinel among [items]). When `true`,
+  /// the closed trigger renders with a tinted `primarySubtle` fill, a
+  /// `primary`-colored border and text, and a small leading dot — letting
+  /// a user see at a glance that this control is narrowing something,
+  /// without needing it open. Purely a caller-driven presentation flag;
+  /// this widget has no concept of which [items] value counts as
+  /// "default."
+  final bool isActive;
 
   @override
   State<AppDropdown<T>> createState() => _AppDropdownState<T>();
@@ -153,10 +173,14 @@ class _AppDropdownState<T> extends State<AppDropdown<T>> {
   Widget build(BuildContext context) {
     final t = ThemeScope.of(context);
     final c = t.colors;
+    final emphasized = _isOpen || widget.isActive;
+    final emphasisColor = emphasized ? c.primary : null;
 
     return Semantics(
       button: true,
-      label: '${widget.labelText ?? ''} ${widget.itemLabel(widget.value)}',
+      label:
+          '${widget.semanticsLabel ?? widget.labelText ?? ''} '
+          '${widget.itemLabel(widget.value)}',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -185,11 +209,11 @@ class _AppDropdownState<T> extends State<AppDropdown<T>> {
                 onTap: _toggleOverlay,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: c.surface,
+                    color: widget.isActive ? c.primarySubtle : c.surface,
                     borderRadius: BorderRadius.all(AionRadius.lg),
                     border: Border.all(
-                      color: _isOpen ? c.primary : c.border,
-                      width: _isOpen ? 1.5 : 1,
+                      color: emphasisColor ?? c.border,
+                      width: emphasized ? 1.5 : 1,
                     ),
                   ),
                   child: Padding(
@@ -199,18 +223,33 @@ class _AppDropdownState<T> extends State<AppDropdown<T>> {
                     ),
                     child: Row(
                       children: [
+                        if (widget.isActive) ...[
+                          DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: c.primary,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const SizedBox(width: 6, height: 6),
+                          ),
+                          const SizedBox(width: 6),
+                        ],
                         Expanded(
                           child: Text(
                             widget.itemLabel(widget.value),
                             style: AionText.bodySm.copyWith(
-                              color: c.textPrimary,
+                              color: emphasisColor ?? c.textPrimary,
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        const SizedBox(width: 6),
                         PhosphorIcon(
-                          PhosphorIcons.caretDownLight,
+                          _isOpen
+                              ? PhosphorIcons.caretUpLight
+                              : PhosphorIcons.caretDownLight,
                           size: 12,
-                          color: c.textMuted,
+                          color: emphasisColor ?? c.textMuted,
                         ),
                       ],
                     ),

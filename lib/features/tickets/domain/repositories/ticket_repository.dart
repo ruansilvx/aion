@@ -1,7 +1,9 @@
 // domain/repositories/ticket_repository.dart — TicketRepository interface (domain layer).
 
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
 /// Read/write access to [Ticket] persistence. Implemented by the data layer
 /// ([DriftTicketRepository]); UI and domain code depend only on this
@@ -43,4 +45,16 @@ abstract interface class TicketRepository {
   /// other ticket has `parentId == id`; the caller must reparent or delete
   /// those children first. Structural children are never cascade-deleted.
   Future<void> deleteTicket(String id);
+
+  /// Returns tickets matching every non-null filter (ANDed): [status],
+  /// [type], [priority] restrict to an exact match on that field; [query]
+  /// full-text-matches against title/description. All parameters
+  /// omitted/null is equivalent to [getAllTickets]. Ordered by relevance
+  /// when [query] is set, otherwise by creation date descending.
+  Future<List<Ticket>> searchTickets({
+    String? query,
+    TicketStatus? status,
+    TicketType? type,
+    TicketPriority? priority,
+  });
 }

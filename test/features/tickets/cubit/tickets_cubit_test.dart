@@ -36,14 +36,19 @@ void main() {
 
   group('TicketsCubit', () {
     blocTest<TicketsCubit, TicketsState>(
-      'loadTickets emits [TicketsLoading, TicketsLoaded] on success',
+      'searchTickets from TicketsInitial emits [TicketsLoading, TicketsLoaded] on success',
       setUp: () {
         when(
-          () => repository.getAllTickets(),
+          () => repository.searchTickets(
+            query: any(named: 'query'),
+            status: any(named: 'status'),
+            type: any(named: 'type'),
+            priority: any(named: 'priority'),
+          ),
         ).thenAnswer((_) async => [ticket]);
       },
       build: () => TicketsCubit(repository),
-      act: (cubit) => cubit.loadTickets(),
+      act: (cubit) => cubit.searchTickets(),
       expect: () => [
         const TicketsLoading(),
         TicketsLoaded([ticket]),
@@ -51,13 +56,41 @@ void main() {
     );
 
     blocTest<TicketsCubit, TicketsState>(
-      'loadTickets emits [TicketsLoading, TicketsError] on exception',
+      'searchTickets from TicketsInitial emits [TicketsLoading, TicketsError] on exception',
       setUp: () {
-        when(() => repository.getAllTickets()).thenThrow(Exception('boom'));
+        when(
+          () => repository.searchTickets(
+            query: any(named: 'query'),
+            status: any(named: 'status'),
+            type: any(named: 'type'),
+            priority: any(named: 'priority'),
+          ),
+        ).thenThrow(Exception('boom'));
       },
       build: () => TicketsCubit(repository),
-      act: (cubit) => cubit.loadTickets(),
+      act: (cubit) => cubit.searchTickets(),
       expect: () => [const TicketsLoading(), isA<TicketsError>()],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'searchTickets with a list already visible emits only [TicketsLoaded] '
+      '(no intervening TicketsLoading)',
+      setUp: () {
+        when(
+          () => repository.searchTickets(
+            query: any(named: 'query'),
+            status: any(named: 'status'),
+            type: any(named: 'type'),
+            priority: any(named: 'priority'),
+          ),
+        ).thenAnswer((_) async => [ticket]);
+      },
+      build: () => TicketsCubit(repository),
+      seed: () => const TicketsLoaded([]),
+      act: (cubit) => cubit.searchTickets(query: 'test'),
+      expect: () => [
+        TicketsLoaded([ticket]),
+      ],
     );
 
     blocTest<TicketsCubit, TicketsState>(

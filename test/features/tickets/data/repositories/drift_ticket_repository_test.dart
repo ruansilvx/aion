@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -54,6 +56,28 @@ void main() {
   tearDown(() async {
     await database.close();
   });
+
+  Ticket buildSearchable({
+    required String id,
+    required String title,
+    String? description,
+    TicketType type = TicketType.task,
+    TicketStatus status = TicketStatus.backlog,
+    TicketPriority priority = TicketPriority.none,
+  }) {
+    final now = DateTime(2026, 1, 1);
+    return Ticket(
+      id: id,
+      ticketId: '',
+      type: type,
+      title: title,
+      description: description,
+      status: status,
+      priority: priority,
+      createdAt: now,
+      updatedAt: now,
+    );
+  }
 
   test('createTicket then getAllTickets returns the created ticket', () async {
     await repository.createTicket(buildTicket());
@@ -393,5 +417,168 @@ void main() {
         throwsA(isA<StateError>()),
       );
     });
+  });
+
+  group('searchTickets', () {
+    test(
+      'query matches title/description; a title hit ranks ahead of a description-only hit',
+      () async {
+        await repository.createTicket(
+          buildSearchable(
+            id: 'desc-hit',
+            title: 'Unrelated title',
+            description: 'mentions authentication in passing',
+          ),
+        );
+        await repository.createTicket(
+          buildSearchable(id: 'title-hit', title: 'Fix authentication bug'),
+        );
+        await repository.createTicket(
+          buildSearchable(id: 'no-match', title: 'Completely different'),
+        );
+
+        final results = await repository.searchTickets(
+          query: 'authentication',
+        );
+
+        expect(results.map((t) => t.id), ['title-hit', 'desc-hit']);
+      },
+    );
+
+    test('status/type/priority filters return only exact matches', () async {
+      await repository.createTicket(
+        buildSearchable(
+          id: 'match',
+          title: 'A',
+          type: TicketType.story,
+          status: TicketStatus.inProgress,
+          priority: TicketPriority.high,
+        ),
+      );
+      await repository.createTicket(
+        buildSearchable(
+          id: 'wrong-type',
+          title: 'B',
+          type: TicketType.task,
+          status: TicketStatus.inProgress,
+          priority: TicketPriority.high,
+        ),
+      );
+
+      final results = await repository.searchTickets(
+        type: TicketType.story,
+        status: TicketStatus.inProgress,
+        priority: TicketPriority.high,
+      );
+
+      expect(results.map((t) => t.id), ['match']);
+    });
+
+    test('query and a structured filter combine (ANDed)', () async {
+      await repository.createTicket(
+        buildSearchable(
+          id: 'match',
+          title: 'Fix login bug',
+          type: TicketType.task,
+        ),
+      );
+      await repository.createTicket(
+        buildSearchable(
+          id: 'wrong-type',
+          title: 'Fix login bug',
+          type: TicketType.story,
+        ),
+      );
+      await repository.createTicket(
+        buildSearchable(id: 'wrong-query', title: 'Unrelated', type: TicketType.task),
+      );
+
+      final results = await repository.searchTickets(
+        query: 'login',
+        type: TicketType.task,
+      );
+
+      expect(results.map((t) => t.id), ['match']);
+    });
+
+    test(
+      'every parameter null/omitted returns everything, parity with getAllTickets',
+      () async {
+        await repository.createTicket(buildSearchable(id: '1', title: 'A'));
+        await repository.createTicket(buildSearchable(id: '2', title: 'B'));
+
+        final all = await repository.getAllTickets();
+        final searched = await repository.searchTickets();
+
+        expect(
+          searched.map((t) => t.id).toSet(),
+          all.map((t) => t.id).toSet(),
+        );
+      },
+    );
+
+    test('a query containing FTS5-special characters does not throw', () async {
+      await repository.createTicket(
+        buildSearchable(id: '1', title: 'Fix drift-web init bug'),
+      );
+
+      await expectLater(
+        () => repository.searchTickets(query: '-drift-web "quoted"'),
+        returnsNormally,
+      );
+    });
+  });
+
+  group('schema migration (v1 -> v2)', () {
+    test(
+      'onUpgrade backfills existing rows into the FTS5 search index',
+      () async {
+        // In-memory SQLite doesn't persist across separate connections, so
+        // this test needs a real file to genuinely close and reopen
+        // against — exactly the scenario onUpgrade exists for (an
+        // existing local database on disk).
+        final tempDir = Directory.systemTemp.createTempSync(
+          'aion_migration_test',
+        );
+        final dbFile = File('${tempDir.path}/test.sqlite');
+        addTearDown(() => tempDir.deleteSync(recursive: true));
+
+        // A fresh AppDatabase always runs onCreate at the *current*
+        // schemaVersion (2), which already includes the search
+        // infrastructure — so the v1 shape has to be built by hand:
+        // strip back down to just the bare tables, insert data, then
+        // stamp user_version back to 1.
+        final v1Db = AppDatabase(NativeDatabase(dbFile));
+        await v1Db.customStatement('DROP TABLE IF EXISTS tickets_fts;');
+        await v1Db.customStatement('DROP TRIGGER IF EXISTS tickets_fts_ai;');
+        await v1Db.customStatement('DROP TRIGGER IF EXISTS tickets_fts_ad;');
+        await v1Db.customStatement('DROP TRIGGER IF EXISTS tickets_fts_au;');
+        await v1Db.customStatement('DROP INDEX IF EXISTS idx_tickets_status;');
+        await v1Db.customStatement('DROP INDEX IF EXISTS idx_tickets_type;');
+        await v1Db.customStatement(
+          'DROP INDEX IF EXISTS idx_tickets_priority;',
+        );
+
+        final preMigrationRepo = DriftTicketRepository(v1Db);
+        await preMigrationRepo.createTicket(
+          buildSearchable(id: 'pre-existing', title: 'Fix authentication bug'),
+        );
+        await v1Db.customStatement('PRAGMA user_version = 1;');
+        await v1Db.close();
+
+        // Reopen against the same file at the current schemaVersion (2).
+        // Drift reads user_version=1, sees schemaVersion=2, and runs
+        // onUpgrade automatically.
+        final v2Db = AppDatabase(NativeDatabase(dbFile));
+        final upgradedRepo = DriftTicketRepository(v2Db);
+
+        final results = await upgradedRepo.searchTickets(
+          query: 'authentication',
+        );
+
+        expect(results.map((t) => t.id), ['pre-existing']);
+        await v2Db.close();
+      },
+    );
   });
 }

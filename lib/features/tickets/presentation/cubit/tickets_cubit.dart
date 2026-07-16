@@ -20,12 +20,39 @@ class TicketsCubit extends Cubit<TicketsState> {
   final TicketRepository _repository;
   static const _uuid = Uuid();
 
-  /// Fetches all tickets. Emits [TicketsLoading] then [TicketsLoaded] on
-  /// success, or [TicketsError] if the repository call throws.
-  Future<void> loadTickets() async {
-    emit(const TicketsLoading());
+  /// Fetches tickets matching every non-null filter (ANDed) — see
+  /// [TicketRepository.searchTickets]. Called with no arguments, this is
+  /// equivalent to fetching every ticket (most recent first). Emits
+  /// [TicketsLoading] first only when nothing is on screen yet
+  /// ([TicketsInitial]/[TicketsError]/[TicketDeleted]) — once a ticket
+  /// list is already showing, the previous list stays visible until the
+  /// new results arrive, so re-searching/re-filtering doesn't flash a
+  /// spinner over the existing list on every keystroke. Emits
+  /// [TicketsLoaded] on success, [TicketsError] if the repository call
+  /// throws.
+  Future<void> searchTickets({
+    String? query,
+    TicketStatus? status,
+    TicketType? type,
+    TicketPriority? priority,
+  }) async {
+    final hasVisibleList = switch (state) {
+      TicketsLoaded() ||
+      TicketCreating() ||
+      TicketCreated() ||
+      TicketStatusUpdating() ||
+      TicketStatusUpdated() => true,
+      _ => false,
+    };
+    if (!hasVisibleList) emit(const TicketsLoading());
+
     try {
-      final tickets = await _repository.getAllTickets();
+      final tickets = await _repository.searchTickets(
+        query: query,
+        status: status,
+        type: type,
+        priority: priority,
+      );
       emit(TicketsLoaded(tickets));
     } catch (e) {
       emit(TicketsError(e.toString()));

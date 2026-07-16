@@ -102,6 +102,22 @@ class DriftTicketRepository implements TicketRepository {
   }
 
   @override
+  Future<List<Ticket>> searchTickets({
+    String? query,
+    TicketStatus? status,
+    TicketType? type,
+    TicketPriority? priority,
+  }) async {
+    final rows = await _db.ticketDao.searchTickets(
+      query: query,
+      status: status,
+      type: type,
+      priority: priority,
+    );
+    return rows.map(_toEntity).toList();
+  }
+
+  @override
   Future<void> deleteTicket(String id) async {
     final existing = await _db.ticketDao.getTicketById(id);
     if (existing == null) {
