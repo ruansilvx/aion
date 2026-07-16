@@ -1,14 +1,15 @@
-// core/widgets/app_checkbox.dart — AppCheckbox primitive (core layer).
+// design_system/atoms/app_checkbox.dart — AppCheckbox primitive (design-system layer).
 
 import 'package:flutter/widgets.dart';
 
-import 'package:aion/core/design_system.dart';
+import 'package:aion/design_system/tokens/aion_radius.dart';
+import 'package:aion/design_system/tokens/theme_scope.dart';
 
 /// A small, square, non-Material checkbox primitive: filled with a white
 /// check mark when [value] is `true`, outlined and empty when `false`.
 /// Used by `TicketListTile`/`TicketBoardCard` in selection mode. General-
-/// purpose (not ticket-specific) — lives in `core/widgets/` alongside
-/// `AppButton`/`AppConfirmDialog`. Renders default/hover/keyboard-focused/
+/// purpose (not ticket-specific) — lives in `design_system/atoms/` alongside
+/// `AppButton`. Renders default/hover/keyboard-focused/
 /// disabled states per the design spec's `AppCheckbox` interaction table.
 class AppCheckbox extends StatefulWidget {
   /// Creates an [AppCheckbox] reflecting [value]; calls [onChanged] with

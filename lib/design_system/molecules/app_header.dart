@@ -1,10 +1,12 @@
-// core/widgets/app_header.dart — AppHeader primitive widget (core layer).
+// design_system/molecules/app_header.dart — AppHeader primitive widget (design-system layer).
 
 import 'package:flutter/widgets.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
-import 'package:aion/core/design_system.dart';
-import 'package:aion/core/localization/context_localizations_x.dart';
+import 'package:aion/core/core.dart';
+import 'package:aion/design_system/tokens/aion_radius.dart';
+import 'package:aion/design_system/tokens/aion_text.dart';
+import 'package:aion/design_system/tokens/theme_scope.dart';
 
 /// Aion's screen-header primitive — back button + title + optional trailing
 /// widget. Replaces `AppBar`/`Scaffold` chrome; used by the create and

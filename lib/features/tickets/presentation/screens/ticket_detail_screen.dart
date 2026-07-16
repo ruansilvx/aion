@@ -11,7 +11,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:intl/intl.dart' show DateFormat;
 
 import 'package:aion/core/core.dart';
-import 'package:aion/core/design_system.dart';
+import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
 import 'package:aion/features/tickets/domain/enums/comment_author_type.dart';
@@ -24,7 +24,6 @@ import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_list_screen.dart';
-import 'package:aion/features/tickets/presentation/widgets/inline_editable_field.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_overflow_menu.dart';
 
 /// The `/tickets/:id` route: ticket meta (priority, title, type, status,

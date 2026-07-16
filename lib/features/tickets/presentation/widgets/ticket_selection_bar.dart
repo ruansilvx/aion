@@ -4,7 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:aion/core/core.dart';
-import 'package:aion/core/design_system.dart';
+import 'package:aion/design_system/design_system.dart';
 
 /// The contextual bar shown in place of the create-ticket FAB while
 /// `TicketsListScreen`'s selection mode is active: a Cancel/exit control,

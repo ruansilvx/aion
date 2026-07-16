@@ -1,4 +1,4 @@
-// core/theme/aion_colors.dart — Color token definitions (core/theme layer).
+// design_system/tokens/aion_colors.dart — Color token definitions (design-system layer).
 
 import 'dart:ui';
 

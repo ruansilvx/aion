@@ -1,11 +1,11 @@
-// core/widgets/app_spinner.dart — AppSpinner primitive widget (core layer).
+// design_system/atoms/app_spinner.dart — AppSpinner primitive widget (design-system layer).
 
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 
-import 'package:aion/core/design_system.dart';
-import 'package:aion/core/localization/context_localizations_x.dart';
+import 'package:aion/core/core.dart';
+import 'package:aion/design_system/tokens/theme_scope.dart';
 
 /// Aion's loading-indicator primitive — a sweeping arc drawn via
 /// [CustomPaint], replacing `CircularProgressIndicator`.

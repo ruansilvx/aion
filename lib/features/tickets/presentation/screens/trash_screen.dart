@@ -6,7 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:aion/core/core.dart';
-import 'package:aion/core/design_system.dart';
+import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/presentation/cubit/trash_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/trash_state.dart';
 import 'package:aion/features/tickets/presentation/widgets/trashed_ticket_tile.dart';

@@ -1,8 +1,11 @@
-// core/widgets/app_toast.dart — AppToast primitive widget (core layer).
+// design_system/molecules/app_toast.dart — AppToast primitive widget (design-system layer).
 
 import 'package:flutter/widgets.dart';
 
-import 'package:aion/core/design_system.dart';
+import 'package:aion/design_system/tokens/aion_radius.dart';
+import 'package:aion/design_system/tokens/aion_shadows.dart';
+import 'package:aion/design_system/tokens/aion_text.dart';
+import 'package:aion/design_system/tokens/theme_scope.dart';
 
 /// Aion's transient-message primitive — replaces `SnackBar`/
 /// `ScaffoldMessenger` with an [OverlayEntry] inserted directly into the
