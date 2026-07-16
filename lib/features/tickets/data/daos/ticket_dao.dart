@@ -1,5 +1,7 @@
 // data/daos/ticket_dao.dart — TicketDao Drift accessor (data layer).
 
+import 'dart:collection';
+
 import 'package:drift/drift.dart';
 
 import 'package:aion/core/core.dart';
@@ -11,17 +13,21 @@ import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 part 'ticket_dao.g.dart';
 
 /// Drift accessor for [TicketsTable] and [TicketIdSequenceTable]. Owns the
-/// transactional human-readable ID generation logic.
+/// transactional human-readable ID generation logic, plus the trash/
+/// soft-delete subtree traversal ([getDescendantIds]/[getAncestorIds]) and
+/// bulk write helpers ([softDeleteByIds]/[restoreByIds]/[deleteTicketRows])
+/// used by [DriftTicketRepository]'s trash/restore/permanent-delete methods.
 @DriftAccessor(tables: [TicketsTable, TicketIdSequenceTable])
 class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
   /// Creates a [TicketDao] bound to [db].
   TicketDao(super.db);
 
-  /// Returns all tickets, most recently created first.
+  /// Returns all live (non-trashed) tickets, most recently created first.
   Future<List<TicketData>> getAllTickets() {
-    return (select(
-      ticketsTable,
-    )..orderBy([(t) => OrderingTerm.desc(t.createdAt)])).get();
+    return (select(ticketsTable)
+          ..where((t) => t.deletedAt.isNull())
+          ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
+        .get();
   }
 
   /// Returns the ticket row with primary key [id], or `null` if none exists.
@@ -69,30 +75,89 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
     )..where((t) => t.id.equals(id))).write(companion);
   }
 
-  /// Returns how many tickets have `parent_id == parentId`. Used by
-  /// [DriftTicketRepository.deleteTicket] to block deletion of tickets
-  /// with structural children.
-  Future<int> countChildTickets(String parentId) {
-    final query = selectOnly(ticketsTable)
-      ..addColumns([ticketsTable.id.count()])
-      ..where(ticketsTable.parentId.equals(parentId));
-    return query
-        .map((row) => row.read(ticketsTable.id.count()) ?? 0)
-        .getSingle();
+  /// Returns the ids of every ticket in [rootId]'s structural subtree
+  /// (children, grandchildren, ...), not including [rootId] itself.
+  /// Breadth-first, with a visited-set guard against a cycle (shouldn't
+  /// be possible — [TicketsCubit.updateTicketParent] rejects cycles at
+  /// write time — but cheap insurance against an infinite loop if one
+  /// ever existed).
+  Future<List<String>> getDescendantIds(String rootId) async {
+    final result = <String>[];
+    final visited = <String>{rootId};
+    final queue = Queue<String>()..add(rootId);
+    while (queue.isNotEmpty) {
+      final current = queue.removeFirst();
+      final children = await (select(
+        ticketsTable,
+      )..where((t) => t.parentId.equals(current))).get();
+      for (final child in children) {
+        if (visited.add(child.id)) {
+          result.add(child.id);
+          queue.add(child.id);
+        }
+      }
+    }
+    return result;
   }
 
-  /// Deletes the ticket row with primary key [id]. Callers are responsible
-  /// for cascading to dependent rows (comments, links) first.
-  Future<void> deleteTicketRow(String id) {
-    return (delete(ticketsTable)..where((t) => t.id.equals(id))).go();
+  /// Returns the ids of every ticket above [id] in its structural parent
+  /// chain (its parent, its parent's parent, ...), not including [id]
+  /// itself. Stops at the first ticket with no parent, or defensively at
+  /// a repeated id (cycle guard, same rationale as [getDescendantIds]).
+  Future<List<String>> getAncestorIds(String id) async {
+    final result = <String>[];
+    final visited = <String>{id};
+    var currentId = id;
+    while (true) {
+      final row = await getTicketById(currentId);
+      final parentId = row?.parentId;
+      if (parentId == null || !visited.add(parentId)) break;
+      result.add(parentId);
+      currentId = parentId;
+    }
+    return result;
   }
 
-  /// Returns tickets matching every non-null filter (ANDed). With [query]
-  /// null/empty, returns a plain filtered list ordered by `created_at desc`
-  /// (identical shape to [getAllTickets] when every filter is also null).
-  /// With [query] set, matches against the `tickets_fts` index (title +
-  /// description) and orders by relevance (`bm25`, ascending — SQLite's
-  /// bm25 scores are negative, more-negative meaning a better match).
+  /// Sets `deleted_at = deletedAtMs` for every id in [ids]. Bulk
+  /// `UPDATE ... WHERE id IN (...)` — used by trash operations.
+  Future<void> softDeleteByIds(List<String> ids, int deletedAtMs) {
+    return (update(ticketsTable)..where((t) => t.id.isIn(ids))).write(
+      TicketsTableCompanion(deletedAt: Value(deletedAtMs)),
+    );
+  }
+
+  /// Sets `deleted_at = NULL` for every id in [ids]. Bulk
+  /// `UPDATE ... WHERE id IN (...)` — used by restore. A no-op per row
+  /// already live (idempotent), so callers don't need to filter down to
+  /// "currently trashed" ids first.
+  Future<void> restoreByIds(List<String> ids) {
+    return (update(ticketsTable)..where((t) => t.id.isIn(ids))).write(
+      const TicketsTableCompanion(deletedAt: Value(null)),
+    );
+  }
+
+  /// Deletes every ticket row with a primary key in [ids]. Callers are
+  /// responsible for cascading to dependent rows (comments, links) first.
+  Future<void> deleteTicketRows(List<String> ids) {
+    return (delete(ticketsTable)..where((t) => t.id.isIn(ids))).go();
+  }
+
+  /// Returns every trashed ticket row (`deleted_at IS NOT NULL`), most
+  /// recently trashed first.
+  Future<List<TicketData>> getTrashedTickets() {
+    return (select(ticketsTable)
+          ..where((t) => t.deletedAt.isNotNull())
+          ..orderBy([(t) => OrderingTerm.desc(t.deletedAt)]))
+        .get();
+  }
+
+  /// Returns tickets matching every non-null filter (ANDed), excluding
+  /// trashed tickets. With [query] null/empty, returns a plain filtered
+  /// list ordered by `created_at desc` (identical shape to [getAllTickets]
+  /// when every filter is also null). With [query] set, matches against
+  /// the `tickets_fts` index (title + description) and orders by
+  /// relevance (`bm25`, ascending — SQLite's bm25 scores are negative,
+  /// more-negative meaning a better match).
   Future<List<TicketData>> searchTickets({
     String? query,
     TicketStatus? status,
@@ -102,6 +167,7 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
     final trimmed = query?.trim() ?? '';
     if (trimmed.isEmpty) {
       final q = select(ticketsTable)
+        ..where((t) => t.deletedAt.isNull())
         ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]);
       if (status != null) q.where((t) => t.status.equals(status.name));
       if (type != null) q.where((t) => t.type.equals(type.name));
@@ -109,7 +175,10 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
       return q.get();
     }
 
-    final conditions = <String>['tickets_fts MATCH ?'];
+    final conditions = <String>[
+      'tickets_fts MATCH ?',
+      'tickets.deleted_at IS NULL',
+    ];
     final variables = <Variable<Object>>[Variable(_buildFtsQuery(trimmed))];
     if (status != null) {
       conditions.add('tickets.status = ?');

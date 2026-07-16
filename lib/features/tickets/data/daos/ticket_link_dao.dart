@@ -29,12 +29,14 @@ class TicketLinkDao extends DatabaseAccessor<AppDatabase>
     return into(ticketLinksTable).insert(entry);
   }
 
-  /// Deletes every link row where [ticketId] is the source or the target.
-  Future<void> deleteLinksForTicket(String ticketId) {
+  /// Deletes every link row where the source or target is any ticket in
+  /// [ticketIds]. Used by permanent ticket deletion (a whole subtree's
+  /// worth of ids at once).
+  Future<void> deleteLinksForTickets(List<String> ticketIds) {
     return (delete(ticketLinksTable)..where(
           (t) =>
-              t.sourceTicketId.equals(ticketId) |
-              t.targetTicketId.equals(ticketId),
+              t.sourceTicketId.isIn(ticketIds) |
+              t.targetTicketId.isIn(ticketIds),
         ))
         .go();
   }

@@ -9,7 +9,7 @@ import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 /// ([DriftTicketRepository]); UI and domain code depend only on this
 /// interface, never on a concrete data source.
 abstract interface class TicketRepository {
-  /// Returns all tickets, most recently created first.
+  /// Returns all live (non-trashed) tickets, most recently created first.
   Future<List<Ticket>> getAllTickets();
 
   /// Returns the ticket with internal id [id], or `null` if none exists.
@@ -37,20 +37,58 @@ abstract interface class TicketRepository {
   /// `ticketId`. Throws if `ticket.id` does not exist.
   Future<void> updateTicket(Ticket ticket);
 
-  /// Deletes the ticket with internal id [id], cascading to its comments
-  /// and any `ticket_links` rows that reference it in either direction.
-  ///
-  /// Throws [StateError] if [id] does not exist. Throws
-  /// [TicketHasChildrenException] — without deleting anything — if any
-  /// other ticket has `parentId == id`; the caller must reparent or delete
-  /// those children first. Structural children are never cascade-deleted.
-  Future<void> deleteTicket(String id);
+  /// Moves [id] and every ticket in its structural subtree into trash
+  /// (sets `deletedAt`, deletes nothing). Never blocked by children —
+  /// they're cascaded into trash alongside [id] instead. Throws
+  /// [StateError] if [id] does not exist.
+  Future<void> trashTicket(String id);
+
+  /// Moves every ticket in [ids] — and each one's full structural
+  /// subtree — into trash in one call. Returns the total number of
+  /// tickets actually moved (== [ids] plus every cascaded descendant,
+  /// deduplicated), so the caller can report an accurate count even when
+  /// it's larger than `ids.length`. Ids that don't exist are silently
+  /// skipped.
+  Future<int> trashTickets(List<String> ids);
+
+  /// Returns the total number of tickets that would move to trash if
+  /// every id in [ids] were trashed right now — existing ids plus every
+  /// structural descendant (live *or already trashed*), deduplicated.
+  /// Query only, performs no writes. Mirrors [trashTickets]'s own cascade
+  /// computation exactly, so a cascade preview shown before a trash
+  /// action always matches what the action will actually touch —
+  /// including a descendant that's already in trash (e.g. a child
+  /// trashed individually earlier, whose still-live parent is being
+  /// trashed now).
+  Future<int> previewTrashCount(List<String> ids);
+
+  /// Restores [id] out of trash, along with any currently-trashed
+  /// ancestors (so it's never left with a hidden parent) and any
+  /// currently-trashed descendants (its own subtree, trashed alongside
+  /// it originally). Throws [StateError] if [id] does not exist.
+  Future<void> restoreTicket(String id);
+
+  /// Permanently deletes [id] and its full structural subtree —
+  /// cascading to comments and `ticket_links` exactly as the old
+  /// `deleteTicket` did. Irreversible. Throws [StateError] if [id] does
+  /// not exist.
+  Future<void> permanentlyDeleteTicket(String id);
+
+  /// Permanently deletes every currently trashed ticket (and their
+  /// comments/`ticket_links`). Irreversible. Used by the trash screen's
+  /// "Empty trash" action. No-ops if trash is empty.
+  Future<void> emptyTrash();
+
+  /// Returns every currently trashed ticket, most recently trashed
+  /// first.
+  Future<List<Ticket>> getTrashedTickets();
 
   /// Returns tickets matching every non-null filter (ANDed): [status],
   /// [type], [priority] restrict to an exact match on that field; [query]
   /// full-text-matches against title/description. All parameters
   /// omitted/null is equivalent to [getAllTickets]. Ordered by relevance
-  /// when [query] is set, otherwise by creation date descending.
+  /// when [query] is set, otherwise by creation date descending. Excludes
+  /// trashed tickets, same as [getAllTickets].
   Future<List<Ticket>> searchTickets({
     String? query,
     TicketStatus? status,

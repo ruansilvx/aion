@@ -17,10 +17,13 @@ import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 /// `MoveToStatusMenu` (`tickets_board_view.dart`) — a third instance of
 /// that pattern, since this is an *action list* rather than a *value
 /// picker* like `SelectionMenu`, so it isn't built on top of that widget.
-/// Selecting "Delete ticket" opens [showAppConfirmDialog]; on
-/// confirmation, calls [TicketsCubit.deleteTicket]. Renders distinct
-/// default/hover/keyboard-focused/pressed/open fills and a focus ring, per
-/// the design spec's interaction-state table.
+/// Selecting "Delete ticket" previews the cascade via
+/// [TicketsCubit.previewTrashCount], opens [showAppConfirmDialog] with a
+/// cascade-aware message, and on confirmation calls
+/// [TicketsCubit.trashTicket] — a reversible move to trash, not a
+/// permanent delete. Renders distinct default/hover/keyboard-focused/
+/// pressed/open fills and a focus ring, per the design spec's
+/// interaction-state table.
 class TicketOverflowMenu extends StatefulWidget {
   /// Creates a [TicketOverflowMenu] for [ticket]. Set [compact] to `true`
   /// for the smaller 26×26/16px footprint used inline on list rows and
@@ -166,15 +169,19 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
   }
 
   Future<void> _onDeletePressed() async {
+    final total = await context.read<TicketsCubit>().previewTrashCount([
+      widget.ticket.id,
+    ]);
+    if (!mounted) return;
     final confirmed = await showAppConfirmDialog(
       context,
       title: context.l10n.ticketDeleteConfirmTitle,
-      message: context.l10n.ticketDeleteConfirmMessage,
+      message: context.l10n.ticketTrashConfirmMessage(total),
       confirmLabel: context.l10n.ticketDeleteConfirmAction,
-      isDestructive: true,
+      tone: ConfirmDialogTone.reversible,
     );
     if (confirmed && mounted) {
-      context.read<TicketsCubit>().deleteTicket(widget.ticket.id);
+      context.read<TicketsCubit>().trashTicket(widget.ticket.id);
     }
   }
 

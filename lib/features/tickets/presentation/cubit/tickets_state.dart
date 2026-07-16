@@ -46,15 +46,10 @@ enum TicketsErrorReason {
   /// The requested ticket does not exist.
   notFound,
 
-  /// Deletion was blocked because the ticket has structural children.
-  /// The widget layer reads [TicketsError.childCount] to build a
-  /// count-aware message.
-  hasChildren,
-
   /// Reassigning a ticket's parent was rejected because the chosen parent
   /// is the ticket itself or one of its own descendants (would create a
   /// cycle). The widget layer reads this via `ticketsErrorMessage` /
-  /// `AppToast`, same as [hasChildren].
+  /// `AppToast`.
   invalidParent,
 }
 
@@ -65,10 +60,8 @@ enum TicketsErrorReason {
 /// for display whenever it's non-null.
 class TicketsError extends TicketsState {
   /// Creates a [TicketsError] state. Pass [reason] for a classified,
-  /// localizable error; otherwise [message] is shown as-is. Pass
-  /// [childCount] alongside [TicketsErrorReason.hasChildren] so the widget
-  /// layer can build a count-aware message.
-  const TicketsError(this.message, {this.reason, this.childCount});
+  /// localizable error; otherwise [message] is shown as-is.
+  const TicketsError(this.message, {this.reason});
 
   /// A raw, unlocalized description of what went wrong. Ignored in favor
   /// of [reason] when [reason] is non-null.
@@ -78,12 +71,8 @@ class TicketsError extends TicketsState {
   /// localizable case. `null` for generic/forwarded exceptions.
   final TicketsErrorReason? reason;
 
-  /// How many structural children blocked deletion. Only set when [reason]
-  /// is [TicketsErrorReason.hasChildren]; `null` otherwise.
-  final int? childCount;
-
   @override
-  List<Object?> get props => [message, reason, childCount];
+  List<Object?> get props => [message, reason];
 }
 
 /// A [TicketsCubit.createTicket] call is in flight. Carries the
@@ -155,17 +144,45 @@ class TicketDetailLoaded extends TicketsState {
   List<Object?> get props => [ticket];
 }
 
-/// A [TicketsCubit.deleteTicket] call is in flight for the ticket
-/// currently shown on [TicketDetailScreen].
-class TicketDeleting extends TicketsState {
-  /// Creates a [TicketDeleting] state.
-  const TicketDeleting();
+/// A [TicketsCubit.trashTicket] call is in flight (single ticket,
+/// triggered from `TicketOverflowMenu`).
+class TicketTrashing extends TicketsState {
+  /// Creates a [TicketTrashing] state.
+  const TicketTrashing();
 }
 
-/// A ticket was deleted successfully. Carries no data — the UI responds
-/// by navigating back to `/tickets`, where [TicketsCubit.loadTickets]
-/// re-fetches the now-shorter list.
-class TicketDeleted extends TicketsState {
-  /// Creates a [TicketDeleted] state.
-  const TicketDeleted();
+/// A single ticket was moved to trash successfully. Carries no data —
+/// `TicketDetailScreen` responds by navigating back to `/tickets`, where
+/// [TicketsCubit.loadTickets]/`searchTickets` re-fetches the now-shorter
+/// (trash-excluded) list.
+class TicketTrashed extends TicketsState {
+  /// Creates a [TicketTrashed] state.
+  const TicketTrashed();
+}
+
+/// A [TicketsCubit.trashTickets] batch call is in flight (bulk,
+/// triggered from `TicketSelectionBar`).
+class TicketsBatchTrashing extends TicketsState {
+  /// Creates a [TicketsBatchTrashing] state.
+  const TicketsBatchTrashing();
+}
+
+/// A batch trash call completed. Carries the refreshed list and the
+/// total number of tickets actually moved (>= the original selection
+/// size, once cascaded descendants are included) so the widget layer
+/// can show an accurate summary toast.
+class TicketsBatchTrashed extends TicketsState {
+  /// Creates a [TicketsBatchTrashed] state carrying the refreshed
+  /// [tickets] list and the [trashedCount].
+  const TicketsBatchTrashed(this.tickets, this.trashedCount);
+
+  /// The full list, re-fetched after the batch trash completed.
+  final List<Ticket> tickets;
+
+  /// How many tickets were actually moved to trash, including cascaded
+  /// descendants.
+  final int trashedCount;
+
+  @override
+  List<Object?> get props => [tickets, trashedCount];
 }

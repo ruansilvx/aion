@@ -50,6 +50,11 @@ class TicketsTable extends Table {
   /// Unix milliseconds.
   IntColumn get updatedAt => integer().named('updated_at')();
 
+  /// When this ticket was moved to trash (soft-deleted). `null` means the
+  /// ticket is live. Set by [TicketDao.softDeleteByIds], cleared by
+  /// [TicketDao.restoreByIds]. Unix milliseconds.
+  IntColumn get deletedAt => integer().named('deleted_at').nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
 }

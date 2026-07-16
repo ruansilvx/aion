@@ -19,6 +19,66 @@ void main() {
     updatedAt: DateTime(2026),
   );
 
+  // Multi-level hierarchy fixture: ticket (root) -> child -> grandchild,
+  // plus an unrelated ticket with no parent (a valid reparent target).
+  final child = Ticket(
+    id: '2',
+    ticketId: 'AIO-2',
+    type: TicketType.task,
+    title: 'Child ticket',
+    status: TicketStatus.backlog,
+    parentId: ticket.id,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+  final grandchild = Ticket(
+    id: '3',
+    ticketId: 'AIO-3',
+    type: TicketType.task,
+    title: 'Grandchild ticket',
+    status: TicketStatus.backlog,
+    parentId: child.id,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+  final unrelated = Ticket(
+    id: '4',
+    ticketId: 'AIO-4',
+    type: TicketType.task,
+    title: 'Unrelated ticket',
+    status: TicketStatus.backlog,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+  final reparented = Ticket(
+    id: ticket.id,
+    ticketId: ticket.ticketId,
+    type: ticket.type,
+    title: ticket.title,
+    status: ticket.status,
+    parentId: unrelated.id,
+    createdAt: ticket.createdAt,
+    updatedAt: ticket.updatedAt,
+  );
+  final cleared = Ticket(
+    id: ticket.id,
+    ticketId: ticket.ticketId,
+    type: ticket.type,
+    title: ticket.title,
+    status: ticket.status,
+    createdAt: ticket.createdAt,
+    updatedAt: ticket.updatedAt,
+  );
+  final epic = Ticket(
+    id: '5',
+    ticketId: 'AIO-5',
+    type: TicketType.epic,
+    title: 'Epic ticket',
+    status: TicketStatus.backlog,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+
   setUpAll(() {
     registerFallbackValue(ticket);
     registerFallbackValue(TicketStatus.backlog);
@@ -208,154 +268,98 @@ void main() {
       expect: () => [isA<TicketsError>()],
     );
 
+    group('previewTrashCount', () {
+      test('delegates to TicketRepository.previewTrashCount and returns '
+          'its result', () async {
+        when(
+          () => repository.previewTrashCount([ticket.id]),
+        ).thenAnswer((_) async => 3);
+
+        final total = await TicketsCubit(
+          repository,
+        ).previewTrashCount([ticket.id]);
+
+        expect(total, 3);
+        verify(() => repository.previewTrashCount([ticket.id])).called(1);
+      });
+
+      test('returns whatever count the repository reports, unmodified', () async {
+        when(
+          () => repository.previewTrashCount([ticket.id, unrelated.id]),
+        ).thenAnswer((_) async => 1);
+
+        final total = await TicketsCubit(
+          repository,
+        ).previewTrashCount([ticket.id, unrelated.id]);
+
+        expect(total, 1);
+      });
+    });
+
     blocTest<TicketsCubit, TicketsState>(
-      'deleteTicket from a TicketDetailLoaded previous state emits '
-      '[TicketDeleting, TicketDeleted] on success',
+      'trashTicket from a TicketDetailLoaded previous state emits '
+      '[TicketTrashing, TicketTrashed] on success',
       setUp: () {
-        when(() => repository.deleteTicket(ticket.id)).thenAnswer((_) async {});
+        when(() => repository.trashTicket(ticket.id)).thenAnswer((_) async {});
       },
       build: () => TicketsCubit(repository),
       seed: () => TicketDetailLoaded(ticket),
-      act: (cubit) => cubit.deleteTicket(ticket.id),
-      expect: () => [const TicketDeleting(), const TicketDeleted()],
+      act: (cubit) => cubit.trashTicket(ticket.id),
+      expect: () => [const TicketTrashing(), const TicketTrashed()],
     );
 
     blocTest<TicketsCubit, TicketsState>(
-      'deleteTicket from a TicketDetailLoaded previous state emits '
-      '[TicketDeleting, TicketsError(hasChildren), TicketDetailLoaded] '
-      'when blocked by structural children',
+      'trashTicket emits [TicketTrashing, TicketsError] on a generic failure',
       setUp: () {
         when(
-          () => repository.deleteTicket(ticket.id),
-        ).thenThrow(const TicketHasChildrenException(2));
-        when(
-          () => repository.getTicketById(ticket.id),
-        ).thenAnswer((_) async => ticket);
-      },
-      build: () => TicketsCubit(repository),
-      seed: () => TicketDetailLoaded(ticket),
-      act: (cubit) => cubit.deleteTicket(ticket.id),
-      expect: () => [
-        const TicketDeleting(),
-        const TicketsError(
-          '',
-          reason: TicketsErrorReason.hasChildren,
-          childCount: 2,
-        ),
-        TicketDetailLoaded(ticket),
-      ],
-    );
-
-    blocTest<TicketsCubit, TicketsState>(
-      'deleteTicket emits [TicketDeleting, TicketsError] on a generic failure',
-      setUp: () {
-        when(
-          () => repository.deleteTicket(ticket.id),
+          () => repository.trashTicket(ticket.id),
         ).thenThrow(Exception('boom'));
       },
       build: () => TicketsCubit(repository),
       seed: () => TicketDetailLoaded(ticket),
-      act: (cubit) => cubit.deleteTicket(ticket.id),
-      expect: () => [const TicketDeleting(), isA<TicketsError>()],
+      act: (cubit) => cubit.trashTicket(ticket.id),
+      expect: () => [const TicketTrashing(), isA<TicketsError>()],
     );
 
     blocTest<TicketsCubit, TicketsState>(
-      'deleteTicket from a TicketsLoaded previous state emits '
-      '[TicketDeleting, TicketsLoaded] with the refreshed list on success',
+      'trashTicket from a TicketsLoaded previous state emits '
+      '[TicketTrashing, TicketsLoaded] with the refreshed list on success',
       setUp: () {
-        when(() => repository.deleteTicket(ticket.id)).thenAnswer((_) async {});
+        when(() => repository.trashTicket(ticket.id)).thenAnswer((_) async {});
         when(() => repository.getAllTickets()).thenAnswer((_) async => []);
       },
       build: () => TicketsCubit(repository),
       seed: () => TicketsLoaded([ticket]),
-      act: (cubit) => cubit.deleteTicket(ticket.id),
-      expect: () => [const TicketDeleting(), const TicketsLoaded([])],
+      act: (cubit) => cubit.trashTicket(ticket.id),
+      expect: () => [const TicketTrashing(), const TicketsLoaded([])],
     );
 
     blocTest<TicketsCubit, TicketsState>(
-      'deleteTicket from a TicketsLoaded previous state emits '
-      '[TicketDeleting, TicketsError(hasChildren), TicketsLoaded] '
-      'when blocked by structural children',
+      'trashTickets emits [TicketsBatchTrashing, TicketsBatchTrashed] '
+      'carrying the refreshed list and trashed count on success',
       setUp: () {
         when(
-          () => repository.deleteTicket(ticket.id),
-        ).thenThrow(const TicketHasChildrenException(2));
-        when(
-          () => repository.getAllTickets(),
-        ).thenAnswer((_) async => [ticket]);
+          () => repository.trashTickets([ticket.id]),
+        ).thenAnswer((_) async => 1);
+        when(() => repository.getAllTickets()).thenAnswer((_) async => []);
       },
       build: () => TicketsCubit(repository),
-      seed: () => TicketsLoaded([ticket]),
-      act: (cubit) => cubit.deleteTicket(ticket.id),
+      act: (cubit) => cubit.trashTickets([ticket.id]),
       expect: () => [
-        const TicketDeleting(),
-        const TicketsError(
-          '',
-          reason: TicketsErrorReason.hasChildren,
-          childCount: 2,
-        ),
-        TicketsLoaded([ticket]),
+        const TicketsBatchTrashing(),
+        const TicketsBatchTrashed([], 1),
       ],
     );
 
-    // Multi-level hierarchy fixture: ticket (root) -> child -> grandchild,
-    // plus an unrelated ticket with no parent (a valid reparent target).
-    final child = Ticket(
-      id: '2',
-      ticketId: 'AIO-2',
-      type: TicketType.task,
-      title: 'Child ticket',
-      status: TicketStatus.backlog,
-      parentId: ticket.id,
-      createdAt: DateTime(2026),
-      updatedAt: DateTime(2026),
-    );
-    final grandchild = Ticket(
-      id: '3',
-      ticketId: 'AIO-3',
-      type: TicketType.task,
-      title: 'Grandchild ticket',
-      status: TicketStatus.backlog,
-      parentId: child.id,
-      createdAt: DateTime(2026),
-      updatedAt: DateTime(2026),
-    );
-    final unrelated = Ticket(
-      id: '4',
-      ticketId: 'AIO-4',
-      type: TicketType.task,
-      title: 'Unrelated ticket',
-      status: TicketStatus.backlog,
-      createdAt: DateTime(2026),
-      updatedAt: DateTime(2026),
-    );
-    final reparented = Ticket(
-      id: ticket.id,
-      ticketId: ticket.ticketId,
-      type: ticket.type,
-      title: ticket.title,
-      status: ticket.status,
-      parentId: unrelated.id,
-      createdAt: ticket.createdAt,
-      updatedAt: ticket.updatedAt,
-    );
-    final cleared = Ticket(
-      id: ticket.id,
-      ticketId: ticket.ticketId,
-      type: ticket.type,
-      title: ticket.title,
-      status: ticket.status,
-      createdAt: ticket.createdAt,
-      updatedAt: ticket.updatedAt,
-    );
-    final epic = Ticket(
-      id: '5',
-      ticketId: 'AIO-5',
-      type: TicketType.epic,
-      title: 'Epic ticket',
-      status: TicketStatus.backlog,
-      createdAt: DateTime(2026),
-      updatedAt: DateTime(2026),
+    blocTest<TicketsCubit, TicketsState>(
+      'trashTickets emits [TicketsBatchTrashing, TicketsError] on a '
+      'generic failure',
+      setUp: () {
+        when(() => repository.trashTickets(any())).thenThrow(Exception('boom'));
+      },
+      build: () => TicketsCubit(repository),
+      act: (cubit) => cubit.trashTickets([ticket.id]),
+      expect: () => [const TicketsBatchTrashing(), isA<TicketsError>()],
     );
 
     group('getValidParentCandidates', () {

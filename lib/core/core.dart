@@ -6,6 +6,7 @@ export 'routing/app_router.dart';
 export 'utils/duration_format.dart';
 export 'utils/platform_utils.dart';
 export 'widgets/app_button.dart';
+export 'widgets/app_checkbox.dart';
 export 'widgets/app_confirm_dialog.dart';
 export 'widgets/app_dropdown.dart';
 export 'widgets/app_header.dart';

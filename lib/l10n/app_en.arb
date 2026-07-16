@@ -121,14 +121,66 @@
   },
   "ticketDeleteMenuItem": "Delete ticket",
   "ticketDeleteConfirmTitle": "Delete this ticket?",
-  "ticketDeleteConfirmMessage": "This cannot be undone.",
   "ticketDeleteConfirmAction": "Delete",
-  "ticketDeleteBlockedByChildren": "This ticket has {count, plural, one{1 subticket} other{{count} subtickets}} — delete or reparent them first.",
-  "@ticketDeleteBlockedByChildren": {
+  "ticketInvalidParentError": "Can't set that ticket as its own parent or a descendant.",
+
+  "ticketTrashConfirmMessage": "{total, plural, one{This ticket will move to Trash.} other{These {total} tickets will move to Trash.}} You can restore it from Trash later.",
+  "@ticketTrashConfirmMessage": {
+    "placeholders": {
+      "total": { "type": "int" }
+    }
+  },
+  "ticketBulkTrashConfirmTitle": "Delete {count, plural, one{1 ticket} other{{count} tickets}}?",
+  "@ticketBulkTrashConfirmTitle": {
     "placeholders": {
       "count": { "type": "int" }
     }
   },
-  "ticketDeleteBlockedByChildrenGeneric": "Can't delete — this ticket has subtickets. Delete or reparent them first.",
-  "ticketInvalidParentError": "Can't set that ticket as its own parent or a descendant."
+  "ticketBulkTrashSummaryToast": "Moved {count, plural, one{1 ticket} other{{count} tickets}} to Trash.",
+  "@ticketBulkTrashSummaryToast": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+
+  "ticketTrashEntryLabel": "View trash",
+  "ticketTrashScreenTitle": "Trash",
+  "ticketTrashItemCount": "{count, plural, one{1 item} other{{count} items}}",
+  "@ticketTrashItemCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "ticketTrashInfoBanner": "Trashed tickets keep their subtasks. Restore brings the whole subtree back.",
+  "ticketTrashEmptyState": "Trash is empty",
+  "ticketTrashEmptyStateHint": "Deleted tickets show up here and can be restored.",
+  "ticketTrashRestoreAction": "Restore",
+  "ticketTrashPermanentDeleteAction": "Delete permanently",
+  "ticketTrashPermanentDeleteConfirmTitle": "Delete forever?",
+  "ticketTrashPermanentDeleteConfirmMessage": "\"{title}\" will be permanently deleted. This cannot be undone.",
+  "@ticketTrashPermanentDeleteConfirmMessage": {
+    "placeholders": {
+      "title": { "type": "String" }
+    }
+  },
+  "ticketTrashEmptyConfirmTitle": "Empty Trash?",
+  "ticketTrashEmptyConfirmMessage": "All {count, plural, one{1 ticket} other{{count} tickets}} in Trash will be permanently deleted. This cannot be undone.",
+  "@ticketTrashEmptyConfirmMessage": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "ticketTrashEmptyAction": "Empty trash",
+
+  "ticketSelectionToggleLabel": "Select tickets",
+  "ticketSelectionExitLabel": "Cancel selection",
+  "ticketSelectionCountLabel": "{count, plural, one{1 selected} other{{count} selected}}",
+  "@ticketSelectionCountLabel": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "ticketSelectionSelectAllAction": "Select all",
+  "ticketSelectionDeselectAllAction": "Deselect all",
+  "ticketSelectionDeleteAction": "Delete"
 }

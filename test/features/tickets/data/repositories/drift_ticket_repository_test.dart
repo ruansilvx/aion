@@ -340,75 +340,228 @@ void main() {
     },
   );
 
-  group('deleteTicket', () {
+  group('trashTicket / trashTickets', () {
+    test('moves a childless ticket into trash (deletedAt set, row intact)', () async {
+      await repository.createTicket(buildTicket(id: '1'));
+      await repository.trashTicket('1');
+
+      // Excluded from the live surface...
+      expect(await repository.getAllTickets(), isEmpty);
+      // ...but the row itself, and its data, are untouched.
+      expect(await repository.getTrashedTickets(), hasLength(1));
+    });
+
     test(
-      'deletes a childless ticket, its comments, and its links (as source and target)',
+      'trashing a grandparent cascades to trash its full multi-level subtree',
       () async {
-        await repository.createTicket(buildTicket(id: '1'));
+        await repository.createTicket(buildTicket(id: 'grandparent'));
+        await repository.createTicket(
+          buildTicket(id: 'parent', parentId: 'grandparent'),
+        );
+        await repository.createTicket(
+          buildTicket(id: 'child', parentId: 'parent'),
+        );
+        await repository.createTicket(buildTicket(id: 'unrelated'));
+
+        await repository.trashTicket('grandparent');
+
+        final trashedIds = (await repository.getTrashedTickets())
+            .map((t) => t.id)
+            .toSet();
+        expect(trashedIds, {'grandparent', 'parent', 'child'});
+        expect(
+          (await repository.getAllTickets()).map((t) => t.id),
+          ['unrelated'],
+        );
+      },
+    );
+
+    test('throws StateError when the ticket does not exist', () async {
+      await expectLater(
+        () => repository.trashTicket('missing'),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test(
+      'trashTickets returns the total moved (selection + cascaded '
+      'descendants), and silently skips a non-existent id',
+      () async {
+        await repository.createTicket(buildTicket(id: 'parent'));
+        await repository.createTicket(
+          buildTicket(id: 'child', parentId: 'parent'),
+        );
+        await repository.createTicket(buildTicket(id: 'other'));
+
+        final total = await repository.trashTickets([
+          'parent',
+          'other',
+          'missing',
+        ]);
+
+        expect(total, 3); // parent + child (cascaded) + other
+        expect(await repository.getAllTickets(), isEmpty);
+      },
+    );
+  });
+
+  group('previewTrashCount', () {
+    test(
+      'matches the count trashTickets actually moves for a simple subtree',
+      () async {
+        await repository.createTicket(buildTicket(id: 'parent'));
+        await repository.createTicket(
+          buildTicket(id: 'child', parentId: 'parent'),
+        );
+        await repository.createTicket(buildTicket(id: 'unrelated'));
+
+        final preview = await repository.previewTrashCount(['parent']);
+        expect(preview, 2); // parent + child
+
+        final actual = await repository.trashTickets(['parent']);
+        expect(actual, preview);
+      },
+    );
+
+    test('performs no writes — tickets stay live after a preview', () async {
+      await repository.createTicket(buildTicket(id: '1'));
+
+      await repository.previewTrashCount(['1']);
+
+      expect(await repository.getAllTickets(), hasLength(1));
+      expect(await repository.getTrashedTickets(), isEmpty);
+    });
+
+    test(
+      'counts a descendant that is already trashed, matching what '
+      'trashTickets would actually move — a live-tickets-only descendant '
+      'walk would undercount this case',
+      () async {
+        await repository.createTicket(buildTicket(id: 'parent'));
+        await repository.createTicket(
+          buildTicket(id: 'child', parentId: 'parent'),
+        );
+        await repository.createTicket(
+          buildTicket(id: 'grandchild', parentId: 'child'),
+        );
+        // Trash the child (and its own subtree) individually first,
+        // leaving the parent live.
+        await repository.trashTicket('child');
+        expect(await repository.getAllTickets(), hasLength(1)); // parent
+
+        final preview = await repository.previewTrashCount(['parent']);
+        final actual = await repository.trashTickets(['parent']);
+
+        expect(preview, 3); // parent + already-trashed child + grandchild
+        expect(actual, preview);
+      },
+    );
+  });
+
+  group('restoreTicket', () {
+    test(
+      'restoring a deep child also restores its trashed ancestors, '
+      'leaving unrelated trashed tickets untouched',
+      () async {
+        await repository.createTicket(buildTicket(id: 'grandparent'));
+        await repository.createTicket(
+          buildTicket(id: 'parent', parentId: 'grandparent'),
+        );
+        await repository.createTicket(
+          buildTicket(id: 'child', parentId: 'parent'),
+        );
+        await repository.createTicket(buildTicket(id: 'unrelated-trashed'));
+        await repository.trashTicket('grandparent');
+        await repository.trashTicket('unrelated-trashed');
+
+        await repository.restoreTicket('child');
+
+        final liveIds = (await repository.getAllTickets())
+            .map((t) => t.id)
+            .toSet();
+        expect(liveIds, {'grandparent', 'parent', 'child'});
+        expect(
+          (await repository.getTrashedTickets()).map((t) => t.id),
+          ['unrelated-trashed'],
+        );
+      },
+    );
+
+    test('throws StateError when the ticket does not exist', () async {
+      await expectLater(
+        () => repository.restoreTicket('missing'),
+        throwsA(isA<StateError>()),
+      );
+    });
+  });
+
+  group('permanentlyDeleteTicket / emptyTrash', () {
+    test(
+      'permanently deletes a ticket, its subtree, comments, and links',
+      () async {
+        await repository.createTicket(buildTicket(id: 'parent'));
+        await repository.createTicket(
+          buildTicket(id: 'child', parentId: 'parent'),
+        );
         await repository.createTicket(buildTicket(id: 'other'));
 
         final commentRepository = DriftCommentRepository(database);
         await commentRepository.addComment(
           TicketComment(
             id: '',
-            ticketId: '1',
+            ticketId: 'parent',
             content: 'A comment',
             authorType: CommentAuthorType.human,
             createdAt: DateTime(2026, 1, 1),
           ),
         );
-
         final linkRepository = DriftTicketLinkRepository(database);
         await linkRepository.createLink(
-          sourceTicketId: '1',
+          sourceTicketId: 'parent',
           targetTicketId: 'other',
           linkType: TicketLinkType.relatesTo,
         );
-        await linkRepository.createLink(
-          sourceTicketId: 'other',
-          targetTicketId: '1',
-          linkType: TicketLinkType.blocks,
+
+        await repository.trashTicket('parent');
+        await repository.permanentlyDeleteTicket('parent');
+
+        expect(await repository.getTicketById('parent'), isNull);
+        expect(await repository.getTicketById('child'), isNull);
+        expect(
+          await commentRepository.getCommentsForTicket('parent'),
+          isEmpty,
         );
-
-        await repository.deleteTicket('1');
-
-        expect(await repository.getTicketById('1'), isNull);
-        expect(await commentRepository.getCommentsForTicket('1'), isEmpty);
-        expect(await linkRepository.getLinksForTicket('1'), isEmpty);
-        // The unrelated ticket and its own data are untouched.
+        expect(await linkRepository.getLinksForTicket('parent'), isEmpty);
         expect(await repository.getTicketById('other'), isNotNull);
-      },
-    );
-
-    test(
-      'throws TicketHasChildrenException and deletes nothing when the ticket has children',
-      () async {
-        await repository.createTicket(buildTicket(id: 'parent'));
-        await repository.createTicket(
-          buildTicket(id: 'child', parentId: 'parent'),
-        );
-
-        await expectLater(
-          () => repository.deleteTicket('parent'),
-          throwsA(
-            isA<TicketHasChildrenException>().having(
-              (e) => e.childCount,
-              'childCount',
-              1,
-            ),
-          ),
-        );
-
-        expect(await repository.getTicketById('parent'), isNotNull);
-        expect(await repository.getTicketById('child'), isNotNull);
       },
     );
 
     test('throws StateError when the ticket does not exist', () async {
       await expectLater(
-        () => repository.deleteTicket('missing'),
+        () => repository.permanentlyDeleteTicket('missing'),
         throwsA(isA<StateError>()),
       );
+    });
+
+    test('emptyTrash removes every trashed ticket and only trashed tickets', () async {
+      await repository.createTicket(buildTicket(id: 'trashed-1'));
+      await repository.createTicket(buildTicket(id: 'trashed-2'));
+      await repository.createTicket(buildTicket(id: 'live'));
+      await repository.trashTicket('trashed-1');
+      await repository.trashTicket('trashed-2');
+
+      await repository.emptyTrash();
+
+      expect(await repository.getTrashedTickets(), isEmpty);
+      expect(await repository.getTicketById('trashed-1'), isNull);
+      expect(await repository.getTicketById('trashed-2'), isNull);
+      expect(await repository.getTicketById('live'), isNotNull);
+    });
+
+    test('emptyTrash is a no-op when trash is already empty', () async {
+      await repository.createTicket(buildTicket(id: 'live'));
+      await expectLater(repository.emptyTrash(), completes);
+      expect(await repository.getTicketById('live'), isNotNull);
     });
   });
 
@@ -520,9 +673,33 @@ void main() {
         returnsNormally,
       );
     });
+
+    test(
+      'excludes trashed tickets, both unfiltered and with a text query',
+      () async {
+        await repository.createTicket(
+          buildSearchable(id: 'live', title: 'Fix authentication bug'),
+        );
+        await repository.createTicket(
+          buildSearchable(id: 'trashed', title: 'Fix authentication too'),
+        );
+        await repository.trashTicket('trashed');
+
+        expect(
+          (await repository.searchTickets()).map((t) => t.id),
+          ['live'],
+        );
+        expect(
+          (await repository.searchTickets(
+            query: 'authentication',
+          )).map((t) => t.id),
+          ['live'],
+        );
+      },
+    );
   });
 
-  group('schema migration (v1 -> v2)', () {
+  group('schema migration (v1 -> current)', () {
     test(
       'onUpgrade backfills existing rows into the FTS5 search index',
       () async {
@@ -537,10 +714,10 @@ void main() {
         addTearDown(() => tempDir.deleteSync(recursive: true));
 
         // A fresh AppDatabase always runs onCreate at the *current*
-        // schemaVersion (2), which already includes the search
-        // infrastructure — so the v1 shape has to be built by hand:
-        // strip back down to just the bare tables, insert data, then
-        // stamp user_version back to 1.
+        // schemaVersion (3), which already includes the search
+        // infrastructure and the `deleted_at` column — so the v1 shape has
+        // to be built by hand: strip back down to just the bare tables,
+        // insert data, then stamp user_version back to 1.
         final v1Db = AppDatabase(NativeDatabase(dbFile));
         await v1Db.customStatement('DROP TABLE IF EXISTS tickets_fts;');
         await v1Db.customStatement('DROP TRIGGER IF EXISTS tickets_fts_ai;');
@@ -551,6 +728,9 @@ void main() {
         await v1Db.customStatement(
           'DROP INDEX IF EXISTS idx_tickets_priority;',
         );
+        await v1Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN deleted_at;',
+        );
 
         final preMigrationRepo = DriftTicketRepository(v1Db);
         await preMigrationRepo.createTicket(
@@ -559,9 +739,9 @@ void main() {
         await v1Db.customStatement('PRAGMA user_version = 1;');
         await v1Db.close();
 
-        // Reopen against the same file at the current schemaVersion (2).
-        // Drift reads user_version=1, sees schemaVersion=2, and runs
-        // onUpgrade automatically.
+        // Reopen against the same file at the current schemaVersion (3).
+        // Drift reads user_version=1, sees schemaVersion=3, and runs
+        // onUpgrade automatically (both the v2 and v3 steps).
         final v2Db = AppDatabase(NativeDatabase(dbFile));
         final upgradedRepo = DriftTicketRepository(v2Db);
 
@@ -570,6 +750,9 @@ void main() {
         );
 
         expect(results.map((t) => t.id), ['pre-existing']);
+        // The v3 step ran too — the pre-existing ticket is live, not
+        // trashed, since it existed before trash was ever a concept.
+        expect(await upgradedRepo.getTrashedTickets(), isEmpty);
         await v2Db.close();
       },
     );
