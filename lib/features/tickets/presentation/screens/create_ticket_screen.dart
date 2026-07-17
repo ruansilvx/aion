@@ -12,10 +12,13 @@ import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart';
+import 'package:aion/features/tickets/presentation/widgets/ticket_parent_picker.dart';
 
-/// The `/tickets/new` route: title, type, priority, and description fields
-/// followed by a full-width submit button. Reads [TicketsCubit] from the
-/// root-level provider and navigates back to `/tickets` on success.
+/// The `/tickets/new` route: title, type, parent, priority, and
+/// description fields followed by a full-width submit button. The parent
+/// field is hidden whenever the selected type is [TicketType.epic] (epics
+/// are always subtree roots). Reads [TicketsCubit] from the root-level
+/// provider and navigates back to `/tickets` on success.
 class CreateTicketScreen extends StatefulWidget {
   /// Creates a [CreateTicketScreen].
   const CreateTicketScreen({super.key});
@@ -34,6 +37,7 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
 
   TicketType _selectedType = TicketType.task;
   TicketPriority _selectedPriority = TicketPriority.none;
+  String? _selectedParentId;
   bool _isSubmitting = false;
 
   @override
@@ -56,6 +60,7 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
           ? null
           : _descController.text.trim(),
       priority: _selectedPriority,
+      parentId: _selectedParentId,
     );
   }
 
@@ -106,9 +111,54 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                       labelText: context.l10n.createTicketTypeLabel,
                       value: _selectedType,
                       items: TicketType.values,
-                      onChanged: (v) => setState(() => _selectedType = v),
+                      onChanged: (v) => setState(() {
+                        _selectedType = v;
+                        if (v == TicketType.epic) _selectedParentId = null;
+                      }),
                       itemLabel: (v) => ticketTypeLabel(context, v),
                       focusNode: _typeFocus,
+                    ),
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 150),
+                      curve: Curves.easeOut,
+                      alignment: Alignment.topCenter,
+                      child: _selectedType == TicketType.epic
+                          ? const SizedBox.shrink()
+                          : Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const SizedBox(height: AionSpacing.sp20),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      context.l10n.createTicketParentLabel,
+                                      style: AionText.label.copyWith(
+                                        color: c.textSecondary,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      context.l10n.commonOptionalMarker,
+                                      style: AionText.bodySm.copyWith(
+                                        color: c.textMuted,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 7),
+                                TicketParentPicker(
+                                  ticketType: _selectedType,
+                                  currentParentId: _selectedParentId,
+                                  candidatesLoader: () => context
+                                      .read<TicketsCubit>()
+                                      .getAllTickets(),
+                                  onParentSelected: (id) =>
+                                      setState(() => _selectedParentId = id),
+                                  variant: TicketParentPickerVariant.formField,
+                                ),
+                              ],
+                            ),
                     ),
                     const SizedBox(height: AionSpacing.sp20),
                     AppDropdown<TicketPriority>(

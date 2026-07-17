@@ -320,6 +320,12 @@ class TicketsCubit extends Cubit<TicketsState> {
         .toList();
   }
 
+  /// Returns every ticket in the workspace, for pickers that need the
+  /// full candidate set with no self/descendant exclusion (e.g. the
+  /// create-ticket parent field, where the ticket being created doesn't
+  /// exist yet). Performs a query only — does not emit a state.
+  Future<List<Ticket>> getAllTickets() => _repository.getAllTickets();
+
   /// Reassigns [ticket]'s parent to [newParentId] (`null` clears it).
   /// Rejects self-parenting and cycles locally — without calling the
   /// repository — by re-deriving the same descendant set

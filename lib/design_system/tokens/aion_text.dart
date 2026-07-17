@@ -135,4 +135,16 @@ abstract final class AionText {
     fontSize: 11,
     fontWeight: FontWeight.w400,
   );
+
+  /// Small proportional style for ancestor-breadcrumb subtitles under a
+  /// parent-picker candidate row's title (e.g. "Auth Epic / OAuth
+  /// redesign"). Deliberately not [caption] — caption's uppercase/wide
+  /// tracking reads badly on a mixed-case ancestor path.
+  static const breadcrumb = TextStyle(
+    fontFamily: _ui,
+    fontSize: 11,
+    fontWeight: FontWeight.w500,
+    letterSpacing: 0,
+    height: 1.2,
+  );
 }
