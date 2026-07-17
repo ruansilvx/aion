@@ -624,7 +624,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                     ),
                   ),
                 if (_viewMode == _TicketViewMode.board &&
-                    _hasMore(state) &&
+                    (_hasMore(state) || state is TicketsLoadingMore) &&
                     !selection.isActive)
                   Positioned(
                     left: 18,
@@ -1114,15 +1114,21 @@ class _LoadMoreRetryRowState extends State<_LoadMoreRetryRow> {
 }
 
 /// Floating "Load more" button shown in board mode when
-/// [TicketsCubit.loadMoreTickets] has another page available (design.md
-/// §3). Anchored bottom-left so it never collides with [AppFab]
-/// (bottom-right) or [TicketSelectionBar] (which already hides both via
-/// the same `selection.isActive` visibility rule). Takes a secondary/
-/// outlined treatment (surface fill, `borderStrong` outline) rather than
-/// [AppFab]'s solid `primary` fill, so the create action stays the single
-/// visually-dominant floating control. Deliberately has no disabled
-/// variant — [_TicketsListScreenState.build] only builds this widget
-/// when a next page actually exists, so it's simply absent otherwise.
+/// [TicketsCubit.loadMoreTickets] has another page available, and kept
+/// mounted through an in-flight fetch triggered from either the board
+/// button or the flat list's scroll trigger (design.md §3, §3.8) — a
+/// `TicketsLoadingMore` state always implies the prior snapshot had
+/// `hasMore: true` (see [TicketsCubit.loadMoreTickets]'s guard), so
+/// [_TicketsListScreenState.build] builds this widget whenever
+/// `_hasMore(state) || state is TicketsLoadingMore`, avoiding the
+/// layout shift design.md §3.8 calls out. Anchored bottom-left so it
+/// never collides with [AppFab] (bottom-right) or [TicketSelectionBar]
+/// (which already hides both via the same `selection.isActive`
+/// visibility rule). Takes a secondary/outlined treatment (surface
+/// fill, `borderStrong` outline) rather than [AppFab]'s solid `primary`
+/// fill, so the create action stays the single visually-dominant
+/// floating control. Deliberately has no disabled variant — it's simply
+/// absent when no next page exists and nothing is loading.
 class _BoardLoadMoreButton extends StatefulWidget {
   /// Creates a [_BoardLoadMoreButton]. Shows a small [AppSpinner] in
   /// place of the leading icon while [isLoading] is true (a board-
