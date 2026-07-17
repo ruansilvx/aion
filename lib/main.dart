@@ -1,5 +1,7 @@
 // main.dart — App entry point: database init, repository/BLoC providers, theme, router.
 
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -12,10 +14,30 @@ import 'package:aion/features/tickets/data/repositories/drift_ticket_link_reposi
 import 'package:aion/features/tickets/data/repositories/drift_ticket_repository.dart';
 import 'package:aion/features/tickets/tickets.dart';
 
-/// App entry point. Opens the [AppDatabase] and runs [AionApp].
+/// App entry point. Opens the [AppDatabase], fires off a best-effort
+/// trash purge, and runs [AionApp].
 void main() {
   final database = AppDatabase();
+  unawaited(_purgeOldTrashOnLaunch(database));
   runApp(AionApp(database: database));
+}
+
+/// Permanently purges trashed tickets older than
+/// [TrashCubit.purgeAgeThreshold] on every cold start, so trash is
+/// cleaned up even for users who never visit the Trash screen's manual
+/// "Purge old" action. Fire-and-forget: [main] does not await this, so
+/// it never delays first paint. Failures are swallowed — a missed purge
+/// has no user-visible consequence and simply gets another chance on
+/// the next launch.
+Future<void> _purgeOldTrashOnLaunch(AppDatabase database) async {
+  try {
+    await DriftTicketRepository(
+      database,
+    ).purgeTrashOlderThan(TrashCubit.purgeAgeThreshold);
+  } catch (_) {
+    // Best-effort housekeeping — no user-facing surface for failures,
+    // and this codebase has no logging infrastructure to report into.
+  }
 }
 
 /// The Aion app root. Wires repository providers, the root-level
