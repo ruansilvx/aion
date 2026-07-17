@@ -78,6 +78,8 @@ class TicketParentPicker extends StatefulWidget {
     required this.candidatesLoader,
     required this.onParentSelected,
     this.variant = TicketParentPickerVariant.inline,
+    this.isDisabled = false,
+    this.errorText,
   });
 
   /// The type of the ticket being edited/created. Callers gate whether to
@@ -106,6 +108,20 @@ class TicketParentPicker extends StatefulWidget {
   /// Which trigger appearance to render. Defaults to
   /// [TicketParentPickerVariant.inline].
   final TicketParentPickerVariant variant;
+
+  /// Renders the [TicketParentPickerVariant.formField] trigger's disabled
+  /// state (50% opacity, muted glyphs/text, `IgnorePointer`) and blocks
+  /// opening the overlay. Meaningful only for that variant — the compact
+  /// inline trigger has no disabled treatment in the design spec. Callers
+  /// typically wire this to their own submit-in-flight state (e.g.
+  /// `CreateTicketScreen`'s `_isSubmitting`).
+  final bool isDisabled;
+
+  /// When non-null, renders the [TicketParentPickerVariant.formField]
+  /// trigger's error state (danger-colored border/ring) with this text as
+  /// a helper line below the control. Meaningful only for that variant.
+  /// `null` (the default) means no error is shown.
+  final String? errorText;
 
   @override
   State<TicketParentPicker> createState() => _TicketParentPickerState();
@@ -153,6 +169,7 @@ class _TicketParentPickerState extends State<TicketParentPicker> {
   }
 
   void _toggleOverlay() {
+    if (widget.isDisabled) return;
     if (_isOpen) {
       _removeOverlay();
     } else {
@@ -338,12 +355,14 @@ class _TicketParentPickerState extends State<TicketParentPicker> {
       ),
     };
 
-    return CompositedTransformTarget(
+    final control = CompositedTransformTarget(
       link: _layerLink,
       child: Semantics(
         button: true,
+        enabled: !widget.isDisabled,
         label: context.l10n.ticketDetailChangeParent,
         child: FocusableActionDetector(
+          enabled: !widget.isDisabled,
           onShowFocusHighlight: (focused) =>
               setState(() => _isFocused = focused),
           onShowHoverHighlight: (hovered) =>
@@ -361,10 +380,26 @@ class _TicketParentPickerState extends State<TicketParentPicker> {
             onTapCancel: () => setState(() => _isPressed = false),
             onTapUp: (_) => setState(() => _isPressed = false),
             onTap: _toggleOverlay,
-            child: trigger,
+            child: IgnorePointer(ignoring: widget.isDisabled, child: trigger),
           ),
         ),
       ),
+    );
+
+    if (widget.variant != TicketParentPickerVariant.formField ||
+        widget.errorText == null) {
+      return control;
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        control,
+        const SizedBox(height: 4),
+        Text(
+          widget.errorText!,
+          style: AionText.bodySm.copyWith(color: c.danger),
+        ),
+      ],
     );
   }
 
@@ -442,37 +477,46 @@ class _TicketParentPickerState extends State<TicketParentPicker> {
   }
 
   /// Full-width, `AppDropdown`-style form-field trigger, used on
-  /// `CreateTicketScreen`.
+  /// `CreateTicketScreen`. Renders [TicketParentPicker.isDisabled]'s
+  /// muted/`0.5`-opacity treatment and [TicketParentPicker.errorText]'s
+  /// danger-colored border/ring, per Component Spec §2.3.
   Widget _buildFormFieldTrigger(AionColors c, Ticket? resolvedParent) {
-    final borderColor = _isFocused || _isOpen
+    final hasError = widget.errorText != null;
+    final isActive = _isFocused || _isOpen;
+    final borderColor = hasError
+        ? c.danger
+        : isActive
         ? c.primary
         : _isHovered
         ? c.borderStrong
         : c.border;
-    final borderWidth = _isFocused || _isOpen ? 1.5 : 1.0;
-    final glyphColor = _isHovered || _isFocused || _isOpen
+    final borderWidth = hasError || isActive ? 1.5 : 1.0;
+    final glyphColor = _isHovered || isActive
         ? c.textSecondary
         : c.textMuted;
+    final ringColor = hasError ? c.danger : c.primary;
 
-    return AnimatedScale(
-      scale: _isPressed ? 0.99 : 1.0,
-      duration: const Duration(milliseconds: 80),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: c.surface,
-          borderRadius: BorderRadius.circular(11),
-          border: Border.all(color: borderColor, width: borderWidth),
-          boxShadow: _isFocused || _isOpen
-              ? [
-                  BoxShadow(
-                    color: c.primary.withValues(
-                      alpha: t.isDark ? 0.30 : 0.16,
+    return Opacity(
+      opacity: widget.isDisabled ? 0.5 : 1.0,
+      child: AnimatedScale(
+        scale: _isPressed ? 0.99 : 1.0,
+        duration: const Duration(milliseconds: 80),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: c.surface,
+            borderRadius: BorderRadius.circular(11),
+            border: Border.all(color: borderColor, width: borderWidth),
+            boxShadow: hasError || isActive
+                ? [
+                    BoxShadow(
+                      color: ringColor.withValues(
+                        alpha: t.isDark ? 0.30 : 0.16,
+                      ),
+                      spreadRadius: 3,
                     ),
-                    spreadRadius: 3,
-                  ),
-                ]
-              : null,
-        ),
+                  ]
+                : null,
+          ),
         child: widget.currentParentId == null
             ? Padding(
                 padding: const EdgeInsets.symmetric(
@@ -552,6 +596,7 @@ class _TicketParentPickerState extends State<TicketParentPicker> {
                   ],
                 ),
               ),
+        ),
       ),
     );
   }

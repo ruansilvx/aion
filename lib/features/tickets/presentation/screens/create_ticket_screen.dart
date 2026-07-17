@@ -156,6 +156,7 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                                   onParentSelected: (id) =>
                                       setState(() => _selectedParentId = id),
                                   variant: TicketParentPickerVariant.formField,
+                                  isDisabled: _isSubmitting,
                                 ),
                               ],
                             ),
