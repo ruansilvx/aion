@@ -307,16 +307,22 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Returns every ticket that [ticket] could validly be reparented under:
-  /// all tickets except [ticket] itself and any of its descendants
-  /// (reachable by walking `parentId` forward). Setting either as the new
-  /// parent would create a cycle. Performs a query only — does not emit a
-  /// state, since this feeds a picker overlay rather than driving the
-  /// detail screen's own render state.
+  /// all tickets except [ticket] itself, any of its descendants
+  /// (reachable by walking `parentId` forward, since either would create a
+  /// cycle), and any candidate whose type cannot structurally parent
+  /// [ticket]'s type per [TicketTypeHierarchy.canParent]. Performs a query
+  /// only — does not emit a state, since this feeds a picker overlay
+  /// rather than driving the detail screen's own render state.
   Future<List<Ticket>> getValidParentCandidates(Ticket ticket) async {
     final all = await _repository.getAllTickets();
     final descendantIds = _descendantIds(ticket.id, all);
     return all
-        .where((t) => t.id != ticket.id && !descendantIds.contains(t.id))
+        .where(
+          (t) =>
+              t.id != ticket.id &&
+              !descendantIds.contains(t.id) &&
+              t.type.canParent(ticket.type),
+        )
         .toList();
   }
 
@@ -325,6 +331,18 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// create-ticket parent field, where the ticket being created doesn't
   /// exist yet). Performs a query only — does not emit a state.
   Future<List<Ticket>> getAllTickets() => _repository.getAllTickets();
+
+  /// Returns every ticket whose type may structurally parent [childType]
+  /// per [TicketTypeHierarchy.canParent], for the create-ticket parent
+  /// field — where the ticket being created doesn't exist yet, so there is
+  /// no id to derive self/descendant exclusions from. Performs a query
+  /// only — does not emit a state.
+  Future<List<Ticket>> getValidParentCandidatesForType(
+    TicketType childType,
+  ) async {
+    final all = await _repository.getAllTickets();
+    return all.where((t) => t.type.canParent(childType)).toList();
+  }
 
   /// Reassigns [ticket]'s parent to [newParentId] (`null` clears it).
   /// Rejects self-parenting and cycles locally — without calling the
@@ -336,8 +354,10 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// a toast rather than collapsing to the generic error view. Also
   /// rejects any attempt to set a non-null parent on an [TicketType.epic]
   /// ticket — epics are always subtree roots (see project.md's watcher
-  /// system) — via the same rejection path. On a valid reparent, persists
-  /// via [TicketRepository.updateTicketParent] and emits the refreshed
+  /// system) — and any candidate parent whose type cannot structurally
+  /// parent [ticket]'s type per [TicketTypeHierarchy.canParent], via the
+  /// same rejection path. On a valid reparent, persists via
+  /// [TicketRepository.updateTicketParent] and emits the refreshed
   /// [TicketDetailLoaded].
   Future<void> updateTicketParent(Ticket ticket, String? newParentId) async {
     if (newParentId != null) {
@@ -352,6 +372,12 @@ class TicketsCubit extends Cubit<TicketsState> {
       final all = await _repository.getAllTickets();
       final descendantIds = _descendantIds(ticket.id, all);
       if (descendantIds.contains(newParentId)) {
+        await _emitInvalidParent(ticket.id);
+        return;
+      }
+      final candidateParent = await _repository.getTicketById(newParentId);
+      if (candidateParent == null ||
+          !candidateParent.type.canParent(ticket.type)) {
         await _emitInvalidParent(ticket.id);
         return;
       }

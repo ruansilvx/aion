@@ -136,9 +136,10 @@ class _TicketParentPickerState extends State<TicketParentPicker> {
   bool _isFocused = false;
   bool _isPressed = false;
 
-  /// Valid reparent candidates, fetched once on mount so the trigger can
-  /// resolve the current parent's title without waiting for the overlay
-  /// to open. `null` while the initial fetch is in flight.
+  /// Valid reparent candidates, fetched on mount (and re-fetched whenever
+  /// [TicketParentPicker.ticketType] changes, see [didUpdateWidget]) so the
+  /// trigger can resolve the current parent's title without waiting for
+  /// the overlay to open. `null` while a fetch is in flight.
   List<Ticket>? _candidates;
 
   @override
@@ -146,6 +147,19 @@ class _TicketParentPickerState extends State<TicketParentPicker> {
     super.initState();
     _loadCandidates();
     _searchController.addListener(_handleSearchChanged);
+  }
+
+  /// Re-fetches candidates when [TicketParentPicker.ticketType] changes —
+  /// candidates depend on `ticketType` via [TicketParentPicker.candidatesLoader],
+  /// and `CreateTicketScreen` can change it after this widget is mounted
+  /// (its type dropdown), which would otherwise leave a stale candidate
+  /// list from the type selected at first build.
+  @override
+  void didUpdateWidget(covariant TicketParentPicker oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.ticketType != oldWidget.ticketType) {
+      _loadCandidates();
+    }
   }
 
   Future<void> _loadCandidates() async {

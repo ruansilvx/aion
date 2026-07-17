@@ -43,10 +43,13 @@ void main() {
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
   );
+  // Type is story (not task, unlike the rest of this hierarchy fixture) so
+  // it remains a valid reparent target for `ticket` (a task) under the
+  // type-compatibility rule: story can parent task, task cannot parent task.
   final unrelated = Ticket(
     id: '4',
     ticketId: 'AIO-4',
-    type: TicketType.task,
+    type: TicketType.story,
     title: 'Unrelated ticket',
     status: TicketStatus.backlog,
     createdAt: DateTime(2026),
@@ -79,6 +82,54 @@ void main() {
     status: TicketStatus.backlog,
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
+  );
+
+  // Additional type-variety fixtures for type-compatibility test cases.
+  final story = Ticket(
+    id: '6',
+    ticketId: 'AIO-6',
+    type: TicketType.story,
+    title: 'Story ticket',
+    status: TicketStatus.backlog,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+  final resourceTicket = Ticket(
+    id: '7',
+    ticketId: 'AIO-7',
+    type: TicketType.resource,
+    title: 'Resource ticket',
+    status: TicketStatus.backlog,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+  final otherTask = Ticket(
+    id: '8',
+    ticketId: 'AIO-8',
+    type: TicketType.task,
+    title: 'Another task ticket',
+    status: TicketStatus.backlog,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+  final chatTicket = Ticket(
+    id: '9',
+    ticketId: 'AIO-9',
+    type: TicketType.chat,
+    title: 'Chat ticket',
+    status: TicketStatus.backlog,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+  final chatReparented = Ticket(
+    id: chatTicket.id,
+    ticketId: chatTicket.ticketId,
+    type: chatTicket.type,
+    title: chatTicket.title,
+    status: chatTicket.status,
+    parentId: ticket.id,
+    createdAt: chatTicket.createdAt,
+    updatedAt: chatTicket.updatedAt,
   );
 
   setUpAll(() {
@@ -599,6 +650,45 @@ void main() {
 
         expect(candidates.map((t) => t.id), [unrelated.id]);
       });
+
+      test(
+        'excludes candidates whose type cannot parent the ticket type, '
+        'keeps compatible ones',
+        () async {
+          when(
+            () => repository.getAllTickets(),
+          ).thenAnswer((_) async => [ticket, unrelated, otherTask, resourceTicket]);
+
+          final candidates = await TicketsCubit(
+            repository,
+          ).getValidParentCandidates(ticket);
+
+          // unrelated (story) can parent ticket (task): kept.
+          // otherTask (task) cannot parent ticket (task, same rank): excluded.
+          // resourceTicket (leaf) can never parent anything: excluded.
+          expect(candidates.map((t) => t.id).toSet(), {unrelated.id});
+        },
+      );
+    });
+
+    group('getValidParentCandidatesForType', () {
+      test(
+        'returns only tickets whose type can parent the given child type, '
+        'with no self/descendant exclusion',
+        () async {
+          when(
+            () => repository.getAllTickets(),
+          ).thenAnswer((_) async => [ticket, story, resourceTicket, otherTask]);
+
+          final candidates = await TicketsCubit(
+            repository,
+          ).getValidParentCandidatesForType(TicketType.task);
+
+          // story can parent task; ticket/otherTask (task) cannot parent
+          // task (same rank); resourceTicket (leaf) can never parent.
+          expect(candidates.map((t) => t.id).toSet(), {story.id});
+        },
+      );
     });
 
     group('getAllTickets', () {
@@ -638,6 +728,9 @@ void main() {
           when(
             () => repository.getTicketById(ticket.id),
           ).thenAnswer((_) async => reparented);
+          when(
+            () => repository.getTicketById(unrelated.id),
+          ).thenAnswer((_) async => unrelated);
         },
         build: () => TicketsCubit(repository),
         act: (cubit) => cubit.updateTicketParent(ticket, unrelated.id),
@@ -704,6 +797,108 @@ void main() {
           const TicketsError('', reason: TicketsErrorReason.invalidParent),
           TicketDetailLoaded(ticket),
         ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'rejects reparenting under a type-incompatible candidate '
+        '(task under task) without calling the repository',
+        setUp: () {
+          when(
+            () => repository.getAllTickets(),
+          ).thenAnswer((_) async => [ticket, otherTask]);
+          when(
+            () => repository.getTicketById(ticket.id),
+          ).thenAnswer((_) async => ticket);
+          when(
+            () => repository.getTicketById(otherTask.id),
+          ).thenAnswer((_) async => otherTask);
+        },
+        build: () => TicketsCubit(repository),
+        act: (cubit) => cubit.updateTicketParent(ticket, otherTask.id),
+        verify: (_) {
+          verifyNever(() => repository.updateTicketParent(any(), any()));
+        },
+        expect: () => [
+          const TicketsError('', reason: TicketsErrorReason.invalidParent),
+          TicketDetailLoaded(ticket),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'rejects reparenting a story under a task without calling the '
+        'repository',
+        setUp: () {
+          when(
+            () => repository.getAllTickets(),
+          ).thenAnswer((_) async => [story, ticket]);
+          when(
+            () => repository.getTicketById(story.id),
+          ).thenAnswer((_) async => story);
+          when(
+            () => repository.getTicketById(ticket.id),
+          ).thenAnswer((_) async => ticket);
+        },
+        build: () => TicketsCubit(repository),
+        act: (cubit) => cubit.updateTicketParent(story, ticket.id),
+        verify: (_) {
+          verifyNever(() => repository.updateTicketParent(any(), any()));
+        },
+        expect: () => [
+          const TicketsError('', reason: TicketsErrorReason.invalidParent),
+          TicketDetailLoaded(story),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'rejects reparenting under a resource (a leaf type that can never '
+        'parent) without calling the repository',
+        setUp: () {
+          when(
+            () => repository.getAllTickets(),
+          ).thenAnswer((_) async => [ticket, resourceTicket]);
+          when(
+            () => repository.getTicketById(ticket.id),
+          ).thenAnswer((_) async => ticket);
+          when(
+            () => repository.getTicketById(resourceTicket.id),
+          ).thenAnswer((_) async => resourceTicket);
+        },
+        build: () => TicketsCubit(repository),
+        act: (cubit) => cubit.updateTicketParent(ticket, resourceTicket.id),
+        verify: (_) {
+          verifyNever(() => repository.updateTicketParent(any(), any()));
+        },
+        expect: () => [
+          const TicketsError('', reason: TicketsErrorReason.invalidParent),
+          TicketDetailLoaded(ticket),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'persists a valid reparent for a leaf type under a task '
+        '(chat under task) and emits [TicketDetailLoaded]',
+        setUp: () {
+          when(
+            () => repository.getAllTickets(),
+          ).thenAnswer((_) async => [chatTicket, ticket]);
+          when(
+            () => repository.updateTicketParent(any(), any()),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(ticket.id),
+          ).thenAnswer((_) async => ticket);
+          when(
+            () => repository.getTicketById(chatTicket.id),
+          ).thenAnswer((_) async => chatReparented);
+        },
+        build: () => TicketsCubit(repository),
+        act: (cubit) => cubit.updateTicketParent(chatTicket, ticket.id),
+        verify: (_) {
+          verify(
+            () => repository.updateTicketParent(chatTicket.id, ticket.id),
+          ).called(1);
+        },
+        expect: () => [TicketDetailLoaded(chatReparented)],
       );
 
       blocTest<TicketsCubit, TicketsState>(
