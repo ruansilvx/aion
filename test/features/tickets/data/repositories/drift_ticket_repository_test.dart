@@ -565,6 +565,92 @@ void main() {
     });
   });
 
+  group('purgeTrashOlderThan', () {
+    test(
+      'purges only tickets older than the cutoff, leaving younger '
+      'trashed tickets and live tickets untouched',
+      () async {
+        await repository.createTicket(buildTicket(id: 'old'));
+        await repository.createTicket(buildTicket(id: 'young'));
+        await repository.createTicket(buildTicket(id: 'live'));
+        await repository.trashTicket('old');
+        await repository.trashTicket('young');
+
+        final now = DateTime.now();
+        await database.ticketDao.softDeleteByIds(
+          ['old'],
+          now.subtract(const Duration(days: 40)).millisecondsSinceEpoch,
+        );
+        await database.ticketDao.softDeleteByIds(
+          ['young'],
+          now.subtract(const Duration(days: 5)).millisecondsSinceEpoch,
+        );
+
+        final purged = await repository.purgeTrashOlderThan(
+          const Duration(days: 30),
+        );
+
+        expect(purged, 1);
+        expect(await repository.getTicketById('old'), isNull);
+        expect(await repository.getTicketById('young'), isNotNull);
+        expect(await repository.getTicketById('live'), isNotNull);
+      },
+    );
+
+    test('cascades to comments and ticket_links', () async {
+      await repository.createTicket(buildTicket(id: 'old'));
+      await repository.createTicket(buildTicket(id: 'other'));
+
+      final commentRepository = DriftCommentRepository(database);
+      await commentRepository.addComment(
+        TicketComment(
+          id: '',
+          ticketId: 'old',
+          content: 'A comment',
+          authorType: CommentAuthorType.human,
+          createdAt: DateTime(2026, 1, 1),
+        ),
+      );
+      final linkRepository = DriftTicketLinkRepository(database);
+      await linkRepository.createLink(
+        sourceTicketId: 'old',
+        targetTicketId: 'other',
+        linkType: TicketLinkType.relatesTo,
+      );
+
+      await repository.trashTicket('old');
+      await database.ticketDao.softDeleteByIds(
+        ['old'],
+        DateTime.now()
+            .subtract(const Duration(days: 40))
+            .millisecondsSinceEpoch,
+      );
+
+      final purged = await repository.purgeTrashOlderThan(
+        const Duration(days: 30),
+      );
+
+      expect(purged, 1);
+      expect(
+        await commentRepository.getCommentsForTicket('old'),
+        isEmpty,
+      );
+      expect(await linkRepository.getLinksForTicket('old'), isEmpty);
+    });
+
+    test('is a no-op when nothing qualifies', () async {
+      await repository.createTicket(buildTicket(id: 'young'));
+      await repository.trashTicket('young');
+
+      final purged = await repository.purgeTrashOlderThan(
+        const Duration(days: 30),
+      );
+
+      expect(purged, 0);
+      expect(await repository.getTicketById('young'), isNotNull);
+    });
+  });
+
   group('getLinksForTicket excludes trashed', () {
     late DriftTicketLinkRepository linkRepository;
 

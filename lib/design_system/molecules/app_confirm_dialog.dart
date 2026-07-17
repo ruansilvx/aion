@@ -66,8 +66,18 @@ Future<bool> showAppConfirmDialog(
   final resolvedCancelLabel = cancelLabel ?? context.l10n.commonCancel;
   final completer = _CompleterBox<bool>();
   late final OverlayEntry entry;
+  var isResolved = false;
 
+  // Guards against a second dismissal path (confirm, cancel, scrim tap,
+  // Escape) firing after the first has already removed the entry — e.g.
+  // an overlapping tap on both the card's action button and the scrim
+  // beneath it in the same input event. Without this guard, a second
+  // `entry.remove()` throws ("An OverlayEntry should be removed only
+  // once"), even though `_CompleterBox.complete` itself is safely
+  // idempotent.
   void resolve(bool value) {
+    if (isResolved) return;
+    isResolved = true;
     completer.complete(value);
     entry.remove();
   }

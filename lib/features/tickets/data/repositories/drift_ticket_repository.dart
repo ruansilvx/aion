@@ -205,6 +205,29 @@ class DriftTicketRepository implements TicketRepository {
     });
   }
 
+  /// Filters [getTrashedTickets]'s rows by [age] and hard-deletes the
+  /// matches, same cascade shape as [emptyTrash]. `row.deletedAt!` is
+  /// safe to force-unwrap here: the underlying query is `WHERE
+  /// deleted_at IS NOT NULL`, so every row already has a non-null
+  /// `deletedAt`.
+  @override
+  Future<int> purgeTrashOlderThan(Duration age) async {
+    final cutoffMs = DateTime.now().subtract(age).millisecondsSinceEpoch;
+    final trashed = await _db.ticketDao.getTrashedTickets();
+    final ids = trashed
+        .where((row) => row.deletedAt! < cutoffMs)
+        .map((row) => row.id)
+        .toList();
+    if (ids.isEmpty) return 0;
+
+    await _db.transaction(() async {
+      await _db.commentDao.deleteCommentsForTickets(ids);
+      await _db.ticketLinkDao.deleteLinksForTickets(ids);
+      await _db.ticketDao.deleteTicketRows(ids);
+    });
+    return ids.length;
+  }
+
   @override
   Future<List<Ticket>> getTrashedTickets() async {
     final rows = await _db.ticketDao.getTrashedTickets();

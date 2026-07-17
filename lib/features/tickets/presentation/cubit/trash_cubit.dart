@@ -15,8 +15,13 @@ class TrashCubit extends Cubit<TrashState> {
 
   final TicketRepository _repository;
 
+  /// How old a trashed ticket must be before "Purge old" will remove it.
+  /// Fixed, not user-configurable (see proposal.md's Non-goals).
+  static const Duration purgeAgeThreshold = Duration(days: 30);
+
   /// Fetches every currently trashed ticket, then reduces the flat list
   /// to roots + per-root descendant counts (see [TrashLoaded]'s dartdoc)
+  /// and counts how many are old enough for [purgeOldTrash] to remove,
   /// before emitting. Emits [TrashLoading] then [TrashLoaded] on success,
   /// or [TrashError] if the repository call throws.
   Future<void> load() async {
@@ -41,8 +46,12 @@ class TrashCubit extends Cubit<TrashState> {
         for (final root in roots)
           root.id: _countDescendants(root.id, childrenByParent),
       };
+      final cutoff = DateTime.now().subtract(purgeAgeThreshold);
+      final purgeEligibleCount = all
+          .where((t) => t.deletedAt!.isBefore(cutoff))
+          .length;
 
-      emit(TrashLoaded(roots, descendantCounts));
+      emit(TrashLoaded(roots, descendantCounts, purgeEligibleCount));
     } catch (e) {
       emit(TrashError(e.toString()));
     }
@@ -92,6 +101,19 @@ class TrashCubit extends Cubit<TrashState> {
   Future<void> emptyTrash() async {
     try {
       await _repository.emptyTrash();
+      await load();
+    } catch (e) {
+      emit(TrashError(e.toString()));
+    }
+  }
+
+  /// Permanently deletes every trashed ticket older than
+  /// [purgeAgeThreshold] via [TicketRepository.purgeTrashOlderThan],
+  /// then reloads the trash list. Emits [TrashError] if the repository
+  /// call throws.
+  Future<void> purgeOldTrash() async {
+    try {
+      await _repository.purgeTrashOlderThan(purgeAgeThreshold);
       await load();
     } catch (e) {
       emit(TrashError(e.toString()));

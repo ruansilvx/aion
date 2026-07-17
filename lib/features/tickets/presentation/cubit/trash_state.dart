@@ -27,9 +27,13 @@ class TrashLoading extends TrashState {
 /// or permanently deleting a root always takes its whole subtree with
 /// it, so the subtree never needs independent tiles.
 class TrashLoaded extends TrashState {
-  /// Creates a [TrashLoaded] state carrying [tickets] (roots only) and
-  /// [descendantCounts].
-  const TrashLoaded(this.tickets, this.descendantCounts);
+  /// Creates a [TrashLoaded] state carrying [tickets] (roots only),
+  /// [descendantCounts], and [purgeEligibleCount].
+  const TrashLoaded(
+    this.tickets,
+    this.descendantCounts,
+    this.purgeEligibleCount,
+  );
 
   /// Every currently trashed root ticket, most recently trashed first.
   final List<Ticket> tickets;
@@ -39,8 +43,14 @@ class TrashLoaded extends TrashState {
   /// descendants.
   final Map<String, int> descendantCounts;
 
+  /// How many currently trashed tickets (roots and descendants combined)
+  /// are older than [TrashCubit.purgeAgeThreshold] — i.e. how many
+  /// "Purge old" would remove right now. Drives the purge action's
+  /// enabled state and its confirm-dialog count.
+  final int purgeEligibleCount;
+
   @override
-  List<Object?> get props => [tickets, descendantCounts];
+  List<Object?> get props => [tickets, descendantCounts, purgeEligibleCount];
 }
 
 /// A trash load, restore, permanent-delete, or empty-trash operation

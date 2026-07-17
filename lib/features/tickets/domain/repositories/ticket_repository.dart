@@ -79,6 +79,20 @@ abstract interface class TicketRepository {
   /// "Empty trash" action. No-ops if trash is empty.
   Future<void> emptyTrash();
 
+  /// Permanently deletes every currently trashed ticket whose
+  /// `deletedAt` is older than [age] (cascading to comments and
+  /// `ticket_links`, same as [emptyTrash]). Returns the number of
+  /// tickets purged. No-op (returns 0) if none are eligible.
+  ///
+  /// Safe to filter per-ticket, with no cascade/subtree walk: trashing
+  /// always stamps a whole affected subtree with one `DateTime.now()`
+  /// at once (see [trashTickets]), and there is no UI path that
+  /// re-trashes a single already-trashed descendant independently — so
+  /// every member of a given trashed subtree always shares the same
+  /// `deletedAt`. A root and its descendants therefore always age out
+  /// together.
+  Future<int> purgeTrashOlderThan(Duration age);
+
   /// Returns every currently trashed ticket, most recently trashed
   /// first.
   Future<List<Ticket>> getTrashedTickets();

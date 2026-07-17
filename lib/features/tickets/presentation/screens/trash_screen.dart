@@ -13,9 +13,9 @@ import 'package:aion/features/tickets/presentation/widgets/trashed_ticket_tile.d
 
 /// The `/tickets/trash` route: lists every trashed root ticket
 /// (see [TrashLoaded]'s dartdoc for what "root" means here), with a
-/// per-row Restore/Permanently-Delete pair and a screen-level "Empty
-/// trash" action. Reached via the ticket list's header Trash-entry icon
-/// button.
+/// per-row Restore/Permanently-Delete pair and screen-level "Purge old"
+/// and "Empty trash" actions. Reached via the ticket list's header
+/// Trash-entry icon button.
 class TrashScreen extends StatelessWidget {
   /// Creates a [TrashScreen].
   const TrashScreen({super.key});
@@ -49,46 +49,104 @@ class TrashScreen extends StatelessWidget {
             builder: (context, state) {
               final count = state is TrashLoaded ? state.tickets.length : 0;
               final isEmpty = state is TrashLoaded && state.tickets.isEmpty;
+              final purgeEligibleCount = state is TrashLoaded
+                  ? state.purgeEligibleCount
+                  : 0;
 
-              return Padding(
-                padding: const EdgeInsets.fromLTRB(20, 6, 20, 14),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    _BackButton(onTap: () => context.go('/tickets')),
-                    const SizedBox(width: 13),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          context.l10n.ticketTrashScreenTitle,
-                          style: AionText.h2.copyWith(color: c.textPrimary),
+              final purgeAction = _PurgeOldAction(
+                enabled: purgeEligibleCount > 0,
+                onTap: purgeEligibleCount == 0
+                    ? null
+                    : () => _confirmPermanentDelete(
+                        context,
+                        title: context.l10n.ticketTrashPurgeOldConfirmTitle,
+                        message: context.l10n
+                            .ticketTrashPurgeOldConfirmMessage(
+                              purgeEligibleCount,
+                              TrashCubit.purgeAgeThreshold.inDays,
+                            ),
+                        onConfirmed: () =>
+                            context.read<TrashCubit>().purgeOldTrash(),
+                      ),
+              );
+              final emptyAction = _EmptyTrashAction(
+                enabled: !isEmpty,
+                onTap: isEmpty
+                    ? null
+                    : () => _confirmPermanentDelete(
+                        context,
+                        title: context.l10n.ticketTrashEmptyConfirmTitle,
+                        message: context.l10n.ticketTrashEmptyConfirmMessage(
+                          count,
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          context.l10n.ticketTrashItemCount(count),
-                          style: AionText.time.copyWith(color: c.textMuted),
+                        onConfirmed: () =>
+                            context.read<TrashCubit>().emptyTrash(),
+                      ),
+              );
+              final titleColumn = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    context.l10n.ticketTrashScreenTitle,
+                    style: AionText.h2.copyWith(color: c.textPrimary),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    context.l10n.ticketTrashItemCount(count),
+                    style: AionText.time.copyWith(color: c.textMuted),
+                  ),
+                ],
+              );
+
+              return LayoutBuilder(
+                builder: (context, constraints) {
+                  // Below this width the back button + title/count block
+                  // plus two text-labelled ghost buttons no longer fit on
+                  // one row — reflow the actions onto their own row.
+                  final isNarrow = constraints.maxWidth <= 380;
+
+                  final backTitleRow = Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      _BackButton(onTap: () => context.go('/tickets')),
+                      const SizedBox(width: 13),
+                      titleColumn,
+                      const Spacer(),
+                      if (!isNarrow) ...[
+                        purgeAction,
+                        const SizedBox(width: AionSpacing.sp8),
+                        emptyAction,
+                      ],
+                    ],
+                  );
+
+                  if (!isNarrow) {
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 6, 20, 14),
+                      child: backTitleRow,
+                    );
+                  }
+
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 6, 20, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        backTitleRow,
+                        const SizedBox(height: AionSpacing.sp8),
+                        Row(
+                          children: [
+                            const Spacer(),
+                            purgeAction,
+                            const SizedBox(width: AionSpacing.sp8),
+                            emptyAction,
+                          ],
                         ),
                       ],
                     ),
-                    const Spacer(),
-                    _EmptyTrashAction(
-                      enabled: !isEmpty,
-                      onTap: isEmpty
-                          ? null
-                          : () => _confirmPermanentDelete(
-                              context,
-                              title: context.l10n.ticketTrashEmptyConfirmTitle,
-                              message: context.l10n.ticketTrashEmptyConfirmMessage(
-                                count,
-                              ),
-                              onConfirmed: () =>
-                                  context.read<TrashCubit>().emptyTrash(),
-                            ),
-                    ),
-                  ],
-                ),
+                  );
+                },
               );
             },
           ),
@@ -303,6 +361,72 @@ class _BackButton extends StatelessWidget {
                 PhosphorIcons.caretLeftLight,
                 size: 20,
                 color: c.textPrimary,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// [TrashScreen]'s header "Purge old" action — permanently deletes every
+/// trashed ticket older than [TrashCubit.purgeAgeThreshold]. Styled like
+/// [_EmptyTrashAction] (bordered ghost button, danger-tinted icon +
+/// label, disabled via [Opacity]), with a distinct icon so it reads as a
+/// separate, age-based bulk action rather than "delete everything".
+class _PurgeOldAction extends StatelessWidget {
+  /// Creates a [_PurgeOldAction]. Disabled (and non-tappable) when
+  /// [enabled] is `false`, i.e. when no trashed ticket currently
+  /// qualifies for purge.
+  const _PurgeOldAction({required this.enabled, required this.onTap});
+
+  /// Whether at least one trashed ticket is old enough to purge.
+  final bool enabled;
+
+  /// Called when the action is tapped. `null` when [enabled] is `false`.
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+
+    return Opacity(
+      opacity: enabled ? 1.0 : 0.45,
+      child: Semantics(
+        button: true,
+        enabled: enabled,
+        label: context.l10n.ticketTrashPurgeOldAction,
+        child: GestureDetector(
+          onTap: onTap,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              border: Border.all(color: c.border, width: 1),
+              borderRadius: BorderRadius.all(AionRadius.md),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  PhosphorIcon(
+                    PhosphorIcons.clockCounterClockwiseLight,
+                    size: 14,
+                    color: c.danger,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    context.l10n.ticketTrashPurgeOldAction,
+                    style: AionText.label.copyWith(
+                      color: c.danger,
+                      fontSize: 12.5,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
