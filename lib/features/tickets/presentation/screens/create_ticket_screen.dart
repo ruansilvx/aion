@@ -113,7 +113,7 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                       items: TicketType.values,
                       onChanged: (v) => setState(() {
                         _selectedType = v;
-                        if (v == TicketType.epic) _selectedParentId = null;
+                        _selectedParentId = null;
                       }),
                       itemLabel: (v) => ticketTypeLabel(context, v),
                       focusNode: _typeFocus,
@@ -152,7 +152,9 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                                   currentParentId: _selectedParentId,
                                   candidatesLoader: () => context
                                       .read<TicketsCubit>()
-                                      .getAllTickets(),
+                                      .getValidParentCandidatesForType(
+                                        _selectedType,
+                                      ),
                                   onParentSelected: (id) =>
                                       setState(() => _selectedParentId = id),
                                   variant: TicketParentPickerVariant.formField,
