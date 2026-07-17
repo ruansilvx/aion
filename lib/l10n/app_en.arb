@@ -171,6 +171,15 @@
     }
   },
   "ticketTrashEmptyAction": "Empty trash",
+  "ticketTrashPurgeOldAction": "Purge old",
+  "ticketTrashPurgeOldConfirmTitle": "Purge old trash?",
+  "ticketTrashPurgeOldConfirmMessage": "{count, plural, one{1 ticket} other{{count} tickets}} trashed more than {days} days ago will be permanently deleted. This cannot be undone.",
+  "@ticketTrashPurgeOldConfirmMessage": {
+    "placeholders": {
+      "count": { "type": "int" },
+      "days": { "type": "int" }
+    }
+  },
 
   "ticketSelectionToggleLabel": "Select tickets",
   "ticketSelectionExitLabel": "Cancel selection",

@@ -14,6 +14,9 @@ import 'package:aion/features/tickets/presentation/screens/tickets_list_screen.d
 /// since trashed tickets carry no workflow context. Non-navigating (no
 /// detail screen for trashed tickets); offers Restore (neutral, no
 /// confirmation) and Permanently Delete (danger, confirmed) actions.
+/// Its second line also shows how long the ticket has been trashed via
+/// [formatTrashedAge], reflowing onto its own run when the row is
+/// crowded (see the `Wrap` around the type chip / subtasks / age labels).
 class TrashedTicketTile extends StatelessWidget {
   /// Creates a [TrashedTicketTile] for [ticket]. [descendantCount] is how
   /// many other trashed tickets are in its structural subtree — shown as
@@ -92,16 +95,21 @@ class TrashedTicketTile extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: AionSpacing.sp8),
-                  Row(
+                  Wrap(
+                    spacing: 9,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       TypeChip(type: ticket.type),
-                      if (descendantCount > 0) ...[
-                        const SizedBox(width: 9),
+                      if (descendantCount > 0)
                         Text(
                           '+$descendantCount subtasks',
                           style: AionText.time.copyWith(color: c.textMuted),
                         ),
-                      ],
+                      Text(
+                        formatTrashedAge(ticket.deletedAt!),
+                        style: AionText.time.copyWith(color: c.textMuted),
+                      ),
                     ],
                   ),
                 ],
