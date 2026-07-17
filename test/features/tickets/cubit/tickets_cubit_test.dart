@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -98,14 +100,18 @@ void main() {
             status: any(named: 'status'),
             type: any(named: 'type'),
             priority: any(named: 'priority'),
+            limit: any(named: 'limit'),
+            offset: any(named: 'offset'),
           ),
-        ).thenAnswer((_) async => [ticket]);
+        ).thenAnswer(
+          (_) async => TicketSearchPage(tickets: [ticket], hasMore: false),
+        );
       },
       build: () => TicketsCubit(repository),
       act: (cubit) => cubit.searchTickets(),
       expect: () => [
         const TicketsLoading(),
-        TicketsLoaded([ticket]),
+        TicketsLoaded([ticket], hasMore: false),
       ],
     );
 
@@ -118,6 +124,8 @@ void main() {
             status: any(named: 'status'),
             type: any(named: 'type'),
             priority: any(named: 'priority'),
+            limit: any(named: 'limit'),
+            offset: any(named: 'offset'),
           ),
         ).thenThrow(Exception('boom'));
       },
@@ -136,14 +144,18 @@ void main() {
             status: any(named: 'status'),
             type: any(named: 'type'),
             priority: any(named: 'priority'),
+            limit: any(named: 'limit'),
+            offset: any(named: 'offset'),
           ),
-        ).thenAnswer((_) async => [ticket]);
+        ).thenAnswer(
+          (_) async => TicketSearchPage(tickets: [ticket], hasMore: false),
+        );
       },
       build: () => TicketsCubit(repository),
-      seed: () => const TicketsLoaded([]),
+      seed: () => const TicketsLoaded([], hasMore: false),
       act: (cubit) => cubit.searchTickets(query: 'test'),
       expect: () => [
-        TicketsLoaded([ticket]),
+        TicketsLoaded([ticket], hasMore: false),
       ],
     );
 
@@ -152,15 +164,24 @@ void main() {
       setUp: () {
         when(() => repository.createTicket(any())).thenAnswer((_) async {});
         when(
-          () => repository.getAllTickets(),
-        ).thenAnswer((_) async => [ticket]);
+          () => repository.searchTickets(
+            query: any(named: 'query'),
+            status: any(named: 'status'),
+            type: any(named: 'type'),
+            priority: any(named: 'priority'),
+            limit: any(named: 'limit'),
+            offset: any(named: 'offset'),
+          ),
+        ).thenAnswer(
+          (_) async => TicketSearchPage(tickets: [ticket], hasMore: false),
+        );
       },
       build: () => TicketsCubit(repository),
       act: (cubit) =>
           cubit.createTicket(type: TicketType.task, title: 'New ticket'),
       expect: () => [
         const TicketCreating([]),
-        TicketCreated([ticket]),
+        TicketCreated([ticket], hasMore: false),
       ],
     );
 
@@ -182,15 +203,29 @@ void main() {
           () => repository.updateTicketStatus(any(), any()),
         ).thenAnswer((_) async {});
         when(
-          () => repository.getAllTickets(),
-        ).thenAnswer((_) async => [ticket.copyWith(status: TicketStatus.done)]);
+          () => repository.searchTickets(
+            query: any(named: 'query'),
+            status: any(named: 'status'),
+            type: any(named: 'type'),
+            priority: any(named: 'priority'),
+            limit: any(named: 'limit'),
+            offset: any(named: 'offset'),
+          ),
+        ).thenAnswer(
+          (_) async => TicketSearchPage(
+            tickets: [ticket.copyWith(status: TicketStatus.done)],
+            hasMore: false,
+          ),
+        );
       },
       build: () => TicketsCubit(repository),
-      seed: () => TicketsLoaded([ticket]),
+      seed: () => TicketsLoaded([ticket], hasMore: false),
       act: (cubit) => cubit.updateTicketStatus(ticket.id, TicketStatus.done),
       expect: () => [
         TicketStatusUpdating([ticket.copyWith(status: TicketStatus.done)]),
-        TicketStatusUpdated([ticket.copyWith(status: TicketStatus.done)]),
+        TicketStatusUpdated([
+          ticket.copyWith(status: TicketStatus.done),
+        ], hasMore: false),
       ],
     );
 
@@ -202,7 +237,7 @@ void main() {
         ).thenThrow(Exception('boom'));
       },
       build: () => TicketsCubit(repository),
-      seed: () => TicketsLoaded([ticket]),
+      seed: () => TicketsLoaded([ticket], hasMore: false),
       act: (cubit) => cubit.updateTicketStatus(ticket.id, TicketStatus.done),
       expect: () => [
         TicketStatusUpdating([ticket.copyWith(status: TicketStatus.done)]),
@@ -326,12 +361,26 @@ void main() {
       '[TicketTrashing, TicketsLoaded] with the refreshed list on success',
       setUp: () {
         when(() => repository.trashTicket(ticket.id)).thenAnswer((_) async {});
-        when(() => repository.getAllTickets()).thenAnswer((_) async => []);
+        when(
+          () => repository.searchTickets(
+            query: any(named: 'query'),
+            status: any(named: 'status'),
+            type: any(named: 'type'),
+            priority: any(named: 'priority'),
+            limit: any(named: 'limit'),
+            offset: any(named: 'offset'),
+          ),
+        ).thenAnswer(
+          (_) async => const TicketSearchPage(tickets: [], hasMore: false),
+        );
       },
       build: () => TicketsCubit(repository),
-      seed: () => TicketsLoaded([ticket]),
+      seed: () => TicketsLoaded([ticket], hasMore: false),
       act: (cubit) => cubit.trashTicket(ticket.id),
-      expect: () => [const TicketTrashing(), const TicketsLoaded([])],
+      expect: () => [
+        const TicketTrashing(),
+        const TicketsLoaded([], hasMore: false),
+      ],
     );
 
     blocTest<TicketsCubit, TicketsState>(
@@ -341,13 +390,24 @@ void main() {
         when(
           () => repository.trashTickets([ticket.id]),
         ).thenAnswer((_) async => 1);
-        when(() => repository.getAllTickets()).thenAnswer((_) async => []);
+        when(
+          () => repository.searchTickets(
+            query: any(named: 'query'),
+            status: any(named: 'status'),
+            type: any(named: 'type'),
+            priority: any(named: 'priority'),
+            limit: any(named: 'limit'),
+            offset: any(named: 'offset'),
+          ),
+        ).thenAnswer(
+          (_) async => const TicketSearchPage(tickets: [], hasMore: false),
+        );
       },
       build: () => TicketsCubit(repository),
       act: (cubit) => cubit.trashTickets([ticket.id]),
       expect: () => [
         const TicketsBatchTrashing(),
-        const TicketsBatchTrashed([], 1),
+        const TicketsBatchTrashed([], 1, hasMore: false),
       ],
     );
 
@@ -361,6 +421,171 @@ void main() {
       act: (cubit) => cubit.trashTickets([ticket.id]),
       expect: () => [const TicketsBatchTrashing(), isA<TicketsError>()],
     );
+
+    group('loadMoreTickets', () {
+      blocTest<TicketsCubit, TicketsState>(
+        'appends the next page and emits TicketsLoaded with the combined list',
+        setUp: () {
+          when(
+            () => repository.searchTickets(
+              query: any(named: 'query'),
+              status: any(named: 'status'),
+              type: any(named: 'type'),
+              priority: any(named: 'priority'),
+              limit: any(named: 'limit'),
+              offset: any(named: 'offset'),
+            ),
+          ).thenAnswer(
+            (_) async => TicketSearchPage(tickets: [child], hasMore: false),
+          );
+        },
+        build: () => TicketsCubit(repository),
+        seed: () => TicketsLoaded([ticket], hasMore: true),
+        act: (cubit) => cubit.loadMoreTickets(),
+        verify: (_) {
+          verify(
+            () => repository.searchTickets(
+              query: null,
+              status: null,
+              type: null,
+              priority: null,
+              limit: 50,
+              offset: 1,
+            ),
+          ).called(1);
+        },
+        expect: () => [
+          TicketsLoadingMore([ticket]),
+          TicketsLoaded([ticket, child], hasMore: false),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'no-ops when hasMore is false',
+        build: () => TicketsCubit(repository),
+        seed: () => TicketsLoaded([ticket], hasMore: false),
+        act: (cubit) => cubit.loadMoreTickets(),
+        verify: (_) {
+          verifyNever(
+            () => repository.searchTickets(
+              query: any(named: 'query'),
+              status: any(named: 'status'),
+              type: any(named: 'type'),
+              priority: any(named: 'priority'),
+              limit: any(named: 'limit'),
+              offset: any(named: 'offset'),
+            ),
+          );
+        },
+        expect: () => [],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'no-ops while a load-more is already in flight',
+        build: () => TicketsCubit(repository),
+        seed: () => TicketsLoadingMore([ticket]),
+        act: (cubit) => cubit.loadMoreTickets(),
+        verify: (_) {
+          verifyNever(
+            () => repository.searchTickets(
+              query: any(named: 'query'),
+              status: any(named: 'status'),
+              type: any(named: 'type'),
+              priority: any(named: 'priority'),
+              limit: any(named: 'limit'),
+              offset: any(named: 'offset'),
+            ),
+          );
+        },
+        expect: () => [],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'emits TicketsLoadMoreFailed preserving the existing tickets on a '
+        'repository throw',
+        setUp: () {
+          when(
+            () => repository.searchTickets(
+              query: any(named: 'query'),
+              status: any(named: 'status'),
+              type: any(named: 'type'),
+              priority: any(named: 'priority'),
+              limit: any(named: 'limit'),
+              offset: any(named: 'offset'),
+            ),
+          ).thenThrow(Exception('boom'));
+        },
+        build: () => TicketsCubit(repository),
+        seed: () => TicketsLoaded([ticket], hasMore: true),
+        act: (cubit) => cubit.loadMoreTickets(),
+        expect: () => [
+          TicketsLoadingMore([ticket]),
+          TicketsLoadMoreFailed([ticket], hasMore: true),
+        ],
+      );
+
+      test(
+        'a searchTickets call issued while a loadMoreTickets is in flight '
+        'discards the stale load-more result instead of appending it',
+        () async {
+          when(
+            () => repository.searchTickets(
+              query: any(named: 'query'),
+              status: any(named: 'status'),
+              type: any(named: 'type'),
+              priority: any(named: 'priority'),
+              limit: any(named: 'limit'),
+              offset: any(named: 'offset'),
+            ),
+          ).thenAnswer(
+            (_) async => TicketSearchPage(tickets: [ticket], hasMore: true),
+          );
+
+          final cubit = TicketsCubit(repository);
+          await cubit.searchTickets();
+          expect(cubit.state, TicketsLoaded([ticket], hasMore: true));
+
+          final loadMoreCompleter = Completer<TicketSearchPage>();
+          when(
+            () => repository.searchTickets(
+              query: any(named: 'query'),
+              status: any(named: 'status'),
+              type: any(named: 'type'),
+              priority: any(named: 'priority'),
+              limit: any(named: 'limit'),
+              offset: any(named: 'offset'),
+            ),
+          ).thenAnswer((_) => loadMoreCompleter.future);
+
+          final loadMoreFuture = cubit.loadMoreTickets();
+          expect(cubit.state, TicketsLoadingMore([ticket]));
+
+          when(
+            () => repository.searchTickets(
+              query: any(named: 'query'),
+              status: any(named: 'status'),
+              type: any(named: 'type'),
+              priority: any(named: 'priority'),
+              limit: any(named: 'limit'),
+              offset: any(named: 'offset'),
+            ),
+          ).thenAnswer(
+            (_) async => TicketSearchPage(tickets: [unrelated], hasMore: false),
+          );
+          await cubit.searchTickets(query: 'x');
+          expect(cubit.state, TicketsLoaded([unrelated], hasMore: false));
+
+          loadMoreCompleter.complete(
+            TicketSearchPage(tickets: [grandchild], hasMore: false),
+          );
+          await loadMoreFuture;
+
+          expect(cubit.state, TicketsLoaded([unrelated], hasMore: false));
+
+          await cubit.close();
+        },
+      );
+    });
 
     group('getValidParentCandidates', () {
       test('excludes self and the full multi-level descendant chain', () async {

@@ -24,7 +24,11 @@ import 'package:aion/features/tickets/presentation/widgets/ticket_selection_bar.
 /// The `/tickets` route: eyebrow + title header, a functioning search
 /// field + status/type/priority filter row, the ticket list body driven
 /// by [TicketsCubit], and an [AppFab] to create a new ticket. Loads the
-/// unfiltered list in [State.initState].
+/// unfiltered first page in [State.initState]. The flat list loads
+/// further pages automatically as the user scrolls near the bottom (via
+/// [TicketsCubit.loadMoreTickets]); board mode, which has no single
+/// scroll container to hook that trigger onto, exposes an explicit
+/// [_BoardLoadMoreButton] instead.
 class TicketsListScreen extends StatefulWidget {
   /// Creates a [TicketsListScreen].
   const TicketsListScreen({super.key});
@@ -68,6 +72,11 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
   /// filter changes re-search immediately and don't go through this.
   Timer? _searchDebounce;
 
+  /// Drives the flat list's `ListView.separated`. Its listener
+  /// ([_handleScroll]) triggers [TicketsCubit.loadMoreTickets] when the
+  /// user scrolls within 400px of the bottom (design.md §4).
+  final ScrollController _scrollController = ScrollController();
+
   /// Whether a search query or a non-default filter is currently active —
   /// used to pick between the "No tickets yet" and "No tickets match your
   /// search" empty states, and to drive the search icon's "active" color.
@@ -81,6 +90,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
   void initState() {
     super.initState();
     _searchController.addListener(_handleSearchTextChanged);
+    _scrollController.addListener(_handleScroll);
     _runSearch();
   }
 
@@ -90,7 +100,23 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
     _searchController.removeListener(_handleSearchTextChanged);
     _searchController.dispose();
     _searchFocusNode.dispose();
+    _scrollController.removeListener(_handleScroll);
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  /// Triggers [TicketsCubit.loadMoreTickets] once the flat list has been
+  /// scrolled within 400 logical pixels of the bottom, so the next page is
+  /// already in flight before the user hits the physical end of the list
+  /// (design.md §4). [TicketsCubit.loadMoreTickets] itself guards against
+  /// this firing repeatedly while a page is already loading or none
+  /// remains — no debounce timer needed here.
+  void _handleScroll() {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 400) {
+      context.read<TicketsCubit>().loadMoreTickets();
+    }
   }
 
   /// Restarts the search debounce timer on every keystroke. Deliberately
@@ -145,7 +171,23 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
     TicketStatusUpdating(:final tickets) => tickets,
     TicketStatusUpdated(:final tickets) => tickets,
     TicketsBatchTrashed(:final tickets) => tickets,
+    TicketsLoadingMore(:final tickets) => tickets,
+    TicketsLoadMoreFailed(:final tickets) => tickets,
     _ => const <Ticket>[],
+  };
+
+  /// Whether at least one more page exists beyond the tickets currently on
+  /// screen — drives both the flat list's scroll-triggered loading (via
+  /// the presence of a footer) and the board mode's "Load more" button.
+  /// `false` while a page is already loading ([TicketsLoadingMore]) or
+  /// for any non-list state, since neither has anything new to trigger.
+  bool _hasMore(TicketsState state) => switch (state) {
+    TicketsLoaded(:final hasMore) => hasMore,
+    TicketCreated(:final hasMore) => hasMore,
+    TicketStatusUpdated(:final hasMore) => hasMore,
+    TicketsBatchTrashed(:final hasMore) => hasMore,
+    TicketsLoadMoreFailed(:final hasMore) => hasMore,
+    _ => false,
   };
 
   /// Narrows [tickets] to whatever [_viewMode] actually renders as
@@ -166,8 +208,15 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
   /// Renders the loaded [tickets] as either the flat list or the board,
   /// depending on [_viewMode]. An empty [tickets] list shows "No tickets
   /// match your search" when [_hasActiveFilter], otherwise the generic
-  /// "No tickets yet" message.
-  Widget _buildTicketsBody(BuildContext context, List<Ticket> tickets) {
+  /// "No tickets yet" message. [state] drives the flat list's
+  /// scroll-triggered loading footer (design.md §1/§2) — nothing beyond
+  /// [tickets] itself is needed in board mode, which uses the separate
+  /// "Load more" button in [build] instead (design.md §3).
+  Widget _buildTicketsBody(
+    BuildContext context,
+    List<Ticket> tickets,
+    TicketsState state,
+  ) {
     final t = ThemeScope.of(context);
     final c = t.colors;
 
@@ -235,11 +284,24 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
       return TicketBoardView(tickets: boardTickets);
     }
 
+    final isLoadingMore = state is TicketsLoadingMore;
+    final loadMoreFailed = state is TicketsLoadMoreFailed;
+    final showFooter = isLoadingMore || loadMoreFailed;
+
     return ListView.separated(
-      itemCount: tickets.length,
+      controller: _scrollController,
+      itemCount: tickets.length + (showFooter ? 1 : 0),
       separatorBuilder: (context, index) =>
           Container(color: c.border, height: 1),
-      itemBuilder: (context, index) => TicketListTile(ticket: tickets[index]),
+      itemBuilder: (context, index) {
+        if (index >= tickets.length) {
+          return _TicketListFooter(
+            isLoadingMore: isLoadingMore,
+            onRetry: () => context.read<TicketsCubit>().loadMoreTickets(),
+          );
+        }
+        return TicketListTile(ticket: tickets[index]);
+      },
     );
   }
 
@@ -502,7 +564,9 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                             TicketCreated() ||
                             TicketStatusUpdating() ||
                             TicketStatusUpdated() ||
-                            TicketsBatchTrashed() =>
+                            TicketsBatchTrashed() ||
+                            TicketsLoadingMore() ||
+                            TicketsLoadMoreFailed() =>
                               AnimatedSwitcher(
                                 duration: const Duration(milliseconds: 120),
                                 transitionBuilder: (child, anim) =>
@@ -514,7 +578,11 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                                   key: ValueKey(
                                     tickets.map((t) => t.id).join(','),
                                   ),
-                                  child: _buildTicketsBody(context, tickets),
+                                  child: _buildTicketsBody(
+                                    context,
+                                    tickets,
+                                    state,
+                                  ),
                                 ),
                               ),
                             _ => const SizedBox.shrink(),
@@ -553,6 +621,18 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                         context,
                         selection.selectedIds,
                       ),
+                    ),
+                  ),
+                if (_viewMode == _TicketViewMode.board &&
+                    _hasMore(state) &&
+                    !selection.isActive)
+                  Positioned(
+                    left: 18,
+                    bottom: 24,
+                    child: _BoardLoadMoreButton(
+                      isLoading: state is TicketsLoadingMore,
+                      onTap: () =>
+                          context.read<TicketsCubit>().loadMoreTickets(),
                     ),
                   ),
               ],
@@ -875,6 +955,278 @@ class _TrashEntryButtonState extends State<_TrashEntryButton> {
                       size: 20,
                       color: iconColor,
                     ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The last item appended to [TicketsListScreen]'s flat `ListView` while
+/// [TicketsCubit.loadMoreTickets] is fetching the next page, or after it
+/// has failed. Renders a centered [AppSpinner] while loading (design.md
+/// §1), or a tappable retry row when the last attempt failed (design.md
+/// §2). The caller only includes this in `itemCount` when one of those
+/// two conditions holds — it's never built otherwise.
+class _TicketListFooter extends StatelessWidget {
+  /// Creates a [_TicketListFooter]. [isLoadingMore] selects the loading
+  /// spinner; otherwise the retry row is shown, calling [onRetry] when
+  /// tapped or keyboard-activated.
+  const _TicketListFooter({
+    required this.isLoadingMore,
+    required this.onRetry,
+  });
+
+  /// Whether a page fetch is currently in flight.
+  final bool isLoadingMore;
+
+  /// Called when the retry row is tapped or keyboard-activated. Never
+  /// invoked while [isLoadingMore] is true (no retry row is shown then).
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    if (isLoadingMore) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 20),
+        child: Center(child: AppSpinner(size: 22)),
+      );
+    }
+    return _LoadMoreRetryRow(onRetry: onRetry);
+  }
+}
+
+/// The tappable "couldn't load more — tap to retry" row shown by
+/// [_TicketListFooter] after a failed [TicketsCubit.loadMoreTickets]
+/// attempt (design.md §2). A soft, recoverable inline failure — `danger`
+/// is used restrained (icon/text tint, soft wash on hover/press) rather
+/// than a heavy blocking error treatment. Manages its own hover/press/
+/// focus visual state, matching this file's other interactive primitives
+/// (e.g. [_TrashEntryButtonState]). Uses a `danger`-toned focus ring
+/// rather than the design system's default `primary` ring, since every
+/// other visual on this control is already `danger`-toned (design.md §2.5).
+class _LoadMoreRetryRow extends StatefulWidget {
+  /// Creates a [_LoadMoreRetryRow] that calls [onRetry] when activated.
+  const _LoadMoreRetryRow({required this.onRetry});
+
+  /// Called when tapped or keyboard-activated.
+  final VoidCallback onRetry;
+
+  @override
+  State<_LoadMoreRetryRow> createState() => _LoadMoreRetryRowState();
+}
+
+class _LoadMoreRetryRowState extends State<_LoadMoreRetryRow> {
+  bool _isHovered = false;
+  bool _isFocused = false;
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+
+    final fill = _isPressed
+        ? c.danger.withValues(alpha: t.fillAlpha + 0.06)
+        : (_isHovered
+              ? c.danger.withValues(alpha: t.fillAlpha)
+              : const Color(0x00000000));
+    final boxShadow = _isFocused
+        ? [
+            BoxShadow(
+              color: c.danger.withValues(alpha: t.isDark ? 0.30 : 0.16),
+              spreadRadius: 3,
+            ),
+          ]
+        : const <BoxShadow>[];
+
+    return Semantics(
+      button: true,
+      label: context.l10n.ticketsListLoadMoreRetry,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: FocusableActionDetector(
+          actions: {
+            ActivateIntent: CallbackAction<ActivateIntent>(
+              onInvoke: (_) {
+                widget.onRetry();
+                return null;
+              },
+            ),
+          },
+          onShowFocusHighlight: (value) =>
+              setState(() => _isFocused = value),
+          child: GestureDetector(
+            onTap: widget.onRetry,
+            onTapDown: (_) => setState(() => _isPressed = true),
+            onTapUp: (_) => setState(() => _isPressed = false),
+            onTapCancel: () => setState(() => _isPressed = false),
+            child: AnimatedScale(
+              scale: _isPressed ? 0.98 : 1.0,
+              duration: const Duration(milliseconds: 80),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  vertical: 12,
+                  horizontal: 16,
+                ),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: fill,
+                    borderRadius: BorderRadius.all(AionRadius.iconBtnSm),
+                    boxShadow: boxShadow,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 8,
+                      horizontal: 12,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.max,
+                      children: [
+                        PhosphorIcon(
+                          PhosphorIcons.arrowClockwiseLight,
+                          size: 16,
+                          color: c.danger,
+                        ),
+                        const SizedBox(width: 9),
+                        Text(
+                          context.l10n.ticketsListLoadMoreRetry,
+                          style: AionText.bodySm.copyWith(color: c.danger),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Floating "Load more" button shown in board mode when
+/// [TicketsCubit.loadMoreTickets] has another page available (design.md
+/// §3). Anchored bottom-left so it never collides with [AppFab]
+/// (bottom-right) or [TicketSelectionBar] (which already hides both via
+/// the same `selection.isActive` visibility rule). Takes a secondary/
+/// outlined treatment (surface fill, `borderStrong` outline) rather than
+/// [AppFab]'s solid `primary` fill, so the create action stays the single
+/// visually-dominant floating control. Deliberately has no disabled
+/// variant — [_TicketsListScreenState.build] only builds this widget
+/// when a next page actually exists, so it's simply absent otherwise.
+class _BoardLoadMoreButton extends StatefulWidget {
+  /// Creates a [_BoardLoadMoreButton]. Shows a small [AppSpinner] in
+  /// place of the leading icon while [isLoading] is true (a board-
+  /// triggered page fetch is in flight, design.md §3.8); calls [onTap]
+  /// when tapped or keyboard-activated.
+  const _BoardLoadMoreButton({required this.isLoading, required this.onTap});
+
+  /// Whether a board-triggered page fetch is currently in flight.
+  final bool isLoading;
+
+  /// Called when tapped or keyboard-activated.
+  final VoidCallback onTap;
+
+  @override
+  State<_BoardLoadMoreButton> createState() => _BoardLoadMoreButtonState();
+}
+
+class _BoardLoadMoreButtonState extends State<_BoardLoadMoreButton> {
+  bool _isHovered = false;
+  bool _isFocused = false;
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+
+    final fill = (_isPressed || _isHovered) ? c.surfaceHover : c.surface;
+    final borderColor = _isFocused ? c.primary : c.borderStrong;
+    final borderWidth = _isFocused ? 1.5 : 1.0;
+    final restingShadow = t.isDark
+        ? const <BoxShadow>[]
+        : [
+            BoxShadow(
+              color: c.textPrimary.withValues(alpha: 0.22),
+              blurRadius: 20,
+              spreadRadius: -8,
+              offset: const Offset(0, 8),
+            ),
+          ];
+    final focusRing = _isFocused
+        ? [
+            BoxShadow(
+              color: c.primary.withValues(alpha: t.isDark ? 0.30 : 0.16),
+              spreadRadius: 3,
+            ),
+          ]
+        : const <BoxShadow>[];
+
+    return Semantics(
+      button: true,
+      label: context.l10n.ticketsBoardLoadMoreLabel,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: FocusableActionDetector(
+          actions: {
+            ActivateIntent: CallbackAction<ActivateIntent>(
+              onInvoke: (_) {
+                widget.onTap();
+                return null;
+              },
+            ),
+          },
+          onShowFocusHighlight: (value) =>
+              setState(() => _isFocused = value),
+          child: GestureDetector(
+            onTap: widget.onTap,
+            onTapDown: (_) => setState(() => _isPressed = true),
+            onTapUp: (_) => setState(() => _isPressed = false),
+            onTapCancel: () => setState(() => _isPressed = false),
+            child: AnimatedScale(
+              scale: _isPressed ? 0.98 : 1.0,
+              duration: const Duration(milliseconds: 80),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: fill,
+                  borderRadius: BorderRadius.all(AionRadius.pill),
+                  border: Border.all(color: borderColor, width: borderWidth),
+                  boxShadow: [...restingShadow, ...focusRing],
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 18,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      widget.isLoading
+                          ? const AppSpinner(size: 15)
+                          : PhosphorIcon(
+                              PhosphorIcons.arrowDownLight,
+                              size: 15,
+                              color: c.textSecondary,
+                            ),
+                      const SizedBox(width: 8),
+                      Text(
+                        context.l10n.ticketsBoardLoadMoreLabel,
+                        style: AionText.button.copyWith(color: c.textPrimary),
+                      ),
+                    ],
                   ),
                 ),
               ),

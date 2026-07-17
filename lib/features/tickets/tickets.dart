@@ -6,6 +6,7 @@
 
 export 'domain/entities/ticket.dart';
 export 'domain/entities/ticket_comment.dart';
+export 'domain/entities/ticket_search_page.dart';
 export 'domain/enums/comment_author_type.dart';
 export 'domain/enums/ticket_link_type.dart';
 export 'domain/enums/ticket_priority.dart';

@@ -1,5 +1,7 @@
 // presentation/cubit/tickets_cubit.dart — TicketsCubit business logic (presentation layer).
 
+import 'dart:math' show max;
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 
@@ -19,42 +21,150 @@ class TicketsCubit extends Cubit<TicketsState> {
   final TicketRepository _repository;
   static const _uuid = Uuid();
 
-  /// Fetches tickets matching every non-null filter (ANDed) — see
-  /// [TicketRepository.searchTickets]. Called with no arguments, this is
-  /// equivalent to fetching every ticket (most recent first). Emits
-  /// [TicketsLoading] first only when nothing is on screen yet
-  /// ([TicketsInitial]/[TicketsError]/[TicketTrashed]) — once a ticket
-  /// list is already showing, the previous list stays visible until the
-  /// new results arrive, so re-searching/re-filtering doesn't flash a
-  /// spinner over the existing list on every keystroke. Emits
-  /// [TicketsLoaded] on success, [TicketsError] if the repository call
-  /// throws.
+  /// Tickets fetched per page, for both [searchTickets] and
+  /// [loadMoreTickets].
+  static const _pageSize = 50;
+
+  /// The query/filters the most recent [searchTickets] call used —
+  /// remembered so [loadMoreTickets] and the mutation-refresh methods
+  /// below don't need the screen to pass them again.
+  String? _lastQuery;
+  TicketStatus? _lastStatus;
+  TicketType? _lastType;
+  TicketPriority? _lastPriority;
+
+  /// Bumped on every call that replaces the list wholesale ([searchTickets],
+  /// [createTicket], [updateTicketStatus], [trashTicket], [trashTickets]).
+  /// A [loadMoreTickets] call in flight discards its result if this
+  /// changes before it resolves — guards against a stale in-flight
+  /// load-more silently appending onto a list that's since been replaced
+  /// by a filter change or another mutation.
+  int _searchGeneration = 0;
+
+  /// Pulls the current tickets and [TicketsState]-carried `hasMore` out of
+  /// [s], for every state [loadMoreTickets] can sensibly extend. Returns
+  /// `null` for [TicketsLoadingMore] (a load-more is already in flight —
+  /// this is what makes [loadMoreTickets] a no-op while one is pending,
+  /// with no separate debounce timer needed) and for every non-list state.
+  ({List<Ticket> tickets, bool hasMore})? _listSnapshot(TicketsState s) =>
+      switch (s) {
+        TicketsLoaded(:final tickets, :final hasMore) => (
+          tickets: tickets,
+          hasMore: hasMore,
+        ),
+        TicketCreated(:final tickets, :final hasMore) => (
+          tickets: tickets,
+          hasMore: hasMore,
+        ),
+        TicketStatusUpdated(:final tickets, :final hasMore) => (
+          tickets: tickets,
+          hasMore: hasMore,
+        ),
+        TicketsBatchTrashed(:final tickets, :final hasMore) => (
+          tickets: tickets,
+          hasMore: hasMore,
+        ),
+        TicketsLoadMoreFailed(:final tickets, :final hasMore) => (
+          tickets: tickets,
+          hasMore: hasMore,
+        ),
+        _ => null,
+      };
+
+  /// Fetches the first page of tickets matching every non-null filter
+  /// (ANDed) — see [TicketRepository.searchTickets]. Called with no
+  /// arguments, this is equivalent to fetching every ticket (most recent
+  /// first). Remembers [query]/[status]/[type]/[priority] internally for
+  /// [loadMoreTickets] and the mutation-refresh methods below, and bumps
+  /// the internal generation counter so a [loadMoreTickets] call already
+  /// in flight from a previous filter state is discarded (not appended
+  /// onto the new list) when it resolves. Emits [TicketsLoading] first
+  /// only when nothing is on screen yet ([TicketsInitial]/
+  /// [TicketsError]/[TicketTrashed]) — once a ticket list is already
+  /// showing, the previous list stays visible until the new results
+  /// arrive, so re-searching/re-filtering doesn't flash a spinner over
+  /// the existing list on every keystroke. Emits [TicketsLoaded] on
+  /// success, [TicketsError] if the repository call throws.
   Future<void> searchTickets({
     String? query,
     TicketStatus? status,
     TicketType? type,
     TicketPriority? priority,
   }) async {
+    final generation = ++_searchGeneration;
+    _lastQuery = query;
+    _lastStatus = status;
+    _lastType = type;
+    _lastPriority = priority;
+
     final hasVisibleList = switch (state) {
       TicketsLoaded() ||
       TicketCreating() ||
       TicketCreated() ||
       TicketStatusUpdating() ||
-      TicketStatusUpdated() => true,
+      TicketStatusUpdated() ||
+      TicketsBatchTrashed() ||
+      TicketsLoadingMore() ||
+      TicketsLoadMoreFailed() => true,
       _ => false,
     };
     if (!hasVisibleList) emit(const TicketsLoading());
 
     try {
-      final tickets = await _repository.searchTickets(
+      final page = await _repository.searchTickets(
         query: query,
         status: status,
         type: type,
         priority: priority,
+        limit: _pageSize,
       );
-      emit(TicketsLoaded(tickets));
+      if (generation != _searchGeneration) return;
+      emit(TicketsLoaded(page.tickets, hasMore: page.hasMore));
     } catch (e) {
+      if (generation != _searchGeneration) return;
       emit(TicketsError(e.toString()));
+    }
+  }
+
+  /// Fetches the next page for whatever query/filters [searchTickets] was
+  /// last called with, appending to the currently loaded list. No-ops if
+  /// the cubit isn't in a settled list-shaped state with more results
+  /// available (covers: nothing loaded yet, a load-more already in
+  /// flight, or the last page already reached the end) — this doubles as
+  /// the concurrency guard against a fast/bouncy scroll firing the
+  /// trigger multiple times before the first request resolves. Emits
+  /// [TicketsLoadingMore] (carrying the tickets loaded so far)
+  /// immediately, then [TicketsLoaded] (carrying the combined list) on
+  /// success, or [TicketsLoadMoreFailed] (carrying the tickets loaded so
+  /// far, unchanged) if the repository call throws — the existing rows
+  /// are never discarded by a failed load-more.
+  Future<void> loadMoreTickets() async {
+    final snapshot = _listSnapshot(state);
+    if (snapshot == null || !snapshot.hasMore) return;
+
+    final currentTickets = snapshot.tickets;
+    final generation = _searchGeneration;
+    emit(TicketsLoadingMore(currentTickets));
+
+    try {
+      final page = await _repository.searchTickets(
+        query: _lastQuery,
+        status: _lastStatus,
+        type: _lastType,
+        priority: _lastPriority,
+        limit: _pageSize,
+        offset: currentTickets.length,
+      );
+      if (generation != _searchGeneration) return;
+      emit(
+        TicketsLoaded([
+          ...currentTickets,
+          ...page.tickets,
+        ], hasMore: page.hasMore),
+      );
+    } catch (e) {
+      if (generation != _searchGeneration) return;
+      emit(TicketsLoadMoreFailed(currentTickets, hasMore: snapshot.hasMore));
     }
   }
 
@@ -62,8 +172,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   ///
   /// [status] always starts at [TicketStatus.backlog]. Emits
   /// [TicketCreating] (carrying the list as it was before this call) then
-  /// [TicketCreated] (carrying the refreshed list) on success, or
-  /// [TicketsError] if the repository call throws.
+  /// [TicketCreated] (carrying the refreshed page) on success, or
+  /// [TicketsError] if the repository call throws. The refresh re-applies
+  /// the filters [searchTickets] was last called with (rather than
+  /// fetching every ticket) and requests at least as many tickets as were
+  /// already loaded, so this doesn't silently drop an active search/filter
+  /// or collapse an infinite-scrolled list back down to one page.
   Future<void> createTicket({
     required TicketType type,
     required String title,
@@ -71,11 +185,14 @@ class TicketsCubit extends Cubit<TicketsState> {
     TicketPriority priority = TicketPriority.none,
     String? parentId,
   }) async {
+    _searchGeneration++;
     final currentTickets = switch (state) {
       TicketsLoaded(:final tickets) => tickets,
       TicketCreating(:final tickets) => tickets,
       TicketStatusUpdating(:final tickets) => tickets,
       TicketStatusUpdated(:final tickets) => tickets,
+      TicketsLoadingMore(:final tickets) => tickets,
+      TicketsLoadMoreFailed(:final tickets) => tickets,
       _ => <Ticket>[],
     };
 
@@ -96,8 +213,14 @@ class TicketsCubit extends Cubit<TicketsState> {
       );
 
       await _repository.createTicket(ticket);
-      final tickets = await _repository.getAllTickets();
-      emit(TicketCreated(tickets));
+      final page = await _repository.searchTickets(
+        query: _lastQuery,
+        status: _lastStatus,
+        type: _lastType,
+        priority: _lastPriority,
+        limit: max(_pageSize, currentTickets.length),
+      );
+      emit(TicketCreated(page.tickets, hasMore: page.hasMore));
     } catch (e) {
       emit(TicketsError(e.toString()));
     }
@@ -105,14 +228,21 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Moves ticket [id] to [status]. Emits [TicketStatusUpdating] (carrying
   /// the list with [id]'s status optimistically replaced) immediately,
-  /// then [TicketStatusUpdated] (carrying the re-fetched list) once the
-  /// repository call succeeds, or [TicketsError] if it throws.
+  /// then [TicketStatusUpdated] (carrying the re-fetched page) once the
+  /// repository call succeeds, or [TicketsError] if it throws. The
+  /// refresh re-applies the filters [searchTickets] was last called with
+  /// and requests at least as many tickets as were already loaded, so a
+  /// background status update (e.g. a board drag) never collapses an
+  /// infinite-scrolled list back down to one page.
   Future<void> updateTicketStatus(String id, TicketStatus status) async {
+    _searchGeneration++;
     final currentTickets = switch (state) {
       TicketsLoaded(:final tickets) => tickets,
       TicketCreated(:final tickets) => tickets,
       TicketStatusUpdating(:final tickets) => tickets,
       TicketStatusUpdated(:final tickets) => tickets,
+      TicketsLoadingMore(:final tickets) => tickets,
+      TicketsLoadMoreFailed(:final tickets) => tickets,
       _ => <Ticket>[],
     };
 
@@ -124,8 +254,14 @@ class TicketsCubit extends Cubit<TicketsState> {
 
     try {
       await _repository.updateTicketStatus(id, status);
-      final tickets = await _repository.getAllTickets();
-      emit(TicketStatusUpdated(tickets));
+      final page = await _repository.searchTickets(
+        query: _lastQuery,
+        status: _lastStatus,
+        type: _lastType,
+        priority: _lastPriority,
+        limit: max(_pageSize, currentTickets.length),
+      );
+      emit(TicketStatusUpdated(page.tickets, hasMore: page.hasMore));
     } catch (e) {
       emit(TicketsError(e.toString()));
     }
@@ -293,19 +429,38 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// Context-aware on the state active before the call: if it was
   /// [TicketDetailLoaded] (the caller is `TicketDetailScreen`), emits
   /// [TicketTrashed] on success; any other (list/board-shaped) previous
-  /// state re-fetches and emits [TicketsLoaded] instead, so
+  /// state re-fetches (re-applying the filters [searchTickets] was last
+  /// called with, requesting at least as many tickets as were already
+  /// loaded) and emits [TicketsLoaded] instead, so
   /// `TicketsListScreen`/`TicketBoardView` never fall into a blank state.
   /// Trash never fails except on a genuine unexpected repository error,
   /// which emits [TicketsError].
   Future<void> trashTicket(String id) async {
+    _searchGeneration++;
     final previousState = state;
+    final currentTickets = switch (previousState) {
+      TicketsLoaded(:final tickets) => tickets,
+      TicketCreated(:final tickets) => tickets,
+      TicketStatusUpdated(:final tickets) => tickets,
+      TicketsBatchTrashed(:final tickets) => tickets,
+      TicketsLoadingMore(:final tickets) => tickets,
+      TicketsLoadMoreFailed(:final tickets) => tickets,
+      _ => <Ticket>[],
+    };
     emit(const TicketTrashing());
     try {
       await _repository.trashTicket(id);
       if (previousState is TicketDetailLoaded) {
         emit(const TicketTrashed());
       } else {
-        emit(TicketsLoaded(await _repository.getAllTickets()));
+        final page = await _repository.searchTickets(
+          query: _lastQuery,
+          status: _lastStatus,
+          type: _lastType,
+          priority: _lastPriority,
+          limit: max(_pageSize, currentTickets.length),
+        );
+        emit(TicketsLoaded(page.tickets, hasMore: page.hasMore));
       }
     } catch (e) {
       emit(TicketsError(e.toString()));
@@ -316,15 +471,33 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [TicketRepository.trashTickets]. Always triggered from
   /// `TicketsListScreen`'s selection mode (list or board rendering) — no
   /// detail-screen caller to special-case, unlike [trashTicket]. Emits
-  /// [TicketsBatchTrashing] then [TicketsBatchTrashed] (refreshed list +
+  /// [TicketsBatchTrashing] then [TicketsBatchTrashed] (refreshed page +
   /// actual trashed count) on success, or [TicketsError] on an
-  /// unexpected failure.
+  /// unexpected failure. The refresh re-applies the filters
+  /// [searchTickets] was last called with and requests at least as many
+  /// tickets as were already loaded.
   Future<void> trashTickets(List<String> ids) async {
+    _searchGeneration++;
+    final currentTickets = switch (state) {
+      TicketsLoaded(:final tickets) => tickets,
+      TicketCreated(:final tickets) => tickets,
+      TicketStatusUpdated(:final tickets) => tickets,
+      TicketsBatchTrashed(:final tickets) => tickets,
+      TicketsLoadingMore(:final tickets) => tickets,
+      TicketsLoadMoreFailed(:final tickets) => tickets,
+      _ => <Ticket>[],
+    };
     emit(const TicketsBatchTrashing());
     try {
       final trashedCount = await _repository.trashTickets(ids);
-      final tickets = await _repository.getAllTickets();
-      emit(TicketsBatchTrashed(tickets, trashedCount));
+      final page = await _repository.searchTickets(
+        query: _lastQuery,
+        status: _lastStatus,
+        type: _lastType,
+        priority: _lastPriority,
+        limit: max(_pageSize, currentTickets.length),
+      );
+      emit(TicketsBatchTrashed(page.tickets, trashedCount, hasMore: page.hasMore));
     } catch (e) {
       emit(TicketsError(e.toString()));
     }
