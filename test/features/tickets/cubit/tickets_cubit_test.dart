@@ -601,6 +601,30 @@ void main() {
       });
     });
 
+    group('getAllTickets', () {
+      test('forwards the repository result unmodified', () async {
+        when(
+          () => repository.getAllTickets(),
+        ).thenAnswer((_) async => [ticket, child, grandchild, unrelated]);
+
+        final all = await TicketsCubit(repository).getAllTickets();
+
+        expect(all, [ticket, child, grandchild, unrelated]);
+      });
+
+      blocTest<TicketsCubit, TicketsState>(
+        'emits no state',
+        setUp: () {
+          when(
+            () => repository.getAllTickets(),
+          ).thenAnswer((_) async => [ticket]);
+        },
+        build: () => TicketsCubit(repository),
+        act: (cubit) => cubit.getAllTickets(),
+        expect: () => [],
+      );
+    });
+
     group('updateTicketParent', () {
       blocTest<TicketsCubit, TicketsState>(
         'persists a valid reparent and emits [TicketDetailLoaded]',
