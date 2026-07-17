@@ -4,24 +4,59 @@ import 'package:drift/drift.dart';
 
 import 'package:aion/core/core.dart';
 import 'package:aion/features/tickets/data/models/ticket_link_model.dart';
+import 'package:aion/features/tickets/data/models/ticket_model.dart';
 
 part 'ticket_link_dao.g.dart';
 
-/// Drift accessor for [TicketLinksTable].
-@DriftAccessor(tables: [TicketLinksTable])
+/// Drift accessor for [TicketLinksTable], also reading [TicketsTable] to
+/// filter out links to trashed tickets.
+@DriftAccessor(tables: [TicketLinksTable, TicketsTable])
 class TicketLinkDao extends DatabaseAccessor<AppDatabase>
     with _$TicketLinkDaoMixin {
   /// Creates a [TicketLinkDao] bound to [db].
   TicketLinkDao(super.db);
 
-  /// Returns every link where [ticketId] is the source or the target.
-  Future<List<TicketLinkData>> getLinksForTicket(String ticketId) {
-    return (select(ticketLinksTable)..where(
-          (t) =>
-              t.sourceTicketId.equals(ticketId) |
-              t.targetTicketId.equals(ticketId),
-        ))
+  /// Returns every link where [ticketId] is the source or the target, and
+  /// the *other* ticket in the link is not currently trashed. A link to a
+  /// trashed ticket reappears automatically once that ticket is restored,
+  /// and disappears for good once it's permanently deleted (which
+  /// cascade-deletes the link row itself via [deleteLinksForTickets]) — so
+  /// this filter only affects the interim window while the other ticket
+  /// sits in Trash. Deduplicated by [TicketLinkData.id]: a self-link (a
+  /// ticket linked to itself) would otherwise match both the source-side
+  /// and target-side query below and be returned twice.
+  Future<List<TicketLinkData>> getLinksForTicket(String ticketId) async {
+    final asSource = await (select(ticketLinksTable).join([
+          innerJoin(
+            ticketsTable,
+            ticketsTable.id.equalsExp(ticketLinksTable.targetTicketId),
+          ),
+        ])
+          ..where(
+            ticketLinksTable.sourceTicketId.equals(ticketId) &
+                ticketsTable.deletedAt.isNull(),
+          ))
+        .map((row) => row.readTable(ticketLinksTable))
         .get();
+
+    final asTarget = await (select(ticketLinksTable).join([
+          innerJoin(
+            ticketsTable,
+            ticketsTable.id.equalsExp(ticketLinksTable.sourceTicketId),
+          ),
+        ])
+          ..where(
+            ticketLinksTable.targetTicketId.equals(ticketId) &
+                ticketsTable.deletedAt.isNull(),
+          ))
+        .map((row) => row.readTable(ticketLinksTable))
+        .get();
+
+    final byId = <String, TicketLinkData>{};
+    for (final link in [...asSource, ...asTarget]) {
+      byId[link.id] = link;
+    }
+    return byId.values.toList();
   }
 
   /// Inserts [entry] as a new link row.
