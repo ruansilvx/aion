@@ -565,6 +565,93 @@ void main() {
     });
   });
 
+  group('getLinksForTicket excludes trashed', () {
+    late DriftTicketLinkRepository linkRepository;
+
+    setUp(() {
+      linkRepository = DriftTicketLinkRepository(database);
+    });
+
+    test(
+      'a link between two live tickets is counted from both sides',
+      () async {
+        await repository.createTicket(buildTicket(id: 'a'));
+        await repository.createTicket(buildTicket(id: 'b'));
+        await linkRepository.createLink(
+          sourceTicketId: 'a',
+          targetTicketId: 'b',
+          linkType: TicketLinkType.relatesTo,
+        );
+
+        expect(await linkRepository.getLinksForTicket('a'), hasLength(1));
+        expect(await linkRepository.getLinksForTicket('b'), hasLength(1));
+      },
+    );
+
+    test(
+      'a link to a trashed ticket is excluded from the live ticket\'s result',
+      () async {
+        await repository.createTicket(buildTicket(id: 'a'));
+        await repository.createTicket(buildTicket(id: 'b'));
+        await linkRepository.createLink(
+          sourceTicketId: 'a',
+          targetTicketId: 'b',
+          linkType: TicketLinkType.relatesTo,
+        );
+
+        await repository.trashTicket('b');
+
+        expect(await linkRepository.getLinksForTicket('a'), isEmpty);
+      },
+    );
+
+    test(
+      'restoring the trashed ticket makes the link reappear with no extra write',
+      () async {
+        await repository.createTicket(buildTicket(id: 'a'));
+        await repository.createTicket(buildTicket(id: 'b'));
+        await linkRepository.createLink(
+          sourceTicketId: 'a',
+          targetTicketId: 'b',
+          linkType: TicketLinkType.relatesTo,
+        );
+        await repository.trashTicket('b');
+        expect(await linkRepository.getLinksForTicket('a'), isEmpty);
+
+        await repository.restoreTicket('b');
+
+        expect(await linkRepository.getLinksForTicket('a'), hasLength(1));
+      },
+    );
+
+    test('a ticket with no links returns an empty list', () async {
+      await repository.createTicket(buildTicket(id: 'a'));
+
+      expect(await linkRepository.getLinksForTicket('a'), isEmpty);
+    });
+
+    test(
+      'a ticket linked as both source and target has both returned',
+      () async {
+        await repository.createTicket(buildTicket(id: 'a'));
+        await repository.createTicket(buildTicket(id: 'b'));
+        await repository.createTicket(buildTicket(id: 'c'));
+        await linkRepository.createLink(
+          sourceTicketId: 'a',
+          targetTicketId: 'b',
+          linkType: TicketLinkType.relatesTo,
+        );
+        await linkRepository.createLink(
+          sourceTicketId: 'c',
+          targetTicketId: 'a',
+          linkType: TicketLinkType.relatesTo,
+        );
+
+        expect(await linkRepository.getLinksForTicket('a'), hasLength(2));
+      },
+    );
+  });
+
   group('searchTickets', () {
     test(
       'query matches title/description; a title hit ranks ahead of a description-only hit',
