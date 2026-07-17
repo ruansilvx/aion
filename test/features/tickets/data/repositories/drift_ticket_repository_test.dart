@@ -772,9 +772,10 @@ void main() {
 
         final results = await repository.searchTickets(
           query: 'authentication',
+          limit: 100,
         );
 
-        expect(results.map((t) => t.id), ['title-hit', 'desc-hit']);
+        expect(results.tickets.map((t) => t.id), ['title-hit', 'desc-hit']);
       },
     );
 
@@ -802,9 +803,10 @@ void main() {
         type: TicketType.story,
         status: TicketStatus.inProgress,
         priority: TicketPriority.high,
+        limit: 100,
       );
 
-      expect(results.map((t) => t.id), ['match']);
+      expect(results.tickets.map((t) => t.id), ['match']);
     });
 
     test('query and a structured filter combine (ANDed)', () async {
@@ -829,9 +831,10 @@ void main() {
       final results = await repository.searchTickets(
         query: 'login',
         type: TicketType.task,
+        limit: 100,
       );
 
-      expect(results.map((t) => t.id), ['match']);
+      expect(results.tickets.map((t) => t.id), ['match']);
     });
 
     test(
@@ -841,10 +844,10 @@ void main() {
         await repository.createTicket(buildSearchable(id: '2', title: 'B'));
 
         final all = await repository.getAllTickets();
-        final searched = await repository.searchTickets();
+        final searched = await repository.searchTickets(limit: 100);
 
         expect(
-          searched.map((t) => t.id).toSet(),
+          searched.tickets.map((t) => t.id).toSet(),
           all.map((t) => t.id).toSet(),
         );
       },
@@ -856,7 +859,10 @@ void main() {
       );
 
       await expectLater(
-        () => repository.searchTickets(query: '-drift-web "quoted"'),
+        () => repository.searchTickets(
+          query: '-drift-web "quoted"',
+          limit: 100,
+        ),
         returnsNormally,
       );
     });
@@ -873,17 +879,74 @@ void main() {
         await repository.trashTicket('trashed');
 
         expect(
-          (await repository.searchTickets()).map((t) => t.id),
+          (await repository.searchTickets(limit: 100)).tickets.map(
+            (t) => t.id,
+          ),
           ['live'],
         );
         expect(
           (await repository.searchTickets(
             query: 'authentication',
-          )).map((t) => t.id),
+            limit: 100,
+          )).tickets.map((t) => t.id),
           ['live'],
         );
       },
     );
+
+    group('pagination (limit/offset -> hasMore)', () {
+      test(
+        'returns exactly limit tickets with hasMore true when more rows exist',
+        () async {
+          for (var i = 0; i < 5; i++) {
+            await repository.createTicket(
+              buildSearchable(id: 'p$i', title: 'Ticket $i'),
+            );
+          }
+
+          final page = await repository.searchTickets(limit: 3);
+
+          expect(page.tickets.length, 3);
+          expect(page.hasMore, isTrue);
+        },
+      );
+
+      test('hasMore is false when the DAO returns <= limit rows', () async {
+        for (var i = 0; i < 3; i++) {
+          await repository.createTicket(
+            buildSearchable(id: 'p$i', title: 'Ticket $i'),
+          );
+        }
+
+        final page = await repository.searchTickets(limit: 3);
+
+        expect(page.tickets.length, 3);
+        expect(page.hasMore, isFalse);
+      });
+
+      test('offset skips already-loaded rows on the next page', () async {
+        for (var i = 0; i < 5; i++) {
+          await repository.createTicket(
+            buildSearchable(id: 'p$i', title: 'Ticket $i'),
+          );
+        }
+
+        final firstPage = await repository.searchTickets(limit: 3);
+        final secondPage = await repository.searchTickets(
+          limit: 3,
+          offset: firstPage.tickets.length,
+        );
+
+        expect(
+          firstPage.tickets.map((t) => t.id).toSet().intersection(
+            secondPage.tickets.map((t) => t.id).toSet(),
+          ),
+          isEmpty,
+        );
+        expect(secondPage.tickets.length, 2);
+        expect(secondPage.hasMore, isFalse);
+      });
+    });
   });
 
   group('schema migration (v1 -> current)', () {
@@ -934,9 +997,10 @@ void main() {
 
         final results = await upgradedRepo.searchTickets(
           query: 'authentication',
+          limit: 100,
         );
 
-        expect(results.map((t) => t.id), ['pre-existing']);
+        expect(results.tickets.map((t) => t.id), ['pre-existing']);
         // The v3 step ran too — the pre-existing ticket is live, not
         // trashed, since it existed before trash was ever a concept.
         expect(await upgradedRepo.getTrashedTickets(), isEmpty);

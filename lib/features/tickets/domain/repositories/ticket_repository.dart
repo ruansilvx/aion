@@ -1,6 +1,7 @@
 // domain/repositories/ticket_repository.dart — TicketRepository interface (domain layer).
 
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
+import 'package:aion/features/tickets/domain/entities/ticket_search_page.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
@@ -97,16 +98,20 @@ abstract interface class TicketRepository {
   /// first.
   Future<List<Ticket>> getTrashedTickets();
 
-  /// Returns tickets matching every non-null filter (ANDed): [status],
-  /// [type], [priority] restrict to an exact match on that field; [query]
-  /// full-text-matches against title/description. All parameters
-  /// omitted/null is equivalent to [getAllTickets]. Ordered by relevance
-  /// when [query] is set, otherwise by creation date descending. Excludes
-  /// trashed tickets, same as [getAllTickets].
-  Future<List<Ticket>> searchTickets({
+  /// Returns one page of tickets matching every non-null filter (ANDed):
+  /// [status], [type], [priority] restrict to an exact match on that field;
+  /// [query] full-text-matches against title/description. All filter
+  /// parameters omitted/null is equivalent to paginating [getAllTickets].
+  /// Ordered by relevance when [query] is set, otherwise by creation date
+  /// descending. Excludes trashed tickets, same as [getAllTickets]. Returns
+  /// at most [limit] tickets starting after the first [offset] matches,
+  /// plus whether further matches exist beyond this page.
+  Future<TicketSearchPage> searchTickets({
     String? query,
     TicketStatus? status,
     TicketType? type,
     TicketPriority? priority,
+    required int limit,
+    int offset = 0,
   });
 }

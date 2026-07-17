@@ -25,8 +25,10 @@
   "ticketsListFilterAllPriorities": "All priorities",
   "ticketsListNoResultsState": "No tickets match your search",
   "ticketsListNoResultsHint": "Try a different term, or reset a filter to its \"All\" option.",
+  "ticketsListLoadMoreRetry": "Couldn't load more — tap to retry",
 
   "ticketsBoardEmptyColumn": "No tickets",
+  "ticketsBoardLoadMoreLabel": "Load more",
   "ticketsBoardMoveTicketLabel": "Move {ticketId} to another status",
   "@ticketsBoardMoveTicketLabel": {
     "placeholders": {

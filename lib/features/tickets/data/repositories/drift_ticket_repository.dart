@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:aion/core/core.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
+import 'package:aion/features/tickets/domain/entities/ticket_search_page.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
@@ -100,20 +101,33 @@ class DriftTicketRepository implements TicketRepository {
     );
   }
 
+  /// Requests `[limit] + 1` rows from [TicketDao.searchTickets] to derive
+  /// [TicketSearchPage.hasMore] without a separate `COUNT` query: if the
+  /// DAO returns more than [limit] rows, another page exists — the extra
+  /// row is trimmed before mapping to entities.
   @override
-  Future<List<Ticket>> searchTickets({
+  Future<TicketSearchPage> searchTickets({
     String? query,
     TicketStatus? status,
     TicketType? type,
     TicketPriority? priority,
+    required int limit,
+    int offset = 0,
   }) async {
     final rows = await _db.ticketDao.searchTickets(
       query: query,
       status: status,
       type: type,
       priority: priority,
+      limit: limit + 1,
+      offset: offset,
     );
-    return rows.map(_toEntity).toList();
+    final hasMore = rows.length > limit;
+    final page = hasMore ? rows.take(limit).toList() : rows;
+    return TicketSearchPage(
+      tickets: page.map(_toEntity).toList(),
+      hasMore: hasMore,
+    );
   }
 
   @override

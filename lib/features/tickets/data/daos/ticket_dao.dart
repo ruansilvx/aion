@@ -151,24 +151,30 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
         .get();
   }
 
-  /// Returns tickets matching every non-null filter (ANDed), excluding
-  /// trashed tickets. With [query] null/empty, returns a plain filtered
-  /// list ordered by `created_at desc` (identical shape to [getAllTickets]
-  /// when every filter is also null). With [query] set, matches against
-  /// the `tickets_fts` index (title + description) and orders by
-  /// relevance (`bm25`, ascending — SQLite's bm25 scores are negative,
-  /// more-negative meaning a better match).
+  /// Returns one page of tickets matching every non-null filter (ANDed),
+  /// excluding trashed tickets. With [query] null/empty, returns a plain
+  /// filtered list ordered by `created_at desc` (identical shape to
+  /// [getAllTickets] when every filter is also null). With [query] set,
+  /// matches against the `tickets_fts` index (title + description) and
+  /// orders by relevance (`bm25`, ascending — SQLite's bm25 scores are
+  /// negative, more-negative meaning a better match). Both branches apply
+  /// [limit]/[offset] mechanically — this method makes no `hasMore`
+  /// decision of its own; that's the caller's responsibility (see
+  /// [DriftTicketRepository.searchTickets]).
   Future<List<TicketData>> searchTickets({
     String? query,
     TicketStatus? status,
     TicketType? type,
     TicketPriority? priority,
+    required int limit,
+    int offset = 0,
   }) {
     final trimmed = query?.trim() ?? '';
     if (trimmed.isEmpty) {
       final q = select(ticketsTable)
         ..where((t) => t.deletedAt.isNull())
-        ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]);
+        ..orderBy([(t) => OrderingTerm.desc(t.createdAt)])
+        ..limit(limit, offset: offset);
       if (status != null) q.where((t) => t.status.equals(status.name));
       if (type != null) q.where((t) => t.type.equals(type.name));
       if (priority != null) q.where((t) => t.priority.equals(priority.name));
@@ -192,12 +198,15 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
       conditions.add('tickets.priority = ?');
       variables.add(Variable(priority.name));
     }
+    variables.add(Variable(limit));
+    variables.add(Variable(offset));
 
     return customSelect(
       'SELECT tickets.* FROM tickets_fts '
       'JOIN tickets ON tickets.rowid = tickets_fts.rowid '
       'WHERE ${conditions.join(' AND ')} '
-      'ORDER BY bm25(tickets_fts) ASC',
+      'ORDER BY bm25(tickets_fts) ASC '
+      'LIMIT ? OFFSET ?',
       variables: variables,
       readsFrom: {ticketsTable},
     ).map((row) => ticketsTable.map(row.data)).get();

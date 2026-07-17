@@ -25,16 +25,58 @@ class TicketsLoading extends TicketsState {
   const TicketsLoading();
 }
 
-/// The ticket list loaded successfully. Carries the full list to render.
+/// The ticket list loaded successfully. Carries the page to render.
 class TicketsLoaded extends TicketsState {
-  /// Creates a [TicketsLoaded] state carrying [tickets].
-  const TicketsLoaded(this.tickets);
+  /// Creates a [TicketsLoaded] state carrying [tickets] and [hasMore].
+  const TicketsLoaded(this.tickets, {required this.hasMore});
 
-  /// All tickets, most recently created first.
+  /// The tickets loaded so far, most recently created first (or by
+  /// relevance, when a text query is active).
+  final List<Ticket> tickets;
+
+  /// Whether at least one more page exists beyond [tickets] —
+  /// [TicketsCubit.loadMoreTickets] no-ops when this is `false`.
+  final bool hasMore;
+
+  @override
+  List<Object?> get props => [tickets, hasMore];
+}
+
+/// A [TicketsCubit.loadMoreTickets] call is in flight. Carries the tickets
+/// loaded so far (unchanged) so the list stays fully visible with a
+/// bottom-of-list spinner, rather than blanking out mid-scroll.
+class TicketsLoadingMore extends TicketsState {
+  /// Creates a [TicketsLoadingMore] state carrying the already-loaded
+  /// [tickets].
+  const TicketsLoadingMore(this.tickets);
+
+  /// The tickets loaded before this page request started.
   final List<Ticket> tickets;
 
   @override
   List<Object?> get props => [tickets];
+}
+
+/// A [TicketsCubit.loadMoreTickets] call failed. Carries the tickets
+/// loaded before the failed attempt (unchanged — a failed load-more never
+/// discards what's already on screen) and the [hasMore] value from before
+/// the attempt, so the UI can offer a retry rather than silently treating
+/// this as the end of the list.
+class TicketsLoadMoreFailed extends TicketsState {
+  /// Creates a [TicketsLoadMoreFailed] state carrying [tickets] and
+  /// [hasMore].
+  const TicketsLoadMoreFailed(this.tickets, {required this.hasMore});
+
+  /// The tickets loaded before the failed load-more attempt.
+  final List<Ticket> tickets;
+
+  /// Whether another page might still exist — carried over from the state
+  /// before the failed attempt, since the failure itself provides no new
+  /// information about how many results remain.
+  final bool hasMore;
+
+  @override
+  List<Object?> get props => [tickets, hasMore];
 }
 
 /// Categorizes a [TicketsError] so it can be localized at the widget layer
@@ -88,17 +130,21 @@ class TicketCreating extends TicketsState {
   List<Object?> get props => [tickets];
 }
 
-/// A ticket was created successfully. Carries the refreshed list (including
+/// A ticket was created successfully. Carries the refreshed page (including
 /// the new ticket) so the UI can navigate back and show it immediately.
 class TicketCreated extends TicketsState {
-  /// Creates a [TicketCreated] state carrying the refreshed [tickets] list.
-  const TicketCreated(this.tickets);
+  /// Creates a [TicketCreated] state carrying the refreshed [tickets] and
+  /// [hasMore].
+  const TicketCreated(this.tickets, {required this.hasMore});
 
-  /// The full list, including the newly created ticket.
+  /// The refreshed tickets, including the newly created ticket.
   final List<Ticket> tickets;
 
+  /// Whether at least one more page exists beyond [tickets].
+  final bool hasMore;
+
   @override
-  List<Object?> get props => [tickets];
+  List<Object?> get props => [tickets, hasMore];
 }
 
 /// A [TicketsCubit.updateTicketStatus] call is in flight. Carries the
@@ -117,19 +163,22 @@ class TicketStatusUpdating extends TicketsState {
   List<Object?> get props => [tickets];
 }
 
-/// A ticket's status change persisted successfully. Carries the list
+/// A ticket's status change persisted successfully. Carries the page
 /// re-fetched from the repository, which supersedes the optimistic copy
 /// carried by the preceding [TicketStatusUpdating] state.
 class TicketStatusUpdated extends TicketsState {
   /// Creates a [TicketStatusUpdated] state carrying the refreshed
-  /// [tickets] list.
-  const TicketStatusUpdated(this.tickets);
+  /// [tickets] and [hasMore].
+  const TicketStatusUpdated(this.tickets, {required this.hasMore});
 
-  /// The full list, re-fetched after the status change persisted.
+  /// The tickets, re-fetched after the status change persisted.
   final List<Ticket> tickets;
 
+  /// Whether at least one more page exists beyond [tickets].
+  final bool hasMore;
+
   @override
-  List<Object?> get props => [tickets];
+  List<Object?> get props => [tickets, hasMore];
 }
 
 /// A single ticket's detail loaded successfully. Carries that ticket.
@@ -167,22 +216,29 @@ class TicketsBatchTrashing extends TicketsState {
   const TicketsBatchTrashing();
 }
 
-/// A batch trash call completed. Carries the refreshed list and the
-/// total number of tickets actually moved (>= the original selection
-/// size, once cascaded descendants are included) so the widget layer
-/// can show an accurate summary toast.
+/// A batch trash call completed. Carries the refreshed page, the total
+/// number of tickets actually moved (>= the original selection size, once
+/// cascaded descendants are included) so the widget layer can show an
+/// accurate summary toast, and [hasMore].
 class TicketsBatchTrashed extends TicketsState {
   /// Creates a [TicketsBatchTrashed] state carrying the refreshed
-  /// [tickets] list and the [trashedCount].
-  const TicketsBatchTrashed(this.tickets, this.trashedCount);
+  /// [tickets], the [trashedCount], and [hasMore].
+  const TicketsBatchTrashed(
+    this.tickets,
+    this.trashedCount, {
+    required this.hasMore,
+  });
 
-  /// The full list, re-fetched after the batch trash completed.
+  /// The tickets, re-fetched after the batch trash completed.
   final List<Ticket> tickets;
 
   /// How many tickets were actually moved to trash, including cascaded
   /// descendants.
   final int trashedCount;
 
+  /// Whether at least one more page exists beyond [tickets].
+  final bool hasMore;
+
   @override
-  List<Object?> get props => [tickets, trashedCount];
+  List<Object?> get props => [tickets, trashedCount, hasMore];
 }
