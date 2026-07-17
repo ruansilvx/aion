@@ -8,7 +8,8 @@ import 'package:aion/features/tickets/data/models/ticket_model.dart';
 
 part 'ticket_link_dao.g.dart';
 
-/// Drift accessor for [TicketLinksTable].
+/// Drift accessor for [TicketLinksTable], also reading [TicketsTable] to
+/// filter out links to trashed tickets.
 @DriftAccessor(tables: [TicketLinksTable, TicketsTable])
 class TicketLinkDao extends DatabaseAccessor<AppDatabase>
     with _$TicketLinkDaoMixin {
@@ -21,7 +22,9 @@ class TicketLinkDao extends DatabaseAccessor<AppDatabase>
   /// and disappears for good once it's permanently deleted (which
   /// cascade-deletes the link row itself via [deleteLinksForTickets]) — so
   /// this filter only affects the interim window while the other ticket
-  /// sits in Trash.
+  /// sits in Trash. Deduplicated by [TicketLinkData.id]: a self-link (a
+  /// ticket linked to itself) would otherwise match both the source-side
+  /// and target-side query below and be returned twice.
   Future<List<TicketLinkData>> getLinksForTicket(String ticketId) async {
     final asSource = await (select(ticketLinksTable).join([
           innerJoin(
@@ -49,7 +52,11 @@ class TicketLinkDao extends DatabaseAccessor<AppDatabase>
         .map((row) => row.readTable(ticketLinksTable))
         .get();
 
-    return [...asSource, ...asTarget];
+    final byId = <String, TicketLinkData>{};
+    for (final link in [...asSource, ...asTarget]) {
+      byId[link.id] = link;
+    }
+    return byId.values.toList();
   }
 
   /// Inserts [entry] as a new link row.

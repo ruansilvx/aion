@@ -650,6 +650,20 @@ void main() {
         expect(await linkRepository.getLinksForTicket('a'), hasLength(2));
       },
     );
+
+    test(
+      'a self-link (source and target the same ticket) is only counted once',
+      () async {
+        await repository.createTicket(buildTicket(id: 'a'));
+        await linkRepository.createLink(
+          sourceTicketId: 'a',
+          targetTicketId: 'a',
+          linkType: TicketLinkType.relatesTo,
+        );
+
+        expect(await linkRepository.getLinksForTicket('a'), hasLength(1));
+      },
+    );
   });
 
   group('searchTickets', () {
