@@ -80,6 +80,13 @@ class _AionAppState extends State<AionApp> with WidgetsBindingObserver {
           create: (context) =>
               BundledBaselineRepository(context.read<ProjectRepository>()),
         ),
+        // Project-agnostic (a bundled, on-device model, not addressed to
+        // any project's rootPath) — unlike the ticket git-sync services
+        // in WorkspaceShell, which do need a project's rootPath and are
+        // wired there instead.
+        RepositoryProvider<EmbeddingProvider>(
+          create: (_) => BundledEmbeddingProvider(),
+        ),
       ],
       child: BlocProvider<ActiveProjectCubit>(
         create: (context) =>

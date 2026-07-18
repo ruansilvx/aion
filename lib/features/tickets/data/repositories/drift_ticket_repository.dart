@@ -8,6 +8,7 @@ import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_search_page.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_sync_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
 
@@ -53,6 +54,7 @@ class DriftTicketRepository implements TicketRepository {
       priority: Value(ticket.priority.name),
       parentId: Value(ticket.parentId),
       embedding: Value(ticket.embedding),
+      syncStatus: Value(ticket.syncStatus.name),
       estimate: Value(ticket.estimate),
       timeSpent: Value(ticket.timeSpent),
       createdAt: ticket.createdAt.millisecondsSinceEpoch,
@@ -98,6 +100,26 @@ class DriftTicketRepository implements TicketRepository {
         timeSpent: Value(ticket.timeSpent),
         updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
       ),
+    );
+  }
+
+  /// Writes only `embedding` — no `updated_at` bump, since this is a
+  /// background side effect of a content change, not the change itself.
+  @override
+  Future<void> updateEmbedding(String id, Uint8List embedding) {
+    return _db.ticketDao.updateFields(
+      id,
+      TicketsTableCompanion(embedding: Value(embedding)),
+    );
+  }
+
+  /// Writes only `sync_status` — no `updated_at` bump, same rationale as
+  /// [updateEmbedding].
+  @override
+  Future<void> updateSyncStatus(String id, TicketSyncStatus status) {
+    return _db.ticketDao.updateFields(
+      id,
+      TicketsTableCompanion(syncStatus: Value(status.name)),
     );
   }
 
@@ -198,8 +220,10 @@ class DriftTicketRepository implements TicketRepository {
       throw StateError('Ticket $id does not exist');
     }
 
-    final ids = <String>{id, ...await _db.ticketDao.getDescendantIds(id)}
-        .toList();
+    final ids = <String>{
+      id,
+      ...await _db.ticketDao.getDescendantIds(id),
+    }.toList();
     await _db.transaction(() async {
       await _db.commentDao.deleteCommentsForTickets(ids);
       await _db.ticketLinkDao.deleteLinksForTickets(ids);
@@ -270,6 +294,10 @@ class DriftTicketRepository implements TicketRepository {
       ),
       parentId: row.parentId,
       embedding: row.embedding,
+      syncStatus: TicketSyncStatus.values.firstWhere(
+        (e) => e.name == row.syncStatus,
+        orElse: () => TicketSyncStatus.synced,
+      ),
       estimate: row.estimate,
       timeSpent: row.timeSpent,
       createdAt: DateTime.fromMillisecondsSinceEpoch(row.createdAt),

@@ -11,19 +11,26 @@ import 'package:intl/intl.dart' show DateFormat;
 
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
+import 'package:aion/features/tickets/data/services/active_ticket_view_registry.dart';
+import 'package:aion/features/tickets/data/services/ticket_repair_service.dart';
+import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
 import 'package:aion/features/tickets/domain/enums/comment_author_type.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_sync_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/presentation/cubit/comments_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/comments_state.dart';
+import 'package:aion/features/tickets/presentation/cubit/ticket_repair_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_list_screen.dart';
+import 'package:aion/features/tickets/presentation/widgets/ticket_needs_repair_banner.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_overflow_menu.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_parent_picker.dart';
+import 'package:aion/features/tickets/presentation/widgets/ticket_sync_status_badge.dart';
 
 /// The `/tickets/:id` route: ticket meta (priority, title, type, status,
 /// description, timestamps), a comment thread, and a pinned comment
@@ -44,6 +51,14 @@ class TicketDetailScreen extends StatefulWidget {
 class _TicketDetailScreenState extends State<TicketDetailScreen> {
   final _commentController = TextEditingController();
 
+  /// The human-readable `ticketId` this screen registered as "active"
+  /// with [ActiveTicketViewRegistry], once its [TicketDetailLoaded]
+  /// state arrives (unknown before then). `null` on mobile/web, where
+  /// [ActiveTicketViewRegistry] isn't provided at all (see
+  /// `WorkspaceShell`) — reads are guarded with [_tryReadRegistry]
+  /// rather than assuming desktop.
+  String? _registeredTicketId;
+
   @override
   void initState() {
     super.initState();
@@ -53,8 +68,92 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
 
   @override
   void dispose() {
+    final registeredId = _registeredTicketId;
+    if (registeredId != null) {
+      final registry = _tryReadRegistry(context);
+      if (registry?.activeTicketId.value == registeredId) {
+        registry!.activeTicketId.value = null;
+      }
+    }
     _commentController.dispose();
     super.dispose();
+  }
+
+  /// [ActiveTicketViewRegistry] is only provided on desktop with a
+  /// resolved project directory (see `WorkspaceShell`) — `null` on
+  /// mobile/web rather than a thrown `ProviderNotFoundException`.
+  ActiveTicketViewRegistry? _tryReadRegistry(BuildContext context) {
+    try {
+      return context.read<ActiveTicketViewRegistry>();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// [TicketRepairService] is only provided on desktop with a resolved
+  /// project directory — same nullability rationale as
+  /// [_tryReadRegistry].
+  TicketRepairService? _tryReadRepairService(BuildContext context) {
+    try {
+      return context.read<TicketRepairService>();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _registerActiveTicket(String ticketId) {
+    if (_registeredTicketId == ticketId) return;
+    final registry = _tryReadRegistry(context);
+    if (registry == null) return;
+    registry.activeTicketId.value = ticketId;
+    _registeredTicketId = ticketId;
+  }
+
+  /// Whether [ticket] should show the sync badge/repair banner: a
+  /// `resource`/`page` type, **and** sync tracking is actually active
+  /// (desktop with a resolved project directory — [ActiveTicketViewRegistry]
+  /// presence is used as that signal, rather than assuming desktop).
+  /// Without the second check, a `resource`/`page` ticket on mobile/web
+  /// would show a "SYNCED" badge implying a sync mechanism that doesn't
+  /// exist there at all.
+  bool _isSyncable(Ticket ticket) {
+    if (ticket.type != TicketType.resource && ticket.type != TicketType.page) {
+      return false;
+    }
+    return _tryReadRegistry(context) != null;
+  }
+
+  /// The active project's root directory, or `null` if unavailable
+  /// (mobile/web, or [ActiveProjectProvider] not found — e.g. a screen
+  /// test that doesn't wrap the full app-root provider tree).
+  String? _tryReadRootPath(BuildContext context) {
+    try {
+      return context.read<ActiveProjectProvider>().activeProject?.rootPath;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Builds the [TicketNeedsRepairBanner] wrapped in its own
+  /// [TicketRepairCubit], scoped to [ticket]'s `ticketId`/rootPath. Only
+  /// called when [_isSyncable] and `needsRepair` are both true, at which
+  /// point [_tryReadRepairService]/[_tryReadRootPath] are guaranteed
+  /// non-null (both gated on the same desktop-with-project condition as
+  /// [_tryReadRegistry], which [_isSyncable] already checked).
+  Widget _buildRepairBanner(BuildContext context, Ticket ticket) {
+    final service = _tryReadRepairService(context);
+    final rootPath = _tryReadRootPath(context);
+    if (service == null || rootPath == null) return const SizedBox.shrink();
+
+    return BlocProvider<TicketRepairCubit>(
+      key: ValueKey('repair-${ticket.ticketId}'),
+      create: (_) => TicketRepairCubit(service, ticket.ticketId, rootPath),
+      child: TicketNeedsRepairBanner(
+        isPage: ticket.type == TicketType.page,
+        onRepaired: () =>
+            context.read<TicketsCubit>().getTicketById(widget.ticketId),
+      ),
+    );
   }
 
   void _sendComment() {
@@ -79,6 +178,8 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
         } else if (state is TicketsError &&
             state.reason == TicketsErrorReason.invalidParent) {
           AppToast.show(context, context.l10n.ticketInvalidParentError);
+        } else if (state is TicketDetailLoaded) {
+          _registerActiveTicket(state.ticket.ticketId);
         }
       },
       child: ColoredBox(
@@ -96,7 +197,18 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                   onBack: () => context.go('/workspace/tickets'),
                   padding: const EdgeInsets.fromLTRB(20, 6, 20, 12),
                   trailing: state is TicketDetailLoaded
-                      ? TicketOverflowMenu(ticket: state.ticket)
+                      ? Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_isSyncable(state.ticket)) ...[
+                              TicketSyncStatusBadge(
+                                status: state.ticket.syncStatus,
+                              ),
+                              const SizedBox(width: 12),
+                            ],
+                            TicketOverflowMenu(ticket: state.ticket),
+                          ],
+                        )
                       : PhosphorIcon(
                           PhosphorIcons.dotsThreeLight,
                           size: 20,
@@ -136,6 +248,10 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
+                                        if (_isSyncable(ticket) &&
+                                            ticket.syncStatus ==
+                                                TicketSyncStatus.needsRepair)
+                                          _buildRepairBanner(context, ticket),
                                         SelectionMenu<TicketPriority>(
                                           // PriorityBadge renders SizedBox.shrink() for
                                           // TicketPriority.none, which would make the trigger

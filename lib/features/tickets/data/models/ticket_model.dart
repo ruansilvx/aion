@@ -35,8 +35,13 @@ class TicketsTable extends Table {
   /// Self-referencing UUID for the structural parent ticket, if any.
   TextColumn get parentId => text().named('parent_id').nullable()();
 
-  /// Semantic embedding BLOB. Population is deferred to a future change.
+  /// Semantic embedding BLOB, populated asynchronously by
+  /// `EmbeddingProvider` whenever `title`/`description` change.
   BlobColumn get embedding => blob().nullable()();
+
+  /// `TicketSyncStatus.name` string. Defaults to `'synced'`.
+  TextColumn get syncStatus =>
+      text().named('sync_status').withDefault(const Constant('synced'))();
 
   /// Estimated effort in minutes.
   IntColumn get estimate => integer().nullable()();

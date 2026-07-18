@@ -1,9 +1,12 @@
 // domain/repositories/ticket_repository.dart — TicketRepository interface (domain layer).
 
+import 'dart:typed_data';
+
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_search_page.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_sync_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
 /// Read/write access to [Ticket] persistence. Implemented by the data layer
@@ -37,6 +40,19 @@ abstract interface class TicketRepository {
   /// `status` (use [updateTicketStatus]), `parentId`, `embedding`, `id`, or
   /// `ticketId`. Throws if `ticket.id` does not exist.
   Future<void> updateTicket(Ticket ticket);
+
+  /// Updates only the [embedding] of the ticket with id [id]. Independent
+  /// of [updateTicket] — embedding regeneration is a background side
+  /// effect of a content change, not the content change itself, and must
+  /// not perturb `updatedAt` the way a content edit does. Throws if [id]
+  /// does not exist.
+  Future<void> updateEmbedding(String id, Uint8List embedding);
+
+  /// Updates only the [syncStatus] of the ticket with id [id], independent
+  /// of [updateTicket] — sync state changes originate from the
+  /// reconciler/watcher, not user edits, and must not perturb `updatedAt`
+  /// the way a content edit does. Throws if [id] does not exist.
+  Future<void> updateSyncStatus(String id, TicketSyncStatus status);
 
   /// Moves [id] and every ticket in its structural subtree into trash
   /// (sets `deletedAt`, deletes nothing). Never blocked by children —

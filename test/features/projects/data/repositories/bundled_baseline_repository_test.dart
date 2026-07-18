@@ -58,13 +58,16 @@ void main() {
   });
 
   group('getAvailableBaselineVersions', () {
-    test('returns the single bundled version', () async {
+    test('returns every bundled version', () async {
       final repository = BundledBaselineRepository(
         projectRepository,
         bundle: _FakeAssetBundle(manifestJson),
       );
 
-      expect(await repository.getAvailableBaselineVersions(), ['0.1.0']);
+      expect(
+        await repository.getAvailableBaselineVersions(),
+        ['0.1.0', '0.2.0'],
+      );
     });
   });
 

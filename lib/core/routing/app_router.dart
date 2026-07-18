@@ -6,11 +6,20 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:aion/core/contracts/embedding_provider.dart';
 import 'package:aion/core/database/app_database.dart';
+import 'package:aion/core/git/git_repository_client.dart';
+import 'package:aion/core/markdown/ticket_markdown_serializer.dart';
+import 'package:aion/core/utils/platform_utils.dart';
 import 'package:aion/features/projects/projects.dart';
 import 'package:aion/features/tickets/data/repositories/drift_comment_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_link_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_repository.dart';
+import 'package:aion/features/tickets/data/services/active_ticket_view_registry.dart';
+import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
+import 'package:aion/features/tickets/data/services/ticket_markdown_reconciler.dart';
+import 'package:aion/features/tickets/data/services/ticket_markdown_watcher_service.dart';
+import 'package:aion/features/tickets/data/services/ticket_repair_service.dart';
 import 'package:aion/features/tickets/tickets.dart';
 
 /// The app's route table: `/hub`, `/hub/new` (project switcher, no
@@ -168,23 +177,52 @@ class WorkspaceShell extends StatefulWidget {
   State<WorkspaceShell> createState() => _WorkspaceShellState();
 }
 
-class _WorkspaceShellState extends State<WorkspaceShell> {
+class _WorkspaceShellState extends State<WorkspaceShell>
+    with WidgetsBindingObserver {
   late final AppDatabase _database = AppDatabase(widget.project);
+
+  /// Non-null only on desktop with a resolved project directory — the
+  /// same gate `CreateProjectCubit._initializeDesktopProject` uses for
+  /// git-backed version history at all (see proposal.md's Non-goals:
+  /// mobile/web project-scoped git history is a separate, unbuilt gap).
+  String? get _rootPath => isDesktop ? widget.project.rootPath : null;
+
+  TicketMarkdownWatcherService? _watcherService;
 
   @override
   void initState() {
     super.initState();
     unawaited(_purgeOldTrashOnOpen(_database));
+    WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _watcherService?.stop();
     unawaited(_database.close());
     super.dispose();
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final watcher = _watcherService;
+    if (watcher == null) return;
+    switch (state) {
+      case AppLifecycleState.resumed:
+        watcher.start();
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        watcher.stop();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final rootPath = _rootPath;
+
     return MultiRepositoryProvider(
       providers: [
         RepositoryProvider<TicketRepository>(
@@ -196,10 +234,67 @@ class _WorkspaceShellState extends State<WorkspaceShell> {
         RepositoryProvider<TicketLinkRepository>(
           create: (_) => DriftTicketLinkRepository(_database),
         ),
+        // Desktop-only project-scoped services below — git projection,
+        // bidirectional resource/page reconcile, and repair. Absent
+        // entirely on mobile/web (no rootPath to address git commands
+        // to); `TicketsCubit`'s embeddingProvider/gitProjector/
+        // projectRootPath params already no-op when null, and
+        // `TicketDetailScreen` gates the sync badge/banner on
+        // `isDesktop` rather than reading these providers unguarded.
+        if (rootPath != null) ...[
+          RepositoryProvider<GitRepositoryClient>(
+            create: (_) => GitRepositoryClient(),
+          ),
+          RepositoryProvider<TicketMarkdownSerializer>(
+            create: (_) => TicketMarkdownSerializer(),
+          ),
+          RepositoryProvider<ActiveTicketViewRegistry>(
+            create: (_) => ActiveTicketViewRegistry(),
+          ),
+          RepositoryProvider<TicketGitProjector>(
+            create: (context) => TicketGitProjector(
+              context.read<TicketMarkdownSerializer>(),
+              context.read<GitRepositoryClient>(),
+            ),
+          ),
+          RepositoryProvider<TicketMarkdownReconciler>(
+            create: (context) => TicketMarkdownReconciler(
+              context.read<TicketRepository>(),
+              context.read<TicketMarkdownSerializer>(),
+              context.read<ActiveTicketViewRegistry>(),
+              context.read<EmbeddingProvider>(),
+            ),
+          ),
+          RepositoryProvider<TicketRepairService>(
+            create: (context) => TicketRepairService(
+              context.read<TicketRepository>(),
+              context.read<TicketMarkdownSerializer>(),
+            ),
+          ),
+        ],
       ],
-      child: BlocProvider<TicketsCubit>(
-        create: (context) => TicketsCubit(context.read<TicketRepository>()),
-        child: widget.child,
+      child: Builder(
+        builder: (context) {
+          if (rootPath != null) {
+            // Deferred until the providers above exist — `initState`
+            // itself can't `context.read` before `build` runs once.
+            _watcherService ??= TicketMarkdownWatcherService(
+              context.read<TicketMarkdownReconciler>(),
+              rootPath,
+            )..start();
+          }
+          return BlocProvider<TicketsCubit>(
+            create: (context) => TicketsCubit(
+              context.read<TicketRepository>(),
+              embeddingProvider: context.read<EmbeddingProvider>(),
+              gitProjector: rootPath != null
+                  ? context.read<TicketGitProjector>()
+                  : null,
+              projectRootPath: rootPath,
+            ),
+            child: widget.child,
+          );
+        },
       ),
     );
   }
