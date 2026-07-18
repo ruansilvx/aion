@@ -197,9 +197,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
   List<Ticket> _visibleTickets(List<Ticket> tickets) {
     if (_viewMode == _TicketViewMode.board) {
       return tickets
-          .where(
-            (t) => t.type == TicketType.task || t.type == TicketType.story,
-          )
+          .where((t) => t.type == TicketType.task || t.type == TicketType.story)
           .toList();
     }
     return tickets;
@@ -387,15 +385,14 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                                 const _SelectModeToggle(),
                               ],
                               const SizedBox(width: AionSpacing.sp8),
+                              const _SwitchProjectButton(),
+                              const SizedBox(width: AionSpacing.sp8),
                               const _TrashEntryButton(),
                               const SizedBox(width: AionSpacing.sp12),
                               DecoratedBox(
                                 decoration: BoxDecoration(
                                   color: c.surfaceHover,
-                                  border: Border.all(
-                                    color: c.border,
-                                    width: 1,
-                                  ),
+                                  border: Border.all(color: c.border, width: 1),
                                   shape: BoxShape.circle,
                                 ),
                                 child: SizedBox(
@@ -451,14 +448,10 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                               Expanded(
                                 child: AppDropdown<TicketStatus?>(
                                   value: _statusFilter,
-                                  items: const [
-                                    null,
-                                    ...TicketStatus.values,
-                                  ],
+                                  items: const [null, ...TicketStatus.values],
                                   isActive: _statusFilter != null,
-                                  semanticsLabel: context
-                                      .l10n
-                                      .ticketsListFilterStatusLabel,
+                                  semanticsLabel:
+                                      context.l10n.ticketsListFilterStatusLabel,
                                   itemLabel: (s) => s == null
                                       ? context
                                             .l10n
@@ -491,10 +484,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                               Expanded(
                                 child: AppDropdown<TicketPriority?>(
                                   value: _priorityFilter,
-                                  items: const [
-                                    null,
-                                    ...TicketPriority.values,
-                                  ],
+                                  items: const [null, ...TicketPriority.values],
                                   isActive: _priorityFilter != null,
                                   semanticsLabel: context
                                       .l10n
@@ -542,10 +532,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                                   children: [
                                     Text(
                                       reason != null
-                                          ? ticketsErrorMessage(
-                                              context,
-                                              reason,
-                                            )
+                                          ? ticketsErrorMessage(context, reason)
                                           : message,
                                       style: AionText.body.copyWith(
                                         color: c.textSecondary,
@@ -566,25 +553,21 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                             TicketStatusUpdated() ||
                             TicketsBatchTrashed() ||
                             TicketsLoadingMore() ||
-                            TicketsLoadMoreFailed() =>
-                              AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 120),
-                                transitionBuilder: (child, anim) =>
-                                    FadeTransition(
-                                      opacity: anim,
-                                      child: child,
-                                    ),
-                                child: KeyedSubtree(
-                                  key: ValueKey(
-                                    tickets.map((t) => t.id).join(','),
-                                  ),
-                                  child: _buildTicketsBody(
-                                    context,
-                                    tickets,
-                                    state,
-                                  ),
+                            TicketsLoadMoreFailed() => AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 120),
+                              transitionBuilder: (child, anim) =>
+                                  FadeTransition(opacity: anim, child: child),
+                              child: KeyedSubtree(
+                                key: ValueKey(
+                                  tickets.map((t) => t.id).join(','),
+                                ),
+                                child: _buildTicketsBody(
+                                  context,
+                                  tickets,
+                                  state,
                                 ),
                               ),
+                            ),
                             _ => const SizedBox.shrink(),
                           },
                         ),
@@ -596,7 +579,9 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                   Positioned(
                     right: 18,
                     bottom: 24,
-                    child: AppFab(onTap: () => context.go('/tickets/new')),
+                    child: AppFab(
+                      onTap: () => context.go('/workspace/tickets/new'),
+                    ),
                   )
                 else
                   Positioned(
@@ -614,9 +599,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                           context.read<TicketSelectionCubit>().clear(),
                       onSelectAll: () => context
                           .read<TicketSelectionCubit>()
-                          .selectAll(
-                            visibleTickets.map((t) => t.id).toList(),
-                          ),
+                          .selectAll(visibleTickets.map((t) => t.id).toList()),
                       onDelete: () => _confirmAndTrashSelection(
                         context,
                         selection.selectedIds,
@@ -843,8 +826,7 @@ class _SelectModeToggleState extends State<_SelectModeToggle> {
               },
             ),
           },
-          onShowFocusHighlight: (value) =>
-              setState(() => _isFocused = value),
+          onShowFocusHighlight: (value) => setState(() => _isFocused = value),
           child: GestureDetector(
             onTap: enter,
             onTapDown: (_) => setState(() => _isPressed = true),
@@ -866,6 +848,96 @@ class _SelectModeToggleState extends State<_SelectModeToggle> {
                   child: Center(
                     child: PhosphorIcon(
                       PhosphorIcons.checkSquareLight,
+                      size: 20,
+                      color: iconColor,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Header icon button returning to the project Hub (`/hub`) to switch
+/// projects. Local to this screen rather than a shared widget — the
+/// standalone `ProjectSwitcherMenu`
+/// (`features/projects/presentation/widgets/project_switcher_menu.dart`)
+/// is designed for a full-width sidebar row, which this header's
+/// compact icon-button layout doesn't have; `features/tickets/` also
+/// cannot import `features/projects/` directly per `project.md`'s
+/// cross-feature rule. Same visual treatment as [_TrashEntryButton].
+class _SwitchProjectButton extends StatefulWidget {
+  const _SwitchProjectButton();
+
+  @override
+  State<_SwitchProjectButton> createState() => _SwitchProjectButtonState();
+}
+
+class _SwitchProjectButtonState extends State<_SwitchProjectButton> {
+  bool _isHovered = false;
+  bool _isFocused = false;
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+
+    final fill = (_isPressed || _isHovered)
+        ? c.surfaceHover
+        : const Color(0x00000000);
+    final iconColor = _isHovered ? c.textPrimary : c.textSecondary;
+    final boxShadow = _isFocused
+        ? [
+            BoxShadow(
+              color: c.primary.withValues(alpha: t.isDark ? 0.30 : 0.16),
+              spreadRadius: 3,
+            ),
+          ]
+        : const <BoxShadow>[];
+
+    return Semantics(
+      button: true,
+      label: context.l10n.projectSwitcherMenuLabel,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: FocusableActionDetector(
+          actions: {
+            ActivateIntent: CallbackAction<ActivateIntent>(
+              onInvoke: (_) {
+                context.go('/hub');
+                return null;
+              },
+            ),
+          },
+          onShowFocusHighlight: (value) => setState(() => _isFocused = value),
+          child: GestureDetector(
+            onTap: () => context.go('/hub'),
+            onTapDown: (_) => setState(() => _isPressed = true),
+            onTapUp: (_) => setState(() => _isPressed = false),
+            onTapCancel: () => setState(() => _isPressed = false),
+            child: AnimatedScale(
+              scale: _isPressed ? 0.96 : 1.0,
+              duration: const Duration(milliseconds: 80),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 100),
+                decoration: BoxDecoration(
+                  color: fill,
+                  borderRadius: BorderRadius.all(AionRadius.iconBtn),
+                  boxShadow: boxShadow,
+                ),
+                child: SizedBox(
+                  width: 37,
+                  height: 37,
+                  child: Center(
+                    child: PhosphorIcon(
+                      PhosphorIcons.hexagonLight,
                       size: 20,
                       color: iconColor,
                     ),
@@ -924,15 +996,14 @@ class _TrashEntryButtonState extends State<_TrashEntryButton> {
           actions: {
             ActivateIntent: CallbackAction<ActivateIntent>(
               onInvoke: (_) {
-                context.go('/tickets/trash');
+                context.go('/workspace/tickets/trash');
                 return null;
               },
             ),
           },
-          onShowFocusHighlight: (value) =>
-              setState(() => _isFocused = value),
+          onShowFocusHighlight: (value) => setState(() => _isFocused = value),
           child: GestureDetector(
-            onTap: () => context.go('/tickets/trash'),
+            onTap: () => context.go('/workspace/tickets/trash'),
             onTapDown: (_) => setState(() => _isPressed = true),
             onTapUp: (_) => setState(() => _isPressed = false),
             onTapCancel: () => setState(() => _isPressed = false),
@@ -976,10 +1047,7 @@ class _TicketListFooter extends StatelessWidget {
   /// Creates a [_TicketListFooter]. [isLoadingMore] selects the loading
   /// spinner; otherwise the retry row is shown, calling [onRetry] when
   /// tapped or keyboard-activated.
-  const _TicketListFooter({
-    required this.isLoadingMore,
-    required this.onRetry,
-  });
+  const _TicketListFooter({required this.isLoadingMore, required this.onRetry});
 
   /// Whether a page fetch is currently in flight.
   final bool isLoadingMore;
@@ -1060,8 +1128,7 @@ class _LoadMoreRetryRowState extends State<_LoadMoreRetryRow> {
               },
             ),
           },
-          onShowFocusHighlight: (value) =>
-              setState(() => _isFocused = value),
+          onShowFocusHighlight: (value) => setState(() => _isFocused = value),
           child: GestureDetector(
             onTap: widget.onRetry,
             onTapDown: (_) => setState(() => _isPressed = true),
@@ -1194,8 +1261,7 @@ class _BoardLoadMoreButtonState extends State<_BoardLoadMoreButton> {
               },
             ),
           },
-          onShowFocusHighlight: (value) =>
-              setState(() => _isFocused = value),
+          onShowFocusHighlight: (value) => setState(() => _isFocused = value),
           child: GestureDetector(
             onTap: widget.onTap,
             onTapDown: (_) => setState(() => _isPressed = true),
@@ -1274,7 +1340,7 @@ class TicketListTile extends StatelessWidget {
       if (isSelectionActive) {
         context.read<TicketSelectionCubit>().toggle(ticket.id);
       } else {
-        context.go('/tickets/${ticket.id}');
+        context.go('/workspace/tickets/${ticket.id}');
       }
     }
 
@@ -1302,10 +1368,7 @@ class TicketListTile extends StatelessWidget {
             child: Padding(
               padding: isSelectionActive
                   ? const EdgeInsets.fromLTRB(16, 12, 20, 12)
-                  : const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 12,
-                    ),
+                  : const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

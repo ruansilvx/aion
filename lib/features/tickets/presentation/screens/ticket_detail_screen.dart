@@ -75,7 +75,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     return BlocListener<TicketsCubit, TicketsState>(
       listener: (context, state) {
         if (state is TicketTrashed) {
-          context.go('/tickets');
+          context.go('/workspace/tickets');
         } else if (state is TicketsError &&
             state.reason == TicketsErrorReason.invalidParent) {
           AppToast.show(context, context.l10n.ticketInvalidParentError);
@@ -93,7 +93,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                 return AppHeader(
                   title: title,
                   showBack: true,
-                  onBack: () => context.go('/tickets'),
+                  onBack: () => context.go('/workspace/tickets'),
                   padding: const EdgeInsets.fromLTRB(20, 6, 20, 12),
                   trailing: state is TicketDetailLoaded
                       ? TicketOverflowMenu(ticket: state.ticket)
@@ -231,10 +231,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                               ),
                                               items: TicketStatus.values,
                                               itemLabel: (s) =>
-                                                  ticketStatusLabel(
-                                                    context,
-                                                    s,
-                                                  ),
+                                                  ticketStatusLabel(context, s),
                                               currentValue: ticket.status,
                                               onSelected: (s) => context
                                                   .read<TicketsCubit>()
@@ -795,4 +792,3 @@ class CommentTile extends StatelessWidget {
     return '$hour:$minute';
   }
 }
-

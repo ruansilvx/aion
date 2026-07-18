@@ -254,7 +254,7 @@ class TicketBoardCard extends StatelessWidget {
       if (isSelectionActive) {
         context.read<TicketSelectionCubit>().toggle(ticket.id);
       } else {
-        context.go('/tickets/${ticket.id}');
+        context.go('/workspace/tickets/${ticket.id}');
       }
     }
 
@@ -379,9 +379,8 @@ class _CardVisual extends StatelessWidget {
                 if (isSelectionActive) ...[
                   AppCheckbox(
                     value: isSelected,
-                    onChanged: (_) => context
-                        .read<TicketSelectionCubit>()
-                        .toggle(ticket.id),
+                    onChanged: (_) =>
+                        context.read<TicketSelectionCubit>().toggle(ticket.id),
                   ),
                   const SizedBox(width: AionSpacing.sp8),
                 ],

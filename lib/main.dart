@@ -1,4 +1,4 @@
-// main.dart — App entry point: database init, repository/BLoC providers, theme, router.
+// main.dart — App entry point: registry database init, root providers, theme, router.
 
 import 'dart:async';
 
@@ -9,46 +9,28 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/l10n/generated/app_localizations.dart';
-import 'package:aion/features/tickets/data/repositories/drift_comment_repository.dart';
-import 'package:aion/features/tickets/data/repositories/drift_ticket_link_repository.dart';
-import 'package:aion/features/tickets/data/repositories/drift_ticket_repository.dart';
-import 'package:aion/features/tickets/tickets.dart';
+import 'package:aion/features/projects/data/repositories/bundled_baseline_repository.dart';
+import 'package:aion/features/projects/data/repositories/drift_project_repository.dart';
+import 'package:aion/features/projects/projects.dart';
 
-/// App entry point. Opens the [AppDatabase], fires off a best-effort
-/// trash purge, and runs [AionApp].
+/// App entry point. No [AppDatabase] is opened here — it no longer has
+/// one fixed global location; each project opens its own instance once
+/// active (see `WorkspaceShell` in `core/routing/app_router.dart`, and
+/// `aion-arch/changes/multi-project-hub/design.md` §6, §7). Only the
+/// non-project-scoped [RegistryDatabase] (owned by [AionApp]) exists at
+/// launch.
 void main() {
-  final database = AppDatabase();
-  unawaited(_purgeOldTrashOnLaunch(database));
-  runApp(AionApp(database: database));
+  runApp(const AionApp());
 }
 
-/// Permanently purges trashed tickets older than
-/// [TrashCubit.purgeAgeThreshold] on every cold start, so trash is
-/// cleaned up even for users who never visit the Trash screen's manual
-/// "Purge old" action. Fire-and-forget: [main] does not await this, so
-/// it never delays first paint. Failures are swallowed — a missed purge
-/// has no user-visible consequence and simply gets another chance on
-/// the next launch.
-Future<void> _purgeOldTrashOnLaunch(AppDatabase database) async {
-  try {
-    await DriftTicketRepository(
-      database,
-    ).purgeTrashOlderThan(TrashCubit.purgeAgeThreshold);
-  } catch (_) {
-    // Best-effort housekeeping — no user-facing surface for failures,
-    // and this codebase has no logging infrastructure to report into.
-  }
-}
-
-/// The Aion app root. Wires repository providers, the root-level
-/// [TicketsCubit], [ThemeScope] (tracking system brightness), and the
-/// `WidgetsApp.router` shell — no `MaterialApp`, no `ThemeData`.
+/// The Aion app root. Wires the [RegistryDatabase] and its repositories,
+/// [ActiveProjectCubit], [ThemeScope] (tracking system brightness), and
+/// the `WidgetsApp.router` shell — no `MaterialApp`, no `ThemeData`.
+/// Project-scoped state (ticket repositories, [AppDatabase]) is wired
+/// per-project inside `WorkspaceShell`, not here.
 class AionApp extends StatefulWidget {
-  /// Creates the [AionApp] root widget, backed by [database].
-  const AionApp({super.key, required this.database});
-
-  /// The already-opened database, shared by all repositories.
-  final AppDatabase database;
+  /// Creates the [AionApp] root widget.
+  const AionApp({super.key});
 
   @override
   State<AionApp> createState() => _AionAppState();
@@ -56,6 +38,7 @@ class AionApp extends StatefulWidget {
 
 class _AionAppState extends State<AionApp> with WidgetsBindingObserver {
   late AionThemeData _theme;
+  late final RegistryDatabase _registryDatabase = RegistryDatabase();
 
   @override
   void initState() {
@@ -69,6 +52,7 @@ class _AionAppState extends State<AionApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    unawaited(_registryDatabase.close());
     super.dispose();
   }
 
@@ -89,18 +73,17 @@ class _AionAppState extends State<AionApp> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return MultiRepositoryProvider(
       providers: [
-        RepositoryProvider<TicketRepository>(
-          create: (_) => DriftTicketRepository(widget.database),
+        RepositoryProvider<ProjectRepository>(
+          create: (_) => DriftProjectRepository(_registryDatabase),
         ),
-        RepositoryProvider<CommentRepository>(
-          create: (_) => DriftCommentRepository(widget.database),
-        ),
-        RepositoryProvider<TicketLinkRepository>(
-          create: (_) => DriftTicketLinkRepository(widget.database),
+        RepositoryProvider<BaselineRepository>(
+          create: (context) =>
+              BundledBaselineRepository(context.read<ProjectRepository>()),
         ),
       ],
-      child: BlocProvider<TicketsCubit>(
-        create: (context) => TicketsCubit(context.read<TicketRepository>()),
+      child: BlocProvider<ActiveProjectCubit>(
+        create: (context) =>
+            ActiveProjectCubit(context.read<ProjectRepository>()),
         child: ThemeScope(
           theme: _theme,
           child: WidgetsApp.router(

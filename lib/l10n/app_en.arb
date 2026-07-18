@@ -195,5 +195,75 @@
   },
   "ticketSelectionSelectAllAction": "Select all",
   "ticketSelectionDeselectAllAction": "Deselect all",
-  "ticketSelectionDeleteAction": "Delete"
+  "ticketSelectionDeleteAction": "Delete",
+
+  "projectHubEyebrow": "WORKSPACE",
+  "projectHubTitle": "Projects",
+  "projectHubNewProjectAction": "New Project",
+  "projectHubEmptyTitle": "No projects yet",
+  "projectHubEmptyBody": "Create your first project to start planning tickets, boards, and agent work. Each project keeps its own isolated data store.",
+  "projectHubErrorRetry": "Couldn't load your projects — tap to retry",
+  "projectCardOpenAction": "Open",
+  "projectCardOverflowLabel": "More actions for {projectName}",
+  "@projectCardOverflowLabel": {
+    "placeholders": {
+      "projectName": { "type": "String" }
+    }
+  },
+  "projectCardOpenMenuItem": "Open",
+  "projectCardRemoveMenuItem": "Remove",
+  "projectCardAppStorageLabel": "App storage · {storageKey}",
+  "@projectCardAppStorageLabel": {
+    "placeholders": {
+      "storageKey": { "type": "String" }
+    }
+  },
+  "projectCardLastOpenedJustNow": "Just now",
+  "projectCardLastOpenedHoursAgo": "{hours, plural, one{1 hour ago} other{{hours} hours ago}}",
+  "@projectCardLastOpenedHoursAgo": {
+    "placeholders": {
+      "hours": { "type": "int" }
+    }
+  },
+  "projectCardLastOpenedYesterday": "Yesterday",
+  "projectCardLastOpenedDaysAgo": "{days, plural, one{1 day ago} other{{days} days ago}}",
+  "@projectCardLastOpenedDaysAgo": {
+    "placeholders": {
+      "days": { "type": "int" }
+    }
+  },
+  "projectCardLastOpenedWeeksAgo": "{weeks, plural, one{1 week ago} other{{weeks} weeks ago}}",
+  "@projectCardLastOpenedWeeksAgo": {
+    "placeholders": {
+      "weeks": { "type": "int" }
+    }
+  },
+
+  "removeProjectConfirmTitle": "Remove project?",
+  "removeProjectConfirmMessage": "Removes \"{projectName}\" from your Hub. Your files on disk are not deleted — you can add the project back later.",
+  "@removeProjectConfirmMessage": {
+    "placeholders": {
+      "projectName": { "type": "String" }
+    }
+  },
+  "removeProjectConfirmAction": "Remove",
+
+  "newProjectTitle": "New Project",
+  "newProjectNameLabel": "Project name",
+  "newProjectNameHint": "e.g. Client Portal API",
+  "newProjectLocationLabel": "Location",
+  "newProjectLocationDesktopQualifier": "Desktop",
+  "newProjectLocationPlaceholder": "Choose a folder…",
+  "newProjectLocationBrowseAction": "Browse…",
+  "newProjectLocationHint": "Where this project's data is stored on disk. Hidden on mobile & web builds.",
+  "newProjectLocationDirectoryInUseError": "This directory is already used by another project.",
+  "newProjectNoDirectoryNotice": "Stored in this device's app storage. There's no folder to choose on mobile & web — the directory picker is hidden here.",
+  "newProjectBaselineVersionLabel": "Baseline version",
+  "newProjectBaselineVersionLatestTag": "LATEST",
+  "newProjectBaselineVersionHint": "Selected automatically — version management arrives in a later release.",
+  "newProjectDuplicateNameError": "A project with this name already exists.",
+  "newProjectSubmitAction": "Create project",
+  "newProjectSubmittingAction": "Creating…",
+
+  "projectSwitcherMenuLabel": "Switch Project"
 }

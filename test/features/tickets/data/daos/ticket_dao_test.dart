@@ -4,7 +4,19 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aion/core/core.dart';
+import 'package:aion/features/projects/projects.dart';
 import 'package:aion/features/tickets/data/daos/ticket_dao.dart';
+
+/// Dummy project [AppDatabase] now requires per-project addressing —
+/// unused here since every test passes an explicit in-memory executor.
+final _testProject = Project(
+  id: 'test-project',
+  name: 'Test Project',
+  storageKey: 'test-project',
+  baselineVersion: '0.1.0',
+  createdAt: DateTime(2024, 1, 1),
+  lastOpenedAt: DateTime(2024, 1, 1),
+);
 
 /// Direct [TicketDao] pagination tests against a real in-memory drift
 /// instance — per `flutter-conventions.md`'s stated exception, this is
@@ -40,7 +52,7 @@ void main() {
   }
 
   setUp(() {
-    database = AppDatabase(NativeDatabase.memory());
+    database = AppDatabase(_testProject, NativeDatabase.memory());
     dao = database.ticketDao;
   });
 
@@ -112,9 +124,10 @@ void main() {
       expect(firstPage.length, 2);
       expect(secondPage.length, 2);
       expect(
-        firstPage.map((t) => t.id).toSet().intersection(
-          secondPage.map((t) => t.id).toSet(),
-        ),
+        firstPage
+            .map((t) => t.id)
+            .toSet()
+            .intersection(secondPage.map((t) => t.id).toSet()),
         isEmpty,
       );
     });
