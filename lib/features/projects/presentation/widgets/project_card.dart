@@ -338,8 +338,7 @@ class _LocationRow extends StatelessWidget {
     final c = colors;
     final rootPath = project.rootPath;
     final locationText =
-        rootPath ??
-        context.l10n.projectCardAppStorageLabel(project.storageKey);
+        rootPath ?? context.l10n.projectCardAppStorageLabel(project.storageKey);
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,

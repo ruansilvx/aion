@@ -50,7 +50,11 @@ class EmptyHubState extends StatelessWidget {
               ),
             ),
             const SizedBox(height: AionSpacing.sp24),
-            _NewProjectCta(colors: c, isDark: t.isDark, onNewProject: onNewProject),
+            _NewProjectCta(
+              colors: c,
+              isDark: t.isDark,
+              onNewProject: onNewProject,
+            ),
           ],
         ),
       ),

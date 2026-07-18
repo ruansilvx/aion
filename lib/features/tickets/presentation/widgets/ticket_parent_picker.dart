@@ -200,12 +200,14 @@ class _TicketParentPickerState extends State<TicketParentPicker> {
       builder: (overlayContext) {
         final query = _searchController.text.trim().toLowerCase();
         final candidates = _candidates;
-        final filtered = candidates?.where(
-          (cand) =>
-              query.isEmpty ||
-              cand.ticketId.toLowerCase().contains(query) ||
-              cand.title.toLowerCase().contains(query),
-        ).toList();
+        final filtered = candidates
+            ?.where(
+              (cand) =>
+                  query.isEmpty ||
+                  cand.ticketId.toLowerCase().contains(query) ||
+                  cand.title.toLowerCase().contains(query),
+            )
+            .toList();
         final byId = <String, Ticket>{
           for (final cand in candidates ?? const <Ticket>[]) cand.id: cand,
         };
@@ -277,9 +279,7 @@ class _TicketParentPickerState extends State<TicketParentPicker> {
                             ),
                             child: Center(
                               child: Text(
-                                overlayContext
-                                    .l10n
-                                    .ticketDetailParentNoResults,
+                                overlayContext.l10n.ticketDetailParentNoResults,
                                 style: AionText.bodySm.copyWith(
                                   color: c.textMuted,
                                 ),
@@ -496,9 +496,7 @@ class _InlineTrigger extends StatelessWidget {
                           ),
                           TextSpan(
                             text: '  —  ',
-                            style: AionText.bodySm.copyWith(
-                              color: c.textMuted,
-                            ),
+                            style: AionText.bodySm.copyWith(color: c.textMuted),
                           ),
                           TextSpan(
                             text: resolvedParent?.title ?? '',
@@ -582,85 +580,85 @@ class _FormFieldTrigger extends StatelessWidget {
                   ]
                 : null,
           ),
-        child: currentParentId == null
-            ? Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 13,
-                  vertical: 11,
-                ),
-                child: Row(
-                  children: [
-                    PhosphorIcon(
-                      PhosphorIcons.gitBranchLight,
-                      size: 15,
-                      color: glyphColor,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        context.l10n.ticketDetailParentFieldPlaceholder,
-                        style: AionText.body.copyWith(color: c.textMuted),
+          child: currentParentId == null
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 13,
+                    vertical: 11,
+                  ),
+                  child: Row(
+                    children: [
+                      PhosphorIcon(
+                        PhosphorIcons.gitBranchLight,
+                        size: 15,
+                        color: glyphColor,
                       ),
-                    ),
-                    PhosphorIcon(
-                      PhosphorIcons.caretDownLight,
-                      size: 12,
-                      color: glyphColor,
-                    ),
-                  ],
-                ),
-              )
-            : Padding(
-                padding: const EdgeInsets.fromLTRB(12, 9, 11, 9),
-                child: Row(
-                  children: [
-                    DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: c.surfaceHover,
-                        border: Border.all(color: c.border, width: 1),
-                        borderRadius: BorderRadius.all(AionRadius.sm),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
-                          vertical: 3,
-                        ),
+                      const SizedBox(width: 10),
+                      Expanded(
                         child: Text(
-                          resolvedParent?.ticketId ?? '…',
-                          style: AionText.key.copyWith(
-                            color: c.textSecondary,
+                          context.l10n.ticketDetailParentFieldPlaceholder,
+                          style: AionText.body.copyWith(color: c.textMuted),
+                        ),
+                      ),
+                      PhosphorIcon(
+                        PhosphorIcons.caretDownLight,
+                        size: 12,
+                        color: glyphColor,
+                      ),
+                    ],
+                  ),
+                )
+              : Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 9, 11, 9),
+                  child: Row(
+                    children: [
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: c.surfaceHover,
+                          border: Border.all(color: c.border, width: 1),
+                          borderRadius: BorderRadius.all(AionRadius.sm),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 3,
+                          ),
+                          child: Text(
+                            resolvedParent?.ticketId ?? '…',
+                            style: AionText.key.copyWith(
+                              color: c.textSecondary,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 9),
-                    Expanded(
-                      child: Text(
-                        resolvedParent?.title ?? '',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AionText.bodySm.copyWith(color: c.textPrimary),
-                      ),
-                    ),
-                    if (resolvedParent != null) ...[
-                      const SizedBox(width: 8),
-                      DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: _typeAccent(c, resolvedParent!.type),
-                          borderRadius: BorderRadius.circular(2),
+                      const SizedBox(width: 9),
+                      Expanded(
+                        child: Text(
+                          resolvedParent?.title ?? '',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AionText.bodySm.copyWith(color: c.textPrimary),
                         ),
-                        child: const SizedBox(width: 8, height: 8),
+                      ),
+                      if (resolvedParent != null) ...[
+                        const SizedBox(width: 8),
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: _typeAccent(c, resolvedParent!.type),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                          child: const SizedBox(width: 8, height: 8),
+                        ),
+                      ],
+                      const SizedBox(width: 2),
+                      PhosphorIcon(
+                        PhosphorIcons.caretDownLight,
+                        size: 11,
+                        color: glyphColor,
                       ),
                     ],
-                    const SizedBox(width: 2),
-                    PhosphorIcon(
-                      PhosphorIcons.caretDownLight,
-                      size: 11,
-                      color: glyphColor,
-                    ),
-                  ],
+                  ),
                 ),
-              ),
         ),
       ),
     );

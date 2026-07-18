@@ -195,7 +195,11 @@ class _AppConfirmDialogOverlay extends StatelessWidget {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          _LeadingIcon(colors: colors, isDark: isDark, tone: tone),
+                          _LeadingIcon(
+                            colors: colors,
+                            isDark: isDark,
+                            tone: tone,
+                          ),
                           const SizedBox(height: AionSpacing.sp16),
                           Text(
                             title,
@@ -238,7 +242,6 @@ class _AppConfirmDialogOverlay extends StatelessWidget {
       ],
     );
   }
-
 }
 
 /// The tone-colored icon disc (trash/warning glyph) at the top of the

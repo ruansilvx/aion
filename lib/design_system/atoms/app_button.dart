@@ -220,7 +220,9 @@ class _DecoratedContent extends StatelessWidget {
     final content = isFullWidth
         ? Padding(
             padding: const EdgeInsets.all(15),
-            child: Center(child: _Label(label: label, color: textColor, fontSize: 15)),
+            child: Center(
+              child: _Label(label: label, color: textColor, fontSize: 15),
+            ),
           )
         : Padding(
             padding: padding,

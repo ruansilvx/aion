@@ -759,7 +759,11 @@ class CommentTile extends StatelessWidget {
 /// [CommentTile]'s leading avatar — a sparkle glyph disc for AI-authored
 /// comments, a "U" initial circle otherwise.
 class _Avatar extends StatelessWidget {
-  const _Avatar({required this.colors, required this.isAi, required this.isDark});
+  const _Avatar({
+    required this.colors,
+    required this.isAi,
+    required this.isDark,
+  });
 
   final AionColors colors;
   final bool isAi;

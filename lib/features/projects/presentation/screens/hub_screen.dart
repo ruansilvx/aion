@@ -79,7 +79,6 @@ class _HubScreenState extends State<HubScreen> {
       ),
     );
   }
-
 }
 
 /// [HubScreen]'s eyebrow/title header plus its "New Project" action.

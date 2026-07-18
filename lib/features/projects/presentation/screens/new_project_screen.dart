@@ -114,7 +114,6 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
       ),
     );
   }
-
 }
 
 /// The create-project form body: name field, directory picker/notice,
@@ -160,7 +159,10 @@ class _Form extends StatelessWidget {
         ),
         if (failure?.reason == CreateProjectFailureReason.duplicateName) ...[
           const SizedBox(height: AionSpacing.sp4),
-          _InlineError(colors: c, message: context.l10n.newProjectDuplicateNameError),
+          _InlineError(
+            colors: c,
+            message: context.l10n.newProjectDuplicateNameError,
+          ),
         ],
         const SizedBox(height: AionSpacing.sp20),
         if (isDesktop)
@@ -235,9 +237,7 @@ class _DirectoryPicker extends StatelessWidget {
                     boxShadow: hasDirectoryError
                         ? [
                             BoxShadow(
-                              color: c.errorRing(
-                                ThemeScope.of(context).isDark,
-                              ),
+                              color: c.errorRing(ThemeScope.of(context).isDark),
                               spreadRadius: 3,
                             ),
                           ]
