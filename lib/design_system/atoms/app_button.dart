@@ -100,16 +100,27 @@ class _AppButtonState extends State<AppButton> {
             child: ValueListenableBuilder<bool>(
               valueListenable: _isHovered,
               builder: (context, hovered, _) {
+                final fill = _fillColor(c, hovered, isDisabled);
+                final textColor = _textColor(c);
+                final border = _border(c);
+                final shadow = isDisabled
+                    ? const <BoxShadow>[]
+                    : _shadow(c, t.isDark);
+
                 return AnimatedScale(
                   scale: isDisabled ? 1.0 : (_isPressed ? 0.98 : 1.0),
                   duration: const Duration(milliseconds: 80),
                   child: Opacity(
                     opacity: isDisabled ? 0.45 : 1.0,
-                    child: _buildDecoratedContent(
-                      c,
-                      hovered,
-                      isDisabled,
-                      t.isDark,
+                    child: _DecoratedContent(
+                      isFullWidth: widget.isFullWidth,
+                      icon: widget.icon,
+                      label: widget.label,
+                      padding: _padding(),
+                      fill: fill,
+                      textColor: textColor,
+                      border: border,
+                      shadow: shadow,
                     ),
                   ),
                 );
@@ -119,58 +130,6 @@ class _AppButtonState extends State<AppButton> {
         ),
       ),
     );
-  }
-
-  Widget _buildDecoratedContent(
-    AionColors c,
-    bool hovered,
-    bool isDisabled,
-    bool isDark,
-  ) {
-    final fill = _fillColor(c, hovered, isDisabled);
-    final textColor = _textColor(c);
-    final border = _border(c);
-    final shadow = isDisabled ? const <BoxShadow>[] : _shadow(c, isDark);
-
-    final content = widget.isFullWidth
-        ? Padding(
-            padding: const EdgeInsets.all(15),
-            child: Center(child: _label(textColor, fontSize: 15)),
-          )
-        : Padding(
-            padding: _padding(),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (widget.icon != null) ...[
-                  PhosphorIcon(widget.icon!, size: 18, color: textColor),
-                  const SizedBox(width: AionSpacing.sp8),
-                ],
-                _label(textColor),
-              ],
-            ),
-          );
-
-    final decorated = DecoratedBox(
-      decoration: BoxDecoration(
-        color: fill,
-        borderRadius: BorderRadius.all(
-          widget.isFullWidth ? const Radius.circular(13) : AionRadius.md,
-        ),
-        border: border,
-        boxShadow: shadow,
-      ),
-      child: content,
-    );
-
-    return widget.isFullWidth
-        ? SizedBox(width: double.infinity, child: decorated)
-        : decorated;
-  }
-
-  Widget _label(Color color, {double? fontSize}) {
-    final style = AionText.button.copyWith(color: color, fontSize: fontSize);
-    return Text(widget.label, style: style);
   }
 
   EdgeInsets _padding() {
@@ -230,5 +189,84 @@ class _AppButtonState extends State<AppButton> {
       ];
     }
     return const [];
+  }
+}
+
+/// Renders [AppButton]'s decorated fill/border/shadow box around its
+/// icon+label content, given already-resolved style values.
+class _DecoratedContent extends StatelessWidget {
+  const _DecoratedContent({
+    required this.isFullWidth,
+    required this.icon,
+    required this.label,
+    required this.padding,
+    required this.fill,
+    required this.textColor,
+    required this.border,
+    required this.shadow,
+  });
+
+  final bool isFullWidth;
+  final PhosphorIconData? icon;
+  final String label;
+  final EdgeInsets padding;
+  final Color fill;
+  final Color textColor;
+  final BoxBorder? border;
+  final List<BoxShadow> shadow;
+
+  @override
+  Widget build(BuildContext context) {
+    final content = isFullWidth
+        ? Padding(
+            padding: const EdgeInsets.all(15),
+            child: Center(
+              child: _Label(label: label, color: textColor, fontSize: 15),
+            ),
+          )
+        : Padding(
+            padding: padding,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (icon != null) ...[
+                  PhosphorIcon(icon!, size: 18, color: textColor),
+                  const SizedBox(width: AionSpacing.sp8),
+                ],
+                _Label(label: label, color: textColor),
+              ],
+            ),
+          );
+
+    final decorated = DecoratedBox(
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: BorderRadius.all(
+          isFullWidth ? const Radius.circular(13) : AionRadius.md,
+        ),
+        border: border,
+        boxShadow: shadow,
+      ),
+      child: content,
+    );
+
+    return isFullWidth
+        ? SizedBox(width: double.infinity, child: decorated)
+        : decorated;
+  }
+}
+
+/// Renders [AppButton]'s text label in [AionText.button] style.
+class _Label extends StatelessWidget {
+  const _Label({required this.label, required this.color, this.fontSize});
+
+  final String label;
+  final Color color;
+  final double? fontSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = AionText.button.copyWith(color: color, fontSize: fontSize);
+    return Text(label, style: style);
   }
 }

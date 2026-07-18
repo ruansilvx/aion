@@ -195,7 +195,11 @@ class _AppConfirmDialogOverlay extends StatelessWidget {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          _leadingIcon(),
+                          _LeadingIcon(
+                            colors: colors,
+                            isDark: isDark,
+                            tone: tone,
+                          ),
                           const SizedBox(height: AionSpacing.sp16),
                           Text(
                             title,
@@ -213,7 +217,19 @@ class _AppConfirmDialogOverlay extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(height: AionSpacing.sp24),
-                          isNarrow ? _narrowActions() : _wideActions(),
+                          isNarrow
+                              ? _NarrowActions(
+                                  cancelLabel: cancelLabel,
+                                  confirmLabel: confirmLabel,
+                                  tone: tone,
+                                  onResolve: onResolve,
+                                )
+                              : _WideActions(
+                                  cancelLabel: cancelLabel,
+                                  confirmLabel: confirmLabel,
+                                  tone: tone,
+                                  onResolve: onResolve,
+                                ),
                         ],
                       ),
                     ),
@@ -226,8 +242,24 @@ class _AppConfirmDialogOverlay extends StatelessWidget {
       ],
     );
   }
+}
 
-  Widget _leadingIcon() {
+/// The tone-colored icon disc (trash/warning glyph) at the top of the
+/// dialog card. See [ConfirmDialogTone] for the reversible/destructive
+/// visual distinction.
+class _LeadingIcon extends StatelessWidget {
+  const _LeadingIcon({
+    required this.colors,
+    required this.isDark,
+    required this.tone,
+  });
+
+  final AionColors colors;
+  final bool isDark;
+  final ConfirmDialogTone tone;
+
+  @override
+  Widget build(BuildContext context) {
     final isReversible = tone == ConfirmDialogTone.reversible;
     final iconColor = isReversible ? colors.primary : colors.danger;
     final fillAlpha = isDark ? fillAlphaObsidian : fillAlphaArctic;
@@ -252,8 +284,22 @@ class _AppConfirmDialogOverlay extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _cancelButton({bool isFullWidth = false}) {
+/// The dialog's Cancel action button.
+class _CancelButton extends StatelessWidget {
+  const _CancelButton({
+    required this.cancelLabel,
+    required this.onResolve,
+    this.isFullWidth = false,
+  });
+
+  final String cancelLabel;
+  final ValueChanged<bool> onResolve;
+  final bool isFullWidth;
+
+  @override
+  Widget build(BuildContext context) {
     return AppButton(
       label: cancelLabel,
       variant: AppButtonVariant.secondary,
@@ -261,8 +307,26 @@ class _AppConfirmDialogOverlay extends StatelessWidget {
       onPressed: () => onResolve(false),
     );
   }
+}
 
-  Widget _confirmButton({bool isFullWidth = false}) {
+/// The dialog's confirm action button — styled `primary` for
+/// [ConfirmDialogTone.reversible], `destructive` for
+/// [ConfirmDialogTone.destructive].
+class _ConfirmButton extends StatelessWidget {
+  const _ConfirmButton({
+    required this.confirmLabel,
+    required this.tone,
+    required this.onResolve,
+    this.isFullWidth = false,
+  });
+
+  final String confirmLabel;
+  final ConfirmDialogTone tone;
+  final ValueChanged<bool> onResolve;
+  final bool isFullWidth;
+
+  @override
+  Widget build(BuildContext context) {
     return AppButton(
       label: confirmLabel,
       variant: tone == ConfirmDialogTone.destructive
@@ -272,32 +336,76 @@ class _AppConfirmDialogOverlay extends StatelessWidget {
       onPressed: () => onResolve(true),
     );
   }
+}
 
-  Widget _wideActions() {
+/// The Cancel/confirm action row for wide (>= 420px) dialog layouts.
+class _WideActions extends StatelessWidget {
+  const _WideActions({
+    required this.cancelLabel,
+    required this.confirmLabel,
+    required this.tone,
+    required this.onResolve,
+  });
+
+  final String cancelLabel;
+  final String confirmLabel;
+  final ConfirmDialogTone tone;
+  final ValueChanged<bool> onResolve;
+
+  @override
+  Widget build(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
-        _cancelButton(),
+        _CancelButton(cancelLabel: cancelLabel, onResolve: onResolve),
         const SizedBox(width: AionSpacing.sp12),
-        _confirmButton(),
+        _ConfirmButton(
+          confirmLabel: confirmLabel,
+          tone: tone,
+          onResolve: onResolve,
+        ),
       ],
     );
   }
+}
 
-  Widget _narrowActions() {
-    // The confirm action gets thumb-priority (top) position on narrow
-    // viewports, matching iOS/Android action-sheet convention, regardless
-    // of tone.
+/// The Cancel/confirm action column for narrow (< 420px) dialog layouts.
+/// The confirm action gets thumb-priority (top) position, matching
+/// iOS/Android action-sheet convention, regardless of tone.
+class _NarrowActions extends StatelessWidget {
+  const _NarrowActions({
+    required this.cancelLabel,
+    required this.confirmLabel,
+    required this.tone,
+    required this.onResolve,
+  });
+
+  final String cancelLabel;
+  final String confirmLabel;
+  final ConfirmDialogTone tone;
+  final ValueChanged<bool> onResolve;
+
+  @override
+  Widget build(BuildContext context) {
     return Column(
       children: [
         SizedBox(
           width: double.infinity,
-          child: _confirmButton(isFullWidth: true),
+          child: _ConfirmButton(
+            confirmLabel: confirmLabel,
+            tone: tone,
+            onResolve: onResolve,
+            isFullWidth: true,
+          ),
         ),
         const SizedBox(height: AionSpacing.sp8),
         SizedBox(
           width: double.infinity,
-          child: _cancelButton(isFullWidth: true),
+          child: _CancelButton(
+            cancelLabel: cancelLabel,
+            onResolve: onResolve,
+            isFullWidth: true,
+          ),
         ),
       ],
     );

@@ -200,12 +200,14 @@ class _TicketParentPickerState extends State<TicketParentPicker> {
       builder: (overlayContext) {
         final query = _searchController.text.trim().toLowerCase();
         final candidates = _candidates;
-        final filtered = candidates?.where(
-          (cand) =>
-              query.isEmpty ||
-              cand.ticketId.toLowerCase().contains(query) ||
-              cand.title.toLowerCase().contains(query),
-        ).toList();
+        final filtered = candidates
+            ?.where(
+              (cand) =>
+                  query.isEmpty ||
+                  cand.ticketId.toLowerCase().contains(query) ||
+                  cand.title.toLowerCase().contains(query),
+            )
+            .toList();
         final byId = <String, Ticket>{
           for (final cand in candidates ?? const <Ticket>[]) cand.id: cand,
         };
@@ -277,9 +279,7 @@ class _TicketParentPickerState extends State<TicketParentPicker> {
                             ),
                             child: Center(
                               child: Text(
-                                overlayContext
-                                    .l10n
-                                    .ticketDetailParentNoResults,
+                                overlayContext.l10n.ticketDetailParentNoResults,
                                 style: AionText.bodySm.copyWith(
                                   color: c.textMuted,
                                 ),
@@ -359,13 +359,23 @@ class _TicketParentPickerState extends State<TicketParentPicker> {
     final resolvedParent = parentId == null ? null : _resolveParent(parentId);
 
     final trigger = switch (widget.variant) {
-      TicketParentPickerVariant.inline => _buildInlineTrigger(
-        c,
-        resolvedParent,
+      TicketParentPickerVariant.inline => _InlineTrigger(
+        colors: c,
+        resolvedParent: resolvedParent,
+        currentParentId: widget.currentParentId,
+        isOpen: _isOpen,
       ),
-      TicketParentPickerVariant.formField => _buildFormFieldTrigger(
-        c,
-        resolvedParent,
+      TicketParentPickerVariant.formField => _FormFieldTrigger(
+        colors: c,
+        isDark: t.isDark,
+        resolvedParent: resolvedParent,
+        currentParentId: widget.currentParentId,
+        isDisabled: widget.isDisabled,
+        hasError: widget.errorText != null,
+        isFocused: _isFocused,
+        isOpen: _isOpen,
+        isHovered: _isHovered,
+        isPressed: _isPressed,
       ),
     };
 
@@ -417,12 +427,30 @@ class _TicketParentPickerState extends State<TicketParentPicker> {
     );
   }
 
-  /// Compact "+ PARENT" / resolved key-title trigger, used on
-  /// `TicketDetailScreen`.
-  Widget _buildInlineTrigger(AionColors c, Ticket? resolvedParent) {
+  AionThemeData get t => ThemeScope.of(context);
+}
+
+/// Compact "+ PARENT" / resolved key-title trigger, used on
+/// `TicketDetailScreen`.
+class _InlineTrigger extends StatelessWidget {
+  const _InlineTrigger({
+    required this.colors,
+    required this.resolvedParent,
+    required this.currentParentId,
+    required this.isOpen,
+  });
+
+  final AionColors colors;
+  final Ticket? resolvedParent;
+  final String? currentParentId;
+  final bool isOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colors;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: _isOpen ? c.surfaceHover : const Color(0x00000000),
+        color: isOpen ? c.surfaceHover : const Color(0x00000000),
         borderRadius: BorderRadius.all(AionRadius.md),
       ),
       child: Padding(
@@ -430,7 +458,7 @@ class _TicketParentPickerState extends State<TicketParentPicker> {
           horizontal: AionSpacing.sp8,
           vertical: 4,
         ),
-        child: widget.currentParentId == null
+        child: currentParentId == null
             ? Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -468,9 +496,7 @@ class _TicketParentPickerState extends State<TicketParentPicker> {
                           ),
                           TextSpan(
                             text: '  —  ',
-                            style: AionText.bodySm.copyWith(
-                              color: c.textMuted,
-                            ),
+                            style: AionText.bodySm.copyWith(color: c.textMuted),
                           ),
                           TextSpan(
                             text: resolvedParent?.title ?? '',
@@ -489,31 +515,56 @@ class _TicketParentPickerState extends State<TicketParentPicker> {
       ),
     );
   }
+}
 
-  /// Full-width, `AppDropdown`-style form-field trigger, used on
-  /// `CreateTicketScreen`. Renders [TicketParentPicker.isDisabled]'s
-  /// muted/`0.5`-opacity treatment and [TicketParentPicker.errorText]'s
-  /// danger-colored border/ring, per Component Spec §2.3.
-  Widget _buildFormFieldTrigger(AionColors c, Ticket? resolvedParent) {
-    final hasError = widget.errorText != null;
-    final isActive = _isFocused || _isOpen;
+/// Full-width, `AppDropdown`-style form-field trigger, used on
+/// `CreateTicketScreen`. Renders [TicketParentPicker.isDisabled]'s
+/// muted/`0.5`-opacity treatment and [TicketParentPicker.errorText]'s
+/// danger-colored border/ring, per Component Spec §2.3.
+class _FormFieldTrigger extends StatelessWidget {
+  const _FormFieldTrigger({
+    required this.colors,
+    required this.isDark,
+    required this.resolvedParent,
+    required this.currentParentId,
+    required this.isDisabled,
+    required this.hasError,
+    required this.isFocused,
+    required this.isOpen,
+    required this.isHovered,
+    required this.isPressed,
+  });
+
+  final AionColors colors;
+  final bool isDark;
+  final Ticket? resolvedParent;
+  final String? currentParentId;
+  final bool isDisabled;
+  final bool hasError;
+  final bool isFocused;
+  final bool isOpen;
+  final bool isHovered;
+  final bool isPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colors;
+    final isActive = isFocused || isOpen;
     final borderColor = hasError
         ? c.danger
         : isActive
         ? c.primary
-        : _isHovered
+        : isHovered
         ? c.borderStrong
         : c.border;
     final borderWidth = hasError || isActive ? 1.5 : 1.0;
-    final glyphColor = _isHovered || isActive
-        ? c.textSecondary
-        : c.textMuted;
+    final glyphColor = isHovered || isActive ? c.textSecondary : c.textMuted;
     final ringColor = hasError ? c.danger : c.primary;
 
     return Opacity(
-      opacity: widget.isDisabled ? 0.5 : 1.0,
+      opacity: isDisabled ? 0.5 : 1.0,
       child: AnimatedScale(
-        scale: _isPressed ? 0.99 : 1.0,
+        scale: isPressed ? 0.99 : 1.0,
         duration: const Duration(milliseconds: 80),
         child: DecoratedBox(
           decoration: BoxDecoration(
@@ -523,99 +574,95 @@ class _TicketParentPickerState extends State<TicketParentPicker> {
             boxShadow: hasError || isActive
                 ? [
                     BoxShadow(
-                      color: ringColor.withValues(
-                        alpha: t.isDark ? 0.30 : 0.16,
-                      ),
+                      color: ringColor.withValues(alpha: isDark ? 0.30 : 0.16),
                       spreadRadius: 3,
                     ),
                   ]
                 : null,
           ),
-        child: widget.currentParentId == null
-            ? Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 13,
-                  vertical: 11,
-                ),
-                child: Row(
-                  children: [
-                    PhosphorIcon(
-                      PhosphorIcons.gitBranchLight,
-                      size: 15,
-                      color: glyphColor,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        context.l10n.ticketDetailParentFieldPlaceholder,
-                        style: AionText.body.copyWith(color: c.textMuted),
+          child: currentParentId == null
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 13,
+                    vertical: 11,
+                  ),
+                  child: Row(
+                    children: [
+                      PhosphorIcon(
+                        PhosphorIcons.gitBranchLight,
+                        size: 15,
+                        color: glyphColor,
                       ),
-                    ),
-                    PhosphorIcon(
-                      PhosphorIcons.caretDownLight,
-                      size: 12,
-                      color: glyphColor,
-                    ),
-                  ],
-                ),
-              )
-            : Padding(
-                padding: const EdgeInsets.fromLTRB(12, 9, 11, 9),
-                child: Row(
-                  children: [
-                    DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: c.surfaceHover,
-                        border: Border.all(color: c.border, width: 1),
-                        borderRadius: BorderRadius.all(AionRadius.sm),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
-                          vertical: 3,
-                        ),
+                      const SizedBox(width: 10),
+                      Expanded(
                         child: Text(
-                          resolvedParent?.ticketId ?? '…',
-                          style: AionText.key.copyWith(
-                            color: c.textSecondary,
+                          context.l10n.ticketDetailParentFieldPlaceholder,
+                          style: AionText.body.copyWith(color: c.textMuted),
+                        ),
+                      ),
+                      PhosphorIcon(
+                        PhosphorIcons.caretDownLight,
+                        size: 12,
+                        color: glyphColor,
+                      ),
+                    ],
+                  ),
+                )
+              : Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 9, 11, 9),
+                  child: Row(
+                    children: [
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: c.surfaceHover,
+                          border: Border.all(color: c.border, width: 1),
+                          borderRadius: BorderRadius.all(AionRadius.sm),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 3,
+                          ),
+                          child: Text(
+                            resolvedParent?.ticketId ?? '…',
+                            style: AionText.key.copyWith(
+                              color: c.textSecondary,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 9),
-                    Expanded(
-                      child: Text(
-                        resolvedParent?.title ?? '',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AionText.bodySm.copyWith(color: c.textPrimary),
-                      ),
-                    ),
-                    if (resolvedParent != null) ...[
-                      const SizedBox(width: 8),
-                      DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: _typeAccent(c, resolvedParent.type),
-                          borderRadius: BorderRadius.circular(2),
+                      const SizedBox(width: 9),
+                      Expanded(
+                        child: Text(
+                          resolvedParent?.title ?? '',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AionText.bodySm.copyWith(color: c.textPrimary),
                         ),
-                        child: const SizedBox(width: 8, height: 8),
+                      ),
+                      if (resolvedParent != null) ...[
+                        const SizedBox(width: 8),
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: _typeAccent(c, resolvedParent!.type),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                          child: const SizedBox(width: 8, height: 8),
+                        ),
+                      ],
+                      const SizedBox(width: 2),
+                      PhosphorIcon(
+                        PhosphorIcons.caretDownLight,
+                        size: 11,
+                        color: glyphColor,
                       ),
                     ],
-                    const SizedBox(width: 2),
-                    PhosphorIcon(
-                      PhosphorIcons.caretDownLight,
-                      size: 11,
-                      color: glyphColor,
-                    ),
-                  ],
+                  ),
                 ),
-              ),
         ),
       ),
     );
   }
-
-  AionThemeData get t => ThemeScope.of(context);
 }
 
 /// The "No parent" row always shown first in [TicketParentPicker]'s

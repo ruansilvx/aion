@@ -62,9 +62,15 @@ class _HubScreenState extends State<HubScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _header(context, c),
+                  _Header(colors: c, onNewProject: widget.onNewProject),
                   const SizedBox(height: AionSpacing.sp24),
-                  Expanded(child: _body(context, c, state)),
+                  Expanded(
+                    child: _Body(
+                      colors: c,
+                      state: state,
+                      onOpenProject: widget.onOpenProject,
+                    ),
+                  ),
                 ],
               ),
             );
@@ -73,8 +79,18 @@ class _HubScreenState extends State<HubScreen> {
       ),
     );
   }
+}
 
-  Widget _header(BuildContext context, AionColors c) {
+/// [HubScreen]'s eyebrow/title header plus its "New Project" action.
+class _Header extends StatelessWidget {
+  const _Header({required this.colors, required this.onNewProject});
+
+  final AionColors colors;
+  final VoidCallback onNewProject;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colors;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -96,23 +112,51 @@ class _HubScreenState extends State<HubScreen> {
         AppButton(
           label: context.l10n.projectHubNewProjectAction,
           icon: PhosphorIcons.plusLight,
-          onPressed: widget.onNewProject,
+          onPressed: onNewProject,
         ),
       ],
     );
   }
+}
 
-  Widget _body(BuildContext context, AionColors c, ProjectHubState state) {
+/// [HubScreen]'s main content area — dispatches on [ProjectHubState] to
+/// a spinner, the project grid, or the error/retry view. [ProjectHubEmpty]
+/// is handled by [HubScreen.build] itself before reaching this widget.
+class _Body extends StatelessWidget {
+  const _Body({
+    required this.colors,
+    required this.state,
+    required this.onOpenProject,
+  });
+
+  final AionColors colors;
+  final ProjectHubState state;
+  final ValueChanged<Project> onOpenProject;
+
+  @override
+  Widget build(BuildContext context) {
     return switch (state) {
       ProjectHubInitial() ||
       ProjectHubLoading() => const Center(child: AppSpinner()),
-      ProjectHubLoaded(:final projects) => _grid(projects),
-      ProjectHubError() => _error(context, c),
+      ProjectHubLoaded(:final projects) => _Grid(
+        projects: projects,
+        onOpenProject: onOpenProject,
+      ),
+      ProjectHubError() => _Error(colors: colors),
       ProjectHubEmpty() => const SizedBox.shrink(), // handled by build()
     };
   }
+}
 
-  Widget _grid(List<Project> projects) {
+/// The wrapping grid of [ProjectCard]s.
+class _Grid extends StatelessWidget {
+  const _Grid({required this.projects, required this.onOpenProject});
+
+  final List<Project> projects;
+  final ValueChanged<Project> onOpenProject;
+
+  @override
+  Widget build(BuildContext context) {
     return SingleChildScrollView(
       child: Wrap(
         spacing: AionSpacing.sp16,
@@ -123,7 +167,7 @@ class _HubScreenState extends State<HubScreen> {
               width: 340,
               child: ProjectCard(
                 project: project,
-                onOpen: () => widget.onOpenProject(project),
+                onOpen: () => onOpenProject(project),
                 onRemove: () =>
                     context.read<ProjectHubCubit>().removeProject(project.id),
               ),
@@ -132,14 +176,22 @@ class _HubScreenState extends State<HubScreen> {
       ),
     );
   }
+}
 
-  Widget _error(BuildContext context, AionColors c) {
+/// The load-error view with a tap-to-retry action.
+class _Error extends StatelessWidget {
+  const _Error({required this.colors});
+
+  final AionColors colors;
+
+  @override
+  Widget build(BuildContext context) {
     return Center(
       child: GestureDetector(
         onTap: () => context.read<ProjectHubCubit>().load(),
         child: Text(
           context.l10n.projectHubErrorRetry,
-          style: AionText.body.copyWith(color: c.danger),
+          style: AionText.body.copyWith(color: colors.danger),
         ),
       ),
     );

@@ -92,8 +92,7 @@ class _ProjectCardState extends State<ProjectCard> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        _overflowRow(
-                          overlayContext,
+                        _OverflowRow(
                           icon: PhosphorIcons.folderLight,
                           iconColor: c.textSecondary,
                           label: overlayContext.l10n.projectCardOpenMenuItem,
@@ -110,8 +109,7 @@ class _ProjectCardState extends State<ProjectCard> {
                           child: const SizedBox(height: 1),
                         ),
                         const SizedBox(height: 2),
-                        _overflowRow(
-                          overlayContext,
+                        _OverflowRow(
                           icon: PhosphorIcons.trashLight,
                           iconColor: c.danger,
                           label: overlayContext.l10n.projectCardRemoveMenuItem,
@@ -145,32 +143,6 @@ class _ProjectCardState extends State<ProjectCard> {
     if (mounted) {
       setState(() {});
     }
-  }
-
-  Widget _overflowRow(
-    BuildContext context, {
-    required PhosphorIconData icon,
-    required Color iconColor,
-    required String label,
-    required Color textColor,
-    required Color hoverFill,
-    required VoidCallback onTap,
-  }) {
-    return _HoverableMenuRow(
-      hoverFill: hoverFill,
-      onTap: onTap,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          PhosphorIcon(icon, size: 13, color: iconColor),
-          const SizedBox(width: AionSpacing.sp8),
-          Text(
-            label,
-            style: AionText.bodySm.copyWith(color: textColor, fontSize: 13.5),
-          ),
-        ],
-      ),
-    );
   }
 
   Future<void> _confirmRemove(BuildContext context) async {
@@ -241,11 +213,24 @@ class _ProjectCardState extends State<ProjectCard> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _titleRow(context, c),
+                      _TitleRow(
+                        colors: c,
+                        project: widget.project,
+                        isMenuOpen: _overlayEntry != null,
+                        onToggleOverflowMenu: _toggleOverflowMenu,
+                      ),
                       const SizedBox(height: AionSpacing.sp12),
-                      _locationRow(context, c),
+                      _LocationRow(colors: c, project: widget.project),
                       const SizedBox(height: AionSpacing.sp12),
-                      _metaRow(context, c),
+                      _MetaRow(
+                        colors: c,
+                        project: widget.project,
+                        lastOpenedLabel: _relativeLastOpened(
+                          context,
+                          widget.project.lastOpenedAt,
+                        ),
+                        onOpen: widget.onOpen,
+                      ),
                     ],
                   ),
                 ),
@@ -257,13 +242,49 @@ class _ProjectCardState extends State<ProjectCard> {
     );
   }
 
-  Widget _titleRow(BuildContext context, AionColors c) {
+  /// Formats [lastOpenedAt] as a short relative label, resolving
+  /// [AppLocalizations] plurals via `context.l10n` per the
+  /// `Localization` convention.
+  String _relativeLastOpened(BuildContext context, DateTime lastOpenedAt) {
+    final l10n = context.l10n;
+    final now = DateTime.now();
+    final elapsed = now.difference(lastOpenedAt);
+
+    if (elapsed.inHours < 1) return l10n.projectCardLastOpenedJustNow;
+    if (elapsed.inHours < 24) {
+      return l10n.projectCardLastOpenedHoursAgo(elapsed.inHours);
+    }
+    final elapsedDays = elapsed.inDays;
+    if (elapsedDays == 1) return l10n.projectCardLastOpenedYesterday;
+    if (elapsedDays < 7) return l10n.projectCardLastOpenedDaysAgo(elapsedDays);
+    return l10n.projectCardLastOpenedWeeksAgo(elapsedDays ~/ 7);
+  }
+}
+
+/// [ProjectCard]'s title row: the project name and its overflow-menu
+/// trigger.
+class _TitleRow extends StatelessWidget {
+  const _TitleRow({
+    required this.colors,
+    required this.project,
+    required this.isMenuOpen,
+    required this.onToggleOverflowMenu,
+  });
+
+  final AionColors colors;
+  final Project project;
+  final bool isMenuOpen;
+  final VoidCallback onToggleOverflowMenu;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colors;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Expanded(
           child: Text(
-            widget.project.name,
+            project.name,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: AionText.cardTitle.copyWith(
@@ -277,12 +298,12 @@ class _ProjectCardState extends State<ProjectCard> {
         const SizedBox(width: AionSpacing.sp8),
         Semantics(
           button: true,
-          label: context.l10n.projectCardOverflowLabel(widget.project.name),
+          label: context.l10n.projectCardOverflowLabel(project.name),
           child: GestureDetector(
-            onTap: _toggleOverflowMenu,
+            onTap: onToggleOverflowMenu,
             child: DecoratedBox(
               decoration: BoxDecoration(
-                color: _overlayEntry != null ? c.surfaceHover : null,
+                color: isMenuOpen ? c.surfaceHover : null,
                 borderRadius: BorderRadius.all(AionRadius.iconBtnSm),
               ),
               child: SizedBox(
@@ -302,12 +323,22 @@ class _ProjectCardState extends State<ProjectCard> {
       ],
     );
   }
+}
 
-  Widget _locationRow(BuildContext context, AionColors c) {
-    final rootPath = widget.project.rootPath;
+/// [ProjectCard]'s location row: root path (or app-storage label) with a
+/// leading folder/database glyph.
+class _LocationRow extends StatelessWidget {
+  const _LocationRow({required this.colors, required this.project});
+
+  final AionColors colors;
+  final Project project;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colors;
+    final rootPath = project.rootPath;
     final locationText =
-        rootPath ??
-        context.l10n.projectCardAppStorageLabel(widget.project.storageKey);
+        rootPath ?? context.l10n.projectCardAppStorageLabel(project.storageKey);
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -331,8 +362,26 @@ class _ProjectCardState extends State<ProjectCard> {
       ],
     );
   }
+}
 
-  Widget _metaRow(BuildContext context, AionColors c) {
+/// [ProjectCard]'s meta row: baseline version badge, last-opened label,
+/// and the Open action.
+class _MetaRow extends StatelessWidget {
+  const _MetaRow({
+    required this.colors,
+    required this.project,
+    required this.lastOpenedLabel,
+    required this.onOpen,
+  });
+
+  final AionColors colors;
+  final Project project;
+  final String lastOpenedLabel;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colors;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -345,7 +394,7 @@ class _ProjectCardState extends State<ProjectCard> {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
             child: Text(
-              'v${widget.project.baselineVersion}',
+              'v${project.baselineVersion}',
               style: AionText.key.copyWith(
                 fontSize: 10.5,
                 color: c.textSecondary,
@@ -355,18 +404,28 @@ class _ProjectCardState extends State<ProjectCard> {
         ),
         const SizedBox(width: 9),
         Text(
-          _relativeLastOpened(context, widget.project.lastOpenedAt),
+          lastOpenedLabel,
           style: AionText.time.copyWith(color: c.textMuted),
         ),
         const Spacer(),
-        _openButton(context, c),
+        _OpenButton(colors: c, onOpen: onOpen),
       ],
     );
   }
+}
 
-  Widget _openButton(BuildContext context, AionColors c) {
+/// [ProjectCard]'s Open action button.
+class _OpenButton extends StatelessWidget {
+  const _OpenButton({required this.colors, required this.onOpen});
+
+  final AionColors colors;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colors;
     return GestureDetector(
-      onTap: widget.onOpen,
+      onTap: onOpen,
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: c.surfaceHover,
@@ -383,23 +442,43 @@ class _ProjectCardState extends State<ProjectCard> {
       ),
     );
   }
+}
 
-  /// Formats [lastOpenedAt] as a short relative label, resolving
-  /// [AppLocalizations] plurals via `context.l10n` per the
-  /// `Localization` convention.
-  String _relativeLastOpened(BuildContext context, DateTime lastOpenedAt) {
-    final l10n = context.l10n;
-    final now = DateTime.now();
-    final elapsed = now.difference(lastOpenedAt);
+/// One row in [ProjectCard]'s overflow menu (icon + label, hoverable).
+class _OverflowRow extends StatelessWidget {
+  const _OverflowRow({
+    required this.icon,
+    required this.iconColor,
+    required this.label,
+    required this.textColor,
+    required this.hoverFill,
+    required this.onTap,
+  });
 
-    if (elapsed.inHours < 1) return l10n.projectCardLastOpenedJustNow;
-    if (elapsed.inHours < 24) {
-      return l10n.projectCardLastOpenedHoursAgo(elapsed.inHours);
-    }
-    final elapsedDays = elapsed.inDays;
-    if (elapsedDays == 1) return l10n.projectCardLastOpenedYesterday;
-    if (elapsedDays < 7) return l10n.projectCardLastOpenedDaysAgo(elapsedDays);
-    return l10n.projectCardLastOpenedWeeksAgo(elapsedDays ~/ 7);
+  final PhosphorIconData icon;
+  final Color iconColor;
+  final String label;
+  final Color textColor;
+  final Color hoverFill;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return _HoverableMenuRow(
+      hoverFill: hoverFill,
+      onTap: onTap,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          PhosphorIcon(icon, size: 13, color: iconColor),
+          const SizedBox(width: AionSpacing.sp8),
+          Text(
+            label,
+            style: AionText.bodySm.copyWith(color: textColor, fontSize: 13.5),
+          ),
+        ],
+      ),
+    );
   }
 }
 
