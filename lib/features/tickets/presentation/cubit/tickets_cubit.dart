@@ -2,9 +2,13 @@
 
 import 'dart:math' show max;
 
+import 'dart:async';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 
+import 'package:aion/core/contracts/embedding_provider.dart';
+import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
@@ -15,10 +19,34 @@ import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 /// Loads, lists, and creates tickets via [TicketRepository]. Root-scoped —
 /// provided once at the app root, not per-screen.
 class TicketsCubit extends Cubit<TicketsState> {
-  /// Creates a [TicketsCubit] backed by [_repository].
-  TicketsCubit(this._repository) : super(const TicketsInitial());
+  /// Creates a [TicketsCubit] backed by [_repository]. [_embeddingProvider],
+  /// [_gitProjector], and [_projectRootPath] are optional — when any is
+  /// `null` (the default, and every existing call site/test), the
+  /// embedding-regen and git-projection side effects documented on
+  /// [createTicket]/[updateTicket]/[updateTicketStatus]/
+  /// [changeTicketStatus]/[trashTicket]/[trashTickets] simply no-op,
+  /// rather than requiring every one of ~40 existing construction sites
+  /// to be updated for a feature most of them don't exercise.
+  // The public param names below (embeddingProvider/gitProjector/
+  // projectRootPath) intentionally differ from their private backing
+  // fields; a private identifier can't be used as an external
+  // named-parameter label from another library, so `this._foo` shorthand
+  // isn't usable here.
+  TicketsCubit(
+    this._repository, {
+    EmbeddingProvider? embeddingProvider,
+    TicketGitProjector? gitProjector,
+    String? projectRootPath,
+  }) : super(const TicketsInitial()) {
+    _embeddingProvider = embeddingProvider;
+    _gitProjector = gitProjector;
+    _projectRootPath = projectRootPath;
+  }
 
   final TicketRepository _repository;
+  late final EmbeddingProvider? _embeddingProvider;
+  late final TicketGitProjector? _gitProjector;
+  late final String? _projectRootPath;
   static const _uuid = Uuid();
 
   /// Tickets fetched per page, for both [searchTickets] and
@@ -213,6 +241,13 @@ class TicketsCubit extends Cubit<TicketsState> {
       );
 
       await _repository.createTicket(ticket);
+      final persisted = await _repository.getTicketById(ticket.id);
+      if (persisted != null) {
+        // Always regenerate on create (no prior title/description to
+        // compare against), fire-and-forget.
+        unawaited(_triggerEmbeddingRegen(persisted));
+        unawaited(_triggerGitProjection(persisted, 'created'));
+      }
       final page = await _repository.searchTickets(
         query: _lastQuery,
         status: _lastStatus,
@@ -254,6 +289,10 @@ class TicketsCubit extends Cubit<TicketsState> {
 
     try {
       await _repository.updateTicketStatus(id, status);
+      final updated = await _repository.getTicketById(id);
+      if (updated != null) {
+        unawaited(_triggerGitProjection(updated, 'status-changed'));
+      }
       final page = await _repository.searchTickets(
         query: _lastQuery,
         status: _lastStatus,
@@ -277,10 +316,22 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// needed here.
   Future<void> updateTicket(Ticket ticket) async {
     try {
+      final previous = await _repository.getTicketById(ticket.id);
       await _repository.updateTicket(ticket);
       final refreshed = await _repository.getTicketById(ticket.id);
       if (refreshed != null) {
         emit(TicketDetailLoaded(refreshed));
+        // Only regenerate when title/description actually changed — not
+        // on every field edit (e.g. a priority-only change shouldn't
+        // trigger this). Git projection is deliberately not triggered
+        // here — design.md's trigger events are create/status-change/
+        // trash/restore, not every content edit (would be a commit
+        // storm).
+        if (previous == null ||
+            previous.title != refreshed.title ||
+            previous.description != refreshed.description) {
+          unawaited(_triggerEmbeddingRegen(refreshed));
+        }
       }
     } catch (e) {
       emit(TicketsError(e.toString()));
@@ -300,6 +351,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       final refreshed = await _repository.getTicketById(ticket.id);
       if (refreshed != null) {
         emit(TicketDetailLoaded(refreshed));
+        unawaited(_triggerGitProjection(refreshed, 'status-changed'));
       }
     } catch (e) {
       emit(TicketsError(e.toString()));
@@ -405,6 +457,37 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
   }
 
+  /// Fires an async embedding-regen call for [ticket] and writes the
+  /// result back via [TicketRepository.updateEmbedding] once it
+  /// resolves. Never awaited by callers — ticket save must never block
+  /// on this. No-ops if no [_embeddingProvider] was provided (see the
+  /// constructor's dartdoc).
+  Future<void> _triggerEmbeddingRegen(Ticket ticket) async {
+    final provider = _embeddingProvider;
+    if (provider == null) return;
+    final bytes = await provider.embed(
+      '${ticket.title}\n\n${ticket.description ?? ''}',
+    );
+    await _repository.updateEmbedding(ticket.id, bytes);
+  }
+
+  /// Projects [ticket] to its Markdown file and commits it, labelled
+  /// [eventLabel]. No-ops if no [_gitProjector]/[_projectRootPath] was
+  /// provided (see the constructor's dartdoc) — desktop-only in
+  /// practice, since `WorkspaceShell` only supplies these on desktop.
+  ///
+  /// **Known gap**: the "restored from trash" trigger event from
+  /// design.md is not wired anywhere — that action lives in
+  /// `TrashCubit`, which has no access to a projector/root path today,
+  /// and wiring it wasn't in this task's scope (`tasks.md` T25 only
+  /// names `tickets_cubit.dart`). Flagged rather than silently expanded.
+  Future<void> _triggerGitProjection(Ticket ticket, String eventLabel) async {
+    final projector = _gitProjector;
+    final rootPath = _projectRootPath;
+    if (projector == null || rootPath == null) return;
+    await projector.project(ticket, rootPath, eventLabel);
+  }
+
   /// Builds the full descendant-id set of [rootId] by walking `parentId`
   /// forward through [all]. Shared by [getValidParentCandidates] and
   /// [updateTicketParent] so both apply the identical cycle definition.
@@ -482,6 +565,10 @@ class TicketsCubit extends Cubit<TicketsState> {
     emit(const TicketTrashing());
     try {
       await _repository.trashTicket(id);
+      final trashed = await _repository.getTicketById(id);
+      if (trashed != null) {
+        unawaited(_triggerGitProjection(trashed, 'trashed'));
+      }
       if (previousState is TicketDetailLoaded) {
         emit(const TicketTrashed());
       } else {
@@ -522,6 +609,16 @@ class TicketsCubit extends Cubit<TicketsState> {
     emit(const TicketsBatchTrashing());
     try {
       final trashedCount = await _repository.trashTickets(ids);
+      // Projects only the explicitly-requested ids, not their cascaded
+      // descendants (also trashed by trashTickets, but not individually
+      // enumerable from its return value) — a documented scope
+      // simplification, not an oversight.
+      for (final id in ids) {
+        final trashed = await _repository.getTicketById(id);
+        if (trashed != null) {
+          unawaited(_triggerGitProjection(trashed, 'trashed'));
+        }
+      }
       final page = await _repository.searchTickets(
         query: _lastQuery,
         status: _lastStatus,
@@ -529,7 +626,9 @@ class TicketsCubit extends Cubit<TicketsState> {
         priority: _lastPriority,
         limit: max(_pageSize, currentTickets.length),
       );
-      emit(TicketsBatchTrashed(page.tickets, trashedCount, hasMore: page.hasMore));
+      emit(
+        TicketsBatchTrashed(page.tickets, trashedCount, hasMore: page.hasMore),
+      );
     } catch (e) {
       emit(TicketsError(e.toString()));
     }

@@ -240,4 +240,44 @@ extension AionColorsHubTokens on AionColors {
   /// Error-state ring for an invalid `NewProjectScreen` form field.
   Color errorRing(bool isDark) =>
       danger.withValues(alpha: isDark ? 0.24 : 0.14);
+
+  // needsRepair — an EXPECTED, recoverable state, not a crash, so it uses
+  // `warning`, not `danger`. `danger` stays reserved for destructive/error.
+  /// `TicketNeedsRepairBanner`/`TicketSyncStatusBadge` fill in the
+  /// `needsRepair` state.
+  Color needsRepairTint(bool isDark) =>
+      warning.withValues(alpha: isDark ? 0.20 : 0.14);
+
+  /// `TicketNeedsRepairBanner`/`TicketSyncStatusBadge` border in the
+  /// `needsRepair` state.
+  Color needsRepairBorderTint(bool isDark) =>
+      warning.withValues(alpha: isDark ? 0.42 : 0.34);
+
+  /// `TicketNeedsRepairBanner`'s leading icon-chip fill in the
+  /// `needsRepair` state.
+  Color needsRepairIconTint(bool isDark) =>
+      warning.withValues(alpha: isDark ? 0.24 : 0.18);
+
+  // primary family — pendingReconcile: active but calm.
+  /// `TicketSyncStatusBadge` fill in the `pendingReconcile` state.
+  Color pendingTint(bool isDark) =>
+      primary.withValues(alpha: isDark ? 0.18 : 0.12);
+
+  /// `TicketSyncStatusBadge` spinner track-ring color in the
+  /// `pendingReconcile` state.
+  Color pendingSpinnerTrack(bool isDark) =>
+      primary.withValues(alpha: isDark ? 0.32 : 0.24);
+
+  // success family — brief post-repair confirmation.
+  /// `TicketNeedsRepairBanner`'s success-confirmation fill.
+  Color repairedTint(bool isDark) =>
+      success.withValues(alpha: isDark ? 0.20 : 0.14);
+
+  /// `TicketNeedsRepairBanner`'s success-confirmation border.
+  Color repairedBorderTint(bool isDark) =>
+      success.withValues(alpha: isDark ? 0.42 : 0.34);
+
+  /// `TicketNeedsRepairBanner`'s success-confirmation icon-chip fill.
+  Color repairedIconTint(bool isDark) =>
+      success.withValues(alpha: isDark ? 0.24 : 0.18);
 }

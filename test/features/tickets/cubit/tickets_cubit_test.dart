@@ -1,12 +1,19 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
+import 'package:aion/core/contracts/embedding_provider.dart';
+import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
 import 'package:aion/features/tickets/tickets.dart';
 
 class MockTicketRepository extends Mock implements TicketRepository {}
+
+class MockEmbeddingProvider extends Mock implements EmbeddingProvider {}
+
+class MockTicketGitProjector extends Mock implements TicketGitProjector {}
 
 void main() {
   late MockTicketRepository repository;
@@ -135,6 +142,7 @@ void main() {
   setUpAll(() {
     registerFallbackValue(ticket);
     registerFallbackValue(TicketStatus.backlog);
+    registerFallbackValue(Uint8List(0));
   });
 
   setUp(() {
@@ -215,6 +223,9 @@ void main() {
       setUp: () {
         when(() => repository.createTicket(any())).thenAnswer((_) async {});
         when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => ticket);
+        when(
           () => repository.searchTickets(
             query: any(named: 'query'),
             status: any(named: 'status'),
@@ -253,6 +264,9 @@ void main() {
         when(
           () => repository.updateTicketStatus(any(), any()),
         ).thenAnswer((_) async {});
+        when(() => repository.getTicketById(any())).thenAnswer(
+          (_) async => ticket.copyWith(status: TicketStatus.done),
+        );
         when(
           () => repository.searchTickets(
             query: any(named: 'query'),
@@ -387,6 +401,9 @@ void main() {
       '[TicketTrashing, TicketTrashed] on success',
       setUp: () {
         when(() => repository.trashTicket(ticket.id)).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(ticket.id),
+        ).thenAnswer((_) async => ticket);
       },
       build: () => TicketsCubit(repository),
       seed: () => TicketDetailLoaded(ticket),
@@ -412,6 +429,9 @@ void main() {
       '[TicketTrashing, TicketsLoaded] with the refreshed list on success',
       setUp: () {
         when(() => repository.trashTicket(ticket.id)).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(ticket.id),
+        ).thenAnswer((_) async => ticket);
         when(
           () => repository.searchTickets(
             query: any(named: 'query'),
@@ -441,6 +461,9 @@ void main() {
         when(
           () => repository.trashTickets([ticket.id]),
         ).thenAnswer((_) async => 1);
+        when(
+          () => repository.getTicketById(ticket.id),
+        ).thenAnswer((_) async => ticket);
         when(
           () => repository.searchTickets(
             query: any(named: 'query'),
@@ -919,6 +942,179 @@ void main() {
           ).called(1);
         },
         expect: () => [TicketDetailLoaded(cleared)],
+      );
+    });
+
+    group('embedding + git-projection triggers', () {
+      late MockEmbeddingProvider embeddingProvider;
+      late MockTicketGitProjector gitProjector;
+      const rootPath = '/root';
+
+      setUp(() {
+        embeddingProvider = MockEmbeddingProvider();
+        gitProjector = MockTicketGitProjector();
+        when(
+          () => embeddingProvider.embed(any()),
+        ).thenAnswer((_) async => Uint8List.fromList([1, 2, 3]));
+        when(() => gitProjector.project(any(), any(), any())).thenAnswer(
+          (_) async {},
+        );
+        when(
+          () => repository.updateEmbedding(any(), any()),
+        ).thenAnswer((_) async {});
+      });
+
+      TicketsCubit buildCubit() => TicketsCubit(
+        repository,
+        embeddingProvider: embeddingProvider,
+        gitProjector: gitProjector,
+        projectRootPath: rootPath,
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'createTicket always triggers embedding regen and a "created" projection',
+        setUp: () {
+          when(() => repository.createTicket(any())).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(any()),
+          ).thenAnswer((_) async => ticket);
+          when(
+            () => repository.searchTickets(
+              query: any(named: 'query'),
+              status: any(named: 'status'),
+              type: any(named: 'type'),
+              priority: any(named: 'priority'),
+              limit: any(named: 'limit'),
+              offset: any(named: 'offset'),
+            ),
+          ).thenAnswer(
+            (_) async => TicketSearchPage(tickets: [ticket], hasMore: false),
+          );
+        },
+        build: buildCubit,
+        act: (cubit) =>
+            cubit.createTicket(type: TicketType.task, title: 'New ticket'),
+        verify: (_) {
+          verify(() => embeddingProvider.embed(any())).called(1);
+          verify(
+            () => gitProjector.project(ticket, rootPath, 'created'),
+          ).called(1);
+        },
+        expect: () => [
+          const TicketCreating([]),
+          TicketCreated([ticket], hasMore: false),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'updateTicket triggers embedding regen only when title/description changed',
+        setUp: () {
+          when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+          when(() => repository.getTicketById(ticket.id)).thenAnswer(
+            (_) async => ticket, // "previous" and "refreshed" both unchanged
+          );
+        },
+        build: buildCubit,
+        act: (cubit) => cubit.updateTicket(ticket.copyWith(priority: TicketPriority.high)),
+        verify: (_) {
+          verifyNever(() => embeddingProvider.embed(any()));
+          verifyNever(() => gitProjector.project(any(), any(), any()));
+        },
+        expect: () => [TicketDetailLoaded(ticket)],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'updateTicketStatus (board path) triggers a "status-changed" projection, no embedding',
+        setUp: () {
+          when(
+            () => repository.updateTicketStatus(any(), any()),
+          ).thenAnswer((_) async {});
+          when(() => repository.getTicketById(any())).thenAnswer(
+            (_) async => ticket.copyWith(status: TicketStatus.done),
+          );
+          when(
+            () => repository.searchTickets(
+              query: any(named: 'query'),
+              status: any(named: 'status'),
+              type: any(named: 'type'),
+              priority: any(named: 'priority'),
+              limit: any(named: 'limit'),
+              offset: any(named: 'offset'),
+            ),
+          ).thenAnswer(
+            (_) async => TicketSearchPage(
+              tickets: [ticket.copyWith(status: TicketStatus.done)],
+              hasMore: false,
+            ),
+          );
+        },
+        build: buildCubit,
+        seed: () => TicketsLoaded([ticket], hasMore: false),
+        act: (cubit) => cubit.updateTicketStatus(ticket.id, TicketStatus.done),
+        verify: (_) {
+          verifyNever(() => embeddingProvider.embed(any()));
+          verify(
+            () => gitProjector.project(
+              ticket.copyWith(status: TicketStatus.done),
+              rootPath,
+              'status-changed',
+            ),
+          ).called(1);
+        },
+        expect: () => [
+          TicketStatusUpdating([ticket.copyWith(status: TicketStatus.done)]),
+          TicketStatusUpdated([
+            ticket.copyWith(status: TicketStatus.done),
+          ], hasMore: false),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'trashTicket triggers a "trashed" projection',
+        setUp: () {
+          when(() => repository.trashTicket(ticket.id)).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(ticket.id),
+          ).thenAnswer((_) async => ticket);
+        },
+        build: buildCubit,
+        seed: () => TicketDetailLoaded(ticket),
+        act: (cubit) => cubit.trashTicket(ticket.id),
+        verify: (_) {
+          verify(
+            () => gitProjector.project(ticket, rootPath, 'trashed'),
+          ).called(1);
+        },
+        expect: () => [const TicketTrashing(), const TicketTrashed()],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'when no embeddingProvider/gitProjector/projectRootPath is given, both no-op',
+        setUp: () {
+          when(() => repository.createTicket(any())).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(any()),
+          ).thenAnswer((_) async => ticket);
+          when(
+            () => repository.searchTickets(
+              query: any(named: 'query'),
+              status: any(named: 'status'),
+              type: any(named: 'type'),
+              priority: any(named: 'priority'),
+              limit: any(named: 'limit'),
+              offset: any(named: 'offset'),
+            ),
+          ).thenAnswer(
+            (_) async => TicketSearchPage(tickets: [ticket], hasMore: false),
+          );
+        },
+        build: () => TicketsCubit(repository), // no optional params
+        act: (cubit) =>
+            cubit.createTicket(type: TicketType.task, title: 'New ticket'),
+        expect: () => [
+          const TicketCreating([]),
+          TicketCreated([ticket], hasMore: false),
+        ],
       );
     });
   });

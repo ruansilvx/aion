@@ -53,6 +53,19 @@ dependencies:
   # Used directly by AionColors/AionThemeData for @immutable
   meta: ^1.15.0
 
+  # Ticket <-> Markdown frontmatter parsing (storage-embedding-git-sync)
+  yaml: ^3.1.3
+
+  # Focus-only filesystem watcher for resource/page bidirectional sync
+  watcher: ^1.2.1
+
+  # Bundled on-device embedding model runtime (native + web, single API)
+  flutter_onnxruntime: ^1.8.2
+
+  # Filename/extension parsing in TicketMarkdownWatcherService (previously
+  # only a transitive dependency)
+  path: ^1.9.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -71,6 +84,9 @@ flutter:
   assets:
     - assets/baseline/0.1.0/
     - assets/baseline/0.1.0/skills/
+    - assets/baseline/0.2.0/
+    - assets/baseline/0.2.0/skills/
+    - assets/models/
   fonts:
     - family: Manrope
       fonts:

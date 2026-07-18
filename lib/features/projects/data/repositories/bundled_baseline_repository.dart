@@ -32,7 +32,7 @@ class BundledBaselineRepository implements BaselineRepository {
   /// the single version shipped in `assets/baseline/` — a future
   /// baseline release adds an entry here alongside its own asset
   /// directory.
-  static const _bundledVersions = ['0.1.0'];
+  static const _bundledVersions = ['0.1.0', '0.2.0'];
 
   @override
   Future<List<String>> getAvailableBaselineVersions() async {

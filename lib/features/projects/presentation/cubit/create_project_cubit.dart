@@ -134,11 +134,13 @@ class CreateProjectCubit extends Cubit<CreateProjectState> {
     }
   }
 
-  /// Writes the `.aion/manifest.json` marker and initializes an empty
-  /// git repository at [rootPath]. Desktop only — see
-  /// `aion-arch/changes/multi-project-hub/proposal.md`'s platform note
-  /// for why mobile/web don't get git-backed version history in this
-  /// change.
+  /// Writes the `.aion/manifest.json` marker, creates the `tickets/`
+  /// subdirectory that ticket git-projection writes into (see
+  /// `aion-arch/changes/storage-embedding-git-sync/design.md`), and
+  /// initializes an empty git repository at [rootPath]. Desktop only —
+  /// see `aion-arch/changes/multi-project-hub/proposal.md`'s platform
+  /// note for why mobile/web don't get git-backed version history in
+  /// this change.
   Future<void> _initializeDesktopProject(
     String rootPath,
     String baselineVersion,
@@ -150,7 +152,11 @@ class CreateProjectCubit extends Cubit<CreateProjectState> {
     );
     manifest.writeAsStringSync('{"baselineVersion": "$baselineVersion"}');
 
-    await Process.run('git', ['init'], workingDirectory: rootPath);
+    Directory(
+      '$rootPath${Platform.pathSeparator}tickets',
+    ).createSync(recursive: true);
+
+    await GitRepositoryClient().init(rootPath);
   }
 
   File _manifestFile(String rootPath) {

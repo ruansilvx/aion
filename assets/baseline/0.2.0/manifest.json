@@ -1,0 +1,20 @@
+{
+  "version": "0.2.0",
+  "assets": [
+    { "key": "skills/apply", "kind": "skill", "bundledPath": "assets/baseline/0.2.0/skills/apply.md" },
+    { "key": "skills/archive", "kind": "skill", "bundledPath": "assets/baseline/0.2.0/skills/archive.md" },
+    { "key": "skills/brainstorm", "kind": "skill", "bundledPath": "assets/baseline/0.2.0/skills/brainstorm.md" },
+    { "key": "skills/capture", "kind": "skill", "bundledPath": "assets/baseline/0.2.0/skills/capture.md" },
+    { "key": "skills/clean-up", "kind": "skill", "bundledPath": "assets/baseline/0.2.0/skills/clean-up.md" },
+    { "key": "skills/design-brief", "kind": "skill", "bundledPath": "assets/baseline/0.2.0/skills/design-brief.md" },
+    { "key": "skills/design-sync", "kind": "skill", "bundledPath": "assets/baseline/0.2.0/skills/design-sync.md" },
+    { "key": "skills/explore", "kind": "skill", "bundledPath": "assets/baseline/0.2.0/skills/explore.md" },
+    { "key": "skills/handoff", "kind": "skill", "bundledPath": "assets/baseline/0.2.0/skills/handoff.md" },
+    { "key": "skills/propose", "kind": "skill", "bundledPath": "assets/baseline/0.2.0/skills/propose.md" },
+    { "key": "skills/verify", "kind": "skill", "bundledPath": "assets/baseline/0.2.0/skills/verify.md" },
+    { "key": "skills/what-next", "kind": "skill", "bundledPath": "assets/baseline/0.2.0/skills/what-next.md" },
+    { "key": "skills/ticket-lint", "kind": "skill", "bundledPath": "assets/baseline/0.2.0/skills/ticket-lint.md" },
+    { "key": "config/model-config", "kind": "modelConfig", "bundledPath": "assets/baseline/0.2.0/model_config.json" },
+    { "key": "conventions/flutter-conventions", "kind": "architectureConvention", "bundledPath": "assets/baseline/0.2.0/architecture_convention.md" }
+  ]
+}

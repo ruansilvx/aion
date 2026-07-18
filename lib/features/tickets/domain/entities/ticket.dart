@@ -6,6 +6,7 @@ import 'package:equatable/equatable.dart';
 
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_sync_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
 /// The central entity of Aion — every other concept (epic, story, task,
@@ -39,10 +40,18 @@ class Ticket extends Equatable {
   /// models the parent/child hierarchy exclusively — never a link type.
   final String? parentId;
 
-  /// Semantic embedding for similarity search. Nullable — population is
-  /// deferred to a future change; the column exists so no migration is
-  /// needed later.
+  /// Semantic embedding for similarity search. Nullable until the
+  /// on-device [EmbeddingProvider](../../../core/contracts/embedding_provider.dart)
+  /// generates one — regenerated asynchronously whenever [title]/
+  /// [description] change (ticket save never waits on it). Never
+  /// committed to git, not even as a hash.
   final Uint8List? embedding;
+
+  /// How this ticket's database record relates to its projected Markdown
+  /// file. Always [TicketSyncStatus.synced] for every type except
+  /// `resource`/`page`, which have a bidirectional file the user can
+  /// hand-edit.
+  final TicketSyncStatus syncStatus;
 
   /// Estimated effort in minutes. No UI reads or writes this yet.
   final int? estimate;
@@ -72,6 +81,7 @@ class Ticket extends Equatable {
     this.priority = TicketPriority.none,
     this.parentId,
     this.embedding,
+    this.syncStatus = TicketSyncStatus.synced,
     this.estimate,
     this.timeSpent,
     required this.createdAt,
@@ -90,6 +100,7 @@ class Ticket extends Equatable {
     priority,
     parentId,
     embedding,
+    syncStatus,
     estimate,
     timeSpent,
     createdAt,
@@ -103,8 +114,8 @@ class Ticket extends Equatable {
   /// explicitly clear one of them, or omit the parameter entirely to leave
   /// it unchanged. A plain `?? this.x` fallback can't tell "not passed"
   /// apart from "explicitly set to null," since both look like `null` at
-  /// the call site. `id`, `ticketId`, `parentId`, `embedding`, and
-  /// `createdAt` are never mutated by this method.
+  /// the call site. `id`, `ticketId`, `parentId`, `embedding`,
+  /// `syncStatus`, and `createdAt` are never mutated by this method.
   Ticket copyWith({
     String? title,
     TicketFieldSetter<String?>? description,
@@ -125,6 +136,7 @@ class Ticket extends Equatable {
       priority: priority ?? this.priority,
       parentId: parentId,
       embedding: embedding,
+      syncStatus: syncStatus,
       estimate: estimate != null ? estimate() : this.estimate,
       timeSpent: timeSpent != null ? timeSpent() : this.timeSpent,
       createdAt: createdAt,

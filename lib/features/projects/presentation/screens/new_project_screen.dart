@@ -378,7 +378,7 @@ class _BaselineVersionField extends StatelessWidget {
             child: Row(
               children: [
                 Text(
-                  'v0.1.0',
+                  'v0.2.0',
                   style: AionText.key.copyWith(
                     fontSize: 13.5,
                     color: c.textPrimary,
