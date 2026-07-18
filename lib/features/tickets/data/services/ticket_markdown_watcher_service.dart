@@ -41,7 +41,12 @@ class TicketMarkdownWatcherService {
   StreamSubscription<WatchEvent>? _subscription;
   final _debounceTimers = <String, Timer>{};
 
-  /// Starts watching. Safe to call while already started (no-op).
+  /// Starts watching, and immediately reconciles every existing ticket
+  /// file once — covers edits made to `resource`/`page` files while Aion
+  /// was backgrounded, which no filesystem event fires for on resume
+  /// (per design.md: "immediately triggers one reconcile pass ...
+  /// covering edits made while backgrounded"). Safe to call while
+  /// already started (no-op).
   void start() {
     if (_watcher != null) return;
     final ticketsDir = '$_rootPath${Platform.pathSeparator}tickets';
@@ -50,6 +55,12 @@ class TicketMarkdownWatcherService {
     final watcher = DirectoryWatcher(ticketsDir);
     _watcher = watcher;
     _subscription = watcher.events.listen(_onEvent);
+
+    for (final entity in Directory(ticketsDir).listSync()) {
+      if (entity is! File || p.extension(entity.path) != '.md') continue;
+      final ticketId = p.basenameWithoutExtension(entity.path);
+      unawaited(_reconciler.reconcile(ticketId, _rootPath));
+    }
   }
 
   /// Stops watching and cancels any pending debounce timers. Safe to call
