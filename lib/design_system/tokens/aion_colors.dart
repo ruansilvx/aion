@@ -213,3 +213,31 @@ const double fillAlphaArctic = 0.11;
 /// than [fillAlphaArctic] because dark surfaces need more fill to read as
 /// tinted.
 const double fillAlphaObsidian = 0.16;
+
+/// Derived, theme-aware overlay/tint colors computed from existing
+/// [AionColors] fields — not stored as separate palette entries since
+/// their only variation across themes is opacity, not hue. Added for the
+/// multi-project Hub (`features/projects/`); see
+/// `aion-arch/changes/multi-project-hub/design.md` §0.
+extension AionColorsHubTokens on AionColors {
+  /// `EmptyHubState` emblem halo glow.
+  Color emblemGlow(bool isDark) =>
+      primary.withValues(alpha: isDark ? 0.50 : 0.32);
+
+  /// Compact "no directory" notice background (`NewProjectScreen`).
+  Color noticeFill(bool isDark) =>
+      primary.withValues(alpha: isDark ? 0.10 : 0.06);
+
+  /// Compact "no directory" notice border (`NewProjectScreen`).
+  Color noticeBorder(bool isDark) =>
+      primary.withValues(alpha: isDark ? 0.30 : 0.20);
+
+  /// Remove-icon disc fill and destructive menu-row hover fill
+  /// (`ProjectCard` overflow menu).
+  Color destructiveTint(bool isDark) =>
+      danger.withValues(alpha: isDark ? 0.20 : 0.14);
+
+  /// Error-state ring for an invalid `NewProjectScreen` form field.
+  Color errorRing(bool isDark) =>
+      danger.withValues(alpha: isDark ? 0.24 : 0.14);
+}

@@ -72,7 +72,7 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
     return BlocListener<TicketsCubit, TicketsState>(
       listener: (context, state) {
         if (state is TicketCreated) {
-          context.go('/tickets');
+          context.go('/workspace/tickets');
         } else if (state is TicketsError) {
           final message = state.reason != null
               ? ticketsErrorMessage(context, state.reason!)
@@ -88,7 +88,7 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
             AppHeader(
               title: context.l10n.commonNewTicket,
               showBack: true,
-              onBack: () => context.go('/tickets'),
+              onBack: () => context.go('/workspace/tickets'),
               padding: const EdgeInsets.fromLTRB(20, 6, 20, 16),
             ),
             Expanded(

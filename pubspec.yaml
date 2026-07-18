@@ -31,6 +31,13 @@ dependencies:
   # IDs
   uuid: ^4.5.1
 
+  # Directory picker (desktop) — features/projects new-project flow
+  file_selector: ^1.0.3
+
+  # Used directly by AppDatabase to resolve the mobile per-project data
+  # directory (previously only a transitive dependency via drift_flutter)
+  path_provider: ^2.1.0
+
   # Localization (ARB-based, see aion-arch/changes/intl-string-retrofit)
   intl: ^0.20.2
 
@@ -61,6 +68,9 @@ dev_dependencies:
 
 flutter:
   generate: true
+  assets:
+    - assets/baseline/0.1.0/
+    - assets/baseline/0.1.0/skills/
   fonts:
     - family: Manrope
       fonts:

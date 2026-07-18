@@ -1,8 +1,12 @@
 // core/database/app_database.dart — AppDatabase Drift database (core layer).
 
+import 'dart:io';
+
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
+import 'package:path_provider/path_provider.dart';
 
+import 'package:aion/features/projects/domain/entities/project.dart';
 import 'package:aion/features/tickets/data/daos/comment_dao.dart';
 import 'package:aion/features/tickets/data/daos/ticket_dao.dart';
 import 'package:aion/features/tickets/data/daos/ticket_link_dao.dart';
@@ -12,15 +16,27 @@ import 'package:aion/features/tickets/data/models/ticket_model.dart';
 
 part 'app_database.g.dart';
 
-/// Opens the platform-appropriate [QueryExecutor].
+/// Opens the platform-appropriate [QueryExecutor], addressed to [project]'s
+/// own isolated storage rather than one fixed global location — see
+/// `aion-arch/changes/multi-project-hub/design.md` §7.
 ///
 /// drift_flutter's `driftDatabase` picks the right implementation per
 /// platform via conditional imports: `NativeDatabase` (dart:io) on
-/// desktop/mobile, and `WasmDatabase` (drift/wasm) on web. The `web` option
-/// is only consulted by the web implementation; it is ignored on native.
-QueryExecutor _openConnection() {
+/// desktop/mobile, and `WasmDatabase` (drift/wasm) on web.
+///
+/// - Desktop/mobile: [native]'s `databasePath` resolves to
+///   `<rootPath>/.aion/data/app.db` when [Project.rootPath] is set
+///   (desktop), or `<app documents dir>/<storageKey>/app.db` otherwise
+///   (mobile, which has no user-chosen directory).
+/// - Web: the WASM database name becomes `aion_<storageKey>`, so each
+///   project gets an isolated OPFS/IndexedDB namespace within the same
+///   browser origin.
+QueryExecutor _openConnection(Project project) {
   return driftDatabase(
-    name: 'aion',
+    name: 'aion_${project.storageKey}',
+    native: DriftNativeOptions(
+      databasePath: () => _resolveNativeDatabasePath(project),
+    ),
     web: DriftWebOptions(
       sqlite3Wasm: Uri.parse('sqlite3.wasm'),
       driftWorker: Uri.parse('worker.dart.js'),
@@ -28,9 +44,33 @@ QueryExecutor _openConnection() {
   );
 }
 
-/// Aion's local SQLite database. Schema version 3, seeding
-/// [TicketIdSequenceTable] with a single `(id: 1, seq: 0)` row on creation.
-/// Version 2 adds ticket search/filter infrastructure (see
+/// Resolves the on-disk SQLite file path for [project] on desktop/mobile,
+/// creating its containing directory if needed (`NativeDatabase` does not
+/// create intermediate directories itself).
+Future<String> _resolveNativeDatabasePath(Project project) async {
+  final Directory dir;
+  final rootPath = project.rootPath;
+  if (rootPath != null) {
+    dir = Directory(
+      '$rootPath${Platform.pathSeparator}.aion${Platform.pathSeparator}data',
+    );
+  } else {
+    final documentsDir = await getApplicationDocumentsDirectory();
+    dir = Directory(
+      '${documentsDir.path}${Platform.pathSeparator}${project.storageKey}',
+    );
+  }
+  await dir.create(recursive: true);
+  return '${dir.path}${Platform.pathSeparator}app.db';
+}
+
+/// Aion's per-project local SQLite database. One instance exists per
+/// currently active [Project] — see
+/// `aion-arch/changes/multi-project-hub/design.md` §6, §7 — never one
+/// fixed global instance; the project registry itself lives in the
+/// separate, non-project-scoped [RegistryDatabase]. Schema version 3,
+/// seeding [TicketIdSequenceTable] with a single `(id: 1, seq: 0)` row on
+/// creation. Version 2 adds ticket search/filter infrastructure (see
 /// [_createSearchInfrastructure]): indexes on `status`/`type`/`priority`
 /// and an external-content FTS5 index over `title`/`description`. Version 3
 /// adds [TicketsTable.deletedAt] for the trash/soft-delete model — see
@@ -45,10 +85,13 @@ QueryExecutor _openConnection() {
   daos: [TicketDao, TicketLinkDao, CommentDao],
 )
 class AppDatabase extends _$AppDatabase {
-  /// Creates an [AppDatabase]. Pass [executor] to use a custom connection
-  /// (e.g. `NativeDatabase.memory()` in tests); otherwise opens the normal
-  /// platform-appropriate connection via [_openConnection].
-  AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
+  /// Creates an [AppDatabase] for [project]. Pass [executor] to use a
+  /// custom connection (e.g. `NativeDatabase.memory()` in tests), in which
+  /// case [project] is accepted but not consulted; otherwise opens the
+  /// normal platform-appropriate, project-addressed connection via
+  /// [_openConnection].
+  AppDatabase(Project project, [QueryExecutor? executor])
+    : super(executor ?? _openConnection(project));
 
   @override
   int get schemaVersion => 3;

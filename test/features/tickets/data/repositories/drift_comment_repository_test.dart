@@ -2,15 +2,27 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aion/core/core.dart';
+import 'package:aion/features/projects/projects.dart';
 import 'package:aion/features/tickets/data/repositories/drift_comment_repository.dart';
 import 'package:aion/features/tickets/tickets.dart';
+
+/// Dummy project [AppDatabase] now requires per-project addressing —
+/// unused here since every test passes an explicit in-memory executor.
+final _testProject = Project(
+  id: 'test-project',
+  name: 'Test Project',
+  storageKey: 'test-project',
+  baselineVersion: '0.1.0',
+  createdAt: DateTime(2024, 1, 1),
+  lastOpenedAt: DateTime(2024, 1, 1),
+);
 
 void main() {
   late AppDatabase database;
   late DriftCommentRepository repository;
 
   setUp(() {
-    database = AppDatabase(NativeDatabase.memory());
+    database = AppDatabase(_testProject, NativeDatabase.memory());
     repository = DriftCommentRepository(database);
   });
 

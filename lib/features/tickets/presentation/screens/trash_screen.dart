@@ -60,11 +60,10 @@ class TrashScreen extends StatelessWidget {
                     : () => _confirmPermanentDelete(
                         context,
                         title: context.l10n.ticketTrashPurgeOldConfirmTitle,
-                        message: context.l10n
-                            .ticketTrashPurgeOldConfirmMessage(
-                              purgeEligibleCount,
-                              TrashCubit.purgeAgeThreshold.inDays,
-                            ),
+                        message: context.l10n.ticketTrashPurgeOldConfirmMessage(
+                          purgeEligibleCount,
+                          TrashCubit.purgeAgeThreshold.inDays,
+                        ),
                         onConfirmed: () =>
                             context.read<TrashCubit>().purgeOldTrash(),
                       ),
@@ -109,7 +108,9 @@ class TrashScreen extends StatelessWidget {
                   final backTitleRow = Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      _BackButton(onTap: () => context.go('/tickets')),
+                      _BackButton(
+                        onTap: () => context.go('/workspace/tickets'),
+                      ),
                       const SizedBox(width: 13),
                       titleColumn,
                       const Spacer(),
@@ -239,26 +240,22 @@ class TrashScreen extends StatelessWidget {
                             final ticket = tickets[index];
                             return TrashedTicketTile(
                               ticket: ticket,
-                              descendantCount:
-                                  descendantCounts[ticket.id] ?? 0,
+                              descendantCount: descendantCounts[ticket.id] ?? 0,
                               onRestore: () =>
-                                  context.read<TrashCubit>().restore(
-                                    ticket.id,
-                                  ),
-                              onPermanentlyDelete: () =>
-                                  _confirmPermanentDelete(
-                                    context,
-                                    title: context
-                                        .l10n
-                                        .ticketTrashPermanentDeleteConfirmTitle,
-                                    message: context.l10n
-                                        .ticketTrashPermanentDeleteConfirmMessage(
-                                          ticket.title,
-                                        ),
-                                    onConfirmed: () => context
-                                        .read<TrashCubit>()
-                                        .permanentlyDelete(ticket.id),
-                                  ),
+                                  context.read<TrashCubit>().restore(ticket.id),
+                              onPermanentlyDelete: () => _confirmPermanentDelete(
+                                context,
+                                title: context
+                                    .l10n
+                                    .ticketTrashPermanentDeleteConfirmTitle,
+                                message: context.l10n
+                                    .ticketTrashPermanentDeleteConfirmMessage(
+                                      ticket.title,
+                                    ),
+                                onConfirmed: () => context
+                                    .read<TrashCubit>()
+                                    .permanentlyDelete(ticket.id),
+                              ),
                             );
                           },
                         ),
@@ -406,10 +403,7 @@ class _PurgeOldAction extends StatelessWidget {
               borderRadius: BorderRadius.all(AionRadius.md),
             ),
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 8,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -462,10 +456,7 @@ class _EmptyTrashAction extends StatelessWidget {
               borderRadius: BorderRadius.all(AionRadius.md),
             ),
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 8,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [

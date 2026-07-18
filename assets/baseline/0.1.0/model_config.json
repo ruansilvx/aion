@@ -1,0 +1,11 @@
+{
+  "note": "Default model/provider config stub for a newly created project. No provider is pre-configured — the user assigns providers and per-phase models in Settings after project creation, per project.md's Model Routing & Provider Configuration section.",
+  "phases": {
+    "spec": null,
+    "watcher": null,
+    "tier1Frontier": null,
+    "tier2Capable": null,
+    "tier3Execution": null,
+    "lightweight": null
+  }
+}
