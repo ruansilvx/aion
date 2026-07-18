@@ -86,9 +86,7 @@ flutter:
     - assets/baseline/0.1.0/skills/
     - assets/baseline/0.2.0/
     - assets/baseline/0.2.0/skills/
-    # assets/models/ is deliberately NOT registered yet — no model/vocab
-    # files exist there (see assets/models/README.md, tasks.md T10).
-    # Register it once those files are sourced.
+    - assets/models/
   fonts:
     - family: Manrope
       fonts:
