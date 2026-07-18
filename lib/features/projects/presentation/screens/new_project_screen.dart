@@ -164,71 +164,75 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
           ],
         ),
         const SizedBox(height: AionSpacing.sp4),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: c.surface,
-                  border: Border.all(
-                    color: hasDirectoryError ? c.danger : c.border,
-                    width: hasDirectoryError ? 1.5 : 1,
-                  ),
-                  borderRadius: BorderRadius.all(AionRadius.lg),
-                  boxShadow: hasDirectoryError
-                      ? [
-                          BoxShadow(
-                            color: c.errorRing(ThemeScope.of(context).isDark),
-                            spreadRadius: 3,
-                          ),
-                        ]
-                      : const [],
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 12,
-                  ),
-                  child: Text(
-                    _chosenDirectory ??
-                        context.l10n.newProjectLocationPlaceholder,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AionText.key.copyWith(
-                      fontSize: 12.5,
-                      color: _chosenDirectory != null
-                          ? c.textPrimary
-                          : c.textMuted,
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: c.surface,
+                    border: Border.all(
+                      color: hasDirectoryError ? c.danger : c.border,
+                      width: hasDirectoryError ? 1.5 : 1,
                     ),
+                    borderRadius: BorderRadius.all(AionRadius.lg),
+                    boxShadow: hasDirectoryError
+                        ? [
+                            BoxShadow(
+                              color: c.errorRing(
+                                ThemeScope.of(context).isDark,
+                              ),
+                              spreadRadius: 3,
+                            ),
+                          ]
+                        : const [],
                   ),
-                ),
-              ),
-            ),
-            const SizedBox(width: AionSpacing.sp8),
-            GestureDetector(
-              onTap: _browseDirectory,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: c.surfaceHover,
-                  border: Border.all(color: c.borderStrong, width: 1),
-                  borderRadius: BorderRadius.all(AionRadius.lg),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
                     child: Text(
-                      context.l10n.newProjectLocationBrowseAction,
-                      style: AionText.button.copyWith(
-                        fontSize: 13,
-                        color: c.textPrimary,
+                      _chosenDirectory ??
+                          context.l10n.newProjectLocationPlaceholder,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AionText.key.copyWith(
+                        fontSize: 12.5,
+                        color: _chosenDirectory != null
+                            ? c.textPrimary
+                            : c.textMuted,
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+              const SizedBox(width: AionSpacing.sp8),
+              GestureDetector(
+                onTap: _browseDirectory,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: c.surfaceHover,
+                    border: Border.all(color: c.borderStrong, width: 1),
+                    borderRadius: BorderRadius.all(AionRadius.lg),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Center(
+                      child: Text(
+                        context.l10n.newProjectLocationBrowseAction,
+                        style: AionText.button.copyWith(
+                          fontSize: 13,
+                          color: c.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: AionSpacing.sp4),
         Text(
