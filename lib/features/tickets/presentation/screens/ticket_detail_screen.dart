@@ -646,7 +646,7 @@ class CommentTile extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildAvatar(c, isAi, t.isDark),
+            _Avatar(colors: c, isAi: isAi, isDark: t.isDark),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -749,7 +749,25 @@ class CommentTile extends StatelessWidget {
     );
   }
 
-  Widget _buildAvatar(AionColors c, bool isAi, bool isDark) {
+  String _formatTime(DateTime date) {
+    final hour = date.hour.toString().padLeft(2, '0');
+    final minute = date.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+}
+
+/// [CommentTile]'s leading avatar — a sparkle glyph disc for AI-authored
+/// comments, a "U" initial circle otherwise.
+class _Avatar extends StatelessWidget {
+  const _Avatar({required this.colors, required this.isAi, required this.isDark});
+
+  final AionColors colors;
+  final bool isAi;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colors;
     if (isAi) {
       return DecoratedBox(
         decoration: BoxDecoration(
@@ -784,11 +802,5 @@ class CommentTile extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  String _formatTime(DateTime date) {
-    final hour = date.hour.toString().padLeft(2, '0');
-    final minute = date.minute.toString().padLeft(2, '0');
-    return '$hour:$minute';
   }
 }

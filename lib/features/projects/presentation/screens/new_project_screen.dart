@@ -95,7 +95,15 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 520),
                     child: BlocBuilder<CreateProjectCubit, CreateProjectState>(
-                      builder: (context, state) => _form(context, c, state),
+                      builder: (context, state) => _Form(
+                        colors: c,
+                        state: state,
+                        nameController: _nameController,
+                        nameFocus: _nameFocus,
+                        chosenDirectory: _chosenDirectory,
+                        onBrowseDirectory: _browseDirectory,
+                        onSubmit: _submit,
+                      ),
                     ),
                   ),
                 ),
@@ -107,8 +115,35 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
     );
   }
 
-  Widget _form(BuildContext context, AionColors c, CreateProjectState state) {
-    final failure = state is CreateProjectFailure ? state : null;
+}
+
+/// The create-project form body: name field, directory picker/notice,
+/// baseline version field, and submit footer.
+class _Form extends StatelessWidget {
+  const _Form({
+    required this.colors,
+    required this.state,
+    required this.nameController,
+    required this.nameFocus,
+    required this.chosenDirectory,
+    required this.onBrowseDirectory,
+    required this.onSubmit,
+  });
+
+  final AionColors colors;
+  final CreateProjectState state;
+  final TextEditingController nameController;
+  final FocusNode nameFocus;
+  final String? chosenDirectory;
+  final VoidCallback onBrowseDirectory;
+  final VoidCallback onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colors;
+    final failure = state is CreateProjectFailure
+        ? state as CreateProjectFailure
+        : null;
     final isSubmitting =
         state is CreateProjectValidating || state is CreateProjectSubmitting;
 
@@ -119,30 +154,50 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
           labelText: context.l10n.newProjectNameLabel,
           isRequired: true,
           hintText: context.l10n.newProjectNameHint,
-          controller: _nameController,
-          focusNode: _nameFocus,
+          controller: nameController,
+          focusNode: nameFocus,
           textInputAction: TextInputAction.next,
         ),
         if (failure?.reason == CreateProjectFailureReason.duplicateName) ...[
           const SizedBox(height: AionSpacing.sp4),
-          _inlineError(c, context.l10n.newProjectDuplicateNameError),
+          _InlineError(colors: c, message: context.l10n.newProjectDuplicateNameError),
         ],
         const SizedBox(height: AionSpacing.sp20),
-        if (isDesktop) _directoryPicker(context, c, failure),
-        if (!isDesktop) _noDirectoryNotice(context, c),
+        if (isDesktop)
+          _DirectoryPicker(
+            colors: c,
+            failure: failure,
+            chosenDirectory: chosenDirectory,
+            onBrowseDirectory: onBrowseDirectory,
+          ),
+        if (!isDesktop) _NoDirectoryNotice(colors: c),
         const SizedBox(height: AionSpacing.sp20),
-        _baselineVersionField(context, c),
+        _BaselineVersionField(colors: c),
         const SizedBox(height: AionSpacing.sp24),
-        _footer(context, isSubmitting),
+        _Footer(isSubmitting: isSubmitting, onSubmit: onSubmit),
       ],
     );
   }
+}
 
-  Widget _directoryPicker(
-    BuildContext context,
-    AionColors c,
-    CreateProjectFailure? failure,
-  ) {
+/// The desktop-only directory picker field (path display + Browse
+/// button).
+class _DirectoryPicker extends StatelessWidget {
+  const _DirectoryPicker({
+    required this.colors,
+    required this.failure,
+    required this.chosenDirectory,
+    required this.onBrowseDirectory,
+  });
+
+  final AionColors colors;
+  final CreateProjectFailure? failure;
+  final String? chosenDirectory;
+  final VoidCallback onBrowseDirectory;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colors;
     final hasDirectoryError =
         failure?.reason == CreateProjectFailureReason.directoryAlreadyInUse ||
         failure?.reason == CreateProjectFailureReason.directoryNotChosen;
@@ -194,13 +249,13 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
                       vertical: 12,
                     ),
                     child: Text(
-                      _chosenDirectory ??
+                      chosenDirectory ??
                           context.l10n.newProjectLocationPlaceholder,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AionText.key.copyWith(
                         fontSize: 12.5,
-                        color: _chosenDirectory != null
+                        color: chosenDirectory != null
                             ? c.textPrimary
                             : c.textMuted,
                       ),
@@ -210,7 +265,7 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
               ),
               const SizedBox(width: AionSpacing.sp8),
               GestureDetector(
-                onTap: _browseDirectory,
+                onTap: onBrowseDirectory,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     color: c.surfaceHover,
@@ -241,13 +296,26 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
         ),
         if (hasDirectoryError) ...[
           const SizedBox(height: AionSpacing.sp4),
-          _inlineError(c, context.l10n.newProjectLocationDirectoryInUseError),
+          _InlineError(
+            colors: c,
+            message: context.l10n.newProjectLocationDirectoryInUseError,
+          ),
         ],
       ],
     );
   }
+}
 
-  Widget _noDirectoryNotice(BuildContext context, AionColors c) {
+/// The mobile/web informational notice replacing the directory picker
+/// (no filesystem access on those platforms).
+class _NoDirectoryNotice extends StatelessWidget {
+  const _NoDirectoryNotice({required this.colors});
+
+  final AionColors colors;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colors;
     final isDark = ThemeScope.of(context).isDark;
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -280,8 +348,17 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
       ),
     );
   }
+}
 
-  Widget _baselineVersionField(BuildContext context, AionColors c) {
+/// The (currently read-only) baseline-version field.
+class _BaselineVersionField extends StatelessWidget {
+  const _BaselineVersionField({required this.colors});
+
+  final AionColors colors;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -342,18 +419,38 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
       ],
     );
   }
+}
 
-  Widget _footer(BuildContext context, bool isSubmitting) {
+/// The submit footer button.
+class _Footer extends StatelessWidget {
+  const _Footer({required this.isSubmitting, required this.onSubmit});
+
+  final bool isSubmitting;
+  final VoidCallback onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
     return AppButton(
       label: isSubmitting
           ? context.l10n.newProjectSubmittingAction
           : context.l10n.newProjectSubmitAction,
       isFullWidth: true,
-      onPressed: isSubmitting ? null : _submit,
+      onPressed: isSubmitting ? null : onSubmit,
     );
   }
+}
 
-  Widget _inlineError(AionColors c, String message) {
+/// A small "!"-in-circle glyph plus danger-colored error text, used for
+/// this form's inline validation messages.
+class _InlineError extends StatelessWidget {
+  const _InlineError({required this.colors, required this.message});
+
+  final AionColors colors;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colors;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [

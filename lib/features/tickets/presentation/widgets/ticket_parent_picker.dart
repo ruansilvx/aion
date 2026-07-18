@@ -359,13 +359,23 @@ class _TicketParentPickerState extends State<TicketParentPicker> {
     final resolvedParent = parentId == null ? null : _resolveParent(parentId);
 
     final trigger = switch (widget.variant) {
-      TicketParentPickerVariant.inline => _buildInlineTrigger(
-        c,
-        resolvedParent,
+      TicketParentPickerVariant.inline => _InlineTrigger(
+        colors: c,
+        resolvedParent: resolvedParent,
+        currentParentId: widget.currentParentId,
+        isOpen: _isOpen,
       ),
-      TicketParentPickerVariant.formField => _buildFormFieldTrigger(
-        c,
-        resolvedParent,
+      TicketParentPickerVariant.formField => _FormFieldTrigger(
+        colors: c,
+        isDark: t.isDark,
+        resolvedParent: resolvedParent,
+        currentParentId: widget.currentParentId,
+        isDisabled: widget.isDisabled,
+        hasError: widget.errorText != null,
+        isFocused: _isFocused,
+        isOpen: _isOpen,
+        isHovered: _isHovered,
+        isPressed: _isPressed,
       ),
     };
 
@@ -417,12 +427,30 @@ class _TicketParentPickerState extends State<TicketParentPicker> {
     );
   }
 
-  /// Compact "+ PARENT" / resolved key-title trigger, used on
-  /// `TicketDetailScreen`.
-  Widget _buildInlineTrigger(AionColors c, Ticket? resolvedParent) {
+  AionThemeData get t => ThemeScope.of(context);
+}
+
+/// Compact "+ PARENT" / resolved key-title trigger, used on
+/// `TicketDetailScreen`.
+class _InlineTrigger extends StatelessWidget {
+  const _InlineTrigger({
+    required this.colors,
+    required this.resolvedParent,
+    required this.currentParentId,
+    required this.isOpen,
+  });
+
+  final AionColors colors;
+  final Ticket? resolvedParent;
+  final String? currentParentId;
+  final bool isOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colors;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: _isOpen ? c.surfaceHover : const Color(0x00000000),
+        color: isOpen ? c.surfaceHover : const Color(0x00000000),
         borderRadius: BorderRadius.all(AionRadius.md),
       ),
       child: Padding(
@@ -430,7 +458,7 @@ class _TicketParentPickerState extends State<TicketParentPicker> {
           horizontal: AionSpacing.sp8,
           vertical: 4,
         ),
-        child: widget.currentParentId == null
+        child: currentParentId == null
             ? Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -489,31 +517,56 @@ class _TicketParentPickerState extends State<TicketParentPicker> {
       ),
     );
   }
+}
 
-  /// Full-width, `AppDropdown`-style form-field trigger, used on
-  /// `CreateTicketScreen`. Renders [TicketParentPicker.isDisabled]'s
-  /// muted/`0.5`-opacity treatment and [TicketParentPicker.errorText]'s
-  /// danger-colored border/ring, per Component Spec §2.3.
-  Widget _buildFormFieldTrigger(AionColors c, Ticket? resolvedParent) {
-    final hasError = widget.errorText != null;
-    final isActive = _isFocused || _isOpen;
+/// Full-width, `AppDropdown`-style form-field trigger, used on
+/// `CreateTicketScreen`. Renders [TicketParentPicker.isDisabled]'s
+/// muted/`0.5`-opacity treatment and [TicketParentPicker.errorText]'s
+/// danger-colored border/ring, per Component Spec §2.3.
+class _FormFieldTrigger extends StatelessWidget {
+  const _FormFieldTrigger({
+    required this.colors,
+    required this.isDark,
+    required this.resolvedParent,
+    required this.currentParentId,
+    required this.isDisabled,
+    required this.hasError,
+    required this.isFocused,
+    required this.isOpen,
+    required this.isHovered,
+    required this.isPressed,
+  });
+
+  final AionColors colors;
+  final bool isDark;
+  final Ticket? resolvedParent;
+  final String? currentParentId;
+  final bool isDisabled;
+  final bool hasError;
+  final bool isFocused;
+  final bool isOpen;
+  final bool isHovered;
+  final bool isPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colors;
+    final isActive = isFocused || isOpen;
     final borderColor = hasError
         ? c.danger
         : isActive
         ? c.primary
-        : _isHovered
+        : isHovered
         ? c.borderStrong
         : c.border;
     final borderWidth = hasError || isActive ? 1.5 : 1.0;
-    final glyphColor = _isHovered || isActive
-        ? c.textSecondary
-        : c.textMuted;
+    final glyphColor = isHovered || isActive ? c.textSecondary : c.textMuted;
     final ringColor = hasError ? c.danger : c.primary;
 
     return Opacity(
-      opacity: widget.isDisabled ? 0.5 : 1.0,
+      opacity: isDisabled ? 0.5 : 1.0,
       child: AnimatedScale(
-        scale: _isPressed ? 0.99 : 1.0,
+        scale: isPressed ? 0.99 : 1.0,
         duration: const Duration(milliseconds: 80),
         child: DecoratedBox(
           decoration: BoxDecoration(
@@ -523,15 +576,13 @@ class _TicketParentPickerState extends State<TicketParentPicker> {
             boxShadow: hasError || isActive
                 ? [
                     BoxShadow(
-                      color: ringColor.withValues(
-                        alpha: t.isDark ? 0.30 : 0.16,
-                      ),
+                      color: ringColor.withValues(alpha: isDark ? 0.30 : 0.16),
                       spreadRadius: 3,
                     ),
                   ]
                 : null,
           ),
-        child: widget.currentParentId == null
+        child: currentParentId == null
             ? Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 13,
@@ -595,7 +646,7 @@ class _TicketParentPickerState extends State<TicketParentPicker> {
                       const SizedBox(width: 8),
                       DecoratedBox(
                         decoration: BoxDecoration(
-                          color: _typeAccent(c, resolvedParent.type),
+                          color: _typeAccent(c, resolvedParent!.type),
                           borderRadius: BorderRadius.circular(2),
                         ),
                         child: const SizedBox(width: 8, height: 8),
@@ -614,8 +665,6 @@ class _TicketParentPickerState extends State<TicketParentPicker> {
       ),
     );
   }
-
-  AionThemeData get t => ThemeScope.of(context);
 }
 
 /// The "No parent" row always shown first in [TicketParentPicker]'s

@@ -203,106 +203,6 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
     return tickets;
   }
 
-  /// Renders the loaded [tickets] as either the flat list or the board,
-  /// depending on [_viewMode]. An empty [tickets] list shows "No tickets
-  /// match your search" when [_hasActiveFilter], otherwise the generic
-  /// "No tickets yet" message. [state] drives the flat list's
-  /// scroll-triggered loading footer (design.md §1/§2) — nothing beyond
-  /// [tickets] itself is needed in board mode, which uses the separate
-  /// "Load more" button in [build] instead (design.md §3).
-  Widget _buildTicketsBody(
-    BuildContext context,
-    List<Ticket> tickets,
-    TicketsState state,
-  ) {
-    final t = ThemeScope.of(context);
-    final c = t.colors;
-
-    if (tickets.isEmpty) {
-      if (_hasActiveFilter) {
-        return Center(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 48),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: c.primary.withValues(alpha: t.fillAlpha),
-                    borderRadius: BorderRadius.all(AionRadius.xl),
-                  ),
-                  child: SizedBox(
-                    width: 56,
-                    height: 56,
-                    child: Center(
-                      child: PhosphorIcon(
-                        PhosphorIcons.magnifyingGlassLight,
-                        size: 28,
-                        color: c.primary,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: AionSpacing.sp16),
-                Text(
-                  context.l10n.ticketsListNoResultsState,
-                  textAlign: TextAlign.center,
-                  style: AionText.body.copyWith(
-                    color: c.textPrimary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  context.l10n.ticketsListNoResultsHint,
-                  textAlign: TextAlign.center,
-                  style: AionText.bodySm.copyWith(color: c.textMuted),
-                ),
-              ],
-            ),
-          ),
-        );
-      }
-      return Center(
-        child: Text(
-          context.l10n.ticketsListEmptyState,
-          style: AionText.body.copyWith(color: c.textMuted),
-        ),
-      );
-    }
-
-    if (_viewMode == _TicketViewMode.board) {
-      final boardTickets = tickets
-          .where(
-            (ticket) =>
-                ticket.type == TicketType.task ||
-                ticket.type == TicketType.story,
-          )
-          .toList();
-      return TicketBoardView(tickets: boardTickets);
-    }
-
-    final isLoadingMore = state is TicketsLoadingMore;
-    final loadMoreFailed = state is TicketsLoadMoreFailed;
-    final showFooter = isLoadingMore || loadMoreFailed;
-
-    return ListView.separated(
-      controller: _scrollController,
-      itemCount: tickets.length + (showFooter ? 1 : 0),
-      separatorBuilder: (context, index) =>
-          Container(color: c.border, height: 1),
-      itemBuilder: (context, index) {
-        if (index >= tickets.length) {
-          return _TicketListFooter(
-            isLoadingMore: isLoadingMore,
-            onRetry: () => context.read<TicketsCubit>().loadMoreTickets(),
-          );
-        }
-        return TicketListTile(ticket: tickets[index]);
-      },
-    );
-  }
-
   /// Previews the cascade (per [TicketsCubit.previewTrashCount]), confirms
   /// via [showAppConfirmDialog], and — if confirmed — trashes every id in
   /// [selectedIds] via [TicketsCubit.trashTickets]. Shared onDelete
@@ -561,10 +461,12 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                                 key: ValueKey(
                                   tickets.map((t) => t.id).join(','),
                                 ),
-                                child: _buildTicketsBody(
-                                  context,
-                                  tickets,
-                                  state,
+                                child: _TicketsBody(
+                                  tickets: tickets,
+                                  state: state,
+                                  viewMode: _viewMode,
+                                  hasActiveFilter: _hasActiveFilter,
+                                  scrollController: _scrollController,
                                 ),
                               ),
                             ),
@@ -623,6 +525,119 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
           );
         },
       ),
+    );
+  }
+}
+
+/// Renders the loaded ticket list as either the flat list or the board,
+/// depending on [viewMode]. An empty [tickets] list shows "No tickets
+/// match your search" when [hasActiveFilter], otherwise the generic "No
+/// tickets yet" message. [state] drives the flat list's scroll-triggered
+/// loading footer (design.md §1/§2) — nothing beyond [tickets] itself is
+/// needed in board mode, which uses the separate "Load more" button in
+/// `TicketsListScreen.build` instead (design.md §3).
+class _TicketsBody extends StatelessWidget {
+  const _TicketsBody({
+    required this.tickets,
+    required this.state,
+    required this.viewMode,
+    required this.hasActiveFilter,
+    required this.scrollController,
+  });
+
+  final List<Ticket> tickets;
+  final TicketsState state;
+  final _TicketViewMode viewMode;
+  final bool hasActiveFilter;
+  final ScrollController scrollController;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+
+    if (tickets.isEmpty) {
+      if (hasActiveFilter) {
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 48),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: c.primary.withValues(alpha: t.fillAlpha),
+                    borderRadius: BorderRadius.all(AionRadius.xl),
+                  ),
+                  child: SizedBox(
+                    width: 56,
+                    height: 56,
+                    child: Center(
+                      child: PhosphorIcon(
+                        PhosphorIcons.magnifyingGlassLight,
+                        size: 28,
+                        color: c.primary,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: AionSpacing.sp16),
+                Text(
+                  context.l10n.ticketsListNoResultsState,
+                  textAlign: TextAlign.center,
+                  style: AionText.body.copyWith(
+                    color: c.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  context.l10n.ticketsListNoResultsHint,
+                  textAlign: TextAlign.center,
+                  style: AionText.bodySm.copyWith(color: c.textMuted),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+      return Center(
+        child: Text(
+          context.l10n.ticketsListEmptyState,
+          style: AionText.body.copyWith(color: c.textMuted),
+        ),
+      );
+    }
+
+    if (viewMode == _TicketViewMode.board) {
+      final boardTickets = tickets
+          .where(
+            (ticket) =>
+                ticket.type == TicketType.task ||
+                ticket.type == TicketType.story,
+          )
+          .toList();
+      return TicketBoardView(tickets: boardTickets);
+    }
+
+    final isLoadingMore = state is TicketsLoadingMore;
+    final loadMoreFailed = state is TicketsLoadMoreFailed;
+    final showFooter = isLoadingMore || loadMoreFailed;
+
+    return ListView.separated(
+      controller: scrollController,
+      itemCount: tickets.length + (showFooter ? 1 : 0),
+      separatorBuilder: (context, index) =>
+          Container(color: c.border, height: 1),
+      itemBuilder: (context, index) {
+        if (index >= tickets.length) {
+          return _TicketListFooter(
+            isLoadingMore: isLoadingMore,
+            onRetry: () => context.read<TicketsCubit>().loadMoreTickets(),
+          );
+        }
+        return TicketListTile(ticket: tickets[index]);
+      },
     );
   }
 }

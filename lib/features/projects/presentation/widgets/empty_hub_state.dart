@@ -30,7 +30,7 @@ class EmptyHubState extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            _emblem(c, t.isDark),
+            _Emblem(colors: c, isDark: t.isDark),
             const SizedBox(height: 22),
             Text(
               context.l10n.projectHubEmptyTitle,
@@ -50,14 +50,24 @@ class EmptyHubState extends StatelessWidget {
               ),
             ),
             const SizedBox(height: AionSpacing.sp24),
-            _newProjectCta(context, c, t.isDark),
+            _NewProjectCta(colors: c, isDark: t.isDark, onNewProject: onNewProject),
           ],
         ),
       ),
     );
   }
+}
 
-  Widget _emblem(AionColors c, bool isDark) {
+/// [EmptyHubState]'s filled faction-motif emblem illustration.
+class _Emblem extends StatelessWidget {
+  const _Emblem({required this.colors, required this.isDark});
+
+  final AionColors colors;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colors;
     return SizedBox(
       width: 100,
       height: 100,
@@ -91,8 +101,23 @@ class EmptyHubState extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _newProjectCta(BuildContext context, AionColors c, bool isDark) {
+/// [EmptyHubState]'s "New Project" call-to-action button.
+class _NewProjectCta extends StatelessWidget {
+  const _NewProjectCta({
+    required this.colors,
+    required this.isDark,
+    required this.onNewProject,
+  });
+
+  final AionColors colors;
+  final bool isDark;
+  final VoidCallback onNewProject;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = colors;
     return GestureDetector(
       onTap: onNewProject,
       child: DecoratedBox(
