@@ -107,17 +107,11 @@ final appRouter = GoRouter(
             child: const TrashScreen(),
           ),
         ),
-        GoRoute(
-          path: '/workspace/tickets/:id',
-          builder: (context, state) {
-            final id = state.pathParameters['id']!;
-            return BlocProvider<CommentsCubit>(
-              create: (context) =>
-                  CommentsCubit(context.read<CommentRepository>()),
-              child: TicketDetailScreen(ticketId: id),
-            );
-          },
-        ),
+        // Registered before `/workspace/tickets/:id` for the same reason as
+        // `/workspace/tickets/trash` above, even though the two prefixes
+        // (`/workspace/documentation` vs `/workspace/tickets/*`) don't
+        // actually collide today — keeps every non-wildcard route ahead of
+        // the wildcard per this file's declaration-order convention.
         GoRoute(
           path: '/workspace/documentation',
           builder: (context, state) => BlocProvider<DocumentationCubit>(
@@ -130,6 +124,17 @@ final appRouter = GoRouter(
             ),
             child: const DocumentationScreen(),
           ),
+        ),
+        GoRoute(
+          path: '/workspace/tickets/:id',
+          builder: (context, state) {
+            final id = state.pathParameters['id']!;
+            return BlocProvider<CommentsCubit>(
+              create: (context) =>
+                  CommentsCubit(context.read<CommentRepository>()),
+              child: TicketDetailScreen(ticketId: id),
+            );
+          },
         ),
       ],
     ),

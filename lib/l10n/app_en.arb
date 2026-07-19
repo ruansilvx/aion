@@ -298,5 +298,8 @@
     "placeholders": {
       "count": { "type": "int" }
     }
-  }
+  },
+  "documentationAddAction": "Add",
+  "ticketLinkPickerSearchHint": "Search tickets",
+  "ticketLinkPickerNoResults": "No matching tickets"
 }

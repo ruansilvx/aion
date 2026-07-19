@@ -10,15 +10,18 @@ import 'package:aion/features/tickets/presentation/screens/tickets_list_screen.d
 
 /// A ticket-detail section listing the board tickets (epic/story/task/
 /// chat) a `page`/`resource` ticket links to via `TicketLink`. Given
-/// [tickets] and an [onTap] callback — grouping logic (which links belong
-/// here vs. [DocumentationBacklinksSection]) lives in `TicketsCubit
-/// .loadDocumentRelations`, not this widget. Per design.md §8.3.
+/// [tickets] and an [onTap] callback, plus an optional header [trailing]
+/// control (the design.md §8.1 "+ Add" affordance, e.g. a
+/// `TicketLinkPicker`) — grouping logic (which links belong here vs.
+/// [DocumentationBacklinksSection]) and the actual link-creation call
+/// live in the caller/[trailing] widget, not here. Per design.md §8.3.
 class DocumentationLinkedTicketsSection extends StatelessWidget {
   /// Creates a [DocumentationLinkedTicketsSection] listing [tickets].
   const DocumentationLinkedTicketsSection({
     super.key,
     required this.tickets,
     required this.onTap,
+    this.trailing,
   });
 
   /// The linked board tickets to render, most relevant order as provided
@@ -27,6 +30,12 @@ class DocumentationLinkedTicketsSection extends StatelessWidget {
 
   /// Called with a row's ticket id when it's tapped.
   final ValueChanged<String> onTap;
+
+  /// The header's trailing "+ Add" affordance (design.md §8.1/§8.3),
+  /// e.g. a `TicketLinkPicker`. `null` renders no trailing control — this
+  /// widget stays presentational and doesn't know how "adding a link"
+  /// actually happens, only where its trigger sits.
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -67,6 +76,10 @@ class DocumentationLinkedTicketsSection extends StatelessWidget {
                       ),
                     ),
                   ),
+                ],
+                if (trailing != null) ...[
+                  const Spacer(),
+                  trailing!,
                 ],
               ],
             ),
