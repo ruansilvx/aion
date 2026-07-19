@@ -210,7 +210,16 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// fetching every ticket) and requests at least as many tickets as were
   /// already loaded, so this doesn't silently drop an active search/filter
   /// or collapse an infinite-scrolled list back down to one page.
-  Future<void> createTicket({
+  ///
+  /// @returns the persisted ticket (with its generated `ticketId`) on
+  /// success. Existing callers (`CreateTicketScreen`) are unaffected by
+  /// this return value and may continue to ignore it — added so
+  /// `PageTicketProviderImpl.createPage` can hand the created ticket back
+  /// through `PageTicketProvider` without a second query. Rethrows the
+  /// original exception after emitting [TicketsError] on failure, so a
+  /// caller that does await this (e.g. `PageTicketProviderImpl`) sees the
+  /// failure rather than a value of the wrong type.
+  Future<Ticket> createTicket({
     required TicketType type,
     required String title,
     String? description,
@@ -260,8 +269,10 @@ class TicketsCubit extends Cubit<TicketsState> {
         limit: max(_pageSize, currentTickets.length),
       );
       emit(TicketCreated(page.tickets, hasMore: page.hasMore));
+      return persisted ?? ticket;
     } catch (e) {
       emit(TicketsError(e.toString()));
+      rethrow;
     }
   }
 
@@ -318,7 +329,16 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// `SelectionMenu` already renders the new value locally before the
   /// repository round trip completes, so no separate "Updating" state is
   /// needed here.
-  Future<void> updateTicket(Ticket ticket) async {
+  ///
+  /// @returns the refreshed ticket on success. Existing callers
+  /// (`TicketDetailScreen`) are unaffected by this return value and may
+  /// continue to ignore it — added so `PageTicketProviderImpl.updatePage`
+  /// can hand the updated ticket back through `PageTicketProvider`
+  /// without a second query. Rethrows the original exception after
+  /// emitting [TicketsError] on failure, so a caller that does await
+  /// this (e.g. `PageTicketProviderImpl`) sees the failure rather than a
+  /// value of the wrong type.
+  Future<Ticket> updateTicket(Ticket ticket) async {
     try {
       final previous = await _repository.getTicketById(ticket.id);
       await _repository.updateTicket(ticket);
@@ -337,8 +357,10 @@ class TicketsCubit extends Cubit<TicketsState> {
           unawaited(_triggerEmbeddingRegen(refreshed));
         }
       }
+      return refreshed ?? ticket;
     } catch (e) {
       emit(TicketsError(e.toString()));
+      rethrow;
     }
   }
 

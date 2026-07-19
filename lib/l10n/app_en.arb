@@ -301,5 +301,15 @@
   },
   "documentationAddAction": "Add",
   "ticketLinkPickerSearchHint": "Search tickets",
-  "ticketLinkPickerNoResults": "No matching tickets"
+  "ticketLinkPickerNoResults": "No matching tickets",
+
+  "pageDetailContentPlaceholder": "Write the page content in Markdown…",
+  "pageDetailEditContent": "Edit page content",
+  "pageDetailMarkdownEditToggle": "Edit",
+  "pageDetailMarkdownViewToggle": "Preview",
+  "pageDetailMarkdownSave": "Save",
+  "pageDetailMarkdownCancel": "Cancel",
+  "pageDetailTitlePlaceholder": "Untitled page",
+  "pageCreateTitlePlaceholder": "Page title",
+  "pageCreateParentFieldPlaceholder": "Optional"
 }

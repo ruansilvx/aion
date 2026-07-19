@@ -254,7 +254,7 @@ class TicketBoardCard extends StatelessWidget {
       if (isSelectionActive) {
         context.read<TicketSelectionCubit>().toggle(ticket.id);
       } else {
-        context.go('/workspace/tickets/${ticket.id}');
+        context.go(ticketDetailRoute(ticket));
       }
     }
 

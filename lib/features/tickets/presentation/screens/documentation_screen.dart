@@ -55,12 +55,14 @@ class _DocumentationScreenState extends State<DocumentationScreen> {
     context.read<DocumentationCubit>().clearSearch();
   }
 
-  void _openTicket(String ticketId) => context.go('/workspace/tickets/$ticketId');
+  void _openTicket(Ticket ticket) => context.go(ticketDetailRoute(ticket));
 
-  void _createDoc(TicketType type) {
+  void _newPage() => context.push('/workspace/pages/new');
+
+  void _newResource() {
     context.push(
       '/workspace/tickets/new',
-      extra: CreateTicketRouteExtra(initialType: type),
+      extra: const CreateTicketRouteExtra(initialType: TicketType.resource),
     );
   }
 
@@ -76,8 +78,8 @@ class _DocumentationScreenState extends State<DocumentationScreen> {
           _Header(
             searchController: _searchController,
             onClearSearch: _clearSearch,
-            onNewPage: () => _createDoc(TicketType.page),
-            onNewResource: () => _createDoc(TicketType.resource),
+            onNewPage: _newPage,
+            onNewResource: _newResource,
           ),
           Expanded(
             child: BlocBuilder<DocumentationCubit, DocumentationState>(
@@ -293,16 +295,13 @@ class _TreeBody extends StatelessWidget {
   const _TreeBody({required this.state, required this.onTap});
 
   final DocumentationLoaded state;
-  final ValueChanged<String> onTap;
+  final ValueChanged<Ticket> onTap;
 
   @override
   Widget build(BuildContext context) {
     if (state.rootDocs.isEmpty) {
       return _EmptyState(
-        onNewPage: () => context.push(
-          '/workspace/tickets/new',
-          extra: const CreateTicketRouteExtra(initialType: TicketType.page),
-        ),
+        onNewPage: () => context.push('/workspace/pages/new'),
       );
     }
 
@@ -342,7 +341,7 @@ class _TreeNode extends StatelessWidget {
   final Ticket ticket;
   final int depth;
   final DocumentationLoaded state;
-  final ValueChanged<String> onTap;
+  final ValueChanged<Ticket> onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -357,7 +356,7 @@ class _TreeNode extends StatelessWidget {
           depth: depth,
           isExpanded: isExpanded,
           childCount: isPage && !isExpanded ? children?.length : null,
-          onTap: () => onTap(ticket.id),
+          onTap: () => onTap(ticket),
           onToggleExpand: isPage
               ? () => context.read<DocumentationCubit>().loadChildren(
                   ticket.id,
@@ -387,7 +386,7 @@ class _SearchResultsBody extends StatelessWidget {
 
   final String query;
   final List<Ticket> results;
-  final ValueChanged<String> onTap;
+  final ValueChanged<Ticket> onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -437,7 +436,7 @@ class _SearchResultsBody extends StatelessWidget {
             DocumentationTreeItem(
               ticket: result,
               showChevron: false,
-              onTap: () => onTap(result.id),
+              onTap: () => onTap(result),
             ),
         ],
       ),

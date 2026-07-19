@@ -1,23 +1,29 @@
-// presentation/widgets/documentation_linked_tickets_section.dart — DocumentationLinkedTicketsSection widget (presentation layer).
+// design_system/molecules/linked_tickets_section.dart — LinkedTicketsSection widget (design-system layer).
 
 import 'package:flutter/widgets.dart';
 
 import 'package:aion/core/core.dart';
-import 'package:aion/design_system/design_system.dart';
+import 'package:aion/design_system/tokens/aion_colors.dart';
+import 'package:aion/design_system/tokens/aion_radius.dart';
+import 'package:aion/design_system/tokens/aion_text.dart';
+import 'package:aion/design_system/tokens/theme_scope.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
-import 'package:aion/features/tickets/presentation/screens/tickets_list_screen.dart'
-    show TypeChip, PriorityBadge;
+import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
 /// A ticket-detail section listing the board tickets (epic/story/task/
 /// chat) a `page`/`resource` ticket links to via `TicketLink`. Given
 /// [tickets] and an [onTap] callback, plus an optional header [trailing]
-/// control (the design.md §8.1 "+ Add" affordance, e.g. a
-/// `TicketLinkPicker`) — grouping logic (which links belong here vs.
-/// [DocumentationBacklinksSection]) and the actual link-creation call
-/// live in the caller/[trailing] widget, not here. Per design.md §8.3.
-class DocumentationLinkedTicketsSection extends StatelessWidget {
-  /// Creates a [DocumentationLinkedTicketsSection] listing [tickets].
-  const DocumentationLinkedTicketsSection({
+/// control (e.g. a link picker) — grouping logic (which links belong here
+/// vs. [BacklinksSection]) and the actual link-creation call live in the
+/// caller/[trailing] widget, not here. Promoted from
+/// `DocumentationLinkedTicketsSection` (per `project.md`'s Pattern 2),
+/// dropping its dependency on the tickets-feature-owned `TypeChip`/
+/// `PriorityBadge` widgets in favor of a self-contained row so this
+/// widget stays design-system-generic. Per
+/// `aion-arch/changes/page-content-markdown-editor/design.md` §5.
+class LinkedTicketsSection extends StatelessWidget {
+  /// Creates a [LinkedTicketsSection] listing [tickets].
+  const LinkedTicketsSection({
     super.key,
     required this.tickets,
     required this.onTap,
@@ -31,10 +37,8 @@ class DocumentationLinkedTicketsSection extends StatelessWidget {
   /// Called with a row's ticket id when it's tapped.
   final ValueChanged<String> onTap;
 
-  /// The header's trailing "+ Add" affordance (design.md §8.1/§8.3),
-  /// e.g. a `TicketLinkPicker`. `null` renders no trailing control — this
-  /// widget stays presentational and doesn't know how "adding a link"
-  /// actually happens, only where its trigger sits.
+  /// The header's trailing "+ Add" affordance, e.g. a link picker.
+  /// `null` renders no trailing control.
   final Widget? trailing;
 
   @override
@@ -106,10 +110,8 @@ class DocumentationLinkedTicketsSection extends StatelessWidget {
   }
 }
 
-/// A single tappable link row, shared shape with
-/// [DocumentationBacklinksSection]'s row — kept private/duplicated per
-/// file (rather than factored into a shared widget) since each carries a
-/// different leading indicator (type chip here vs. type-icon chip there).
+/// A single tappable link row: a type-color dot, mono ticket key, and
+/// title. Per design.md §5.2.
 class _LinkRow extends StatefulWidget {
   const _LinkRow({required this.ticket, required this.onTap});
 
@@ -124,11 +126,20 @@ class _LinkRowState extends State<_LinkRow> {
   bool _isHovered = false;
   bool _isPressed = false;
 
+  Color _typeColor(AionColors c, TicketType type) => switch (type) {
+    TicketType.story => c.typeStory,
+    TicketType.epic => c.typeEpic,
+    TicketType.resource => c.typeResource,
+    TicketType.page => c.typePage,
+    _ => c.typeTask,
+  };
+
   @override
   Widget build(BuildContext context) {
     final t = ThemeScope.of(context);
     final c = t.colors;
     final ticket = widget.ticket;
+    final typeColor = _typeColor(c, ticket.type);
 
     return Semantics(
       button: true,
@@ -163,7 +174,13 @@ class _LinkRowState extends State<_LinkRow> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    TypeChip(type: ticket.type),
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: typeColor,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                      child: const SizedBox(width: 8, height: 8),
+                    ),
                     const SizedBox(width: 10),
                     DecoratedBox(
                       decoration: BoxDecoration(
@@ -192,7 +209,6 @@ class _LinkRowState extends State<_LinkRow> {
                         ),
                       ),
                     ),
-                    PriorityBadge(priority: ticket.priority),
                   ],
                 ),
               ),

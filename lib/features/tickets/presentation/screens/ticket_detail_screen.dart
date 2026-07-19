@@ -30,14 +30,10 @@ import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 import 'package:aion/features/tickets/presentation/screens/create_ticket_screen.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_list_screen.dart';
-import 'package:aion/features/tickets/presentation/widgets/documentation_backlinks_section.dart';
-import 'package:aion/features/tickets/presentation/widgets/documentation_linked_tickets_section.dart';
-import 'package:aion/features/tickets/presentation/widgets/documentation_tree_item.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_link_picker.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_needs_repair_banner.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_overflow_menu.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_parent_picker.dart';
-import 'package:aion/features/tickets/presentation/widgets/ticket_sync_status_badge.dart';
 
 /// The `/tickets/:id` route: ticket meta (priority, title, type, status,
 /// description, timestamps), a comment thread, and a pinned comment
@@ -224,7 +220,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             if (_isSyncable(state.ticket)) ...[
-                              TicketSyncStatusBadge(
+                              SyncStatusBadge(
                                 status: state.ticket.syncStatus,
                               ),
                               const SizedBox(width: 12),
@@ -620,7 +616,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                               return Column(
                                 children: [
                                   if (ticket.type == TicketType.page)
-                                    _SubPagesSection(
+                                    PageSubPagesSection(
                                       childDocs: state.childDocs,
                                       onTap: (id) =>
                                           context.go('/workspace/tickets/$id'),
@@ -632,7 +628,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                         ),
                                       ),
                                     ),
-                                  DocumentationLinkedTicketsSection(
+                                  LinkedTicketsSection(
                                     tickets: state.linkedTickets,
                                     onTap: (id) =>
                                         context.go('/workspace/tickets/$id'),
@@ -676,7 +672,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                       },
                                     ),
                                   ),
-                                  DocumentationBacklinksSection(
+                                  BacklinksSection(
                                     tickets: state.backlinks,
                                     onTap: (id) =>
                                         context.go('/workspace/tickets/$id'),
@@ -832,98 +828,6 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                 ],
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// A `page` ticket detail's "Sub-pages" section: a flat list of its direct
-/// `page`/`resource` children, via non-expandable [DocumentationTreeItem]
-/// rows, plus a header "+ Add" affordance (design.md §8.1/§8.2) that opens
-/// [CreateTicketScreen] pre-seeded with this page as parent — nesting an
-/// *existing* doc under this one has no dedicated picker yet, so [onAdd]
-/// creates a new one instead, same as the Documentation section's own
-/// "+ New page"/"+ New resource" actions.
-class _SubPagesSection extends StatelessWidget {
-  const _SubPagesSection({
-    required this.childDocs,
-    required this.onTap,
-    required this.onAdd,
-  });
-
-  final List<Ticket> childDocs;
-  final ValueChanged<String> onTap;
-
-  /// Called when the header's "+ Add" affordance is tapped.
-  final VoidCallback onAdd;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = ThemeScope.of(context);
-    final c = t.colors;
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: c.border, width: 1)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text(
-                  context.l10n.documentationSubPagesLabel,
-                  style: AionText.caption.copyWith(color: c.textMuted),
-                ),
-                if (childDocs.isNotEmpty) ...[
-                  const SizedBox(width: AionSpacing.sp8),
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: c.surfaceHover,
-                      borderRadius: BorderRadius.circular(5),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      child: Text(
-                        '${childDocs.length}',
-                        style: AionText.key.copyWith(color: c.textSecondary),
-                      ),
-                    ),
-                  ),
-                ],
-                const Spacer(),
-                AppButton(
-                  label: context.l10n.documentationAddAction,
-                  icon: PhosphorIcons.plusLight,
-                  variant: AppButtonVariant.ghost,
-                  onPressed: onAdd,
-                ),
-              ],
-            ),
-            const SizedBox(height: AionSpacing.sp12),
-            if (childDocs.isEmpty)
-              Text(
-                context.l10n.documentationSubPagesEmpty,
-                style: AionText.bodySm.copyWith(color: c.textMuted),
-              )
-            else
-              Column(
-                children: [
-                  for (final child in childDocs)
-                    DocumentationTreeItem(
-                      ticket: child,
-                      showChevron: false,
-                      onTap: () => onTap(child.id),
-                    ),
-                ],
-              ),
           ],
         ),
       ),
