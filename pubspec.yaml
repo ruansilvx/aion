@@ -59,6 +59,11 @@ dependencies:
   # Focus-only filesystem watcher for resource/page bidirectional sync
   watcher: ^1.2.1
 
+  # CommonMark + GFM Markdown parsing for page content (pure Dart, no
+  # Flutter/Material transitive dependency — see
+  # aion-arch/changes/page-content-markdown-editor/design.md)
+  markdown: ^7.3.0
+
   # Bundled on-device embedding model runtime (native + web, single API)
   flutter_onnxruntime: ^1.8.2
 

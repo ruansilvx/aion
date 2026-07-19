@@ -2,6 +2,7 @@
 
 export 'contracts/active_project_provider.dart';
 export 'contracts/embedding_provider.dart';
+export 'contracts/page_ticket_provider.dart';
 export 'database/app_database.dart';
 export 'database/registry_database.dart';
 export 'embeddings/bundled_embedding_provider.dart';
@@ -13,6 +14,7 @@ export 'markdown/ticket_markdown_parse_result.dart';
 export 'markdown/ticket_markdown_serializer.dart';
 export 'markdown/ticket_markdown_template.dart';
 export 'routing/app_router.dart';
+export 'routing/ticket_navigation.dart';
 export 'utils/duration_format.dart';
 export 'utils/platform_utils.dart';
 export 'utils/relative_time_format.dart';

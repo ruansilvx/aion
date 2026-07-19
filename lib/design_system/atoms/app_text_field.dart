@@ -48,7 +48,11 @@ class AppTextField extends StatefulWidget {
 
   /// Number of visible lines. `1` renders the single-line style; anything
   /// greater renders the multiline style with a 5-line minimum height.
-  final int maxLines;
+  /// `null` renders the multiline style with no upper bound (an
+  /// unbounded/expanding textarea), passed through to the underlying
+  /// `TextField` as-is — Flutter's `TextField` already supports
+  /// `maxLines: null` natively.
+  final int? maxLines;
 
   /// Which action the on-screen keyboard's action key performs.
   final TextInputAction? textInputAction;
@@ -99,7 +103,7 @@ class _AppTextFieldState extends State<AppTextField> {
   Widget build(BuildContext context) {
     final t = ThemeScope.of(context);
     final c = t.colors;
-    final isMultiline = widget.maxLines > 1;
+    final isMultiline = widget.maxLines == null || widget.maxLines! > 1;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

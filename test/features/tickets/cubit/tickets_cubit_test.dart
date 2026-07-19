@@ -256,8 +256,16 @@ void main() {
         when(() => repository.createTicket(any())).thenThrow(Exception('boom'));
       },
       build: () => TicketsCubit(repository),
-      act: (cubit) =>
-          cubit.createTicket(type: TicketType.task, title: 'New ticket'),
+      // createTicket now returns Future<Ticket> and rethrows after
+      // emitting TicketsError (see tickets_cubit.dart), so
+      // PageTicketProviderImpl.createPage can propagate a failure to
+      // PagesCubit — swallow the rethrow here, only the emitted states
+      // matter for this test.
+      act: (cubit) async {
+        try {
+          await cubit.createTicket(type: TicketType.task, title: 'New ticket');
+        } catch (_) {}
+      },
       expect: () => [const TicketCreating([]), isA<TicketsError>()],
     );
 
@@ -335,7 +343,14 @@ void main() {
         when(() => repository.updateTicket(any())).thenThrow(Exception('boom'));
       },
       build: () => TicketsCubit(repository),
-      act: (cubit) => cubit.updateTicket(ticket),
+      // updateTicket now returns Future<Ticket> and rethrows after
+      // emitting TicketsError (see tickets_cubit.dart) — swallow the
+      // rethrow here, only the emitted states matter for this test.
+      act: (cubit) async {
+        try {
+          await cubit.updateTicket(ticket);
+        } catch (_) {}
+      },
       expect: () => [isA<TicketsError>()],
     );
 

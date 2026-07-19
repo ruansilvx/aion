@@ -1,29 +1,36 @@
-// presentation/widgets/ticket_sync_status_badge.dart — TicketSyncStatusBadge (presentation layer).
+// design_system/molecules/sync_status_badge.dart — SyncStatusBadge widget (design-system layer).
 
 import 'package:flutter/widgets.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
-import 'package:aion/design_system/design_system.dart';
+import 'package:aion/design_system/atoms/app_spinner.dart';
+import 'package:aion/design_system/tokens/aion_colors.dart';
+import 'package:aion/design_system/tokens/aion_radius.dart';
+import 'package:aion/design_system/tokens/aion_text.dart';
+import 'package:aion/design_system/tokens/theme_scope.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sync_status.dart';
 
-/// A small icon+label indicator in the ticket detail header's trailing
+/// A small icon+label indicator in a ticket detail header's trailing
 /// cluster, showing a `resource`/`page` ticket's [TicketSyncStatus].
 /// Non-interactive except for a hover tooltip — a status readout, not a
-/// control. Per design.md §2, callers only render this for
-/// `resource`/`page` tickets; every other type has no file to fall out
-/// of sync with, so this widget doesn't build itself for them.
-class TicketSyncStatusBadge extends StatefulWidget {
-  /// Creates a [TicketSyncStatusBadge] for [status].
-  const TicketSyncStatusBadge({super.key, required this.status});
+/// control (the actual repair action lives in a separate repair-banner
+/// widget). Callers only render this for `resource`/`page` tickets;
+/// every other type has no file to fall out of sync with. Promoted from
+/// `TicketSyncStatusBadge` (per `project.md`'s Pattern 2), taking only
+/// [TicketSyncStatus] rather than a whole `Ticket`. Per
+/// `aion-arch/changes/page-content-markdown-editor/design.md` §6.
+class SyncStatusBadge extends StatefulWidget {
+  /// Creates a [SyncStatusBadge] for [status].
+  const SyncStatusBadge({super.key, required this.status});
 
   /// The sync status to render.
   final TicketSyncStatus status;
 
   @override
-  State<TicketSyncStatusBadge> createState() => _TicketSyncStatusBadgeState();
+  State<SyncStatusBadge> createState() => _SyncStatusBadgeState();
 }
 
-class _TicketSyncStatusBadgeState extends State<TicketSyncStatusBadge> {
+class _SyncStatusBadgeState extends State<SyncStatusBadge> {
   final _layerLink = LayerLink();
   OverlayEntry? _tooltipEntry;
 

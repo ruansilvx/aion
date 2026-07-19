@@ -1464,7 +1464,7 @@ class TicketListTile extends StatelessWidget {
       if (isSelectionActive) {
         context.read<TicketSelectionCubit>().toggle(ticket.id);
       } else {
-        context.go('/workspace/tickets/${ticket.id}');
+        context.go(ticketDetailRoute(ticket));
       }
     }
 
@@ -1618,60 +1618,6 @@ class PriorityBadge extends StatelessWidget {
 /// label. Color is derived from [type] via [AionColors.typeTask]/
 /// [AionColors.typeStory]/[AionColors.typeEpic]/[AionColors.typeResource]/
 /// [AionColors.typePage].
-class TypeChip extends StatelessWidget {
-  /// Creates a [TypeChip] for [type].
-  const TypeChip({super.key, required this.type, this.isRow = true});
-
-  /// The ticket type to render.
-  final TicketType type;
-
-  /// Whether to use the compact ticket-row sizing (`true`, default) or the
-  /// larger ticket-detail sizing (`false`).
-  final bool isRow;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = ThemeScope.of(context);
-    final c = t.colors;
-    final typeColor = switch (type) {
-      TicketType.story => c.typeStory,
-      TicketType.epic => c.typeEpic,
-      TicketType.resource => c.typeResource,
-      TicketType.page => c.typePage,
-      _ => c.typeTask,
-    };
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: typeColor.withValues(alpha: t.fillAlpha),
-        borderRadius: BorderRadius.circular(5),
-      ),
-      child: Padding(
-        padding: isRow
-            ? const EdgeInsets.fromLTRB(5, 2, 7, 2)
-            : const EdgeInsets.fromLTRB(6, 3, 8, 3),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            DecoratedBox(
-              decoration: BoxDecoration(
-                color: typeColor,
-                borderRadius: BorderRadius.circular(2),
-              ),
-              child: SizedBox(width: isRow ? 9 : 11, height: isRow ? 9 : 11),
-            ),
-            const SizedBox(width: 5),
-            Text(
-              ticketTypeLabel(context, type).toUpperCase(),
-              style: AionText.chip.copyWith(color: typeColor),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 /// A dot + label showing a ticket's workflow status.
 class StatusIndicator extends StatelessWidget {
   /// Creates a [StatusIndicator] for [status].

@@ -1,10 +1,12 @@
-// presentation/widgets/documentation_backlinks_section.dart — DocumentationBacklinksSection widget (presentation layer).
+// design_system/molecules/backlinks_section.dart — BacklinksSection widget (design-system layer).
 
 import 'package:flutter/widgets.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:aion/core/core.dart';
-import 'package:aion/design_system/design_system.dart';
+import 'package:aion/design_system/tokens/aion_radius.dart';
+import 'package:aion/design_system/tokens/aion_text.dart';
+import 'package:aion/design_system/tokens/theme_scope.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
@@ -12,16 +14,15 @@ import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 /// link to this one via `TicketLink` — derived, not authored, so this
 /// section has no "+ Add" affordance and is omitted entirely when
 /// [tickets] is empty. Grouping logic (which links belong here vs.
-/// [DocumentationLinkedTicketsSection]) lives in `TicketsCubit
-/// .loadDocumentRelations`, not this widget. Per design.md §8.4.
-class DocumentationBacklinksSection extends StatelessWidget {
-  /// Creates a [DocumentationBacklinksSection] listing [tickets]. Renders
-  /// nothing when [tickets] is empty.
-  const DocumentationBacklinksSection({
-    super.key,
-    required this.tickets,
-    required this.onTap,
-  });
+/// [LinkedTicketsSection]) lives in the caller, not this widget. Promoted
+/// from `DocumentationBacklinksSection` (per `project.md`'s Pattern 2) —
+/// already fully generic (only `List<Ticket>` + callback), so promoted
+/// as-is. Per
+/// `aion-arch/changes/page-content-markdown-editor/design.md` §5.
+class BacklinksSection extends StatelessWidget {
+  /// Creates a [BacklinksSection] listing [tickets]. Renders nothing when
+  /// [tickets] is empty.
+  const BacklinksSection({super.key, required this.tickets, required this.onTap});
 
   /// The backlinking `page`/`resource` tickets to render.
   final List<Ticket> tickets;
@@ -89,7 +90,7 @@ class DocumentationBacklinksSection extends StatelessWidget {
 }
 
 /// A single tappable backlink row: a type-icon chip (page vs. resource)
-/// instead of [TypeChip], since every row here is always page/resource.
+/// instead of a colored dot, since every row here is always page/resource.
 class _BacklinkRow extends StatefulWidget {
   const _BacklinkRow({required this.ticket, required this.onTap});
 

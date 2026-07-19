@@ -151,7 +151,9 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                     AppDropdown<TicketType>(
                       labelText: context.l10n.createTicketTypeLabel,
                       value: _selectedType,
-                      items: TicketType.values,
+                      items: TicketType.values
+                          .where((type) => type != TicketType.page)
+                          .toList(),
                       onChanged: (v) => setState(() {
                         _selectedType = v;
                         _selectedParentId = null;

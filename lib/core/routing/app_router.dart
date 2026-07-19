@@ -8,11 +8,15 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:aion/core/contracts/embedding_provider.dart';
+import 'package:aion/core/contracts/page_ticket_provider.dart';
 import 'package:aion/core/database/app_database.dart';
 import 'package:aion/core/git/git_repository_client.dart';
 import 'package:aion/core/markdown/ticket_markdown_serializer.dart';
 import 'package:aion/core/utils/platform_utils.dart';
+import 'package:aion/features/pages/presentation/screens/page_create_screen.dart';
+import 'package:aion/features/pages/presentation/screens/page_detail_screen.dart';
 import 'package:aion/features/projects/projects.dart';
+import 'package:aion/features/tickets/data/page_ticket_provider_impl.dart';
 import 'package:aion/features/tickets/data/repositories/drift_comment_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_link_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_repository.dart';
@@ -134,6 +138,24 @@ final appRouter = GoRouter(
                   CommentsCubit(context.read<CommentRepository>()),
               child: TicketDetailScreen(ticketId: id),
             );
+          },
+        ),
+        GoRoute(
+          path: '/workspace/pages/new',
+          builder: (context, state) {
+            final extra = state.extra;
+            return PageCreateScreen(
+              initialParentId: extra is PageCreateRouteExtra
+                  ? extra.initialParentId
+                  : null,
+            );
+          },
+        ),
+        GoRoute(
+          path: '/workspace/pages/:id',
+          builder: (context, state) {
+            final id = state.pathParameters['id']!;
+            return PageDetailScreen(pageId: id);
           },
         ),
       ],
@@ -339,7 +361,16 @@ class _WorkspaceShellState extends State<WorkspaceShell>
               projectRootPath: rootPath,
               linkRepository: context.read<TicketLinkRepository>(),
             ),
-            child: widget.child,
+            child: Builder(
+              builder: (context) => RepositoryProvider<PageTicketProvider>(
+                create: (context) => PageTicketProviderImpl(
+                  context.read<TicketsCubit>(),
+                  context.read<TicketRepository>(),
+                  context.read<TicketLinkRepository>(),
+                ),
+                child: widget.child,
+              ),
+            ),
           );
         },
       ),
