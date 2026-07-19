@@ -150,19 +150,70 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
                   style: AionText.caption.copyWith(color: c.textMuted),
                 ),
               ),
-              if (isNarrow) _buildNarrow(context) else _buildWide(context),
+              if (isNarrow)
+                _Narrow(
+                  controller: _controller,
+                  isEditing: _isEditing,
+                  isSaving: _isSaving,
+                  errorMessage: _errorMessage,
+                  semanticsLabel: widget.semanticsLabel,
+                  placeholder: widget.placeholder,
+                  onStartEditing: () => setState(() => _isEditing = true),
+                  onCancel: _cancel,
+                  onSave: _save,
+                )
+              else
+                _Wide(
+                  controller: _controller,
+                  previewText: _previewText,
+                  isSaving: _isSaving,
+                  errorMessage: _errorMessage,
+                  placeholder: widget.placeholder,
+                  onCancel: _cancel,
+                  onSave: _save,
+                ),
             ],
           ),
         );
       },
     );
   }
+}
 
-  Widget _buildNarrow(BuildContext context) {
+/// The narrow-layout body: a view/edit toggle (design.md §1's narrow
+/// breakpoint), either the rendered [MarkdownView] behind a pencil
+/// button or the editable textarea plus [_ActionRow]. All interaction
+/// state ([MarkdownEditor]'s `_isEditing`/`_isSaving`/`_errorMessage`)
+/// stays owned by [_MarkdownEditorState] — this class only renders it.
+class _Narrow extends StatelessWidget {
+  const _Narrow({
+    required this.controller,
+    required this.isEditing,
+    required this.isSaving,
+    required this.errorMessage,
+    required this.semanticsLabel,
+    required this.placeholder,
+    required this.onStartEditing,
+    required this.onCancel,
+    required this.onSave,
+  });
+
+  final TextEditingController controller;
+  final bool isEditing;
+  final bool isSaving;
+  final String? errorMessage;
+  final String semanticsLabel;
+  final String? placeholder;
+  final VoidCallback onStartEditing;
+  final VoidCallback onCancel;
+  final VoidCallback onSave;
+
+  @override
+  Widget build(BuildContext context) {
     final c = ThemeScope.of(context).colors;
 
-    if (!_isEditing) {
-      final isEmpty = _controller.text.trim().isEmpty;
+    if (!isEditing) {
+      final isEmpty = controller.text.trim().isEmpty;
       return Padding(
         padding: const EdgeInsets.all(AionSpacing.sp16),
         child: Column(
@@ -173,9 +224,9 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
                 const Spacer(),
                 Semantics(
                   button: true,
-                  label: widget.semanticsLabel,
+                  label: semanticsLabel,
                   child: GestureDetector(
-                    onTap: () => setState(() => _isEditing = true),
+                    onTap: onStartEditing,
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         borderRadius: const BorderRadius.all(
@@ -200,7 +251,7 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
             ),
             if (isEmpty)
               GestureDetector(
-                onTap: () => setState(() => _isEditing = true),
+                onTap: onStartEditing,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 24),
                   child: Column(
@@ -215,7 +266,7 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
                 ),
               )
             else
-              MarkdownView(source: _controller.text),
+              MarkdownView(source: controller.text),
           ],
         ),
       );
@@ -227,26 +278,46 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           AppTextField(
-            controller: _controller,
+            controller: controller,
             maxLines: null,
-            hintText: widget.placeholder,
+            hintText: placeholder,
           ),
-          if (_errorMessage != null) ...[
+          if (errorMessage != null) ...[
             const SizedBox(height: AionSpacing.sp8),
-            _ErrorRow(message: _errorMessage!),
+            _ErrorRow(message: errorMessage!),
           ],
           const SizedBox(height: AionSpacing.sp12),
-          _ActionRow(
-            isSaving: _isSaving,
-            onCancel: _cancel,
-            onSave: _save,
-          ),
+          _ActionRow(isSaving: isSaving, onCancel: onCancel, onSave: onSave),
         ],
       ),
     );
   }
+}
 
-  Widget _buildWide(BuildContext context) {
+/// The wide-layout body: a live raw/preview split view (design.md §1.5)
+/// plus [_ActionRow]. All interaction state stays owned by
+/// [_MarkdownEditorState] — this class only renders it.
+class _Wide extends StatelessWidget {
+  const _Wide({
+    required this.controller,
+    required this.previewText,
+    required this.isSaving,
+    required this.errorMessage,
+    required this.placeholder,
+    required this.onCancel,
+    required this.onSave,
+  });
+
+  final TextEditingController controller;
+  final String previewText;
+  final bool isSaving;
+  final String? errorMessage;
+  final String? placeholder;
+  final VoidCallback onCancel;
+  final VoidCallback onSave;
+
+  @override
+  Widget build(BuildContext context) {
     final c = ThemeScope.of(context).colors;
 
     return Column(
@@ -260,9 +331,9 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
               children: [
                 Expanded(
                   child: AppTextField(
-                    controller: _controller,
+                    controller: controller,
                     maxLines: null,
-                    hintText: widget.placeholder,
+                    hintText: placeholder,
                   ),
                 ),
                 const SizedBox(width: AionSpacing.sp16),
@@ -271,15 +342,15 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
                   child: const SizedBox(width: 1),
                 ),
                 const SizedBox(width: AionSpacing.sp16),
-                Expanded(child: MarkdownView(source: _previewText)),
+                Expanded(child: MarkdownView(source: previewText)),
               ],
             ),
           ),
         ),
-        if (_errorMessage != null)
+        if (errorMessage != null)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: _ErrorRow(message: _errorMessage!),
+            child: _ErrorRow(message: errorMessage!),
           ),
         DecoratedBox(
           decoration: BoxDecoration(
@@ -288,9 +359,9 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: _ActionRow(
-              isSaving: _isSaving,
-              onCancel: _cancel,
-              onSave: _save,
+              isSaving: isSaving,
+              onCancel: onCancel,
+              onSave: onSave,
             ),
           ),
         ),
@@ -356,7 +427,11 @@ class _ErrorRow extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        PhosphorIcon(PhosphorIcons.warningCircleLight, size: 16, color: c.danger),
+        PhosphorIcon(
+          PhosphorIcons.warningCircleLight,
+          size: 16,
+          color: c.danger,
+        ),
         const SizedBox(width: 8),
         Flexible(
           child: Text(
