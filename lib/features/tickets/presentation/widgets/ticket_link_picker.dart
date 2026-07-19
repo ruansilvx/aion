@@ -7,8 +7,6 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
-import 'package:aion/features/tickets/presentation/screens/tickets_list_screen.dart'
-    show TypeChip;
 
 /// A "+ Add" ghost-button trigger that opens a searchable overlay of
 /// [candidatesLoader]'s tickets, calling [onSelected] with the chosen

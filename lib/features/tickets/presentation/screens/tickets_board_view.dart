@@ -10,7 +10,6 @@ import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_selection_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
@@ -46,20 +45,6 @@ String ticketPriorityLabel(BuildContext context, TicketPriority priority) {
     TicketPriority.medium => l10n.ticketPriorityMedium,
     TicketPriority.low => l10n.ticketPriorityLow,
     TicketPriority.none => l10n.ticketPriorityNone,
-  };
-}
-
-/// Returns the display label for [type] (e.g. `"Story"`). Same
-/// one-place-mapping rationale as [ticketStatusLabel].
-String ticketTypeLabel(BuildContext context, TicketType type) {
-  final l10n = context.l10n;
-  return switch (type) {
-    TicketType.epic => l10n.ticketTypeEpic,
-    TicketType.story => l10n.ticketTypeStory,
-    TicketType.task => l10n.ticketTypeTask,
-    TicketType.resource => l10n.ticketTypeResource,
-    TicketType.page => l10n.ticketTypePage,
-    TicketType.chat => l10n.ticketTypeChat,
   };
 }
 

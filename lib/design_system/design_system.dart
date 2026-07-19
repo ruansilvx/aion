@@ -23,3 +23,4 @@ export 'molecules/markdown_editor.dart';
 export 'molecules/markdown_view.dart';
 export 'molecules/page_sub_pages_section.dart';
 export 'molecules/sync_status_badge.dart';
+export 'molecules/type_chip.dart';

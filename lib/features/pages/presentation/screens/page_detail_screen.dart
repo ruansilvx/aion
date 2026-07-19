@@ -3,6 +3,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
@@ -10,6 +11,7 @@ import 'package:aion/features/pages/presentation/cubit/pages_cubit.dart';
 import 'package:aion/features/pages/presentation/cubit/pages_state.dart';
 import 'package:aion/features/pages/presentation/screens/page_create_screen.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
 /// The `/workspace/pages/:id` route: a `page` ticket's title, Markdown
 /// content editor, sub-pages, linked tickets, and backlinks — no
@@ -78,36 +80,10 @@ class _PageDetailBody extends StatelessWidget {
           children: [
             BlocBuilder<PagesCubit, PagesState>(
               builder: (context, state) {
-                final title = state is PageDetailLoaded
-                    ? state.page.ticketId
-                    : '…';
-                return AppHeader(
-                  title: title,
-                  showBack: true,
+                final page = state is PageDetailLoaded ? state.page : null;
+                return _PageDetailHeader(
+                  page: page,
                   onBack: () => context.go('/workspace/documentation'),
-                  padding: const EdgeInsets.fromLTRB(20, 6, 20, 12),
-                  trailing: state is PageDetailLoaded
-                      ? Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            SyncStatusBadge(status: state.page.syncStatus),
-                            const SizedBox(width: 12),
-                            DeleteActionButton(
-                              semanticsLabel:
-                                  context.l10n.ticketDeleteMenuItem,
-                              confirmTitle:
-                                  context.l10n.ticketDeleteConfirmTitle,
-                              confirmMessage: context.l10n
-                                  .ticketTrashConfirmMessage(1),
-                              confirmLabel:
-                                  context.l10n.ticketDeleteConfirmAction,
-                              onConfirmed: () => context
-                                  .read<PagesCubit>()
-                                  .trashPage(state.page.id),
-                            ),
-                          ],
-                        )
-                      : null,
                 );
               },
             ),
@@ -146,9 +122,6 @@ class _PageDetailContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final t = ThemeScope.of(context);
-    final c = t.colors;
-
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -158,27 +131,6 @@ class _PageDetailContent extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                InlineEditableField<String>(
-                  displayText: page.title,
-                  editText: page.title,
-                  maxLines: 1,
-                  textStyle: AionText.h2.copyWith(color: c.textPrimary),
-                  placeholder: context.l10n.pageDetailTitlePlaceholder,
-                  semanticsLabel: context.l10n.ticketDetailEditTitle,
-                  parser: (raw) {
-                    final trimmed = raw.trim();
-                    if (trimmed.isEmpty) {
-                      throw FormatException(
-                        context.l10n.ticketDetailTitleEmptyError,
-                      );
-                    }
-                    return trimmed;
-                  },
-                  onCommit: (v) => context
-                      .read<PagesCubit>()
-                      .updatePage(page.copyWith(title: v)),
-                ),
-                const SizedBox(height: AionSpacing.sp16),
                 MarkdownEditor(
                   initialValue: page.description ?? '',
                   placeholder: context.l10n.pageDetailContentPlaceholder,
@@ -213,6 +165,121 @@ class _PageDetailContent extends StatelessWidget {
             },
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// `PageDetailScreen`'s header: back button, [TypeChip] ("PAGE"), an
+/// inline-editable title (with the mono `ticketId` as a small eyebrow above
+/// it), the sync-status badge, and the delete action — per design.md §3.1.
+/// Unlike other screens, this can't reuse [AppHeader] as-is: the title slot
+/// here needs to be an editable field with an eyebrow above it, not a
+/// plain string. [page] is `null` while the page is still loading.
+class _PageDetailHeader extends StatelessWidget {
+  /// Creates a [_PageDetailHeader] for [page] (`null` while loading).
+  const _PageDetailHeader({required this.page, required this.onBack});
+
+  /// The loaded page, or `null` while [PagesCubit.loadPage] is in flight.
+  final Ticket? page;
+
+  /// Called when the back button is tapped.
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    final page = this.page;
+
+    return ColoredBox(
+      color: c.surface,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 6, 20, 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Semantics(
+              label: context.l10n.commonBack,
+              button: true,
+              child: GestureDetector(
+                onTap: onBack,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: c.surfaceHover,
+                    border: Border.all(color: c.border, width: 1),
+                    borderRadius: const BorderRadius.all(AionRadius.iconBtn),
+                  ),
+                  child: SizedBox(
+                    width: 37,
+                    height: 37,
+                    child: Center(
+                      child: PhosphorIcon(
+                        PhosphorIcons.caretLeftLight,
+                        size: 18,
+                        color: c.textSecondary,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: AionSpacing.sp12),
+            if (page != null) ...[
+              const TypeChip(type: TicketType.page, isRow: false),
+              const SizedBox(width: AionSpacing.sp12),
+            ],
+            Expanded(
+              child: page == null
+                  ? Text('…', style: AionText.h2.copyWith(color: c.textPrimary))
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          page.ticketId,
+                          style: AionText.key.copyWith(color: c.textSecondary),
+                        ),
+                        const SizedBox(height: AionSpacing.sp4),
+                        InlineEditableField<String>(
+                          displayText: page.title,
+                          editText: page.title,
+                          maxLines: 1,
+                          textStyle: AionText.h2.copyWith(
+                            color: c.textPrimary,
+                          ),
+                          placeholder: context.l10n.pageDetailTitlePlaceholder,
+                          semanticsLabel: context.l10n.ticketDetailEditTitle,
+                          parser: (raw) {
+                            final trimmed = raw.trim();
+                            if (trimmed.isEmpty) {
+                              throw FormatException(
+                                context.l10n.ticketDetailTitleEmptyError,
+                              );
+                            }
+                            return trimmed;
+                          },
+                          onCommit: (v) => context
+                              .read<PagesCubit>()
+                              .updatePage(page.copyWith(title: v)),
+                        ),
+                      ],
+                    ),
+            ),
+            if (page != null) ...[
+              const SizedBox(width: AionSpacing.sp12),
+              SyncStatusBadge(status: page.syncStatus),
+              const SizedBox(width: 12),
+              DeleteActionButton(
+                semanticsLabel: context.l10n.ticketDeleteMenuItem,
+                confirmTitle: context.l10n.ticketDeleteConfirmTitle,
+                confirmMessage: context.l10n.ticketTrashConfirmMessage(1),
+                confirmLabel: context.l10n.ticketDeleteConfirmAction,
+                onConfirmed: () =>
+                    context.read<PagesCubit>().trashPage(page.id),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

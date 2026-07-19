@@ -313,5 +313,6 @@
   "pageCreateTitlePlaceholder": "Page title",
   "pageCreateParentFieldPlaceholder": "Optional",
   "pageCreateSubmitAction": "Create page",
-  "pageDetailContentLabel": "Content"
+  "pageDetailContentLabel": "Content",
+  "pageDetailMarkdownSaveError": "Couldn't save changes. Try again."
 }

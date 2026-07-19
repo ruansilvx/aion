@@ -6,8 +6,6 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
-import 'package:aion/features/tickets/presentation/screens/tickets_list_screen.dart'
-    show TypeChip;
 
 /// A single row in [TrashScreen]'s list. Deliberately simpler than a live
 /// [TicketListTile] row — no status indicator and no priority badge,
