@@ -163,18 +163,27 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
   /// [state], or an empty list otherwise. Shared by the header (Select
   /// toggle visibility), the body switch, and the selection bar's
   /// select-all wiring, so all three agree on "what's currently on
-  /// screen."
-  List<Ticket> _currentTickets(TicketsState state) => switch (state) {
-    TicketsLoaded(:final tickets) => tickets,
-    TicketCreating(:final tickets) => tickets,
-    TicketCreated(:final tickets) => tickets,
-    TicketStatusUpdating(:final tickets) => tickets,
-    TicketStatusUpdated(:final tickets) => tickets,
-    TicketsBatchTrashed(:final tickets) => tickets,
-    TicketsLoadingMore(:final tickets) => tickets,
-    TicketsLoadMoreFailed(:final tickets) => tickets,
-    _ => const <Ticket>[],
-  };
+  /// screen." Excludes `resource`/`page` tickets — those moved to the
+  /// Documentation section and are no longer shown here, in either list
+  /// or board mode.
+  List<Ticket> _currentTickets(TicketsState state) {
+    final tickets = switch (state) {
+      TicketsLoaded(:final tickets) => tickets,
+      TicketCreating(:final tickets) => tickets,
+      TicketCreated(:final tickets) => tickets,
+      TicketStatusUpdating(:final tickets) => tickets,
+      TicketStatusUpdated(:final tickets) => tickets,
+      TicketsBatchTrashed(:final tickets) => tickets,
+      TicketsLoadingMore(:final tickets) => tickets,
+      TicketsLoadMoreFailed(:final tickets) => tickets,
+      _ => const <Ticket>[],
+    };
+    return tickets
+        .where(
+          (t) => t.type != TicketType.resource && t.type != TicketType.page,
+        )
+        .toList();
+  }
 
   /// Whether at least one more page exists beyond the tickets currently on
   /// screen — drives both the flat list's scroll-triggered loading (via
@@ -287,6 +296,8 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                               const SizedBox(width: AionSpacing.sp8),
                               const _SwitchProjectButton(),
                               const SizedBox(width: AionSpacing.sp8),
+                              const _DocumentationEntryButton(),
+                              const SizedBox(width: AionSpacing.sp8),
                               const _TrashEntryButton(),
                               const SizedBox(width: AionSpacing.sp12),
                               DecoratedBox(
@@ -367,7 +378,17 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                               Expanded(
                                 child: AppDropdown<TicketType?>(
                                   value: _typeFilter,
-                                  items: const [null, ...TicketType.values],
+                                  // page/resource moved to the
+                                  // Documentation section and no longer
+                                  // appear in this list — excluded from
+                                  // the filter accordingly.
+                                  items: const [
+                                    null,
+                                    TicketType.epic,
+                                    TicketType.story,
+                                    TicketType.task,
+                                    TicketType.chat,
+                                  ],
                                   isActive: _typeFilter != null,
                                   semanticsLabel:
                                       context.l10n.ticketsListFilterTypeLabel,
@@ -967,6 +988,94 @@ class _SwitchProjectButtonState extends State<_SwitchProjectButton> {
   }
 }
 
+/// Header icon button navigating to the Documentation section
+/// (`/workspace/documentation`) — the primary home for `resource`/`page`
+/// tickets, no longer shown in this list. Same visual family as
+/// [_TrashEntryButton], placed to its left per design.md §5.3.
+class _DocumentationEntryButton extends StatefulWidget {
+  const _DocumentationEntryButton();
+
+  @override
+  State<_DocumentationEntryButton> createState() =>
+      _DocumentationEntryButtonState();
+}
+
+class _DocumentationEntryButtonState
+    extends State<_DocumentationEntryButton> {
+  bool _isHovered = false;
+  bool _isFocused = false;
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+
+    final fill = (_isPressed || _isHovered)
+        ? c.surfaceHover
+        : const Color(0x00000000);
+    final iconColor = _isHovered ? c.textPrimary : c.textSecondary;
+    final boxShadow = _isFocused
+        ? [
+            BoxShadow(
+              color: c.primary.withValues(alpha: t.isDark ? 0.30 : 0.16),
+              spreadRadius: 3,
+            ),
+          ]
+        : const <BoxShadow>[];
+
+    return Semantics(
+      button: true,
+      label: context.l10n.documentationEntryLabel,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: FocusableActionDetector(
+          actions: {
+            ActivateIntent: CallbackAction<ActivateIntent>(
+              onInvoke: (_) {
+                context.go('/workspace/documentation');
+                return null;
+              },
+            ),
+          },
+          onShowFocusHighlight: (value) => setState(() => _isFocused = value),
+          child: GestureDetector(
+            onTap: () => context.go('/workspace/documentation'),
+            onTapDown: (_) => setState(() => _isPressed = true),
+            onTapUp: (_) => setState(() => _isPressed = false),
+            onTapCancel: () => setState(() => _isPressed = false),
+            child: AnimatedScale(
+              scale: _isPressed ? 0.96 : 1.0,
+              duration: const Duration(milliseconds: 80),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 100),
+                decoration: BoxDecoration(
+                  color: fill,
+                  borderRadius: BorderRadius.all(AionRadius.iconBtn),
+                  boxShadow: boxShadow,
+                ),
+                child: SizedBox(
+                  width: 37,
+                  height: 37,
+                  child: Center(
+                    child: PhosphorIcon(
+                      PhosphorIcons.bookOpenLight,
+                      size: 20,
+                      color: iconColor,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Header icon button navigating to the Trash screen (`/tickets/trash`).
 /// Neutral, not danger-colored — this is navigation, not a destructive
 /// action.
@@ -1507,7 +1616,8 @@ class PriorityBadge extends StatelessWidget {
 
 /// A small chip showing a ticket's type as a colored square + uppercase
 /// label. Color is derived from [type] via [AionColors.typeTask]/
-/// [AionColors.typeStory]/[AionColors.typeEpic].
+/// [AionColors.typeStory]/[AionColors.typeEpic]/[AionColors.typeResource]/
+/// [AionColors.typePage].
 class TypeChip extends StatelessWidget {
   /// Creates a [TypeChip] for [type].
   const TypeChip({super.key, required this.type, this.isRow = true});
@@ -1526,6 +1636,8 @@ class TypeChip extends StatelessWidget {
     final typeColor = switch (type) {
       TicketType.story => c.typeStory,
       TicketType.epic => c.typeEpic,
+      TicketType.resource => c.typeResource,
+      TicketType.page => c.typePage,
       _ => c.typeTask,
     };
 

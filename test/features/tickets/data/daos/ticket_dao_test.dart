@@ -3,9 +3,12 @@
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:drift/drift.dart' show Value;
+
 import 'package:aion/core/core.dart';
 import 'package:aion/features/projects/projects.dart';
 import 'package:aion/features/tickets/data/daos/ticket_dao.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
 /// Dummy project [AppDatabase] now requires per-project addressing —
 /// unused here since every test passes an explicit in-memory executor.
@@ -46,6 +49,28 @@ void main() {
         status: 'backlog',
         createdAt: createdAtMs,
         updatedAt: createdAtMs,
+      ),
+      'AIO',
+    );
+  }
+
+  Future<void> insertDoc({
+    required String id,
+    required TicketType type,
+    String? parentId,
+    bool deleted = false,
+  }) async {
+    await dao.insertTicket(
+      TicketsTableCompanion.insert(
+        id: id,
+        ticketId: '',
+        type: type.name,
+        title: id,
+        status: 'backlog',
+        parentId: Value(parentId),
+        deletedAt: Value(deleted ? 1 : null),
+        createdAt: 0,
+        updatedAt: 0,
       ),
       'AIO',
     );
@@ -152,5 +177,100 @@ void main() {
         expect(rows.length, 3);
       },
     );
+  });
+
+  group('getTicketsByParent', () {
+    test('returns root-level docs of the given types when parentId is null', () async {
+      await insertDoc(id: 'root-page', type: TicketType.page);
+      await insertDoc(id: 'root-resource', type: TicketType.resource);
+      await insertDoc(id: 'root-task', type: TicketType.task);
+      await insertDoc(
+        id: 'nested-page',
+        type: TicketType.page,
+        parentId: 'root-page',
+      );
+
+      final rows = await dao.getTicketsByParent(
+        null,
+        types: const [TicketType.page, TicketType.resource],
+      );
+
+      expect(rows.map((t) => t.id).toSet(), {'root-page', 'root-resource'});
+    });
+
+    test('returns a page\'s direct children of the given types', () async {
+      await insertDoc(id: 'parent-page', type: TicketType.page);
+      await insertDoc(
+        id: 'child-page',
+        type: TicketType.page,
+        parentId: 'parent-page',
+      );
+      await insertDoc(
+        id: 'child-resource',
+        type: TicketType.resource,
+        parentId: 'parent-page',
+      );
+      await insertDoc(
+        id: 'grandchild',
+        type: TicketType.page,
+        parentId: 'child-page',
+      );
+
+      final rows = await dao.getTicketsByParent(
+        'parent-page',
+        types: const [TicketType.page, TicketType.resource],
+      );
+
+      expect(rows.map((t) => t.id).toSet(), {'child-page', 'child-resource'});
+    });
+
+    test('excludes soft-deleted tickets', () async {
+      await insertDoc(id: 'live', type: TicketType.page);
+      await insertDoc(id: 'trashed', type: TicketType.page, deleted: true);
+
+      final rows = await dao.getTicketsByParent(
+        null,
+        types: const [TicketType.page],
+      );
+
+      expect(rows.map((t) => t.id), ['live']);
+    });
+  });
+
+  group('getAllTicketsByType', () {
+    test('returns every live ticket of the given types regardless of nesting', () async {
+      await insertDoc(id: 'root-page', type: TicketType.page);
+      await insertDoc(
+        id: 'nested-page',
+        type: TicketType.page,
+        parentId: 'root-page',
+      );
+      await insertDoc(
+        id: 'nested-resource',
+        type: TicketType.resource,
+        parentId: 'nested-page',
+      );
+      await insertDoc(id: 'unrelated-task', type: TicketType.task);
+
+      final rows = await dao.getAllTicketsByType(const [
+        TicketType.page,
+        TicketType.resource,
+      ]);
+
+      expect(rows.map((t) => t.id).toSet(), {
+        'root-page',
+        'nested-page',
+        'nested-resource',
+      });
+    });
+
+    test('excludes soft-deleted tickets', () async {
+      await insertDoc(id: 'live', type: TicketType.resource);
+      await insertDoc(id: 'trashed', type: TicketType.resource, deleted: true);
+
+      final rows = await dao.getAllTicketsByType(const [TicketType.resource]);
+
+      expect(rows.map((t) => t.id), ['live']);
+    });
   });
 }

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
 import 'package:aion/core/contracts/embedding_provider.dart';
+import 'package:aion/core/database/app_database.dart';
 import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
 import 'package:aion/features/tickets/tickets.dart';
 
@@ -14,6 +15,8 @@ class MockTicketRepository extends Mock implements TicketRepository {}
 class MockEmbeddingProvider extends Mock implements EmbeddingProvider {}
 
 class MockTicketGitProjector extends Mock implements TicketGitProjector {}
+
+class MockTicketLinkRepository extends Mock implements TicketLinkRepository {}
 
 void main() {
   late MockTicketRepository repository;
@@ -1117,5 +1120,187 @@ void main() {
         ],
       );
     });
+  });
+
+  group('loadDocumentRelations', () {
+    late MockTicketLinkRepository linkRepository;
+
+    final page = Ticket(
+      id: 'page-1',
+      ticketId: 'AIO-10',
+      type: TicketType.page,
+      title: 'Doc page',
+      status: TicketStatus.backlog,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final childPage = Ticket(
+      id: 'page-2',
+      ticketId: 'AIO-11',
+      type: TicketType.page,
+      title: 'Child page',
+      status: TicketStatus.backlog,
+      parentId: page.id,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final linkedTask = Ticket(
+      id: 'task-1',
+      ticketId: 'AIO-12',
+      type: TicketType.task,
+      title: 'Linked task',
+      status: TicketStatus.backlog,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final backlinkPage = Ticket(
+      id: 'page-3',
+      ticketId: 'AIO-13',
+      type: TicketType.page,
+      title: 'Backlinking page',
+      status: TicketStatus.backlog,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final resourceTicket = Ticket(
+      id: 'resource-1',
+      ticketId: 'AIO-14',
+      type: TicketType.resource,
+      title: 'A resource',
+      status: TicketStatus.backlog,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    setUpAll(() {
+      registerFallbackValue(TicketLinkType.relatesTo);
+    });
+
+    setUp(() {
+      linkRepository = MockTicketLinkRepository();
+    });
+
+    TicketsCubit buildCubit() =>
+        TicketsCubit(repository, linkRepository: linkRepository);
+
+    blocTest<TicketsCubit, TicketsState>(
+      'populates childDocs/linkedTickets/backlinks for a page ticket',
+      setUp: () {
+        when(
+          () => repository.getTicketById(page.id),
+        ).thenAnswer((_) async => page);
+        when(
+          () => repository.getTicketsByParent(
+            page.id,
+            types: const [TicketType.page, TicketType.resource],
+          ),
+        ).thenAnswer((_) async => [childPage]);
+        when(() => linkRepository.getLinksForTicket(page.id)).thenAnswer(
+          (_) async => [
+            TicketLinkData(
+              id: 'link-1',
+              sourceTicketId: page.id,
+              targetTicketId: linkedTask.id,
+              linkType: TicketLinkType.relatesTo.name,
+            ),
+            TicketLinkData(
+              id: 'link-2',
+              sourceTicketId: backlinkPage.id,
+              targetTicketId: page.id,
+              linkType: TicketLinkType.relatesTo.name,
+            ),
+          ],
+        );
+        when(
+          () => repository.getTicketById(linkedTask.id),
+        ).thenAnswer((_) async => linkedTask);
+        when(
+          () => repository.getTicketById(backlinkPage.id),
+        ).thenAnswer((_) async => backlinkPage);
+      },
+      build: buildCubit,
+      seed: () => TicketDetailLoaded(page),
+      act: (cubit) => cubit.loadDocumentRelations(page.id),
+      expect: () => [
+        TicketDetailLoaded(
+          page,
+          childDocs: [childPage],
+          linkedTickets: [linkedTask],
+          backlinks: [backlinkPage],
+        ),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'resource tickets never fetch childDocs (always empty)',
+      setUp: () {
+        when(
+          () => repository.getTicketById(resourceTicket.id),
+        ).thenAnswer((_) async => resourceTicket);
+        when(
+          () => linkRepository.getLinksForTicket(resourceTicket.id),
+        ).thenAnswer((_) async => []);
+      },
+      build: buildCubit,
+      seed: () => TicketDetailLoaded(resourceTicket),
+      act: (cubit) => cubit.loadDocumentRelations(resourceTicket.id),
+      // Cubit.emit skips re-emitting a state Equatable-equal to the
+      // current one — the seed's default childDocs/linkedTickets/
+      // backlinks (all `const []`) already match what this resolves to,
+      // so no new state is emitted. The `verify` below is what actually
+      // confirms the empty-childDocs behavior.
+      expect: () => [],
+      verify: (_) {
+        verifyNever(
+          () => repository.getTicketsByParent(
+            any(),
+            types: any(named: 'types'),
+          ),
+        );
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'no-ops for a non-page/resource ticket type',
+      setUp: () {
+        when(
+          () => repository.getTicketById(ticket.id),
+        ).thenAnswer((_) async => ticket);
+      },
+      build: buildCubit,
+      seed: () => TicketDetailLoaded(ticket),
+      act: (cubit) => cubit.loadDocumentRelations(ticket.id),
+      expect: () => [],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'no-ops when no TicketLinkRepository was provided',
+      setUp: () {
+        when(
+          () => repository.getTicketById(page.id),
+        ).thenAnswer((_) async => page);
+        when(
+          () => repository.getTicketsByParent(
+            page.id,
+            types: const [TicketType.page, TicketType.resource],
+          ),
+        ).thenAnswer((_) async => []);
+      },
+      build: () => TicketsCubit(repository), // no linkRepository
+      seed: () => TicketDetailLoaded(page),
+      act: (cubit) => cubit.loadDocumentRelations(page.id),
+      // Same Equatable short-circuit as above: the resolved
+      // childDocs/linkedTickets/backlinks match the seed's defaults, so
+      // no new state is emitted.
+      expect: () => [],
+      verify: (_) {
+        verify(
+          () => repository.getTicketsByParent(
+            page.id,
+            types: const [TicketType.page, TicketType.resource],
+          ),
+        ).called(1);
+      },
+    );
   });
 }

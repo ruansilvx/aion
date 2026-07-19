@@ -16,17 +16,24 @@ import 'package:aion/features/tickets/data/services/ticket_repair_service.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
 import 'package:aion/features/tickets/domain/enums/comment_author_type.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sync_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
+import 'package:aion/features/tickets/domain/repositories/ticket_link_repository.dart';
 import 'package:aion/features/tickets/presentation/cubit/comments_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/comments_state.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_repair_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
+import 'package:aion/features/tickets/presentation/screens/create_ticket_screen.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_list_screen.dart';
+import 'package:aion/features/tickets/presentation/widgets/documentation_backlinks_section.dart';
+import 'package:aion/features/tickets/presentation/widgets/documentation_linked_tickets_section.dart';
+import 'package:aion/features/tickets/presentation/widgets/documentation_tree_item.dart';
+import 'package:aion/features/tickets/presentation/widgets/ticket_link_picker.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_needs_repair_banner.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_overflow_menu.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_parent_picker.dart';
@@ -36,7 +43,10 @@ import 'package:aion/features/tickets/presentation/widgets/ticket_sync_status_ba
 /// description, timestamps), a comment thread, and a pinned comment
 /// composer. [TicketsCubit] is read from the root-level provider;
 /// [CommentsCubit] is provided per-route by [appRouter](../../../../core/routing/app_router.dart)
-/// since comments are screen-scoped.
+/// since comments are screen-scoped. For `page`/`resource` tickets, also
+/// renders three Documentation-section sections — Sub-pages (`page` only),
+/// Linked Tickets, and Backlinks — populated via
+/// [TicketsCubit.loadDocumentRelations].
 class TicketDetailScreen extends StatefulWidget {
   /// Creates a [TicketDetailScreen] for the ticket with internal id [ticketId].
   const TicketDetailScreen({super.key, required this.ticketId});
@@ -58,6 +68,12 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   /// `WorkspaceShell`) — reads are guarded with [_tryReadRegistry]
   /// rather than assuming desktop.
   String? _registeredTicketId;
+
+  /// The internal ticket id [loadDocumentRelations] was last triggered
+  /// for — guards against re-triggering on every re-emitted
+  /// [TicketDetailLoaded] (that method itself re-emits
+  /// [TicketDetailLoaded] once it resolves, which would otherwise loop).
+  String? _relationsLoadedForId;
 
   @override
   void initState() {
@@ -180,6 +196,13 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
           AppToast.show(context, context.l10n.ticketInvalidParentError);
         } else if (state is TicketDetailLoaded) {
           _registerActiveTicket(state.ticket.ticketId);
+          final ticket = state.ticket;
+          if ((ticket.type == TicketType.page ||
+                  ticket.type == TicketType.resource) &&
+              _relationsLoadedForId != ticket.id) {
+            _relationsLoadedForId = ticket.id;
+            context.read<TicketsCubit>().loadDocumentRelations(ticket.id);
+          }
         }
       },
       child: ColoredBox(
@@ -584,6 +607,84 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                               },
                             ),
                           ),
+                          BlocBuilder<TicketsCubit, TicketsState>(
+                            builder: (context, state) {
+                              if (state is! TicketDetailLoaded) {
+                                return const SizedBox.shrink();
+                              }
+                              final ticket = state.ticket;
+                              if (ticket.type != TicketType.page &&
+                                  ticket.type != TicketType.resource) {
+                                return const SizedBox.shrink();
+                              }
+                              return Column(
+                                children: [
+                                  if (ticket.type == TicketType.page)
+                                    _SubPagesSection(
+                                      childDocs: state.childDocs,
+                                      onTap: (id) =>
+                                          context.go('/workspace/tickets/$id'),
+                                      onAdd: () => context.push(
+                                        '/workspace/tickets/new',
+                                        extra: CreateTicketRouteExtra(
+                                          initialType: TicketType.page,
+                                          initialParentId: ticket.id,
+                                        ),
+                                      ),
+                                    ),
+                                  DocumentationLinkedTicketsSection(
+                                    tickets: state.linkedTickets,
+                                    onTap: (id) =>
+                                        context.go('/workspace/tickets/$id'),
+                                    trailing: TicketLinkPicker(
+                                      candidatesLoader: () async {
+                                        final all = await context
+                                            .read<TicketsCubit>()
+                                            .getAllTickets();
+                                        final linkedIds = {
+                                          for (final t in state.linkedTickets)
+                                            t.id,
+                                          for (final t in state.backlinks)
+                                            t.id,
+                                        };
+                                        return all
+                                            .where(
+                                              (candidate) =>
+                                                  candidate.id != ticket.id &&
+                                                  !linkedIds.contains(
+                                                    candidate.id,
+                                                  ) &&
+                                                  candidate.type !=
+                                                      TicketType.page &&
+                                                  candidate.type !=
+                                                      TicketType.resource,
+                                            )
+                                            .toList();
+                                      },
+                                      onSelected: (selected) async {
+                                        await context
+                                            .read<TicketLinkRepository>()
+                                            .createLink(
+                                              sourceTicketId: ticket.id,
+                                              targetTicketId: selected.id,
+                                              linkType: TicketLinkType.relatesTo,
+                                            );
+                                        if (!context.mounted) return;
+                                        await context
+                                            .read<TicketsCubit>()
+                                            .loadDocumentRelations(ticket.id);
+                                      },
+                                    ),
+                                  ),
+                                  DocumentationBacklinksSection(
+                                    tickets: state.backlinks,
+                                    onTap: (id) =>
+                                        context.go('/workspace/tickets/$id'),
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
                           Container(color: c.border, height: 1),
                           Padding(
                             padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
@@ -731,6 +832,98 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                 ],
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A `page` ticket detail's "Sub-pages" section: a flat list of its direct
+/// `page`/`resource` children, via non-expandable [DocumentationTreeItem]
+/// rows, plus a header "+ Add" affordance (design.md §8.1/§8.2) that opens
+/// [CreateTicketScreen] pre-seeded with this page as parent — nesting an
+/// *existing* doc under this one has no dedicated picker yet, so [onAdd]
+/// creates a new one instead, same as the Documentation section's own
+/// "+ New page"/"+ New resource" actions.
+class _SubPagesSection extends StatelessWidget {
+  const _SubPagesSection({
+    required this.childDocs,
+    required this.onTap,
+    required this.onAdd,
+  });
+
+  final List<Ticket> childDocs;
+  final ValueChanged<String> onTap;
+
+  /// Called when the header's "+ Add" affordance is tapped.
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: c.border, width: 1)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  context.l10n.documentationSubPagesLabel,
+                  style: AionText.caption.copyWith(color: c.textMuted),
+                ),
+                if (childDocs.isNotEmpty) ...[
+                  const SizedBox(width: AionSpacing.sp8),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: c.surfaceHover,
+                      borderRadius: BorderRadius.circular(5),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      child: Text(
+                        '${childDocs.length}',
+                        style: AionText.key.copyWith(color: c.textSecondary),
+                      ),
+                    ),
+                  ),
+                ],
+                const Spacer(),
+                AppButton(
+                  label: context.l10n.documentationAddAction,
+                  icon: PhosphorIcons.plusLight,
+                  variant: AppButtonVariant.ghost,
+                  onPressed: onAdd,
+                ),
+              ],
+            ),
+            const SizedBox(height: AionSpacing.sp12),
+            if (childDocs.isEmpty)
+              Text(
+                context.l10n.documentationSubPagesEmpty,
+                style: AionText.bodySm.copyWith(color: c.textMuted),
+              )
+            else
+              Column(
+                children: [
+                  for (final child in childDocs)
+                    DocumentationTreeItem(
+                      ticket: child,
+                      showChevron: false,
+                      onTap: () => onTap(child.id),
+                    ),
+                ],
+              ),
           ],
         ),
       ),

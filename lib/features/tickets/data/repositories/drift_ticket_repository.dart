@@ -272,6 +272,24 @@ class DriftTicketRepository implements TicketRepository {
     return rows.map(_toEntity).toList();
   }
 
+  @override
+  Future<List<Ticket>> getTicketsByParent(
+    String? parentId, {
+    required List<TicketType> types,
+  }) async {
+    final rows = await _db.ticketDao.getTicketsByParent(
+      parentId,
+      types: types,
+    );
+    return rows.map(_toEntity).toList();
+  }
+
+  @override
+  Future<List<Ticket>> getAllTicketsByType(List<TicketType> types) async {
+    final rows = await _db.ticketDao.getAllTicketsByType(types);
+    return rows.map(_toEntity).toList();
+  }
+
   /// Maps a generated [TicketData] row to the [Ticket] domain entity,
   /// falling back to safe defaults for unrecognised enum strings.
   Ticket _toEntity(TicketData row) {

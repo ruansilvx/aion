@@ -212,6 +212,40 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
     ).map((row) => ticketsTable.map(row.data)).get();
   }
 
+  /// Returns every live (non-trashed) ticket row whose `parent_id` equals
+  /// [parentId] (or, when [parentId] is `null`, every live row with a
+  /// `NULL` `parent_id`) and whose `type` is one of [types]. Used by the
+  /// Documentation section to load one tree level (root docs, or one
+  /// page's direct children) at a time.
+  Future<List<TicketData>> getTicketsByParent(
+    String? parentId, {
+    required List<TicketType> types,
+  }) {
+    final typeNames = types.map((t) => t.name).toList();
+    final q = select(ticketsTable)
+      ..where((t) => t.deletedAt.isNull())
+      ..where((t) => t.type.isIn(typeNames))
+      ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]);
+    if (parentId == null) {
+      q.where((t) => t.parentId.isNull());
+    } else {
+      q.where((t) => t.parentId.equals(parentId));
+    }
+    return q.get();
+  }
+
+  /// Returns every live (non-trashed) ticket row whose `type` is one of
+  /// [types], regardless of `parent_id` or nesting depth. Used by
+  /// [TicketDocumentSearchService] to scan every page/resource ticket.
+  Future<List<TicketData>> getAllTicketsByType(List<TicketType> types) {
+    final typeNames = types.map((t) => t.name).toList();
+    return (select(ticketsTable)
+          ..where((t) => t.deletedAt.isNull())
+          ..where((t) => t.type.isIn(typeNames))
+          ..orderBy([(t) => OrderingTerm.desc(t.createdAt)]))
+        .get();
+  }
+
   /// Converts free-typed search text into a safe FTS5 MATCH query: each
   /// whitespace-separated token becomes a quoted, prefix-matched literal
   /// (`"token"*`), ANDed together (FTS5's default when terms are just
