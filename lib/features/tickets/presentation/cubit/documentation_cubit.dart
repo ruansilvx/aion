@@ -1,5 +1,7 @@
 // presentation/cubit/documentation_cubit.dart — DocumentationCubit business logic (presentation layer).
 
+import 'dart:async';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:aion/features/tickets/data/services/ticket_document_search_service.dart';
@@ -23,6 +25,19 @@ class DocumentationCubit extends Cubit<DocumentationState> {
 
   /// Types the Documentation section shows — never board tickets.
   static const _documentTypes = [TicketType.page, TicketType.resource];
+
+  /// How long [search] waits after the most recent call before actually
+  /// querying — debouncing lives here, not in the calling widget (a
+  /// Cubit is not required to be a thin pass-through; this is business
+  /// logic, not view rendering).
+  static const _searchDebounceDuration = Duration(milliseconds: 250);
+
+  Timer? _searchDebounce;
+
+  /// Bumped on every [search]/[clearSearch] call, so a debounced search
+  /// that's since been superseded (a newer keystroke, or a clear) detects
+  /// it's stale and drops its result instead of emitting over newer state.
+  int _searchGeneration = 0;
 
   /// Fetches every root-level (`parentId == null`) `page`/`resource`
   /// ticket. Emits [DocumentationLoading] then [DocumentationLoaded] (with
@@ -106,43 +121,62 @@ class DocumentationCubit extends Cubit<DocumentationState> {
   /// Runs an embedding-ranked search for [query] via
   /// [TicketDocumentSearchService.search], switching the body into flat
   /// search-result mode. An empty/whitespace-only [query] is equivalent to
-  /// [clearSearch]. No debounce here — the calling screen debounces
-  /// keystrokes before invoking this, same pattern as
-  /// `TicketsListScreen`'s own search field.
-  Future<void> search(String query) async {
+  /// [clearSearch]. Debounced internally by [_searchDebounceDuration] —
+  /// safe to call on every keystroke; only the last call within the
+  /// debounce window actually queries. The returned future resolves once
+  /// the debounce window elapses and the (possibly superseded) query
+  /// finishes, so callers that `await` it still see real completion.
+  Future<void> search(String query) {
+    _searchDebounce?.cancel();
+    final generation = ++_searchGeneration;
+
     final trimmed = query.trim();
     if (trimmed.isEmpty) {
-      await clearSearch();
-      return;
+      return clearSearch();
     }
 
-    try {
-      final results = await _searchService.search(trimmed);
-      final current = state;
-      final base = current is DocumentationLoaded
-          ? current
-          : const DocumentationLoaded(
-              rootDocs: [],
-              childrenByParentId: {},
-              expandedIds: {},
-            );
-      emit(
-        DocumentationLoaded(
-          rootDocs: base.rootDocs,
-          childrenByParentId: base.childrenByParentId,
-          expandedIds: base.expandedIds,
-          searchResults: results,
-        ),
-      );
-    } catch (e) {
-      emit(DocumentationError(e.toString()));
-    }
+    final completer = Completer<void>();
+    _searchDebounce = Timer(_searchDebounceDuration, () async {
+      try {
+        final results = await _searchService.search(trimmed);
+        if (generation == _searchGeneration) {
+          final current = state;
+          final base = current is DocumentationLoaded
+              ? current
+              : const DocumentationLoaded(
+                  rootDocs: [],
+                  childrenByParentId: {},
+                  expandedIds: {},
+                );
+          emit(
+            DocumentationLoaded(
+              rootDocs: base.rootDocs,
+              childrenByParentId: base.childrenByParentId,
+              expandedIds: base.expandedIds,
+              searchResults: results,
+            ),
+          );
+        }
+      } catch (e) {
+        if (generation == _searchGeneration) {
+          emit(DocumentationError(e.toString()));
+        }
+      } finally {
+        completer.complete();
+      }
+    });
+    return completer.future;
   }
 
-  /// Clears the active search, returning the body to tree mode. No-ops if
-  /// the cubit isn't in [DocumentationLoaded] with a non-null
-  /// `searchResults`.
+  /// Clears the active search, returning the body to tree mode. Cancels
+  /// any pending debounced [search] first, so a stale query can never
+  /// resolve after a clear and silently re-open search mode. No-ops on
+  /// the [DocumentationLoaded] state change if the cubit isn't in that
+  /// state with a non-null `searchResults`.
   Future<void> clearSearch() async {
+    _searchDebounce?.cancel();
+    _searchGeneration++;
+
     final current = state;
     if (current is! DocumentationLoaded || current.searchResults == null) {
       return;
@@ -154,5 +188,11 @@ class DocumentationCubit extends Cubit<DocumentationState> {
         expandedIds: current.expandedIds,
       ),
     );
+  }
+
+  @override
+  Future<void> close() {
+    _searchDebounce?.cancel();
+    return super.close();
   }
 }

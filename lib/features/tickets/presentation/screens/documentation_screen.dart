@@ -1,7 +1,5 @@
 // presentation/screens/documentation_screen.dart — DocumentationScreen root screen (presentation layer).
 
-import 'dart:async';
-
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -31,7 +29,6 @@ class DocumentationScreen extends StatefulWidget {
 
 class _DocumentationScreenState extends State<DocumentationScreen> {
   final _searchController = TextEditingController();
-  Timer? _searchDebounce;
 
   @override
   void initState() {
@@ -42,17 +39,15 @@ class _DocumentationScreenState extends State<DocumentationScreen> {
 
   @override
   void dispose() {
-    _searchDebounce?.cancel();
     _searchController.removeListener(_handleSearchTextChanged);
     _searchController.dispose();
     super.dispose();
   }
 
+  // No widget-level debounce — DocumentationCubit.search debounces
+  // internally, so every keystroke can call it directly.
   void _handleSearchTextChanged() {
-    _searchDebounce?.cancel();
-    _searchDebounce = Timer(const Duration(milliseconds: 250), () {
-      context.read<DocumentationCubit>().search(_searchController.text);
-    });
+    context.read<DocumentationCubit>().search(_searchController.text);
   }
 
   void _clearSearch() {

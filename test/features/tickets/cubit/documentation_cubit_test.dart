@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -177,6 +179,42 @@ void main() {
           searchResults: [rootPage],
         ),
       ],
+    );
+
+    blocTest<DocumentationCubit, DocumentationState>(
+      'debounces rapid calls — only the last query within the window is searched',
+      setUp: () {
+        when(
+          () => searchService.search('final'),
+        ).thenAnswer((_) async => [rootPage]);
+      },
+      build: buildCubit,
+      seed: () => DocumentationLoaded(
+        rootDocs: [rootPage],
+        childrenByParentId: const {},
+        expandedIds: const {},
+      ),
+      act: (cubit) async {
+        // Fire-and-forget the superseded calls; only await the last one,
+        // matching how the widget calls search() on every keystroke with
+        // no debounce of its own.
+        unawaited(cubit.search('f'));
+        unawaited(cubit.search('fin'));
+        await cubit.search('final');
+      },
+      expect: () => [
+        DocumentationLoaded(
+          rootDocs: [rootPage],
+          childrenByParentId: const {},
+          expandedIds: const {},
+          searchResults: [rootPage],
+        ),
+      ],
+      verify: (_) {
+        verifyNever(() => searchService.search('f'));
+        verifyNever(() => searchService.search('fin'));
+        verify(() => searchService.search('final')).called(1);
+      },
     );
 
     blocTest<DocumentationCubit, DocumentationState>(
