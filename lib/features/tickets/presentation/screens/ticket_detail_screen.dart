@@ -104,17 +104,6 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     }
   }
 
-  /// [TicketRepairService] is only provided on desktop with a resolved
-  /// project directory — same nullability rationale as
-  /// [_tryReadRegistry].
-  TicketRepairService? _tryReadRepairService(BuildContext context) {
-    try {
-      return context.read<TicketRepairService>();
-    } catch (_) {
-      return null;
-    }
-  }
-
   void _registerActiveTicket(String ticketId) {
     if (_registeredTicketId == ticketId) return;
     final registry = _tryReadRegistry(context);
@@ -136,40 +125,6 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
       return false;
     }
     return _tryReadRegistry(context) != null;
-  }
-
-  /// The active project's root directory, or `null` if unavailable
-  /// (mobile/web, or [ActiveProjectProvider] not found — e.g. a screen
-  /// test that doesn't wrap the full app-root provider tree).
-  String? _tryReadRootPath(BuildContext context) {
-    try {
-      return context.read<ActiveProjectProvider>().activeProject?.rootPath;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /// Builds the [TicketNeedsRepairBanner] wrapped in its own
-  /// [TicketRepairCubit], scoped to [ticket]'s `ticketId`/rootPath. Only
-  /// called when [_isSyncable] and `needsRepair` are both true, at which
-  /// point [_tryReadRepairService]/[_tryReadRootPath] are guaranteed
-  /// non-null (both gated on the same desktop-with-project condition as
-  /// [_tryReadRegistry], which [_isSyncable] already checked).
-  Widget _buildRepairBanner(BuildContext context, Ticket ticket) {
-    final service = _tryReadRepairService(context);
-    final rootPath = _tryReadRootPath(context);
-    if (service == null || rootPath == null) return const SizedBox.shrink();
-
-    return BlocProvider<TicketRepairCubit>(
-      key: ValueKey('repair-${ticket.ticketId}'),
-      create: (_) => TicketRepairCubit(service, ticket.ticketId, rootPath),
-      child: TicketNeedsRepairBanner(
-        // Always `resource` here — see [_isSyncable]/the class doc comment.
-        isPage: false,
-        onRepaired: () =>
-            context.read<TicketsCubit>().getTicketById(widget.ticketId),
-      ),
-    );
   }
 
   void _sendComment() {
@@ -231,9 +186,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             if (_isSyncable(state.ticket)) ...[
-                              SyncStatusBadge(
-                                status: state.ticket.syncStatus,
-                              ),
+                              SyncStatusBadge(status: state.ticket.syncStatus),
                               const SizedBox(width: 12),
                             ],
                             TicketOverflowMenu(ticket: state.ticket),
@@ -281,7 +234,12 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                         if (_isSyncable(ticket) &&
                                             ticket.syncStatus ==
                                                 TicketSyncStatus.needsRepair)
-                                          _buildRepairBanner(context, ticket),
+                                          _RepairBanner(
+                                            ticket: ticket,
+                                            onRepaired: () => context
+                                                .read<TicketsCubit>()
+                                                .getTicketById(widget.ticketId),
+                                          ),
                                         SelectionMenu<TicketPriority>(
                                           // PriorityBadge renders SizedBox.shrink() for
                                           // TicketPriority.none, which would make the trigger
@@ -644,8 +602,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                         final linkedIds = {
                                           for (final t in state.linkedTickets)
                                             t.id,
-                                          for (final t in state.backlinks)
-                                            t.id,
+                                          for (final t in state.backlinks) t.id,
                                         };
                                         return all
                                             .where(
@@ -667,7 +624,8 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                             .createLink(
                                               sourceTicketId: ticket.id,
                                               targetTicketId: selected.id,
-                                              linkType: TicketLinkType.relatesTo,
+                                              linkType:
+                                                  TicketLinkType.relatesTo,
                                             );
                                         if (!context.mounted) return;
                                         await context
@@ -834,6 +792,63 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// [TicketRepairService] is only provided on desktop with a resolved
+/// project directory — `null` on mobile/web or if not found, rather
+/// than a thrown `ProviderNotFoundException`.
+TicketRepairService? _tryReadRepairService(BuildContext context) {
+  try {
+    return context.read<TicketRepairService>();
+  } catch (_) {
+    return null;
+  }
+}
+
+/// The active project's root directory, or `null` if unavailable
+/// (mobile/web, or [ActiveProjectProvider] not found — e.g. a screen
+/// test that doesn't wrap the full app-root provider tree).
+String? _tryReadRootPath(BuildContext context) {
+  try {
+    return context.read<ActiveProjectProvider>().activeProject?.rootPath;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// The [TicketNeedsRepairBanner], wrapped in its own [TicketRepairCubit]
+/// scoped to [ticket]'s `ticketId`/rootPath. Only rendered by
+/// [_TicketDetailScreenState] when `_isSyncable` and `needsRepair` are
+/// both true; still guards [_tryReadRepairService]/[_tryReadRootPath]
+/// itself and renders nothing if either is unexpectedly null.
+class _RepairBanner extends StatelessWidget {
+  const _RepairBanner({required this.ticket, required this.onRepaired});
+
+  /// The `resource` ticket the repair banner is scoped to — see
+  /// [_TicketDetailScreenState]'s class doc comment.
+  final Ticket ticket;
+
+  /// Called once the repair completes, so the caller can reload the
+  /// ticket.
+  final VoidCallback onRepaired;
+
+  @override
+  Widget build(BuildContext context) {
+    final service = _tryReadRepairService(context);
+    final rootPath = _tryReadRootPath(context);
+    if (service == null || rootPath == null) return const SizedBox.shrink();
+
+    return BlocProvider<TicketRepairCubit>(
+      key: ValueKey('repair-${ticket.ticketId}'),
+      create: (_) => TicketRepairCubit(service, ticket.ticketId, rootPath),
+      child: TicketNeedsRepairBanner(
+        // Always `resource` here — see [_TicketDetailScreenState]'s class
+        // doc comment.
+        isPage: false,
+        onRepaired: onRepaired,
       ),
     );
   }
