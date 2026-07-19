@@ -183,14 +183,37 @@ class TicketStatusUpdated extends TicketsState {
 
 /// A single ticket's detail loaded successfully. Carries that ticket.
 class TicketDetailLoaded extends TicketsState {
-  /// Creates a [TicketDetailLoaded] state carrying [ticket].
-  const TicketDetailLoaded(this.ticket);
+  /// Creates a [TicketDetailLoaded] state carrying [ticket] and, once
+  /// [TicketsCubit.loadDocumentRelations] resolves, its Documentation-
+  /// section relations.
+  const TicketDetailLoaded(
+    this.ticket, {
+    this.childDocs = const [],
+    this.linkedTickets = const [],
+    this.backlinks = const [],
+  });
 
   /// The loaded ticket.
   final Ticket ticket;
 
+  /// [ticket]'s direct `page`/`resource` children, populated only when
+  /// [ticket] is a `page` (resources never have children). Empty until
+  /// [TicketsCubit.loadDocumentRelations] resolves.
+  final List<Ticket> childDocs;
+
+  /// Board tickets (epic/story/task/chat) linked to [ticket] via
+  /// `TicketLink`, populated only when [ticket] is `page`/`resource`.
+  /// Empty until [TicketsCubit.loadDocumentRelations] resolves.
+  final List<Ticket> linkedTickets;
+
+  /// Other `page`/`resource` tickets linked to [ticket] via `TicketLink`
+  /// (see [TicketsCubit.loadDocumentRelations]'s dartdoc for the scoping
+  /// rationale). Empty until [TicketsCubit.loadDocumentRelations]
+  /// resolves.
+  final List<Ticket> backlinks;
+
   @override
-  List<Object?> get props => [ticket];
+  List<Object?> get props => [ticket, childDocs, linkedTickets, backlinks];
 }
 
 /// A [TicketsCubit.trashTicket] call is in flight (single ticket,

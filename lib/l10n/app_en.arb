@@ -265,5 +265,38 @@
   "newProjectSubmitAction": "Create project",
   "newProjectSubmittingAction": "Creating…",
 
-  "projectSwitcherMenuLabel": "Switch Project"
+  "projectSwitcherMenuLabel": "Switch Project",
+
+  "documentationEyebrow": "AION · DOCS",
+  "documentationTitle": "Documentation",
+  "documentationEntryLabel": "Open documentation",
+  "documentationNewPageAction": "New page",
+  "documentationNewResourceAction": "New resource",
+  "documentationSearchHint": "Search pages & resources",
+  "documentationClearSearchAction": "Clear search",
+  "documentationResultsCount": "{count} RESULTS",
+  "@documentationResultsCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "documentationNoResults": "No docs match “{query}”",
+  "@documentationNoResults": {
+    "placeholders": {
+      "query": { "type": "String" }
+    }
+  },
+  "documentationEmptyTitle": "No documentation yet",
+  "documentationEmptyBody": "Start a knowledge base for this project. Pages nest sub-pages; resources capture reference material and links to tickets.",
+  "documentationSubPagesLabel": "SUB-PAGES",
+  "documentationSubPagesEmpty": "No sub-pages yet",
+  "documentationLinkedTicketsLabel": "LINKED TICKETS",
+  "documentationLinkedTicketsEmpty": "No linked tickets",
+  "documentationBacklinksLabel": "BACKLINKS",
+  "documentationChildCount": "{count}",
+  "@documentationChildCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  }
 }

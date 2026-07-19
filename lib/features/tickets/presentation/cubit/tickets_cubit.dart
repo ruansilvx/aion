@@ -13,6 +13,7 @@ import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
+import 'package:aion/features/tickets/domain/repositories/ticket_link_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 
@@ -37,16 +38,19 @@ class TicketsCubit extends Cubit<TicketsState> {
     EmbeddingProvider? embeddingProvider,
     TicketGitProjector? gitProjector,
     String? projectRootPath,
+    TicketLinkRepository? linkRepository,
   }) : super(const TicketsInitial()) {
     _embeddingProvider = embeddingProvider;
     _gitProjector = gitProjector;
     _projectRootPath = projectRootPath;
+    _linkRepository = linkRepository;
   }
 
   final TicketRepository _repository;
   late final EmbeddingProvider? _embeddingProvider;
   late final TicketGitProjector? _gitProjector;
   late final String? _projectRootPath;
+  late final TicketLinkRepository? _linkRepository;
   static const _uuid = Uuid();
 
   /// Tickets fetched per page, for both [searchTickets] and
@@ -632,5 +636,66 @@ class TicketsCubit extends Cubit<TicketsState> {
     } catch (e) {
       emit(TicketsError(e.toString()));
     }
+  }
+
+  /// Loads the Documentation-section relations for the `page`/`resource`
+  /// ticket with id [ticketId] — its direct sub-page/resource children (if
+  /// it's a `page`) and its `TicketLink`s, grouped into [linkedTickets]
+  /// (the other side is a board type: epic/story/task/chat) and
+  /// [backlinks] (the other side is itself `page`/`resource`) — then
+  /// re-emits [TicketDetailLoaded] with those fields populated. No-ops
+  /// (does not emit) if the ticket isn't found, isn't a `page`/`resource`
+  /// type, or the cubit has since moved on to a different ticket's detail
+  /// state (a stale response from an earlier navigation). Only actually
+  /// populates [linkedTickets]/[backlinks] when constructed with a
+  /// [TicketLinkRepository] — every other call site is unaffected by this
+  /// optional dependency, same rationale as [_embeddingProvider]/
+  /// [_gitProjector]/[_projectRootPath].
+  Future<void> loadDocumentRelations(String ticketId) async {
+    final ticket = await _repository.getTicketById(ticketId);
+    if (ticket == null) return;
+    if (ticket.type != TicketType.page && ticket.type != TicketType.resource) {
+      return;
+    }
+
+    final childDocs = ticket.type == TicketType.page
+        ? await _repository.getTicketsByParent(
+            ticket.id,
+            types: const [TicketType.page, TicketType.resource],
+          )
+        : const <Ticket>[];
+
+    final linkedTickets = <Ticket>[];
+    final backlinks = <Ticket>[];
+    final linkRepo = _linkRepository;
+    if (linkRepo != null) {
+      final links = await linkRepo.getLinksForTicket(ticket.id);
+      for (final link in links) {
+        final otherId = link.sourceTicketId == ticket.id
+            ? link.targetTicketId
+            : link.sourceTicketId;
+        final other = await _repository.getTicketById(otherId);
+        if (other == null) continue;
+        if (other.type == TicketType.page ||
+            other.type == TicketType.resource) {
+          backlinks.add(other);
+        } else {
+          linkedTickets.add(other);
+        }
+      }
+    }
+
+    final current = state;
+    if (current is! TicketDetailLoaded || current.ticket.id != ticket.id) {
+      return;
+    }
+    emit(
+      TicketDetailLoaded(
+        ticket,
+        childDocs: childDocs,
+        linkedTickets: linkedTickets,
+        backlinks: backlinks,
+      ),
+    );
   }
 }

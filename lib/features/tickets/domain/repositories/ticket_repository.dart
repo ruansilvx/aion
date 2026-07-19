@@ -130,4 +130,23 @@ abstract interface class TicketRepository {
     required int limit,
     int offset = 0,
   });
+
+  /// Returns every live (non-trashed) ticket whose `parentId` equals
+  /// [parentId] (or, when [parentId] is `null`, every live ticket with no
+  /// parent at all) and whose `type` is one of [types]. A dumb,
+  /// parameterized query with no business logic — used by the
+  /// Documentation section to load one level of the page/resource tree at
+  /// a time (root docs when [parentId] is `null`, a page's direct
+  /// children when it's set).
+  Future<List<Ticket>> getTicketsByParent(
+    String? parentId, {
+    required List<TicketType> types,
+  });
+
+  /// Returns every live (non-trashed) ticket whose `type` is one of
+  /// [types], regardless of `parentId` or nesting depth. Unlike
+  /// [getTicketsByParent], this is not scoped to one tree level — used by
+  /// [TicketDocumentSearchService] to scan every page/resource ticket for
+  /// embedding-based search.
+  Future<List<Ticket>> getAllTicketsByType(List<TicketType> types);
 }

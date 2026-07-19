@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:aion/core/contracts/embedding_provider.dart';
 import 'package:aion/core/database/app_database.dart';
@@ -16,6 +17,8 @@ import 'package:aion/features/tickets/data/repositories/drift_comment_repository
 import 'package:aion/features/tickets/data/repositories/drift_ticket_link_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_repository.dart';
 import 'package:aion/features/tickets/data/services/active_ticket_view_registry.dart';
+import 'package:aion/features/tickets/data/services/document_parent_migration_service.dart';
+import 'package:aion/features/tickets/data/services/ticket_document_search_service.dart';
 import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
 import 'package:aion/features/tickets/data/services/ticket_markdown_reconciler.dart';
 import 'package:aion/features/tickets/data/services/ticket_markdown_watcher_service.dart';
@@ -83,7 +86,15 @@ final appRouter = GoRouter(
         ),
         GoRoute(
           path: '/workspace/tickets/new',
-          builder: (context, state) => const CreateTicketScreen(),
+          builder: (context, state) {
+            final extra = state.extra;
+            return extra is CreateTicketRouteExtra
+                ? CreateTicketScreen(
+                    initialType: extra.initialType,
+                    initialParentId: extra.initialParentId,
+                  )
+                : const CreateTicketScreen();
+          },
         ),
         // Registered before `/workspace/tickets/:id` — go_router matches
         // path segments in declaration order, and `:id` would otherwise
@@ -106,6 +117,19 @@ final appRouter = GoRouter(
               child: TicketDetailScreen(ticketId: id),
             );
           },
+        ),
+        GoRoute(
+          path: '/workspace/documentation',
+          builder: (context, state) => BlocProvider<DocumentationCubit>(
+            create: (context) => DocumentationCubit(
+              context.read<TicketRepository>(),
+              TicketDocumentSearchService(
+                context.read<EmbeddingProvider>(),
+                context.read<TicketRepository>(),
+              ),
+            ),
+            child: const DocumentationScreen(),
+          ),
         ),
       ],
     ),
@@ -155,6 +179,22 @@ Future<void> _purgeOldTrashOnOpen(AppDatabase database) async {
   }
 }
 
+/// Converts every existing resource/page ticket's legacy `parentId` →
+/// epic/story/task relationship into a `TicketLink`, every time a
+/// project's workspace opens (called from [WorkspaceShell.initState]),
+/// via [DocumentParentMigrationService] — which itself gates the actual
+/// migration work to a single run per install. Fire-and-forget, same
+/// rationale as [_purgeOldTrashOnOpen]: never delays the workspace's
+/// first paint, and failures are non-fatal (retried on the next open).
+Future<void> _migrateDocumentParentsOnOpen(AppDatabase database) async {
+  final prefs = await SharedPreferences.getInstance();
+  await DocumentParentMigrationService(
+    DriftTicketRepository(database),
+    DriftTicketLinkRepository(database),
+    prefs,
+  ).migrateIfNeeded();
+}
+
 /// Owns the per-project [AppDatabase] connection and the ticket-feature
 /// repositories/cubit built on top of it. Constructed with
 /// `key: ValueKey(project.id)` in [appRouter]'s `ShellRoute`, so Flutter
@@ -193,6 +233,7 @@ class _WorkspaceShellState extends State<WorkspaceShell>
   void initState() {
     super.initState();
     unawaited(_purgeOldTrashOnOpen(_database));
+    unawaited(_migrateDocumentParentsOnOpen(_database));
     WidgetsBinding.instance.addObserver(this);
   }
 
@@ -291,6 +332,7 @@ class _WorkspaceShellState extends State<WorkspaceShell>
                   ? context.read<TicketGitProjector>()
                   : null,
               projectRootPath: rootPath,
+              linkRepository: context.read<TicketLinkRepository>(),
             ),
             child: widget.child,
           );

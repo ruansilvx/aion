@@ -33,8 +33,10 @@ enum TicketType {
 /// performs, which apply regardless of type.
 extension TicketTypeHierarchy on TicketType {
   /// This type's rank in the epic > story > task work-breakdown chain, or
-  /// `null` for a leaf type ([TicketType.resource], [TicketType.page],
-  /// [TicketType.chat]) that has no rank and can never parent anything.
+  /// `null` for a type ([TicketType.resource], [TicketType.page],
+  /// [TicketType.chat]) with no rank in that chain. Note that `page` still
+  /// has its own nesting rule — see [canParent] — despite having no rank
+  /// here.
   int? get _rank => switch (this) {
     TicketType.epic => 0,
     TicketType.story => 1,
@@ -43,17 +45,30 @@ extension TicketTypeHierarchy on TicketType {
   };
 
   /// Whether a ticket of this type may structurally parent a ticket of
-  /// type [child]. Leaf types (resource/page/chat) can never parent
-  /// anything. A work type (epic/story/task) may parent another work
-  /// type only if strictly higher in the chain (epic > story > task,
-  /// e.g. task cannot parent story), and may parent any leaf type
-  /// unconditionally. Same-type nesting is always rejected — a
-  /// consequence of the strict-rank comparison, not a special case.
+  /// type [child].
+  ///
+  /// - [TicketType.page] may parent [TicketType.page] (Notion-style
+  ///   sub-page nesting) or [TicketType.resource], and nothing else —
+  ///   documentation tickets nest only under other documentation tickets,
+  ///   never under a work item.
+  /// - A work type (epic/story/task) may parent another work type only if
+  ///   strictly higher in the chain (epic > story > task, e.g. task cannot
+  ///   parent story), and may still parent [TicketType.chat]
+  ///   unconditionally. Work types can no longer parent
+  ///   [TicketType.resource] or [TicketType.page] — those relocated under
+  ///   the Documentation section and link back to work tickets via
+  ///   `TicketLink` instead of `parentId`.
+  /// - [TicketType.resource] and [TicketType.chat] remain full leaves and
+  ///   can never parent anything, including each other.
   bool canParent(TicketType child) {
+    if (this == TicketType.page) {
+      return child == TicketType.page || child == TicketType.resource;
+    }
     final parentRank = _rank;
     if (parentRank == null) return false;
+    if (child == TicketType.chat) return true;
     final childRank = child._rank;
-    if (childRank == null) return true;
+    if (childRank == null) return false;
     return parentRank < childRank;
   }
 }

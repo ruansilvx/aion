@@ -14,14 +14,48 @@ import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_parent_picker.dart';
 
+/// Payload passed via go_router's `extra` when navigating to
+/// `/workspace/tickets/new` with pre-selected type/parent values — used by
+/// `DocumentationScreen`'s "+ New page"/"+ New resource" actions. See
+/// `appRouter`'s `/workspace/tickets/new` route builder, which reads this
+/// and falls back to a plain [CreateTicketScreen] when `extra` isn't one
+/// of these (e.g. every other navigation to this route).
+class CreateTicketRouteExtra {
+  /// Creates a [CreateTicketRouteExtra] carrying [initialType]/
+  /// [initialParentId].
+  const CreateTicketRouteExtra({this.initialType, this.initialParentId});
+
+  /// Forwarded to [CreateTicketScreen.initialType].
+  final TicketType? initialType;
+
+  /// Forwarded to [CreateTicketScreen.initialParentId].
+  final String? initialParentId;
+}
+
 /// The `/tickets/new` route: title, type, parent, priority, and
 /// description fields followed by a full-width submit button. The parent
 /// field is hidden whenever the selected type is [TicketType.epic] (epics
 /// are always subtree roots). Reads [TicketsCubit] from the root-level
 /// provider and navigates back to `/tickets` on success.
 class CreateTicketScreen extends StatefulWidget {
-  /// Creates a [CreateTicketScreen].
-  const CreateTicketScreen({super.key});
+  /// Creates a [CreateTicketScreen]. [initialType]/[initialParentId] seed
+  /// the type/parent fields — used when opened from `DocumentationScreen`'s
+  /// "+ New page"/"+ New resource" actions; omitted (defaulting to
+  /// [TicketType.task] with no parent) at every other call site.
+  const CreateTicketScreen({
+    super.key,
+    this.initialType,
+    this.initialParentId,
+  });
+
+  /// Ticket type the type field starts pre-selected to. `null` defaults
+  /// to [TicketType.task], matching this screen's original behavior.
+  final TicketType? initialType;
+
+  /// Parent ticket id the parent field starts pre-selected to. `null`
+  /// leaves the parent field unset, matching this screen's original
+  /// behavior.
+  final String? initialParentId;
 
   @override
   State<CreateTicketScreen> createState() => _CreateTicketScreenState();
@@ -35,10 +69,17 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
   final _priorityFocus = FocusNode();
   final _descFocus = FocusNode();
 
-  TicketType _selectedType = TicketType.task;
+  late TicketType _selectedType;
   TicketPriority _selectedPriority = TicketPriority.none;
   String? _selectedParentId;
   bool _isSubmitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedType = widget.initialType ?? TicketType.task;
+    _selectedParentId = widget.initialParentId;
+  }
 
   @override
   void dispose() {
