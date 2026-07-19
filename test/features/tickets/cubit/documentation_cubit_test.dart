@@ -257,5 +257,28 @@ void main() {
         ),
       ],
     );
+
+    blocTest<DocumentationCubit, DocumentationState>(
+      'clearing search after a failed search reloads instead of getting stuck on the error',
+      setUp: () {
+        when(
+          () => repository.getTicketsByParent(
+            null,
+            types: const [TicketType.page, TicketType.resource],
+          ),
+        ).thenAnswer((_) async => [rootPage]);
+      },
+      build: buildCubit,
+      seed: () => const DocumentationError('boom'),
+      act: (cubit) => cubit.clearSearch(),
+      expect: () => [
+        const DocumentationLoading(),
+        DocumentationLoaded(
+          rootDocs: [rootPage],
+          childrenByParentId: const {},
+          expandedIds: const {},
+        ),
+      ],
+    );
   });
 }

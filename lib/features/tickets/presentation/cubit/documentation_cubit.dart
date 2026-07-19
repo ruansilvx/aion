@@ -170,15 +170,23 @@ class DocumentationCubit extends Cubit<DocumentationState> {
 
   /// Clears the active search, returning the body to tree mode. Cancels
   /// any pending debounced [search] first, so a stale query can never
-  /// resolve after a clear and silently re-open search mode. No-ops on
-  /// the [DocumentationLoaded] state change if the cubit isn't in that
-  /// state with a non-null `searchResults`.
+  /// resolve after a clear and silently re-open search mode. If the
+  /// cubit is in [DocumentationError] (a failed search) rather than
+  /// [DocumentationLoaded], falls back to [load] instead of no-op'ing —
+  /// otherwise clearing the field after a failed search would leave the
+  /// error screen stuck on-screen forever, since [DocumentationError]
+  /// carries no tree data of its own to fall back to. No-ops only when
+  /// already in [DocumentationLoaded] with no active search.
   Future<void> clearSearch() async {
     _searchDebounce?.cancel();
     _searchGeneration++;
 
     final current = state;
-    if (current is! DocumentationLoaded || current.searchResults == null) {
+    if (current is! DocumentationLoaded) {
+      await load();
+      return;
+    }
+    if (current.searchResults == null) {
       return;
     }
     emit(
