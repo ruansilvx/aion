@@ -27,7 +27,6 @@ import 'package:aion/features/tickets/presentation/cubit/comments_state.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_repair_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
-import 'package:aion/features/tickets/presentation/screens/create_ticket_screen.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_list_screen.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_link_picker.dart';
@@ -39,10 +38,13 @@ import 'package:aion/features/tickets/presentation/widgets/ticket_parent_picker.
 /// description, timestamps), a comment thread, and a pinned comment
 /// composer. [TicketsCubit] is read from the root-level provider;
 /// [CommentsCubit] is provided per-route by [appRouter](../../../../core/routing/app_router.dart)
-/// since comments are screen-scoped. For `page`/`resource` tickets, also
-/// renders three Documentation-section sections — Sub-pages (`page` only),
-/// Linked Tickets, and Backlinks — populated via
-/// [TicketsCubit.loadDocumentRelations].
+/// since comments are screen-scoped. For `resource` tickets, also renders
+/// two Documentation-section sections — Linked Tickets and Backlinks —
+/// populated via [TicketsCubit.loadDocumentRelations]. `page` tickets no
+/// longer render here at all: since `page-content-markdown-editor`, a
+/// loaded `page` ticket immediately redirects to `PageDetailScreen` via
+/// `/workspace/pages/:id` (see the `TicketDetailLoaded` branch below) —
+/// this screen now only ever renders `resource`/work-item tickets.
 class TicketDetailScreen extends StatefulWidget {
   /// Creates a [TicketDetailScreen] for the ticket with internal id [ticketId].
   const TicketDetailScreen({super.key, required this.ticketId});
@@ -122,14 +124,15 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   }
 
   /// Whether [ticket] should show the sync badge/repair banner: a
-  /// `resource`/`page` type, **and** sync tracking is actually active
+  /// `resource` type (the only type still rendered by this screen — see
+  /// the class doc comment), **and** sync tracking is actually active
   /// (desktop with a resolved project directory — [ActiveTicketViewRegistry]
   /// presence is used as that signal, rather than assuming desktop).
-  /// Without the second check, a `resource`/`page` ticket on mobile/web
-  /// would show a "SYNCED" badge implying a sync mechanism that doesn't
-  /// exist there at all.
+  /// Without the second check, a `resource` ticket on mobile/web would
+  /// show a "SYNCED" badge implying a sync mechanism that doesn't exist
+  /// there at all.
   bool _isSyncable(Ticket ticket) {
-    if (ticket.type != TicketType.resource && ticket.type != TicketType.page) {
+    if (ticket.type != TicketType.resource) {
       return false;
     }
     return _tryReadRegistry(context) != null;
@@ -161,7 +164,8 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
       key: ValueKey('repair-${ticket.ticketId}'),
       create: (_) => TicketRepairCubit(service, ticket.ticketId, rootPath),
       child: TicketNeedsRepairBanner(
-        isPage: ticket.type == TicketType.page,
+        // Always `resource` here — see [_isSyncable]/the class doc comment.
+        isPage: false,
         onRepaired: () =>
             context.read<TicketsCubit>().getTicketById(widget.ticketId),
       ),
@@ -191,10 +195,17 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
             state.reason == TicketsErrorReason.invalidParent) {
           AppToast.show(context, context.l10n.ticketInvalidParentError);
         } else if (state is TicketDetailLoaded) {
-          _registerActiveTicket(state.ticket.ticketId);
           final ticket = state.ticket;
-          if ((ticket.type == TicketType.page ||
-                  ticket.type == TicketType.resource) &&
+          if (ticket.type == TicketType.page) {
+            // `page` tickets moved to their own module in
+            // page-content-markdown-editor — bounce a stale
+            // `/workspace/tickets/:id` link to the new route instead of
+            // rendering the (no-longer-applicable) page UI here.
+            context.go(ticketDetailRoute(ticket));
+            return;
+          }
+          _registerActiveTicket(ticket.ticketId);
+          if (ticket.type == TicketType.resource &&
               _relationsLoadedForId != ticket.id) {
             _relationsLoadedForId = ticket.id;
             context.read<TicketsCubit>().loadDocumentRelations(ticket.id);
@@ -609,25 +620,18 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                 return const SizedBox.shrink();
                               }
                               final ticket = state.ticket;
-                              if (ticket.type != TicketType.page &&
-                                  ticket.type != TicketType.resource) {
+                              // `page` tickets never reach this far — the
+                              // `TicketDetailLoaded` listener above redirects
+                              // them to `PageDetailScreen` first. Only
+                              // `resource` renders Linked Tickets/Backlinks
+                              // here (sub-pages moved to `PageDetailScreen`
+                              // entirely, since only `page` tickets have
+                              // sub-pages).
+                              if (ticket.type != TicketType.resource) {
                                 return const SizedBox.shrink();
                               }
                               return Column(
                                 children: [
-                                  if (ticket.type == TicketType.page)
-                                    PageSubPagesSection(
-                                      childDocs: state.childDocs,
-                                      onTap: (id) =>
-                                          context.go('/workspace/tickets/$id'),
-                                      onAdd: () => context.push(
-                                        '/workspace/tickets/new',
-                                        extra: CreateTicketRouteExtra(
-                                          initialType: TicketType.page,
-                                          initialParentId: ticket.id,
-                                        ),
-                                      ),
-                                    ),
                                   LinkedTicketsSection(
                                     tickets: state.linkedTickets,
                                     onTap: (id) =>

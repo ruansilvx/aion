@@ -154,7 +154,7 @@ class _PageCreateScreenState extends State<PageCreateScreen> {
                         const SizedBox(height: AionSpacing.sp20),
                       ],
                       AppTextField(
-                        labelText: context.l10n.pageDetailContentPlaceholder,
+                        labelText: context.l10n.pageDetailContentLabel,
                         isOptional: true,
                         hintText: context.l10n.pageDetailContentPlaceholder,
                         controller: _contentController,
@@ -167,7 +167,7 @@ class _PageCreateScreenState extends State<PageCreateScreen> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
                 child: AppButton(
-                  label: context.l10n.commonCreateTicket,
+                  label: context.l10n.pageCreateSubmitAction,
                   variant: AppButtonVariant.primary,
                   isFullWidth: true,
                   onPressed: _isSubmitting ? null : _submit,

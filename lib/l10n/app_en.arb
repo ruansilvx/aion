@@ -311,5 +311,7 @@
   "pageDetailMarkdownCancel": "Cancel",
   "pageDetailTitlePlaceholder": "Untitled page",
   "pageCreateTitlePlaceholder": "Page title",
-  "pageCreateParentFieldPlaceholder": "Optional"
+  "pageCreateParentFieldPlaceholder": "Optional",
+  "pageCreateSubmitAction": "Create page",
+  "pageDetailContentLabel": "Content"
 }
