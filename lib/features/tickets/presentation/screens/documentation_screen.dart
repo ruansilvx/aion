@@ -286,17 +286,20 @@ class _TreeBody extends StatelessWidget {
         color: c.surface,
         border: Border(top: BorderSide(color: c.border, width: 1)),
       ),
-      child: ListView(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        children: [
-          for (final doc in state.rootDocs)
-            _TreeNode(
-              ticket: doc,
-              depth: 0,
-              state: state,
-              onTap: onTap,
-            ),
-        ],
+      child: ContentMaxWidth(
+        variant: ContentWidthVariant.reading,
+        child: ListView(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          children: [
+            for (final doc in state.rootDocs)
+              _TreeNode(
+                ticket: doc,
+                depth: 0,
+                state: state,
+                onTap: onTap,
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -396,23 +399,26 @@ class _SearchResultsBody extends StatelessWidget {
         color: c.surface,
         border: Border(top: BorderSide(color: c.border, width: 1)),
       ),
-      child: ListView(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 6),
-            child: Text(
-              context.l10n.documentationResultsCount(results.length),
-              style: AionText.caption.copyWith(color: c.textMuted),
+      child: ContentMaxWidth(
+        variant: ContentWidthVariant.reading,
+        child: ListView(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 6),
+              child: Text(
+                context.l10n.documentationResultsCount(results.length),
+                style: AionText.caption.copyWith(color: c.textMuted),
+              ),
             ),
-          ),
-          for (final result in results)
-            DocumentationTreeItem(
-              ticket: result,
-              showChevron: false,
-              onTap: () => onTap(result),
-            ),
-        ],
+            for (final result in results)
+              DocumentationTreeItem(
+                ticket: result,
+                showChevron: false,
+                onTap: () => onTap(result),
+              ),
+          ],
+        ),
       ),
     );
   }

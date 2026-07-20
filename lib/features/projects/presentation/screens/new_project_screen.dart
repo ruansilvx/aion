@@ -92,8 +92,8 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
                     horizontal: 32,
                     vertical: 28,
                   ),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 520),
+                  child: ContentMaxWidth(
+                    variant: ContentWidthVariant.form,
                     child: BlocBuilder<CreateProjectCubit, CreateProjectState>(
                       builder: (context, state) => _Form(
                         colors: c,
