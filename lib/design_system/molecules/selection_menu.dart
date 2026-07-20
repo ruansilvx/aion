@@ -29,6 +29,9 @@ class SelectionMenu<T> extends StatefulWidget {
     required this.currentValue,
     required this.onSelected,
     required this.semanticsLabel,
+    this.openUpward = false,
+    this.onOpenChanged,
+    this.onFocusChange,
   });
 
   /// The always-visible tappable widget (e.g. a `PriorityBadge`/`TypeChip`).
@@ -50,6 +53,26 @@ class SelectionMenu<T> extends StatefulWidget {
   /// Accessibility label describing what this menu changes (e.g.
   /// `'Change priority'`).
   final String semanticsLabel;
+
+  /// Opens the overlay above [trigger] instead of below it — for a
+  /// trigger anchored near the bottom of the viewport (e.g.
+  /// `WorkspaceNavShell`'s secondary-actions trigger), where the default
+  /// downward placement would render off-screen. Defaults to `false`
+  /// (downward), preserving every existing caller's behavior.
+  final bool openUpward;
+
+  /// Called with `true` when the overlay opens and `false` when it
+  /// closes — lets [trigger] reflect open state visually (e.g. holding a
+  /// focus-ring look while its own popover is up). Optional; existing
+  /// callers that don't need this stay unaffected.
+  final ValueChanged<bool>? onOpenChanged;
+
+  /// Called when this menu's own [FocusableActionDetector] gains or
+  /// loses keyboard focus highlight — lets a stateful [trigger] render
+  /// its own focus ring without introducing a second, competing
+  /// focusable region nested inside [trigger] itself. Optional; existing
+  /// callers that don't need this stay unaffected.
+  final ValueChanged<bool>? onFocusChange;
 
   @override
   State<SelectionMenu<T>> createState() => _SelectionMenuState<T>();
@@ -96,8 +119,15 @@ class _SelectionMenuState<T> extends State<SelectionMenu<T>> {
             CompositedTransformFollower(
               link: _layerLink,
               showWhenUnlinked: false,
-              offset: const Offset(0, 6),
-              targetAnchor: Alignment.bottomLeft,
+              offset: widget.openUpward
+                  ? const Offset(0, -6)
+                  : const Offset(0, 6),
+              targetAnchor: widget.openUpward
+                  ? Alignment.topLeft
+                  : Alignment.bottomLeft,
+              followerAnchor: widget.openUpward
+                  ? Alignment.bottomLeft
+                  : Alignment.topLeft,
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   color: c.surface,
@@ -138,6 +168,7 @@ class _SelectionMenuState<T> extends State<SelectionMenu<T>> {
 
     overlay.insert(_overlayEntry!);
     setState(() => _isOpen = true);
+    widget.onOpenChanged?.call(true);
   }
 
   void _removeOverlay() {
@@ -150,6 +181,7 @@ class _SelectionMenuState<T> extends State<SelectionMenu<T>> {
     } else {
       _isOpen = false;
     }
+    widget.onOpenChanged?.call(false);
   }
 
   @override
@@ -168,6 +200,7 @@ class _SelectionMenuState<T> extends State<SelectionMenu<T>> {
               },
             ),
           },
+          onShowFocusHighlight: widget.onFocusChange,
           child: GestureDetector(onTap: _toggleOverlay, child: widget.trigger),
         ),
       ),

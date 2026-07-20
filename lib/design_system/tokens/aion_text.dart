@@ -147,4 +147,16 @@ abstract final class AionText {
     letterSpacing: 0,
     height: 1.2,
   );
+
+  /// `WorkspaceNavShell`'s compact (bottom-tab) nav-item label — smaller
+  /// and non-uppercase, unlike [chip]. Deliberately not [chip]: chip's
+  /// wide uppercase tracking reads badly under a small icon in a bottom
+  /// tab bar.
+  static const navTabLabel = TextStyle(
+    fontFamily: _ui,
+    fontSize: 11,
+    fontWeight: FontWeight.w600,
+    letterSpacing: -0.06,
+    height: 1.0,
+  );
 }

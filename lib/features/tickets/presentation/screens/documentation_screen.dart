@@ -145,35 +145,9 @@ class _Header extends StatelessWidget {
                   style: AionText.caption.copyWith(color: c.textMuted),
                 ),
                 const SizedBox(height: AionSpacing.sp4),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        context.l10n.documentationTitle,
-                        style: AionText.h1.copyWith(color: c.textPrimary),
-                      ),
-                    ),
-                    DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: c.surfaceHover,
-                        border: Border.all(color: c.border, width: 1),
-                        shape: BoxShape.circle,
-                      ),
-                      child: SizedBox(
-                        width: 38,
-                        height: 38,
-                        child: Center(
-                          child: Text(
-                            'U',
-                            style: AionText.key.copyWith(
-                              color: c.textSecondary,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                Text(
+                  context.l10n.documentationTitle,
+                  style: AionText.h1.copyWith(color: c.textPrimary),
                 ),
                 const SizedBox(height: 14),
                 Row(

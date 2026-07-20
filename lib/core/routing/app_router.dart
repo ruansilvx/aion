@@ -12,6 +12,7 @@ import 'package:aion/core/contracts/page_ticket_provider.dart';
 import 'package:aion/core/database/app_database.dart';
 import 'package:aion/core/git/git_repository_client.dart';
 import 'package:aion/core/markdown/ticket_markdown_serializer.dart';
+import 'package:aion/core/routing/workspace_nav_shell.dart';
 import 'package:aion/core/utils/platform_utils.dart';
 import 'package:aion/features/pages/presentation/screens/page_create_screen.dart';
 import 'package:aion/features/pages/presentation/screens/page_detail_screen.dart';
@@ -75,6 +76,7 @@ final appRouter = GoRouter(
           ActiveProjectOpen(:final project) => WorkspaceShell(
             key: ValueKey(project.id),
             project: project,
+            currentLocation: state.uri.path,
             child: child,
           ),
           _ => const SizedBox.shrink(),
@@ -228,14 +230,26 @@ Future<void> _migrateDocumentParentsOnOpen(AppDatabase database) async {
 /// disposes the old instance (closing its [AppDatabase]) and builds a
 /// fresh one — opening a new [AppDatabase] addressed to the newly active
 /// project — whenever the active project's id changes, per
-/// `aion-arch/changes/multi-project-hub/design.md` §6.
+/// `aion-arch/changes/multi-project-hub/design.md` §6. Also wraps [child]
+/// in [WorkspaceNavShell] (persistent Tickets/Documentation navigation
+/// chrome — see `aion-arch/changes/persistent-navigation-shell/design.md`),
+/// which needs [currentLocation] to know which destination is active.
 class WorkspaceShell extends StatefulWidget {
   /// Creates a [WorkspaceShell] for [project], wrapping [child] (the
   /// current `/workspace/*` route's content).
-  const WorkspaceShell({super.key, required this.project, required this.child});
+  const WorkspaceShell({
+    super.key,
+    required this.project,
+    required this.currentLocation,
+    required this.child,
+  });
 
   /// The active project this shell's [AppDatabase] is addressed to.
   final Project project;
+
+  /// The current route path (`GoRouterState.uri.path`), passed through to
+  /// [WorkspaceNavShell] to compute the active nav destination.
+  final String currentLocation;
 
   /// The current `/workspace/*` route's content.
   final Widget child;
@@ -368,7 +382,10 @@ class _WorkspaceShellState extends State<WorkspaceShell>
                   context.read<TicketRepository>(),
                   context.read<TicketLinkRepository>(),
                 ),
-                child: widget.child,
+                child: WorkspaceNavShell(
+                  currentLocation: widget.currentLocation,
+                  child: widget.child,
+                ),
               ),
             ),
           );
