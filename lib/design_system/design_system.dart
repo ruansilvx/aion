@@ -1,6 +1,7 @@
 // design_system.dart — Design-system barrel: tokens, atoms, and molecules (design-system layer).
 
 export 'tokens/aion_colors.dart';
+export 'tokens/aion_content_width.dart';
 export 'tokens/aion_radius.dart';
 export 'tokens/aion_shadows.dart';
 export 'tokens/aion_text.dart';
@@ -10,6 +11,7 @@ export 'atoms/app_button.dart';
 export 'atoms/app_checkbox.dart';
 export 'atoms/app_text_field.dart';
 export 'atoms/app_spinner.dart';
+export 'atoms/content_max_width.dart';
 export 'molecules/app_confirm_dialog.dart';
 export 'molecules/app_dropdown.dart';
 export 'molecules/app_header.dart';

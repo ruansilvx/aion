@@ -125,52 +125,57 @@ class _PageCreateScreenState extends State<PageCreateScreen> {
               Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(20, 6, 20, 0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      AppTextField(
-                        labelText: context.l10n.createTicketTitleLabel,
-                        isRequired: true,
-                        hintText: context.l10n.pageCreateTitlePlaceholder,
-                        controller: _titleController,
-                        focusNode: _titleFocus,
-                        textInputAction: TextInputAction.next,
-                      ),
-                      const SizedBox(height: AionSpacing.sp20),
-                      if (_parentCandidates != null) ...[
-                        AppDropdown<Ticket?>(
-                          labelText: context.l10n.createTicketParentLabel,
-                          semanticsLabel: context
-                              .l10n
-                              .createTicketParentLabel,
-                          value: _selectedParent,
-                          items: [null, ..._parentCandidates!],
-                          itemLabel: (v) =>
-                              v?.title ??
-                              context.l10n.pageCreateParentFieldPlaceholder,
-                          onChanged: (v) =>
-                              setState(() => _selectedParent = v),
+                  child: ContentMaxWidth(
+                    variant: ContentWidthVariant.form,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        AppTextField(
+                          labelText: context.l10n.createTicketTitleLabel,
+                          isRequired: true,
+                          hintText: context.l10n.pageCreateTitlePlaceholder,
+                          controller: _titleController,
+                          focusNode: _titleFocus,
+                          textInputAction: TextInputAction.next,
                         ),
                         const SizedBox(height: AionSpacing.sp20),
+                        if (_parentCandidates != null) ...[
+                          AppDropdown<Ticket?>(
+                            labelText: context.l10n.createTicketParentLabel,
+                            semanticsLabel:
+                                context.l10n.createTicketParentLabel,
+                            value: _selectedParent,
+                            items: [null, ..._parentCandidates!],
+                            itemLabel: (v) =>
+                                v?.title ??
+                                context.l10n.pageCreateParentFieldPlaceholder,
+                            onChanged: (v) =>
+                                setState(() => _selectedParent = v),
+                          ),
+                          const SizedBox(height: AionSpacing.sp20),
+                        ],
+                        AppTextField(
+                          labelText: context.l10n.pageDetailContentLabel,
+                          isOptional: true,
+                          hintText: context.l10n.pageDetailContentPlaceholder,
+                          controller: _contentController,
+                          maxLines: null,
+                        ),
                       ],
-                      AppTextField(
-                        labelText: context.l10n.pageDetailContentLabel,
-                        isOptional: true,
-                        hintText: context.l10n.pageDetailContentPlaceholder,
-                        controller: _contentController,
-                        maxLines: null,
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
-                child: AppButton(
-                  label: context.l10n.pageCreateSubmitAction,
-                  variant: AppButtonVariant.primary,
-                  isFullWidth: true,
-                  onPressed: _isSubmitting ? null : _submit,
+                child: ContentMaxWidth(
+                  variant: ContentWidthVariant.form,
+                  child: AppButton(
+                    label: context.l10n.pageCreateSubmitAction,
+                    variant: AppButtonVariant.primary,
+                    isFullWidth: true,
+                    onPressed: _isSubmitting ? null : _submit,
+                  ),
                 ),
               ),
             ],

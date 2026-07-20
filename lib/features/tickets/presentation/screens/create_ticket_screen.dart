@@ -42,11 +42,7 @@ class CreateTicketScreen extends StatefulWidget {
   /// the type/parent fields — used when opened from `DocumentationScreen`'s
   /// "+ New page"/"+ New resource" actions; omitted (defaulting to
   /// [TicketType.task] with no parent) at every other call site.
-  const CreateTicketScreen({
-    super.key,
-    this.initialType,
-    this.initialParentId,
-  });
+  const CreateTicketScreen({super.key, this.initialType, this.initialParentId});
 
   /// Ticket type the type field starts pre-selected to. `null` defaults
   /// to [TicketType.task], matching this screen's original behavior.
@@ -135,107 +131,114 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(20, 6, 20, 0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    AppTextField(
-                      labelText: context.l10n.createTicketTitleLabel,
-                      isRequired: true,
-                      hintText: context.l10n.createTicketTitleHint,
-                      controller: _titleController,
-                      focusNode: _titleFocus,
-                      textInputAction: TextInputAction.next,
-                      onSubmitted: (_) => _typeFocus.requestFocus(),
-                    ),
-                    const SizedBox(height: AionSpacing.sp20),
-                    AppDropdown<TicketType>(
-                      labelText: context.l10n.createTicketTypeLabel,
-                      value: _selectedType,
-                      items: TicketType.values
-                          .where((type) => type != TicketType.page)
-                          .toList(),
-                      onChanged: (v) => setState(() {
-                        _selectedType = v;
-                        _selectedParentId = null;
-                      }),
-                      itemLabel: (v) => ticketTypeLabel(context, v),
-                      focusNode: _typeFocus,
-                    ),
-                    AnimatedSize(
-                      duration: const Duration(milliseconds: 150),
-                      curve: Curves.easeOut,
-                      alignment: Alignment.topCenter,
-                      child: _selectedType == TicketType.epic
-                          ? const SizedBox.shrink()
-                          : Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const SizedBox(height: AionSpacing.sp20),
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      context.l10n.createTicketParentLabel,
-                                      style: AionText.label.copyWith(
-                                        color: c.textSecondary,
+                child: ContentMaxWidth(
+                  variant: ContentWidthVariant.form,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      AppTextField(
+                        labelText: context.l10n.createTicketTitleLabel,
+                        isRequired: true,
+                        hintText: context.l10n.createTicketTitleHint,
+                        controller: _titleController,
+                        focusNode: _titleFocus,
+                        textInputAction: TextInputAction.next,
+                        onSubmitted: (_) => _typeFocus.requestFocus(),
+                      ),
+                      const SizedBox(height: AionSpacing.sp20),
+                      AppDropdown<TicketType>(
+                        labelText: context.l10n.createTicketTypeLabel,
+                        value: _selectedType,
+                        items: TicketType.values
+                            .where((type) => type != TicketType.page)
+                            .toList(),
+                        onChanged: (v) => setState(() {
+                          _selectedType = v;
+                          _selectedParentId = null;
+                        }),
+                        itemLabel: (v) => ticketTypeLabel(context, v),
+                        focusNode: _typeFocus,
+                      ),
+                      AnimatedSize(
+                        duration: const Duration(milliseconds: 150),
+                        curve: Curves.easeOut,
+                        alignment: Alignment.topCenter,
+                        child: _selectedType == TicketType.epic
+                            ? const SizedBox.shrink()
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const SizedBox(height: AionSpacing.sp20),
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        context.l10n.createTicketParentLabel,
+                                        style: AionText.label.copyWith(
+                                          color: c.textSecondary,
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      context.l10n.commonOptionalMarker,
-                                      style: AionText.bodySm.copyWith(
-                                        color: c.textMuted,
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        context.l10n.commonOptionalMarker,
+                                        style: AionText.bodySm.copyWith(
+                                          color: c.textMuted,
+                                        ),
                                       ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 7),
-                                TicketParentPicker(
-                                  ticketType: _selectedType,
-                                  currentParentId: _selectedParentId,
-                                  candidatesLoader: () => context
-                                      .read<TicketsCubit>()
-                                      .getValidParentCandidatesForType(
-                                        _selectedType,
-                                      ),
-                                  onParentSelected: (id) =>
-                                      setState(() => _selectedParentId = id),
-                                  variant: TicketParentPickerVariant.formField,
-                                  isDisabled: _isSubmitting,
-                                ),
-                              ],
-                            ),
-                    ),
-                    const SizedBox(height: AionSpacing.sp20),
-                    AppDropdown<TicketPriority>(
-                      labelText: context.l10n.createTicketPriorityLabel,
-                      value: _selectedPriority,
-                      items: TicketPriority.values,
-                      onChanged: (v) => setState(() => _selectedPriority = v),
-                      itemLabel: (v) => ticketPriorityLabel(context, v),
-                      focusNode: _priorityFocus,
-                    ),
-                    const SizedBox(height: AionSpacing.sp20),
-                    AppTextField(
-                      labelText: context.l10n.createTicketDescriptionLabel,
-                      isOptional: true,
-                      hintText: context.l10n.createTicketDescriptionHint,
-                      controller: _descController,
-                      focusNode: _descFocus,
-                      maxLines: 6,
-                      textInputAction: TextInputAction.done,
-                    ),
-                  ],
+                                    ],
+                                  ),
+                                  const SizedBox(height: 7),
+                                  TicketParentPicker(
+                                    ticketType: _selectedType,
+                                    currentParentId: _selectedParentId,
+                                    candidatesLoader: () => context
+                                        .read<TicketsCubit>()
+                                        .getValidParentCandidatesForType(
+                                          _selectedType,
+                                        ),
+                                    onParentSelected: (id) =>
+                                        setState(() => _selectedParentId = id),
+                                    variant:
+                                        TicketParentPickerVariant.formField,
+                                    isDisabled: _isSubmitting,
+                                  ),
+                                ],
+                              ),
+                      ),
+                      const SizedBox(height: AionSpacing.sp20),
+                      AppDropdown<TicketPriority>(
+                        labelText: context.l10n.createTicketPriorityLabel,
+                        value: _selectedPriority,
+                        items: TicketPriority.values,
+                        onChanged: (v) => setState(() => _selectedPriority = v),
+                        itemLabel: (v) => ticketPriorityLabel(context, v),
+                        focusNode: _priorityFocus,
+                      ),
+                      const SizedBox(height: AionSpacing.sp20),
+                      AppTextField(
+                        labelText: context.l10n.createTicketDescriptionLabel,
+                        isOptional: true,
+                        hintText: context.l10n.createTicketDescriptionHint,
+                        controller: _descController,
+                        focusNode: _descFocus,
+                        maxLines: 6,
+                        textInputAction: TextInputAction.done,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
-              child: AppButton(
-                label: context.l10n.commonCreateTicket,
-                variant: AppButtonVariant.primary,
-                isFullWidth: true,
-                onPressed: _isSubmitting ? null : _submit,
+              child: ContentMaxWidth(
+                variant: ContentWidthVariant.form,
+                child: AppButton(
+                  label: context.l10n.commonCreateTicket,
+                  variant: AppButtonVariant.primary,
+                  isFullWidth: true,
+                  onPressed: _isSubmitting ? null : _submit,
+                ),
               ),
             ),
           ],

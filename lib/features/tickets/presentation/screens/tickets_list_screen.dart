@@ -619,20 +619,23 @@ class _TicketsBody extends StatelessWidget {
     final loadMoreFailed = state is TicketsLoadMoreFailed;
     final showFooter = isLoadingMore || loadMoreFailed;
 
-    return ListView.separated(
-      controller: scrollController,
-      itemCount: tickets.length + (showFooter ? 1 : 0),
-      separatorBuilder: (context, index) =>
-          Container(color: c.border, height: 1),
-      itemBuilder: (context, index) {
-        if (index >= tickets.length) {
-          return _TicketListFooter(
-            isLoadingMore: isLoadingMore,
-            onRetry: () => context.read<TicketsCubit>().loadMoreTickets(),
-          );
-        }
-        return TicketListTile(ticket: tickets[index]);
-      },
+    return ContentMaxWidth(
+      variant: ContentWidthVariant.reading,
+      child: ListView.separated(
+        controller: scrollController,
+        itemCount: tickets.length + (showFooter ? 1 : 0),
+        separatorBuilder: (context, index) =>
+            Container(color: c.border, height: 1),
+        itemBuilder: (context, index) {
+          if (index >= tickets.length) {
+            return _TicketListFooter(
+              isLoadingMore: isLoadingMore,
+              onRetry: () => context.read<TicketsCubit>().loadMoreTickets(),
+            );
+          }
+          return TicketListTile(ticket: tickets[index]);
+        },
+      ),
     );
   }
 }

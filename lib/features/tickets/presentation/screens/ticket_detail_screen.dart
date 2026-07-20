@@ -205,492 +205,526 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                 children: [
                   Expanded(
                     child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-                            child: BlocBuilder<TicketsCubit, TicketsState>(
+                      child: ContentMaxWidth(
+                        variant: ContentWidthVariant.reading,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                20,
+                                16,
+                                20,
+                                16,
+                              ),
+                              child: BlocBuilder<TicketsCubit, TicketsState>(
+                                builder: (context, state) {
+                                  return switch (state) {
+                                    TicketsLoading() => const Center(
+                                      child: AppSpinner(),
+                                    ),
+                                    TicketsError(
+                                      :final message,
+                                      :final reason,
+                                    ) =>
+                                      Text(
+                                        reason != null
+                                            ? ticketsErrorMessage(
+                                                context,
+                                                reason,
+                                              )
+                                            : message,
+                                        style: AionText.body.copyWith(
+                                          color: c.danger,
+                                        ),
+                                      ),
+                                    TicketDetailLoaded(:final ticket) => Semantics(
+                                      header: true,
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          if (_isSyncable(ticket) &&
+                                              ticket.syncStatus ==
+                                                  TicketSyncStatus.needsRepair)
+                                            _RepairBanner(
+                                              ticket: ticket,
+                                              onRepaired: () => context
+                                                  .read<TicketsCubit>()
+                                                  .getTicketById(
+                                                    widget.ticketId,
+                                                  ),
+                                            ),
+                                          SelectionMenu<TicketPriority>(
+                                            // PriorityBadge renders SizedBox.shrink() for
+                                            // TicketPriority.none, which would make the trigger
+                                            // untappable (zero hit-test area) — fall back to a
+                                            // visible placeholder so priority can still be set
+                                            // for the first time from this screen.
+                                            trigger:
+                                                ticket.priority ==
+                                                    TicketPriority.none
+                                                ? Text(
+                                                    context
+                                                        .l10n
+                                                        .ticketDetailAddPriority,
+                                                    style: AionText.label
+                                                        .copyWith(
+                                                          color: c.textMuted,
+                                                        ),
+                                                  )
+                                                : PriorityBadge(
+                                                    priority: ticket.priority,
+                                                    isRow: false,
+                                                  ),
+                                            items: TicketPriority.values,
+                                            itemLabel: (p) =>
+                                                ticketPriorityLabel(context, p),
+                                            currentValue: ticket.priority,
+                                            onSelected: (p) => context
+                                                .read<TicketsCubit>()
+                                                .updateTicket(
+                                                  ticket.copyWith(priority: p),
+                                                ),
+                                            semanticsLabel: context
+                                                .l10n
+                                                .ticketDetailChangePriority,
+                                          ),
+                                          const SizedBox(
+                                            height: AionSpacing.sp8,
+                                          ),
+                                          InlineEditableField<String>(
+                                            displayText: ticket.title,
+                                            editText: ticket.title,
+                                            maxLines: 1,
+                                            textStyle: AionText.h2.copyWith(
+                                              color: c.textPrimary,
+                                            ),
+                                            semanticsLabel: context
+                                                .l10n
+                                                .ticketDetailEditTitle,
+                                            parser: (raw) {
+                                              final trimmed = raw.trim();
+                                              if (trimmed.isEmpty) {
+                                                throw FormatException(
+                                                  context
+                                                      .l10n
+                                                      .ticketDetailTitleEmptyError,
+                                                );
+                                              }
+                                              return trimmed;
+                                            },
+                                            onCommit: (v) => context
+                                                .read<TicketsCubit>()
+                                                .updateTicket(
+                                                  ticket.copyWith(title: v),
+                                                ),
+                                          ),
+                                          const SizedBox(
+                                            height: AionSpacing.sp12,
+                                          ),
+                                          Row(
+                                            children: [
+                                              SelectionMenu<TicketType>(
+                                                trigger: TypeChip(
+                                                  type: ticket.type,
+                                                  isRow: false,
+                                                ),
+                                                items: TicketType.values,
+                                                itemLabel: (ty) =>
+                                                    ticketTypeLabel(
+                                                      context,
+                                                      ty,
+                                                    ),
+                                                currentValue: ticket.type,
+                                                onSelected: (ty) => context
+                                                    .read<TicketsCubit>()
+                                                    .updateTicket(
+                                                      ticket.copyWith(type: ty),
+                                                    ),
+                                                semanticsLabel: context
+                                                    .l10n
+                                                    .ticketDetailChangeType,
+                                              ),
+                                              const SizedBox(
+                                                width: AionSpacing.sp8,
+                                              ),
+                                              SelectionMenu<TicketStatus>(
+                                                trigger: StatusIndicator(
+                                                  status: ticket.status,
+                                                ),
+                                                items: TicketStatus.values,
+                                                itemLabel: (s) =>
+                                                    ticketStatusLabel(
+                                                      context,
+                                                      s,
+                                                    ),
+                                                currentValue: ticket.status,
+                                                onSelected: (s) => context
+                                                    .read<TicketsCubit>()
+                                                    .changeTicketStatus(
+                                                      ticket,
+                                                      s,
+                                                    ),
+                                                semanticsLabel: context
+                                                    .l10n
+                                                    .ticketDetailChangeStatus,
+                                              ),
+                                            ],
+                                          ),
+                                          if (ticket.type !=
+                                              TicketType.epic) ...[
+                                            const SizedBox(
+                                              height: AionSpacing.sp8,
+                                            ),
+                                            TicketParentPicker(
+                                              ticketType: ticket.type,
+                                              currentParentId: ticket.parentId,
+                                              candidatesLoader: () => context
+                                                  .read<TicketsCubit>()
+                                                  .getValidParentCandidates(
+                                                    ticket,
+                                                  ),
+                                              onParentSelected: (parentId) =>
+                                                  context
+                                                      .read<TicketsCubit>()
+                                                      .updateTicketParent(
+                                                        ticket,
+                                                        parentId,
+                                                      ),
+                                            ),
+                                          ],
+                                          const SizedBox(
+                                            height: AionSpacing.sp12,
+                                          ),
+                                          Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Text(
+                                                    context
+                                                        .l10n
+                                                        .ticketDetailEstimateCaption,
+                                                    style: AionText.caption
+                                                        .copyWith(
+                                                          color: c.textMuted,
+                                                        ),
+                                                  ),
+                                                  const SizedBox(
+                                                    height: AionSpacing.sp4,
+                                                  ),
+                                                  InlineEditableField<int?>(
+                                                    displayText:
+                                                        formatDurationMinutes(
+                                                          ticket.estimate,
+                                                          placeholder: '',
+                                                        ),
+                                                    editText:
+                                                        formatDurationMinutes(
+                                                          ticket.estimate,
+                                                          placeholder: '',
+                                                        ),
+                                                    placeholder: context
+                                                        .l10n
+                                                        .ticketDetailEstimatePlaceholder,
+                                                    textStyle: AionText.bodySm
+                                                        .copyWith(
+                                                          color: c.textPrimary,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                        ),
+                                                    semanticsLabel: context
+                                                        .l10n
+                                                        .ticketDetailEditEstimate,
+                                                    parser: (raw) {
+                                                      try {
+                                                        return parseDurationMinutes(
+                                                          raw,
+                                                        );
+                                                      } on FormatException {
+                                                        throw FormatException(
+                                                          context.l10n
+                                                              .durationInvalidFormat(
+                                                                raw,
+                                                              ),
+                                                        );
+                                                      }
+                                                    },
+                                                    onCommit: (v) => context
+                                                        .read<TicketsCubit>()
+                                                        .updateTicket(
+                                                          ticket.copyWith(
+                                                            estimate: () => v,
+                                                          ),
+                                                        ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(
+                                                width: AionSpacing.sp24,
+                                              ),
+                                              Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Text(
+                                                    context
+                                                        .l10n
+                                                        .ticketDetailTimeSpentCaption,
+                                                    style: AionText.caption
+                                                        .copyWith(
+                                                          color: c.textMuted,
+                                                        ),
+                                                  ),
+                                                  const SizedBox(
+                                                    height: AionSpacing.sp4,
+                                                  ),
+                                                  InlineEditableField<int?>(
+                                                    displayText:
+                                                        formatDurationMinutes(
+                                                          ticket.timeSpent,
+                                                          placeholder: '',
+                                                        ),
+                                                    editText:
+                                                        formatDurationMinutes(
+                                                          ticket.timeSpent,
+                                                          placeholder: '',
+                                                        ),
+                                                    placeholder: context
+                                                        .l10n
+                                                        .ticketDetailTimeSpentPlaceholder,
+                                                    textStyle: AionText.bodySm
+                                                        .copyWith(
+                                                          color: c.textPrimary,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                        ),
+                                                    semanticsLabel: context
+                                                        .l10n
+                                                        .ticketDetailEditTimeSpent,
+                                                    parser: (raw) {
+                                                      try {
+                                                        return parseDurationMinutes(
+                                                          raw,
+                                                        );
+                                                      } on FormatException {
+                                                        throw FormatException(
+                                                          context.l10n
+                                                              .durationInvalidFormat(
+                                                                raw,
+                                                              ),
+                                                        );
+                                                      }
+                                                    },
+                                                    onCommit: (v) => context
+                                                        .read<TicketsCubit>()
+                                                        .updateTicket(
+                                                          ticket.copyWith(
+                                                            timeSpent: () => v,
+                                                          ),
+                                                        ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(
+                                            height: AionSpacing.sp16,
+                                          ),
+                                          Container(color: c.border, height: 1),
+                                          const SizedBox(
+                                            height: AionSpacing.sp16,
+                                          ),
+                                          Text(
+                                            context
+                                                .l10n
+                                                .ticketDetailDescriptionCaption,
+                                            style: AionText.caption.copyWith(
+                                              color: c.textMuted,
+                                            ),
+                                          ),
+                                          const SizedBox(
+                                            height: AionSpacing.sp8,
+                                          ),
+                                          InlineEditableField<String?>(
+                                            displayText:
+                                                ticket.description ?? '',
+                                            editText: ticket.description ?? '',
+                                            maxLines: 6,
+                                            placeholder: context
+                                                .l10n
+                                                .ticketDetailDescriptionPlaceholder,
+                                            textStyle: AionText.body.copyWith(
+                                              color: c.textSecondary,
+                                            ),
+                                            semanticsLabel: context
+                                                .l10n
+                                                .ticketDetailEditDescription,
+                                            parser: (raw) {
+                                              final trimmed = raw.trim();
+                                              return trimmed.isEmpty
+                                                  ? null
+                                                  : trimmed;
+                                            },
+                                            onCommit: (v) => context
+                                                .read<TicketsCubit>()
+                                                .updateTicket(
+                                                  ticket.copyWith(
+                                                    description: () => v,
+                                                  ),
+                                                ),
+                                          ),
+                                          const SizedBox(
+                                            height: AionSpacing.sp8,
+                                          ),
+                                          Text(
+                                            context.l10n.ticketDetailCreatedOn(
+                                              DateFormat.yMMMd().format(
+                                                ticket.createdAt,
+                                              ),
+                                            ),
+                                            style: AionText.time.copyWith(
+                                              color: c.textMuted,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    _ => const SizedBox.shrink(),
+                                  };
+                                },
+                              ),
+                            ),
+                            BlocBuilder<TicketsCubit, TicketsState>(
                               builder: (context, state) {
-                                return switch (state) {
-                                  TicketsLoading() => const Center(
-                                    child: AppSpinner(),
-                                  ),
-                                  TicketsError(:final message, :final reason) =>
-                                    Text(
-                                      reason != null
-                                          ? ticketsErrorMessage(context, reason)
-                                          : message,
+                                if (state is! TicketDetailLoaded) {
+                                  return const SizedBox.shrink();
+                                }
+                                final ticket = state.ticket;
+                                // `page` tickets never reach this far — the
+                                // `TicketDetailLoaded` listener above redirects
+                                // them to `PageDetailScreen` first. Only
+                                // `resource` renders Linked Tickets/Backlinks
+                                // here (sub-pages moved to `PageDetailScreen`
+                                // entirely, since only `page` tickets have
+                                // sub-pages).
+                                if (ticket.type != TicketType.resource) {
+                                  return const SizedBox.shrink();
+                                }
+                                return Column(
+                                  children: [
+                                    LinkedTicketsSection(
+                                      tickets: state.linkedTickets,
+                                      onTap: (id) =>
+                                          context.go('/workspace/tickets/$id'),
+                                      trailing: TicketLinkPicker(
+                                        candidatesLoader: () async {
+                                          final all = await context
+                                              .read<TicketsCubit>()
+                                              .getAllTickets();
+                                          final linkedIds = {
+                                            for (final t in state.linkedTickets)
+                                              t.id,
+                                            for (final t in state.backlinks)
+                                              t.id,
+                                          };
+                                          return all
+                                              .where(
+                                                (candidate) =>
+                                                    candidate.id != ticket.id &&
+                                                    !linkedIds.contains(
+                                                      candidate.id,
+                                                    ) &&
+                                                    candidate.type !=
+                                                        TicketType.page &&
+                                                    candidate.type !=
+                                                        TicketType.resource,
+                                              )
+                                              .toList();
+                                        },
+                                        onSelected: (selected) async {
+                                          await context
+                                              .read<TicketLinkRepository>()
+                                              .createLink(
+                                                sourceTicketId: ticket.id,
+                                                targetTicketId: selected.id,
+                                                linkType:
+                                                    TicketLinkType.relatesTo,
+                                              );
+                                          if (!context.mounted) return;
+                                          await context
+                                              .read<TicketsCubit>()
+                                              .loadDocumentRelations(ticket.id);
+                                        },
+                                      ),
+                                    ),
+                                    BacklinksSection(
+                                      tickets: state.backlinks,
+                                      onTap: (id) =>
+                                          context.go('/workspace/tickets/$id'),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+                            Container(color: c.border, height: 1),
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                              child: BlocBuilder<CommentsCubit, CommentsState>(
+                                builder: (context, state) {
+                                  return switch (state) {
+                                    CommentsLoading() => const Center(
+                                      child: AppSpinner(),
+                                    ),
+                                    CommentsError(:final message) => Text(
+                                      message,
                                       style: AionText.body.copyWith(
                                         color: c.danger,
                                       ),
                                     ),
-                                  TicketDetailLoaded(:final ticket) => Semantics(
-                                    header: true,
-                                    child: Column(
+                                    CommentsLoaded(:final comments) ||
+                                    CommentAdding(:final comments) ||
+                                    CommentAdded(:final comments) => Column(
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
-                                        if (_isSyncable(ticket) &&
-                                            ticket.syncStatus ==
-                                                TicketSyncStatus.needsRepair)
-                                          _RepairBanner(
-                                            ticket: ticket,
-                                            onRepaired: () => context
-                                                .read<TicketsCubit>()
-                                                .getTicketById(widget.ticketId),
-                                          ),
-                                        SelectionMenu<TicketPriority>(
-                                          // PriorityBadge renders SizedBox.shrink() for
-                                          // TicketPriority.none, which would make the trigger
-                                          // untappable (zero hit-test area) — fall back to a
-                                          // visible placeholder so priority can still be set
-                                          // for the first time from this screen.
-                                          trigger:
-                                              ticket.priority ==
-                                                  TicketPriority.none
-                                              ? Text(
-                                                  context
-                                                      .l10n
-                                                      .ticketDetailAddPriority,
-                                                  style: AionText.label
-                                                      .copyWith(
-                                                        color: c.textMuted,
-                                                      ),
-                                                )
-                                              : PriorityBadge(
-                                                  priority: ticket.priority,
-                                                  isRow: false,
-                                                ),
-                                          items: TicketPriority.values,
-                                          itemLabel: (p) =>
-                                              ticketPriorityLabel(context, p),
-                                          currentValue: ticket.priority,
-                                          onSelected: (p) => context
-                                              .read<TicketsCubit>()
-                                              .updateTicket(
-                                                ticket.copyWith(priority: p),
-                                              ),
-                                          semanticsLabel: context
-                                              .l10n
-                                              .ticketDetailChangePriority,
-                                        ),
-                                        const SizedBox(height: AionSpacing.sp8),
-                                        InlineEditableField<String>(
-                                          displayText: ticket.title,
-                                          editText: ticket.title,
-                                          maxLines: 1,
-                                          textStyle: AionText.h2.copyWith(
-                                            color: c.textPrimary,
-                                          ),
-                                          semanticsLabel: context
-                                              .l10n
-                                              .ticketDetailEditTitle,
-                                          parser: (raw) {
-                                            final trimmed = raw.trim();
-                                            if (trimmed.isEmpty) {
-                                              throw FormatException(
-                                                context
-                                                    .l10n
-                                                    .ticketDetailTitleEmptyError,
-                                              );
-                                            }
-                                            return trimmed;
-                                          },
-                                          onCommit: (v) => context
-                                              .read<TicketsCubit>()
-                                              .updateTicket(
-                                                ticket.copyWith(title: v),
-                                              ),
-                                        ),
-                                        const SizedBox(
-                                          height: AionSpacing.sp12,
-                                        ),
-                                        Row(
-                                          children: [
-                                            SelectionMenu<TicketType>(
-                                              trigger: TypeChip(
-                                                type: ticket.type,
-                                                isRow: false,
-                                              ),
-                                              items: TicketType.values,
-                                              itemLabel: (ty) =>
-                                                  ticketTypeLabel(context, ty),
-                                              currentValue: ticket.type,
-                                              onSelected: (ty) => context
-                                                  .read<TicketsCubit>()
-                                                  .updateTicket(
-                                                    ticket.copyWith(type: ty),
-                                                  ),
-                                              semanticsLabel: context
-                                                  .l10n
-                                                  .ticketDetailChangeType,
-                                            ),
-                                            const SizedBox(
-                                              width: AionSpacing.sp8,
-                                            ),
-                                            SelectionMenu<TicketStatus>(
-                                              trigger: StatusIndicator(
-                                                status: ticket.status,
-                                              ),
-                                              items: TicketStatus.values,
-                                              itemLabel: (s) =>
-                                                  ticketStatusLabel(context, s),
-                                              currentValue: ticket.status,
-                                              onSelected: (s) => context
-                                                  .read<TicketsCubit>()
-                                                  .changeTicketStatus(
-                                                    ticket,
-                                                    s,
-                                                  ),
-                                              semanticsLabel: context
-                                                  .l10n
-                                                  .ticketDetailChangeStatus,
-                                            ),
-                                          ],
-                                        ),
-                                        if (ticket.type != TicketType.epic) ...[
-                                          const SizedBox(
-                                            height: AionSpacing.sp8,
-                                          ),
-                                          TicketParentPicker(
-                                            ticketType: ticket.type,
-                                            currentParentId: ticket.parentId,
-                                            candidatesLoader: () => context
-                                                .read<TicketsCubit>()
-                                                .getValidParentCandidates(
-                                                  ticket,
-                                                ),
-                                            onParentSelected: (parentId) =>
-                                                context
-                                                    .read<TicketsCubit>()
-                                                    .updateTicketParent(
-                                                      ticket,
-                                                      parentId,
-                                                    ),
-                                          ),
-                                        ],
-                                        const SizedBox(
-                                          height: AionSpacing.sp12,
-                                        ),
-                                        Row(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Text(
-                                                  context
-                                                      .l10n
-                                                      .ticketDetailEstimateCaption,
-                                                  style: AionText.caption
-                                                      .copyWith(
-                                                        color: c.textMuted,
-                                                      ),
-                                                ),
-                                                const SizedBox(
-                                                  height: AionSpacing.sp4,
-                                                ),
-                                                InlineEditableField<int?>(
-                                                  displayText:
-                                                      formatDurationMinutes(
-                                                        ticket.estimate,
-                                                        placeholder: '',
-                                                      ),
-                                                  editText:
-                                                      formatDurationMinutes(
-                                                        ticket.estimate,
-                                                        placeholder: '',
-                                                      ),
-                                                  placeholder: context
-                                                      .l10n
-                                                      .ticketDetailEstimatePlaceholder,
-                                                  textStyle: AionText.bodySm
-                                                      .copyWith(
-                                                        color: c.textPrimary,
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                      ),
-                                                  semanticsLabel: context
-                                                      .l10n
-                                                      .ticketDetailEditEstimate,
-                                                  parser: (raw) {
-                                                    try {
-                                                      return parseDurationMinutes(
-                                                        raw,
-                                                      );
-                                                    } on FormatException {
-                                                      throw FormatException(
-                                                        context.l10n
-                                                            .durationInvalidFormat(
-                                                              raw,
-                                                            ),
-                                                      );
-                                                    }
-                                                  },
-                                                  onCommit: (v) => context
-                                                      .read<TicketsCubit>()
-                                                      .updateTicket(
-                                                        ticket.copyWith(
-                                                          estimate: () => v,
-                                                        ),
-                                                      ),
-                                                ),
-                                              ],
-                                            ),
-                                            const SizedBox(
-                                              width: AionSpacing.sp24,
-                                            ),
-                                            Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Text(
-                                                  context
-                                                      .l10n
-                                                      .ticketDetailTimeSpentCaption,
-                                                  style: AionText.caption
-                                                      .copyWith(
-                                                        color: c.textMuted,
-                                                      ),
-                                                ),
-                                                const SizedBox(
-                                                  height: AionSpacing.sp4,
-                                                ),
-                                                InlineEditableField<int?>(
-                                                  displayText:
-                                                      formatDurationMinutes(
-                                                        ticket.timeSpent,
-                                                        placeholder: '',
-                                                      ),
-                                                  editText:
-                                                      formatDurationMinutes(
-                                                        ticket.timeSpent,
-                                                        placeholder: '',
-                                                      ),
-                                                  placeholder: context
-                                                      .l10n
-                                                      .ticketDetailTimeSpentPlaceholder,
-                                                  textStyle: AionText.bodySm
-                                                      .copyWith(
-                                                        color: c.textPrimary,
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                      ),
-                                                  semanticsLabel: context
-                                                      .l10n
-                                                      .ticketDetailEditTimeSpent,
-                                                  parser: (raw) {
-                                                    try {
-                                                      return parseDurationMinutes(
-                                                        raw,
-                                                      );
-                                                    } on FormatException {
-                                                      throw FormatException(
-                                                        context.l10n
-                                                            .durationInvalidFormat(
-                                                              raw,
-                                                            ),
-                                                      );
-                                                    }
-                                                  },
-                                                  onCommit: (v) => context
-                                                      .read<TicketsCubit>()
-                                                      .updateTicket(
-                                                        ticket.copyWith(
-                                                          timeSpent: () => v,
-                                                        ),
-                                                      ),
-                                                ),
-                                              ],
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(
-                                          height: AionSpacing.sp16,
-                                        ),
-                                        Container(color: c.border, height: 1),
-                                        const SizedBox(
-                                          height: AionSpacing.sp16,
-                                        ),
                                         Text(
-                                          context
-                                              .l10n
-                                              .ticketDetailDescriptionCaption,
+                                          context.l10n
+                                              .ticketDetailCommentsCount(
+                                                comments.length,
+                                              ),
                                           style: AionText.caption.copyWith(
                                             color: c.textMuted,
                                           ),
                                         ),
-                                        const SizedBox(height: AionSpacing.sp8),
-                                        InlineEditableField<String?>(
-                                          displayText: ticket.description ?? '',
-                                          editText: ticket.description ?? '',
-                                          maxLines: 6,
-                                          placeholder: context
-                                              .l10n
-                                              .ticketDetailDescriptionPlaceholder,
-                                          textStyle: AionText.body.copyWith(
-                                            color: c.textSecondary,
-                                          ),
-                                          semanticsLabel: context
-                                              .l10n
-                                              .ticketDetailEditDescription,
-                                          parser: (raw) {
-                                            final trimmed = raw.trim();
-                                            return trimmed.isEmpty
-                                                ? null
-                                                : trimmed;
-                                          },
-                                          onCommit: (v) => context
-                                              .read<TicketsCubit>()
-                                              .updateTicket(
-                                                ticket.copyWith(
-                                                  description: () => v,
-                                                ),
-                                              ),
+                                        const SizedBox(
+                                          height: AionSpacing.sp12,
                                         ),
-                                        const SizedBox(height: AionSpacing.sp8),
-                                        Text(
-                                          context.l10n.ticketDetailCreatedOn(
-                                            DateFormat.yMMMd().format(
-                                              ticket.createdAt,
-                                            ),
-                                          ),
-                                          style: AionText.time.copyWith(
-                                            color: c.textMuted,
-                                          ),
+                                        ListView.builder(
+                                          shrinkWrap: true,
+                                          physics:
+                                              const NeverScrollableScrollPhysics(),
+                                          itemCount: comments.length,
+                                          itemBuilder: (context, index) =>
+                                              CommentTile(
+                                                comment: comments[index],
+                                              ),
                                         ),
                                       ],
                                     ),
-                                  ),
-                                  _ => const SizedBox.shrink(),
-                                };
-                              },
+                                    _ => const SizedBox.shrink(),
+                                  };
+                                },
+                              ),
                             ),
-                          ),
-                          BlocBuilder<TicketsCubit, TicketsState>(
-                            builder: (context, state) {
-                              if (state is! TicketDetailLoaded) {
-                                return const SizedBox.shrink();
-                              }
-                              final ticket = state.ticket;
-                              // `page` tickets never reach this far — the
-                              // `TicketDetailLoaded` listener above redirects
-                              // them to `PageDetailScreen` first. Only
-                              // `resource` renders Linked Tickets/Backlinks
-                              // here (sub-pages moved to `PageDetailScreen`
-                              // entirely, since only `page` tickets have
-                              // sub-pages).
-                              if (ticket.type != TicketType.resource) {
-                                return const SizedBox.shrink();
-                              }
-                              return Column(
-                                children: [
-                                  LinkedTicketsSection(
-                                    tickets: state.linkedTickets,
-                                    onTap: (id) =>
-                                        context.go('/workspace/tickets/$id'),
-                                    trailing: TicketLinkPicker(
-                                      candidatesLoader: () async {
-                                        final all = await context
-                                            .read<TicketsCubit>()
-                                            .getAllTickets();
-                                        final linkedIds = {
-                                          for (final t in state.linkedTickets)
-                                            t.id,
-                                          for (final t in state.backlinks) t.id,
-                                        };
-                                        return all
-                                            .where(
-                                              (candidate) =>
-                                                  candidate.id != ticket.id &&
-                                                  !linkedIds.contains(
-                                                    candidate.id,
-                                                  ) &&
-                                                  candidate.type !=
-                                                      TicketType.page &&
-                                                  candidate.type !=
-                                                      TicketType.resource,
-                                            )
-                                            .toList();
-                                      },
-                                      onSelected: (selected) async {
-                                        await context
-                                            .read<TicketLinkRepository>()
-                                            .createLink(
-                                              sourceTicketId: ticket.id,
-                                              targetTicketId: selected.id,
-                                              linkType:
-                                                  TicketLinkType.relatesTo,
-                                            );
-                                        if (!context.mounted) return;
-                                        await context
-                                            .read<TicketsCubit>()
-                                            .loadDocumentRelations(ticket.id);
-                                      },
-                                    ),
-                                  ),
-                                  BacklinksSection(
-                                    tickets: state.backlinks,
-                                    onTap: (id) =>
-                                        context.go('/workspace/tickets/$id'),
-                                  ),
-                                ],
-                              );
-                            },
-                          ),
-                          Container(color: c.border, height: 1),
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                            child: BlocBuilder<CommentsCubit, CommentsState>(
-                              builder: (context, state) {
-                                return switch (state) {
-                                  CommentsLoading() => const Center(
-                                    child: AppSpinner(),
-                                  ),
-                                  CommentsError(:final message) => Text(
-                                    message,
-                                    style: AionText.body.copyWith(
-                                      color: c.danger,
-                                    ),
-                                  ),
-                                  CommentsLoaded(:final comments) ||
-                                  CommentAdding(:final comments) ||
-                                  CommentAdded(:final comments) => Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        context.l10n.ticketDetailCommentsCount(
-                                          comments.length,
-                                        ),
-                                        style: AionText.caption.copyWith(
-                                          color: c.textMuted,
-                                        ),
-                                      ),
-                                      const SizedBox(height: AionSpacing.sp12),
-                                      ListView.builder(
-                                        shrinkWrap: true,
-                                        physics:
-                                            const NeverScrollableScrollPhysics(),
-                                        itemCount: comments.length,
-                                        itemBuilder: (context, index) =>
-                                            CommentTile(
-                                              comment: comments[index],
-                                            ),
-                                      ),
-                                    ],
-                                  ),
-                                  _ => const SizedBox.shrink(),
-                                };
-                              },
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -699,91 +733,97 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                     color: c.background,
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(20, 12, 20, 18),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: c.secondary,
-                              shape: BoxShape.circle,
-                            ),
-                            child: SizedBox(
-                              width: 34,
-                              height: 34,
-                              child: Center(
-                                child: Text(
-                                  'U',
-                                  style: AionText.key.copyWith(
-                                    color: const Color(0xFFFFFFFF),
+                      child: ContentMaxWidth(
+                        variant: ContentWidthVariant.reading,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: c.secondary,
+                                shape: BoxShape.circle,
+                              ),
+                              child: SizedBox(
+                                width: 34,
+                                height: 34,
+                                child: Center(
+                                  child: Text(
+                                    'U',
+                                    style: AionText.key.copyWith(
+                                      color: const Color(0xFFFFFFFF),
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: c.surface,
-                                border: Border.all(color: c.border, width: 1),
-                                borderRadius: BorderRadius.all(AionRadius.pill),
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 15,
-                                  vertical: 10,
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: c.surface,
+                                  border: Border.all(color: c.border, width: 1),
+                                  borderRadius: BorderRadius.all(
+                                    AionRadius.pill,
+                                  ),
                                 ),
-                                child: Material(
-                                  type: MaterialType.transparency,
-                                  child: TextField(
-                                    controller: _commentController,
-                                    maxLines: 1,
-                                    style: AionText.bodySm.copyWith(
-                                      color: c.textPrimary,
-                                      fontSize: 13,
-                                    ),
-                                    decoration: InputDecoration.collapsed(
-                                      hintText:
-                                          context.l10n.ticketDetailCommentHint,
-                                      hintStyle: AionText.bodySm.copyWith(
-                                        color: c.textMuted,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 15,
+                                    vertical: 10,
+                                  ),
+                                  child: Material(
+                                    type: MaterialType.transparency,
+                                    child: TextField(
+                                      controller: _commentController,
+                                      maxLines: 1,
+                                      style: AionText.bodySm.copyWith(
+                                        color: c.textPrimary,
                                         fontSize: 13,
+                                      ),
+                                      decoration: InputDecoration.collapsed(
+                                        hintText: context
+                                            .l10n
+                                            .ticketDetailCommentHint,
+                                        hintStyle: AionText.bodySm.copyWith(
+                                          color: c.textMuted,
+                                          fontSize: 13,
+                                        ),
                                       ),
                                     ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 10),
-                          Semantics(
-                            button: true,
-                            label: context.l10n.ticketDetailSendComment,
-                            child: GestureDetector(
-                              onTap: _sendComment,
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  color: c.primary,
-                                  borderRadius: BorderRadius.circular(19),
-                                  boxShadow: AionShadows.fab(c, t.isDark),
-                                ),
-                                child: SizedBox(
-                                  width: 38,
-                                  height: 38,
-                                  child: Center(
-                                    child: PhosphorIcon(
-                                      PhosphorIcons.paperPlaneTiltLight,
-                                      size: 17,
-                                      color: const Color(
-                                        0xFFFFFFFF,
-                                      ), // white glyph
+                            const SizedBox(width: 10),
+                            Semantics(
+                              button: true,
+                              label: context.l10n.ticketDetailSendComment,
+                              child: GestureDetector(
+                                onTap: _sendComment,
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: c.primary,
+                                    borderRadius: BorderRadius.circular(19),
+                                    boxShadow: AionShadows.fab(c, t.isDark),
+                                  ),
+                                  child: SizedBox(
+                                    width: 38,
+                                    height: 38,
+                                    child: Center(
+                                      child: PhosphorIcon(
+                                        PhosphorIcons.paperPlaneTiltLight,
+                                        size: 17,
+                                        color: const Color(
+                                          0xFFFFFFFF,
+                                        ), // white glyph
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),

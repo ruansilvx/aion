@@ -123,48 +123,51 @@ class _PageDetailContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                MarkdownEditor(
-                  initialValue: page.description ?? '',
-                  placeholder: context.l10n.pageDetailContentPlaceholder,
-                  semanticsLabel: context.l10n.pageDetailEditContent,
-                  onCommit: (v) => context.read<PagesCubit>().updatePage(
-                    page.copyWith(description: () => v.isEmpty ? null : v),
+      child: ContentMaxWidth(
+        variant: ContentWidthVariant.reading,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  MarkdownEditor(
+                    initialValue: page.description ?? '',
+                    placeholder: context.l10n.pageDetailContentPlaceholder,
+                    semanticsLabel: context.l10n.pageDetailEditContent,
+                    onCommit: (v) => context.read<PagesCubit>().updatePage(
+                      page.copyWith(description: () => v.isEmpty ? null : v),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          PageSubPagesSection(
-            childDocs: relations.childDocs,
-            onTap: (id) => context.go('/workspace/pages/$id'),
-            onAdd: () => context.push(
-              '/workspace/pages/new',
-              extra: PageCreateRouteExtra(initialParentId: page.id),
+            PageSubPagesSection(
+              childDocs: relations.childDocs,
+              onTap: (id) => context.go('/workspace/pages/$id'),
+              onAdd: () => context.push(
+                '/workspace/pages/new',
+                extra: PageCreateRouteExtra(initialParentId: page.id),
+              ),
             ),
-          ),
-          LinkedTicketsSection(
-            tickets: relations.linkedTickets,
-            onTap: (id) => context.go('/workspace/tickets/$id'),
-          ),
-          BacklinksSection(
-            tickets: relations.backlinks,
-            onTap: (id) {
-              final ticket = relations.backlinks.firstWhere(
-                (t) => t.id == id,
-                orElse: () => relations.backlinks.first,
-              );
-              context.go(ticketDetailRoute(ticket));
-            },
-          ),
-        ],
+            LinkedTicketsSection(
+              tickets: relations.linkedTickets,
+              onTap: (id) => context.go('/workspace/tickets/$id'),
+            ),
+            BacklinksSection(
+              tickets: relations.backlinks,
+              onTap: (id) {
+                final ticket = relations.backlinks.firstWhere(
+                  (t) => t.id == id,
+                  orElse: () => relations.backlinks.first,
+                );
+                context.go(ticketDetailRoute(ticket));
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
