@@ -731,10 +731,10 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                   Container(color: c.border, height: 1),
                   ColoredBox(
                     color: c.background,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 18),
-                      child: ContentMaxWidth(
-                        variant: ContentWidthVariant.reading,
+                    child: ContentMaxWidth(
+                      variant: ContentWidthVariant.reading,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 12, 20, 18),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
