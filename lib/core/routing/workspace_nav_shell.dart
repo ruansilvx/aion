@@ -133,9 +133,37 @@ class _WideShell extends StatelessWidget {
   }
 }
 
-/// The fixed-width (244px) left sidebar rendered by [_WideShell]: the two
-/// [_NavItem] destinations top-aligned, then flexible space, then the
-/// [_SecondaryActionsTrigger] anchored to the bottom.
+/// The sidebar's top zone: the AION hexagon emblem plus wordmark, sitting
+/// above the nav items. Purely decorative — per design.md's Claude Design
+/// visual spec §1, not itself interactive.
+class _BrandHeader extends StatelessWidget {
+  /// Creates a [_BrandHeader].
+  const _BrandHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 2, 8, 20),
+      child: Row(
+        children: [
+          PhosphorIcon(PhosphorIcons.hexagonFill, size: 26, color: c.primary),
+          const SizedBox(width: 10),
+          Text(
+            'AION',
+            style: AionText.caption.copyWith(color: c.textPrimary),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The fixed-width (244px) left sidebar rendered by [_WideShell]: the
+/// brand header, then the two [_NavItem] destinations, then flexible
+/// space, then the [_SecondaryActionsTrigger] anchored to the bottom.
 class _Sidebar extends StatelessWidget {
   /// Creates a [_Sidebar].
   const _Sidebar({
@@ -170,6 +198,7 @@ class _Sidebar extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              const _BrandHeader(),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
