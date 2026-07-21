@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_search_page.dart';
+import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sync_status.dart';
@@ -36,10 +37,18 @@ abstract interface class TicketRepository {
   Future<void> updateTicketParent(String id, String? parentId);
 
   /// Persists [ticket]'s `title`, `description`, `priority`, `type`,
-  /// `estimate`, and `timeSpent`, plus a fresh `updatedAt`. Does not touch
-  /// `status` (use [updateTicketStatus]), `parentId`, `embedding`, `id`, or
+  /// `estimate`, `timeSpent`, and `complexity`, plus a fresh `updatedAt`.
+  /// Does not touch `status` (use [updateTicketStatus]), `sddStage` (use
+  /// [updateTicketSddStage]), `parentId`, `embedding`, `id`, or
   /// `ticketId`. Throws if `ticket.id` does not exist.
   Future<void> updateTicket(Ticket ticket);
+
+  /// Updates only the [stage] (and `updatedAt`) of the ticket with id
+  /// [id]. Does not touch any other field, and performs no precondition
+  /// validation — callers (`TicketsCubit.advanceSddStage`) are
+  /// responsible for checking the transition is legal before calling
+  /// this. Throws if [id] does not exist.
+  Future<void> updateTicketSddStage(String id, SddStage stage);
 
   /// Updates only the [embedding] of the ticket with id [id]. Independent
   /// of [updateTicket] — embedding regeneration is a background side

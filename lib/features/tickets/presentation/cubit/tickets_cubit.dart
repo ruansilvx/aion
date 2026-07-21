@@ -7,43 +7,59 @@ import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 
+import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/core/contracts/embedding_provider.dart';
+import 'package:aion/features/providers/domain/enums/agent_model.dart';
 import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
+import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
+import 'package:aion/features/tickets/domain/enums/comment_author_type.dart';
+import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_complexity.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
+import 'package:aion/features/tickets/domain/repositories/comment_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_link_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
+import 'package:aion/features/tickets/presentation/cubit/chat_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 
 /// Loads, lists, and creates tickets via [TicketRepository]. Root-scoped —
 /// provided once at the app root, not per-screen.
 class TicketsCubit extends Cubit<TicketsState> {
   /// Creates a [TicketsCubit] backed by [_repository]. [_embeddingProvider],
-  /// [_gitProjector], and [_projectRootPath] are optional — when any is
-  /// `null` (the default, and every existing call site/test), the
-  /// embedding-regen and git-projection side effects documented on
+  /// [_gitProjector], [_projectRootPath], [_agentClient], and
+  /// [_commentRepository] are optional — when any is `null` (the
+  /// default, and every existing call site/test), the embedding-regen,
+  /// git-projection, and stage-chat-spawning side effects documented on
   /// [createTicket]/[updateTicket]/[updateTicketStatus]/
-  /// [changeTicketStatus]/[trashTicket]/[trashTickets] simply no-op,
-  /// rather than requiring every one of ~40 existing construction sites
-  /// to be updated for a feature most of them don't exercise.
+  /// [changeTicketStatus]/[trashTicket]/[trashTickets]/[advanceSddStage]
+  /// simply no-op, rather than requiring every one of ~40 existing
+  /// construction sites to be updated for a feature most of them don't
+  /// exercise. Real usage (`app_router.dart`) supplies [_agentClient]/
+  /// [_commentRepository] so [advanceSddStage] always spawns its chat.
   // The public param names below (embeddingProvider/gitProjector/
-  // projectRootPath) intentionally differ from their private backing
-  // fields; a private identifier can't be used as an external
-  // named-parameter label from another library, so `this._foo` shorthand
-  // isn't usable here.
+  // projectRootPath/agentClient/commentRepository) intentionally differ
+  // from their private backing fields; a private identifier can't be
+  // used as an external named-parameter label from another library, so
+  // `this._foo` shorthand isn't usable here.
   TicketsCubit(
     this._repository, {
     EmbeddingProvider? embeddingProvider,
     TicketGitProjector? gitProjector,
     String? projectRootPath,
     TicketLinkRepository? linkRepository,
+    AgentModelClient? agentClient,
+    CommentRepository? commentRepository,
   }) : super(const TicketsInitial()) {
     _embeddingProvider = embeddingProvider;
     _gitProjector = gitProjector;
     _projectRootPath = projectRootPath;
     _linkRepository = linkRepository;
+    _agentClient = agentClient;
+    _commentRepository = commentRepository;
   }
 
   final TicketRepository _repository;
@@ -51,6 +67,8 @@ class TicketsCubit extends Cubit<TicketsState> {
   late final TicketGitProjector? _gitProjector;
   late final String? _projectRootPath;
   late final TicketLinkRepository? _linkRepository;
+  late final AgentModelClient? _agentClient;
+  late final CommentRepository? _commentRepository;
   static const _uuid = Uuid();
 
   /// Tickets fetched per page, for both [searchTickets] and
@@ -202,7 +220,9 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Creates a new ticket of [type] with [title], then reloads the list.
   ///
-  /// [status] always starts at [TicketStatus.backlog]. Emits
+  /// [status] always starts at [TicketStatus.backlog]. [complexity]
+  /// defaults to `null` (unset), matching [Ticket.complexity]'s own
+  /// default. Emits
   /// [TicketCreating] (carrying the list as it was before this call) then
   /// [TicketCreated] (carrying the refreshed page) on success, or
   /// [TicketsError] if the repository call throws. The refresh re-applies
@@ -225,6 +245,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     String? description,
     TicketPriority priority = TicketPriority.none,
     String? parentId,
+    TicketComplexity? complexity,
   }) async {
     _searchGeneration++;
     final currentTickets = switch (state) {
@@ -243,6 +264,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       final ticket = Ticket(
         id: _uuid.v4(),
         ticketId: '',
+        complexity: complexity,
         type: type,
         title: title,
         description: description,
@@ -484,6 +506,313 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
   }
 
+  /// Advances [ticket]'s [Ticket.sddStage] to the next stage, after
+  /// checking that stage's precondition. Rejects (emits
+  /// [TicketsError] with [TicketsErrorReason.sddStagePreconditionNotMet],
+  /// then re-emits [TicketDetailLoaded], mirroring [_emitInvalidParent])
+  /// if `ticket.type` is not [TicketType.epic]/[TicketType.story], the
+  /// ticket has already reached [SddStage.archived], or the precondition
+  /// for the current → next transition isn't met yet:
+  ///
+  /// - `null` → [SddStage.exploring]: no precondition, any epic/story may
+  ///   start.
+  /// - [SddStage.exploring] → [SddStage.proposed]: the ticket's most
+  ///   recently created `chat` child has at least one [CommentAuthorType.ai]
+  ///   comment (i.e. isn't mid-run).
+  /// - [SddStage.proposed] → [SddStage.verifying]: every direct child at
+  ///   the next rank down (Tasks for a story, Stories for an epic) has
+  ///   reached a terminal state ([TicketStatus.done] for a Task,
+  ///   [SddStage.archived] for a Story) — and at least one such child
+  ///   exists.
+  /// - [SddStage.verifying] → [SddStage.archived]: same chat-reply check
+  ///   as exploring → proposed, against the most recent `chat` child.
+  ///
+  /// On success: persists the new stage via
+  /// [TicketRepository.updateTicketSddStage], re-emits
+  /// [TicketDetailLoaded], then spawns the next stage's chat (see
+  /// [_spawnStageChat]) unless the new stage is [SddStage.archived]
+  /// (nothing to spawn after Archival).
+  Future<void> advanceSddStage(Ticket ticket) async {
+    if (ticket.type != TicketType.epic && ticket.type != TicketType.story) {
+      await _emitSddStagePreconditionNotMet(ticket.id);
+      return;
+    }
+
+    final nextStage = _nextSddStage(ticket.sddStage);
+    if (nextStage == null) {
+      await _emitSddStagePreconditionNotMet(ticket.id);
+      return;
+    }
+    if (!await _canAdvanceSddStage(ticket)) {
+      await _emitSddStagePreconditionNotMet(ticket.id);
+      return;
+    }
+
+    try {
+      await _repository.updateTicketSddStage(ticket.id, nextStage);
+      final refreshed = await _repository.getTicketById(ticket.id);
+      if (refreshed != null) {
+        emit(TicketDetailLoaded(refreshed));
+        if (nextStage != SddStage.archived) {
+          unawaited(_spawnStageChat(refreshed, nextStage));
+        }
+      }
+    } catch (e) {
+      emit(TicketsError(e.toString()));
+    }
+  }
+
+  /// Promotes [signal] into an epic: if [existingEpicId] is given, links
+  /// [signal] to that epic via [TicketLinkRepository.createLink] (as
+  /// [TicketLinkType.relatesTo]); otherwise creates a new
+  /// [TicketType.epic] ticket copying `signal.title`/`description`, then
+  /// links the two the same way. Does not delete or change [signal]'s
+  /// own type or status — promotion is a link, not a conversion,
+  /// consistent with `release`'s existing cross-cutting-link precedent.
+  /// Emits [TicketsError] (raw message, no classified reason — this
+  /// guard is defensive, since the UI only ever calls this for a
+  /// `signal` ticket) if `signal.type` isn't [TicketType.signal]. No-ops
+  /// (does not touch the repository) if constructed without a
+  /// [TicketLinkRepository] (see the constructor's dartdoc).
+  Future<void> promoteSignalToEpic(
+    Ticket signal, {
+    String? existingEpicId,
+  }) async {
+    if (signal.type != TicketType.signal) {
+      emit(TicketsError('Only signal tickets can be promoted to an epic.'));
+      final ticket = await _repository.getTicketById(signal.id);
+      if (ticket != null) {
+        emit(TicketDetailLoaded(ticket));
+      }
+      return;
+    }
+
+    final linkRepo = _linkRepository;
+    if (linkRepo == null) return;
+
+    try {
+      String epicId;
+      if (existingEpicId != null) {
+        epicId = existingEpicId;
+      } else {
+        final now = DateTime.now();
+        final epic = Ticket(
+          id: _uuid.v4(),
+          ticketId: '',
+          type: TicketType.epic,
+          title: signal.title,
+          description: signal.description,
+          status: TicketStatus.backlog,
+          createdAt: now,
+          updatedAt: now,
+        );
+        await _repository.createTicket(epic);
+        epicId = epic.id;
+      }
+      await linkRepo.createLink(
+        sourceTicketId: signal.id,
+        targetTicketId: epicId,
+        linkType: TicketLinkType.relatesTo,
+      );
+      final refreshed = await _repository.getTicketById(signal.id);
+      if (refreshed != null) {
+        emit(TicketDetailLoaded(refreshed));
+      }
+    } catch (e) {
+      emit(TicketsError(e.toString()));
+    }
+  }
+
+  /// Emits the rejected-stage-advance error for ticket [ticketId], then
+  /// re-emits its unchanged [TicketDetailLoaded] so the detail screen
+  /// shows a toast instead of collapsing to the generic error view.
+  /// Mirrors [_emitInvalidParent].
+  Future<void> _emitSddStagePreconditionNotMet(String ticketId) async {
+    emit(
+      const TicketsError(
+        '',
+        reason: TicketsErrorReason.sddStagePreconditionNotMet,
+      ),
+    );
+    final ticket = await _repository.getTicketById(ticketId);
+    if (ticket != null) {
+      emit(TicketDetailLoaded(ticket));
+    }
+  }
+
+  /// The next [SddStage] after [current] (`null` meaning the cycle hasn't
+  /// started), or `null` if [current] is already [SddStage.archived]
+  /// (nothing further to advance to).
+  SddStage? _nextSddStage(SddStage? current) => switch (current) {
+    null => SddStage.exploring,
+    SddStage.exploring => SddStage.proposed,
+    SddStage.proposed => SddStage.verifying,
+    SddStage.verifying => SddStage.archived,
+    SddStage.archived => null,
+  };
+
+  /// Whether [advanceSddStage] would currently succeed for [ticket] —
+  /// shared by [advanceSddStage]'s own check and [getTicketById]'s
+  /// [TicketDetailLoaded.canAdvanceSddStage] computation, so the two
+  /// can't disagree. `false` for any type other than
+  /// [TicketType.epic]/[TicketType.story], or once [SddStage.archived]
+  /// is reached.
+  Future<bool> _canAdvanceSddStage(Ticket ticket) async {
+    if (ticket.type != TicketType.epic && ticket.type != TicketType.story) {
+      return false;
+    }
+    if (_nextSddStage(ticket.sddStage) == null) return false;
+
+    switch (ticket.sddStage) {
+      case null:
+        return true;
+      case SddStage.exploring:
+      case SddStage.verifying:
+        return _mostRecentChatHasTerminalReply(ticket.id);
+      case SddStage.proposed:
+        final nextRank = ticket.type == TicketType.story
+            ? TicketType.task
+            : TicketType.story;
+        final children = await _repository.getTicketsByParent(
+          ticket.id,
+          types: [nextRank],
+        );
+        if (children.isEmpty) return false;
+        return children.every(
+          (c) => nextRank == TicketType.task
+              ? c.status == TicketStatus.done
+              : c.sddStage == SddStage.archived,
+        );
+      case SddStage.archived:
+        return false;
+    }
+  }
+
+  /// Whether [parentId]'s most recently created `chat` child ticket
+  /// already has at least one [CommentAuthorType.ai] comment — the proxy
+  /// this change uses for "that stage's chat has completed," since a
+  /// [ChatCubit] reply's in-progress `streamingText` is never persisted
+  /// mid-stream (see `chat_cubit.dart`). Returns `false` if constructed
+  /// without a [CommentRepository] (see the constructor's dartdoc), or if
+  /// no `chat` child exists yet.
+  Future<bool> _mostRecentChatHasTerminalReply(String parentId) async {
+    final commentRepo = _commentRepository;
+    if (commentRepo == null) return false;
+
+    final chats = await _repository.getTicketsByParent(
+      parentId,
+      types: const [TicketType.chat],
+    );
+    if (chats.isEmpty) return false;
+
+    final mostRecent = chats.reduce(
+      (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
+    );
+    final comments = await commentRepo.getCommentsForTicket(mostRecent.id);
+    return comments.any((c) => c.authorType == CommentAuthorType.ai);
+  }
+
+  /// Creates a `chat`-type child ticket for [stage] under [parent],
+  /// posts an auto-assembled [CommentAuthorType.system] context comment
+  /// (see [_assembleStageContext]), then calls the configured
+  /// [AgentModelClient] and persists the streamed reply via
+  /// [ChatCubit.runChatTurn] — the same accumulate-then-persist logic
+  /// [ChatCubit.sendMessage] uses, so the spawn path and the user-message
+  /// path can't drift apart. Returns the spawned chat ticket's id, or
+  /// `null` if constructed without an [AgentModelClient]/
+  /// [CommentRepository] (see the constructor's dartdoc) — real usage
+  /// (`app_router.dart`) always supplies both. A default model
+  /// ([AgentModel.sonnet]) is used for this call; no per-phase model
+  /// routing exists yet (see `providers.md`).
+  Future<String?> _spawnStageChat(Ticket parent, SddStage stage) async {
+    final client = _agentClient;
+    final commentRepo = _commentRepository;
+    if (client == null || commentRepo == null) return null;
+
+    final now = DateTime.now();
+    final chatTicket = Ticket(
+      id: _uuid.v4(),
+      ticketId: '',
+      type: TicketType.chat,
+      title: '${_stagePresentName(stage)} — ${parent.title}',
+      status: TicketStatus.backlog,
+      parentId: parent.id,
+      createdAt: now,
+      updatedAt: now,
+    );
+    await _repository.createTicket(chatTicket);
+    final persistedChat = await _repository.getTicketById(chatTicket.id);
+    if (persistedChat == null) return null;
+
+    final context = await _assembleStageContext(parent, stage);
+    await commentRepo.addComment(
+      TicketComment(
+        id: '',
+        ticketId: persistedChat.id,
+        content: context,
+        authorType: CommentAuthorType.system,
+        createdAt: DateTime.now(),
+      ),
+    );
+
+    await ChatCubit.runChatTurn(
+      client: client,
+      commentRepo: commentRepo,
+      chatTicketId: persistedChat.id,
+      prompt: context,
+      model: AgentModel.sonnet,
+    );
+    return persistedChat.id;
+  }
+
+  /// Assembles the plain-text context a spawned stage chat opens with:
+  /// [parent]'s title/description, and — for [SddStage.verifying]/
+  /// [SddStage.archived] — its direct children's titles and statuses. No
+  /// embeddings, no repo-map-lite involvement (see proposal.md's Out of
+  /// scope).
+  Future<String> _assembleStageContext(Ticket parent, SddStage stage) async {
+    final buffer = StringBuffer()
+      ..writeln('# ${parent.title}');
+    final description = parent.description;
+    if (description != null && description.isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln(description);
+    }
+
+    if (stage == SddStage.verifying || stage == SddStage.archived) {
+      final nextRank = parent.type == TicketType.story
+          ? TicketType.task
+          : TicketType.story;
+      final children = await _repository.getTicketsByParent(
+        parent.id,
+        types: [nextRank],
+      );
+      if (children.isNotEmpty) {
+        buffer
+          ..writeln()
+          ..writeln(nextRank == TicketType.task ? '## Tasks' : '## Stories');
+        for (final child in children) {
+          final statusLabel = nextRank == TicketType.task
+              ? child.status.name
+              : (child.sddStage?.name ?? 'not started');
+          buffer.writeln('- ${child.title} ($statusLabel)');
+        }
+      }
+    }
+
+    return buffer.toString().trim();
+  }
+
+  /// Present-progressive display name for [stage], used in a spawned
+  /// chat ticket's title.
+  String _stagePresentName(SddStage stage) => switch (stage) {
+    SddStage.exploring => 'Exploring',
+    SddStage.proposed => 'Proposed',
+    SddStage.verifying => 'Verifying',
+    SddStage.archived => 'Archived',
+  };
+
   /// Fires an async embedding-regen call for [ticket] and writes the
   /// result back via [TicketRepository.updateEmbedding] once it
   /// resolves. Never awaited by callers — ticket save must never block
@@ -539,16 +868,20 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Fetches the ticket with internal id [id]. Emits [TicketsLoading] then
   /// [TicketDetailLoaded] on success, or [TicketsError] if not found or the
-  /// repository call throws.
+  /// repository call throws. For an `epic`/`story` ticket, also fetches
+  /// its direct children and evaluates [advanceSddStage]'s precondition
+  /// for the ticket's current stage, populating
+  /// [TicketDetailLoaded.canAdvanceSddStage].
   Future<void> getTicketById(String id) async {
     emit(const TicketsLoading());
     try {
       final ticket = await _repository.getTicketById(id);
       if (ticket == null) {
         emit(const TicketsError('', reason: TicketsErrorReason.notFound));
-      } else {
-        emit(TicketDetailLoaded(ticket));
+        return;
       }
+      final canAdvance = await _canAdvanceSddStage(ticket);
+      emit(TicketDetailLoaded(ticket, canAdvanceSddStage: canAdvance));
     } catch (e) {
       emit(TicketsError(e.toString()));
     }

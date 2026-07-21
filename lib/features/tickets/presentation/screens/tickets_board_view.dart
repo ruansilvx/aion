@@ -55,6 +55,8 @@ String ticketsErrorMessage(BuildContext context, TicketsErrorReason reason) {
   return switch (reason) {
     TicketsErrorReason.notFound => l10n.ticketsErrorNotFound,
     TicketsErrorReason.invalidParent => l10n.ticketInvalidParentError,
+    TicketsErrorReason.sddStagePreconditionNotMet =>
+      l10n.ticketSddStagePreconditionNotMetError,
   };
 }
 

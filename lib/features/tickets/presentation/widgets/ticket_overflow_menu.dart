@@ -7,13 +7,17 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
+import 'package:aion/features/tickets/presentation/widgets/ticket_link_picker.dart';
 
 /// The ticket "more actions" `⋯` trigger, shared across
 /// `TicketDetailScreen`'s header, `TicketListTile` (list rows), and
 /// `TicketBoardCard` (board cards). Opens a small overlay listing "Delete
-/// ticket" (the only action today). Same `Overlay`/`LayerLink`/
-/// `CompositedTransformFollower`/`mounted`-guard mechanics as
+/// ticket" plus, for `signal` tickets only, "Promote to Epic" (linking to
+/// an existing epic via [TicketLinkPicker], or creating a new one, via
+/// [TicketsCubit.promoteSignalToEpic]) above it. Same `Overlay`/
+/// `LayerLink`/`CompositedTransformFollower`/`mounted`-guard mechanics as
 /// `MoveToStatusMenu` (`tickets_board_view.dart`) — a third instance of
 /// that pattern, since this is an *action list* rather than a *value
 /// picker* like `SelectionMenu`, so it isn't built on top of that widget.
@@ -53,6 +57,11 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
   bool _isHovered = false;
   bool _isFocused = false;
   bool _isPressed = false;
+
+  /// Whether the overlay is currently showing the "Promote to Epic"
+  /// existing-vs-new chooser (§5.2) instead of the root action list.
+  /// Reset to `false` whenever the overlay closes.
+  bool _showPromoteChooser = false;
 
   @override
   void dispose() {
@@ -98,51 +107,20 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
                   boxShadow: AionShadows.card(c, t.isDark),
                 ),
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(
+                  constraints: BoxConstraints(
                     minWidth: 180,
-                    maxWidth: 240,
+                    maxWidth: _showPromoteChooser ? 208 : 240,
                   ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Semantics(
-                          button: true,
-                          label: overlayContext.l10n.ticketDeleteMenuItem,
-                          child: GestureDetector(
-                            onTap: () {
-                              _removeOverlay();
-                              _onDeletePressed();
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 13,
-                                vertical: 9,
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  PhosphorIcon(
-                                    PhosphorIcons.trashLight,
-                                    size: 16,
-                                    color: c.danger,
-                                  ),
-                                  const SizedBox(width: AionSpacing.sp8),
-                                  Text(
-                                    overlayContext.l10n.ticketDeleteMenuItem,
-                                    style: AionText.bodySm.copyWith(
-                                      color: c.danger,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                  child: StatefulBuilder(
+                    builder: (context, setOverlayState) {
+                      return _showPromoteChooser
+                          ? _buildPromoteChooser(
+                              overlayContext,
+                              c,
+                              setOverlayState,
+                            )
+                          : _buildRootMenu(overlayContext, c, setOverlayState);
+                    },
                   ),
                 ),
               ),
@@ -159,6 +137,7 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
   void _removeOverlay() {
     _overlayEntry?.remove();
     _overlayEntry = null;
+    _showPromoteChooser = false;
     // Guards against setState-after-dispose — the same class of bug
     // project.md's AppDropdown overlay-dismiss crash note warns about.
     if (mounted) {
@@ -166,6 +145,210 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
     } else {
       _isOpen = false;
     }
+  }
+
+  /// The root action-list content (Promote to Epic, for `signal` tickets
+  /// only, then Delete ticket).
+  Widget _buildRootMenu(
+    BuildContext overlayContext,
+    AionColors c,
+    StateSetter setOverlayState,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (widget.ticket.type == TicketType.signal) ...[
+            Semantics(
+              button: true,
+              label: overlayContext.l10n.ticketPromoteToEpicMenuItem,
+              child: GestureDetector(
+                onTap: () => setOverlayState(() => _showPromoteChooser = true),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 13,
+                    vertical: 9,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      PhosphorIcon(
+                        PhosphorIcons.hexagonLight,
+                        size: 16,
+                        color: c.textSecondary,
+                      ),
+                      const SizedBox(width: AionSpacing.sp8),
+                      Text(
+                        overlayContext.l10n.ticketPromoteToEpicMenuItem,
+                        style: AionText.bodySm.copyWith(
+                          color: c.textPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Container(color: c.border, height: 1),
+          ],
+          Semantics(
+            button: true,
+            label: overlayContext.l10n.ticketDeleteMenuItem,
+            child: GestureDetector(
+              onTap: () {
+                _removeOverlay();
+                _onDeletePressed();
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 13,
+                  vertical: 9,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    PhosphorIcon(
+                      PhosphorIcons.trashLight,
+                      size: 16,
+                      color: c.danger,
+                    ),
+                    const SizedBox(width: AionSpacing.sp8),
+                    Text(
+                      overlayContext.l10n.ticketDeleteMenuItem,
+                      style: AionText.bodySm.copyWith(
+                        color: c.danger,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The "Promote to Epic" existing-vs-new chooser (§5.2/§5.3): a back
+  /// header, then "Link to existing epic" (an embedded [TicketLinkPicker]
+  /// filtered to `epic` candidates) and "Create new epic" (a direct
+  /// action, no further dialog).
+  Widget _buildPromoteChooser(
+    BuildContext overlayContext,
+    AionColors c,
+    StateSetter setOverlayState,
+  ) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(10, 8, 12, 8),
+          child: Row(
+            children: [
+              Semantics(
+                button: true,
+                label: overlayContext.l10n.commonBack,
+                child: GestureDetector(
+                  onTap: () =>
+                      setOverlayState(() => _showPromoteChooser = false),
+                  child: SizedBox(
+                    width: 26,
+                    height: 26,
+                    child: Center(
+                      child: PhosphorIcon(
+                        PhosphorIcons.caretLeftLight,
+                        size: 14,
+                        color: c.textSecondary,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                overlayContext.l10n.ticketPromoteToEpicMenuItem,
+                style: AionText.label.copyWith(color: c.textSecondary),
+              ),
+            ],
+          ),
+        ),
+        Container(color: c.border, height: 1),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+          child: Row(
+            children: [
+              PhosphorIcon(
+                PhosphorIcons.linkLight,
+                size: 16,
+                color: c.textSecondary,
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Text(
+                  overlayContext.l10n.ticketPromoteLinkExisting,
+                  style: AionText.bodySm.copyWith(
+                    color: c.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              TicketLinkPicker(
+                candidatesLoader: () async {
+                  final all = await context
+                      .read<TicketsCubit>()
+                      .getAllTickets();
+                  return all.where((t) => t.type == TicketType.epic).toList();
+                },
+                onSelected: (epic) {
+                  context.read<TicketsCubit>().promoteSignalToEpic(
+                    widget.ticket,
+                    existingEpicId: epic.id,
+                  );
+                  _removeOverlay();
+                },
+              ),
+            ],
+          ),
+        ),
+        Container(color: c.border, height: 1),
+        Semantics(
+          button: true,
+          label: overlayContext.l10n.ticketPromoteCreateNew,
+          child: GestureDetector(
+            onTap: () {
+              context.read<TicketsCubit>().promoteSignalToEpic(widget.ticket);
+              _removeOverlay();
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+              child: Row(
+                children: [
+                  PhosphorIcon(
+                    PhosphorIcons.plusLight,
+                    size: 16,
+                    color: c.primary,
+                  ),
+                  const SizedBox(width: 11),
+                  Expanded(
+                    child: Text(
+                      overlayContext.l10n.ticketPromoteCreateNew,
+                      style: AionText.bodySm.copyWith(
+                        color: c.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   Future<void> _onDeletePressed() async {
@@ -225,8 +408,7 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
                 },
               ),
             },
-            onShowFocusHighlight: (value) =>
-                setState(() => _isFocused = value),
+            onShowFocusHighlight: (value) => setState(() => _isFocused = value),
             child: GestureDetector(
               onTap: _toggleOverlay,
               onTapDown: (_) => setState(() => _isPressed = true),

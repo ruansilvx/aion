@@ -93,6 +93,12 @@ enum TicketsErrorReason {
   /// cycle). The widget layer reads this via `ticketsErrorMessage` /
   /// `AppToast`.
   invalidParent,
+
+  /// [TicketsCubit.advanceSddStage] was rejected because the ticket's
+  /// type can't have an SDD stage, or the current stage's precondition
+  /// for advancing to the next one isn't met yet. The widget layer reads
+  /// this via `ticketsErrorMessage` / `AppToast`.
+  sddStagePreconditionNotMet,
 }
 
 /// A list, detail, or create operation failed. Carries either a classified
@@ -191,6 +197,7 @@ class TicketDetailLoaded extends TicketsState {
     this.childDocs = const [],
     this.linkedTickets = const [],
     this.backlinks = const [],
+    this.canAdvanceSddStage = false,
   });
 
   /// The loaded ticket.
@@ -212,8 +219,20 @@ class TicketDetailLoaded extends TicketsState {
   /// resolves.
   final List<Ticket> backlinks;
 
+  /// Whether [ticket] (an `epic`/`story`) currently satisfies the
+  /// precondition for `TicketsCubit.advanceSddStage` to succeed.
+  /// Computed by [TicketsCubit.getTicketById] from [ticket]'s direct
+  /// children; always `false` for every other ticket type.
+  final bool canAdvanceSddStage;
+
   @override
-  List<Object?> get props => [ticket, childDocs, linkedTickets, backlinks];
+  List<Object?> get props => [
+    ticket,
+    childDocs,
+    linkedTickets,
+    backlinks,
+    canAdvanceSddStage,
+  ];
 }
 
 /// A [TicketsCubit.trashTicket] call is in flight (single ticket,

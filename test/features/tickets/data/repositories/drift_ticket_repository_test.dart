@@ -959,11 +959,11 @@ void main() {
         addTearDown(() => tempDir.deleteSync(recursive: true));
 
         // A fresh AppDatabase always runs onCreate at the *current*
-        // schemaVersion (4), which already includes the search
-        // infrastructure, the `deleted_at` column, and the `sync_status`
-        // column — so the v1 shape has to be built by hand: strip back
-        // down to just the bare tables, insert data, then stamp
-        // user_version back to 1.
+        // schemaVersion (5), which already includes the search
+        // infrastructure, the `deleted_at` column, the `sync_status`
+        // column, and the `complexity`/`sdd_stage` columns — so the v1
+        // shape has to be built by hand: strip back down to just the bare
+        // tables, insert data, then stamp user_version back to 1.
         final v1Db = AppDatabase(_testProject, NativeDatabase(dbFile));
         await v1Db.customStatement('DROP TABLE IF EXISTS tickets_fts;');
         await v1Db.customStatement('DROP TRIGGER IF EXISTS tickets_fts_ai;');
@@ -977,12 +977,16 @@ void main() {
         await v1Db.customStatement(
           'ALTER TABLE tickets DROP COLUMN deleted_at;',
         );
+        await v1Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN sdd_stage;',
+        );
 
-        // sync_status can't be dropped yet — createTicket's generated
-        // companion sets it explicitly (unlike deleted_at, which it never
-        // touches), so the column must still exist for this insert to
-        // succeed. Drop it immediately after, before stamping user_version,
-        // to finish simulating the pre-v4 shape.
+        // sync_status/complexity can't be dropped yet — createTicket's
+        // generated companion sets both explicitly (unlike deleted_at/
+        // sdd_stage, which it never touches), so both columns must still
+        // exist for this insert to succeed. Drop them immediately after,
+        // before stamping user_version, to finish simulating the pre-v4
+        // shape.
         final preMigrationRepo = DriftTicketRepository(v1Db);
         await preMigrationRepo.createTicket(
           buildSearchable(id: 'pre-existing', title: 'Fix authentication bug'),
@@ -990,12 +994,15 @@ void main() {
         await v1Db.customStatement(
           'ALTER TABLE tickets DROP COLUMN sync_status;',
         );
+        await v1Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN complexity;',
+        );
         await v1Db.customStatement('PRAGMA user_version = 1;');
         await v1Db.close();
 
-        // Reopen against the same file at the current schemaVersion (4).
-        // Drift reads user_version=1, sees schemaVersion=4, and runs
-        // onUpgrade automatically (the v2, v3, and v4 steps).
+        // Reopen against the same file at the current schemaVersion (5).
+        // Drift reads user_version=1, sees schemaVersion=5, and runs
+        // onUpgrade automatically (the v2 through v5 steps).
         final v2Db = AppDatabase(_testProject, NativeDatabase(dbFile));
         final upgradedRepo = DriftTicketRepository(v2Db);
 

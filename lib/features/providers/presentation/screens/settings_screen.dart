@@ -9,6 +9,8 @@ import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/providers/domain/enums/agent_model.dart';
 import 'package:aion/features/providers/domain/enums/provider_connection_status.dart';
+import 'package:aion/features/providers/presentation/cubit/automation_settings_cubit.dart';
+import 'package:aion/features/providers/presentation/cubit/automation_settings_state.dart';
 import 'package:aion/features/providers/presentation/cubit/provider_settings_cubit.dart';
 import 'package:aion/features/providers/presentation/cubit/provider_settings_state.dart';
 import 'package:aion/features/providers/presentation/widgets/provider_connection_badge.dart';
@@ -56,35 +58,88 @@ class SettingsScreen extends StatelessWidget {
               ),
               child: ContentMaxWidth(
                 variant: ContentWidthVariant.form,
-                child: BlocBuilder<ProviderSettingsCubit, ProviderSettingsState>(
-                  builder: (context, state) {
-                    if (state is! ProviderSettingsReady) {
-                      return const Center(child: AppSpinner());
-                    }
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _ProviderStatusCard(state: state),
-                        const SizedBox(height: AionSpacing.sp24),
-                        AppDropdown<AgentModel>(
-                          value: state.selectedModel,
-                          items: AgentModel.values,
-                          itemLabel: (model) => model.label,
-                          labelText: context.l10n.settingsModelDropdownLabel,
-                          onChanged: (model) =>
-                              context.read<ProviderSettingsCubit>().selectModel(
-                                model,
-                              ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
+                child:
+                    BlocBuilder<ProviderSettingsCubit, ProviderSettingsState>(
+                      builder: (context, state) {
+                        if (state is! ProviderSettingsReady) {
+                          return const Center(child: AppSpinner());
+                        }
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _ProviderStatusCard(state: state),
+                            const SizedBox(height: AionSpacing.sp24),
+                            AppDropdown<AgentModel>(
+                              value: state.selectedModel,
+                              items: AgentModel.values,
+                              itemLabel: (model) => model.label,
+                              labelText:
+                                  context.l10n.settingsModelDropdownLabel,
+                              onChanged: (model) => context
+                                  .read<ProviderSettingsCubit>()
+                                  .selectModel(model),
+                            ),
+                            const SizedBox(height: AionSpacing.sp24),
+                            const _AutomationSection(),
+                          ],
+                        );
+                      },
+                    ),
               ),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// The "SDD Stage Automation" section: a labeled description followed by
+/// an [AutomationConfidence] dropdown, backed by [AutomationSettingsCubit]
+/// (kept separate from [ProviderSettingsCubit] since the two concerns —
+/// provider connection vs. automation confidence — are unrelated).
+class _AutomationSection extends StatelessWidget {
+  const _AutomationSection();
+
+  String _confidenceLabel(BuildContext context, AutomationConfidence c) =>
+      switch (c) {
+        AutomationConfidence.auto => context.l10n.settingsAutomationAuto,
+        AutomationConfidence.gated => context.l10n.settingsAutomationGated,
+        AutomationConfidence.manual => context.l10n.settingsAutomationManual,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+
+    return BlocBuilder<AutomationSettingsCubit, AutomationSettingsState>(
+      builder: (context, state) {
+        if (state is! AutomationSettingsReady) {
+          return const SizedBox.shrink();
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              context.l10n.settingsAutomationLabel,
+              style: AionText.label.copyWith(color: c.textSecondary),
+            ),
+            const SizedBox(height: AionSpacing.sp4),
+            Text(
+              context.l10n.settingsAutomationDescription,
+              style: AionText.bodySm.copyWith(color: c.textMuted),
+            ),
+            const SizedBox(height: AionSpacing.sp8),
+            AppDropdown<AutomationConfidence>(
+              value: state.confidence,
+              items: AutomationConfidence.values,
+              itemLabel: (v) => _confidenceLabel(context, v),
+              onChanged: (v) =>
+                  context.read<AutomationSettingsCubit>().selectConfidence(v),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -164,7 +219,9 @@ class _ProviderStatusCard extends StatelessWidget {
                 variant: AppButtonVariant.secondary,
                 onPressed: isChecking
                     ? null
-                    : () => context.read<ProviderSettingsCubit>().testConnection(),
+                    : () => context
+                          .read<ProviderSettingsCubit>()
+                          .testConnection(),
               ),
             ),
           ],
@@ -204,7 +261,10 @@ class _StatusMessageLine extends StatelessWidget {
         Expanded(
           child: Text(
             message,
-            style: AionText.bodySm.copyWith(color: c.textSecondary, height: 1.45),
+            style: AionText.bodySm.copyWith(
+              color: c.textSecondary,
+              height: 1.45,
+            ),
           ),
         ),
       ],

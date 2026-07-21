@@ -6,6 +6,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:aion/core/core.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_search_page.dart';
+import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_complexity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sync_status.dart';
@@ -57,6 +59,7 @@ class DriftTicketRepository implements TicketRepository {
       syncStatus: Value(ticket.syncStatus.name),
       estimate: Value(ticket.estimate),
       timeSpent: Value(ticket.timeSpent),
+      complexity: Value(ticket.complexity?.name),
       createdAt: ticket.createdAt.millisecondsSinceEpoch,
       updatedAt: ticket.updatedAt.millisecondsSinceEpoch,
     );
@@ -98,6 +101,20 @@ class DriftTicketRepository implements TicketRepository {
         type: Value(ticket.type.name),
         estimate: Value(ticket.estimate),
         timeSpent: Value(ticket.timeSpent),
+        complexity: Value(ticket.complexity?.name),
+        updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
+  }
+
+  /// Writes only `sdd_stage` — no precondition validation, callers
+  /// (`TicketsCubit.advanceSddStage`) are responsible for that.
+  @override
+  Future<void> updateTicketSddStage(String id, SddStage stage) {
+    return _db.ticketDao.updateFields(
+      id,
+      TicketsTableCompanion(
+        sddStage: Value(stage.name),
         updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
       ),
     );
@@ -323,6 +340,21 @@ class DriftTicketRepository implements TicketRepository {
       deletedAt: row.deletedAt == null
           ? null
           : DateTime.fromMillisecondsSinceEpoch(row.deletedAt!),
+      complexity: _parseNullableEnum(TicketComplexity.values, row.complexity),
+      sddStage: _parseNullableEnum(SddStage.values, row.sddStage),
     );
+  }
+
+  /// Parses [name] against [values] by `.name`, returning `null` if
+  /// [name] is `null` or doesn't match any value — used for enum columns
+  /// that are nullable with no sensible non-null default (unlike
+  /// `type`/`status`/`priority`/`syncStatus` above, which fall back to a
+  /// safe default instead of `null` for unrecognised strings).
+  T? _parseNullableEnum<T extends Enum>(List<T> values, String? name) {
+    if (name == null) return null;
+    for (final value in values) {
+      if (value.name == name) return value;
+    }
+    return null;
   }
 }

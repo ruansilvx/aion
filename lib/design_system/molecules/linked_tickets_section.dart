@@ -81,10 +81,7 @@ class LinkedTicketsSection extends StatelessWidget {
                     ),
                   ),
                 ],
-                if (trailing != null) ...[
-                  const Spacer(),
-                  trailing!,
-                ],
+                if (trailing != null) ...[const Spacer(), trailing!],
               ],
             ),
             const SizedBox(height: AionSpacing.sp12),
@@ -131,6 +128,12 @@ class _LinkRowState extends State<_LinkRow> {
     TicketType.epic => c.typeEpic,
     TicketType.resource => c.typeResource,
     TicketType.page => c.typePage,
+    TicketType.signal => c.typeSignal,
+    TicketType.release => c.typeRelease,
+    // `chat` has no dedicated AionColors token yet — TypeChip itself
+    // falls into this same task-colored catch-all for `chat` today, see
+    // aion-arch/changes/sdd-ticket-foundation/proposal.md's design-sync
+    // note. Not a new gap introduced here.
     _ => c.typeTask,
   };
 

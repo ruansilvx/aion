@@ -74,7 +74,9 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
 /// [_createSearchInfrastructure]): indexes on `status`/`type`/`priority`
 /// and an external-content FTS5 index over `title`/`description`. Version 3
 /// adds [TicketsTable.deletedAt] for the trash/soft-delete model — see
-/// `TicketRepository.trashTicket`/`restoreTicket`.
+/// `TicketRepository.trashTicket`/`restoreTicket`. Version 5 adds
+/// `TicketsTable.complexity`/`TicketsTable.sddStage` — see
+/// `TicketRepository.updateTicketSddStage`.
 @DriftDatabase(
   tables: [
     TicketsTable,
@@ -94,7 +96,7 @@ class AppDatabase extends _$AppDatabase {
     : super(executor ?? _openConnection(project));
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -114,6 +116,10 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 4) {
         await m.addColumn(ticketsTable, ticketsTable.syncStatus);
+      }
+      if (from < 5) {
+        await m.addColumn(ticketsTable, ticketsTable.complexity);
+        await m.addColumn(ticketsTable, ticketsTable.sddStage);
       }
     },
   );
