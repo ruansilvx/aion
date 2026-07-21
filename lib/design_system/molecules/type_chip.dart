@@ -19,12 +19,15 @@ String ticketTypeLabel(BuildContext context, TicketType type) {
     TicketType.resource => l10n.ticketTypeResource,
     TicketType.page => l10n.ticketTypePage,
     TicketType.chat => l10n.ticketTypeChat,
+    TicketType.signal => l10n.ticketTypeSignal,
+    TicketType.release => l10n.ticketTypeRelease,
   };
 }
 
 /// A small square swatch + uppercase label showing a ticket's [type],
 /// colored by that type's `AionColors` accent (`typeTask`/`typeStory`/
-/// `typeEpic`/`typeResource`/`typePage`). Promoted from `tickets_list_screen
+/// `typeEpic`/`typeResource`/`typePage`/`typeSignal`/`typeRelease`).
+/// Promoted from `tickets_list_screen
 /// .dart` (per `project.md`'s Pattern 2) so `features/pages/` can render the
 /// same "PAGE" chip `TicketDetailScreen` renders for other types, without a
 /// direct `features/tickets` presentation-layer import. Per
@@ -49,6 +52,8 @@ class TypeChip extends StatelessWidget {
       TicketType.epic => c.typeEpic,
       TicketType.resource => c.typeResource,
       TicketType.page => c.typePage,
+      TicketType.signal => c.typeSignal,
+      TicketType.release => c.typeRelease,
       _ => c.typeTask,
     };
 

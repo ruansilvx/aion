@@ -117,6 +117,12 @@ class AionColors {
   /// Base accent color for [TicketType.page] chips.
   final Color typePage;
 
+  /// Base accent color for [TicketType.signal] chips.
+  final Color typeSignal;
+
+  /// Base accent color for [TicketType.release] chips.
+  final Color typeRelease;
+
   /// Creates an [AionColors] palette. All fields are required.
   const AionColors({
     required this.background,
@@ -140,6 +146,8 @@ class AionColors {
     required this.typeEpic,
     required this.typeResource,
     required this.typePage,
+    required this.typeSignal,
+    required this.typeRelease,
   });
 }
 
@@ -190,6 +198,8 @@ const AionColors arctic = AionColors(
   typeEpic: Color(0xFF6A5AD0),
   typeResource: Color(0xFFC2622E),
   typePage: Color(0xFFB0499E),
+  typeSignal: Color(0xFF0E8C9E),
+  typeRelease: Color(0xFFD8402C),
 );
 
 /// Obsidian — the dark, abyssal theme palette.
@@ -215,6 +225,8 @@ const AionColors obsidian = AionColors(
   typeEpic: Color(0xFF5C7CF5),
   typeResource: Color(0xFFE68A4E),
   typePage: Color(0xFFD98CE6),
+  typeSignal: Color(0xFF34C6D6),
+  typeRelease: Color(0xFFF26A4B),
 );
 
 /// Opacity applied to tinted chip fills (e.g. `c.typeTask.withOpacity(a)`)

@@ -430,11 +430,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// immediately by a re-emitted [TicketDetailLoaded] (same pattern as
   /// [deleteTicket]'s `hasChildren` handling), so the detail screen shows
   /// a toast rather than collapsing to the generic error view. Also
-  /// rejects any attempt to set a non-null parent on an [TicketType.epic]
-  /// ticket — epics are always subtree roots (see project.md's watcher
-  /// system) — and any candidate parent whose type cannot structurally
-  /// parent [ticket]'s type per [TicketTypeHierarchy.canParent], via the
-  /// same rejection path. On a valid reparent, persists via
+  /// rejects any attempt to set a non-null parent on a ticket whose type
+  /// is always a subtree root ([TicketType.epic], [TicketType.signal], or
+  /// [TicketType.release] — see [TicketTypeHierarchy.isAlwaysRoot]) — and
+  /// any candidate parent whose type cannot structurally parent [ticket]'s
+  /// type per [TicketTypeHierarchy.canParent], via the same rejection
+  /// path. On a valid reparent, persists via
   /// [TicketRepository.updateTicketParent] and emits the refreshed
   /// [TicketDetailLoaded].
   Future<void> updateTicketParent(Ticket ticket, String? newParentId) async {
@@ -443,7 +444,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         await _emitInvalidParent(ticket.id);
         return;
       }
-      if (ticket.type == TicketType.epic) {
+      if (ticket.type.isAlwaysRoot) {
         await _emitInvalidParent(ticket.id);
         return;
       }
