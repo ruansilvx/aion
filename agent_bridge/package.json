@@ -1,0 +1,11 @@
+{
+  "name": "aion-agent-bridge",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Node.js bridge invoked by ClaudeAgentSdkClient (aion/lib/core/agent/claude_agent_sdk_client.dart) to run a single Claude Agent SDK request per process. Not part of the Flutter build — run `npm install` here once before using any provider-configuration feature. See aion-arch/changes/provider-configuration/design.md §3.",
+  "type": "module",
+  "main": "index.mjs",
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.1.0"
+  }
+}

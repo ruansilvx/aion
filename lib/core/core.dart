@@ -1,6 +1,9 @@
 // core.dart — Barrel for core infrastructure: database, routing, localization, utils (core layer).
 
+export 'agent/agent_bridge_locator.dart';
+export 'agent/claude_agent_sdk_client.dart';
 export 'contracts/active_project_provider.dart';
+export 'contracts/agent_model_client.dart';
 export 'contracts/embedding_provider.dart';
 export 'contracts/page_ticket_provider.dart';
 export 'database/app_database.dart';

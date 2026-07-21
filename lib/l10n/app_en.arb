@@ -316,5 +316,16 @@
   "pageCreateParentFieldPlaceholder": "Optional",
   "pageCreateSubmitAction": "Create page",
   "pageDetailContentLabel": "Content",
-  "pageDetailMarkdownSaveError": "Couldn't save changes. Try again."
+  "pageDetailMarkdownSaveError": "Couldn't save changes. Try again.",
+
+  "settingsScreenTitle": "Settings",
+  "settingsProviderCardTitle": "Claude Agent SDK",
+  "settingsProviderEyebrow": "PROVIDER",
+  "settingsProviderSubline": "Authenticated via your Claude plan",
+  "settingsTestConnectionButtonLabel": "Test Connection",
+  "settingsModelDropdownLabel": "Model",
+  "settingsProviderStatusUnknown": "NOT TESTED",
+  "settingsProviderStatusChecking": "CHECKING",
+  "settingsProviderStatusConnected": "CONNECTED",
+  "settingsProviderStatusDisconnected": "NOT CONNECTED"
 }

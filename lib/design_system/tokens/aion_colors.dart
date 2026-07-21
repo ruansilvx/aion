@@ -292,4 +292,30 @@ extension AionColorsHubTokens on AionColors {
   /// `TicketNeedsRepairBanner`'s success-confirmation icon-chip fill.
   Color repairedIconTint(bool isDark) =>
       success.withValues(alpha: isDark ? 0.24 : 0.18);
+
+  // success family — ProviderConnectionBadge, connected state. Added for
+  // provider-configuration; see aion-arch/changes/provider-configuration/design.md.
+  /// `ProviderConnectionBadge` fill in the `connected` state.
+  Color connectedTint(bool isDark) =>
+      success.withValues(alpha: isDark ? 0.20 : 0.14);
+
+  /// `ProviderConnectionBadge` border in the `connected` state.
+  Color connectedBorderTint(bool isDark) =>
+      success.withValues(alpha: isDark ? 0.42 : 0.34);
+
+  // warning family — ProviderConnectionBadge, disconnected state. An
+  // EXPECTED, recoverable condition (not yet connected), not a
+  // destructive action — `danger` stays reserved for delete/error.
+  /// `ProviderConnectionBadge` fill in the `disconnected` state.
+  Color disconnectedTint(bool isDark) =>
+      warning.withValues(alpha: isDark ? 0.20 : 0.14);
+
+  /// `ProviderConnectionBadge` border in the `disconnected` state.
+  Color disconnectedBorderTint(bool isDark) =>
+      warning.withValues(alpha: isDark ? 0.42 : 0.34);
+
+  // `ProviderConnectionBadge`'s `checking` state deliberately reuses
+  // [pendingTint]/[pendingSpinnerTrack] above rather than adding
+  // numerically-identical duplicates — both represent the same "active
+  // but calm" primary-family treatment.
 }

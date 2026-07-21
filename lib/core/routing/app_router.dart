@@ -7,6 +7,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/core/contracts/embedding_provider.dart';
 import 'package:aion/core/contracts/page_ticket_provider.dart';
 import 'package:aion/core/database/app_database.dart';
@@ -17,6 +18,7 @@ import 'package:aion/core/utils/platform_utils.dart';
 import 'package:aion/features/pages/presentation/screens/page_create_screen.dart';
 import 'package:aion/features/pages/presentation/screens/page_detail_screen.dart';
 import 'package:aion/features/projects/projects.dart';
+import 'package:aion/features/providers/providers.dart';
 import 'package:aion/features/tickets/data/page_ticket_provider_impl.dart';
 import 'package:aion/features/tickets/data/repositories/drift_comment_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_link_repository.dart';
@@ -33,8 +35,9 @@ import 'package:aion/features/tickets/tickets.dart';
 /// The app's route table: `/hub`, `/hub/new` (project switcher, no
 /// active project needed), and `/workspace/tickets`,
 /// `/workspace/tickets/new`, `/workspace/tickets/trash`,
-/// `/workspace/tickets/:id` (gated on an active project — see
-/// [_redirect]). See
+/// `/workspace/tickets/:id`, `/workspace/documentation`,
+/// `/workspace/pages/new`, `/workspace/pages/:id`, `/workspace/settings`
+/// (gated on an active project — see [_redirect]). See
 /// `aion-arch/changes/multi-project-hub/design.md` §9.
 ///
 /// Clean (path-based, no `#`) URLs are go_router's default. Deploying the
@@ -159,6 +162,17 @@ final appRouter = GoRouter(
             final id = state.pathParameters['id']!;
             return PageDetailScreen(pageId: id);
           },
+        ),
+        GoRoute(
+          path: '/workspace/settings',
+          builder: (context, state) => BlocProvider<ProviderSettingsCubit>(
+            create: (context) =>
+                ProviderSettingsCubit(
+                  context.read<AgentModelClient>(),
+                  context.read<AgentSettingsRepository>(),
+                )..load(),
+            child: const SettingsScreen(),
+          ),
         ),
       ],
     ),
