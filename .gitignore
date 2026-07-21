@@ -86,3 +86,7 @@ lib/l10n/generated/
 # kept on disk for convenience, never committed. Skills/CLAUDE.md live
 # in ~/.claude/skills/ and openspec/CLAUDE.md instead.
 .claude/
+
+# agent_bridge/ Node dependencies — fetched via `npm install`, see
+# aion-arch/changes/provider-configuration/proposal.md's Non-goals.
+agent_bridge/node_modules/

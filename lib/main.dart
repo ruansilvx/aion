@@ -12,6 +12,8 @@ import 'package:aion/l10n/generated/app_localizations.dart';
 import 'package:aion/features/projects/data/repositories/bundled_baseline_repository.dart';
 import 'package:aion/features/projects/data/repositories/drift_project_repository.dart';
 import 'package:aion/features/projects/projects.dart';
+import 'package:aion/features/providers/data/repositories/shared_prefs_agent_settings_repository.dart';
+import 'package:aion/features/providers/providers.dart';
 
 /// App entry point. No [AppDatabase] is opened here — it no longer has
 /// one fixed global location; each project opens its own instance once
@@ -24,7 +26,10 @@ void main() {
 }
 
 /// The Aion app root. Wires the [RegistryDatabase] and its repositories,
-/// [ActiveProjectCubit], [ThemeScope] (tracking system brightness), and
+/// [ActiveProjectCubit], [ThemeScope] (tracking system brightness), the
+/// app-level provider-configuration stack ([AgentBridgeLocator],
+/// [AgentModelClient], [AgentSettingsRepository] — global, not
+/// per-project, since provider identity isn't a per-project concept), and
 /// the `WidgetsApp.router` shell — no `MaterialApp`, no `ThemeData`.
 /// Project-scoped state (ticket repositories, [AppDatabase]) is wired
 /// per-project inside `WorkspaceShell`, not here.
@@ -86,6 +91,21 @@ class _AionAppState extends State<AionApp> with WidgetsBindingObserver {
         // wired there instead.
         RepositoryProvider<EmbeddingProvider>(
           create: (_) => BundledEmbeddingProvider(),
+        ),
+        // Provider identity/model selection is a global (not per-project)
+        // setting — see aion-arch/changes/provider-configuration/design.md
+        // §5. Desktop-only (ClaudeAgentSdkClient spawns a Node subprocess);
+        // still safe to construct on any platform, since construction
+        // itself does no I/O.
+        RepositoryProvider<AgentBridgeLocator>(
+          create: (_) => AgentBridgeLocator(),
+        ),
+        RepositoryProvider<AgentModelClient>(
+          create: (context) =>
+              ClaudeAgentSdkClient(context.read<AgentBridgeLocator>()),
+        ),
+        RepositoryProvider<AgentSettingsRepository>(
+          create: (_) => SharedPrefsAgentSettingsRepository(),
         ),
       ],
       child: BlocProvider<ActiveProjectCubit>(

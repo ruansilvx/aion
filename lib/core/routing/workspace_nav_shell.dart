@@ -474,6 +474,9 @@ enum _SecondaryAction {
 
   /// Navigates to `/workspace/tickets/trash`.
   trash,
+
+  /// Navigates to `/workspace/settings`.
+  settings,
 }
 
 /// The shared secondary-actions entry point rendered by both [_Sidebar]
@@ -558,6 +561,7 @@ class _SecondaryActionsTriggerState extends State<_SecondaryActionsTrigger> {
       itemLabel: (action) => switch (action) {
         _SecondaryAction.switchProject => context.l10n.projectSwitcherMenuLabel,
         _SecondaryAction.trash => context.l10n.ticketTrashScreenTitle,
+        _SecondaryAction.settings => context.l10n.settingsScreenTitle,
         null => '',
       },
       onSelected: (action) {
@@ -566,6 +570,8 @@ class _SecondaryActionsTriggerState extends State<_SecondaryActionsTrigger> {
             context.go('/hub');
           case _SecondaryAction.trash:
             context.go('/workspace/tickets/trash');
+          case _SecondaryAction.settings:
+            context.go('/workspace/settings');
           case null:
             break;
         }
