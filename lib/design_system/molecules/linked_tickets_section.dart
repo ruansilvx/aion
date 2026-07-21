@@ -123,6 +123,9 @@ class _LinkRowState extends State<_LinkRow> {
   bool _isHovered = false;
   bool _isPressed = false;
 
+  // All seven non-task types resolve to their own dedicated token; only
+  // `task` itself falls through to the `typeTask` catch-all, mirroring
+  // `TypeChip`'s own switch.
   Color _typeColor(AionColors c, TicketType type) => switch (type) {
     TicketType.story => c.typeStory,
     TicketType.epic => c.typeEpic,
@@ -130,10 +133,7 @@ class _LinkRowState extends State<_LinkRow> {
     TicketType.page => c.typePage,
     TicketType.signal => c.typeSignal,
     TicketType.release => c.typeRelease,
-    // `chat` has no dedicated AionColors token yet — TypeChip itself
-    // falls into this same task-colored catch-all for `chat` today, see
-    // aion-arch/changes/sdd-ticket-foundation/proposal.md's design-sync
-    // note. Not a new gap introduced here.
+    TicketType.chat => c.typeChat,
     _ => c.typeTask,
   };
 

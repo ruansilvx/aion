@@ -1661,7 +1661,13 @@ void main() {
       },
       build: () => TicketsCubit(repository),
       act: (cubit) => cubit.getTicketById(storyProposed.id),
-      expect: () => [const TicketsLoading(), TicketDetailLoaded(storyProposed)],
+      expect: () => [
+        const TicketsLoading(),
+        TicketDetailLoaded(
+          storyProposed,
+          sddStageBlockReason: SddStageBlockReason.awaitingChildren,
+        ),
+      ],
     );
 
     blocTest<TicketsCubit, TicketsState>(

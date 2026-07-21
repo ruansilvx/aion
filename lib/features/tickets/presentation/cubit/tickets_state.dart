@@ -101,6 +101,27 @@ enum TicketsErrorReason {
   sddStagePreconditionNotMet,
 }
 
+/// Why an `epic`/`story` [TicketDetailLoaded.ticket]'s current
+/// [SddStage](../../domain/enums/sdd_stage.dart) precondition isn't met
+/// yet — resolved to localized hint text at the widget layer (the
+/// `_SddStageSection` "Not ready" state, per
+/// `aion-arch/changes/sdd-ticket-execution/design.md` §2.2), mirroring
+/// how [TicketsErrorReason] is resolved via `ticketsErrorMessage`. `null`
+/// on [TicketDetailLoaded.sddStageBlockReason] means either the ticket
+/// can already advance ([TicketDetailLoaded.canAdvanceSddStage] is
+/// `true`), or there's nothing left to advance to (not an epic/story, or
+/// already [SddStage.archived]).
+enum SddStageBlockReason {
+  /// The current stage's most recently created `chat` child doesn't have
+  /// an AI reply yet (or no `chat` child exists yet).
+  awaitingChatReply,
+
+  /// Not every direct child at the next rank down (Tasks for a story,
+  /// Stories for an epic) has reached a terminal state yet — or none
+  /// exist yet.
+  awaitingChildren,
+}
+
 /// A list, detail, or create operation failed. Carries either a classified
 /// [reason] — resolved to localized text at the widget layer — or a raw,
 /// unlocalized [message] (e.g. a forwarded repository exception) when no
@@ -198,6 +219,7 @@ class TicketDetailLoaded extends TicketsState {
     this.linkedTickets = const [],
     this.backlinks = const [],
     this.canAdvanceSddStage = false,
+    this.sddStageBlockReason,
   });
 
   /// The loaded ticket.
@@ -225,6 +247,12 @@ class TicketDetailLoaded extends TicketsState {
   /// children; always `false` for every other ticket type.
   final bool canAdvanceSddStage;
 
+  /// Why [canAdvanceSddStage] is `false`, for the "Not ready" hint row —
+  /// `null` whenever [canAdvanceSddStage] is `true`, or [ticket] has
+  /// nothing left to advance to. Computed by
+  /// [TicketsCubit.getTicketById] alongside [canAdvanceSddStage].
+  final SddStageBlockReason? sddStageBlockReason;
+
   @override
   List<Object?> get props => [
     ticket,
@@ -232,6 +260,7 @@ class TicketDetailLoaded extends TicketsState {
     linkedTickets,
     backlinks,
     canAdvanceSddStage,
+    sddStageBlockReason,
   ];
 }
 

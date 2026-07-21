@@ -212,23 +212,36 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                               ),
                       ),
                       const SizedBox(height: AionSpacing.sp20),
-                      AppDropdown<TicketPriority>(
-                        labelText: context.l10n.createTicketPriorityLabel,
-                        value: _selectedPriority,
-                        items: TicketPriority.values,
-                        onChanged: (v) => setState(() => _selectedPriority = v),
-                        itemLabel: (v) => ticketPriorityLabel(context, v),
-                        focusNode: _priorityFocus,
-                      ),
-                      const SizedBox(height: AionSpacing.sp20),
-                      ComplexityPicker(
-                        labelText: context.l10n.createTicketComplexityLabel,
-                        value: _selectedComplexity,
-                        onSelected: (v) =>
-                            setState(() => _selectedComplexity = v),
-                        semanticsLabel:
-                            context.l10n.createTicketComplexityLabel,
-                        focusNode: _complexityFocus,
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: AppDropdown<TicketPriority>(
+                              labelText:
+                                  context.l10n.createTicketPriorityLabel,
+                              value: _selectedPriority,
+                              items: TicketPriority.values,
+                              onChanged: (v) =>
+                                  setState(() => _selectedPriority = v),
+                              itemLabel: (v) =>
+                                  ticketPriorityLabel(context, v),
+                              focusNode: _priorityFocus,
+                            ),
+                          ),
+                          const SizedBox(width: AionSpacing.sp12),
+                          Expanded(
+                            child: ComplexityPicker(
+                              labelText:
+                                  context.l10n.createTicketComplexityLabel,
+                              value: _selectedComplexity,
+                              onSelected: (v) =>
+                                  setState(() => _selectedComplexity = v),
+                              semanticsLabel:
+                                  context.l10n.createTicketComplexityLabel,
+                              focusNode: _complexityFocus,
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: AionSpacing.sp20),
                       AppTextField(

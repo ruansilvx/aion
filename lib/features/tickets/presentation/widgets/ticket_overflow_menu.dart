@@ -174,7 +174,7 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       PhosphorIcon(
-                        PhosphorIcons.hexagonLight,
+                        PhosphorIcons.crownLight,
                         size: 16,
                         color: c.textSecondary,
                       ),

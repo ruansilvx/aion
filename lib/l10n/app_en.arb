@@ -112,9 +112,28 @@
   "ticketDetailSddStageProposed": "Proposed",
   "ticketDetailSddStageVerifying": "Verifying",
   "ticketDetailSddStageArchived": "Archived",
-  "ticketDetailSddStageReadyBanner": "Ready to advance to the next stage",
+  "ticketDetailSddStageReadyBanner": "Ready to advance to {stage}",
+  "@ticketDetailSddStageReadyBanner": {
+    "placeholders": {
+      "stage": { "type": "String" }
+    }
+  },
   "ticketDetailSddStageAdvance": "Advance",
-  "ticketDetailSddStageAutoAdvancedNote": "Automatically advanced to the next stage",
+  "ticketDetailSddStageAdvanceToStage": "Advance to {stage}",
+  "@ticketDetailSddStageAdvanceToStage": {
+    "placeholders": {
+      "stage": { "type": "String" }
+    }
+  },
+  "ticketDetailSddStageAutoAdvancedNote": "Automatically advanced to {stage}",
+  "@ticketDetailSddStageAutoAdvancedNote": {
+    "placeholders": {
+      "stage": { "type": "String" }
+    }
+  },
+  "ticketDetailSddStageHintAwaitingChat": "Advance unlocks once this stage's chat replies.",
+  "ticketDetailSddStageHintAwaitingTasks": "Advance unlocks once every Task is done.",
+  "ticketDetailSddStageHintAwaitingStories": "Advance unlocks once every Story is archived.",
   "ticketDetailViaModel": "via {model}",
   "@ticketDetailViaModel": {
     "placeholders": {
@@ -135,6 +154,9 @@
   "ticketComplexitySmall": "Small",
   "ticketComplexityMedium": "Medium",
   "ticketComplexityLarge": "Large",
+  "ticketComplexitySubHintSmall": "~1 file",
+  "ticketComplexitySubHintMedium": "a few files",
+  "ticketComplexitySubHintLarge": "multi-module",
 
   "ticketsErrorNotFound": "Ticket not found",
   "durationInvalidFormat": "Not a valid duration: \"{input}\"",
@@ -360,6 +382,9 @@
   "settingsAutomationAuto": "Auto",
   "settingsAutomationGated": "Gated",
   "settingsAutomationManual": "Manual",
+  "settingsAutomationAutoSubLabel": "Advances silently, then tells you",
+  "settingsAutomationGatedSubLabel": "Asks for confirmation each stage",
+  "settingsAutomationManualSubLabel": "You decide when to advance",
   "settingsProviderStatusUnknown": "NOT TESTED",
   "settingsProviderStatusChecking": "CHECKING",
   "settingsProviderStatusConnected": "CONNECTED",

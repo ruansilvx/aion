@@ -123,6 +123,12 @@ class AionColors {
   /// Base accent color for [TicketType.release] chips.
   final Color typeRelease;
 
+  /// Base accent color for [TicketType.chat] chips. Added for
+  /// `aion-arch/changes/sdd-ticket-execution` — completes the seven-type
+  /// palette so `TypeChip`/`LinkedTicketsSection` no longer fall back to
+  /// [typeTask] for `chat` tickets.
+  final Color typeChat;
+
   /// Creates an [AionColors] palette. All fields are required.
   const AionColors({
     required this.background,
@@ -148,6 +154,7 @@ class AionColors {
     required this.typePage,
     required this.typeSignal,
     required this.typeRelease,
+    required this.typeChat,
   });
 }
 
@@ -200,6 +207,7 @@ const AionColors arctic = AionColors(
   typePage: Color(0xFFB0499E),
   typeSignal: Color(0xFF0E8C9E),
   typeRelease: Color(0xFFD8402C),
+  typeChat: Color(0xFF4C6FDE),
 );
 
 /// Obsidian — the dark, abyssal theme palette.
@@ -227,6 +235,7 @@ const AionColors obsidian = AionColors(
   typePage: Color(0xFFD98CE6),
   typeSignal: Color(0xFF34C6D6),
   typeRelease: Color(0xFFF26A4B),
+  typeChat: Color(0xFF7C93FF),
 );
 
 /// Opacity applied to tinted chip fills (e.g. `c.typeTask.withOpacity(a)`)

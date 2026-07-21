@@ -26,7 +26,8 @@ String ticketTypeLabel(BuildContext context, TicketType type) {
 
 /// A small square swatch + uppercase label showing a ticket's [type],
 /// colored by that type's `AionColors` accent (`typeTask`/`typeStory`/
-/// `typeEpic`/`typeResource`/`typePage`/`typeSignal`/`typeRelease`).
+/// `typeEpic`/`typeResource`/`typePage`/`typeSignal`/`typeRelease`/
+/// `typeChat`).
 /// Promoted from `tickets_list_screen
 /// .dart` (per `project.md`'s Pattern 2) so `features/pages/` can render the
 /// same "PAGE" chip `TicketDetailScreen` renders for other types, without a
@@ -54,6 +55,7 @@ class TypeChip extends StatelessWidget {
       TicketType.page => c.typePage,
       TicketType.signal => c.typeSignal,
       TicketType.release => c.typeRelease,
+      TicketType.chat => c.typeChat,
       _ => c.typeTask,
     };
 

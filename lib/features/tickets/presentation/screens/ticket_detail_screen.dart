@@ -134,8 +134,20 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     _autoAdvancedKey = key;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      context.read<TicketsCubit>().advanceSddStage(ticket);
+      unawaited(context.read<TicketsCubit>().advanceSddStage(ticket));
     });
+  }
+
+  /// Calls [TicketsCubit.advanceSddStage] for an explicit gated/manual
+  /// "Advance" tap, then navigates to the spawned chat ticket once it and
+  /// its first AI reply are ready — an intentional user action, unlike
+  /// [_maybeAutoAdvanceSddStage]'s passive auto-advance, which never
+  /// yanks the user off the screen they're already viewing.
+  Future<void> _advanceSddStage(Ticket ticket) async {
+    final chatId = await context.read<TicketsCubit>().advanceSddStage(ticket);
+    if (chatId != null && mounted) {
+      context.go('/workspace/tickets/$chatId');
+    }
   }
 
   @override
@@ -313,6 +325,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                     TicketDetailLoaded(
                                       :final ticket,
                                       :final canAdvanceSddStage,
+                                      :final sddStageBlockReason,
                                     ) =>
                                       Semantics(
                                         header: true,
@@ -450,6 +463,11 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                                           complexity: () => v,
                                                         ),
                                                       ),
+                                                  itemBuilder:
+                                                      (context, c, item) =>
+                                                          ComplexityMenuRow(
+                                                            item: item,
+                                                          ),
                                                   semanticsLabel: context
                                                       .l10n
                                                       .ticketDetailChangeComplexity,
@@ -757,11 +775,12 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                                     ticket: ticket,
                                                     canAdvance:
                                                         canAdvanceSddStage,
+                                                    blockReason:
+                                                        sddStageBlockReason,
                                                     automationConfidence:
                                                         _automationConfidence,
-                                                    onAdvance: () => context
-                                                        .read<TicketsCubit>()
-                                                        .advanceSddStage(
+                                                    onAdvance: () =>
+                                                        _advanceSddStage(
                                                           ticket,
                                                         ),
                                                   ),
@@ -1431,23 +1450,27 @@ class _Avatar extends StatelessWidget {
 
 /// The SDD-stage section shown on epic/story ticket detail, below the
 /// ticket-meta row and above the Description block: a 4-step tracker
-/// (Explore, Propose, Verify, Archive), the current-stage line, and --
-/// only when [canAdvance] is true -- an [automationConfidence]-dependent
-/// control (gated banner, plain manual button, or a silent auto-note; see
-/// aion-arch/changes/sdd-ticket-execution/proposal.md's
-/// AutomationConfidence semantics section). Renders nothing beyond the
-/// tracker/current-stage line when [canAdvance] is false, regardless of
-/// confidence level.
+/// (Explore, Propose, Verify, Archive), the current-stage line, and one
+/// of three mutually-exclusive footers per
+/// `aion-arch/changes/sdd-ticket-execution/design.md` §2: when
+/// [canAdvance] is `true`, an [automationConfidence]-dependent control
+/// (gated banner, plain manual button, or a silent auto-note — see
+/// proposal.md's AutomationConfidence semantics section); when it's
+/// `false` and [blockReason] is non-null, the "Not ready" hint row (§2.2)
+/// explaining what's still pending; otherwise (nothing left to advance
+/// to) neither renders.
 class _SddStageSection extends StatelessWidget {
   const _SddStageSection({
     required this.ticket,
     required this.canAdvance,
+    required this.blockReason,
     required this.automationConfidence,
     required this.onAdvance,
   });
 
   final Ticket ticket;
   final bool canAdvance;
+  final SddStageBlockReason? blockReason;
   final AutomationConfidence? automationConfidence;
   final VoidCallback onAdvance;
 
@@ -1473,6 +1496,28 @@ class _SddStageSection extends StatelessWidget {
         SddStage.archived => context.l10n.ticketDetailSddStageArchived,
       };
 
+  /// The stage [canAdvance] would move [ticket] to, or `null` once
+  /// [SddStage.archived] is reached — mirrors
+  /// `TicketsCubit._nextSddStage` without exposing that private cubit
+  /// method to the widget layer.
+  SddStage? _nextStage(SddStage? current) => switch (current) {
+    null => SddStage.exploring,
+    SddStage.exploring => SddStage.proposed,
+    SddStage.proposed => SddStage.verifying,
+    SddStage.verifying => SddStage.archived,
+    SddStage.archived => null,
+  };
+
+  String _blockReasonHint(BuildContext context, SddStageBlockReason reason) =>
+      switch (reason) {
+        SddStageBlockReason.awaitingChatReply =>
+          context.l10n.ticketDetailSddStageHintAwaitingChat,
+        SddStageBlockReason.awaitingChildren =>
+          ticket.type == TicketType.story
+              ? context.l10n.ticketDetailSddStageHintAwaitingTasks
+              : context.l10n.ticketDetailSddStageHintAwaitingStories,
+      };
+
   @override
   Widget build(BuildContext context) {
     final c = ThemeScope.of(context).colors;
@@ -1480,6 +1525,10 @@ class _SddStageSection extends StatelessWidget {
     final currentIndex = currentStage == null
         ? -1
         : _stages.indexOf(currentStage);
+    final nextStage = _nextStage(currentStage);
+    final nextStageLabel = nextStage != null
+        ? _stagePresentLabel(context, nextStage)
+        : '';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1534,13 +1583,58 @@ class _SddStageSection extends StatelessWidget {
         if (canAdvance && automationConfidence != null) ...[
           const SizedBox(height: AionSpacing.sp12),
           switch (automationConfidence!) {
-            AutomationConfidence.gated => _GatedBanner(onAdvance: onAdvance),
-            AutomationConfidence.manual => _ManualAdvanceButton(
+            AutomationConfidence.gated => _GatedBanner(
+              nextStageLabel: nextStageLabel,
               onAdvance: onAdvance,
             ),
-            AutomationConfidence.auto => const _AutoAdvancedNote(),
+            AutomationConfidence.manual => _ManualAdvanceButton(
+              nextStageLabel: nextStageLabel,
+              onAdvance: onAdvance,
+            ),
+            // The stage that was just silently advanced to is the
+            // *current* one by the time this note renders (the cubit
+            // already persisted and re-emitted before this rebuild) --
+            // not `nextStageLabel`, which describes where a *further*
+            // advance (this refreshed canAdvance being true again) would
+            // go next.
+            AutomationConfidence.auto => _AutoAdvancedNote(
+              stageLabel: currentStage != null
+                  ? _stagePresentLabel(context, currentStage)
+                  : nextStageLabel,
+            ),
           },
+        ] else if (!canAdvance && blockReason != null) ...[
+          const SizedBox(height: AionSpacing.sp12),
+          _NotReadyHint(text: _blockReasonHint(context, blockReason!)),
         ],
+      ],
+    );
+  }
+}
+
+/// The "Not ready" state (design.md §2.2): a single hint row explaining
+/// what's still blocking [_SddStageSection.onAdvance], shown when the
+/// precondition isn't met yet and there's still a next stage to advance
+/// to.
+class _NotReadyHint extends StatelessWidget {
+  const _NotReadyHint({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        PhosphorIcon(PhosphorIcons.infoLight, size: 15, color: c.textMuted),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: AionText.bodySm.copyWith(color: c.textMuted),
+          ),
+        ),
       ],
     );
   }
@@ -1612,8 +1706,12 @@ class _StageNode extends StatelessWidget {
 /// AutomationConfidence.gated "ready to advance" banner plus inline
 /// confirm button.
 class _GatedBanner extends StatelessWidget {
-  const _GatedBanner({required this.onAdvance});
+  const _GatedBanner({required this.nextStageLabel, required this.onAdvance});
 
+  /// The present-progressive name of the stage advancing would move to
+  /// (e.g. `"Verifying"`), interpolated into the banner title per
+  /// design.md §2.3.
+  final String nextStageLabel;
   final VoidCallback onAdvance;
 
   @override
@@ -1642,7 +1740,7 @@ class _GatedBanner extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                context.l10n.ticketDetailSddStageReadyBanner,
+                context.l10n.ticketDetailSddStageReadyBanner(nextStageLabel),
                 style: AionText.cardTitle.copyWith(color: c.textPrimary),
               ),
             ),
@@ -1681,16 +1779,27 @@ class _GatedBanner extends StatelessWidget {
 /// AutomationConfidence.manual plain, always-visible advance button --
 /// quieter than [_GatedBanner], no banner framing.
 class _ManualAdvanceButton extends StatelessWidget {
-  const _ManualAdvanceButton({required this.onAdvance});
+  const _ManualAdvanceButton({
+    required this.nextStageLabel,
+    required this.onAdvance,
+  });
 
+  /// The present-progressive name of the stage advancing would move to
+  /// (e.g. `"Verifying"`), interpolated into the button label per
+  /// design.md §2.4 — this button has no banner title to supply that
+  /// context, unlike [_GatedBanner]'s inline "Advance".
+  final String nextStageLabel;
   final VoidCallback onAdvance;
 
   @override
   Widget build(BuildContext context) {
     final c = ThemeScope.of(context).colors;
+    final label = context.l10n.ticketDetailSddStageAdvanceToStage(
+      nextStageLabel,
+    );
     return Semantics(
       button: true,
-      label: context.l10n.ticketDetailSddStageAdvance,
+      label: label,
       child: GestureDetector(
         onTap: onAdvance,
         child: DecoratedBox(
@@ -1710,10 +1819,7 @@ class _ManualAdvanceButton extends StatelessWidget {
                   color: c.primary,
                 ),
                 const SizedBox(width: 7),
-                Text(
-                  context.l10n.ticketDetailSddStageAdvance,
-                  style: AionText.button.copyWith(color: c.primary),
-                ),
+                Text(label, style: AionText.button.copyWith(color: c.primary)),
               ],
             ),
           ),
@@ -1728,7 +1834,12 @@ class _ManualAdvanceButton extends StatelessWidget {
 /// post-frame callback in _TicketDetailScreenState
 /// ._maybeAutoAdvanceSddStage; no button, since auto never asks.
 class _AutoAdvancedNote extends StatelessWidget {
-  const _AutoAdvancedNote();
+  const _AutoAdvancedNote({required this.stageLabel});
+
+  /// The present-progressive name of the stage that was just advanced to
+  /// (e.g. `"Verifying"`), interpolated into the note text per
+  /// design.md §2.5.
+  final String stageLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -1756,7 +1867,7 @@ class _AutoAdvancedNote extends StatelessWidget {
             const SizedBox(width: 9),
             Expanded(
               child: Text(
-                context.l10n.ticketDetailSddStageAutoAdvancedNote,
+                context.l10n.ticketDetailSddStageAutoAdvancedNote(stageLabel),
                 style: AionText.bodySm.copyWith(color: c.textPrimary),
               ),
             ),

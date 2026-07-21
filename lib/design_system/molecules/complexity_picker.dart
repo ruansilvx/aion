@@ -70,6 +70,7 @@ class ComplexityPicker extends StatelessWidget {
           itemLabel: (v) => v == null
               ? context.l10n.commonNotSet
               : ticketComplexityLabel(context, v),
+          itemBuilder: (context, c, item) => ComplexityMenuRow(item: item),
           trigger: FocusableActionDetector(
             focusNode: focusNode,
             child: DecoratedBox(
@@ -131,4 +132,65 @@ String ticketComplexityLabel(
     TicketComplexity.medium => l10n.ticketComplexityMedium,
     TicketComplexity.large => l10n.ticketComplexityLarge,
   };
+}
+
+/// A one-word scale hint for [complexity] (`"~1 file"` / `"a few files"` /
+/// `"multi-module"`), shown as a [ComplexityMenuRow]'s trailing sub-hint.
+/// Per design.md §1.4.
+String ticketComplexitySubHint(
+  BuildContext context,
+  TicketComplexity complexity,
+) {
+  final l10n = context.l10n;
+  return switch (complexity) {
+    TicketComplexity.small => l10n.ticketComplexitySubHintSmall,
+    TicketComplexity.medium => l10n.ticketComplexitySubHintMedium,
+    TicketComplexity.large => l10n.ticketComplexitySubHintLarge,
+  };
+}
+
+/// One [SelectionMenu]`<TicketComplexity?>` menu row: the complexity
+/// meter, the label, and — for a non-`null` [item] — a trailing
+/// scale-hint sub-label. Public (not folded into [ComplexityPicker])
+/// since `TicketDetailScreen`'s inline
+/// `SelectionMenu<TicketComplexity?>` (the ticket-meta row's complexity
+/// field) reuses it too. Per design.md §1.4.
+class ComplexityMenuRow extends StatelessWidget {
+  /// Creates a [ComplexityMenuRow] for [item] (`null` renders the
+  /// "unset" label with no meter/sub-hint).
+  const ComplexityMenuRow({super.key, required this.item});
+
+  /// The complexity this row represents, or `null` for "unset".
+  final TicketComplexity? item;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    final item = this.item;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        ComplexityMeter(complexity: item),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            item == null
+                ? context.l10n.commonNotSet
+                : ticketComplexityLabel(context, item),
+            style: AionText.bodySm.copyWith(
+              color: c.textPrimary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        if (item != null) ...[
+          const SizedBox(width: 8),
+          Text(
+            ticketComplexitySubHint(context, item),
+            style: AionText.time.copyWith(color: c.textMuted),
+          ),
+        ],
+      ],
+    );
+  }
 }

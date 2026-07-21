@@ -529,36 +529,43 @@ class TicketsCubit extends Cubit<TicketsState> {
   ///
   /// On success: persists the new stage via
   /// [TicketRepository.updateTicketSddStage], re-emits
-  /// [TicketDetailLoaded], then spawns the next stage's chat (see
+  /// [TicketDetailLoaded] (so the tracker/current-stage line update
+  /// immediately, independent of how long the spawned chat's model call
+  /// below takes), then spawns the next stage's chat (see
   /// [_spawnStageChat]) unless the new stage is [SddStage.archived]
   /// (nothing to spawn after Archival).
-  Future<void> advanceSddStage(Ticket ticket) async {
+  ///
+  /// @returns the spawned chat ticket's id once it and its first AI reply
+  /// have been persisted, so a caller (`TicketDetailScreen`'s Advance
+  /// button handlers) can navigate straight to it; `null` when nothing
+  /// was spawned (the new stage is [SddStage.archived]) or nothing to
+  /// advance (a rejection already emitted [TicketsError]).
+  Future<String?> advanceSddStage(Ticket ticket) async {
     if (ticket.type != TicketType.epic && ticket.type != TicketType.story) {
       await _emitSddStagePreconditionNotMet(ticket.id);
-      return;
+      return null;
     }
 
     final nextStage = _nextSddStage(ticket.sddStage);
     if (nextStage == null) {
       await _emitSddStagePreconditionNotMet(ticket.id);
-      return;
+      return null;
     }
-    if (!await _canAdvanceSddStage(ticket)) {
+    if (!(await _sddStageAdvanceCheck(ticket)).canAdvance) {
       await _emitSddStagePreconditionNotMet(ticket.id);
-      return;
+      return null;
     }
 
     try {
       await _repository.updateTicketSddStage(ticket.id, nextStage);
       final refreshed = await _repository.getTicketById(ticket.id);
-      if (refreshed != null) {
-        emit(TicketDetailLoaded(refreshed));
-        if (nextStage != SddStage.archived) {
-          unawaited(_spawnStageChat(refreshed, nextStage));
-        }
-      }
+      if (refreshed == null) return null;
+      emit(TicketDetailLoaded(refreshed));
+      if (nextStage == SddStage.archived) return null;
+      return await _spawnStageChat(refreshed, nextStage);
     } catch (e) {
       emit(TicketsError(e.toString()));
+      return null;
     }
   }
 
@@ -651,24 +658,36 @@ class TicketsCubit extends Cubit<TicketsState> {
     SddStage.archived => null,
   };
 
-  /// Whether [advanceSddStage] would currently succeed for [ticket] —
-  /// shared by [advanceSddStage]'s own check and [getTicketById]'s
-  /// [TicketDetailLoaded.canAdvanceSddStage] computation, so the two
-  /// can't disagree. `false` for any type other than
-  /// [TicketType.epic]/[TicketType.story], or once [SddStage.archived]
-  /// is reached.
-  Future<bool> _canAdvanceSddStage(Ticket ticket) async {
+  /// Whether [advanceSddStage] would currently succeed for [ticket],
+  /// alongside — when it wouldn't — why, as an [SddStageBlockReason] for
+  /// the "Not ready" hint row (`_SddStageSection`, see
+  /// `aion-arch/changes/sdd-ticket-execution/design.md` §2.2). Shared by
+  /// [advanceSddStage]'s own check and [getTicketById]'s
+  /// [TicketDetailLoaded.canAdvanceSddStage]/
+  /// [TicketDetailLoaded.sddStageBlockReason] computation, so the two
+  /// can't disagree. `canAdvance` is `false` with `blockReason: null` for
+  /// any type other than [TicketType.epic]/[TicketType.story], or once
+  /// [SddStage.archived] is reached (nothing left to advance to, not a
+  /// "blocked" state).
+  Future<({bool canAdvance, SddStageBlockReason? blockReason})>
+  _sddStageAdvanceCheck(Ticket ticket) async {
     if (ticket.type != TicketType.epic && ticket.type != TicketType.story) {
-      return false;
+      return (canAdvance: false, blockReason: null);
     }
-    if (_nextSddStage(ticket.sddStage) == null) return false;
+    if (_nextSddStage(ticket.sddStage) == null) {
+      return (canAdvance: false, blockReason: null);
+    }
 
     switch (ticket.sddStage) {
       case null:
-        return true;
+        return (canAdvance: true, blockReason: null);
       case SddStage.exploring:
       case SddStage.verifying:
-        return _mostRecentChatHasTerminalReply(ticket.id);
+        final ready = await _mostRecentChatHasTerminalReply(ticket.id);
+        return (
+          canAdvance: ready,
+          blockReason: ready ? null : SddStageBlockReason.awaitingChatReply,
+        );
       case SddStage.proposed:
         final nextRank = ticket.type == TicketType.story
             ? TicketType.task
@@ -677,14 +696,19 @@ class TicketsCubit extends Cubit<TicketsState> {
           ticket.id,
           types: [nextRank],
         );
-        if (children.isEmpty) return false;
-        return children.every(
-          (c) => nextRank == TicketType.task
-              ? c.status == TicketStatus.done
-              : c.sddStage == SddStage.archived,
+        final ready =
+            children.isNotEmpty &&
+            children.every(
+              (c) => nextRank == TicketType.task
+                  ? c.status == TicketStatus.done
+                  : c.sddStage == SddStage.archived,
+            );
+        return (
+          canAdvance: ready,
+          blockReason: ready ? null : SddStageBlockReason.awaitingChildren,
         );
       case SddStage.archived:
-        return false;
+        return (canAdvance: false, blockReason: null);
     }
   }
 
@@ -871,7 +895,8 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// repository call throws. For an `epic`/`story` ticket, also fetches
   /// its direct children and evaluates [advanceSddStage]'s precondition
   /// for the ticket's current stage, populating
-  /// [TicketDetailLoaded.canAdvanceSddStage].
+  /// [TicketDetailLoaded.canAdvanceSddStage] and, when that's `false`,
+  /// [TicketDetailLoaded.sddStageBlockReason].
   Future<void> getTicketById(String id) async {
     emit(const TicketsLoading());
     try {
@@ -880,8 +905,14 @@ class TicketsCubit extends Cubit<TicketsState> {
         emit(const TicketsError('', reason: TicketsErrorReason.notFound));
         return;
       }
-      final canAdvance = await _canAdvanceSddStage(ticket);
-      emit(TicketDetailLoaded(ticket, canAdvanceSddStage: canAdvance));
+      final check = await _sddStageAdvanceCheck(ticket);
+      emit(
+        TicketDetailLoaded(
+          ticket,
+          canAdvanceSddStage: check.canAdvance,
+          sddStageBlockReason: check.blockReason,
+        ),
+      );
     } catch (e) {
       emit(TicketsError(e.toString()));
     }

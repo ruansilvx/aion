@@ -95,9 +95,14 @@ class SettingsScreen extends StatelessWidget {
 }
 
 /// The "SDD Stage Automation" section: a labeled description followed by
-/// an [AutomationConfidence] dropdown, backed by [AutomationSettingsCubit]
-/// (kept separate from [ProviderSettingsCubit] since the two concerns —
-/// provider connection vs. automation confidence — are unrelated).
+/// an [AutomationConfidence] [SelectionMenu] (mode dot + name in the
+/// trigger, mode dot + sub-label per menu row — design.md §6.2/§6.3),
+/// backed by [AutomationSettingsCubit] (kept separate from
+/// [ProviderSettingsCubit] since the two concerns — provider connection
+/// vs. automation confidence — are unrelated). Built on [SelectionMenu]
+/// rather than `AppDropdown` since the mode-dot/sub-label row content
+/// design.md specifies needs [SelectionMenu.itemBuilder]; `AppDropdown`
+/// only renders a plain label per row.
 class _AutomationSection extends StatelessWidget {
   const _AutomationSection();
 
@@ -106,6 +111,28 @@ class _AutomationSection extends StatelessWidget {
         AutomationConfidence.auto => context.l10n.settingsAutomationAuto,
         AutomationConfidence.gated => context.l10n.settingsAutomationGated,
         AutomationConfidence.manual => context.l10n.settingsAutomationManual,
+      };
+
+  String _confidenceSubLabel(BuildContext context, AutomationConfidence c) =>
+      switch (c) {
+        AutomationConfidence.auto =>
+          context.l10n.settingsAutomationAutoSubLabel,
+        AutomationConfidence.gated =>
+          context.l10n.settingsAutomationGatedSubLabel,
+        AutomationConfidence.manual =>
+          context.l10n.settingsAutomationManualSubLabel,
+      };
+
+  /// The mode dot's color, encoding the confidence level per design.md
+  /// §7's `confidenceDot` resolver — `manual` uses `secondary`
+  /// (rendered as a `textSecondary`-weight neutral), the §7 code being
+  /// authoritative over §6.2's restated `textSecondary` prose per
+  /// proposal.md's Design gate note.
+  Color _confidenceDotColor(AionColors c, AutomationConfidence confidence) =>
+      switch (confidence) {
+        AutomationConfidence.auto => c.success,
+        AutomationConfidence.gated => c.primary,
+        AutomationConfidence.manual => c.secondary,
       };
 
   @override
@@ -130,12 +157,76 @@ class _AutomationSection extends StatelessWidget {
               style: AionText.bodySm.copyWith(color: c.textMuted),
             ),
             const SizedBox(height: AionSpacing.sp8),
-            AppDropdown<AutomationConfidence>(
-              value: state.confidence,
+            SelectionMenu<AutomationConfidence>(
+              semanticsLabel: context.l10n.settingsAutomationLabel,
               items: AutomationConfidence.values,
               itemLabel: (v) => _confidenceLabel(context, v),
-              onChanged: (v) =>
+              currentValue: state.confidence,
+              onSelected: (v) =>
                   context.read<AutomationSettingsCubit>().selectConfidence(v),
+              itemBuilder: (context, c, item) => Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: _confidenceDotColor(c, item),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const SizedBox(width: 8, height: 8),
+                  ),
+                  const SizedBox(width: 11),
+                  Expanded(
+                    child: Text(
+                      _confidenceLabel(context, item),
+                      style: AionText.bodySm.copyWith(color: c.textPrimary),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _confidenceSubLabel(context, item),
+                    style: AionText.time.copyWith(color: c.textMuted),
+                  ),
+                ],
+              ),
+              trigger: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: c.surface,
+                  border: Border.all(color: c.border, width: 1),
+                  borderRadius: BorderRadius.all(AionRadius.lg),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  child: Row(
+                    children: [
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: _confidenceDotColor(c, state.confidence),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const SizedBox(width: 8, height: 8),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _confidenceLabel(context, state.confidence),
+                          style: AionText.bodySm.copyWith(
+                            color: c.textPrimary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      PhosphorIcon(
+                        PhosphorIcons.caretDownLight,
+                        size: 12,
+                        color: c.textMuted,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ],
         );
