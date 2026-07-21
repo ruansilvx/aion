@@ -55,6 +55,8 @@
   "ticketTypeResource": "Resource",
   "ticketTypePage": "Page",
   "ticketTypeChat": "Chat",
+  "ticketTypeSignal": "Signal",
+  "ticketTypeRelease": "Release",
 
   "ticketDetailAddPriority": "+ PRIORITY",
   "ticketDetailChangePriority": "Change priority",

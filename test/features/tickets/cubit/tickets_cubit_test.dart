@@ -141,6 +141,24 @@ void main() {
     createdAt: chatTicket.createdAt,
     updatedAt: chatTicket.updatedAt,
   );
+  final signalTicket = Ticket(
+    id: '10',
+    ticketId: 'AIO-10',
+    type: TicketType.signal,
+    title: 'Signal ticket',
+    status: TicketStatus.backlog,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+  final releaseTicket = Ticket(
+    id: '11',
+    ticketId: 'AIO-11',
+    type: TicketType.release,
+    title: 'Release ticket',
+    status: TicketStatus.backlog,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
 
   setUpAll(() {
     registerFallbackValue(ticket);
@@ -816,6 +834,42 @@ void main() {
         expect: () => [
           const TicketsError('', reason: TicketsErrorReason.invalidParent),
           TicketDetailLoaded(epic),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'rejects reparenting a signal ticket without calling the repository',
+        setUp: () {
+          when(
+            () => repository.getTicketById(signalTicket.id),
+          ).thenAnswer((_) async => signalTicket);
+        },
+        build: () => TicketsCubit(repository),
+        act: (cubit) => cubit.updateTicketParent(signalTicket, unrelated.id),
+        verify: (_) {
+          verifyNever(() => repository.updateTicketParent(any(), any()));
+        },
+        expect: () => [
+          const TicketsError('', reason: TicketsErrorReason.invalidParent),
+          TicketDetailLoaded(signalTicket),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'rejects reparenting a release ticket without calling the repository',
+        setUp: () {
+          when(
+            () => repository.getTicketById(releaseTicket.id),
+          ).thenAnswer((_) async => releaseTicket);
+        },
+        build: () => TicketsCubit(repository),
+        act: (cubit) => cubit.updateTicketParent(releaseTicket, unrelated.id),
+        verify: (_) {
+          verifyNever(() => repository.updateTicketParent(any(), any()));
+        },
+        expect: () => [
+          const TicketsError('', reason: TicketsErrorReason.invalidParent),
+          TicketDetailLoaded(releaseTicket),
         ],
       );
 

@@ -34,9 +34,10 @@ class CreateTicketRouteExtra {
 
 /// The `/tickets/new` route: title, type, parent, priority, and
 /// description fields followed by a full-width submit button. The parent
-/// field is hidden whenever the selected type is [TicketType.epic] (epics
-/// are always subtree roots). Reads [TicketsCubit] from the root-level
-/// provider and navigates back to `/tickets` on success.
+/// field is hidden whenever the selected type is always a subtree root
+/// ([TicketType.epic], [TicketType.signal], or [TicketType.release] — see
+/// [TicketTypeHierarchy.isAlwaysRoot]). Reads [TicketsCubit] from the
+/// root-level provider and navigates back to `/tickets` on success.
 class CreateTicketScreen extends StatefulWidget {
   /// Creates a [CreateTicketScreen]. [initialType]/[initialParentId] seed
   /// the type/parent fields — used when opened from `DocumentationScreen`'s
@@ -163,7 +164,7 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                         duration: const Duration(milliseconds: 150),
                         curve: Curves.easeOut,
                         alignment: Alignment.topCenter,
-                        child: _selectedType == TicketType.epic
+                        child: _selectedType.isAlwaysRoot
                             ? const SizedBox.shrink()
                             : Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
