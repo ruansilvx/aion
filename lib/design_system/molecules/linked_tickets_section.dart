@@ -81,10 +81,7 @@ class LinkedTicketsSection extends StatelessWidget {
                     ),
                   ),
                 ],
-                if (trailing != null) ...[
-                  const Spacer(),
-                  trailing!,
-                ],
+                if (trailing != null) ...[const Spacer(), trailing!],
               ],
             ),
             const SizedBox(height: AionSpacing.sp12),
@@ -126,11 +123,17 @@ class _LinkRowState extends State<_LinkRow> {
   bool _isHovered = false;
   bool _isPressed = false;
 
+  // All seven non-task types resolve to their own dedicated token; only
+  // `task` itself falls through to the `typeTask` catch-all, mirroring
+  // `TypeChip`'s own switch.
   Color _typeColor(AionColors c, TicketType type) => switch (type) {
     TicketType.story => c.typeStory,
     TicketType.epic => c.typeEpic,
     TicketType.resource => c.typeResource,
     TicketType.page => c.typePage,
+    TicketType.signal => c.typeSignal,
+    TicketType.release => c.typeRelease,
+    TicketType.chat => c.typeChat,
     _ => c.typeTask,
   };
 

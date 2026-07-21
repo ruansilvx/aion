@@ -19,6 +19,8 @@ export 'molecules/app_toast.dart';
 export 'molecules/selection_menu.dart';
 export 'molecules/inline_editable_field.dart';
 export 'molecules/backlinks_section.dart';
+export 'molecules/complexity_meter.dart';
+export 'molecules/complexity_picker.dart';
 export 'molecules/delete_action_button.dart';
 export 'molecules/linked_tickets_section.dart';
 export 'molecules/markdown_editor.dart';

@@ -29,8 +29,10 @@ void main() {
 /// [ActiveProjectCubit], [ThemeScope] (tracking system brightness), the
 /// app-level provider-configuration stack ([AgentBridgeLocator],
 /// [AgentModelClient], [AgentSettingsRepository] — global, not
-/// per-project, since provider identity isn't a per-project concept), and
-/// the `WidgetsApp.router` shell — no `MaterialApp`, no `ThemeData`.
+/// per-project, since provider identity isn't a per-project concept),
+/// [AutomationSettingsRepository] (also global — SDD-stage-triggering
+/// confidence isn't a per-project concept either), and the
+/// `WidgetsApp.router` shell — no `MaterialApp`, no `ThemeData`.
 /// Project-scoped state (ticket repositories, [AppDatabase]) is wired
 /// per-project inside `WorkspaceShell`, not here.
 class AionApp extends StatefulWidget {
@@ -106,6 +108,11 @@ class _AionAppState extends State<AionApp> with WidgetsBindingObserver {
         ),
         RepositoryProvider<AgentSettingsRepository>(
           create: (_) => SharedPrefsAgentSettingsRepository(),
+        ),
+        // Global (not per-project) SDD-stage-triggering confidence
+        // setting — see aion-arch/changes/sdd-ticket-execution/design.md.
+        RepositoryProvider<AutomationSettingsRepository>(
+          create: (_) => SharedPrefsAutomationSettingsRepository(),
         ),
       ],
       child: BlocProvider<ActiveProjectCubit>(

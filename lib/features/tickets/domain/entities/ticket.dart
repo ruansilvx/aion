@@ -4,6 +4,8 @@ import 'dart:typed_data';
 
 import 'package:equatable/equatable.dart';
 
+import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_complexity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sync_status.dart';
@@ -70,6 +72,17 @@ class Ticket extends Equatable {
   /// cleared by [TicketRepository.restoreTicket].
   final DateTime? deletedAt;
 
+  /// Rough size estimate, user-set. `null` until sized.
+  final TicketComplexity? complexity;
+
+  /// This ticket's SDD-cycle progress. `null` until the cycle starts.
+  /// Meaningful only for [TicketType.epic]/[TicketType.story] — see
+  /// [SddStage]. Written only via `TicketsCubit.advanceSddStage`, never
+  /// through the generic [copyWith]-based [TicketRepository.updateTicket]
+  /// path other fields use, so its precondition can't be bypassed by a
+  /// plain edit.
+  final SddStage? sddStage;
+
   /// Creates a [Ticket]. [priority] defaults to [TicketPriority.none].
   const Ticket({
     required this.id,
@@ -87,6 +100,8 @@ class Ticket extends Equatable {
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,
+    this.complexity,
+    this.sddStage,
   });
 
   @override
@@ -106,16 +121,21 @@ class Ticket extends Equatable {
     createdAt,
     updatedAt,
     deletedAt,
+    complexity,
+    sddStage,
   ];
 
   /// Returns a copy of this ticket with the given fields replaced.
-  /// [description], [estimate], and [timeSpent] are nullable and therefore
-  /// take a zero-arg setter instead of a bare value — pass `() => null` to
-  /// explicitly clear one of them, or omit the parameter entirely to leave
-  /// it unchanged. A plain `?? this.x` fallback can't tell "not passed"
-  /// apart from "explicitly set to null," since both look like `null` at
-  /// the call site. `id`, `ticketId`, `parentId`, `embedding`,
-  /// `syncStatus`, and `createdAt` are never mutated by this method.
+  /// [description], [estimate], [timeSpent], and [complexity] are
+  /// nullable and therefore take a zero-arg setter instead of a bare
+  /// value — pass `() => null` to explicitly clear one of them, or omit
+  /// the parameter entirely to leave it unchanged. A plain `?? this.x`
+  /// fallback can't tell "not passed" apart from "explicitly set to
+  /// null," since both look like `null` at the call site. `id`,
+  /// `ticketId`, `parentId`, `embedding`, `syncStatus`, `createdAt`, and
+  /// `sddStage` are never mutated by this method — `sddStage` is written
+  /// only via `TicketsCubit.advanceSddStage`, so its precondition can't
+  /// be bypassed by a plain edit.
   Ticket copyWith({
     String? title,
     TicketFieldSetter<String?>? description,
@@ -124,6 +144,7 @@ class Ticket extends Equatable {
     TicketType? type,
     TicketFieldSetter<int?>? estimate,
     TicketFieldSetter<int?>? timeSpent,
+    TicketFieldSetter<TicketComplexity?>? complexity,
     DateTime? updatedAt,
   }) {
     return Ticket(
@@ -141,6 +162,8 @@ class Ticket extends Equatable {
       timeSpent: timeSpent != null ? timeSpent() : this.timeSpent,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      complexity: complexity != null ? complexity() : this.complexity,
+      sddStage: sddStage,
     );
   }
 }

@@ -7,6 +7,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:aion/core/automation/automation_settings_repository.dart';
 import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/core/contracts/embedding_provider.dart';
 import 'package:aion/core/contracts/page_ticket_provider.dart';
@@ -138,9 +139,23 @@ final appRouter = GoRouter(
           path: '/workspace/tickets/:id',
           builder: (context, state) {
             final id = state.pathParameters['id']!;
-            return BlocProvider<CommentsCubit>(
-              create: (context) =>
-                  CommentsCubit(context.read<CommentRepository>()),
+            return MultiBlocProvider(
+              providers: [
+                BlocProvider<CommentsCubit>(
+                  create: (context) =>
+                      CommentsCubit(context.read<CommentRepository>()),
+                ),
+                // Provided unconditionally alongside CommentsCubit —
+                // TicketDetailScreen doesn't know the ticket's type until
+                // it loads, so both cubits are wired here and the screen
+                // picks which one's UI to render once the ticket arrives.
+                BlocProvider<ChatCubit>(
+                  create: (context) => ChatCubit(
+                    context.read<CommentRepository>(),
+                    context.read<AgentModelClient>(),
+                  ),
+                ),
+              ],
               child: TicketDetailScreen(ticketId: id),
             );
           },
@@ -165,12 +180,20 @@ final appRouter = GoRouter(
         ),
         GoRoute(
           path: '/workspace/settings',
-          builder: (context, state) => BlocProvider<ProviderSettingsCubit>(
-            create: (context) =>
-                ProviderSettingsCubit(
+          builder: (context, state) => MultiBlocProvider(
+            providers: [
+              BlocProvider<ProviderSettingsCubit>(
+                create: (context) => ProviderSettingsCubit(
                   context.read<AgentModelClient>(),
                   context.read<AgentSettingsRepository>(),
                 )..load(),
+              ),
+              BlocProvider<AutomationSettingsCubit>(
+                create: (context) => AutomationSettingsCubit(
+                  context.read<AutomationSettingsRepository>(),
+                )..load(),
+              ),
+            ],
             child: const SettingsScreen(),
           ),
         ),
@@ -388,6 +411,8 @@ class _WorkspaceShellState extends State<WorkspaceShell>
                   : null,
               projectRootPath: rootPath,
               linkRepository: context.read<TicketLinkRepository>(),
+              agentClient: context.read<AgentModelClient>(),
+              commentRepository: context.read<CommentRepository>(),
             ),
             child: Builder(
               builder: (context) => RepositoryProvider<PageTicketProvider>(

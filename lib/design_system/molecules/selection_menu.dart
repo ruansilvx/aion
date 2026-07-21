@@ -2,6 +2,7 @@
 
 import 'package:flutter/widgets.dart';
 
+import 'package:aion/design_system/tokens/aion_colors.dart';
 import 'package:aion/design_system/tokens/aion_radius.dart';
 import 'package:aion/design_system/tokens/aion_shadows.dart';
 import 'package:aion/design_system/tokens/aion_text.dart';
@@ -32,6 +33,7 @@ class SelectionMenu<T> extends StatefulWidget {
     this.openUpward = false,
     this.onOpenChanged,
     this.onFocusChange,
+    this.itemBuilder,
   });
 
   /// The always-visible tappable widget (e.g. a `PriorityBadge`/`TypeChip`).
@@ -73,6 +75,16 @@ class SelectionMenu<T> extends StatefulWidget {
   /// focusable region nested inside [trigger] itself. Optional; existing
   /// callers that don't need this stay unaffected.
   final ValueChanged<bool>? onFocusChange;
+
+  /// Builds a menu row's content for [item], overriding the default
+  /// plain [itemLabel] text row — used by pickers whose design (e.g. the
+  /// Complexity meter/sub-hint, the Automation-Confidence mode dot/
+  /// sub-label, per
+  /// `aion-arch/changes/sdd-ticket-execution/design.md` §1.4/§6.3) needs
+  /// more than a label per row. Every pre-existing caller omits this and
+  /// keeps the plain-text row unchanged.
+  final Widget Function(BuildContext context, AionColors c, T item)?
+  itemBuilder;
 
   @override
   State<SelectionMenu<T>> createState() => _SelectionMenuState<T>();
@@ -138,6 +150,7 @@ class _SelectionMenuState<T> extends State<SelectionMenu<T>> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: selectable.map((item) {
+                    final builder = widget.itemBuilder;
                     return GestureDetector(
                       onTap: () {
                         widget.onSelected(item);
@@ -148,13 +161,15 @@ class _SelectionMenuState<T> extends State<SelectionMenu<T>> {
                           vertical: 9,
                           horizontal: 13,
                         ),
-                        child: Text(
-                          widget.itemLabel(item),
-                          style: AionText.bodySm.copyWith(
-                            color: c.textPrimary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                        child: builder != null
+                            ? builder(context, c, item)
+                            : Text(
+                                widget.itemLabel(item),
+                                style: AionText.bodySm.copyWith(
+                                  color: c.textPrimary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                       ),
                     );
                   }).toList(),

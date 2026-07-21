@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_complexity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
@@ -32,8 +33,8 @@ class CreateTicketRouteExtra {
   final String? initialParentId;
 }
 
-/// The `/tickets/new` route: title, type, parent, priority, and
-/// description fields followed by a full-width submit button. The parent
+/// The `/tickets/new` route: title, type, parent, priority, complexity,
+/// and description fields followed by a full-width submit button. The parent
 /// field is hidden whenever the selected type is always a subtree root
 /// ([TicketType.epic], [TicketType.signal], or [TicketType.release] — see
 /// [TicketTypeHierarchy.isAlwaysRoot]). Reads [TicketsCubit] from the
@@ -64,10 +65,12 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
   final _titleFocus = FocusNode();
   final _typeFocus = FocusNode();
   final _priorityFocus = FocusNode();
+  final _complexityFocus = FocusNode();
   final _descFocus = FocusNode();
 
   late TicketType _selectedType;
   TicketPriority _selectedPriority = TicketPriority.none;
+  TicketComplexity? _selectedComplexity;
   String? _selectedParentId;
   bool _isSubmitting = false;
 
@@ -85,6 +88,7 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
     _titleFocus.dispose();
     _typeFocus.dispose();
     _priorityFocus.dispose();
+    _complexityFocus.dispose();
     _descFocus.dispose();
     super.dispose();
   }
@@ -99,6 +103,7 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
           : _descController.text.trim(),
       priority: _selectedPriority,
       parentId: _selectedParentId,
+      complexity: _selectedComplexity,
     );
   }
 
@@ -207,13 +212,36 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                               ),
                       ),
                       const SizedBox(height: AionSpacing.sp20),
-                      AppDropdown<TicketPriority>(
-                        labelText: context.l10n.createTicketPriorityLabel,
-                        value: _selectedPriority,
-                        items: TicketPriority.values,
-                        onChanged: (v) => setState(() => _selectedPriority = v),
-                        itemLabel: (v) => ticketPriorityLabel(context, v),
-                        focusNode: _priorityFocus,
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: AppDropdown<TicketPriority>(
+                              labelText:
+                                  context.l10n.createTicketPriorityLabel,
+                              value: _selectedPriority,
+                              items: TicketPriority.values,
+                              onChanged: (v) =>
+                                  setState(() => _selectedPriority = v),
+                              itemLabel: (v) =>
+                                  ticketPriorityLabel(context, v),
+                              focusNode: _priorityFocus,
+                            ),
+                          ),
+                          const SizedBox(width: AionSpacing.sp12),
+                          Expanded(
+                            child: ComplexityPicker(
+                              labelText:
+                                  context.l10n.createTicketComplexityLabel,
+                              value: _selectedComplexity,
+                              onSelected: (v) =>
+                                  setState(() => _selectedComplexity = v),
+                              semanticsLabel:
+                                  context.l10n.createTicketComplexityLabel,
+                              focusNode: _complexityFocus,
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: AionSpacing.sp20),
                       AppTextField(

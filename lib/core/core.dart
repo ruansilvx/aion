@@ -2,6 +2,9 @@
 
 export 'agent/agent_bridge_locator.dart';
 export 'agent/claude_agent_sdk_client.dart';
+export 'automation/automation_confidence.dart';
+export 'automation/automation_settings_repository.dart';
+export 'automation/shared_prefs_automation_settings_repository.dart';
 export 'contracts/active_project_provider.dart';
 export 'contracts/agent_model_client.dart';
 export 'contracts/embedding_provider.dart';

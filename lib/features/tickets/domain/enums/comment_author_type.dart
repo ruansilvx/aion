@@ -10,4 +10,10 @@ enum CommentAuthorType {
 
   /// Authored by an AI model. [TicketComment.aiModel] identifies which one.
   ai,
+
+  /// Authored by Aion itself, not a human or a model — the
+  /// auto-assembled context message a spawned SDD-stage chat starts
+  /// with (see `TicketsCubit.advanceSddStage`). Never user- or
+  /// model-generated.
+  system,
 }

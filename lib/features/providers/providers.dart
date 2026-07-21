@@ -6,6 +6,8 @@
 export 'domain/enums/agent_model.dart';
 export 'domain/enums/provider_connection_status.dart';
 export 'domain/repositories/agent_settings_repository.dart';
+export 'presentation/cubit/automation_settings_cubit.dart';
+export 'presentation/cubit/automation_settings_state.dart';
 export 'presentation/cubit/provider_settings_cubit.dart';
 export 'presentation/cubit/provider_settings_state.dart';
 export 'presentation/screens/settings_screen.dart';

@@ -9,6 +9,8 @@ import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/providers/domain/enums/agent_model.dart';
 import 'package:aion/features/providers/domain/enums/provider_connection_status.dart';
+import 'package:aion/features/providers/presentation/cubit/automation_settings_cubit.dart';
+import 'package:aion/features/providers/presentation/cubit/automation_settings_state.dart';
 import 'package:aion/features/providers/presentation/cubit/provider_settings_cubit.dart';
 import 'package:aion/features/providers/presentation/cubit/provider_settings_state.dart';
 import 'package:aion/features/providers/presentation/widgets/provider_connection_badge.dart';
@@ -56,35 +58,209 @@ class SettingsScreen extends StatelessWidget {
               ),
               child: ContentMaxWidth(
                 variant: ContentWidthVariant.form,
-                child: BlocBuilder<ProviderSettingsCubit, ProviderSettingsState>(
-                  builder: (context, state) {
-                    if (state is! ProviderSettingsReady) {
-                      return const Center(child: AppSpinner());
-                    }
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _ProviderStatusCard(state: state),
-                        const SizedBox(height: AionSpacing.sp24),
-                        AppDropdown<AgentModel>(
-                          value: state.selectedModel,
-                          items: AgentModel.values,
-                          itemLabel: (model) => model.label,
-                          labelText: context.l10n.settingsModelDropdownLabel,
-                          onChanged: (model) =>
-                              context.read<ProviderSettingsCubit>().selectModel(
-                                model,
-                              ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
+                child:
+                    BlocBuilder<ProviderSettingsCubit, ProviderSettingsState>(
+                      builder: (context, state) {
+                        if (state is! ProviderSettingsReady) {
+                          return const Center(child: AppSpinner());
+                        }
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _ProviderStatusCard(state: state),
+                            const SizedBox(height: AionSpacing.sp24),
+                            AppDropdown<AgentModel>(
+                              value: state.selectedModel,
+                              items: AgentModel.values,
+                              itemLabel: (model) => model.label,
+                              labelText:
+                                  context.l10n.settingsModelDropdownLabel,
+                              onChanged: (model) => context
+                                  .read<ProviderSettingsCubit>()
+                                  .selectModel(model),
+                            ),
+                            const SizedBox(height: AionSpacing.sp24),
+                            const _AutomationSection(),
+                          ],
+                        );
+                      },
+                    ),
               ),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Localized display label for [confidence]. Module-private since
+/// [_AutomationSection]/[_AutomationTrigger]/[_AutomationMenuRow] are its
+/// only consumers.
+String _confidenceLabel(BuildContext context, AutomationConfidence confidence) =>
+    switch (confidence) {
+      AutomationConfidence.auto => context.l10n.settingsAutomationAuto,
+      AutomationConfidence.gated => context.l10n.settingsAutomationGated,
+      AutomationConfidence.manual => context.l10n.settingsAutomationManual,
+    };
+
+/// One-line explanatory sub-label for [confidence], shown in
+/// [_AutomationMenuRow]. Per design.md §6.3.
+String _confidenceSubLabel(
+  BuildContext context,
+  AutomationConfidence confidence,
+) => switch (confidence) {
+  AutomationConfidence.auto => context.l10n.settingsAutomationAutoSubLabel,
+  AutomationConfidence.gated => context.l10n.settingsAutomationGatedSubLabel,
+  AutomationConfidence.manual =>
+    context.l10n.settingsAutomationManualSubLabel,
+};
+
+/// The mode dot's color, encoding [confidence] per design.md §7's
+/// `confidenceDot` resolver — `manual` uses `secondary` (rendered as a
+/// `textSecondary`-weight neutral), the §7 code being authoritative over
+/// §6.2's restated `textSecondary` prose per proposal.md's Design gate
+/// note.
+Color _confidenceDotColor(AionColors c, AutomationConfidence confidence) =>
+    switch (confidence) {
+      AutomationConfidence.auto => c.success,
+      AutomationConfidence.gated => c.primary,
+      AutomationConfidence.manual => c.secondary,
+    };
+
+/// The "SDD Stage Automation" section: a labeled description followed by
+/// an [AutomationConfidence] [SelectionMenu] (mode dot + name in the
+/// trigger, mode dot + sub-label per menu row — design.md §6.2/§6.3),
+/// backed by [AutomationSettingsCubit] (kept separate from
+/// [ProviderSettingsCubit] since the two concerns — provider connection
+/// vs. automation confidence — are unrelated). Built on [SelectionMenu]
+/// rather than `AppDropdown` since the mode-dot/sub-label row content
+/// design.md specifies needs [SelectionMenu.itemBuilder]; `AppDropdown`
+/// only renders a plain label per row.
+class _AutomationSection extends StatelessWidget {
+  const _AutomationSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+
+    return BlocBuilder<AutomationSettingsCubit, AutomationSettingsState>(
+      builder: (context, state) {
+        if (state is! AutomationSettingsReady) {
+          return const SizedBox.shrink();
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              context.l10n.settingsAutomationLabel,
+              style: AionText.label.copyWith(color: c.textSecondary),
+            ),
+            const SizedBox(height: AionSpacing.sp4),
+            Text(
+              context.l10n.settingsAutomationDescription,
+              style: AionText.bodySm.copyWith(color: c.textMuted),
+            ),
+            const SizedBox(height: AionSpacing.sp8),
+            SelectionMenu<AutomationConfidence>(
+              semanticsLabel: context.l10n.settingsAutomationLabel,
+              items: AutomationConfidence.values,
+              itemLabel: (v) => _confidenceLabel(context, v),
+              currentValue: state.confidence,
+              onSelected: (v) =>
+                  context.read<AutomationSettingsCubit>().selectConfidence(v),
+              itemBuilder: (context, c, item) =>
+                  _AutomationMenuRow(confidence: item),
+              trigger: _AutomationTrigger(confidence: state.confidence),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// [SelectionMenu]`<AutomationConfidence>`'s closed trigger: a mode dot,
+/// [confidence]'s name, and a trailing caret. Per design.md §6.2.
+class _AutomationTrigger extends StatelessWidget {
+  const _AutomationTrigger({required this.confidence});
+
+  final AutomationConfidence confidence;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border.all(color: c.border, width: 1),
+        borderRadius: BorderRadius.all(AionRadius.lg),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: _confidenceDotColor(c, confidence),
+                shape: BoxShape.circle,
+              ),
+              child: const SizedBox(width: 8, height: 8),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _confidenceLabel(context, confidence),
+                style: AionText.bodySm.copyWith(color: c.textPrimary),
+              ),
+            ),
+            const SizedBox(width: 6),
+            PhosphorIcon(
+              PhosphorIcons.caretDownLight,
+              size: 12,
+              color: c.textMuted,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One [SelectionMenu]`<AutomationConfidence>` menu row: the mode dot,
+/// [confidence]'s name, and a trailing one-line sub-label. Per
+/// design.md §6.3.
+class _AutomationMenuRow extends StatelessWidget {
+  const _AutomationMenuRow({required this.confidence});
+
+  final AutomationConfidence confidence;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: _confidenceDotColor(c, confidence),
+            shape: BoxShape.circle,
+          ),
+          child: const SizedBox(width: 8, height: 8),
+        ),
+        const SizedBox(width: 11),
+        Expanded(
+          child: Text(
+            _confidenceLabel(context, confidence),
+            style: AionText.bodySm.copyWith(color: c.textPrimary),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          _confidenceSubLabel(context, confidence),
+          style: AionText.time.copyWith(color: c.textMuted),
+        ),
+      ],
     );
   }
 }
@@ -164,7 +340,9 @@ class _ProviderStatusCard extends StatelessWidget {
                 variant: AppButtonVariant.secondary,
                 onPressed: isChecking
                     ? null
-                    : () => context.read<ProviderSettingsCubit>().testConnection(),
+                    : () => context
+                          .read<ProviderSettingsCubit>()
+                          .testConnection(),
               ),
             ),
           ],
@@ -204,7 +382,10 @@ class _StatusMessageLine extends StatelessWidget {
         Expanded(
           child: Text(
             message,
-            style: AionText.bodySm.copyWith(color: c.textSecondary, height: 1.45),
+            style: AionText.bodySm.copyWith(
+              color: c.textSecondary,
+              height: 1.45,
+            ),
           ),
         ),
       ],

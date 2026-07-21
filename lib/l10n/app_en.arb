@@ -5,6 +5,7 @@
   "commonLoading": "Loading",
   "commonRequiredMarker": " *",
   "commonOptionalMarker": "  Optional",
+  "commonNotSet": "Not set",
   "commonCancel": "Cancel",
   "commonSave": "Save",
   "commonRetry": "Retry",
@@ -60,6 +61,8 @@
 
   "ticketDetailAddPriority": "+ PRIORITY",
   "ticketDetailChangePriority": "Change priority",
+  "ticketDetailAddComplexity": "+ COMPLEXITY",
+  "ticketDetailChangeComplexity": "Change complexity",
   "ticketDetailChangeType": "Change type",
   "ticketDetailChangeStatus": "Change status",
   "ticketDetailAddParent": "+ PARENT",
@@ -96,6 +99,41 @@
   "ticketDetailAiAuthor": "Aion AI",
   "ticketDetailAiTag": "AI",
   "ticketDetailYouAuthor": "You",
+  "ticketDetailSystemAuthor": "System",
+  "ticketDetailTyping": "typing…",
+
+  "ticketDetailSddStageEyebrow": "SDD STAGE",
+  "ticketDetailSddStageNotStarted": "Not started",
+  "ticketDetailSddStageExplore": "Explore",
+  "ticketDetailSddStagePropose": "Propose",
+  "ticketDetailSddStageVerify": "Verify",
+  "ticketDetailSddStageArchive": "Archive",
+  "ticketDetailSddStageExploring": "Exploring",
+  "ticketDetailSddStageProposed": "Proposed",
+  "ticketDetailSddStageVerifying": "Verifying",
+  "ticketDetailSddStageArchived": "Archived",
+  "ticketDetailSddStageReadyBanner": "Ready to advance to {stage}",
+  "@ticketDetailSddStageReadyBanner": {
+    "placeholders": {
+      "stage": { "type": "String" }
+    }
+  },
+  "ticketDetailSddStageAdvance": "Advance",
+  "ticketDetailSddStageAdvanceToStage": "Advance to {stage}",
+  "@ticketDetailSddStageAdvanceToStage": {
+    "placeholders": {
+      "stage": { "type": "String" }
+    }
+  },
+  "ticketDetailSddStageAutoAdvancedNote": "Automatically advanced to {stage}",
+  "@ticketDetailSddStageAutoAdvancedNote": {
+    "placeholders": {
+      "stage": { "type": "String" }
+    }
+  },
+  "ticketDetailSddStageHintAwaitingChat": "Advance unlocks once this stage's chat replies.",
+  "ticketDetailSddStageHintAwaitingTasks": "Advance unlocks once every Task is done.",
+  "ticketDetailSddStageHintAwaitingStories": "Advance unlocks once every Story is archived.",
   "ticketDetailViaModel": "via {model}",
   "@ticketDetailViaModel": {
     "placeholders": {
@@ -110,6 +148,15 @@
   "createTicketPriorityLabel": "Priority",
   "createTicketDescriptionLabel": "Description",
   "createTicketDescriptionHint": "Add details…",
+  "createTicketComplexityLabel": "Complexity",
+  "createTicketComplexityHint": "Select complexity",
+
+  "ticketComplexitySmall": "Small",
+  "ticketComplexityMedium": "Medium",
+  "ticketComplexityLarge": "Large",
+  "ticketComplexitySubHintSmall": "~1 file",
+  "ticketComplexitySubHintMedium": "a few files",
+  "ticketComplexitySubHintLarge": "multi-module",
 
   "ticketsErrorNotFound": "Ticket not found",
   "durationInvalidFormat": "Not a valid duration: \"{input}\"",
@@ -125,10 +172,14 @@
       "ticketId": { "type": "String" }
     }
   },
+  "ticketPromoteToEpicMenuItem": "Promote to Epic",
+  "ticketPromoteLinkExisting": "Link to existing epic",
+  "ticketPromoteCreateNew": "Create new epic",
   "ticketDeleteMenuItem": "Delete ticket",
   "ticketDeleteConfirmTitle": "Delete this ticket?",
   "ticketDeleteConfirmAction": "Delete",
   "ticketInvalidParentError": "Can't set that ticket as its own parent or a descendant.",
+  "ticketSddStagePreconditionNotMetError": "This ticket can't advance to the next SDD stage yet.",
 
   "ticketTrashConfirmMessage": "{total, plural, one{This ticket will move to Trash.} other{These {total} tickets will move to Trash.}} You can restore it from Trash later.",
   "@ticketTrashConfirmMessage": {
@@ -326,6 +377,14 @@
   "settingsProviderSubline": "Authenticated via your Claude plan",
   "settingsTestConnectionButtonLabel": "Test Connection",
   "settingsModelDropdownLabel": "Model",
+  "settingsAutomationLabel": "SDD Stage Automation",
+  "settingsAutomationDescription": "Controls whether tickets advance through Explore, Propose, Verify, and Archive on their own, or wait for you.",
+  "settingsAutomationAuto": "Auto",
+  "settingsAutomationGated": "Gated",
+  "settingsAutomationManual": "Manual",
+  "settingsAutomationAutoSubLabel": "Advances silently, then tells you",
+  "settingsAutomationGatedSubLabel": "Asks for confirmation each stage",
+  "settingsAutomationManualSubLabel": "You decide when to advance",
   "settingsProviderStatusUnknown": "NOT TESTED",
   "settingsProviderStatusChecking": "CHECKING",
   "settingsProviderStatusConnected": "CONNECTED",

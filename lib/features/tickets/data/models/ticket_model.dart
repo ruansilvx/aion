@@ -60,6 +60,14 @@ class TicketsTable extends Table {
   /// [TicketDao.restoreByIds]. Unix milliseconds.
   IntColumn get deletedAt => integer().named('deleted_at').nullable()();
 
+  /// `TicketComplexity.name`, nullable.
+  TextColumn get complexity => text().nullable()();
+
+  /// `SddStage.name`, nullable. Written only via
+  /// `TicketDao.updateSddStage` — see
+  /// `TicketRepository.updateTicketSddStage`.
+  TextColumn get sddStage => text().named('sdd_stage').nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
 }

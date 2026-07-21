@@ -5,6 +5,7 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
+import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/core/contracts/embedding_provider.dart';
 import 'package:aion/core/database/app_database.dart';
 import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
@@ -17,6 +18,10 @@ class MockEmbeddingProvider extends Mock implements EmbeddingProvider {}
 class MockTicketGitProjector extends Mock implements TicketGitProjector {}
 
 class MockTicketLinkRepository extends Mock implements TicketLinkRepository {}
+
+class MockAgentModelClient extends Mock implements AgentModelClient {}
+
+class MockCommentRepository extends Mock implements CommentRepository {}
 
 void main() {
   late MockTicketRepository repository;
@@ -160,10 +165,63 @@ void main() {
     updatedAt: DateTime(2026),
   );
 
+  // SDD-stage fixtures.
+  final storyProposed = Ticket(
+    id: '12',
+    ticketId: 'AIO-12',
+    type: TicketType.story,
+    title: 'Proposed story',
+    status: TicketStatus.backlog,
+    sddStage: SddStage.proposed,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+  final taskChildDone = Ticket(
+    id: '13',
+    ticketId: 'AIO-13',
+    type: TicketType.task,
+    title: 'Done task child',
+    status: TicketStatus.done,
+    parentId: storyProposed.id,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+  final taskChildNotDone = Ticket(
+    id: '14',
+    ticketId: 'AIO-14',
+    type: TicketType.task,
+    title: 'In-progress task child',
+    status: TicketStatus.inProgress,
+    parentId: storyProposed.id,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+  final dummyChatTicket = Ticket(
+    id: 'dummy-chat',
+    ticketId: 'AIO-99',
+    type: TicketType.chat,
+    title: 'Spawned chat',
+    status: TicketStatus.backlog,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+
   setUpAll(() {
     registerFallbackValue(ticket);
     registerFallbackValue(TicketStatus.backlog);
     registerFallbackValue(Uint8List(0));
+    registerFallbackValue(const AgentRequest(prompt: '', model: ''));
+    registerFallbackValue(SddStage.exploring);
+    registerFallbackValue(<TicketType>[]);
+    registerFallbackValue(
+      TicketComment(
+        id: '',
+        ticketId: '',
+        content: '',
+        authorType: CommentAuthorType.system,
+        createdAt: DateTime(2026),
+      ),
+    );
   });
 
   setUp(() {
@@ -293,9 +351,9 @@ void main() {
         when(
           () => repository.updateTicketStatus(any(), any()),
         ).thenAnswer((_) async {});
-        when(() => repository.getTicketById(any())).thenAnswer(
-          (_) async => ticket.copyWith(status: TicketStatus.done),
-        );
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => ticket.copyWith(status: TicketStatus.done));
         when(
           () => repository.searchTickets(
             query: any(named: 'query'),
@@ -419,17 +477,20 @@ void main() {
         verify(() => repository.previewTrashCount([ticket.id])).called(1);
       });
 
-      test('returns whatever count the repository reports, unmodified', () async {
-        when(
-          () => repository.previewTrashCount([ticket.id, unrelated.id]),
-        ).thenAnswer((_) async => 1);
+      test(
+        'returns whatever count the repository reports, unmodified',
+        () async {
+          when(
+            () => repository.previewTrashCount([ticket.id, unrelated.id]),
+          ).thenAnswer((_) async => 1);
 
-        final total = await TicketsCubit(
-          repository,
-        ).previewTrashCount([ticket.id, unrelated.id]);
+          final total = await TicketsCubit(
+            repository,
+          ).previewTrashCount([ticket.id, unrelated.id]);
 
-        expect(total, 1);
-      });
+          expect(total, 1);
+        },
+      );
     });
 
     blocTest<TicketsCubit, TicketsState>(
@@ -710,44 +771,38 @@ void main() {
         expect(candidates.map((t) => t.id), [unrelated.id]);
       });
 
-      test(
-        'excludes candidates whose type cannot parent the ticket type, '
-        'keeps compatible ones',
-        () async {
-          when(
-            () => repository.getAllTickets(),
-          ).thenAnswer((_) async => [ticket, unrelated, otherTask, resourceTicket]);
+      test('excludes candidates whose type cannot parent the ticket type, '
+          'keeps compatible ones', () async {
+        when(() => repository.getAllTickets()).thenAnswer(
+          (_) async => [ticket, unrelated, otherTask, resourceTicket],
+        );
 
-          final candidates = await TicketsCubit(
-            repository,
-          ).getValidParentCandidates(ticket);
+        final candidates = await TicketsCubit(
+          repository,
+        ).getValidParentCandidates(ticket);
 
-          // unrelated (story) can parent ticket (task): kept.
-          // otherTask (task) cannot parent ticket (task, same rank): excluded.
-          // resourceTicket (leaf) can never parent anything: excluded.
-          expect(candidates.map((t) => t.id).toSet(), {unrelated.id});
-        },
-      );
+        // unrelated (story) can parent ticket (task): kept.
+        // otherTask (task) cannot parent ticket (task, same rank): excluded.
+        // resourceTicket (leaf) can never parent anything: excluded.
+        expect(candidates.map((t) => t.id).toSet(), {unrelated.id});
+      });
     });
 
     group('getValidParentCandidatesForType', () {
-      test(
-        'returns only tickets whose type can parent the given child type, '
-        'with no self/descendant exclusion',
-        () async {
-          when(
-            () => repository.getAllTickets(),
-          ).thenAnswer((_) async => [ticket, story, resourceTicket, otherTask]);
+      test('returns only tickets whose type can parent the given child type, '
+          'with no self/descendant exclusion', () async {
+        when(
+          () => repository.getAllTickets(),
+        ).thenAnswer((_) async => [ticket, story, resourceTicket, otherTask]);
 
-          final candidates = await TicketsCubit(
-            repository,
-          ).getValidParentCandidatesForType(TicketType.task);
+        final candidates = await TicketsCubit(
+          repository,
+        ).getValidParentCandidatesForType(TicketType.task);
 
-          // story can parent task; ticket/otherTask (task) cannot parent
-          // task (same rank); resourceTicket (leaf) can never parent.
-          expect(candidates.map((t) => t.id).toSet(), {story.id});
-        },
-      );
+        // story can parent task; ticket/otherTask (task) cannot parent
+        // task (same rank); resourceTicket (leaf) can never parent.
+        expect(candidates.map((t) => t.id).toSet(), {story.id});
+      });
     });
 
     group('getAllTickets', () {
@@ -1028,9 +1083,9 @@ void main() {
         when(
           () => embeddingProvider.embed(any()),
         ).thenAnswer((_) async => Uint8List.fromList([1, 2, 3]));
-        when(() => gitProjector.project(any(), any(), any())).thenAnswer(
-          (_) async {},
-        );
+        when(
+          () => gitProjector.project(any(), any(), any()),
+        ).thenAnswer((_) async {});
         when(
           () => repository.updateEmbedding(any(), any()),
         ).thenAnswer((_) async {});
@@ -1087,7 +1142,8 @@ void main() {
           );
         },
         build: buildCubit,
-        act: (cubit) => cubit.updateTicket(ticket.copyWith(priority: TicketPriority.high)),
+        act: (cubit) =>
+            cubit.updateTicket(ticket.copyWith(priority: TicketPriority.high)),
         verify: (_) {
           verifyNever(() => embeddingProvider.embed(any()));
           verifyNever(() => gitProjector.project(any(), any(), any()));
@@ -1101,9 +1157,9 @@ void main() {
           when(
             () => repository.updateTicketStatus(any(), any()),
           ).thenAnswer((_) async {});
-          when(() => repository.getTicketById(any())).thenAnswer(
-            (_) async => ticket.copyWith(status: TicketStatus.done),
-          );
+          when(
+            () => repository.getTicketById(any()),
+          ).thenAnswer((_) async => ticket.copyWith(status: TicketStatus.done));
           when(
             () => repository.searchTickets(
               query: any(named: 'query'),
@@ -1144,7 +1200,9 @@ void main() {
       blocTest<TicketsCubit, TicketsState>(
         'trashTicket triggers a "trashed" projection',
         setUp: () {
-          when(() => repository.trashTicket(ticket.id)).thenAnswer((_) async {});
+          when(
+            () => repository.trashTicket(ticket.id),
+          ).thenAnswer((_) async {});
           when(
             () => repository.getTicketById(ticket.id),
           ).thenAnswer((_) async => ticket);
@@ -1321,10 +1379,8 @@ void main() {
       expect: () => [],
       verify: (_) {
         verifyNever(
-          () => repository.getTicketsByParent(
-            any(),
-            types: any(named: 'types'),
-          ),
+          () =>
+              repository.getTicketsByParent(any(), types: any(named: 'types')),
         );
       },
     );
@@ -1370,6 +1426,260 @@ void main() {
           ),
         ).called(1);
       },
+    );
+  });
+
+  group('advanceSddStage', () {
+    late MockAgentModelClient agentClient;
+    late MockCommentRepository commentRepository;
+
+    setUp(() {
+      agentClient = MockAgentModelClient();
+      commentRepository = MockCommentRepository();
+    });
+
+    TicketsCubit buildCubit() => TicketsCubit(
+      repository,
+      agentClient: agentClient,
+      commentRepository: commentRepository,
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'rejects a non-epic/story ticket type without calling the repository',
+      setUp: () {
+        when(
+          () => repository.getTicketById(ticket.id),
+        ).thenAnswer((_) async => ticket);
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.advanceSddStage(ticket),
+      verify: (_) {
+        verifyNever(() => repository.updateTicketSddStage(any(), any()));
+      },
+      expect: () => [
+        const TicketsError(
+          '',
+          reason: TicketsErrorReason.sddStagePreconditionNotMet,
+        ),
+        TicketDetailLoaded(ticket),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'rejects proposed to verifying when a child Task is not done',
+      setUp: () {
+        when(
+          () => repository.getTicketsByParent(
+            storyProposed.id,
+            types: any(named: 'types'),
+          ),
+        ).thenAnswer((_) async => [taskChildDone, taskChildNotDone]);
+        when(
+          () => repository.getTicketById(storyProposed.id),
+        ).thenAnswer((_) async => storyProposed);
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.advanceSddStage(storyProposed),
+      verify: (_) {
+        verifyNever(() => repository.updateTicketSddStage(any(), any()));
+      },
+      expect: () => [
+        const TicketsError(
+          '',
+          reason: TicketsErrorReason.sddStagePreconditionNotMet,
+        ),
+        TicketDetailLoaded(storyProposed),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'persists the next stage and spawns a chat ticket once the '
+      'precondition is met',
+      setUp: () {
+        final advancedEpic = Ticket(
+          id: epic.id,
+          ticketId: epic.ticketId,
+          type: epic.type,
+          title: epic.title,
+          status: epic.status,
+          sddStage: SddStage.exploring,
+          createdAt: epic.createdAt,
+          updatedAt: epic.updatedAt,
+        );
+        when(
+          () => repository.updateTicketSddStage(epic.id, SddStage.exploring),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(
+          () => repository.getTicketById(epic.id),
+        ).thenAnswer((_) async => advancedEpic);
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        when(
+          () => commentRepository.addComment(any()),
+        ).thenAnswer((_) async {});
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.advanceSddStage(epic),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verify(
+          () => repository.updateTicketSddStage(epic.id, SddStage.exploring),
+        ).called(1);
+        verify(() => repository.createTicket(any())).called(1);
+        verify(() => commentRepository.addComment(any())).called(1);
+      },
+    );
+  });
+
+  group('promoteSignalToEpic', () {
+    late MockTicketLinkRepository linkRepository;
+
+    setUp(() {
+      linkRepository = MockTicketLinkRepository();
+    });
+
+    TicketsCubit buildCubit() =>
+        TicketsCubit(repository, linkRepository: linkRepository);
+
+    blocTest<TicketsCubit, TicketsState>(
+      'rejects a non-signal ticket without calling the repository',
+      setUp: () {
+        when(
+          () => repository.getTicketById(ticket.id),
+        ).thenAnswer((_) async => ticket);
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.promoteSignalToEpic(ticket),
+      verify: (_) {
+        verifyNever(() => repository.createTicket(any()));
+        verifyNever(
+          () => linkRepository.createLink(
+            sourceTicketId: any(named: 'sourceTicketId'),
+            targetTicketId: any(named: 'targetTicketId'),
+            linkType: any(named: 'linkType'),
+          ),
+        );
+      },
+      expect: () => [isA<TicketsError>(), TicketDetailLoaded(ticket)],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'creates a new epic and links it when existingEpicId is omitted',
+      setUp: () {
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        when(
+          () => linkRepository.createLink(
+            sourceTicketId: signalTicket.id,
+            targetTicketId: any(named: 'targetTicketId'),
+            linkType: TicketLinkType.relatesTo,
+          ),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(signalTicket.id),
+        ).thenAnswer((_) async => signalTicket);
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.promoteSignalToEpic(signalTicket),
+      verify: (_) {
+        verify(() => repository.createTicket(any())).called(1);
+        verify(
+          () => linkRepository.createLink(
+            sourceTicketId: signalTicket.id,
+            targetTicketId: any(named: 'targetTicketId'),
+            linkType: TicketLinkType.relatesTo,
+          ),
+        ).called(1);
+      },
+      expect: () => [TicketDetailLoaded(signalTicket)],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'links to an existing epic without creating a new one when '
+      'existingEpicId is given',
+      setUp: () {
+        when(
+          () => linkRepository.createLink(
+            sourceTicketId: signalTicket.id,
+            targetTicketId: epic.id,
+            linkType: TicketLinkType.relatesTo,
+          ),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(signalTicket.id),
+        ).thenAnswer((_) async => signalTicket);
+      },
+      build: buildCubit,
+      act: (cubit) =>
+          cubit.promoteSignalToEpic(signalTicket, existingEpicId: epic.id),
+      verify: (_) {
+        verifyNever(() => repository.createTicket(any()));
+        verify(
+          () => linkRepository.createLink(
+            sourceTicketId: signalTicket.id,
+            targetTicketId: epic.id,
+            linkType: TicketLinkType.relatesTo,
+          ),
+        ).called(1);
+      },
+      expect: () => [TicketDetailLoaded(signalTicket)],
+    );
+  });
+
+  group('getTicketById computes canAdvanceSddStage', () {
+    blocTest<TicketsCubit, TicketsState>(
+      'true for an epic with no stage yet (no precondition)',
+      setUp: () {
+        when(
+          () => repository.getTicketById(epic.id),
+        ).thenAnswer((_) async => epic);
+      },
+      build: () => TicketsCubit(repository),
+      act: (cubit) => cubit.getTicketById(epic.id),
+      expect: () => [
+        const TicketsLoading(),
+        TicketDetailLoaded(epic, canAdvanceSddStage: true),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'false for a story whose proposed stage has no done child tasks yet',
+      setUp: () {
+        when(
+          () => repository.getTicketById(storyProposed.id),
+        ).thenAnswer((_) async => storyProposed);
+        when(
+          () => repository.getTicketsByParent(
+            storyProposed.id,
+            types: any(named: 'types'),
+          ),
+        ).thenAnswer((_) async => []);
+      },
+      build: () => TicketsCubit(repository),
+      act: (cubit) => cubit.getTicketById(storyProposed.id),
+      expect: () => [
+        const TicketsLoading(),
+        TicketDetailLoaded(
+          storyProposed,
+          sddStageBlockReason: SddStageBlockReason.awaitingChildren,
+        ),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'false for a non-epic/story ticket type regardless of stage',
+      setUp: () {
+        when(
+          () => repository.getTicketById(ticket.id),
+        ).thenAnswer((_) async => ticket);
+      },
+      build: () => TicketsCubit(repository),
+      act: (cubit) => cubit.getTicketById(ticket.id),
+      expect: () => [const TicketsLoading(), TicketDetailLoaded(ticket)],
     );
   });
 }
