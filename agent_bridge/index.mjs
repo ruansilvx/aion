@@ -2,11 +2,13 @@
 // (aion/lib/core/agent/claude_agent_sdk_client.dart). Not part of the
 // Flutter build — a plain Node/ESM script.
 //
-// Reads one JSON request line ({prompt, model}) from stdin, runs it through
-// the Claude Agent SDK's query() with tool access disabled (this MVP has no
-// coding-execution caller — see
-// aion-arch/changes/provider-configuration/design.md §3), and writes one
-// NDJSON line per resulting event to stdout:
+// Reads one JSON request line ({prompt, model, toolsEnabled}) from stdin and
+// runs it through the Claude Agent SDK's query(). Tool access (file edits,
+// git, bash, MCP) is disabled unless the request sets toolsEnabled: true —
+// set only by TicketsCubit's coding-execution path
+// (aion-arch/changes/task-to-coding-execution-trigger/design.md §1.3); every
+// other caller keeps today's text-only behavior. Writes one NDJSON line per
+// resulting event to stdout:
 //   {"type":"text","text":"..."}
 //   {"type":"done"}
 //   {"type":"error","message":"..."}
@@ -32,18 +34,16 @@ async function readRequest() {
 }
 
 async function main() {
-  const { prompt, model } = await readRequest();
+  const { prompt, model, toolsEnabled } = await readRequest();
 
   for await (const message of query({
     prompt,
     options: {
       model,
-      // No file/git/bash/MCP tool access — every call this MVP makes is
-      // plain text-in/text-out (Settings' "Test Connection" and any
-      // future ticket-estimation/spec-phase caller). A tool-enabled mode
-      // for coding execution is a separate future need with no caller
-      // yet — see design.md §3.
-      allowedTools: [],
+      // Tool-enabled runs (Task coding-execution) get the SDK's default
+      // tool set; every other caller (Settings' "Test Connection",
+      // SDD-stage chats) keeps today's text-only behavior.
+      ...(toolsEnabled ? {} : { allowedTools: [] }),
     },
   })) {
     if (message.type === 'assistant') {

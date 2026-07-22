@@ -413,6 +413,8 @@ class _WorkspaceShellState extends State<WorkspaceShell>
               linkRepository: context.read<TicketLinkRepository>(),
               agentClient: context.read<AgentModelClient>(),
               commentRepository: context.read<CommentRepository>(),
+              automationSettingsRepository: context
+                  .read<AutomationSettingsRepository>(),
             ),
             child: Builder(
               builder: (context) => RepositoryProvider<PageTicketProvider>(

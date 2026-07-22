@@ -9,6 +9,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 
+import 'package:aion/core/automation/automation_confidence.dart';
+import 'package:aion/core/automation/automation_context.dart';
+import 'package:aion/core/automation/automation_settings_repository.dart';
 import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/core/contracts/embedding_provider.dart';
 import 'package:aion/features/providers/domain/enums/agent_model.dart';
@@ -42,11 +45,16 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// construction sites to be updated for a feature most of them don't
   /// exercise. Real usage (`app_router.dart`) supplies [_agentClient]/
   /// [_commentRepository] so [advanceSddStage] always spawns its chat.
+  /// [_automationSettingsRepository] follows the same optional-dependency
+  /// pattern — `null` leaves a finished coding-execution run's status
+  /// untouched (never auto-flips to `inReview`) until a caller supplies
+  /// one; real usage (`app_router.dart`) always does.
   // The public param names below (embeddingProvider/gitProjector/
-  // projectRootPath/agentClient/commentRepository) intentionally differ
-  // from their private backing fields; a private identifier can't be
-  // used as an external named-parameter label from another library, so
-  // `this._foo` shorthand isn't usable here.
+  // projectRootPath/agentClient/commentRepository/
+  // automationSettingsRepository) intentionally differ from their private
+  // backing fields; a private identifier can't be used as an external
+  // named-parameter label from another library, so `this._foo` shorthand
+  // isn't usable here.
   TicketsCubit(
     this._repository, {
     EmbeddingProvider? embeddingProvider,
@@ -55,6 +63,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     TicketLinkRepository? linkRepository,
     AgentModelClient? agentClient,
     CommentRepository? commentRepository,
+    AutomationSettingsRepository? automationSettingsRepository,
   }) : super(const TicketsInitial()) {
     _embeddingProvider = embeddingProvider;
     _gitProjector = gitProjector;
@@ -62,6 +71,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     _linkRepository = linkRepository;
     _agentClient = agentClient;
     _commentRepository = commentRepository;
+    _automationSettingsRepository = automationSettingsRepository;
   }
 
   final TicketRepository _repository;
@@ -71,7 +81,24 @@ class TicketsCubit extends Cubit<TicketsState> {
   late final TicketLinkRepository? _linkRepository;
   late final AgentModelClient? _agentClient;
   late final CommentRepository? _commentRepository;
+  late final AutomationSettingsRepository? _automationSettingsRepository;
   static const _uuid = Uuid();
+
+  /// The Task id of the coding-execution run currently in flight, or
+  /// `null` if none is running. In-memory only — does not survive an app
+  /// restart (see proposal.md's Out of scope).
+  String? _inFlightExecutionTaskId;
+
+  /// Task ids waiting behind [_inFlightExecutionTaskId], FIFO — index 0
+  /// runs next.
+  final List<String> _executionQueue = [];
+
+  /// Whether an `AgentOverageDetectedEvent` has fired during any
+  /// coding-execution run this session — once `true`, every subsequent
+  /// completion is treated as [AutomationConfidence.gated] regardless of
+  /// the configured confidence, per proposal.md's reactive-only budget
+  /// handling.
+  bool _overageDetectedThisSession = false;
 
   /// Tickets fetched per page, for both [searchTickets] and
   /// [loadMoreTickets].
@@ -307,8 +334,27 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// refresh re-applies the filters [searchTickets] was last called with
   /// and requests at least as many tickets as were already loaded, so a
   /// background status update (e.g. a board drag) never collapses an
-  /// infinite-scrolled list back down to one page.
+  /// infinite-scrolled list back down to one page. When [id] is a Task
+  /// moving to [TicketStatus.inProgress], first runs
+  /// [_interceptTaskExecutionTrigger] — a rejected trigger skips the
+  /// write entirely (emitting the classified error + a re-emitted
+  /// detail state instead of the usual list-shaped states); an allowed
+  /// one proceeds as normal, then [_triggerOrQueueCodingExecution] starts
+  /// (or queues) the coding-execution run once the write succeeds.
   Future<void> updateTicketStatus(String id, TicketStatus status) async {
+    // Only fetch the ticket up front when the status is the one
+    // _interceptTaskExecutionTrigger can actually reject (inProgress) —
+    // every other transition returns true immediately, so skip the extra
+    // round trip other status changes (e.g. a plain board drag) don't
+    // need.
+    if (status == TicketStatus.inProgress) {
+      final target = await _repository.getTicketById(id);
+      if (target != null &&
+          !(await _interceptTaskExecutionTrigger(target, status))) {
+        return;
+      }
+    }
+
     _searchGeneration++;
     final currentTickets = switch (state) {
       TicketsLoaded(:final tickets) => tickets,
@@ -331,6 +377,10 @@ class TicketsCubit extends Cubit<TicketsState> {
       final updated = await _repository.getTicketById(id);
       if (updated != null) {
         unawaited(_triggerGitProjection(updated, 'status-changed'));
+        if (updated.type == TicketType.task &&
+            status == TicketStatus.inProgress) {
+          unawaited(_triggerOrQueueCodingExecution(updated));
+        }
       }
       final page = await _repository.searchTickets(
         query: _lastQuery,
@@ -394,14 +444,24 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [TicketDetailLoaded] with the refreshed ticket — unlike
   /// [updateTicketStatus], which emits list-shaped optimistic states built
   /// for the board and would fall through `TicketDetailScreen`'s state
-  /// switch. Emits [TicketsError] on failure.
+  /// switch. Emits [TicketsError] on failure. When [ticket] is a Task
+  /// moving to [TicketStatus.inProgress], first runs
+  /// [_interceptTaskExecutionTrigger] — a rejected trigger skips the
+  /// write entirely; an allowed one proceeds as normal, then
+  /// [_triggerOrQueueCodingExecution] starts (or queues) the
+  /// coding-execution run once the write succeeds.
   Future<void> changeTicketStatus(Ticket ticket, TicketStatus status) async {
+    if (!(await _interceptTaskExecutionTrigger(ticket, status))) return;
     try {
       await _repository.updateTicketStatus(ticket.id, status);
       final refreshed = await _repository.getTicketById(ticket.id);
       if (refreshed != null) {
         emit(TicketDetailLoaded(refreshed));
         unawaited(_triggerGitProjection(refreshed, 'status-changed'));
+        if (refreshed.type == TicketType.task &&
+            status == TicketStatus.inProgress) {
+          unawaited(_triggerOrQueueCodingExecution(refreshed));
+        }
       }
     } catch (e) {
       emit(TicketsError(e.toString()));
@@ -772,6 +832,13 @@ class TicketsCubit extends Cubit<TicketsState> {
           blockReason: ready ? null : SddStageBlockReason.awaitingChatReply,
         );
       case SddStage.proposed:
+        // Story branch: `designBrief`/`designSync` are supposed to run
+        // *before* code, so a Story needing design review only requires
+        // its Tasks to exist (not be done) to reach `designBrief` — see
+        // proposal.md's "Grounding correction." The skip-design branch
+        // (straight to `verifying`) is unaffected: it never had a
+        // pre-code stage to protect, so "Tasks done" still gates it, same
+        // as the epic branch (checking child Stories archived).
         final nextRank = ticket.type == TicketType.story
             ? TicketType.task
             : TicketType.story;
@@ -779,13 +846,17 @@ class TicketsCubit extends Cubit<TicketsState> {
           ticket.id,
           types: [nextRank],
         );
+        final needsDesign =
+            ticket.type == TicketType.story &&
+            _storyNeedsDesignReview(children);
         final ready =
             children.isNotEmpty &&
-            children.every(
-              (c) => nextRank == TicketType.task
-                  ? c.status == TicketStatus.done
-                  : c.sddStage == SddStage.archived,
-            );
+            (needsDesign ||
+                children.every(
+                  (c) => nextRank == TicketType.task
+                      ? c.status == TicketStatus.done
+                      : c.sddStage == SddStage.archived,
+                ));
         return (
           canAdvance: ready,
           blockReason: ready ? null : SddStageBlockReason.awaitingChildren,
@@ -801,7 +872,19 @@ class TicketsCubit extends Cubit<TicketsState> {
               : SddStageBlockReason.awaitingDesignPaste,
         );
       case SddStage.designSync:
-        final ready = await _designSyncApproved(ticket.id);
+        // Also requires every child Task done — restoring the check to
+        // the transition it always should have gated, one stage later
+        // than where it was misplaced (see proposal.md's "Grounding
+        // correction").
+        final approved = await _designSyncApproved(ticket.id);
+        final tasks = await _repository.getTicketsByParent(
+          ticket.id,
+          types: const [TicketType.task],
+        );
+        final ready =
+            approved &&
+            tasks.isNotEmpty &&
+            tasks.every((t) => t.status == TicketStatus.done);
         return (
           canAdvance: ready,
           blockReason: ready
@@ -867,6 +950,308 @@ class TicketsCubit extends Cubit<TicketsState> {
     );
     return mostRecent.authorType == CommentAuthorType.ai &&
         mostRecent.content.contains('DESIGN GATE: APPROVED');
+  }
+
+  /// Whether a Task's coding-execution run may start, built directly on
+  /// the now-correctly-gated [_storyNeedsDesignReview]/
+  /// [_designSyncApproved] pair — not on [SddStage] position, sidestepping
+  /// [_sddStageAdvanceCheck]'s fixed bug entirely rather than depending on
+  /// it being exactly right. `canStart` is always `true` when [task] has
+  /// no governing Story (see [_governingStory]) or that Story's Tasks
+  /// don't indicate UI work.
+  Future<({bool canStart, CodingExecutionBlockReason? reason})>
+  _codingExecutionGateCheck(Ticket task) async {
+    final story = await _governingStory(task);
+    if (story == null) return (canStart: true, reason: null);
+    final siblingTasks = await _repository.getTicketsByParent(
+      story.id,
+      types: const [TicketType.task],
+    );
+    if (!_storyNeedsDesignReview(siblingTasks)) {
+      return (canStart: true, reason: null);
+    }
+    final approved = await _designSyncApproved(story.id);
+    return (
+      canStart: approved,
+      reason: approved
+          ? null
+          : CodingExecutionBlockReason.storyDesignGatePending,
+    );
+  }
+
+  /// Walks [task]'s `parentId` up to find the nearest `story` ancestor —
+  /// `null` if [task] is parentless or its nearest structural ancestor is
+  /// an `epic` (a Task parented directly by an Epic, ad hoc — no Story to
+  /// gate on, so it's never blocked). A Task's parent is always a Story or
+  /// an Epic or nothing at all (task-under-task is disallowed by
+  /// `TicketTypeHierarchy.canParent`), so this never walks more than one
+  /// level up in practice, but is written as a walk for defensiveness.
+  Future<Ticket?> _governingStory(Ticket task) async {
+    var current = task;
+    while (current.parentId != null) {
+      final parent = await _repository.getTicketById(current.parentId!);
+      if (parent == null) return null;
+      if (parent.type == TicketType.story) return parent;
+      if (parent.type == TicketType.epic) return null;
+      current = parent;
+    }
+    return null;
+  }
+
+  /// Checked by [changeTicketStatus]/[updateTicketStatus] before their
+  /// repository write, for the one status transition that can be
+  /// rejected: a Task moving to [TicketStatus.inProgress] while
+  /// [_codingExecutionGateCheck] disallows it. Every other type/status
+  /// combination always returns `true` (not a trigger — proceed as
+  /// normal). On rejection, emits [TicketsErrorReason.codingExecutionBlocked]
+  /// then a re-emitted unchanged [TicketDetailLoaded], mirroring
+  /// [_emitInvalidParent]/[_emitSddStagePreconditionNotMet], and returns
+  /// `false` so the caller skips the write entirely.
+  Future<bool> _interceptTaskExecutionTrigger(
+    Ticket task,
+    TicketStatus status,
+  ) async {
+    if (task.type != TicketType.task || status != TicketStatus.inProgress) {
+      return true;
+    }
+    final check = await _codingExecutionGateCheck(task);
+    if (!check.canStart) {
+      emit(
+        const TicketsError(
+          '',
+          reason: TicketsErrorReason.codingExecutionBlocked,
+        ),
+      );
+      emit(TicketDetailLoaded(task));
+      return false;
+    }
+    return true;
+  }
+
+  /// Starts [task]'s coding-execution run immediately if no other run is
+  /// in flight, or appends it to [_executionQueue] (FIFO) otherwise.
+  /// Called by [changeTicketStatus]/[updateTicketStatus] after a Task's
+  /// status write to [TicketStatus.inProgress] succeeds.
+  Future<void> _triggerOrQueueCodingExecution(Ticket task) async {
+    if (_inFlightExecutionTaskId != null) {
+      _executionQueue.add(task.id);
+      return;
+    }
+    _inFlightExecutionTaskId = task.id;
+    unawaited(_runCodingExecution(task));
+  }
+
+  /// Runs [task]'s coding-execution turn: spawns a visible `chat` child
+  /// ticket (`"Coding Execution — <task.title>"`), posts the assembled
+  /// context (see [_assembleExecutionContext]) as a
+  /// [CommentAuthorType.system] comment, then calls
+  /// [ChatCubit.runChatTurn] with `toolsEnabled: true` and
+  /// [_projectRootPath] as the working directory — the same accumulate/
+  /// persist path every other stage chat uses, but with real tool access.
+  /// On completion, if the run reported a confirmed PR (see
+  /// [_executionSucceededWithPr]) and [_automationSettingsRepository] is
+  /// configured, flips [task] straight to [TicketStatus.inReview] when
+  /// [AutomationContext.codingExecution]'s confidence is
+  /// [AutomationConfidence.auto] (forced to
+  /// [AutomationConfidence.gated] for the rest of the session once
+  /// [_overageDetectedThisSession] is `true`) — `gated`/`manual` leave the
+  /// status as-is, for [getTicketById]'s `executionAwaitingReview`
+  /// computation (or a manual status change) to surface instead.
+  /// Re-emits [TicketDetailLoaded] if the detail screen was showing
+  /// [task] *when the run started* — captured up front rather than
+  /// re-read from `state` afterward, since an overage toast emitted
+  /// mid-run would otherwise clobber `state` and make a live re-check
+  /// wrongly skip the refresh. Then dequeues the next run (see
+  /// [_dequeueNext]), no-opping gracefully if constructed without an
+  /// [AgentModelClient]/[CommentRepository] (see the constructor's
+  /// dartdoc).
+  Future<void> _runCodingExecution(Ticket task) async {
+    final client = _agentClient;
+    final commentRepo = _commentRepository;
+    final automationRepo = _automationSettingsRepository;
+    if (client == null || commentRepo == null) {
+      _inFlightExecutionTaskId = null;
+      unawaited(_dequeueNext());
+      return;
+    }
+
+    // Captured before the run starts, not re-read from `state` afterward:
+    // `onOverageDetected` below can emit a one-shot `TicketsError` toast
+    // mid-run, which would otherwise clobber `state` and make a live
+    // re-check wrongly conclude the detail screen isn't showing [task]
+    // anymore, silently skipping the refresh.
+    final wasShowingTaskDetail =
+        state is TicketDetailLoaded &&
+        (state as TicketDetailLoaded).ticket.id == task.id;
+
+    final now = DateTime.now();
+    final chatTicket = Ticket(
+      id: _uuid.v4(),
+      ticketId: '',
+      type: TicketType.chat,
+      title: 'Coding Execution — ${task.title}',
+      status: TicketStatus.backlog,
+      parentId: task.id,
+      createdAt: now,
+      updatedAt: now,
+    );
+    await _repository.createTicket(chatTicket);
+    final persistedChat = await _repository.getTicketById(chatTicket.id);
+    if (persistedChat == null) {
+      _inFlightExecutionTaskId = null;
+      unawaited(_dequeueNext());
+      return;
+    }
+
+    final context = _assembleExecutionContext(task);
+    await commentRepo.addComment(
+      TicketComment(
+        id: '',
+        ticketId: persistedChat.id,
+        content: context,
+        authorType: CommentAuthorType.system,
+        createdAt: DateTime.now(),
+      ),
+    );
+
+    await ChatCubit.runChatTurn(
+      client: client,
+      commentRepo: commentRepo,
+      chatTicketId: persistedChat.id,
+      prompt: context,
+      // Out of scope: per-phase-tier-based-model-routing.
+      model: AgentModel.sonnet,
+      toolsEnabled: true,
+      workingDirectory: _projectRootPath,
+      onOverageDetected: () {
+        if (!_overageDetectedThisSession) {
+          _overageDetectedThisSession = true;
+          emit(
+            const TicketsError(
+              '',
+              reason: TicketsErrorReason.executionBudgetOverageDetected,
+            ),
+          );
+        }
+      },
+    );
+
+    final prConfirmed = await _executionSucceededWithPr(task.id);
+    if (prConfirmed && automationRepo != null) {
+      final confidence = await _effectiveCodingExecutionConfidence(
+        automationRepo,
+      );
+      if (confidence == AutomationConfidence.auto) {
+        await _repository.updateTicketStatus(task.id, TicketStatus.inReview);
+      }
+      // `gated`/`manual`: leave status as-is; getTicketById's re-check
+      // surfaces the "ready for review" banner or leaves it to a manual
+      // status change.
+    }
+
+    // Cleared before the refresh below (not after) so getTicketById's own
+    // `isExecuting` computation correctly sees this run as finished,
+    // rather than reporting the just-completed run as still in flight.
+    _inFlightExecutionTaskId = null;
+
+    if (wasShowingTaskDetail) {
+      await getTicketById(task.id);
+    }
+
+    unawaited(_dequeueNext());
+  }
+
+  /// [automationRepo]'s persisted [AutomationContext.codingExecution]
+  /// confidence, forced to [AutomationConfidence.gated] once
+  /// [_overageDetectedThisSession] is `true` regardless of what's
+  /// persisted — shared by [_runCodingExecution]'s completion-flip
+  /// decision and [getTicketById]'s `executionAwaitingReview`
+  /// computation so the two can't disagree about whether an
+  /// overage-affected run counts as gated (post-`/verify` correction:
+  /// [getTicketById] originally read the repository directly, so the
+  /// "ready for review" banner never appeared after an overage forced
+  /// `gated` — [_runCodingExecution] correctly skipped the auto-flip, but
+  /// nothing surfaced the resulting awaiting-review state instead).
+  Future<AutomationConfidence> _effectiveCodingExecutionConfidence(
+    AutomationSettingsRepository automationRepo,
+  ) async {
+    return _overageDetectedThisSession
+        ? AutomationConfidence.gated
+        : await automationRepo.getConfidence(AutomationContext.codingExecution);
+  }
+
+  /// Pops the next queued Task id (if any) off [_executionQueue] and
+  /// starts its run via [_runCodingExecution], skipping ids that no
+  /// longer resolve to a ticket (defensive — not expected in practice).
+  Future<void> _dequeueNext() async {
+    if (_executionQueue.isEmpty) return;
+    final nextId = _executionQueue.removeAt(0);
+    final next = await _repository.getTicketById(nextId);
+    if (next == null) {
+      unawaited(_dequeueNext());
+      return;
+    }
+    _inFlightExecutionTaskId = next.id;
+    unawaited(_runCodingExecution(next));
+  }
+
+  /// Assembles the plain-text context a spawned coding-execution chat
+  /// opens with: [task]'s title/description, plus an instruction to open
+  /// a PR as the last step of the run using the available git/bash tools,
+  /// ending the final reply with exactly one line — `EXECUTION: PR_OPENED`
+  /// followed by the PR url on success, or `EXECUTION: NO_PR` if it
+  /// couldn't — mirroring [_assembleStageContext]'s existing
+  /// `designSync`/`"DESIGN GATE: APPROVED"` convention for a parseable
+  /// completion signal.
+  String _assembleExecutionContext(Ticket task) {
+    final buffer = StringBuffer()..writeln('# ${task.title}');
+    final description = task.description;
+    if (description != null && description.isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln(description);
+    }
+    buffer
+      ..writeln()
+      ..writeln(
+        'Implement this Task using the available file, git, and bash '
+        'tools. As the last step, open a pull request for your changes. '
+        'End your reply with exactly one line: "EXECUTION: PR_OPENED '
+        '<url>" if the PR was opened successfully, or "EXECUTION: NO_PR" '
+        'if it could not be.',
+      );
+    return buffer.toString().trim();
+  }
+
+  /// Whether [taskId]'s most recently created `"Coding Execution — "`-
+  /// prefixed `chat` child's most recent comment is a
+  /// [CommentAuthorType.ai] reply whose content contains the literal
+  /// `EXECUTION: PR_OPENED` line — mirrors [_designSyncApproved]'s own
+  /// lookup shape exactly (that one takes the *Story's* id and finds its
+  /// `"Design Sync — "`-prefixed chat; this takes the *Task's* id and
+  /// finds its `"Coding Execution — "`-prefixed chat), so both
+  /// [_runCodingExecution] and [getTicketById] can call it identically
+  /// without needing to know the spawned chat's own id.
+  Future<bool> _executionSucceededWithPr(String taskId) async {
+    final commentRepo = _commentRepository;
+    if (commentRepo == null) return false;
+    final chats = await _repository.getTicketsByParent(
+      taskId,
+      types: const [TicketType.chat],
+    );
+    final executionChats =
+        chats.where((c) => c.title.startsWith('Coding Execution — ')).toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    if (executionChats.isEmpty) return false;
+    final comments = await commentRepo.getCommentsForTicket(
+      executionChats.first.id,
+    );
+    if (comments.isEmpty) return false;
+    final mostRecent = comments.reduce(
+      (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
+    );
+    return mostRecent.authorType == CommentAuthorType.ai &&
+        mostRecent.content.contains('EXECUTION: PR_OPENED');
   }
 
   /// Whether [parentId]'s most recently created `chat` child ticket
@@ -1163,7 +1548,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// via [_storyNeedsDesignReview] against its current child Tasks
   /// (`null` if none exist yet), and — when that's `true` —
   /// [TicketDetailLoaded.linkedDesignPage] via [_linkedDesignPage].
-  /// Added for `aion-arch/changes/sdd-design-gate`.
+  /// Added for `aion-arch/changes/sdd-design-gate`. For a `task` ticket,
+  /// also computes [TicketDetailLoaded.isExecuting],
+  /// [TicketDetailLoaded.executionQueuePosition], and
+  /// [TicketDetailLoaded.executionAwaitingReview] from the in-memory
+  /// coding-execution queue state. Added for
+  /// `aion-arch/changes/task-to-coding-execution-trigger`.
   Future<void> getTicketById(String id) async {
     emit(const TicketsLoading());
     try {
@@ -1189,6 +1579,30 @@ class TicketsCubit extends Cubit<TicketsState> {
         }
       }
 
+      var isExecuting = false;
+      int? executionQueuePosition;
+      var executionAwaitingReview = false;
+      if (ticket.type == TicketType.task) {
+        isExecuting = _inFlightExecutionTaskId == ticket.id;
+        final queueIndex = _executionQueue.indexOf(ticket.id);
+        // 1-based: the first entry in the FIFO queue is "next in line"
+        // (position 1) once the in-flight run finishes — nothing *in the
+        // queue* is ahead of it. The in-flight run itself never reaches
+        // this branch (isExecuting is checked separately above).
+        executionQueuePosition = queueIndex >= 0 ? queueIndex + 1 : null;
+        if (!isExecuting &&
+            executionQueuePosition == null &&
+            ticket.status == TicketStatus.inProgress) {
+          final prConfirmed = await _executionSucceededWithPr(ticket.id);
+          final automationRepo = _automationSettingsRepository;
+          final confidence = automationRepo == null
+              ? null
+              : await _effectiveCodingExecutionConfidence(automationRepo);
+          executionAwaitingReview =
+              prConfirmed && confidence == AutomationConfidence.gated;
+        }
+      }
+
       emit(
         TicketDetailLoaded(
           ticket,
@@ -1196,6 +1610,9 @@ class TicketsCubit extends Cubit<TicketsState> {
           sddStageBlockReason: check.blockReason,
           needsDesignReview: needsDesignReview,
           linkedDesignPage: linkedDesignPage,
+          isExecuting: isExecuting,
+          executionQueuePosition: executionQueuePosition,
+          executionAwaitingReview: executionAwaitingReview,
         ),
       );
     } catch (e) {

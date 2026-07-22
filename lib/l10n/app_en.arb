@@ -142,6 +142,20 @@
   "ticketDetailSddStageSubDesignPasted": "Linked design page has content",
   "ticketDetailSddStageSubDesignApproved": "Design Sync approved the pasted design",
   "chatRetryValidation": "Retry validation",
+  "ticketDetailCodingExecutionEyebrow": "CODING EXECUTION",
+  "ticketDetailCodingExecutionStatusExecuting": "Executing",
+  "ticketDetailCodingExecutionStatusQueued": "Queued",
+  "ticketDetailCodingExecutionStatusDone": "Run complete",
+  "ticketDetailCodingExecutionRunningHint": "Execution running — editing files and opening a pull request.",
+  "ticketDetailCodingExecutionQueuedNext": "Queued for execution — next in line.",
+  "ticketDetailCodingExecutionQueuedNth": "Queued for execution — {ordinal} in line.",
+  "@ticketDetailCodingExecutionQueuedNth": {
+    "placeholders": {
+      "ordinal": { "type": "String" }
+    }
+  },
+  "ticketDetailCodingExecutionReadyTitle": "Coding run finished — PR opened",
+  "ticketDetailCodingExecutionMarkReadyButton": "Mark ready for review",
   "ticketDetailViaModel": "via {model}",
   "@ticketDetailViaModel": {
     "placeholders": {
@@ -188,6 +202,8 @@
   "ticketDeleteConfirmAction": "Delete",
   "ticketInvalidParentError": "Can't set that ticket as its own parent or a descendant.",
   "ticketSddStagePreconditionNotMetError": "This ticket can't advance to the next SDD stage yet.",
+  "ticketCodingExecutionBlockedError": "This Task can't start coding execution until its Story's design work is approved.",
+  "executionBudgetOverageDetectedToast": "Usage limit reached — coding execution now requires confirmation for the rest of this session.",
 
   "ticketTrashConfirmMessage": "{total, plural, one{This ticket will move to Trash.} other{These {total} tickets will move to Trash.}} You can restore it from Trash later.",
   "@ticketTrashConfirmMessage": {
@@ -385,6 +401,7 @@
   "settingsProviderSubline": "Authenticated via your Claude plan",
   "settingsTestConnectionButtonLabel": "Test Connection",
   "settingsModelDropdownLabel": "Model",
+  "settingsAutomationEyebrow": "AUTOMATION",
   "settingsAutomationLabel": "SDD Stage Automation",
   "settingsAutomationDescription": "Controls whether tickets advance through Explore, Propose, Verify, and Archive on their own, or wait for you.",
   "settingsAutomationAuto": "Auto",
@@ -393,6 +410,11 @@
   "settingsAutomationAutoSubLabel": "Advances silently, then tells you",
   "settingsAutomationGatedSubLabel": "Asks for confirmation each stage",
   "settingsAutomationManualSubLabel": "You decide when to advance",
+  "settingsAutomationCodingExecutionLabel": "Coding Execution Automation",
+  "settingsAutomationCodingExecutionDescription": "Controls whether a finished coding run moves the Task to In Review on its own, or waits for your confirmation.",
+  "settingsAutomationCodingExecutionAutoSubLabel": "Moves to In Review on its own",
+  "settingsAutomationCodingExecutionGatedSubLabel": "Asks you to confirm each run",
+  "settingsAutomationCodingExecutionManualSubLabel": "You move it to review yourself",
   "settingsProviderStatusUnknown": "NOT TESTED",
   "settingsProviderStatusChecking": "CHECKING",
   "settingsProviderStatusConnected": "CONNECTED",

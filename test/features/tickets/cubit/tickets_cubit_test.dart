@@ -5,6 +5,9 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
+import 'package:aion/core/automation/automation_confidence.dart';
+import 'package:aion/core/automation/automation_context.dart';
+import 'package:aion/core/automation/automation_settings_repository.dart';
 import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/core/contracts/embedding_provider.dart';
 import 'package:aion/core/database/app_database.dart';
@@ -22,6 +25,9 @@ class MockTicketLinkRepository extends Mock implements TicketLinkRepository {}
 class MockAgentModelClient extends Mock implements AgentModelClient {}
 
 class MockCommentRepository extends Mock implements CommentRepository {}
+
+class MockAutomationSettingsRepository extends Mock
+    implements AutomationSettingsRepository {}
 
 void main() {
   late MockTicketRepository repository;
@@ -263,6 +269,90 @@ void main() {
     title: 'Design Sync — Design-synced story',
     status: TicketStatus.backlog,
     parentId: storyDesignSync.id,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+
+  // task-to-coding-execution-trigger fixtures.
+  final taskNoStory = Ticket(
+    id: '21',
+    ticketId: 'AIO-21',
+    type: TicketType.task,
+    title: 'Task with no governing Story',
+    status: TicketStatus.todo,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+  final storyForExecution = Ticket(
+    id: '22',
+    ticketId: 'AIO-22',
+    type: TicketType.story,
+    title: 'Story governing a Task execution',
+    status: TicketStatus.backlog,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+  final taskUnderStory = Ticket(
+    id: '23',
+    ticketId: 'AIO-23',
+    type: TicketType.task,
+    title: 'Redesign the ticket filter widget',
+    status: TicketStatus.todo,
+    parentId: storyForExecution.id,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+  final designSyncChatForExecution = Ticket(
+    id: '24',
+    ticketId: 'AIO-24',
+    type: TicketType.chat,
+    title: 'Design Sync — Story governing a Task execution',
+    status: TicketStatus.backlog,
+    parentId: storyForExecution.id,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+  final dummyExecutionChatTicket = Ticket(
+    id: 'dummy-exec-chat',
+    ticketId: 'AIO-97',
+    type: TicketType.chat,
+    title: 'Coding Execution — ${taskUnderStory.title}',
+    status: TicketStatus.backlog,
+    parentId: taskUnderStory.id,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+  // A Story whose Tasks carry none of _storyNeedsDesignReview's keywords
+  // ("widget"/"screen"/"component"/"ui") — the gate must skip the
+  // design-approval check entirely for a Task under it.
+  final storyNoDesignNeeded = Ticket(
+    id: '25',
+    ticketId: 'AIO-25',
+    type: TicketType.story,
+    title: 'Story with no UI-indicating Tasks',
+    status: TicketStatus.backlog,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+  final taskUnderStoryNoDesign = Ticket(
+    id: '26',
+    ticketId: 'AIO-26',
+    type: TicketType.task,
+    title: 'Refactor the sync engine retry backoff',
+    status: TicketStatus.todo,
+    parentId: storyNoDesignNeeded.id,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+  // A Task parented directly under an Epic (ad hoc, no governing Story) —
+  // _governingStory must stop walking at the Epic and return null.
+  final taskUnderEpic = Ticket(
+    id: '27',
+    ticketId: 'AIO-27',
+    type: TicketType.task,
+    title: 'Ad hoc task filed straight under the Epic',
+    status: TicketStatus.todo,
+    parentId: epic.id,
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
   );
@@ -1682,6 +1772,55 @@ void main() {
     );
 
     blocTest<TicketsCubit, TicketsState>(
+      'proposed advances to designBrief even when the UI-indicating child '
+      'Task is not done yet — T12 regression: designBrief/designSync must '
+      'run before code, so "Tasks exist" (not "Tasks done") gates this '
+      'transition',
+      setUp: () {
+        when(
+          () => repository.getTicketsByParent(
+            storyProposed.id,
+            types: any(named: 'types'),
+          ),
+        ).thenAnswer(
+          (_) async => [taskChildUi.copyWith(status: TicketStatus.todo)],
+        );
+        when(
+          () => repository.updateTicketSddStage(
+            storyProposed.id,
+            SddStage.designBrief,
+          ),
+        ).thenAnswer((_) async {});
+        when(() => repository.getTicketById(any())).thenAnswer(
+          (_) async => dummyChatTicket,
+        );
+        when(() => repository.getTicketById(storyProposed.id)).thenAnswer(
+          (_) async => Ticket(
+            id: storyProposed.id,
+            ticketId: storyProposed.ticketId,
+            type: storyProposed.type,
+            title: storyProposed.title,
+            status: storyProposed.status,
+            sddStage: SddStage.designBrief,
+            createdAt: storyProposed.createdAt,
+            updatedAt: storyProposed.updatedAt,
+          ),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.advanceSddStage(storyProposed),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verify(
+          () => repository.updateTicketSddStage(
+            storyProposed.id,
+            SddStage.designBrief,
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
       'proposed advances straight to verifying (skips designBrief) when no '
       'done child Task title indicates UI work',
       setUp: () {
@@ -1943,9 +2082,17 @@ void main() {
         when(
           () => repository.getTicketsByParent(
             storyDesignSync.id,
-            types: any(named: 'types'),
+            types: const [TicketType.chat],
           ),
         ).thenAnswer((_) async => [designSyncChat]);
+        // T12's fix additionally requires every child Task to be done
+        // before designSync -> verifying is allowed.
+        when(
+          () => repository.getTicketsByParent(
+            storyDesignSync.id,
+            types: const [TicketType.task],
+          ),
+        ).thenAnswer((_) async => [taskChildDone]);
         when(
           () => commentRepository.getCommentsForTicket(designSyncChat.id),
         ).thenAnswer(
@@ -2054,10 +2201,712 @@ void main() {
       act: (cubit) => cubit.retryDesignSync(designSyncChat),
       wait: const Duration(milliseconds: 50),
       verify: (_) {
-        verify(() => commentRepository.addComment(any())).called(1);
+        // The context comment retryDesignSync itself posts, plus
+        // runChatTurn's own failure comment — agentClient.run isn't
+        // stubbed here, so it throws and the run fails, which (since
+        // T4) now persists a trace instead of silently dropping it.
+        verify(() => commentRepository.addComment(any())).called(2);
         verify(() => agentClient.run(any())).called(1);
       },
       expect: () => <TicketsState>[],
+    );
+  });
+
+  group('coding-execution trigger', () {
+    late MockAgentModelClient agentClient;
+    late MockCommentRepository commentRepository;
+    late MockAutomationSettingsRepository automationSettingsRepository;
+
+    setUp(() {
+      agentClient = MockAgentModelClient();
+      commentRepository = MockCommentRepository();
+      automationSettingsRepository = MockAutomationSettingsRepository();
+    });
+
+    TicketsCubit buildFullCubit() => TicketsCubit(
+      repository,
+      agentClient: agentClient,
+      commentRepository: commentRepository,
+      automationSettingsRepository: automationSettingsRepository,
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'blocks a Task under a Story needing design review that is not yet '
+      'approved, without calling the repository or the agent',
+      setUp: () {
+        when(
+          () => repository.getTicketById(storyForExecution.id),
+        ).thenAnswer((_) async => storyForExecution);
+        when(
+          () => repository.getTicketsByParent(
+            storyForExecution.id,
+            types: const [TicketType.task],
+          ),
+        ).thenAnswer((_) async => [taskUnderStory]);
+        when(
+          () => repository.getTicketsByParent(
+            storyForExecution.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [designSyncChatForExecution]);
+        when(
+          () => commentRepository.getCommentsForTicket(
+            designSyncChatForExecution.id,
+          ),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'c3',
+              ticketId: designSyncChatForExecution.id,
+              content: 'Found one issue.\n\nDESIGN GATE: PENDING',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+      },
+      build: buildFullCubit,
+      act: (cubit) =>
+          cubit.changeTicketStatus(taskUnderStory, TicketStatus.inProgress),
+      verify: (_) {
+        verifyNever(() => repository.updateTicketStatus(any(), any()));
+        verifyNever(() => repository.createTicket(any()));
+        verifyNever(() => agentClient.run(any()));
+      },
+      expect: () => [
+        const TicketsError(
+          '',
+          reason: TicketsErrorReason.codingExecutionBlocked,
+        ),
+        TicketDetailLoaded(taskUnderStory),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'allows a Task with no governing Story to start unconditionally',
+      build: () => TicketsCubit(repository),
+      setUp: () {
+        when(
+          () => repository.updateTicketStatus(
+            taskNoStory.id,
+            TicketStatus.inProgress,
+          ),
+        ).thenAnswer((_) async {});
+        when(() => repository.getTicketById(taskNoStory.id)).thenAnswer(
+          (_) async => taskNoStory.copyWith(status: TicketStatus.inProgress),
+        );
+      },
+      act: (cubit) =>
+          cubit.changeTicketStatus(taskNoStory, TicketStatus.inProgress),
+      verify: (_) {
+        verify(
+          () => repository.updateTicketStatus(
+            taskNoStory.id,
+            TicketStatus.inProgress,
+          ),
+        ).called(1);
+      },
+      expect: () => [
+        TicketDetailLoaded(
+          taskNoStory.copyWith(status: TicketStatus.inProgress),
+        ),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'runs the coding-execution chat on an approved Task and flips it to '
+      'inReview when confidence is auto and a PR was confirmed opened',
+      build: buildFullCubit,
+      setUp: () {
+        when(
+          () => repository.getTicketsByParent(
+            storyForExecution.id,
+            types: const [TicketType.task],
+          ),
+        ).thenAnswer((_) async => [taskUnderStory]);
+        when(
+          () => repository.getTicketsByParent(
+            storyForExecution.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [designSyncChatForExecution]);
+        when(
+          () => commentRepository.getCommentsForTicket(
+            designSyncChatForExecution.id,
+          ),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'c4',
+              ticketId: designSyncChatForExecution.id,
+              content: 'No issues found.\n\nDESIGN GATE: APPROVED',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(
+          () => repository.getTicketsByParent(
+            taskUnderStory.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [dummyExecutionChatTicket]);
+        when(
+          () => commentRepository.getCommentsForTicket(
+            dummyExecutionChatTicket.id,
+          ),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'c5',
+              ticketId: dummyExecutionChatTicket.id,
+              content: 'Done.\n\nEXECUTION: PR_OPENED https://example/pr/1',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(() => repository.getTicketById(any())).thenAnswer((invocation) async {
+          final id = invocation.positionalArguments[0] as String;
+          if (id == storyForExecution.id) return storyForExecution;
+          if (id == taskUnderStory.id) {
+            return taskUnderStory.copyWith(status: TicketStatus.inProgress);
+          }
+          return dummyExecutionChatTicket;
+        });
+        when(
+          () => repository.updateTicketStatus(any(), any()),
+        ).thenAnswer((_) async {});
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        when(() => commentRepository.addComment(any())).thenAnswer(
+          (_) async {},
+        );
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Done.\n\nEXECUTION: PR_OPENED https://example/pr/1'),
+            AgentDoneEvent(),
+          ]),
+        );
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecution,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.auto);
+      },
+      act: (cubit) =>
+          cubit.changeTicketStatus(taskUnderStory, TicketStatus.inProgress),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verify(
+          () => repository.updateTicketStatus(
+            taskUnderStory.id,
+            TicketStatus.inProgress,
+          ),
+        ).called(1);
+        verify(() => repository.createTicket(any())).called(1);
+        verify(() => agentClient.run(any())).called(1);
+        verify(
+          () => repository.updateTicketStatus(
+            taskUnderStory.id,
+            TicketStatus.inReview,
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'does not flip the Task to inReview when confidence is gated, even '
+      'with a confirmed PR',
+      build: buildFullCubit,
+      setUp: () {
+        when(
+          () => repository.getTicketsByParent(
+            storyForExecution.id,
+            types: const [TicketType.task],
+          ),
+        ).thenAnswer((_) async => [taskUnderStory]);
+        when(
+          () => repository.getTicketsByParent(
+            storyForExecution.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [designSyncChatForExecution]);
+        when(
+          () => commentRepository.getCommentsForTicket(
+            designSyncChatForExecution.id,
+          ),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'c6',
+              ticketId: designSyncChatForExecution.id,
+              content: 'No issues found.\n\nDESIGN GATE: APPROVED',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(
+          () => repository.getTicketsByParent(
+            taskUnderStory.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [dummyExecutionChatTicket]);
+        when(
+          () => commentRepository.getCommentsForTicket(
+            dummyExecutionChatTicket.id,
+          ),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'c7',
+              ticketId: dummyExecutionChatTicket.id,
+              content: 'Done.\n\nEXECUTION: PR_OPENED https://example/pr/2',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(() => repository.getTicketById(any())).thenAnswer((invocation) async {
+          final id = invocation.positionalArguments[0] as String;
+          if (id == storyForExecution.id) return storyForExecution;
+          if (id == taskUnderStory.id) {
+            return taskUnderStory.copyWith(status: TicketStatus.inProgress);
+          }
+          return dummyExecutionChatTicket;
+        });
+        when(
+          () => repository.updateTicketStatus(any(), any()),
+        ).thenAnswer((_) async {});
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        when(() => commentRepository.addComment(any())).thenAnswer(
+          (_) async {},
+        );
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Done.\n\nEXECUTION: PR_OPENED https://example/pr/2'),
+            AgentDoneEvent(),
+          ]),
+        );
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecution,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.gated);
+      },
+      act: (cubit) =>
+          cubit.changeTicketStatus(taskUnderStory, TicketStatus.inProgress),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verifyNever(
+          () => repository.updateTicketStatus(
+            taskUnderStory.id,
+            TicketStatus.inReview,
+          ),
+        );
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'queues a second Task FIFO while one coding-execution run is already '
+      'in flight',
+      build: () => TicketsCubit(
+        repository,
+        agentClient: agentClient,
+        commentRepository: commentRepository,
+      ),
+      setUp: () {
+        final runGate = Completer<void>();
+        addTearDown(() {
+          if (!runGate.isCompleted) runGate.complete();
+        });
+        when(() => repository.getTicketById(any())).thenAnswer((invocation) async {
+          final id = invocation.positionalArguments[0] as String;
+          if (id == taskNoStory.id) {
+            return taskNoStory.copyWith(status: TicketStatus.inProgress);
+          }
+          return otherTask.copyWith(status: TicketStatus.inProgress);
+        });
+        when(
+          () => repository.updateTicketStatus(any(), any()),
+        ).thenAnswer((_) async {});
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        when(() => commentRepository.addComment(any())).thenAnswer(
+          (_) async {},
+        );
+        // The first run never resolves during this test, so the second
+        // trigger must observe the slot as still occupied.
+        when(() => agentClient.run(any())).thenAnswer((_) async {
+          await runGate.future;
+          return const Stream<AgentEvent>.empty();
+        });
+      },
+      act: (cubit) async {
+        await cubit.changeTicketStatus(taskNoStory, TicketStatus.inProgress);
+        await cubit.changeTicketStatus(otherTask, TicketStatus.inProgress);
+      },
+      verify: (_) {
+        // Only the first Task's chat has been spawned — the second is
+        // still queued behind it, not yet running.
+        verify(() => repository.createTicket(any())).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      "allows a Task under a Story whose Tasks don't indicate UI work to "
+      'start unconditionally, without ever checking design approval',
+      build: () => TicketsCubit(repository),
+      setUp: () {
+        when(
+          () => repository.getTicketById(storyNoDesignNeeded.id),
+        ).thenAnswer((_) async => storyNoDesignNeeded);
+        when(
+          () => repository.getTicketsByParent(
+            storyNoDesignNeeded.id,
+            types: const [TicketType.task],
+          ),
+        ).thenAnswer((_) async => [taskUnderStoryNoDesign]);
+        when(
+          () => repository.updateTicketStatus(
+            taskUnderStoryNoDesign.id,
+            TicketStatus.inProgress,
+          ),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(taskUnderStoryNoDesign.id),
+        ).thenAnswer(
+          (_) async => taskUnderStoryNoDesign.copyWith(
+            status: TicketStatus.inProgress,
+          ),
+        );
+      },
+      act: (cubit) => cubit.changeTicketStatus(
+        taskUnderStoryNoDesign,
+        TicketStatus.inProgress,
+      ),
+      verify: (_) {
+        verify(
+          () => repository.updateTicketStatus(
+            taskUnderStoryNoDesign.id,
+            TicketStatus.inProgress,
+          ),
+        ).called(1);
+        // _designSyncApproved's own lookup (the Story's chat children) is
+        // never consulted when the Story doesn't need design review.
+        verifyNever(
+          () => repository.getTicketsByParent(
+            storyNoDesignNeeded.id,
+            types: const [TicketType.chat],
+          ),
+        );
+      },
+      expect: () => [
+        TicketDetailLoaded(
+          taskUnderStoryNoDesign.copyWith(status: TicketStatus.inProgress),
+        ),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'allows a Task parented directly under an Epic to start '
+      'unconditionally — _governingStory stops walking at the Epic',
+      build: () => TicketsCubit(repository),
+      setUp: () {
+        when(
+          () => repository.getTicketById(epic.id),
+        ).thenAnswer((_) async => epic);
+        when(
+          () => repository.updateTicketStatus(
+            taskUnderEpic.id,
+            TicketStatus.inProgress,
+          ),
+        ).thenAnswer((_) async {});
+        when(() => repository.getTicketById(taskUnderEpic.id)).thenAnswer(
+          (_) async =>
+              taskUnderEpic.copyWith(status: TicketStatus.inProgress),
+        );
+      },
+      act: (cubit) =>
+          cubit.changeTicketStatus(taskUnderEpic, TicketStatus.inProgress),
+      verify: (_) {
+        verify(
+          () => repository.updateTicketStatus(
+            taskUnderEpic.id,
+            TicketStatus.inProgress,
+          ),
+        ).called(1);
+        // Never walks past the Epic looking for sibling Tasks/a Story.
+        verifyNever(
+          () => repository.getTicketsByParent(
+            epic.id,
+            types: any(named: 'types'),
+          ),
+        );
+      },
+      expect: () => [
+        TicketDetailLoaded(
+          taskUnderEpic.copyWith(status: TicketStatus.inProgress),
+        ),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'does not flip the Task to inReview when the run reports '
+      'EXECUTION: NO_PR, even with confidence auto',
+      build: buildFullCubit,
+      setUp: () {
+        when(
+          () => repository.getTicketsByParent(
+            storyForExecution.id,
+            types: const [TicketType.task],
+          ),
+        ).thenAnswer((_) async => [taskUnderStory]);
+        when(
+          () => repository.getTicketsByParent(
+            storyForExecution.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [designSyncChatForExecution]);
+        when(
+          () => commentRepository.getCommentsForTicket(
+            designSyncChatForExecution.id,
+          ),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'c8',
+              ticketId: designSyncChatForExecution.id,
+              content: 'No issues found.\n\nDESIGN GATE: APPROVED',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(
+          () => repository.getTicketsByParent(
+            taskUnderStory.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [dummyExecutionChatTicket]);
+        when(
+          () => commentRepository.getCommentsForTicket(
+            dummyExecutionChatTicket.id,
+          ),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'c9',
+              ticketId: dummyExecutionChatTicket.id,
+              content: "Couldn't finish.\n\nEXECUTION: NO_PR",
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(() => repository.getTicketById(any())).thenAnswer((invocation) async {
+          final id = invocation.positionalArguments[0] as String;
+          if (id == storyForExecution.id) return storyForExecution;
+          if (id == taskUnderStory.id) {
+            return taskUnderStory.copyWith(status: TicketStatus.inProgress);
+          }
+          return dummyExecutionChatTicket;
+        });
+        when(
+          () => repository.updateTicketStatus(any(), any()),
+        ).thenAnswer((_) async {});
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        when(() => commentRepository.addComment(any())).thenAnswer(
+          (_) async {},
+        );
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent("Couldn't finish.\n\nEXECUTION: NO_PR"),
+            AgentDoneEvent(),
+          ]),
+        );
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecution,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.auto);
+      },
+      act: (cubit) =>
+          cubit.changeTicketStatus(taskUnderStory, TicketStatus.inProgress),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verifyNever(
+          () => repository.updateTicketStatus(
+            taskUnderStory.id,
+            TicketStatus.inReview,
+          ),
+        );
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'forces gated (no auto-flip to inReview) for the rest of the '
+      'session once AgentOverageDetectedEvent has fired during a run',
+      build: buildFullCubit,
+      setUp: () {
+        when(
+          () => repository.getTicketsByParent(
+            storyForExecution.id,
+            types: const [TicketType.task],
+          ),
+        ).thenAnswer((_) async => [taskUnderStory]);
+        when(
+          () => repository.getTicketsByParent(
+            storyForExecution.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [designSyncChatForExecution]);
+        when(
+          () => commentRepository.getCommentsForTicket(
+            designSyncChatForExecution.id,
+          ),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'c10',
+              ticketId: designSyncChatForExecution.id,
+              content: 'No issues found.\n\nDESIGN GATE: APPROVED',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(
+          () => repository.getTicketsByParent(
+            taskUnderStory.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [dummyExecutionChatTicket]);
+        when(
+          () => commentRepository.getCommentsForTicket(
+            dummyExecutionChatTicket.id,
+          ),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'c11',
+              ticketId: dummyExecutionChatTicket.id,
+              content: 'Done.\n\nEXECUTION: PR_OPENED https://example/pr/3',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(() => repository.getTicketById(any())).thenAnswer((invocation) async {
+          final id = invocation.positionalArguments[0] as String;
+          if (id == storyForExecution.id) return storyForExecution;
+          if (id == taskUnderStory.id) {
+            return taskUnderStory.copyWith(status: TicketStatus.inProgress);
+          }
+          return dummyExecutionChatTicket;
+        });
+        when(
+          () => repository.updateTicketStatus(any(), any()),
+        ).thenAnswer((_) async {});
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        when(() => commentRepository.addComment(any())).thenAnswer(
+          (_) async {},
+        );
+        // The run itself reports overage mid-stream, then still finishes
+        // with a confirmed PR — the override must still force `gated`.
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentOverageDetectedEvent('Usage limit reached'),
+            AgentTextEvent('Done.\n\nEXECUTION: PR_OPENED https://example/pr/3'),
+            AgentDoneEvent(),
+          ]),
+        );
+        // Configured confidence is auto — the override must beat it.
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecution,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.auto);
+      },
+      act: (cubit) =>
+          cubit.changeTicketStatus(taskUnderStory, TicketStatus.inProgress),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verifyNever(
+          () => repository.updateTicketStatus(
+            taskUnderStory.id,
+            TicketStatus.inReview,
+          ),
+        );
+      },
+      expect: () => [
+        TicketDetailLoaded(
+          taskUnderStory.copyWith(status: TicketStatus.inProgress),
+        ),
+        const TicketsError(
+          '',
+          reason: TicketsErrorReason.executionBudgetOverageDetected,
+        ),
+        const TicketsLoading(),
+        // The forced-`gated` override applies here too (not just to the
+        // skipped auto-flip above) — the ready-for-review banner must
+        // still surface even though the configured confidence is `auto`.
+        TicketDetailLoaded(
+          taskUnderStory.copyWith(status: TicketStatus.inProgress),
+          executionAwaitingReview: true,
+        ),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'dequeues and runs the next Task once the in-flight run completes',
+      build: () => TicketsCubit(
+        repository,
+        agentClient: agentClient,
+        commentRepository: commentRepository,
+      ),
+      setUp: () {
+        when(() => repository.getTicketById(any())).thenAnswer((invocation) async {
+          final id = invocation.positionalArguments[0] as String;
+          if (id == taskNoStory.id) {
+            return taskNoStory.copyWith(status: TicketStatus.inProgress);
+          }
+          if (id == otherTask.id) {
+            return otherTask.copyWith(status: TicketStatus.inProgress);
+          }
+          return dummyExecutionChatTicket;
+        });
+        when(
+          () => repository.updateTicketStatus(any(), any()),
+        ).thenAnswer((_) async {});
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        when(() => commentRepository.addComment(any())).thenAnswer(
+          (_) async {},
+        );
+        // _executionSucceededWithPr's chat lookup — no execution chats
+        // found means no PR to confirm, exercised without needing an
+        // AutomationSettingsRepository (neither Task has one wired here).
+        when(
+          () => repository.getTicketsByParent(
+            any(),
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => []);
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+        );
+      },
+      act: (cubit) async {
+        await cubit.changeTicketStatus(taskNoStory, TicketStatus.inProgress);
+        await cubit.changeTicketStatus(otherTask, TicketStatus.inProgress);
+        // Let the first run's fire-and-forget completion (which triggers
+        // _dequeueNext) settle before asserting on the second run.
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      },
+      verify: (_) {
+        // Both Tasks' chats were eventually spawned and run, in order.
+        verify(() => repository.createTicket(any())).called(2);
+        verify(() => agentClient.run(any())).called(2);
+      },
     );
   });
 

@@ -88,12 +88,19 @@ class ChatCubit extends Cubit<ChatState> {
   /// `AgentTextEvent` chunk (reported to [onChunk], if given) and, on a
   /// successful `AgentDoneEvent` completion, persisting the accumulated
   /// text as one [CommentAuthorType.ai] comment (`aiModel: model.id`) via
-  /// [commentRepo]. Returns `true` if the turn completed and its reply
-  /// was persisted, `false` on an `AgentErrorEvent` or a thrown
-  /// exception — in the failure case, nothing is persisted for the
-  /// reply. Shared by [sendMessage] and
-  /// `TicketsCubit._spawnStageChat` (`tickets_cubit.dart`) so both call
-  /// sites accumulate/persist identically and can't drift apart.
+  /// [commentRepo]. On failure (an `AgentErrorEvent` or a thrown
+  /// exception), persists a `'Execution failed: ...'`
+  /// [CommentAuthorType.ai] comment instead — previously a failed run
+  /// left no trace for anyone not watching the chat live. Returns `true`
+  /// if the turn completed successfully, `false` otherwise. [toolsEnabled]
+  /// and [workingDirectory] opt a run into real tool access (file edits,
+  /// git, bash) scoped to that directory — only `TicketsCubit`'s
+  /// coding-execution path sets these; every other caller leaves them at
+  /// their text-only defaults. [onOverageDetected], if given, is called
+  /// once per `AgentOverageDetectedEvent`. Shared by [sendMessage] and
+  /// `TicketsCubit._spawnStageChat`/coding-execution
+  /// (`tickets_cubit.dart`) so all call sites accumulate/persist
+  /// identically and can't drift apart.
   static Future<bool> runChatTurn({
     required AgentModelClient client,
     required CommentRepository commentRepo,
@@ -101,12 +108,21 @@ class ChatCubit extends Cubit<ChatState> {
     required String prompt,
     required AgentModel model,
     void Function(String textSoFar)? onChunk,
+    bool toolsEnabled = false,
+    String? workingDirectory,
+    void Function()? onOverageDetected,
   }) async {
     final buffer = StringBuffer();
     var succeeded = true;
+    String? failureMessage;
     try {
       final events = await client.run(
-        AgentRequest(prompt: prompt, model: model.id),
+        AgentRequest(
+          prompt: prompt,
+          model: model.id,
+          toolsEnabled: toolsEnabled,
+          workingDirectory: workingDirectory,
+        ),
       );
       await for (final event in events) {
         switch (event) {
@@ -116,13 +132,15 @@ class ChatCubit extends Cubit<ChatState> {
           case AgentDoneEvent():
             break;
           case AgentOverageDetectedEvent():
-            break;
-          case AgentErrorEvent():
+            onOverageDetected?.call();
+          case AgentErrorEvent(:final message):
             succeeded = false;
+            failureMessage = message;
         }
       }
-    } catch (_) {
+    } catch (e) {
       succeeded = false;
+      failureMessage = e.toString();
     }
 
     if (succeeded && buffer.isNotEmpty) {
@@ -131,6 +149,17 @@ class ChatCubit extends Cubit<ChatState> {
           id: '',
           ticketId: chatTicketId,
           content: buffer.toString(),
+          authorType: CommentAuthorType.ai,
+          aiModel: model.id,
+          createdAt: DateTime.now(),
+        ),
+      );
+    } else if (!succeeded) {
+      await commentRepo.addComment(
+        TicketComment(
+          id: '',
+          ticketId: chatTicketId,
+          content: 'Execution failed: ${failureMessage ?? 'unknown error'}',
           authorType: CommentAuthorType.ai,
           aiModel: model.id,
           createdAt: DateTime.now(),

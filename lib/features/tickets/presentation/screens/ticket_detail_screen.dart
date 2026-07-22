@@ -132,11 +132,12 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     context.read<CommentsCubit>().loadComments(widget.ticketId);
     context.read<ChatCubit>().loadMessages(widget.ticketId);
     unawaited(
-      context.read<AutomationSettingsRepository>().getSddStageAutomation().then(
-        (confidence) {
-          if (mounted) setState(() => _automationConfidence = confidence);
-        },
-      ),
+      context
+          .read<AutomationSettingsRepository>()
+          .getConfidence(AutomationContext.sddStage)
+          .then((confidence) {
+            if (mounted) setState(() => _automationConfidence = confidence);
+          }),
     );
   }
 
@@ -252,6 +253,19 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
         } else if (state is TicketsError &&
             state.reason == TicketsErrorReason.invalidParent) {
           AppToast.show(context, context.l10n.ticketInvalidParentError);
+        } else if (state is TicketsError &&
+            state.reason == TicketsErrorReason.codingExecutionBlocked) {
+          AppToast.show(
+            context,
+            context.l10n.ticketCodingExecutionBlockedError,
+          );
+        } else if (state is TicketsError &&
+            state.reason ==
+                TicketsErrorReason.executionBudgetOverageDetected) {
+          AppToast.show(
+            context,
+            context.l10n.executionBudgetOverageDetectedToast,
+          );
         } else if (state is TicketDetailLoaded) {
           final ticket = state.ticket;
           if (ticket.type == TicketType.page) {
@@ -348,6 +362,9 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                       :final sddStageBlockReason,
                                       :final needsDesignReview,
                                       :final linkedDesignPage,
+                                      :final isExecuting,
+                                      :final executionQueuePosition,
+                                      :final executionAwaitingReview,
                                     ) =>
                                       Semantics(
                                         header: true,
@@ -821,6 +838,39 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                                         _advanceSddStage(
                                                           ticket,
                                                         ),
+                                                  ),
+                                                  const SizedBox(
+                                                    height: AionSpacing.sp16,
+                                                  ),
+                                                  Container(
+                                                    color: c.border,
+                                                    height: 1,
+                                                  ),
+                                                ] else if (ticket.type ==
+                                                        TicketType.task &&
+                                                    (isExecuting ||
+                                                        executionQueuePosition !=
+                                                            null ||
+                                                        executionAwaitingReview)) ...[
+                                                  const SizedBox(
+                                                    height: AionSpacing.sp16,
+                                                  ),
+                                                  _CodingExecutionSection(
+                                                    isExecuting: isExecuting,
+                                                    executionQueuePosition:
+                                                        executionQueuePosition,
+                                                    executionAwaitingReview:
+                                                        executionAwaitingReview,
+                                                    onMarkReadyForReview: () =>
+                                                        context
+                                                            .read<
+                                                              TicketsCubit
+                                                            >()
+                                                            .changeTicketStatus(
+                                                              ticket,
+                                                              TicketStatus
+                                                                  .inReview,
+                                                            ),
                                                   ),
                                                   const SizedBox(
                                                     height: AionSpacing.sp16,
@@ -2243,6 +2293,373 @@ class _ManualAdvanceButton extends StatelessWidget {
                 const SizedBox(width: 7),
                 Text(label, style: AionText.button.copyWith(color: c.primary)),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The coding-execution section shown on a `task` ticket's detail view,
+/// below the ticket-meta row and above the Description block — the same
+/// slot [_SddStageSection] occupies for `epic`/`story` tickets (only one
+/// of the two ever renders for a given ticket type). Rendered only while
+/// [isExecuting], [executionQueuePosition], or [executionAwaitingReview]
+/// is truthy — a Task not yet attached to any run shows neither this nor
+/// [_SddStageSection]. Reuses the plain-`Column`/divider framing
+/// [_SddStageSection] already establishes for this slot rather than
+/// wrapping in its own bordered container, per
+/// `aion-arch/changes/task-to-coding-execution-trigger/design.md`'s §0
+/// container spec (the surrounding divider already supplies the "top
+/// border" it describes). Per design.md §0.
+class _CodingExecutionSection extends StatelessWidget {
+  const _CodingExecutionSection({
+    required this.isExecuting,
+    required this.executionQueuePosition,
+    required this.executionAwaitingReview,
+    required this.onMarkReadyForReview,
+  });
+
+  final bool isExecuting;
+  final int? executionQueuePosition;
+  final bool executionAwaitingReview;
+  final VoidCallback onMarkReadyForReview;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    final (Color dotColor, String statusText) = isExecuting
+        ? (c.primary, context.l10n.ticketDetailCodingExecutionStatusExecuting)
+        : executionQueuePosition != null
+        ? (c.secondary, context.l10n.ticketDetailCodingExecutionStatusQueued)
+        : (c.success, context.l10n.ticketDetailCodingExecutionStatusDone);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          context.l10n.ticketDetailCodingExecutionEyebrow,
+          style: AionText.caption.copyWith(color: c.textMuted),
+        ),
+        const SizedBox(height: AionSpacing.sp12),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
+              child: const SizedBox(width: 8, height: 8),
+            ),
+            const SizedBox(width: 8),
+            Text(statusText, style: AionText.body.copyWith(color: c.textPrimary)),
+          ],
+        ),
+        const SizedBox(height: 14),
+        if (isExecuting)
+          const _ExecutionRunningHint()
+        else if (executionQueuePosition != null)
+          _ExecutionQueueHint(position: executionQueuePosition!)
+        else if (executionAwaitingReview)
+          _ExecutionReadyForReviewBanner(onConfirm: onMarkReadyForReview),
+      ],
+    );
+  }
+}
+
+/// Shown while the Task's coding-execution chat is actively running.
+/// Mirrors [_NotReadyHint]'s informational-row shape (icon + text, no
+/// background/border/padding box) but takes an active treatment — a
+/// slowly, continuously rotating gear glyph — so it reads as "work in
+/// progress," not "blocked/waiting." Per design.md §1.
+class _ExecutionRunningHint extends StatefulWidget {
+  const _ExecutionRunningHint();
+
+  @override
+  State<_ExecutionRunningHint> createState() => _ExecutionRunningHintState();
+}
+
+class _ExecutionRunningHintState extends State<_ExecutionRunningHint>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _gearController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 2400),
+  );
+
+  bool _startedSpinning = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_startedSpinning && !MediaQuery.of(context).disableAnimations) {
+      _startedSpinning = true;
+      _gearController.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _gearController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        RotationTransition(
+          turns: _gearController,
+          child: PhosphorIcon(
+            PhosphorIcons.gearSixLight,
+            size: 15,
+            color: c.primary,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            context.l10n.ticketDetailCodingExecutionRunningHint,
+            style: AionText.bodySm.copyWith(color: c.textSecondary),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Shown while the Task is waiting behind another in-flight execution
+/// (FIFO). Same informational-row shape as [_ExecutionRunningHint] but
+/// static/muted, since a queued Task genuinely cannot proceed yet — and
+/// displays an interpolated 1-based queue [position] via [ordinal]. Per
+/// design.md §2.
+class _ExecutionQueueHint extends StatelessWidget {
+  const _ExecutionQueueHint({required this.position});
+
+  /// 1-based position in the coding-execution FIFO queue.
+  final int position;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    final text = position == 1
+        ? context.l10n.ticketDetailCodingExecutionQueuedNext
+        : context.l10n.ticketDetailCodingExecutionQueuedNth(ordinal(position));
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        PhosphorIcon(PhosphorIcons.stackLight, size: 15, color: c.textMuted),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(text, style: AionText.bodySm.copyWith(color: c.textMuted)),
+        ),
+      ],
+    );
+  }
+}
+
+/// Ordinal string for [n] (`1` → `"1st"`, `2` → `"2nd"`, `11..13` →
+/// `"11th"`/`"12th"`/`"13th"`, etc.), for
+/// [_ExecutionQueueHint]'s interpolated queue position. Per design.md
+/// §2.1/§5.
+String ordinal(int n) {
+  if (n >= 11 && n <= 13) return '${n}th';
+  switch (n % 10) {
+    case 1:
+      return '${n}st';
+    case 2:
+      return '${n}nd';
+    case 3:
+      return '${n}rd';
+    default:
+      return '${n}th';
+  }
+}
+
+/// Shown once the Task's coding-execution run finished successfully (a
+/// PR was confirmed opened) and [AutomationConfidence.gated] applies —
+/// the human must confirm before the Task flips to "In Review". Mirrors
+/// [_GatedBanner]'s tinted container/border/leading-icon shape, re-keyed
+/// to [AionColors.success] (a completion moment, not an "advance the SDD
+/// stage" prompt), with its action button stacked full-width below the
+/// text rather than trailing inline — design.md §3's copy doesn't fit
+/// inline beside a two-line title at the narrowest supported phone width
+/// without crushing it to 3 lines. The title carries alone with no
+/// sub-line: no PR metadata (number, file count) is parsed from the
+/// run's reply today — only the confirmation the last line contained
+/// `EXECUTION: PR_OPENED` — so per design.md §3.3's fallback rule
+/// ("omit only if no PR metadata is available"), the sub-line is
+/// omitted rather than showing placeholder copy. Per design.md §3.
+class _ExecutionReadyForReviewBanner extends StatelessWidget {
+  const _ExecutionReadyForReviewBanner({required this.onConfirm});
+
+  final VoidCallback onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.success.withValues(alpha: t.fillAlpha),
+        border: Border.all(
+          color: c.success.withValues(alpha: t.isDark ? 0.42 : 0.28),
+          width: 1,
+        ),
+        borderRadius: BorderRadius.all(AionRadius.lg),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                PhosphorIcon(
+                  PhosphorIcons.gitPullRequestLight,
+                  size: 18,
+                  color: c.success,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    context.l10n.ticketDetailCodingExecutionReadyTitle,
+                    style: AionText.cardTitle.copyWith(color: c.textPrimary),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _MarkReadyForReviewButton(onConfirm: onConfirm),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// [_ExecutionReadyForReviewBanner]'s full-width "Mark ready for review"
+/// confirm button — solid [AionColors.success] fill/glow, hover/focus/
+/// press states mirroring [AppButton]'s own but re-keyed to `success`
+/// (which [AppButton]'s fixed variant set doesn't offer). Per design.md
+/// §3.4/§3.5.
+class _MarkReadyForReviewButton extends StatefulWidget {
+  const _MarkReadyForReviewButton({required this.onConfirm});
+
+  final VoidCallback onConfirm;
+
+  @override
+  State<_MarkReadyForReviewButton> createState() =>
+      _MarkReadyForReviewButtonState();
+}
+
+class _MarkReadyForReviewButtonState
+    extends State<_MarkReadyForReviewButton> {
+  final ValueNotifier<bool> _isHovered = ValueNotifier(false);
+  bool _isPressed = false;
+  bool _isConfirming = false;
+
+  @override
+  void dispose() {
+    _isHovered.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleConfirm() async {
+    if (_isConfirming) return;
+    setState(() => _isConfirming = true);
+    try {
+      widget.onConfirm();
+    } finally {
+      if (mounted) setState(() => _isConfirming = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    final label = context.l10n.ticketDetailCodingExecutionMarkReadyButton;
+
+    return Semantics(
+      button: true,
+      label: label,
+      enabled: !_isConfirming,
+      child: FocusableActionDetector(
+        enabled: !_isConfirming,
+        actions: {
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              unawaited(_handleConfirm());
+              return null;
+            },
+          ),
+        },
+        child: MouseRegion(
+          cursor: _isConfirming
+              ? MouseCursor.defer
+              : SystemMouseCursors.click,
+          onEnter: (_) => _isHovered.value = true,
+          onExit: (_) => _isHovered.value = false,
+          child: GestureDetector(
+            onTap: _isConfirming ? null : () => unawaited(_handleConfirm()),
+            onTapDown: (_) => setState(() => _isPressed = true),
+            onTapUp: (_) => setState(() => _isPressed = false),
+            onTapCancel: () => setState(() => _isPressed = false),
+            child: ValueListenableBuilder<bool>(
+              valueListenable: _isHovered,
+              builder: (context, hovered, _) {
+                final fill = _isConfirming
+                    ? c.success.withValues(alpha: 0.45)
+                    : (hovered
+                          ? Color.lerp(
+                              c.success,
+                              t.isDark
+                                  ? const Color(0xFFFFFFFF)
+                                  : const Color(0xFF000000),
+                              0.10,
+                            )!
+                          : c.success);
+                final glowBlur = _isPressed ? 0.0 : (hovered ? 22.0 : 18.0);
+                return AnimatedScale(
+                  scale: !_isConfirming && _isPressed ? 0.98 : 1.0,
+                  duration: const Duration(milliseconds: 80),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: fill,
+                      borderRadius: BorderRadius.all(AionRadius.md),
+                      boxShadow: glowBlur > 0
+                          ? [
+                              BoxShadow(
+                                color: c.success.withValues(
+                                  alpha: t.isDark ? 0.60 : 0.45,
+                                ),
+                                blurRadius: glowBlur,
+                                spreadRadius: -9,
+                                offset: const Offset(0, 8),
+                              ),
+                            ]
+                          : const [],
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 15,
+                        vertical: 10,
+                      ),
+                      child: Text(
+                        label,
+                        textAlign: TextAlign.center,
+                        style: AionText.button.copyWith(
+                          color: const Color(
+                            0xFFFFFFFF,
+                          ).withValues(alpha: _isConfirming ? 0.45 : 1),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
           ),
         ),

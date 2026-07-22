@@ -57,6 +57,10 @@ String ticketsErrorMessage(BuildContext context, TicketsErrorReason reason) {
     TicketsErrorReason.invalidParent => l10n.ticketInvalidParentError,
     TicketsErrorReason.sddStagePreconditionNotMet =>
       l10n.ticketSddStagePreconditionNotMetError,
+    TicketsErrorReason.codingExecutionBlocked =>
+      l10n.ticketCodingExecutionBlockedError,
+    TicketsErrorReason.executionBudgetOverageDetected =>
+      l10n.executionBudgetOverageDetectedToast,
   };
 }
 
