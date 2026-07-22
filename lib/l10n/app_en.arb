@@ -106,6 +106,8 @@
   "ticketDetailSddStageNotStarted": "Not started",
   "ticketDetailSddStageExplore": "Explore",
   "ticketDetailSddStagePropose": "Propose",
+  "ticketDetailSddStageDesignBrief": "Design Brief",
+  "ticketDetailSddStageDesignSync": "Design Sync",
   "ticketDetailSddStageVerify": "Verify",
   "ticketDetailSddStageArchive": "Archive",
   "ticketDetailSddStageExploring": "Exploring",
@@ -134,6 +136,12 @@
   "ticketDetailSddStageHintAwaitingChat": "Advance unlocks once this stage's chat replies.",
   "ticketDetailSddStageHintAwaitingTasks": "Advance unlocks once every Task is done.",
   "ticketDetailSddStageHintAwaitingStories": "Advance unlocks once every Story is archived.",
+  "ticketDetailSddStageHintAwaitingDesignPaste": "Advance unlocks once the linked design page has content.",
+  "ticketDetailSddStageHintAwaitingDesignApproval": "Advance unlocks once Design Sync approves the pasted design.",
+  "ticketDetailSddStageSubProposalAccepted": "Precondition met · proposal accepted",
+  "ticketDetailSddStageSubDesignPasted": "Linked design page has content",
+  "ticketDetailSddStageSubDesignApproved": "Design Sync approved the pasted design",
+  "chatRetryValidation": "Retry validation",
   "ticketDetailViaModel": "via {model}",
   "@ticketDetailViaModel": {
     "placeholders": {

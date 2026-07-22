@@ -206,6 +206,67 @@ void main() {
     updatedAt: DateTime(2026),
   );
 
+  // sdd-design-gate fixtures.
+  final taskChildUi = Ticket(
+    id: '15',
+    ticketId: 'AIO-15',
+    type: TicketType.task,
+    title: 'Redesign the ticket filter widget',
+    status: TicketStatus.done,
+    parentId: storyProposed.id,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+  final storyDesignBrief = Ticket(
+    id: '16',
+    ticketId: 'AIO-16',
+    type: TicketType.story,
+    title: 'Design-briefed story',
+    status: TicketStatus.backlog,
+    sddStage: SddStage.designBrief,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+  final storyDesignSync = Ticket(
+    id: '17',
+    ticketId: 'AIO-17',
+    type: TicketType.story,
+    title: 'Design-synced story',
+    status: TicketStatus.backlog,
+    sddStage: SddStage.designSync,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+  final designPageEmpty = Ticket(
+    id: '18',
+    ticketId: 'AIO-18',
+    type: TicketType.page,
+    title: 'Design — Design-briefed story',
+    status: TicketStatus.backlog,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+  final designPageFilled = Ticket(
+    id: '19',
+    ticketId: 'AIO-19',
+    type: TicketType.page,
+    title: 'Design — Design-synced story',
+    description: 'Pasted Claude Design export.',
+    status: TicketStatus.backlog,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+  final designSyncChat = Ticket(
+    id: '20',
+    ticketId: 'AIO-20',
+    type: TicketType.chat,
+    title: 'Design Sync — Design-synced story',
+    status: TicketStatus.backlog,
+    parentId: storyDesignSync.id,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+
   setUpAll(() {
     registerFallbackValue(ticket);
     registerFallbackValue(TicketStatus.backlog);
@@ -1536,6 +1597,423 @@ void main() {
     );
   });
 
+  group('advanceSddStage — design gate (designBrief/designSync)', () {
+    late MockAgentModelClient agentClient;
+    late MockCommentRepository commentRepository;
+    late MockTicketLinkRepository linkRepository;
+
+    setUp(() {
+      agentClient = MockAgentModelClient();
+      commentRepository = MockCommentRepository();
+      linkRepository = MockTicketLinkRepository();
+      when(() => agentClient.run(any())).thenAnswer(
+        (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+      );
+      when(() => commentRepository.addComment(any())).thenAnswer((_) async {});
+      when(() => repository.createTicket(any())).thenAnswer((_) async {});
+      when(
+        () => linkRepository.createLink(
+          sourceTicketId: any(named: 'sourceTicketId'),
+          targetTicketId: any(named: 'targetTicketId'),
+          linkType: any(named: 'linkType'),
+        ),
+      ).thenAnswer((_) async {});
+    });
+
+    TicketsCubit buildCubit() => TicketsCubit(
+      repository,
+      linkRepository: linkRepository,
+      agentClient: agentClient,
+      commentRepository: commentRepository,
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'proposed advances to designBrief (not verifying) when a done child '
+      'Task title indicates UI work, and creates+links the design Page',
+      setUp: () {
+        when(
+          () => repository.getTicketsByParent(
+            storyProposed.id,
+            types: any(named: 'types'),
+          ),
+        ).thenAnswer((_) async => [taskChildUi]);
+        when(
+          () => repository.updateTicketSddStage(
+            storyProposed.id,
+            SddStage.designBrief,
+          ),
+        ).thenAnswer((_) async {});
+        when(() => repository.getTicketById(any())).thenAnswer(
+          (_) async => dummyChatTicket,
+        );
+        when(() => repository.getTicketById(storyProposed.id)).thenAnswer(
+          (_) async => Ticket(
+            id: storyProposed.id,
+            ticketId: storyProposed.ticketId,
+            type: storyProposed.type,
+            title: storyProposed.title,
+            status: storyProposed.status,
+            sddStage: SddStage.designBrief,
+            createdAt: storyProposed.createdAt,
+            updatedAt: storyProposed.updatedAt,
+          ),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.advanceSddStage(storyProposed),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verify(
+          () => repository.updateTicketSddStage(
+            storyProposed.id,
+            SddStage.designBrief,
+          ),
+        ).called(1);
+        // Once for the design Page, once for the spawned chat.
+        verify(() => repository.createTicket(any())).called(2);
+        verify(
+          () => linkRepository.createLink(
+            sourceTicketId: any(named: 'sourceTicketId'),
+            targetTicketId: storyProposed.id,
+            linkType: TicketLinkType.relatesTo,
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'proposed advances straight to verifying (skips designBrief) when no '
+      'done child Task title indicates UI work',
+      setUp: () {
+        when(
+          () => repository.getTicketsByParent(
+            storyProposed.id,
+            types: any(named: 'types'),
+          ),
+        ).thenAnswer((_) async => [taskChildDone]);
+        when(
+          () => repository.updateTicketSddStage(
+            storyProposed.id,
+            SddStage.verifying,
+          ),
+        ).thenAnswer((_) async {});
+        when(() => repository.getTicketById(any())).thenAnswer(
+          (_) async => dummyChatTicket,
+        );
+        when(() => repository.getTicketById(storyProposed.id)).thenAnswer(
+          (_) async => storyProposed,
+        );
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.advanceSddStage(storyProposed),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verify(
+          () => repository.updateTicketSddStage(
+            storyProposed.id,
+            SddStage.verifying,
+          ),
+        ).called(1);
+        // Only the spawned chat — no design Page for a skipped Story.
+        verify(() => repository.createTicket(any())).called(1);
+        verifyNever(
+          () => linkRepository.createLink(
+            sourceTicketId: any(named: 'sourceTicketId'),
+            targetTicketId: any(named: 'targetTicketId'),
+            linkType: any(named: 'linkType'),
+          ),
+        );
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'designBrief rejects advancing when no linked design Page has '
+      'content yet',
+      setUp: () {
+        when(
+          () => linkRepository.getLinksForTicket(storyDesignBrief.id),
+        ).thenAnswer((_) async => []);
+        when(
+          () => repository.getTicketById(storyDesignBrief.id),
+        ).thenAnswer((_) async => storyDesignBrief);
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.advanceSddStage(storyDesignBrief),
+      verify: (_) {
+        verifyNever(() => repository.updateTicketSddStage(any(), any()));
+      },
+      expect: () => [
+        const TicketsError(
+          '',
+          reason: TicketsErrorReason.sddStagePreconditionNotMet,
+        ),
+        TicketDetailLoaded(storyDesignBrief),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'designBrief rejects advancing when the linked design Page exists '
+      'but is still empty',
+      setUp: () {
+        when(
+          () => linkRepository.getLinksForTicket(storyDesignBrief.id),
+        ).thenAnswer(
+          (_) async => [
+            TicketLinkData(
+              id: 'link-empty',
+              sourceTicketId: designPageEmpty.id,
+              targetTicketId: storyDesignBrief.id,
+              linkType: 'relatesTo',
+            ),
+          ],
+        );
+        when(() => repository.getTicketById(any())).thenAnswer(
+          (_) async => dummyChatTicket,
+        );
+        when(
+          () => repository.getTicketById(designPageEmpty.id),
+        ).thenAnswer((_) async => designPageEmpty);
+        when(
+          () => repository.getTicketById(storyDesignBrief.id),
+        ).thenAnswer((_) async => storyDesignBrief);
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.advanceSddStage(storyDesignBrief),
+      verify: (_) {
+        verifyNever(() => repository.updateTicketSddStage(any(), any()));
+      },
+      expect: () => [
+        const TicketsError(
+          '',
+          reason: TicketsErrorReason.sddStagePreconditionNotMet,
+        ),
+        TicketDetailLoaded(storyDesignBrief),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'designBrief advances to designSync once the linked design Page has '
+      'content',
+      setUp: () {
+        when(
+          () => linkRepository.getLinksForTicket(storyDesignBrief.id),
+        ).thenAnswer(
+          (_) async => [
+            TicketLinkData(
+              id: 'link-1',
+              sourceTicketId: designPageFilled.id,
+              targetTicketId: storyDesignBrief.id,
+              linkType: 'relatesTo',
+            ),
+          ],
+        );
+        when(
+          () => repository.updateTicketSddStage(
+            storyDesignBrief.id,
+            SddStage.designSync,
+          ),
+        ).thenAnswer((_) async {});
+        // Registered least-specific first — mocktail resolves overlapping
+        // stubs last-registered-wins, so the two id-specific overrides
+        // below must come after this catch-all, not before.
+        when(() => repository.getTicketById(any())).thenAnswer(
+          (_) async => dummyChatTicket,
+        );
+        when(
+          () => repository.getTicketById(designPageFilled.id),
+        ).thenAnswer((_) async => designPageFilled);
+        when(() => repository.getTicketById(storyDesignBrief.id)).thenAnswer(
+          (_) async => Ticket(
+            id: storyDesignBrief.id,
+            ticketId: storyDesignBrief.ticketId,
+            type: storyDesignBrief.type,
+            title: storyDesignBrief.title,
+            status: storyDesignBrief.status,
+            sddStage: SddStage.designSync,
+            createdAt: storyDesignBrief.createdAt,
+            updatedAt: storyDesignBrief.updatedAt,
+          ),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.advanceSddStage(storyDesignBrief),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verify(
+          () => repository.updateTicketSddStage(
+            storyDesignBrief.id,
+            SddStage.designSync,
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'designSync rejects advancing when the most recent reply says '
+      'DESIGN GATE: PENDING',
+      setUp: () {
+        when(
+          () => repository.getTicketsByParent(
+            storyDesignSync.id,
+            types: any(named: 'types'),
+          ),
+        ).thenAnswer((_) async => [designSyncChat]);
+        when(
+          () => commentRepository.getCommentsForTicket(designSyncChat.id),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'c1',
+              ticketId: designSyncChat.id,
+              content: 'Found one issue.\n\nDESIGN GATE: PENDING',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(
+          () => repository.getTicketById(storyDesignSync.id),
+        ).thenAnswer((_) async => storyDesignSync);
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.advanceSddStage(storyDesignSync),
+      verify: (_) {
+        verifyNever(() => repository.updateTicketSddStage(any(), any()));
+      },
+      expect: () => [
+        const TicketsError(
+          '',
+          reason: TicketsErrorReason.sddStagePreconditionNotMet,
+        ),
+        TicketDetailLoaded(storyDesignSync),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'designSync advances to verifying when the most recent reply says '
+      'DESIGN GATE: APPROVED',
+      setUp: () {
+        when(
+          () => repository.getTicketsByParent(
+            storyDesignSync.id,
+            types: any(named: 'types'),
+          ),
+        ).thenAnswer((_) async => [designSyncChat]);
+        when(
+          () => commentRepository.getCommentsForTicket(designSyncChat.id),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'c2',
+              ticketId: designSyncChat.id,
+              content: 'No issues found.\n\nDESIGN GATE: APPROVED',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(
+          () => repository.updateTicketSddStage(
+            storyDesignSync.id,
+            SddStage.verifying,
+          ),
+        ).thenAnswer((_) async {});
+        when(() => repository.getTicketById(any())).thenAnswer(
+          (_) async => dummyChatTicket,
+        );
+        when(() => repository.getTicketById(storyDesignSync.id)).thenAnswer(
+          (_) async => storyDesignSync,
+        );
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.advanceSddStage(storyDesignSync),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verify(
+          () => repository.updateTicketSddStage(
+            storyDesignSync.id,
+            SddStage.verifying,
+          ),
+        ).called(1);
+      },
+    );
+  });
+
+  group('retryDesignSync', () {
+    late MockAgentModelClient agentClient;
+    late MockCommentRepository commentRepository;
+
+    setUp(() {
+      agentClient = MockAgentModelClient();
+      commentRepository = MockCommentRepository();
+    });
+
+    TicketsCubit buildCubit() => TicketsCubit(
+      repository,
+      agentClient: agentClient,
+      commentRepository: commentRepository,
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'no-ops for a non-chat ticket',
+      build: buildCubit,
+      act: (cubit) => cubit.retryDesignSync(storyDesignSync),
+      verify: (_) {
+        verifyNever(() => commentRepository.addComment(any()));
+        verifyNever(() => agentClient.run(any()));
+      },
+      expect: () => <TicketsState>[],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      "no-ops when the chat's parent isn't at SddStage.designSync",
+      setUp: () {
+        when(
+          () => repository.getTicketById(storyProposed.id),
+        ).thenAnswer((_) async => storyProposed);
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.retryDesignSync(
+        Ticket(
+          id: designSyncChat.id,
+          ticketId: designSyncChat.ticketId,
+          type: TicketType.chat,
+          title: designSyncChat.title,
+          status: designSyncChat.status,
+          parentId: storyProposed.id,
+          createdAt: designSyncChat.createdAt,
+          updatedAt: designSyncChat.updatedAt,
+        ),
+      ),
+      verify: (_) {
+        verifyNever(() => commentRepository.addComment(any()));
+        verifyNever(() => agentClient.run(any()));
+      },
+      expect: () => <TicketsState>[],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'posts fresh context and calls the agent when the parent is at '
+      'SddStage.designSync',
+      setUp: () {
+        when(
+          () => repository.getTicketById(storyDesignSync.id),
+        ).thenAnswer((_) async => storyDesignSync);
+        when(() => commentRepository.addComment(any())).thenAnswer(
+          (_) async {},
+        );
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.retryDesignSync(designSyncChat),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verify(() => commentRepository.addComment(any())).called(1);
+        verify(() => agentClient.run(any())).called(1);
+      },
+      expect: () => <TicketsState>[],
+    );
+  });
+
   group('promoteSignalToEpic', () {
     late MockTicketLinkRepository linkRepository;
 
@@ -1631,6 +2109,58 @@ void main() {
   });
 
   group('getTicketById computes canAdvanceSddStage', () {
+    blocTest<TicketsCubit, TicketsState>(
+      'computes needsDesignReview true for a story whose child Task '
+      'title indicates UI work',
+      setUp: () {
+        when(
+          () => repository.getTicketById(storyProposed.id),
+        ).thenAnswer((_) async => storyProposed);
+        when(
+          () => repository.getTicketsByParent(
+            storyProposed.id,
+            types: any(named: 'types'),
+          ),
+        ).thenAnswer((_) async => [taskChildUi]);
+      },
+      build: () => TicketsCubit(repository),
+      act: (cubit) => cubit.getTicketById(storyProposed.id),
+      expect: () => [
+        const TicketsLoading(),
+        TicketDetailLoaded(
+          storyProposed,
+          canAdvanceSddStage: true,
+          needsDesignReview: true,
+        ),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'computes needsDesignReview false for a story whose child Tasks '
+      'have no UI-indicating title',
+      setUp: () {
+        when(
+          () => repository.getTicketById(storyProposed.id),
+        ).thenAnswer((_) async => storyProposed);
+        when(
+          () => repository.getTicketsByParent(
+            storyProposed.id,
+            types: any(named: 'types'),
+          ),
+        ).thenAnswer((_) async => [taskChildDone]);
+      },
+      build: () => TicketsCubit(repository),
+      act: (cubit) => cubit.getTicketById(storyProposed.id),
+      expect: () => [
+        const TicketsLoading(),
+        TicketDetailLoaded(
+          storyProposed,
+          canAdvanceSddStage: true,
+          needsDesignReview: false,
+        ),
+      ],
+    );
+
     blocTest<TicketsCubit, TicketsState>(
       'true for an epic with no stage yet (no precondition)',
       setUp: () {

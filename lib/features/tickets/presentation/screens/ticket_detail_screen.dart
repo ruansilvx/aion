@@ -326,6 +326,8 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                       :final ticket,
                                       :final canAdvanceSddStage,
                                       :final sddStageBlockReason,
+                                      :final needsDesignReview,
+                                      :final linkedDesignPage,
                                     ) =>
                                       Semantics(
                                         header: true,
@@ -757,6 +759,18 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                                     ),
                                                   ],
                                                 ),
+                                                if (needsDesignReview ==
+                                                        true &&
+                                                    linkedDesignPage !=
+                                                        null) ...[
+                                                  const SizedBox(height: 11),
+                                                  _LinkedDesignPageChip(
+                                                    page: linkedDesignPage,
+                                                    onTap: () => context.go(
+                                                      '/workspace/tickets/${linkedDesignPage.id}',
+                                                    ),
+                                                  ),
+                                                ],
                                                 const SizedBox(
                                                   height: AionSpacing.sp16,
                                                 ),
@@ -779,6 +793,8 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                                         sddStageBlockReason,
                                                     automationConfidence:
                                                         _automationConfidence,
+                                                    needsDesignReview:
+                                                        needsDesignReview,
                                                     onAdvance: () =>
                                                         _advanceSddStage(
                                                           ticket,
@@ -1057,6 +1073,51 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                     ),
                   ),
                   Container(color: c.border, height: 1),
+                  // "Retry validation" bar (design.md §4) — shown only for
+                  // a "Design Sync — <Story>" chat whose most recent AI
+                  // reply says PENDING. Added for
+                  // aion-arch/changes/sdd-design-gate.
+                  BlocBuilder<TicketsCubit, TicketsState>(
+                    builder: (context, ticketsState) {
+                      if (ticketsState is! TicketDetailLoaded) {
+                        return const SizedBox.shrink();
+                      }
+                      final chatTicket = ticketsState.ticket;
+                      if (chatTicket.type != TicketType.chat ||
+                          !chatTicket.title.startsWith('Design Sync — ')) {
+                        return const SizedBox.shrink();
+                      }
+                      return BlocBuilder<ChatCubit, ChatState>(
+                        builder: (context, chatState) {
+                          if (chatState is! ChatLoaded ||
+                              chatState.comments.isEmpty) {
+                            return const SizedBox.shrink();
+                          }
+                          final mostRecent = chatState.comments.reduce(
+                            (a, b) =>
+                                a.createdAt.isAfter(b.createdAt) ? a : b,
+                          );
+                          final isPending =
+                              mostRecent.authorType == CommentAuthorType.ai &&
+                              mostRecent.content.contains(
+                                'DESIGN GATE: PENDING',
+                              );
+                          if (!isPending) return const SizedBox.shrink();
+                          return Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: _RetryValidationButton(
+                                onRetry: () => context
+                                    .read<TicketsCubit>()
+                                    .retryDesignSync(chatTicket),
+                              ),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
                   ColoredBox(
                     color: c.background,
                     child: ContentMaxWidth(
@@ -1448,6 +1509,88 @@ class _Avatar extends StatelessWidget {
   }
 }
 
+/// A compact link chip to a Story's linked design Page, shown directly
+/// under the ticket-meta row while `needsDesignReview` is `true` and the
+/// design Page exists (design.md §5). Reuses `typePage`'s accent color,
+/// the same one `TypeChip`/backlink chips already use for `page`
+/// tickets. Added for `aion-arch/changes/sdd-design-gate`.
+class _LinkedDesignPageChip extends StatelessWidget {
+  const _LinkedDesignPageChip({required this.page, required this.onTap});
+
+  /// The linked design Page ticket (`"Design — <Story title>"`).
+  final Ticket page;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    return IntrinsicWidth(
+      child: Semantics(
+        button: true,
+        label: page.title,
+        child: GestureDetector(
+          onTap: onTap,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: c.surface,
+              border: Border.all(color: c.border, width: 1),
+              borderRadius: BorderRadius.all(AionRadius.md),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 6, 10, 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: c.typePage.withValues(alpha: 0.11),
+                      borderRadius: const BorderRadius.all(
+                        Radius.circular(4),
+                      ),
+                    ),
+                    child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: Center(
+                        child: PhosphorIcon(
+                          PhosphorIcons.pencilSimpleLight,
+                          size: 10,
+                          color: c.typePage,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    page.ticketId,
+                    style: AionText.key.copyWith(color: c.typePage),
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      page.title,
+                      style: AionText.bodySm.copyWith(color: c.textSecondary),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  PhosphorIcon(
+                    PhosphorIcons.caretRightLight,
+                    size: 13,
+                    color: c.textMuted,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// The SDD-stage section shown on epic/story ticket detail, below the
 /// ticket-meta row and above the Description block: a 4-step tracker
 /// (Explore, Propose, Verify, Archive), the current-stage line, and one
@@ -1466,6 +1609,7 @@ class _SddStageSection extends StatelessWidget {
     required this.blockReason,
     required this.automationConfidence,
     required this.onAdvance,
+    this.needsDesignReview,
   });
 
   final Ticket ticket;
@@ -1474,16 +1618,36 @@ class _SddStageSection extends StatelessWidget {
   final AutomationConfidence? automationConfidence;
   final VoidCallback onAdvance;
 
-  static const _stages = [
+  /// Whether [ticket] (a `story`) needs a `designBrief`/`designSync`
+  /// pass — `null` while still unknown (before child Tasks exist).
+  /// `false` collapses [_stages] to the original 4 nodes; `null`/`true`
+  /// show the full 6. Added for `aion-arch/changes/sdd-design-gate`.
+  final bool? needsDesignReview;
+
+  static const _fullStages = [
+    SddStage.exploring,
+    SddStage.proposed,
+    SddStage.designBrief,
+    SddStage.designSync,
+    SddStage.verifying,
+    SddStage.archived,
+  ];
+
+  static const _collapsedStages = [
     SddStage.exploring,
     SddStage.proposed,
     SddStage.verifying,
     SddStage.archived,
   ];
 
+  List<SddStage> get _stages =>
+      needsDesignReview == false ? _collapsedStages : _fullStages;
+
   String _stageLabel(BuildContext context, SddStage stage) => switch (stage) {
     SddStage.exploring => context.l10n.ticketDetailSddStageExplore,
     SddStage.proposed => context.l10n.ticketDetailSddStagePropose,
+    SddStage.designBrief => context.l10n.ticketDetailSddStageDesignBrief,
+    SddStage.designSync => context.l10n.ticketDetailSddStageDesignSync,
     SddStage.verifying => context.l10n.ticketDetailSddStageVerify,
     SddStage.archived => context.l10n.ticketDetailSddStageArchive,
   };
@@ -1492,6 +1656,12 @@ class _SddStageSection extends StatelessWidget {
       switch (stage) {
         SddStage.exploring => context.l10n.ticketDetailSddStageExploring,
         SddStage.proposed => context.l10n.ticketDetailSddStageProposed,
+        // Design Brief/Design Sync read naturally as their plain node
+        // name — unlike the other stages, no distinct present-
+        // progressive form (per design.md §1.3, the approved Claude
+        // Design spec's current-stage-line table).
+        SddStage.designBrief => context.l10n.ticketDetailSddStageDesignBrief,
+        SddStage.designSync => context.l10n.ticketDetailSddStageDesignSync,
         SddStage.verifying => context.l10n.ticketDetailSddStageVerifying,
         SddStage.archived => context.l10n.ticketDetailSddStageArchived,
       };
@@ -1499,11 +1669,17 @@ class _SddStageSection extends StatelessWidget {
   /// The stage [canAdvance] would move [ticket] to, or `null` once
   /// [SddStage.archived] is reached — mirrors
   /// `TicketsCubit._nextSddStage` without exposing that private cubit
-  /// method to the widget layer.
+  /// method to the widget layer. Unlike the cubit's version, this can't
+  /// fetch child Tasks itself, so it reads [needsDesignReview] (already
+  /// computed by `TicketsCubit.getTicketById`) instead.
   SddStage? _nextStage(SddStage? current) => switch (current) {
     null => SddStage.exploring,
     SddStage.exploring => SddStage.proposed,
-    SddStage.proposed => SddStage.verifying,
+    SddStage.proposed => needsDesignReview == true
+        ? SddStage.designBrief
+        : SddStage.verifying,
+    SddStage.designBrief => SddStage.designSync,
+    SddStage.designSync => SddStage.verifying,
     SddStage.verifying => SddStage.archived,
     SddStage.archived => null,
   };
@@ -1516,6 +1692,10 @@ class _SddStageSection extends StatelessWidget {
           ticket.type == TicketType.story
               ? context.l10n.ticketDetailSddStageHintAwaitingTasks
               : context.l10n.ticketDetailSddStageHintAwaitingStories,
+        SddStageBlockReason.awaitingDesignPaste =>
+          context.l10n.ticketDetailSddStageHintAwaitingDesignPaste,
+        SddStageBlockReason.awaitingDesignApproval =>
+          context.l10n.ticketDetailSddStageHintAwaitingDesignApproval,
       };
 
   @override
@@ -1584,6 +1764,8 @@ class _SddStageSection extends StatelessWidget {
           const SizedBox(height: AionSpacing.sp12),
           switch (automationConfidence!) {
             AutomationConfidence.gated => _GatedBanner(
+              currentStage: currentStage,
+              nextStage: nextStage,
               nextStageLabel: nextStageLabel,
               onAdvance: onAdvance,
             ),
@@ -1704,9 +1886,28 @@ class _StageNode extends StatelessWidget {
 }
 
 /// AutomationConfidence.gated "ready to advance" banner plus inline
-/// confirm button.
+/// confirm button. Design-gate-aware since
+/// `aion-arch/changes/sdd-design-gate`: while [currentStage] is
+/// [SddStage.designBrief]/[SddStage.designSync], the leading glyph
+/// switches to a `typePage`-tinted pencil (design.md §3.2) and a
+/// precondition-met sub-line appears under the title (design.md §3.3) —
+/// every other stage keeps the original sparkle glyph and single-line
+/// title unchanged.
 class _GatedBanner extends StatelessWidget {
-  const _GatedBanner({required this.nextStageLabel, required this.onAdvance});
+  const _GatedBanner({
+    required this.currentStage,
+    required this.nextStage,
+    required this.nextStageLabel,
+    required this.onAdvance,
+  });
+
+  /// [Ticket.sddStage] before this advance — determines the design-stage
+  /// glyph/sub-line accent per design.md §3.2/§3.3.
+  final SddStage? currentStage;
+
+  /// The stage this advance would move to — combined with [currentStage]
+  /// to pick the right sub-line from design.md §3.3's table.
+  final SddStage? nextStage;
 
   /// The present-progressive name of the stage advancing would move to
   /// (e.g. `"Verifying"`), interpolated into the banner title per
@@ -1714,10 +1915,27 @@ class _GatedBanner extends StatelessWidget {
   final String nextStageLabel;
   final VoidCallback onAdvance;
 
+  /// The sub-line text from design.md §3.3's table, or `null` for every
+  /// transition it doesn't cover (the original explore/propose/verify/
+  /// archive stages keep no sub-line at all).
+  String? _subLine(BuildContext context) => switch ((currentStage, nextStage)) {
+    (SddStage.proposed, SddStage.designBrief) =>
+      context.l10n.ticketDetailSddStageSubProposalAccepted,
+    (SddStage.designBrief, SddStage.designSync) =>
+      context.l10n.ticketDetailSddStageSubDesignPasted,
+    (SddStage.designSync, SddStage.verifying) =>
+      context.l10n.ticketDetailSddStageSubDesignApproved,
+    _ => null,
+  };
+
   @override
   Widget build(BuildContext context) {
     final t = ThemeScope.of(context);
     final c = t.colors;
+    final isDesignStage =
+        currentStage == SddStage.designBrief ||
+        currentStage == SddStage.designSync;
+    final subLine = _subLine(context);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: c.primary.withValues(alpha: t.fillAlpha),
@@ -1733,15 +1951,32 @@ class _GatedBanner extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             PhosphorIcon(
-              PhosphorIcons.sparkleLight,
+              isDesignStage
+                  ? PhosphorIcons.pencilSimpleLight
+                  : PhosphorIcons.sparkleLight,
               size: 18,
-              color: c.primary,
+              color: isDesignStage ? c.typePage : c.primary,
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: Text(
-                context.l10n.ticketDetailSddStageReadyBanner(nextStageLabel),
-                style: AionText.cardTitle.copyWith(color: c.textPrimary),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    context.l10n.ticketDetailSddStageReadyBanner(
+                      nextStageLabel,
+                    ),
+                    style: AionText.cardTitle.copyWith(color: c.textPrimary),
+                  ),
+                  if (subLine != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subLine,
+                      style: AionText.time.copyWith(color: c.textSecondary),
+                    ),
+                  ],
+                ],
               ),
             ),
             Semantics(
@@ -1815,6 +2050,53 @@ class _ManualAdvanceButton extends StatelessWidget {
               children: [
                 PhosphorIcon(
                   PhosphorIcons.caretRightLight,
+                  size: 14,
+                  color: c.primary,
+                ),
+                const SizedBox(width: 7),
+                Text(label, style: AionText.button.copyWith(color: c.primary)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A plain, always-available control for re-running
+/// [SddStage.designSync]'s validation after a `DESIGN GATE: PENDING`
+/// verdict — styled like [_ManualAdvanceButton] (no banner framing,
+/// since this is a recovery utility, not a proactive suggestion), with
+/// a refresh glyph instead of a caret. See design.md §4. Added for
+/// `aion-arch/changes/sdd-design-gate`.
+class _RetryValidationButton extends StatelessWidget {
+  const _RetryValidationButton({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    final label = context.l10n.chatRetryValidation;
+    return Semantics(
+      button: true,
+      label: label,
+      child: GestureDetector(
+        onTap: onRetry,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: c.surfaceHover,
+            border: Border.all(color: c.borderStrong, width: 1),
+            borderRadius: BorderRadius.all(AionRadius.md),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 9),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                PhosphorIcon(
+                  PhosphorIcons.arrowsClockwiseLight,
                   size: 14,
                   color: c.primary,
                 ),
