@@ -120,6 +120,15 @@ enum SddStageBlockReason {
   /// Stories for an epic) has reached a terminal state yet — or none
   /// exist yet.
   awaitingChildren,
+
+  /// [SddStage.designBrief]'s linked design Page ticket doesn't have any
+  /// pasted content yet. Added for `aion-arch/changes/sdd-design-gate`.
+  awaitingDesignPaste,
+
+  /// [SddStage.designSync]'s chat hasn't produced a `"DESIGN GATE:
+  /// APPROVED"` reply yet — either no reply exists, or the most recent
+  /// one says `PENDING`. Added for `aion-arch/changes/sdd-design-gate`.
+  awaitingDesignApproval,
 }
 
 /// A list, detail, or create operation failed. Carries either a classified
@@ -220,6 +229,8 @@ class TicketDetailLoaded extends TicketsState {
     this.backlinks = const [],
     this.canAdvanceSddStage = false,
     this.sddStageBlockReason,
+    this.needsDesignReview,
+    this.linkedDesignPage,
   });
 
   /// The loaded ticket.
@@ -253,6 +264,23 @@ class TicketDetailLoaded extends TicketsState {
   /// [TicketsCubit.getTicketById] alongside [canAdvanceSddStage].
   final SddStageBlockReason? sddStageBlockReason;
 
+  /// Whether [ticket] (a `story`) needs a `designBrief`/`designSync`
+  /// pass, computed by [TicketsCubit.getTicketById] from its current
+  /// child Tasks via `_storyNeedsDesignReview`. `null` until child Tasks
+  /// exist to evaluate, or for any ticket type other than `story`. Drives
+  /// `_SddStageSection`'s variable-length tracker (4 vs. 6 nodes). Added
+  /// for `aion-arch/changes/sdd-design-gate`.
+  final bool? needsDesignReview;
+
+  /// [ticket]'s linked design Page (a `story`'s `"Design — <title>"`
+  /// `page`-type ticket, created by `TicketsCubit._spawnStageChat`'s
+  /// `designBrief` branch), computed by [TicketsCubit.getTicketById] via
+  /// the same lookup `_linkedDesignPage` uses internally for the
+  /// `designBrief`/`designSync` precondition checks. `null` when
+  /// [needsDesignReview] isn't `true`, or the design Page hasn't been
+  /// created yet. Added for `aion-arch/changes/sdd-design-gate`.
+  final Ticket? linkedDesignPage;
+
   @override
   List<Object?> get props => [
     ticket,
@@ -261,6 +289,8 @@ class TicketDetailLoaded extends TicketsState {
     backlinks,
     canAdvanceSddStage,
     sddStageBlockReason,
+    needsDesignReview,
+    linkedDesignPage,
   ];
 }
 

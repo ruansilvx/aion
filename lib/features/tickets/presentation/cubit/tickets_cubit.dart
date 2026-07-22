@@ -3,8 +3,10 @@
 import 'dart:math' show max;
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 
 import 'package:aion/core/contracts/agent_model_client.dart';
@@ -546,7 +548,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       return null;
     }
 
-    final nextStage = _nextSddStage(ticket.sddStage);
+    final nextStage = await _nextSddStage(ticket);
     if (nextStage == null) {
       await _emitSddStagePreconditionNotMet(ticket.id);
       return null;
@@ -630,6 +632,47 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
   }
 
+  /// Re-runs [SddStage.designSync]'s validation in place, after the
+  /// human has edited the linked design Page to address a `DESIGN GATE:
+  /// PENDING` verdict. Re-assembles fresh context (the Page's *current*
+  /// content — unlike a plain user chat reply, which wouldn't
+  /// automatically pick up an edit made outside the chat) and posts
+  /// another turn to the existing [designSyncChat], via the same
+  /// [ChatCubit.runChatTurn] helper [_spawnStageChat] uses. No-ops
+  /// (returns without posting) if [designSyncChat] isn't a `chat`
+  /// ticket, its parent isn't at [SddStage.designSync], or the cubit was
+  /// constructed without an [AgentModelClient]/[CommentRepository] (see
+  /// the constructor's dartdoc). Added for
+  /// `aion-arch/changes/sdd-design-gate`.
+  Future<void> retryDesignSync(Ticket designSyncChat) async {
+    if (designSyncChat.type != TicketType.chat) return;
+    final client = _agentClient;
+    final commentRepo = _commentRepository;
+    if (client == null || commentRepo == null) return;
+    final parentId = designSyncChat.parentId;
+    if (parentId == null) return;
+    final parent = await _repository.getTicketById(parentId);
+    if (parent == null || parent.sddStage != SddStage.designSync) return;
+
+    final context = await _assembleStageContext(parent, SddStage.designSync);
+    await commentRepo.addComment(
+      TicketComment(
+        id: '',
+        ticketId: designSyncChat.id,
+        content: context,
+        authorType: CommentAuthorType.system,
+        createdAt: DateTime.now(),
+      ),
+    );
+    await ChatCubit.runChatTurn(
+      client: client,
+      commentRepo: commentRepo,
+      chatTicketId: designSyncChat.id,
+      prompt: context,
+      model: AgentModel.sonnet,
+    );
+  }
+
   /// Emits the rejected-stage-advance error for ticket [ticketId], then
   /// re-emits its unchanged [TicketDetailLoaded] so the detail screen
   /// shows a toast instead of collapsing to the generic error view.
@@ -647,16 +690,56 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
   }
 
-  /// The next [SddStage] after [current] (`null` meaning the cycle hasn't
-  /// started), or `null` if [current] is already [SddStage.archived]
-  /// (nothing further to advance to).
-  SddStage? _nextSddStage(SddStage? current) => switch (current) {
-    null => SddStage.exploring,
-    SddStage.exploring => SddStage.proposed,
-    SddStage.proposed => SddStage.verifying,
-    SddStage.verifying => SddStage.archived,
-    SddStage.archived => null,
-  };
+  /// The next [SddStage] after [ticket]'s current one, or `null` if
+  /// already [SddStage.archived] (nothing further to advance to). Async
+  /// because the `proposed → ?` branch must inspect [ticket]'s child
+  /// Tasks (via [TicketRepository.getTicketsByParent]) to decide between
+  /// [SddStage.designBrief] and [SddStage.verifying] for a `story` —
+  /// see [_storyNeedsDesignReview]. An `epic` always skips straight to
+  /// [SddStage.verifying], since [SddStage.designBrief]/
+  /// [SddStage.designSync] only ever apply to `story` tickets. Added for
+  /// `aion-arch/changes/sdd-design-gate`.
+  Future<SddStage?> _nextSddStage(Ticket ticket) async {
+    switch (ticket.sddStage) {
+      case null:
+        return SddStage.exploring;
+      case SddStage.exploring:
+        return SddStage.proposed;
+      case SddStage.proposed:
+        if (ticket.type != TicketType.story) return SddStage.verifying;
+        final tasks = await _repository.getTicketsByParent(
+          ticket.id,
+          types: const [TicketType.task],
+        );
+        return _storyNeedsDesignReview(tasks)
+            ? SddStage.designBrief
+            : SddStage.verifying;
+      case SddStage.designBrief:
+        return SddStage.designSync;
+      case SddStage.designSync:
+        return SddStage.verifying;
+      case SddStage.verifying:
+        return SddStage.archived;
+      case SddStage.archived:
+        return null;
+    }
+  }
+
+  /// Whether any of [tasks] indicates UI work, using the same keyword
+  /// heuristic `/propose`'s own design-gate block already applies to a
+  /// change's touched files — here applied to each Task's title +
+  /// description instead of a file path. Case-insensitive substring
+  /// match against: "widget", "screen", "component", "ui". Computed
+  /// fresh every time, not persisted — mirrors how the existing
+  /// `proposed` precondition already re-fetches children on every check
+  /// rather than caching. Added for `aion-arch/changes/sdd-design-gate`.
+  bool _storyNeedsDesignReview(List<Ticket> tasks) {
+    const keywords = ['widget', 'screen', 'component', 'ui'];
+    return tasks.any((t) {
+      final text = '${t.title} ${t.description ?? ''}'.toLowerCase();
+      return keywords.any(text.contains);
+    });
+  }
 
   /// Whether [advanceSddStage] would currently succeed for [ticket],
   /// alongside — when it wouldn't — why, as an [SddStageBlockReason] for
@@ -674,7 +757,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     if (ticket.type != TicketType.epic && ticket.type != TicketType.story) {
       return (canAdvance: false, blockReason: null);
     }
-    if (_nextSddStage(ticket.sddStage) == null) {
+    if (await _nextSddStage(ticket) == null) {
       return (canAdvance: false, blockReason: null);
     }
 
@@ -707,9 +790,83 @@ class TicketsCubit extends Cubit<TicketsState> {
           canAdvance: ready,
           blockReason: ready ? null : SddStageBlockReason.awaitingChildren,
         );
+      case SddStage.designBrief:
+        final page = await _linkedDesignPage(ticket.id);
+        final ready =
+            page != null && (page.description?.trim().isNotEmpty ?? false);
+        return (
+          canAdvance: ready,
+          blockReason: ready
+              ? null
+              : SddStageBlockReason.awaitingDesignPaste,
+        );
+      case SddStage.designSync:
+        final ready = await _designSyncApproved(ticket.id);
+        return (
+          canAdvance: ready,
+          blockReason: ready
+              ? null
+              : SddStageBlockReason.awaitingDesignApproval,
+        );
       case SddStage.archived:
         return (canAdvance: false, blockReason: null);
     }
+  }
+
+  /// The `page`-type ticket linked to [storyId] whose title matches the
+  /// deterministic `"Design — <title>"` naming [_spawnStageChat] gives
+  /// it — identified by naming convention rather than a dedicated schema
+  /// field, since no other relationship in the codebase needs one.
+  /// Returns `null` if constructed without a [TicketLinkRepository]
+  /// (see the constructor's dartdoc), or if no such link exists yet.
+  /// Added for `aion-arch/changes/sdd-design-gate`.
+  Future<Ticket?> _linkedDesignPage(String storyId) async {
+    final linkRepo = _linkRepository;
+    if (linkRepo == null) return null;
+    final links = await linkRepo.getLinksForTicket(storyId);
+    for (final link in links) {
+      final otherId = link.sourceTicketId == storyId
+          ? link.targetTicketId
+          : link.sourceTicketId;
+      final other = await _repository.getTicketById(otherId);
+      if (other != null &&
+          other.type == TicketType.page &&
+          other.title.startsWith('Design — ')) {
+        return other;
+      }
+    }
+    return null;
+  }
+
+  /// Whether [storyId]'s `"Design Sync — "`-prefixed chat's most recent
+  /// comment is an [CommentAuthorType.ai] reply whose content contains
+  /// the literal line `DESIGN GATE: APPROVED` — mirrors `/design-sync`'s
+  /// own final-summary line format. Unlike
+  /// [_mostRecentChatHasTerminalReply] (any AI reply unlocks
+  /// advancement), this checks the reply's *content*, since a `DESIGN
+  /// GATE: PENDING` verdict must not unblock advancement — see
+  /// [retryDesignSync] for how a fresh verdict gets produced after a
+  /// `PENDING` result. Added for `aion-arch/changes/sdd-design-gate`.
+  Future<bool> _designSyncApproved(String storyId) async {
+    final commentRepo = _commentRepository;
+    if (commentRepo == null) return false;
+    final chats = await _repository.getTicketsByParent(
+      storyId,
+      types: const [TicketType.chat],
+    );
+    final designSyncChats =
+        chats.where((c) => c.title.startsWith('Design Sync — ')).toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    if (designSyncChats.isEmpty) return false;
+    final comments = await commentRepo.getCommentsForTicket(
+      designSyncChats.first.id,
+    );
+    if (comments.isEmpty) return false;
+    final mostRecent = comments.reduce(
+      (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
+    );
+    return mostRecent.authorType == CommentAuthorType.ai &&
+        mostRecent.content.contains('DESIGN GATE: APPROVED');
   }
 
   /// Whether [parentId]'s most recently created `chat` child ticket
@@ -747,13 +904,45 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [CommentRepository] (see the constructor's dartdoc) — real usage
   /// (`app_router.dart`) always supplies both. A default model
   /// ([AgentModel.sonnet]) is used for this call; no per-phase model
-  /// routing exists yet (see `providers.md`).
+  /// routing exists yet (see `providers.md`). For [SddStage.designBrief]
+  /// specifically, also creates a `page`-type design ticket
+  /// (`"Design — <parent.title>"`) and links it to [parent] via
+  /// [TicketLinkRepository.createLink] before the chat itself is created
+  /// — see [_linkedDesignPage]. Added for
+  /// `aion-arch/changes/sdd-design-gate`.
   Future<String?> _spawnStageChat(Ticket parent, SddStage stage) async {
     final client = _agentClient;
     final commentRepo = _commentRepository;
     if (client == null || commentRepo == null) return null;
 
     final now = DateTime.now();
+
+    if (stage == SddStage.designBrief) {
+      // Guarded on _linkRepository, not just the link-creation call —
+      // without it, _linkedDesignPage could never discover the page
+      // (it walks links, not title text), leaving `designBrief` stuck
+      // at `awaitingDesignPaste` forever. Skip creating the orphan
+      // rather than leave one behind.
+      final linkRepo = _linkRepository;
+      if (linkRepo != null) {
+        final page = Ticket(
+          id: _uuid.v4(),
+          ticketId: '',
+          type: TicketType.page,
+          title: 'Design — ${parent.title}',
+          status: TicketStatus.backlog,
+          createdAt: now,
+          updatedAt: now,
+        );
+        await _repository.createTicket(page);
+        await linkRepo.createLink(
+          sourceTicketId: page.id,
+          targetTicketId: parent.id,
+          linkType: TicketLinkType.relatesTo,
+        );
+      }
+    }
+
     final chatTicket = Ticket(
       id: _uuid.v4(),
       ticketId: '',
@@ -791,9 +980,12 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Assembles the plain-text context a spawned stage chat opens with:
   /// [parent]'s title/description, and — for [SddStage.verifying]/
-  /// [SddStage.archived] — its direct children's titles and statuses. No
-  /// embeddings, no repo-map-lite involvement (see proposal.md's Out of
-  /// scope).
+  /// [SddStage.archived] — its direct children's titles and statuses, or
+  /// — for [SddStage.designBrief]/[SddStage.designSync] — the existing
+  /// design-token file contents (see [_readTokenFilesForContext]) and,
+  /// for [SddStage.designSync] specifically, the linked design Page's
+  /// pasted content (see [_linkedDesignPage]). No embeddings, no
+  /// repo-map-lite involvement (see proposal.md's Out of scope).
   Future<String> _assembleStageContext(Ticket parent, SddStage stage) async {
     final buffer = StringBuffer()
       ..writeln('# ${parent.title}');
@@ -823,16 +1015,86 @@ class TicketsCubit extends Cubit<TicketsState> {
           buffer.writeln('- ${child.title} ($statusLabel)');
         }
       }
+    } else if (stage == SddStage.designBrief) {
+      buffer
+        ..writeln()
+        ..writeln('## Existing design system')
+        ..writeln(await _readTokenFilesForContext());
+      buffer
+        ..writeln()
+        ..writeln(
+          'Produce a ready-to-paste Claude Design prompt for this Story, '
+          'covering: Context, Existing design system (the tokens above), '
+          'Feature to design, Components to specify, Export requirements '
+          '(Flutter Color/TextStyle/EdgeInsets values, both Arctic and '
+          'Obsidian themes, no Material widgets), and a Mockup request.',
+        );
+    } else if (stage == SddStage.designSync) {
+      final page = await _linkedDesignPage(parent.id);
+      buffer
+        ..writeln()
+        ..writeln('## Pasted design export')
+        ..writeln(page?.description ?? '(none pasted yet)')
+        ..writeln()
+        ..writeln('## Existing design system')
+        ..writeln(await _readTokenFilesForContext())
+        ..writeln()
+        ..writeln(
+          'Check the pasted design export above for: (1) any Material '
+          'widget reference (Card, ElevatedButton, Scaffold, ThemeData, '
+          'etc. — Aion is Non-Material, see project.md), (2) whether every '
+          'referenced color matches one of the existing tokens above or is '
+          'a clearly new, semantically named one. List any issues found. '
+          'End your reply with exactly one line: "DESIGN GATE: APPROVED" '
+          'if there are no issues, or "DESIGN GATE: PENDING" if there are.',
+        );
     }
 
     return buffer.toString().trim();
   }
 
-  /// Present-progressive display name for [stage], used in a spawned
-  /// chat ticket's title.
+  /// Reads `aion_colors.dart`/`aion_text.dart`/`aion_radius.dart`'s
+  /// contents off disk for inclusion as plain-text context — the same
+  /// static-injection approach `/design-brief`/`/design-sync`'s own
+  /// `SKILL.md` `cat`s these files for, ported to Dart
+  /// `File.readAsString`. No tool access involved; this is [TicketsCubit]
+  /// reading files for context assembly, the same category of
+  /// desktop-only capability [_gitProjector]/[_projectRootPath] already
+  /// gates. Returns an empty string (not an error) if [_projectRootPath]
+  /// is unset or a file is missing — mobile/web has neither a filesystem
+  /// root nor UI Story design-gate stages triggering in practice
+  /// (Task/Story execution is desktop-only already), so this degrades
+  /// gracefully rather than throwing. Added for
+  /// `aion-arch/changes/sdd-design-gate`.
+  Future<String> _readTokenFilesForContext() async {
+    final root = _projectRootPath;
+    if (root == null) return '';
+    const relativePaths = [
+      'lib/design_system/tokens/aion_colors.dart',
+      'lib/design_system/tokens/aion_text.dart',
+      'lib/design_system/tokens/aion_radius.dart',
+    ];
+    final buffer = StringBuffer();
+    for (final relativePath in relativePaths) {
+      final file = File(p.join(root, relativePath));
+      if (await file.exists()) {
+        buffer
+          ..writeln('### $relativePath')
+          ..writeln(await file.readAsString());
+      }
+    }
+    return buffer.toString();
+  }
+
+  /// Display name for [stage], used in a spawned chat ticket's title —
+  /// present-progressive for every stage except [SddStage.designBrief]/
+  /// [SddStage.designSync], which read naturally as their plain node
+  /// name instead (design.md §1.3).
   String _stagePresentName(SddStage stage) => switch (stage) {
     SddStage.exploring => 'Exploring',
     SddStage.proposed => 'Proposed',
+    SddStage.designBrief => 'Design Brief',
+    SddStage.designSync => 'Design Sync',
     SddStage.verifying => 'Verifying',
     SddStage.archived => 'Archived',
   };
@@ -896,7 +1158,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// its direct children and evaluates [advanceSddStage]'s precondition
   /// for the ticket's current stage, populating
   /// [TicketDetailLoaded.canAdvanceSddStage] and, when that's `false`,
-  /// [TicketDetailLoaded.sddStageBlockReason].
+  /// [TicketDetailLoaded.sddStageBlockReason]. For a `story` ticket
+  /// specifically, also computes [TicketDetailLoaded.needsDesignReview]
+  /// via [_storyNeedsDesignReview] against its current child Tasks
+  /// (`null` if none exist yet), and — when that's `true` —
+  /// [TicketDetailLoaded.linkedDesignPage] via [_linkedDesignPage].
+  /// Added for `aion-arch/changes/sdd-design-gate`.
   Future<void> getTicketById(String id) async {
     emit(const TicketsLoading());
     try {
@@ -906,11 +1173,29 @@ class TicketsCubit extends Cubit<TicketsState> {
         return;
       }
       final check = await _sddStageAdvanceCheck(ticket);
+
+      bool? needsDesignReview;
+      Ticket? linkedDesignPage;
+      if (ticket.type == TicketType.story) {
+        final tasks = await _repository.getTicketsByParent(
+          ticket.id,
+          types: const [TicketType.task],
+        );
+        needsDesignReview = tasks.isEmpty
+            ? null
+            : _storyNeedsDesignReview(tasks);
+        if (needsDesignReview == true) {
+          linkedDesignPage = await _linkedDesignPage(ticket.id);
+        }
+      }
+
       emit(
         TicketDetailLoaded(
           ticket,
           canAdvanceSddStage: check.canAdvance,
           sddStageBlockReason: check.blockReason,
+          needsDesignReview: needsDesignReview,
+          linkedDesignPage: linkedDesignPage,
         ),
       );
     } catch (e) {
