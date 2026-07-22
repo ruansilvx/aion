@@ -80,7 +80,30 @@ class SettingsScreen extends StatelessWidget {
                                   .selectModel(model),
                             ),
                             const SizedBox(height: AionSpacing.sp24),
-                            const _AutomationSection(),
+                            Text(
+                              context.l10n.settingsAutomationEyebrow,
+                              style: AionText.caption.copyWith(
+                                color: c.textMuted,
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            _AutomationSection(
+                              automationContext: AutomationContext.sddStage,
+                              label: context.l10n.settingsAutomationLabel,
+                              description:
+                                  context.l10n.settingsAutomationDescription,
+                            ),
+                            const SizedBox(height: 20),
+                            _AutomationSection(
+                              automationContext:
+                                  AutomationContext.codingExecution,
+                              label: context
+                                  .l10n
+                                  .settingsAutomationCodingExecutionLabel,
+                              description: context
+                                  .l10n
+                                  .settingsAutomationCodingExecutionDescription,
+                            ),
                           ],
                         );
                       },
@@ -104,16 +127,30 @@ String _confidenceLabel(BuildContext context, AutomationConfidence confidence) =
       AutomationConfidence.manual => context.l10n.settingsAutomationManual,
     };
 
-/// One-line explanatory sub-label for [confidence], shown in
-/// [_AutomationMenuRow]. Per design.md §6.3.
+/// One-line explanatory sub-label for [confidence] under [automationContext],
+/// shown in [_AutomationMenuRow]. Per design.md §4.4 — the two instances
+/// share option names/mode dots but differ in sub-label copy, since they
+/// govern different transitions.
 String _confidenceSubLabel(
   BuildContext context,
+  AutomationContext automationContext,
   AutomationConfidence confidence,
-) => switch (confidence) {
-  AutomationConfidence.auto => context.l10n.settingsAutomationAutoSubLabel,
-  AutomationConfidence.gated => context.l10n.settingsAutomationGatedSubLabel,
-  AutomationConfidence.manual =>
-    context.l10n.settingsAutomationManualSubLabel,
+) => switch (automationContext) {
+  AutomationContext.sddStage => switch (confidence) {
+    AutomationConfidence.auto => context.l10n.settingsAutomationAutoSubLabel,
+    AutomationConfidence.gated =>
+      context.l10n.settingsAutomationGatedSubLabel,
+    AutomationConfidence.manual =>
+      context.l10n.settingsAutomationManualSubLabel,
+  },
+  AutomationContext.codingExecution => switch (confidence) {
+    AutomationConfidence.auto =>
+      context.l10n.settingsAutomationCodingExecutionAutoSubLabel,
+    AutomationConfidence.gated =>
+      context.l10n.settingsAutomationCodingExecutionGatedSubLabel,
+    AutomationConfidence.manual =>
+      context.l10n.settingsAutomationCodingExecutionManualSubLabel,
+  },
 };
 
 /// The mode dot's color, encoding [confidence] per design.md §7's
@@ -128,17 +165,32 @@ Color _confidenceDotColor(AionColors c, AutomationConfidence confidence) =>
       AutomationConfidence.manual => c.secondary,
     };
 
-/// The "SDD Stage Automation" section: a labeled description followed by
-/// an [AutomationConfidence] [SelectionMenu] (mode dot + name in the
-/// trigger, mode dot + sub-label per menu row — design.md §6.2/§6.3),
+/// One automation section — a labeled description followed by an
+/// [AutomationConfidence] [SelectionMenu] (mode dot + name in the
+/// trigger, mode dot + sub-label per menu row — design.md §4.2–§4.4),
 /// backed by [AutomationSettingsCubit] (kept separate from
 /// [ProviderSettingsCubit] since the two concerns — provider connection
-/// vs. automation confidence — are unrelated). Built on [SelectionMenu]
+/// vs. automation confidence — are unrelated). Rendered twice on
+/// [SettingsScreen] — once per [AutomationContext] — under one shared
+/// "AUTOMATION" eyebrow (design.md §4.1). Built on [SelectionMenu]
 /// rather than `AppDropdown` since the mode-dot/sub-label row content
 /// design.md specifies needs [SelectionMenu.itemBuilder]; `AppDropdown`
 /// only renders a plain label per row.
 class _AutomationSection extends StatelessWidget {
-  const _AutomationSection();
+  const _AutomationSection({
+    required this.automationContext,
+    required this.label,
+    required this.description,
+  });
+
+  /// Which [AutomationContext] this instance controls.
+  final AutomationContext automationContext;
+
+  /// This instance's label, per design.md §4.3.
+  final String label;
+
+  /// This instance's one-line description, per design.md §4.3.
+  final String description;
 
   @override
   Widget build(BuildContext context) {
@@ -149,29 +201,35 @@ class _AutomationSection extends StatelessWidget {
         if (state is! AutomationSettingsReady) {
           return const SizedBox.shrink();
         }
+        final confidence =
+            state.confidenceByContext[automationContext] ??
+            AutomationConfidence.gated;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              context.l10n.settingsAutomationLabel,
+              label,
               style: AionText.label.copyWith(color: c.textSecondary),
             ),
             const SizedBox(height: AionSpacing.sp4),
             Text(
-              context.l10n.settingsAutomationDescription,
+              description,
               style: AionText.bodySm.copyWith(color: c.textMuted),
             ),
             const SizedBox(height: AionSpacing.sp8),
             SelectionMenu<AutomationConfidence>(
-              semanticsLabel: context.l10n.settingsAutomationLabel,
+              semanticsLabel: label,
               items: AutomationConfidence.values,
               itemLabel: (v) => _confidenceLabel(context, v),
-              currentValue: state.confidence,
-              onSelected: (v) =>
-                  context.read<AutomationSettingsCubit>().selectConfidence(v),
-              itemBuilder: (context, c, item) =>
-                  _AutomationMenuRow(confidence: item),
-              trigger: _AutomationTrigger(confidence: state.confidence),
+              currentValue: confidence,
+              onSelected: (v) => context
+                  .read<AutomationSettingsCubit>()
+                  .selectConfidence(automationContext, v),
+              itemBuilder: (context, c, item) => _AutomationMenuRow(
+                automationContext: automationContext,
+                confidence: item,
+              ),
+              trigger: _AutomationTrigger(confidence: confidence),
             ),
           ],
         );
@@ -228,10 +286,16 @@ class _AutomationTrigger extends StatelessWidget {
 }
 
 /// One [SelectionMenu]`<AutomationConfidence>` menu row: the mode dot,
-/// [confidence]'s name, and a trailing one-line sub-label. Per
-/// design.md §6.3.
+/// [confidence]'s name, and a trailing one-line sub-label (per
+/// [automationContext] — design.md §4.4). Per design.md §4.4.
 class _AutomationMenuRow extends StatelessWidget {
-  const _AutomationMenuRow({required this.confidence});
+  const _AutomationMenuRow({
+    required this.automationContext,
+    required this.confidence,
+  });
+
+  /// Which [AutomationContext] this row's sub-label copy is for.
+  final AutomationContext automationContext;
 
   final AutomationConfidence confidence;
 
@@ -257,7 +321,7 @@ class _AutomationMenuRow extends StatelessWidget {
         ),
         const SizedBox(width: 8),
         Text(
-          _confidenceSubLabel(context, confidence),
+          _confidenceSubLabel(context, automationContext, confidence),
           style: AionText.time.copyWith(color: c.textMuted),
         ),
       ],

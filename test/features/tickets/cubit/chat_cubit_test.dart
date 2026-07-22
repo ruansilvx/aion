@@ -136,7 +136,7 @@ void main() {
     );
 
     blocTest<ChatCubit, ChatState>(
-      'emits ChatError and persists nothing extra on AgentErrorEvent',
+      'emits ChatError and persists a failure comment on AgentErrorEvent',
       setUp: () {
         when(() => repository.addComment(any())).thenAnswer((_) async {});
         when(
@@ -154,8 +154,9 @@ void main() {
         model: AgentModel.sonnet,
       ),
       verify: (_) {
-        // Only the human comment is persisted — never a broken AI reply.
-        verify(() => repository.addComment(any())).called(1);
+        // The human comment, plus a failure comment so the transcript
+        // isn't silently missing a trace of the failed run.
+        verify(() => repository.addComment(any())).called(2);
       },
       expect: () => [isA<ChatLoaded>(), isA<ChatError>(), isA<ChatLoaded>()],
     );

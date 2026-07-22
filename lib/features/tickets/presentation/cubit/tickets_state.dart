@@ -99,6 +99,30 @@ enum TicketsErrorReason {
   /// for advancing to the next one isn't met yet. The widget layer reads
   /// this via `ticketsErrorMessage` / `AppToast`.
   sddStagePreconditionNotMet,
+
+  /// A Task ticket was rejected from moving to `TicketStatus.inProgress`
+  /// because its governing Story's design work is outstanding — see
+  /// `TicketsCubit._codingExecutionGateCheck`. The widget layer reads
+  /// this via `ticketsErrorMessage` / `AppToast`.
+  codingExecutionBlocked,
+
+  /// A coding-execution run reported `AgentOverageDetectedEvent` — every
+  /// subsequent trigger for the rest of the session is forced to
+  /// `AutomationConfidence.gated` regardless of the configured
+  /// confidence. Informational, surfaced once via `AppToast`.
+  executionBudgetOverageDetected,
+}
+
+/// Why a Task ticket's coding-execution run was blocked from starting —
+/// resolved to a rejection toast at the widget layer (via
+/// [TicketsErrorReason.codingExecutionBlocked] /
+/// `ticketsErrorMessage`), not a persistent hint, since the block
+/// prevents the status transition itself from happening at all. Computed
+/// by `TicketsCubit._codingExecutionGateCheck`.
+enum CodingExecutionBlockReason {
+  /// The Task's governing Story indicates UI work and that work hasn't
+  /// been design-approved yet (`_designSyncApproved` is `false`).
+  storyDesignGatePending,
 }
 
 /// Why an `epic`/`story` [TicketDetailLoaded.ticket]'s current
@@ -231,6 +255,9 @@ class TicketDetailLoaded extends TicketsState {
     this.sddStageBlockReason,
     this.needsDesignReview,
     this.linkedDesignPage,
+    this.isExecuting = false,
+    this.executionQueuePosition,
+    this.executionAwaitingReview = false,
   });
 
   /// The loaded ticket.
@@ -281,6 +308,26 @@ class TicketDetailLoaded extends TicketsState {
   /// created yet. Added for `aion-arch/changes/sdd-design-gate`.
   final Ticket? linkedDesignPage;
 
+  /// Whether [ticket] (a `task`) is the coding-execution run currently
+  /// in flight. Task-only, computed by [TicketsCubit.getTicketById] from
+  /// `_inFlightExecutionTaskId`. Always `false` for every other ticket
+  /// type. Added for `aion-arch/changes/task-to-coding-execution-trigger`.
+  final bool isExecuting;
+
+  /// [ticket]'s (a `task`) 1-based position in the coding-execution FIFO
+  /// queue, or `null` if it isn't queued. Task-only, computed by
+  /// [TicketsCubit.getTicketById]. Added for
+  /// `aion-arch/changes/task-to-coding-execution-trigger`.
+  final int? executionQueuePosition;
+
+  /// Whether [ticket] (a `task`) has a finished coding-execution run with
+  /// a confirmed PR, awaiting human confirmation
+  /// (`AutomationConfidence.gated`) before flipping to
+  /// `TicketStatus.inReview`. Task-only, computed by
+  /// [TicketsCubit.getTicketById]. Added for
+  /// `aion-arch/changes/task-to-coding-execution-trigger`.
+  final bool executionAwaitingReview;
+
   @override
   List<Object?> get props => [
     ticket,
@@ -291,6 +338,9 @@ class TicketDetailLoaded extends TicketsState {
     sddStageBlockReason,
     needsDesignReview,
     linkedDesignPage,
+    isExecuting,
+    executionQueuePosition,
+    executionAwaitingReview,
   ];
 }
 

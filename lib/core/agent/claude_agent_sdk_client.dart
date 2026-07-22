@@ -14,7 +14,10 @@ import 'package:aion/core/contracts/agent_model_client.dart';
 /// Desktop-only, same `isDesktop`-style gate as `GitRepositoryClient`'s
 /// callers — construction is safe on any platform, but [run] surfaces a
 /// readable [AgentErrorEvent] rather than working if `dart:io Process`
-/// can't actually spawn `node` (e.g. web).
+/// can't actually spawn `node` (e.g. web). When [AgentRequest.toolsEnabled]
+/// is set, [AgentRequest.workingDirectory] is passed through to the
+/// spawned process's cwd and `toolsEnabled` is forwarded to the bridge, so
+/// file edits/git/bash land in the actual project checkout.
 class ClaudeAgentSdkClient implements AgentModelClient {
   /// Creates a [ClaudeAgentSdkClient] that resolves the bridge script's
   /// path via [bridgeLocator].
@@ -29,7 +32,11 @@ class ClaudeAgentSdkClient implements AgentModelClient {
 
     final Process process;
     try {
-      process = await Process.start('node', [scriptPath]);
+      process = await Process.start(
+        'node',
+        [scriptPath],
+        workingDirectory: request.workingDirectory,
+      );
     } catch (error) {
       controller.add(
         AgentErrorEvent(
@@ -42,7 +49,11 @@ class ClaudeAgentSdkClient implements AgentModelClient {
     }
 
     process.stdin.writeln(
-      jsonEncode({'prompt': request.prompt, 'model': request.model}),
+      jsonEncode({
+        'prompt': request.prompt,
+        'model': request.model,
+        'toolsEnabled': request.toolsEnabled,
+      }),
     );
     unawaited(process.stdin.close());
 

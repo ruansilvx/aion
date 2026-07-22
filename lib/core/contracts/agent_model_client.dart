@@ -19,7 +19,12 @@ abstract interface class AgentModelClient {
 /// A single request to an [AgentModelClient].
 class AgentRequest extends Equatable {
   /// Creates an [AgentRequest] for [prompt] against [model].
-  const AgentRequest({required this.prompt, required this.model});
+  const AgentRequest({
+    required this.prompt,
+    required this.model,
+    this.toolsEnabled = false,
+    this.workingDirectory,
+  });
 
   /// The user- or system-authored prompt text.
   final String prompt;
@@ -30,8 +35,20 @@ class AgentRequest extends Equatable {
   /// surfaced as [AgentErrorEvent].
   final String model;
 
+  /// When `true`, the run may edit files, run git/bash, and use MCP —
+  /// only ever set by `TicketsCubit`'s coding-execution path. Every
+  /// existing caller (SDD-stage chats, Settings' connection test) leaves
+  /// this `false`, preserving today's text-only behavior.
+  final bool toolsEnabled;
+
+  /// The directory the agent process should run in — required
+  /// (non-null) whenever [toolsEnabled] is `true`, so file edits/git land
+  /// in the actual project checkout rather than wherever the Flutter
+  /// process happens to be running from. `null` for every text-only call.
+  final String? workingDirectory;
+
   @override
-  List<Object?> get props => [prompt, model];
+  List<Object?> get props => [prompt, model, toolsEnabled, workingDirectory];
 }
 
 /// One incremental event from an [AgentModelClient.run] stream.
