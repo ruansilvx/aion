@@ -1727,6 +1727,53 @@ void main() {
     );
 
     blocTest<TicketsCubit, TicketsState>(
+      'proposed advancing to designBrief skips creating an orphan design '
+      'Page when no TicketLinkRepository was provided',
+      setUp: () {
+        when(
+          () => repository.getTicketsByParent(
+            storyProposed.id,
+            types: any(named: 'types'),
+          ),
+        ).thenAnswer((_) async => [taskChildUi]);
+        when(
+          () => repository.updateTicketSddStage(
+            storyProposed.id,
+            SddStage.designBrief,
+          ),
+        ).thenAnswer((_) async {});
+        when(() => repository.getTicketById(any())).thenAnswer(
+          (_) async => dummyChatTicket,
+        );
+        when(() => repository.getTicketById(storyProposed.id)).thenAnswer(
+          (_) async => Ticket(
+            id: storyProposed.id,
+            ticketId: storyProposed.ticketId,
+            type: storyProposed.type,
+            title: storyProposed.title,
+            status: storyProposed.status,
+            sddStage: SddStage.designBrief,
+            createdAt: storyProposed.createdAt,
+            updatedAt: storyProposed.updatedAt,
+          ),
+        );
+      },
+      // No linkRepository this time — only agentClient/commentRepository.
+      build: () => TicketsCubit(
+        repository,
+        agentClient: agentClient,
+        commentRepository: commentRepository,
+      ),
+      act: (cubit) => cubit.advanceSddStage(storyProposed),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        // Only the spawned chat — no orphan design Page without a way
+        // to link it.
+        verify(() => repository.createTicket(any())).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
       'designBrief rejects advancing when no linked design Page has '
       'content yet',
       setUp: () {

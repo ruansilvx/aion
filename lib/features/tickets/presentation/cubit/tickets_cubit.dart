@@ -918,18 +918,23 @@ class TicketsCubit extends Cubit<TicketsState> {
     final now = DateTime.now();
 
     if (stage == SddStage.designBrief) {
-      final page = Ticket(
-        id: _uuid.v4(),
-        ticketId: '',
-        type: TicketType.page,
-        title: 'Design — ${parent.title}',
-        status: TicketStatus.backlog,
-        createdAt: now,
-        updatedAt: now,
-      );
-      await _repository.createTicket(page);
+      // Guarded on _linkRepository, not just the link-creation call —
+      // without it, _linkedDesignPage could never discover the page
+      // (it walks links, not title text), leaving `designBrief` stuck
+      // at `awaitingDesignPaste` forever. Skip creating the orphan
+      // rather than leave one behind.
       final linkRepo = _linkRepository;
       if (linkRepo != null) {
+        final page = Ticket(
+          id: _uuid.v4(),
+          ticketId: '',
+          type: TicketType.page,
+          title: 'Design — ${parent.title}',
+          status: TicketStatus.backlog,
+          createdAt: now,
+          updatedAt: now,
+        );
+        await _repository.createTicket(page);
         await linkRepo.createLink(
           sourceTicketId: page.id,
           targetTicketId: parent.id,
@@ -1081,8 +1086,10 @@ class TicketsCubit extends Cubit<TicketsState> {
     return buffer.toString();
   }
 
-  /// Present-progressive display name for [stage], used in a spawned
-  /// chat ticket's title.
+  /// Display name for [stage], used in a spawned chat ticket's title —
+  /// present-progressive for every stage except [SddStage.designBrief]/
+  /// [SddStage.designSync], which read naturally as their plain node
+  /// name instead (design.md §1.3).
   String _stagePresentName(SddStage stage) => switch (stage) {
     SddStage.exploring => 'Exploring',
     SddStage.proposed => 'Proposed',
