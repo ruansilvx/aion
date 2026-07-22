@@ -1056,11 +1056,15 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [AutomationConfidence.gated] for the rest of the session once
   /// [_overageDetectedThisSession] is `true`) — `gated`/`manual` leave the
   /// status as-is, for [getTicketById]'s `executionAwaitingReview`
-  /// computation (or a manual status change) to surface instead. Always
-  /// re-emits [TicketDetailLoaded] if the detail screen is still showing
-  /// [task], then dequeues the next run (see [_dequeueNext]), no-opping
-  /// gracefully if constructed without an [AgentModelClient]/
-  /// [CommentRepository] (see the constructor's dartdoc).
+  /// computation (or a manual status change) to surface instead.
+  /// Re-emits [TicketDetailLoaded] if the detail screen was showing
+  /// [task] *when the run started* — captured up front rather than
+  /// re-read from `state` afterward, since an overage toast emitted
+  /// mid-run would otherwise clobber `state` and make a live re-check
+  /// wrongly skip the refresh. Then dequeues the next run (see
+  /// [_dequeueNext]), no-opping gracefully if constructed without an
+  /// [AgentModelClient]/[CommentRepository] (see the constructor's
+  /// dartdoc).
   Future<void> _runCodingExecution(Ticket task) async {
     final client = _agentClient;
     final commentRepo = _commentRepository;
@@ -1070,6 +1074,15 @@ class TicketsCubit extends Cubit<TicketsState> {
       unawaited(_dequeueNext());
       return;
     }
+
+    // Captured before the run starts, not re-read from `state` afterward:
+    // `onOverageDetected` below can emit a one-shot `TicketsError` toast
+    // mid-run, which would otherwise clobber `state` and make a live
+    // re-check wrongly conclude the detail screen isn't showing [task]
+    // anymore, silently skipping the refresh.
+    final wasShowingTaskDetail =
+        state is TicketDetailLoaded &&
+        (state as TicketDetailLoaded).ticket.id == task.id;
 
     final now = DateTime.now();
     final chatTicket = Ticket(
@@ -1125,11 +1138,9 @@ class TicketsCubit extends Cubit<TicketsState> {
 
     final prConfirmed = await _executionSucceededWithPr(task.id);
     if (prConfirmed && automationRepo != null) {
-      final confidence = _overageDetectedThisSession
-          ? AutomationConfidence.gated
-          : await automationRepo.getConfidence(
-              AutomationContext.codingExecution,
-            );
+      final confidence = await _effectiveCodingExecutionConfidence(
+        automationRepo,
+      );
       if (confidence == AutomationConfidence.auto) {
         await _repository.updateTicketStatus(task.id, TicketStatus.inReview);
       }
@@ -1138,14 +1149,35 @@ class TicketsCubit extends Cubit<TicketsState> {
       // status change.
     }
 
-    final currentState = state;
-    if (currentState is TicketDetailLoaded &&
-        currentState.ticket.id == task.id) {
+    // Cleared before the refresh below (not after) so getTicketById's own
+    // `isExecuting` computation correctly sees this run as finished,
+    // rather than reporting the just-completed run as still in flight.
+    _inFlightExecutionTaskId = null;
+
+    if (wasShowingTaskDetail) {
       await getTicketById(task.id);
     }
 
-    _inFlightExecutionTaskId = null;
     unawaited(_dequeueNext());
+  }
+
+  /// [automationRepo]'s persisted [AutomationContext.codingExecution]
+  /// confidence, forced to [AutomationConfidence.gated] once
+  /// [_overageDetectedThisSession] is `true` regardless of what's
+  /// persisted — shared by [_runCodingExecution]'s completion-flip
+  /// decision and [getTicketById]'s `executionAwaitingReview`
+  /// computation so the two can't disagree about whether an
+  /// overage-affected run counts as gated (post-`/verify` correction:
+  /// [getTicketById] originally read the repository directly, so the
+  /// "ready for review" banner never appeared after an overage forced
+  /// `gated` — [_runCodingExecution] correctly skipped the auto-flip, but
+  /// nothing surfaced the resulting awaiting-review state instead).
+  Future<AutomationConfidence> _effectiveCodingExecutionConfidence(
+    AutomationSettingsRepository automationRepo,
+  ) async {
+    return _overageDetectedThisSession
+        ? AutomationConfidence.gated
+        : await automationRepo.getConfidence(AutomationContext.codingExecution);
   }
 
   /// Pops the next queued Task id (if any) off [_executionQueue] and
@@ -1553,14 +1585,19 @@ class TicketsCubit extends Cubit<TicketsState> {
       if (ticket.type == TicketType.task) {
         isExecuting = _inFlightExecutionTaskId == ticket.id;
         final queueIndex = _executionQueue.indexOf(ticket.id);
-        // +1 for 0-based, +1 for the in-flight run ahead of the queue.
-        executionQueuePosition = queueIndex >= 0 ? queueIndex + 2 : null;
+        // 1-based: the first entry in the FIFO queue is "next in line"
+        // (position 1) once the in-flight run finishes — nothing *in the
+        // queue* is ahead of it. The in-flight run itself never reaches
+        // this branch (isExecuting is checked separately above).
+        executionQueuePosition = queueIndex >= 0 ? queueIndex + 1 : null;
         if (!isExecuting &&
             executionQueuePosition == null &&
             ticket.status == TicketStatus.inProgress) {
           final prConfirmed = await _executionSucceededWithPr(ticket.id);
-          final confidence = await _automationSettingsRepository
-              ?.getConfidence(AutomationContext.codingExecution);
+          final automationRepo = _automationSettingsRepository;
+          final confidence = automationRepo == null
+              ? null
+              : await _effectiveCodingExecutionConfidence(automationRepo);
           executionAwaitingReview =
               prConfirmed && confidence == AutomationConfidence.gated;
         }

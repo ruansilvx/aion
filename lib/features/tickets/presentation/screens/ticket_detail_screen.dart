@@ -2479,13 +2479,17 @@ String ordinal(int n) {
 /// Shown once the Task's coding-execution run finished successfully (a
 /// PR was confirmed opened) and [AutomationConfidence.gated] applies —
 /// the human must confirm before the Task flips to "In Review". Mirrors
-/// [_GatedBanner]'s tinted container/border/leading-icon/title+sub-line
-/// shape, re-keyed to [AionColors.success] (a completion moment, not an
-/// "advance the SDD stage" prompt), with its action button stacked
-/// full-width below the text rather than trailing inline — design.md
-/// §3's copy doesn't fit inline beside a two-line title at the narrowest
-/// supported phone width without crushing it to 3 lines. Per design.md
-/// §3.
+/// [_GatedBanner]'s tinted container/border/leading-icon shape, re-keyed
+/// to [AionColors.success] (a completion moment, not an "advance the SDD
+/// stage" prompt), with its action button stacked full-width below the
+/// text rather than trailing inline — design.md §3's copy doesn't fit
+/// inline beside a two-line title at the narrowest supported phone width
+/// without crushing it to 3 lines. The title carries alone with no
+/// sub-line: no PR metadata (number, file count) is parsed from the
+/// run's reply today — only the confirmation the last line contained
+/// `EXECUTION: PR_OPENED` — so per design.md §3.3's fallback rule
+/// ("omit only if no PR metadata is available"), the sub-line is
+/// omitted rather than showing placeholder copy. Per design.md §3.
 class _ExecutionReadyForReviewBanner extends StatelessWidget {
   const _ExecutionReadyForReviewBanner({required this.onConfirm});
 
@@ -2519,24 +2523,9 @@ class _ExecutionReadyForReviewBanner extends StatelessWidget {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        context.l10n.ticketDetailCodingExecutionReadyTitle,
-                        style: AionText.cardTitle.copyWith(
-                          color: c.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        context.l10n.ticketDetailCodingExecutionReadySubLine,
-                        style: AionText.time.copyWith(
-                          color: c.textSecondary,
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    context.l10n.ticketDetailCodingExecutionReadyTitle,
+                    style: AionText.cardTitle.copyWith(color: c.textPrimary),
                   ),
                 ),
               ],

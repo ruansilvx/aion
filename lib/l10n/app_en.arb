@@ -155,7 +155,6 @@
     }
   },
   "ticketDetailCodingExecutionReadyTitle": "Coding run finished — PR opened",
-  "ticketDetailCodingExecutionReadySubLine": "Confirm to move this Task to review.",
   "ticketDetailCodingExecutionMarkReadyButton": "Mark ready for review",
   "ticketDetailViaModel": "via {model}",
   "@ticketDetailViaModel": {
