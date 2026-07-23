@@ -1055,10 +1055,13 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// ticket (`"Coding Execution — <task.title>"`), posts the assembled
   /// context (see [_assembleExecutionContext]) as a
   /// [CommentAuthorType.system] comment, then calls
-  /// [ChatCubit.runChatTurn] with `toolsEnabled: true` and
-  /// [_projectRootPath] as the working directory — the same accumulate/
-  /// persist path every other stage chat uses, but with real tool access.
-  /// On completion, if the run reported a confirmed PR (see
+  /// [ChatCubit.runChatTurn] with a model resolved via [_resolveModel]
+  /// using the literal [ModelPhase.execution] (see
+  /// `aion-arch/changes/per-phase-tier-based-model-routing`, replacing
+  /// the previous hardcoded [AgentModel.sonnet] default), `toolsEnabled:
+  /// true`, and [_projectRootPath] as the working directory — the same
+  /// accumulate/persist path every other stage chat uses, but with real
+  /// tool access. On completion, if the run reported a confirmed PR (see
   /// [_executionSucceededWithPr]) and [_automationSettingsRepository] is
   /// configured, flips [task] straight to [TicketStatus.inReview] when
   /// [AutomationContext.codingExecution]'s confidence is
@@ -1287,8 +1290,6 @@ class TicketsCubit extends Cubit<TicketsState> {
     return comments.any((c) => c.authorType == CommentAuthorType.ai);
   }
 
-  /// Creates a `chat`-type child ticket for [stage] under [parent],
-  /// posts an auto-assembled [CommentAuthorType.system] context comment
   /// Resolves [phase] to its currently configured [AgentModel], via
   /// [_modelRoutingRepository]. Falls back to [AgentModel.sonnet] — the
   /// hardcoded default every call site used before per-phase routing
@@ -1301,6 +1302,8 @@ class TicketsCubit extends Cubit<TicketsState> {
     return repo.getModelForPhase(phase);
   }
 
+  /// Creates a `chat`-type child ticket for [stage] under [parent],
+  /// posts an auto-assembled [CommentAuthorType.system] context comment
   /// (see [_assembleStageContext]), then calls the configured
   /// [AgentModelClient] and persists the streamed reply via
   /// [ChatCubit.runChatTurn] — the same accumulate-then-persist logic

@@ -102,7 +102,7 @@ class SettingsScreen extends StatelessWidget {
                                   .l10n
                                   .settingsModelExecutionDescription,
                             ),
-                            const SizedBox(height: AionSpacing.sp24),
+                            const SizedBox(height: 22),
                             Text(
                               context.l10n.settingsAutomationEyebrow,
                               style: AionText.caption.copyWith(
