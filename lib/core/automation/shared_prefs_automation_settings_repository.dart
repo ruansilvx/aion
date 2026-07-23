@@ -9,7 +9,7 @@ import 'package:aion/core/automation/automation_settings_repository.dart';
 /// `shared_preferences`-backed implementation of
 /// [AutomationSettingsRepository]. Stores [AutomationConfidence.name]
 /// under a per-[AutomationContext] string key, mirroring
-/// `SharedPrefsAgentSettingsRepository`'s shape.
+/// `SharedPrefsModelRoutingRepository`'s per-key shape.
 class SharedPrefsAutomationSettingsRepository
     implements AutomationSettingsRepository {
   /// [AutomationContext.sddStage]'s key — unchanged from before

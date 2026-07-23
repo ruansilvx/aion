@@ -11,6 +11,9 @@ import 'package:aion/core/automation/automation_settings_repository.dart';
 import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/core/contracts/embedding_provider.dart';
 import 'package:aion/core/database/app_database.dart';
+import 'package:aion/features/providers/domain/enums/agent_model.dart';
+import 'package:aion/features/providers/domain/enums/model_phase.dart';
+import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
 import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
 import 'package:aion/features/tickets/tickets.dart';
 
@@ -28,6 +31,9 @@ class MockCommentRepository extends Mock implements CommentRepository {}
 
 class MockAutomationSettingsRepository extends Mock
     implements AutomationSettingsRepository {}
+
+class MockModelRoutingRepository extends Mock
+    implements ModelRoutingRepository {}
 
 void main() {
   late MockTicketRepository repository;
@@ -1645,7 +1651,8 @@ void main() {
 
     blocTest<TicketsCubit, TicketsState>(
       'persists the next stage and spawns a chat ticket once the '
-      'precondition is met',
+      'precondition is met, falling back to AgentModel.sonnet when no '
+      'ModelRoutingRepository was supplied',
       setUp: () {
         final advancedEpic = Ticket(
           id: epic.id,
@@ -1683,6 +1690,15 @@ void main() {
         ).called(1);
         verify(() => repository.createTicket(any())).called(1);
         verify(() => commentRepository.addComment(any())).called(1);
+        verify(
+          () => agentClient.run(
+            any(
+              that: predicate<AgentRequest>(
+                (request) => request.model == AgentModel.sonnet.id,
+              ),
+            ),
+          ),
+        ).called(1);
       },
     );
   });
@@ -3106,6 +3122,259 @@ void main() {
       build: () => TicketsCubit(repository),
       act: (cubit) => cubit.getTicketById(ticket.id),
       expect: () => [const TicketsLoading(), TicketDetailLoaded(ticket)],
+    );
+  });
+
+  group('per-phase model routing (per-phase-tier-based-model-routing)', () {
+    late MockAgentModelClient agentClient;
+    late MockCommentRepository commentRepository;
+    late MockTicketLinkRepository linkRepository;
+    late MockAutomationSettingsRepository automationSettingsRepository;
+    late MockModelRoutingRepository modelRoutingRepository;
+
+    setUp(() {
+      agentClient = MockAgentModelClient();
+      commentRepository = MockCommentRepository();
+      linkRepository = MockTicketLinkRepository();
+      automationSettingsRepository = MockAutomationSettingsRepository();
+      modelRoutingRepository = MockModelRoutingRepository();
+      when(() => agentClient.run(any())).thenAnswer(
+        (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+      );
+      when(() => commentRepository.addComment(any())).thenAnswer((_) async {});
+      when(() => repository.createTicket(any())).thenAnswer((_) async {});
+      when(
+        () => linkRepository.createLink(
+          sourceTicketId: any(named: 'sourceTicketId'),
+          targetTicketId: any(named: 'targetTicketId'),
+          linkType: any(named: 'linkType'),
+        ),
+      ).thenAnswer((_) async {});
+      // retryDesignSync's _assembleStageContext calls _linkedDesignPage,
+      // which looks up links whenever a TicketLinkRepository is
+      // configured (unlike the dedicated retryDesignSync test group
+      // above, which omits linkRepository entirely).
+      when(
+        () => linkRepository.getLinksForTicket(any()),
+      ).thenAnswer((_) async => []);
+      when(
+        () => modelRoutingRepository.getModelForPhase(ModelPhase.frontier),
+      ).thenAnswer((_) async => AgentModel.opus);
+      when(
+        () => modelRoutingRepository.getModelForPhase(ModelPhase.capable),
+      ).thenAnswer((_) async => AgentModel.haiku);
+      when(
+        () => modelRoutingRepository.getModelForPhase(ModelPhase.execution),
+      ).thenAnswer((_) async => AgentModel.sonnet);
+    });
+
+    TicketsCubit buildCubit() => TicketsCubit(
+      repository,
+      linkRepository: linkRepository,
+      agentClient: agentClient,
+      commentRepository: commentRepository,
+      automationSettingsRepository: automationSettingsRepository,
+      modelRoutingRepository: modelRoutingRepository,
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      '_spawnStageChat resolves ModelPhase.frontier for an exploring-stage '
+      'transition',
+      setUp: () {
+        final advancedEpic = Ticket(
+          id: epic.id,
+          ticketId: epic.ticketId,
+          type: epic.type,
+          title: epic.title,
+          status: epic.status,
+          sddStage: SddStage.exploring,
+          createdAt: epic.createdAt,
+          updatedAt: epic.updatedAt,
+        );
+        when(
+          () => repository.updateTicketSddStage(epic.id, SddStage.exploring),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(
+          () => repository.getTicketById(epic.id),
+        ).thenAnswer((_) async => advancedEpic);
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.advanceSddStage(epic),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verify(
+          () => modelRoutingRepository.getModelForPhase(ModelPhase.frontier),
+        ).called(1);
+        verify(
+          () => agentClient.run(
+            any(
+              that: predicate<AgentRequest>(
+                (request) => request.model == AgentModel.opus.id,
+              ),
+            ),
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      '_spawnStageChat resolves ModelPhase.capable for a designBrief-stage '
+      'transition',
+      setUp: () {
+        when(
+          () => repository.getTicketsByParent(
+            storyProposed.id,
+            types: any(named: 'types'),
+          ),
+        ).thenAnswer((_) async => [taskChildUi]);
+        when(
+          () => repository.updateTicketSddStage(
+            storyProposed.id,
+            SddStage.designBrief,
+          ),
+        ).thenAnswer((_) async {});
+        when(() => repository.getTicketById(any())).thenAnswer(
+          (_) async => dummyChatTicket,
+        );
+        when(() => repository.getTicketById(storyProposed.id)).thenAnswer(
+          (_) async => Ticket(
+            id: storyProposed.id,
+            ticketId: storyProposed.ticketId,
+            type: storyProposed.type,
+            title: storyProposed.title,
+            status: storyProposed.status,
+            sddStage: SddStage.designBrief,
+            createdAt: storyProposed.createdAt,
+            updatedAt: storyProposed.updatedAt,
+          ),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.advanceSddStage(storyProposed),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verify(
+          () => modelRoutingRepository.getModelForPhase(ModelPhase.capable),
+        ).called(1);
+        verify(
+          () => agentClient.run(
+            any(
+              that: predicate<AgentRequest>(
+                (request) => request.model == AgentModel.haiku.id,
+              ),
+            ),
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'retryDesignSync resolves ModelPhase.capable',
+      setUp: () {
+        when(
+          () => repository.getTicketById(storyDesignSync.id),
+        ).thenAnswer((_) async => storyDesignSync);
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.retryDesignSync(designSyncChat),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verify(
+          () => modelRoutingRepository.getModelForPhase(ModelPhase.capable),
+        ).called(1);
+        verify(
+          () => agentClient.run(
+            any(
+              that: predicate<AgentRequest>(
+                (request) => request.model == AgentModel.haiku.id,
+              ),
+            ),
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      '_runCodingExecution resolves ModelPhase.execution',
+      setUp: () {
+        when(
+          () => repository.getTicketsByParent(
+            storyForExecution.id,
+            types: const [TicketType.task],
+          ),
+        ).thenAnswer((_) async => [taskUnderStory]);
+        when(
+          () => repository.getTicketsByParent(
+            storyForExecution.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [designSyncChatForExecution]);
+        when(
+          () => commentRepository.getCommentsForTicket(
+            designSyncChatForExecution.id,
+          ),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'c-model-routing',
+              ticketId: designSyncChatForExecution.id,
+              content: 'No issues found.\n\nDESIGN GATE: APPROVED',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(
+          () => repository.getTicketsByParent(
+            taskUnderStory.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [dummyExecutionChatTicket]);
+        when(
+          () => commentRepository.getCommentsForTicket(
+            dummyExecutionChatTicket.id,
+          ),
+        ).thenAnswer((_) async => []);
+        when(() => repository.getTicketById(any())).thenAnswer((invocation) async {
+          final id = invocation.positionalArguments[0] as String;
+          if (id == storyForExecution.id) return storyForExecution;
+          if (id == taskUnderStory.id) {
+            return taskUnderStory.copyWith(status: TicketStatus.inProgress);
+          }
+          return dummyExecutionChatTicket;
+        });
+        when(
+          () => repository.updateTicketStatus(any(), any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecution,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.gated);
+      },
+      build: buildCubit,
+      act: (cubit) =>
+          cubit.changeTicketStatus(taskUnderStory, TicketStatus.inProgress),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verify(
+          () => modelRoutingRepository.getModelForPhase(ModelPhase.execution),
+        ).called(1);
+        verify(
+          () => agentClient.run(
+            any(
+              that: predicate<AgentRequest>(
+                (request) =>
+                    request.model == AgentModel.sonnet.id &&
+                    request.toolsEnabled == true,
+              ),
+            ),
+          ),
+        ).called(1);
+      },
     );
   });
 }

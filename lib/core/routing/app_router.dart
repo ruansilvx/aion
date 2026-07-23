@@ -153,6 +153,8 @@ final appRouter = GoRouter(
                   create: (context) => ChatCubit(
                     context.read<CommentRepository>(),
                     context.read<AgentModelClient>(),
+                    context.read<TicketRepository>(),
+                    context.read<ModelRoutingRepository>(),
                   ),
                 ),
               ],
@@ -185,12 +187,17 @@ final appRouter = GoRouter(
               BlocProvider<ProviderSettingsCubit>(
                 create: (context) => ProviderSettingsCubit(
                   context.read<AgentModelClient>(),
-                  context.read<AgentSettingsRepository>(),
+                  context.read<ModelRoutingRepository>(),
                 )..load(),
               ),
               BlocProvider<AutomationSettingsCubit>(
                 create: (context) => AutomationSettingsCubit(
                   context.read<AutomationSettingsRepository>(),
+                )..load(),
+              ),
+              BlocProvider<ModelRoutingCubit>(
+                create: (context) => ModelRoutingCubit(
+                  context.read<ModelRoutingRepository>(),
                 )..load(),
               ),
             ],
@@ -415,6 +422,7 @@ class _WorkspaceShellState extends State<WorkspaceShell>
               commentRepository: context.read<CommentRepository>(),
               automationSettingsRepository: context
                   .read<AutomationSettingsRepository>(),
+              modelRoutingRepository: context.read<ModelRoutingRepository>(),
             ),
             child: Builder(
               builder: (context) => RepositoryProvider<PageTicketProvider>(

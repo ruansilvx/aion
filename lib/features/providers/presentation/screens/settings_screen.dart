@@ -8,9 +8,12 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/providers/domain/enums/agent_model.dart';
+import 'package:aion/features/providers/domain/enums/model_phase.dart';
 import 'package:aion/features/providers/domain/enums/provider_connection_status.dart';
 import 'package:aion/features/providers/presentation/cubit/automation_settings_cubit.dart';
 import 'package:aion/features/providers/presentation/cubit/automation_settings_state.dart';
+import 'package:aion/features/providers/presentation/cubit/model_routing_cubit.dart';
+import 'package:aion/features/providers/presentation/cubit/model_routing_state.dart';
 import 'package:aion/features/providers/presentation/cubit/provider_settings_cubit.dart';
 import 'package:aion/features/providers/presentation/cubit/provider_settings_state.dart';
 import 'package:aion/features/providers/presentation/widgets/provider_connection_badge.dart';
@@ -69,15 +72,35 @@ class SettingsScreen extends StatelessWidget {
                           children: [
                             _ProviderStatusCard(state: state),
                             const SizedBox(height: AionSpacing.sp24),
-                            AppDropdown<AgentModel>(
-                              value: state.selectedModel,
-                              items: AgentModel.values,
-                              itemLabel: (model) => model.label,
-                              labelText:
-                                  context.l10n.settingsModelDropdownLabel,
-                              onChanged: (model) => context
-                                  .read<ProviderSettingsCubit>()
-                                  .selectModel(model),
+                            Text(
+                              context.l10n.settingsModelsEyebrow,
+                              style: AionText.caption.copyWith(
+                                color: c.textMuted,
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            _ModelPhaseSection(
+                              phase: ModelPhase.frontier,
+                              label: context.l10n.settingsModelFrontierLabel,
+                              description: context
+                                  .l10n
+                                  .settingsModelFrontierDescription,
+                            ),
+                            const SizedBox(height: 20),
+                            _ModelPhaseSection(
+                              phase: ModelPhase.capable,
+                              label: context.l10n.settingsModelCapableLabel,
+                              description: context
+                                  .l10n
+                                  .settingsModelCapableDescription,
+                            ),
+                            const SizedBox(height: 20),
+                            _ModelPhaseSection(
+                              phase: ModelPhase.execution,
+                              label: context.l10n.settingsModelExecutionLabel,
+                              description: context
+                                  .l10n
+                                  .settingsModelExecutionDescription,
                             ),
                             const SizedBox(height: AionSpacing.sp24),
                             Text(
@@ -325,6 +348,71 @@ class _AutomationMenuRow extends StatelessWidget {
           style: AionText.time.copyWith(color: c.textMuted),
         ),
       ],
+    );
+  }
+}
+
+/// One "MODELS" section row — a labeled description followed by an
+/// `AppDropdown<AgentModel>` picking which model handles [phase]'s model
+/// calls, backed by [ModelRoutingCubit]. Rendered three times on
+/// [SettingsScreen] — once per [ModelPhase] — under one shared "MODELS"
+/// eyebrow, mirroring how [_AutomationSection] is rendered twice under
+/// "AUTOMATION". Reuses the plain `AppDropdown<AgentModel>` the old
+/// single-model picker already used — no mode-dot treatment, unlike
+/// [_AutomationTrigger]/[_AutomationMenuRow], since a model has no mode
+/// color. Added for
+/// `aion-arch/changes/per-phase-tier-based-model-routing`.
+class _ModelPhaseSection extends StatelessWidget {
+  const _ModelPhaseSection({
+    required this.phase,
+    required this.label,
+    required this.description,
+  });
+
+  /// Which [ModelPhase] this instance's dropdown routes.
+  final ModelPhase phase;
+
+  /// This instance's label.
+  final String label;
+
+  /// This instance's one-line description of what [phase] drives.
+  final String description;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+
+    return BlocBuilder<ModelRoutingCubit, ModelRoutingState>(
+      builder: (context, state) {
+        if (state is! ModelRoutingReady) {
+          return const SizedBox.shrink();
+        }
+        final model = state.modelByPhase[phase] ?? AgentModel.sonnet;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: AionText.label.copyWith(color: c.textSecondary),
+            ),
+            const SizedBox(height: AionSpacing.sp4),
+            Text(
+              description,
+              style: AionText.bodySm.copyWith(color: c.textMuted),
+            ),
+            const SizedBox(height: AionSpacing.sp8),
+            AppDropdown<AgentModel>(
+              value: model,
+              items: AgentModel.values,
+              itemLabel: (m) => m.label,
+              semanticsLabel: label,
+              onChanged: (m) => context
+                  .read<ModelRoutingCubit>()
+                  .selectModel(phase, m),
+            ),
+          ],
+        );
+      },
     );
   }
 }
