@@ -61,6 +61,8 @@ String ticketsErrorMessage(BuildContext context, TicketsErrorReason reason) {
       l10n.ticketCodingExecutionBlockedError,
     TicketsErrorReason.executionBudgetOverageDetected =>
       l10n.executionBudgetOverageDetectedToast,
+    TicketsErrorReason.executionVerificationFailed =>
+      l10n.executionVerificationFailedToast,
   };
 }
 

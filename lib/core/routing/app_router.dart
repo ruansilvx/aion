@@ -12,7 +12,9 @@ import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/core/contracts/embedding_provider.dart';
 import 'package:aion/core/contracts/page_ticket_provider.dart';
 import 'package:aion/core/database/app_database.dart';
+import 'package:aion/core/build/flutter_verifier.dart';
 import 'package:aion/core/git/git_repository_client.dart';
+import 'package:aion/core/git/github_cli_client.dart';
 import 'package:aion/core/markdown/ticket_markdown_serializer.dart';
 import 'package:aion/core/routing/workspace_nav_shell.dart';
 import 'package:aion/core/utils/platform_utils.dart';
@@ -423,6 +425,9 @@ class _WorkspaceShellState extends State<WorkspaceShell>
               automationSettingsRepository: context
                   .read<AutomationSettingsRepository>(),
               modelRoutingRepository: context.read<ModelRoutingRepository>(),
+              gitClient: GitRepositoryClient(),
+              gitHubClient: GitHubCliClient(),
+              flutterVerifier: FlutterVerifier(),
             ),
             child: Builder(
               builder: (context) => RepositoryProvider<PageTicketProvider>(

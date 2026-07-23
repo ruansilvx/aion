@@ -10,6 +10,7 @@
 // other caller keeps today's text-only behavior. Writes one NDJSON line per
 // resulting event to stdout:
 //   {"type":"text","text":"..."}
+//   {"type":"tool_use","name":"...","summary":"..."}
 //   {"type":"done"}
 //   {"type":"error","message":"..."}
 //   {"type":"overage","message":"..."}
@@ -21,6 +22,24 @@ import { createInterface } from 'node:readline';
 
 function emit(event) {
   process.stdout.write(`${JSON.stringify(event)}\n`);
+}
+
+// Derives a short, human-readable one-liner from a tool_use content
+// block's input, for the live progress indicator (coding-execution-
+// reliability-and-safety). Returns undefined for an unrecognized tool —
+// ClaudeAgentSdkClient._parseLine passes that through as `null`.
+// Truncated to ~120 chars: this is a live status hint, not a transcript.
+function summarizeToolInput(name, input) {
+  const raw =
+    name === 'Read' || name === 'Write' || name === 'Edit'
+      ? input?.file_path
+      : name === 'Bash'
+        ? input?.command
+        : name === 'Grep' || name === 'Glob'
+          ? input?.pattern
+          : undefined;
+  if (typeof raw !== 'string') return undefined;
+  return raw.length > 120 ? `${raw.slice(0, 120)}…` : raw;
 }
 
 async function readRequest() {
@@ -61,10 +80,18 @@ async function main() {
     },
   })) {
     if (message.type === 'assistant') {
-      const text = (message.message?.content ?? [])
+      const content = message.message?.content ?? [];
+      const text = content
         .filter((block) => block.type === 'text')
         .map((block) => block.text)
         .join('');
+      for (const block of content.filter((b) => b.type === 'tool_use')) {
+        emit({
+          type: 'tool_use',
+          name: block.name,
+          summary: summarizeToolInput(block.name, block.input),
+        });
+      }
       if (message.error) {
         // A real failure — `authentication_failed`, `rate_limit`,
         // `billing_error`, `invalid_request`, `server_error`, or

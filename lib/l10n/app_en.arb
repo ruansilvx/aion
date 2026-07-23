@@ -146,7 +146,8 @@
   "ticketDetailCodingExecutionStatusExecuting": "Executing",
   "ticketDetailCodingExecutionStatusQueued": "Queued",
   "ticketDetailCodingExecutionStatusDone": "Run complete",
-  "ticketDetailCodingExecutionRunningHint": "Execution running — editing files and opening a pull request.",
+  "ticketDetailCodingExecutionStatusVerificationFailed": "Verification failed",
+  "ticketDetailCodingExecutionRunningHint": "Execution running — editing files. Aion verifies and opens the pull request once you're done.",
   "ticketDetailCodingExecutionQueuedNext": "Queued for execution — next in line.",
   "ticketDetailCodingExecutionQueuedNth": "Queued for execution — {ordinal} in line.",
   "@ticketDetailCodingExecutionQueuedNth": {
@@ -156,6 +157,8 @@
   },
   "ticketDetailCodingExecutionReadyTitle": "Coding run finished — PR opened",
   "ticketDetailCodingExecutionMarkReadyButton": "Mark ready for review",
+  "ticketDetailCodingExecutionFailedTitle": "Verification failed — PR not opened",
+  "ticketDetailCodingExecutionRetryButton": "Retry",
   "ticketDetailViaModel": "via {model}",
   "@ticketDetailViaModel": {
     "placeholders": {
@@ -204,6 +207,8 @@
   "ticketSddStagePreconditionNotMetError": "This ticket can't advance to the next SDD stage yet.",
   "ticketCodingExecutionBlockedError": "This Task can't start coding execution until its Story's design work is approved.",
   "executionBudgetOverageDetectedToast": "Usage limit reached — coding execution now requires confirmation for the rest of this session.",
+
+  "executionVerificationFailedToast": "Coding run failed verification — see the Task for details.",
 
   "ticketTrashConfirmMessage": "{total, plural, one{This ticket will move to Trash.} other{These {total} tickets will move to Trash.}} You can restore it from Trash later.",
   "@ticketTrashConfirmMessage": {
@@ -421,6 +426,12 @@
   "settingsAutomationCodingExecutionAutoSubLabel": "Moves to In Review on its own",
   "settingsAutomationCodingExecutionGatedSubLabel": "Asks you to confirm each run",
   "settingsAutomationCodingExecutionManualSubLabel": "You move it to review yourself",
+
+  "settingsAutomationCodingExecutionRetryLabel": "Coding-Execution Retry",
+  "settingsAutomationCodingExecutionRetryDescription": "When flutter analyze fails after a coding-execution run, retry automatically, ask first, or always wait for a manual retry.",
+  "settingsAutomationCodingExecutionRetryAutoSubLabel": "Retries automatically on failure",
+  "settingsAutomationCodingExecutionRetryGatedSubLabel": "Asks before each retry",
+  "settingsAutomationCodingExecutionRetryManualSubLabel": "You trigger the retry yourself",
   "settingsProviderStatusUnknown": "NOT TESTED",
   "settingsProviderStatusChecking": "CHECKING",
   "settingsProviderStatusConnected": "CONNECTED",
