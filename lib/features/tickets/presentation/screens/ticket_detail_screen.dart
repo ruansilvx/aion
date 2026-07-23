@@ -13,7 +13,6 @@ import 'package:intl/intl.dart' show DateFormat;
 
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
-import 'package:aion/features/providers/domain/enums/agent_model.dart';
 import 'package:aion/features/tickets/data/services/active_ticket_view_registry.dart';
 import 'package:aion/features/tickets/data/services/ticket_repair_service.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
@@ -220,9 +219,8 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
 
   /// Posts [_commentController]'s text via [ChatCubit.sendMessage] when
   /// [_currentTicket] is a `chat` ticket, or [CommentsCubit.addComment]
-  /// otherwise. A default model ([AgentModel.sonnet]) is used for chat
-  /// replies; no per-phase model routing/composer picker exists yet
-  /// (see `providers.md`).
+  /// otherwise. The model is resolved per-phase by
+  /// `ChatCubit.sendMessage` itself; see `providers.md`.
   void _sendComment() {
     final content = _commentController.text.trim();
     if (content.isEmpty) return;
@@ -230,7 +228,6 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
       context.read<ChatCubit>().sendMessage(
         chatTicketId: widget.ticketId,
         content: content,
-        model: AgentModel.sonnet,
       );
     } else {
       context.read<CommentsCubit>().addComment(

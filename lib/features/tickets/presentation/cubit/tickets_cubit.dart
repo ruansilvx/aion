@@ -15,6 +15,8 @@ import 'package:aion/core/automation/automation_settings_repository.dart';
 import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/core/contracts/embedding_provider.dart';
 import 'package:aion/features/providers/domain/enums/agent_model.dart';
+import 'package:aion/features/providers/domain/enums/model_phase.dart';
+import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
 import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
@@ -49,12 +51,17 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// pattern — `null` leaves a finished coding-execution run's status
   /// untouched (never auto-flips to `inReview`) until a caller supplies
   /// one; real usage (`app_router.dart`) always does.
+  /// [_modelRoutingRepository] follows the same optional-dependency
+  /// pattern too — `null` makes every stage-chat/coding-execution model
+  /// resolution fall back to [AgentModel.sonnet] (see [_resolveModel]),
+  /// today's pre-per-phase-routing default; real usage
+  /// (`app_router.dart`) always supplies one.
   // The public param names below (embeddingProvider/gitProjector/
   // projectRootPath/agentClient/commentRepository/
-  // automationSettingsRepository) intentionally differ from their private
-  // backing fields; a private identifier can't be used as an external
-  // named-parameter label from another library, so `this._foo` shorthand
-  // isn't usable here.
+  // automationSettingsRepository/modelRoutingRepository) intentionally
+  // differ from their private backing fields; a private identifier can't
+  // be used as an external named-parameter label from another library, so
+  // `this._foo` shorthand isn't usable here.
   TicketsCubit(
     this._repository, {
     EmbeddingProvider? embeddingProvider,
@@ -64,6 +71,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     AgentModelClient? agentClient,
     CommentRepository? commentRepository,
     AutomationSettingsRepository? automationSettingsRepository,
+    ModelRoutingRepository? modelRoutingRepository,
   }) : super(const TicketsInitial()) {
     _embeddingProvider = embeddingProvider;
     _gitProjector = gitProjector;
@@ -72,6 +80,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     _agentClient = agentClient;
     _commentRepository = commentRepository;
     _automationSettingsRepository = automationSettingsRepository;
+    _modelRoutingRepository = modelRoutingRepository;
   }
 
   final TicketRepository _repository;
@@ -82,6 +91,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   late final AgentModelClient? _agentClient;
   late final CommentRepository? _commentRepository;
   late final AutomationSettingsRepository? _automationSettingsRepository;
+  late final ModelRoutingRepository? _modelRoutingRepository;
   static const _uuid = Uuid();
 
   /// The Task id of the coding-execution run currently in flight, or
@@ -729,7 +739,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       commentRepo: commentRepo,
       chatTicketId: designSyncChat.id,
       prompt: context,
-      model: AgentModel.sonnet,
+      model: await _resolveModel(SddStage.designSync.modelPhase),
     );
   }
 
@@ -1045,10 +1055,13 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// ticket (`"Coding Execution — <task.title>"`), posts the assembled
   /// context (see [_assembleExecutionContext]) as a
   /// [CommentAuthorType.system] comment, then calls
-  /// [ChatCubit.runChatTurn] with `toolsEnabled: true` and
-  /// [_projectRootPath] as the working directory — the same accumulate/
-  /// persist path every other stage chat uses, but with real tool access.
-  /// On completion, if the run reported a confirmed PR (see
+  /// [ChatCubit.runChatTurn] with a model resolved via [_resolveModel]
+  /// using the literal [ModelPhase.execution] (see
+  /// `aion-arch/changes/per-phase-tier-based-model-routing`, replacing
+  /// the previous hardcoded [AgentModel.sonnet] default), `toolsEnabled:
+  /// true`, and [_projectRootPath] as the working directory — the same
+  /// accumulate/persist path every other stage chat uses, but with real
+  /// tool access. On completion, if the run reported a confirmed PR (see
   /// [_executionSucceededWithPr]) and [_automationSettingsRepository] is
   /// configured, flips [task] straight to [TicketStatus.inReview] when
   /// [AutomationContext.codingExecution]'s confidence is
@@ -1119,8 +1132,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       commentRepo: commentRepo,
       chatTicketId: persistedChat.id,
       prompt: context,
-      // Out of scope: per-phase-tier-based-model-routing.
-      model: AgentModel.sonnet,
+      model: await _resolveModel(ModelPhase.execution),
       toolsEnabled: true,
       workingDirectory: _projectRootPath,
       onOverageDetected: () {
@@ -1278,6 +1290,18 @@ class TicketsCubit extends Cubit<TicketsState> {
     return comments.any((c) => c.authorType == CommentAuthorType.ai);
   }
 
+  /// Resolves [phase] to its currently configured [AgentModel], via
+  /// [_modelRoutingRepository]. Falls back to [AgentModel.sonnet] — the
+  /// hardcoded default every call site used before per-phase routing
+  /// existed — when the cubit was constructed without a
+  /// [ModelRoutingRepository] (see the constructor's dartdoc). Added for
+  /// `aion-arch/changes/per-phase-tier-based-model-routing`.
+  Future<AgentModel> _resolveModel(ModelPhase phase) async {
+    final repo = _modelRoutingRepository;
+    if (repo == null) return AgentModel.sonnet;
+    return repo.getModelForPhase(phase);
+  }
+
   /// Creates a `chat`-type child ticket for [stage] under [parent],
   /// posts an auto-assembled [CommentAuthorType.system] context comment
   /// (see [_assembleStageContext]), then calls the configured
@@ -1287,13 +1311,14 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// path can't drift apart. Returns the spawned chat ticket's id, or
   /// `null` if constructed without an [AgentModelClient]/
   /// [CommentRepository] (see the constructor's dartdoc) — real usage
-  /// (`app_router.dart`) always supplies both. A default model
-  /// ([AgentModel.sonnet]) is used for this call; no per-phase model
-  /// routing exists yet (see `providers.md`). For [SddStage.designBrief]
-  /// specifically, also creates a `page`-type design ticket
-  /// (`"Design — <parent.title>"`) and links it to [parent] via
-  /// [TicketLinkRepository.createLink] before the chat itself is created
-  /// — see [_linkedDesignPage]. Added for
+  /// (`app_router.dart`) always supplies both. The model is resolved via
+  /// [_resolveModel] using [stage]'s [SddStageModelPhase.modelPhase] (see
+  /// `aion-arch/changes/per-phase-tier-based-model-routing`), replacing
+  /// the previous hardcoded [AgentModel.sonnet] default. For
+  /// [SddStage.designBrief] specifically, also creates a `page`-type
+  /// design ticket (`"Design — <parent.title>"`) and links it to
+  /// [parent] via [TicketLinkRepository.createLink] before the chat
+  /// itself is created — see [_linkedDesignPage]. Added for
   /// `aion-arch/changes/sdd-design-gate`.
   Future<String?> _spawnStageChat(Ticket parent, SddStage stage) async {
     final client = _agentClient;
@@ -1358,7 +1383,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       commentRepo: commentRepo,
       chatTicketId: persistedChat.id,
       prompt: context,
-      model: AgentModel.sonnet,
+      model: await _resolveModel(stage.modelPhase),
     );
     return persistedChat.id;
   }

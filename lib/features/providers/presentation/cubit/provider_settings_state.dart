@@ -29,7 +29,10 @@ class ProviderSettingsReady extends ProviderSettingsState {
     this.statusMessage,
   });
 
-  /// The currently selected [AgentModel].
+  /// The [AgentModel] the connection test last pinged — always mirrors
+  /// whichever model is currently configured for `ModelPhase.frontier`
+  /// (see `ProviderSettingsCubit`'s class-level dartdoc), not a
+  /// standalone selection this state owns.
   final AgentModel selectedModel;
 
   /// The outcome of the most recent connection test.

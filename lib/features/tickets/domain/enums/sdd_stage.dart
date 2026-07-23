@@ -1,5 +1,7 @@
 // domain/enums/sdd_stage.dart — SddStage enum (domain layer).
 
+import 'package:aion/features/providers/domain/enums/model_phase.dart';
+
 /// An [epic] or [story] Ticket's progress through the SDD cycle, mirroring
 /// the `aion-arch/.claude/skills/` stage names. `null` on `Ticket.sddStage`
 /// means the cycle hasn't started. Meaningful only for
@@ -39,4 +41,21 @@ enum SddStage {
 
   /// The Archival-stage chat has completed; the cycle is closed.
   archived,
+}
+
+/// Maps each [SddStage] to the [ModelPhase] that drives its spawned
+/// chat's model choice, per
+/// `aion-arch/changes/per-phase-tier-based-model-routing/design.md` §1.2's
+/// confirmed split: `exploring`/`proposed`/`verifying` are epic/story-level
+/// judgment calls ([ModelPhase.frontier]); `designBrief`/`designSync`/
+/// `archived` are comparatively mechanical work ([ModelPhase.capable]).
+extension SddStageModelPhase on SddStage {
+  /// The [ModelPhase] this stage's spawned chat resolves its model
+  /// through.
+  ModelPhase get modelPhase => switch (this) {
+    SddStage.exploring || SddStage.proposed || SddStage.verifying =>
+      ModelPhase.frontier,
+    SddStage.designBrief || SddStage.designSync || SddStage.archived =>
+      ModelPhase.capable,
+  };
 }

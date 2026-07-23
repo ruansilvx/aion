@@ -12,7 +12,7 @@ import 'package:aion/l10n/generated/app_localizations.dart';
 import 'package:aion/features/projects/data/repositories/bundled_baseline_repository.dart';
 import 'package:aion/features/projects/data/repositories/drift_project_repository.dart';
 import 'package:aion/features/projects/projects.dart';
-import 'package:aion/features/providers/data/repositories/shared_prefs_agent_settings_repository.dart';
+import 'package:aion/features/providers/data/repositories/shared_prefs_model_routing_repository.dart';
 import 'package:aion/features/providers/providers.dart';
 
 /// App entry point. No [AppDatabase] is opened here — it no longer has
@@ -28,10 +28,10 @@ void main() {
 /// The Aion app root. Wires the [RegistryDatabase] and its repositories,
 /// [ActiveProjectCubit], [ThemeScope] (tracking system brightness), the
 /// app-level provider-configuration stack ([AgentBridgeLocator],
-/// [AgentModelClient], [AgentSettingsRepository] — global, not
-/// per-project, since provider identity isn't a per-project concept),
-/// [AutomationSettingsRepository] (also global — SDD-stage-triggering
-/// confidence isn't a per-project concept either), and the
+/// [AgentModelClient], [ModelRoutingRepository] — global, not
+/// per-project, since per-phase model routing isn't a per-project
+/// concept), [AutomationSettingsRepository] (also global — SDD-stage-
+/// triggering confidence isn't a per-project concept either), and the
 /// `WidgetsApp.router` shell — no `MaterialApp`, no `ThemeData`.
 /// Project-scoped state (ticket repositories, [AppDatabase]) is wired
 /// per-project inside `WorkspaceShell`, not here.
@@ -106,8 +106,8 @@ class _AionAppState extends State<AionApp> with WidgetsBindingObserver {
           create: (context) =>
               ClaudeAgentSdkClient(context.read<AgentBridgeLocator>()),
         ),
-        RepositoryProvider<AgentSettingsRepository>(
-          create: (_) => SharedPrefsAgentSettingsRepository(),
+        RepositoryProvider<ModelRoutingRepository>(
+          create: (_) => SharedPrefsModelRoutingRepository(),
         ),
         // Global (not per-project) SDD-stage-triggering confidence
         // setting — see aion-arch/changes/sdd-ticket-execution/design.md.

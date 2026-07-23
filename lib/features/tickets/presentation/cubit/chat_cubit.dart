@@ -4,9 +4,14 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/features/providers/domain/enums/agent_model.dart';
+import 'package:aion/features/providers/domain/enums/model_phase.dart';
+import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
 import 'package:aion/features/tickets/domain/enums/comment_author_type.dart';
+import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/repositories/comment_repository.dart';
+import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
 import 'package:aion/features/tickets/presentation/cubit/chat_state.dart';
 
 /// Loads and drives a single `chat`-type ticket's live conversation, via
@@ -16,13 +21,25 @@ import 'package:aion/features/tickets/presentation/cubit/chat_state.dart';
 /// `aion-arch/changes/sdd-ticket-execution/proposal.md`'s re-scoping)
 /// plus [AgentModelClient] for generating the AI reply. Screen-scoped —
 /// provided instead of `CommentsCubit` only when `ticket.type ==
-/// TicketType.chat`.
+/// TicketType.chat`. [_ticketRepository]/[_modelRoutingRepository] are
+/// used to infer which [ModelPhase] a chat belongs to (see
+/// [_phaseForChat]) so [sendMessage] can resolve the phase-appropriate
+/// model itself, added for
+/// `aion-arch/changes/per-phase-tier-based-model-routing`.
 class ChatCubit extends Cubit<ChatState> {
-  /// Creates a [ChatCubit] backed by [_repository] and [_client].
-  ChatCubit(this._repository, this._client) : super(const ChatInitial());
+  /// Creates a [ChatCubit] backed by [_repository], [_client],
+  /// [_ticketRepository], and [_modelRoutingRepository].
+  ChatCubit(
+    this._repository,
+    this._client,
+    this._ticketRepository,
+    this._modelRoutingRepository,
+  ) : super(const ChatInitial());
 
   final CommentRepository _repository;
   final AgentModelClient _client;
+  final TicketRepository _ticketRepository;
+  final ModelRoutingRepository _modelRoutingRepository;
 
   /// Fetches all comments for [chatTicketId]. Emits [ChatLoaded] on
   /// success (with no `streamingText`), or [ChatError] if the repository
@@ -36,8 +53,9 @@ class ChatCubit extends Cubit<ChatState> {
     }
   }
 
-  /// Posts a human comment with [content] on [chatTicketId], then calls
-  /// [model] via [AgentModelClient.run], emitting [ChatLoaded] with
+  /// Posts a human comment with [content] on [chatTicketId], resolves the
+  /// model via [_phaseForChat]/[_modelRoutingRepository], then calls it
+  /// via [AgentModelClient.run], emitting [ChatLoaded] with
   /// `streamingText` updated on every `AgentTextEvent` chunk for live
   /// rendering. On completion, the accumulated reply is persisted as one
   /// [CommentAuthorType.ai] comment (see [runChatTurn]) and the thread is
@@ -46,7 +64,6 @@ class ChatCubit extends Cubit<ChatState> {
   Future<void> sendMessage({
     required String chatTicketId,
     required String content,
-    required AgentModel model,
   }) async {
     try {
       await _repository.addComment(
@@ -60,6 +77,9 @@ class ChatCubit extends Cubit<ChatState> {
       );
       final afterHuman = await _repository.getCommentsForTicket(chatTicketId);
       emit(ChatLoaded(afterHuman));
+
+      final phase = await _phaseForChat(chatTicketId);
+      final model = await _modelRoutingRepository.getModelForPhase(phase);
 
       final succeeded = await runChatTurn(
         client: _client,
@@ -82,6 +102,26 @@ class ChatCubit extends Cubit<ChatState> {
     } catch (e) {
       emit(ChatError(e.toString()));
     }
+  }
+
+  /// Infers which [ModelPhase] governs [chatTicketId]'s model calls, from
+  /// its parent ticket: an `epic`/`story` parent's current
+  /// `Ticket.sddStage` (via [SddStageModelPhase.modelPhase]), or
+  /// [ModelPhase.execution] for a `task` parent. Every chat ticket in the
+  /// app is spawned exclusively by `TicketsCubit._spawnStageChat`/
+  /// `_runCodingExecution` (the only two `createTicket` call sites for
+  /// `TicketType.chat` in the codebase), so a chat always has a
+  /// resolvable parent in real usage — the [ModelPhase.capable] fallback
+  /// below only matters defensively (a malformed/orphaned chat in tests).
+  /// Added for `aion-arch/changes/per-phase-tier-based-model-routing`.
+  Future<ModelPhase> _phaseForChat(String chatTicketId) async {
+    final chat = await _ticketRepository.getTicketById(chatTicketId);
+    final parentId = chat?.parentId;
+    if (parentId == null) return ModelPhase.capable;
+    final parent = await _ticketRepository.getTicketById(parentId);
+    if (parent == null) return ModelPhase.capable;
+    if (parent.type == TicketType.task) return ModelPhase.execution;
+    return parent.sddStage?.modelPhase ?? ModelPhase.capable;
   }
 
   /// Calls [client]'s `run` with [prompt]/[model], accumulating every
