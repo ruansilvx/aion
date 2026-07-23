@@ -43,7 +43,21 @@ async function main() {
       // Tool-enabled runs (Task coding-execution) get the SDK's default
       // tool set; every other caller (Settings' "Test Connection",
       // SDD-stage chats) keeps today's text-only behavior.
-      ...(toolsEnabled ? {} : { allowedTools: [] }),
+      ...(toolsEnabled
+        ? {
+            // This process has no TTY (spawned via dart:io Process with
+            // piped stdio, no interactive terminal), so the SDK's default
+            // 'default' permissionMode — which prompts for dangerous
+            // operations like file writes — has no one to answer its
+            // prompts. Confirmed empirically: without this, a tool-enabled
+            // run can Read but every Edit/Write/git-write attempt is
+            // denied, and the model burns its run narrating workarounds
+            // instead of ever touching a file. bypassPermissions requires
+            // allowDangerouslySkipPermissions: true as a companion flag.
+            permissionMode: 'bypassPermissions',
+            allowDangerouslySkipPermissions: true,
+          }
+        : { allowedTools: [] }),
     },
   })) {
     if (message.type === 'assistant') {
