@@ -82,18 +82,25 @@ class ChatCubit extends Cubit<ChatState> {
       final phase = await _phaseForChat(chatTicketId);
       final model = await _modelRoutingRepository.getModelForPhase(phase);
 
+      // Tracks the most recent onChunk text so onToolUse can carry it
+      // forward instead of blanking it — a tool call fired mid-turn
+      // (after some text already streamed) would otherwise reset
+      // ChatLoaded.streamingText to null via its constructor default.
+      String? latestStreamingText;
       final succeeded = await runChatTurn(
         client: _client,
         commentRepo: _repository,
         chatTicketId: chatTicketId,
         prompt: content,
         model: model,
-        onChunk: (textSoFar) => emit(
-          ChatLoaded(afterHuman, streamingText: textSoFar),
-        ),
+        onChunk: (textSoFar) {
+          latestStreamingText = textSoFar;
+          emit(ChatLoaded(afterHuman, streamingText: textSoFar));
+        },
         onToolUse: (toolName, summary) => emit(
           ChatLoaded(
             afterHuman,
+            streamingText: latestStreamingText,
             currentToolUse: summary == null
                 ? 'Running $toolName...'
                 : 'Running $toolName: $summary...',

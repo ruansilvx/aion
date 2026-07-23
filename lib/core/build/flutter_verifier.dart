@@ -16,12 +16,18 @@ class FlutterVerifyResult {
   final String output;
 }
 
-/// Thin wrapper around `flutter analyze`, invoked via [Process.run]. One
-/// implementation, no interface — same shape as `GitRepositoryClient`/
-/// `GitHubCliClient` (`core/git/`). Added for
-/// `aion-arch/changes/coding-execution-reliability-and-safety` — the
-/// verification gate a coding-execution run must pass before Aion pushes
-/// and opens a PR.
+/// Thin wrapper around `flutter analyze`/`flutter pub get`, invoked via
+/// [Process.run]. One implementation, no interface — same shape as
+/// `GitRepositoryClient`/`GitHubCliClient` (`core/git/`). Added for
+/// `aion-arch/changes/coding-execution-reliability-and-safety` —
+/// [analyze] is the verification gate a coding-execution run must pass
+/// before Aion pushes and opens a PR; [pubGet] is the one-time setup that
+/// gate (and the model's own tool calls) need in a fresh worktree.
+/// `design.md` §8's pseudocode originally sketched the `pub get` call as
+/// an inline `Process.run` in `TicketsCubit` — it landed here instead so
+/// tests can mock it rather than spawning a real `flutter` subprocess,
+/// consistent with why [analyze] itself is a class method and not an
+/// inline call.
 class FlutterVerifier {
   /// Runs `flutter analyze` in [rootPath] (a coding-execution worktree).
   Future<FlutterVerifyResult> analyze(String rootPath) async {

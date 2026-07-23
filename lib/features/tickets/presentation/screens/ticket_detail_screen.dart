@@ -2846,6 +2846,7 @@ class _ExecutionActionButtonState extends State<_ExecutionActionButton> {
   final ValueNotifier<bool> _isHovered = ValueNotifier(false);
   bool _isPressed = false;
   bool _isConfirming = false;
+  bool _isFocused = false;
 
   @override
   void dispose() {
@@ -2880,6 +2881,7 @@ class _ExecutionActionButtonState extends State<_ExecutionActionButton> {
       enabled: !_isConfirming,
       child: FocusableActionDetector(
         enabled: !_isConfirming,
+        onShowFocusHighlight: (value) => setState(() => _isFocused = value),
         actions: {
           ActivateIntent: CallbackAction<ActivateIntent>(
             onInvoke: (_) {
@@ -2921,16 +2923,27 @@ class _ExecutionActionButtonState extends State<_ExecutionActionButton> {
                     decoration: BoxDecoration(
                       color: fill,
                       borderRadius: BorderRadius.all(AionRadius.md),
-                      boxShadow: glowBlur > 0
-                          ? [
-                              BoxShadow(
-                                color: baseColor.withValues(alpha: glowAlpha),
-                                blurRadius: glowBlur,
-                                spreadRadius: -9,
-                                offset: const Offset(0, 8),
-                              ),
-                            ]
-                          : const [],
+                      boxShadow: [
+                        if (glowBlur > 0)
+                          BoxShadow(
+                            color: baseColor.withValues(alpha: glowAlpha),
+                            blurRadius: glowBlur,
+                            spreadRadius: -9,
+                            offset: const Offset(0, 8),
+                          ),
+                        // Keyboard-focus ring — design.md §1.6. A solid 3px
+                        // spread with no blur, same shape as AionShadows.focus
+                        // but keyed to the button's own tone color rather
+                        // than the fixed `primary` that helper uses.
+                        if (_isFocused)
+                          BoxShadow(
+                            color: baseColor.withValues(
+                              alpha: t.isDark ? 0.30 : 0.16,
+                            ),
+                            blurRadius: 0,
+                            spreadRadius: 3,
+                          ),
+                      ],
                     ),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
