@@ -8,10 +8,20 @@ import 'package:aion/design_system/tokens/aion_colors.dart';
 /// active [AionColors] (shadow colors are theme-dependent, so these are
 /// methods rather than constants).
 abstract final class AionShadows {
-  /// Subtle floating-card shadow for [arctic]. Returns an empty list for
-  /// [obsidian], which uses border separation instead of shadow.
+  /// Subtle floating-card shadow for [arctic]. Returns a subtle inner glow
+  /// for [obsidian], which uses border separation + inner depth instead of
+  /// outer shadow for better visual separation in dark theme.
   static List<BoxShadow> card(AionColors c, bool isDark) {
-    if (isDark) return const [];
+    if (isDark) {
+      return [
+        BoxShadow(
+          color: c.primary.withValues(alpha: 0.12),
+          blurRadius: 8,
+          spreadRadius: -4,
+          inset: true,
+        ),
+      ];
+    }
     return [
       BoxShadow(
         color: c.textPrimary.withValues(alpha: 0.07),
