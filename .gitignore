@@ -90,3 +90,11 @@ lib/l10n/generated/
 # agent_bridge/ Node dependencies — fetched via `npm install`, see
 # aion-arch/changes/provider-configuration/proposal.md's Non-goals.
 agent_bridge/node_modules/
+
+# Aion's own project-bookkeeping data, written by the app itself when
+# this checkout is registered as an Aion "project" root for dogfooding
+# self-iteration (ticket git-projection has no separate storage target
+# yet — see aion-arch/ideas/self-iteration-sequencing.md). Never part
+# of the app's own source.
+.aion/
+tickets/
