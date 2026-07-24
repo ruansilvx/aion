@@ -109,3 +109,24 @@ class AgentOverageDetectedEvent extends AgentEvent {
   @override
   List<Object?> get props => [message];
 }
+
+/// A tool call the model made mid-run (file edit, git, bash, MCP). Purely
+/// informational — never a terminal event. Added for
+/// `aion-arch/changes/coding-execution-reliability-and-safety` to give a
+/// long-running coding-execution turn live progress visibility.
+class AgentToolUseEvent extends AgentEvent {
+  /// Creates an [AgentToolUseEvent] carrying [toolName] and an optional
+  /// [summary].
+  const AgentToolUseEvent(this.toolName, this.summary);
+
+  /// The SDK's own tool name (`Read`, `Write`, `Bash`, ...).
+  final String toolName;
+
+  /// A short, human-readable one-liner derived from the tool's input
+  /// (e.g. the file path for `Read`/`Write`, the command for `Bash`) —
+  /// `null` if the bridge couldn't derive one for an unrecognized tool.
+  final String? summary;
+
+  @override
+  List<Object?> get props => [toolName, summary];
+}

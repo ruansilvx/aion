@@ -362,6 +362,8 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                       :final isExecuting,
                                       :final executionQueuePosition,
                                       :final executionAwaitingReview,
+                                      :final executionFailureReason,
+                                      :final executionLiveActivity,
                                     ) =>
                                       Semantics(
                                         header: true,
@@ -848,7 +850,9 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                                     (isExecuting ||
                                                         executionQueuePosition !=
                                                             null ||
-                                                        executionAwaitingReview)) ...[
+                                                        executionAwaitingReview ||
+                                                        executionFailureReason !=
+                                                            null)) ...[
                                                   const SizedBox(
                                                     height: AionSpacing.sp16,
                                                   ),
@@ -858,6 +862,10 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                                         executionQueuePosition,
                                                     executionAwaitingReview:
                                                         executionAwaitingReview,
+                                                    executionFailureReason:
+                                                        executionFailureReason,
+                                                    executionLiveActivity:
+                                                        executionLiveActivity,
                                                     onMarkReadyForReview: () =>
                                                         context
                                                             .read<
@@ -868,6 +876,11 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                                               TicketStatus
                                                                   .inReview,
                                                             ),
+                                                    onRetry: () => context
+                                                        .read<TicketsCubit>()
+                                                        .retryCodingExecution(
+                                                          ticket,
+                                                        ),
                                                   ),
                                                   const SizedBox(
                                                     height: AionSpacing.sp16,
@@ -2302,26 +2315,37 @@ class _ManualAdvanceButton extends StatelessWidget {
 /// below the ticket-meta row and above the Description block — the same
 /// slot [_SddStageSection] occupies for `epic`/`story` tickets (only one
 /// of the two ever renders for a given ticket type). Rendered only while
-/// [isExecuting], [executionQueuePosition], or [executionAwaitingReview]
-/// is truthy — a Task not yet attached to any run shows neither this nor
-/// [_SddStageSection]. Reuses the plain-`Column`/divider framing
-/// [_SddStageSection] already establishes for this slot rather than
-/// wrapping in its own bordered container, per
+/// [isExecuting], [executionQueuePosition], [executionAwaitingReview], or
+/// [executionFailureReason] is truthy — a Task not yet attached to any
+/// run shows neither this nor [_SddStageSection]. Reuses the plain-
+/// `Column`/divider framing [_SddStageSection] already establishes for
+/// this slot rather than wrapping in its own bordered container, per
 /// `aion-arch/changes/task-to-coding-execution-trigger/design.md`'s §0
 /// container spec (the surrounding divider already supplies the "top
-/// border" it describes). Per design.md §0.
+/// border" it describes). The `verificationFailed` state
+/// ([executionFailureReason] non-`null`) is checked before
+/// [executionAwaitingReview] — the two are mutually exclusive, a Task is
+/// never both awaiting review and showing a failure. Per
+/// `aion-arch/changes/coding-execution-reliability-and-safety/design.md`
+/// §0.
 class _CodingExecutionSection extends StatelessWidget {
   const _CodingExecutionSection({
     required this.isExecuting,
     required this.executionQueuePosition,
     required this.executionAwaitingReview,
+    required this.executionFailureReason,
+    required this.executionLiveActivity,
     required this.onMarkReadyForReview,
+    required this.onRetry,
   });
 
   final bool isExecuting;
   final int? executionQueuePosition;
   final bool executionAwaitingReview;
+  final String? executionFailureReason;
+  final String? executionLiveActivity;
   final VoidCallback onMarkReadyForReview;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -2330,6 +2354,11 @@ class _CodingExecutionSection extends StatelessWidget {
         ? (c.primary, context.l10n.ticketDetailCodingExecutionStatusExecuting)
         : executionQueuePosition != null
         ? (c.secondary, context.l10n.ticketDetailCodingExecutionStatusQueued)
+        : executionFailureReason != null
+        ? (
+            c.danger,
+            context.l10n.ticketDetailCodingExecutionStatusVerificationFailed,
+          )
         : (c.success, context.l10n.ticketDetailCodingExecutionStatusDone);
 
     return Column(
@@ -2353,11 +2382,24 @@ class _CodingExecutionSection extends StatelessWidget {
         ),
         const SizedBox(height: 14),
         if (isExecuting)
-          const _ExecutionRunningHint()
+          _ExecutionRunningHint(liveActivity: executionLiveActivity)
         else if (executionQueuePosition != null)
           _ExecutionQueueHint(position: executionQueuePosition!)
+        else if (executionFailureReason != null)
+          _ExecutionActionBanner(
+            tone: _BannerTone.failure,
+            title: context.l10n.ticketDetailCodingExecutionFailedTitle,
+            errorDetail: executionFailureReason,
+            actionLabel: context.l10n.ticketDetailCodingExecutionRetryButton,
+            onAction: onRetry,
+          )
         else if (executionAwaitingReview)
-          _ExecutionReadyForReviewBanner(onConfirm: onMarkReadyForReview),
+          _ExecutionActionBanner(
+            tone: _BannerTone.success,
+            title: context.l10n.ticketDetailCodingExecutionReadyTitle,
+            actionLabel: context.l10n.ticketDetailCodingExecutionMarkReadyButton,
+            onAction: onMarkReadyForReview,
+          ),
       ],
     );
   }
@@ -2367,9 +2409,19 @@ class _CodingExecutionSection extends StatelessWidget {
 /// Mirrors [_NotReadyHint]'s informational-row shape (icon + text, no
 /// background/border/padding box) but takes an active treatment — a
 /// slowly, continuously rotating gear glyph — so it reads as "work in
-/// progress," not "blocked/waiting." Per design.md §1.
+/// progress," not "blocked/waiting." Per
+/// `aion-arch/changes/task-to-coding-execution-trigger/design.md` §1.
+/// Additionally renders a [_ExecutionLiveToolLine] below the gear row
+/// when [liveActivity] is non-`null` — see
+/// `aion-arch/changes/coding-execution-reliability-and-safety/design.md`
+/// §2.
 class _ExecutionRunningHint extends StatefulWidget {
-  const _ExecutionRunningHint();
+  const _ExecutionRunningHint({this.liveActivity});
+
+  /// A live "Running `<tool>`..." status string, or `null` if no tool
+  /// call has happened yet this run. Added for
+  /// `aion-arch/changes/coding-execution-reliability-and-safety`.
+  final String? liveActivity;
 
   @override
   State<_ExecutionRunningHint> createState() => _ExecutionRunningHintState();
@@ -2402,25 +2454,127 @@ class _ExecutionRunningHintState extends State<_ExecutionRunningHint>
   @override
   Widget build(BuildContext context) {
     final c = ThemeScope.of(context).colors;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        RotationTransition(
-          turns: _gearController,
-          child: PhosphorIcon(
-            PhosphorIcons.gearSixLight,
-            size: 15,
-            color: c.primary,
-          ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            RotationTransition(
+              turns: _gearController,
+              child: PhosphorIcon(
+                PhosphorIcons.gearSixLight,
+                size: 15,
+                color: c.primary,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                context.l10n.ticketDetailCodingExecutionRunningHint,
+                style: AionText.bodySm.copyWith(color: c.textSecondary),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            context.l10n.ticketDetailCodingExecutionRunningHint,
-            style: AionText.bodySm.copyWith(color: c.textSecondary),
-          ),
-        ),
+        if (widget.liveActivity != null) ...[
+          const SizedBox(height: 9),
+          _ExecutionLiveToolLine(activity: widget.liveActivity!),
+        ],
       ],
+    );
+  }
+}
+
+/// Secondary status line shown below [_ExecutionRunningHint]'s gear row
+/// while a tool call is in flight, reflecting the run's current activity
+/// (e.g. "Running `flutter analyze`..."). Indented to align under the
+/// hint's *text* (not its gear): `15` (gear box) + `8` (hint row gap) =
+/// `23`. A slow, low-contrast opacity pulse signals liveness without
+/// competing with the gear's own rotation — static at full opacity under
+/// reduced motion. Per
+/// `aion-arch/changes/coding-execution-reliability-and-safety/design.md`
+/// §2.1.
+class _ExecutionLiveToolLine extends StatefulWidget {
+  const _ExecutionLiveToolLine({required this.activity});
+
+  /// The live "Running `<tool>`..." status string to display.
+  final String activity;
+
+  @override
+  State<_ExecutionLiveToolLine> createState() =>
+      _ExecutionLiveToolLineState();
+}
+
+class _ExecutionLiveToolLineState extends State<_ExecutionLiveToolLine>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulseController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1400),
+  );
+
+  bool _startedPulsing = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_startedPulsing && !MediaQuery.of(context).disableAnimations) {
+      _startedPulsing = true;
+      _pulseController.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    final reducedMotion = MediaQuery.of(context).disableAnimations;
+    return Padding(
+      padding: const EdgeInsets.only(left: 23),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          reducedMotion
+              ? DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: c.textMuted,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const SizedBox(width: 6, height: 6),
+                )
+              : FadeTransition(
+                  opacity: Tween<double>(
+                    begin: 0.35,
+                    end: 1.0,
+                  ).animate(_pulseController),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: c.textMuted,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const SizedBox(width: 6, height: 6),
+                  ),
+                ),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Text(
+              widget.activity,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              softWrap: false,
+              style: AionText.bodySm.copyWith(
+                fontSize: 12.5,
+                color: c.textMuted,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -2473,36 +2627,79 @@ String ordinal(int n) {
   }
 }
 
-/// Shown once the Task's coding-execution run finished successfully (a
-/// PR was confirmed opened) and [AutomationConfidence.gated] applies —
-/// the human must confirm before the Task flips to "In Review". Mirrors
-/// [_GatedBanner]'s tinted container/border/leading-icon shape, re-keyed
-/// to [AionColors.success] (a completion moment, not an "advance the SDD
-/// stage" prompt), with its action button stacked full-width below the
-/// text rather than trailing inline — design.md §3's copy doesn't fit
-/// inline beside a two-line title at the narrowest supported phone width
-/// without crushing it to 3 lines. The title carries alone with no
-/// sub-line: no PR metadata (number, file count) is parsed from the
-/// run's reply today — only the confirmation the last line contained
-/// `EXECUTION: PR_OPENED` — so per design.md §3.3's fallback rule
-/// ("omit only if no PR metadata is available"), the sub-line is
-/// omitted rather than showing placeholder copy. Per design.md §3.
-class _ExecutionReadyForReviewBanner extends StatelessWidget {
-  const _ExecutionReadyForReviewBanner({required this.onConfirm});
+/// The tone an [_ExecutionActionBanner] renders in. Per
+/// `aion-arch/changes/coding-execution-reliability-and-safety/design.md`
+/// §5.
+enum _BannerTone {
+  /// A finished run with a confirmed PR, awaiting confirmation.
+  success,
 
-  final VoidCallback onConfirm;
+  /// A run that failed verification, hard-errored, or ended
+  /// ambiguously/stalled.
+  failure,
+}
+
+/// Shown once the Task's coding-execution run reaches a non-in-flight
+/// outcome that needs a human action: a finished run with a confirmed PR
+/// awaiting confirmation (`tone: .success` — the original,
+/// behavior-unchanged `_ExecutionReadyForReviewBanner`), or a failed/
+/// stalled run offering a retry (`tone: .failure`, new). One
+/// parameterized component backs both states rather than two separate
+/// banners sharing a container — mirrors [_GatedBanner]'s tinted
+/// container/border/leading-icon shape, re-keyed per [tone], with its
+/// action button stacked full-width below the text rather than trailing
+/// inline (copy doesn't fit inline beside a two-line title at the
+/// narrowest supported phone width without crushing it to 3 lines). Per
+/// `aion-arch/changes/task-to-coding-execution-trigger/design.md` §3 (the
+/// success tone's original spec) and
+/// `aion-arch/changes/coding-execution-reliability-and-safety/design.md`
+/// §1 (the tone parameterization + new failure tone).
+class _ExecutionActionBanner extends StatelessWidget {
+  const _ExecutionActionBanner({
+    required this.tone,
+    required this.title,
+    this.errorDetail,
+    required this.actionLabel,
+    required this.onAction,
+  });
+
+  /// Which visual treatment this banner renders.
+  final _BannerTone tone;
+
+  /// The banner's headline (e.g. "Coding run finished — PR opened" or
+  /// "Verification failed — PR not opened").
+  final String title;
+
+  /// The raw `flutter analyze`/error output, shown in a scrollable well
+  /// below the title — `tone: .failure` only. `null` for `tone: .success`
+  /// (no PR metadata is parsed from the run's reply today, so per the
+  /// original design's fallback rule the sub-line/detail is omitted
+  /// rather than showing placeholder copy).
+  final String? errorDetail;
+
+  /// The action button's label ("Mark ready for review" / "Retry").
+  final String actionLabel;
+
+  /// Called when the action button is pressed.
+  final VoidCallback onAction;
 
   @override
   Widget build(BuildContext context) {
     final t = ThemeScope.of(context);
     final c = t.colors;
+    final isFailure = tone == _BannerTone.failure;
+    final tintColor = isFailure ? c.danger : c.success;
+    final fill = isFailure
+        ? c.dangerTint(t.isDark)
+        : c.success.withValues(alpha: t.fillAlpha);
+    final border = isFailure
+        ? c.dangerBorderTint(t.isDark)
+        : c.success.withValues(alpha: t.isDark ? 0.42 : 0.28);
+
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: c.success.withValues(alpha: t.fillAlpha),
-        border: Border.all(
-          color: c.success.withValues(alpha: t.isDark ? 0.42 : 0.28),
-          width: 1,
-        ),
+        color: fill,
+        border: Border.all(color: border, width: 1),
         borderRadius: BorderRadius.all(AionRadius.lg),
       ),
       child: Padding(
@@ -2511,24 +2708,36 @@ class _ExecutionReadyForReviewBanner extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
+              crossAxisAlignment: isFailure
+                  ? CrossAxisAlignment.start
+                  : CrossAxisAlignment.center,
               children: [
                 PhosphorIcon(
-                  PhosphorIcons.gitPullRequestLight,
-                  size: 18,
-                  color: c.success,
+                  isFailure
+                      ? PhosphorIcons.warningLight
+                      : PhosphorIcons.gitPullRequestLight,
+                  size: isFailure ? 17 : 18,
+                  color: tintColor,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    context.l10n.ticketDetailCodingExecutionReadyTitle,
+                    title,
                     style: AionText.cardTitle.copyWith(color: c.textPrimary),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            _MarkReadyForReviewButton(onConfirm: onConfirm),
+            SizedBox(height: isFailure ? 11 : 12),
+            if (errorDetail != null) ...[
+              _ExecutionErrorWell(text: errorDetail!),
+              const SizedBox(height: 11),
+            ],
+            _ExecutionActionButton(
+              tone: tone,
+              label: actionLabel,
+              onConfirm: onAction,
+            ),
           ],
         ),
       ),
@@ -2536,26 +2745,108 @@ class _ExecutionReadyForReviewBanner extends StatelessWidget {
   }
 }
 
-/// [_ExecutionReadyForReviewBanner]'s full-width "Mark ready for review"
-/// confirm button — solid [AionColors.success] fill/glow, hover/focus/
-/// press states mirroring [AppButton]'s own but re-keyed to `success`
-/// (which [AppButton]'s fixed variant set doesn't offer). Per design.md
-/// §3.4/§3.5.
-class _MarkReadyForReviewButton extends StatefulWidget {
-  const _MarkReadyForReviewButton({required this.onConfirm});
+/// [_ExecutionActionBanner]'s failure-tone scrollable error well — a
+/// fixed-max-height (`96`), vertically scrollable mono region for the raw
+/// `flutter analyze`/error output, with a persistent bottom fade
+/// signaling "more below." Chosen over a "show details" disclosure so the
+/// banner's height stays constant regardless of error length, and
+/// recovery-critical info stays visible with no extra tap. Per
+/// `aion-arch/changes/coding-execution-reliability-and-safety/design.md`
+/// §1.4.
+class _ExecutionErrorWell extends StatelessWidget {
+  const _ExecutionErrorWell({required this.text});
 
+  /// The raw `flutter analyze`/error output to display.
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.background,
+        border: Border.all(color: c.border, width: 1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 96),
+          child: Stack(
+            children: [
+              SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(11, 10, 11, 10),
+                child: Text(
+                  text,
+                  softWrap: true,
+                  style: AionText.time.copyWith(
+                    fontSize: 11.5,
+                    color: c.textSecondary,
+                    height: 1.55,
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: IgnorePointer(
+                  child: Container(
+                    height: 20,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          c.background.withValues(alpha: 0),
+                          c.background,
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// [_ExecutionActionBanner]'s full-width action button — solid fill/glow,
+/// hover/focus/press states mirroring [AppButton]'s own but re-keyed per
+/// [tone] (which [AppButton]'s fixed variant set doesn't offer):
+/// [_BannerTone.success] uses [AionColors.success] (unchanged from the
+/// original "Mark ready for review" button); [_BannerTone.failure] uses
+/// [AionColors.secondary] plus a leading refresh glyph — a calm recovery
+/// action, not a destructive one, at the same visual weight as the
+/// success confirm button. Per
+/// `aion-arch/changes/task-to-coding-execution-trigger/design.md`
+/// §3.4/§3.5 (the success tone's original spec) and
+/// `aion-arch/changes/coding-execution-reliability-and-safety/design.md`
+/// §1.5/§1.6 (the tone parameterization + new failure tone/glyph).
+class _ExecutionActionButton extends StatefulWidget {
+  const _ExecutionActionButton({
+    required this.tone,
+    required this.label,
+    required this.onConfirm,
+  });
+
+  final _BannerTone tone;
+  final String label;
   final VoidCallback onConfirm;
 
   @override
-  State<_MarkReadyForReviewButton> createState() =>
-      _MarkReadyForReviewButtonState();
+  State<_ExecutionActionButton> createState() =>
+      _ExecutionActionButtonState();
 }
 
-class _MarkReadyForReviewButtonState
-    extends State<_MarkReadyForReviewButton> {
+class _ExecutionActionButtonState extends State<_ExecutionActionButton> {
   final ValueNotifier<bool> _isHovered = ValueNotifier(false);
   bool _isPressed = false;
   bool _isConfirming = false;
+  bool _isFocused = false;
 
   @override
   void dispose() {
@@ -2577,7 +2868,12 @@ class _MarkReadyForReviewButtonState
   Widget build(BuildContext context) {
     final t = ThemeScope.of(context);
     final c = t.colors;
-    final label = context.l10n.ticketDetailCodingExecutionMarkReadyButton;
+    final isFailure = widget.tone == _BannerTone.failure;
+    final baseColor = isFailure ? c.secondary : c.success;
+    final glowAlpha = t.isDark
+        ? (isFailure ? 0.55 : 0.60)
+        : (isFailure ? 0.40 : 0.45);
+    final label = widget.label;
 
     return Semantics(
       button: true,
@@ -2585,6 +2881,7 @@ class _MarkReadyForReviewButtonState
       enabled: !_isConfirming,
       child: FocusableActionDetector(
         enabled: !_isConfirming,
+        onShowFocusHighlight: (value) => setState(() => _isFocused = value),
         actions: {
           ActivateIntent: CallbackAction<ActivateIntent>(
             onInvoke: (_) {
@@ -2608,16 +2905,16 @@ class _MarkReadyForReviewButtonState
               valueListenable: _isHovered,
               builder: (context, hovered, _) {
                 final fill = _isConfirming
-                    ? c.success.withValues(alpha: 0.45)
+                    ? baseColor.withValues(alpha: 0.45)
                     : (hovered
                           ? Color.lerp(
-                              c.success,
+                              baseColor,
                               t.isDark
                                   ? const Color(0xFFFFFFFF)
                                   : const Color(0xFF000000),
                               0.10,
                             )!
-                          : c.success);
+                          : baseColor);
                 final glowBlur = _isPressed ? 0.0 : (hovered ? 22.0 : 18.0);
                 return AnimatedScale(
                   scale: !_isConfirming && _isPressed ? 0.98 : 1.0,
@@ -2626,32 +2923,57 @@ class _MarkReadyForReviewButtonState
                     decoration: BoxDecoration(
                       color: fill,
                       borderRadius: BorderRadius.all(AionRadius.md),
-                      boxShadow: glowBlur > 0
-                          ? [
-                              BoxShadow(
-                                color: c.success.withValues(
-                                  alpha: t.isDark ? 0.60 : 0.45,
-                                ),
-                                blurRadius: glowBlur,
-                                spreadRadius: -9,
-                                offset: const Offset(0, 8),
-                              ),
-                            ]
-                          : const [],
+                      boxShadow: [
+                        if (glowBlur > 0)
+                          BoxShadow(
+                            color: baseColor.withValues(alpha: glowAlpha),
+                            blurRadius: glowBlur,
+                            spreadRadius: -9,
+                            offset: const Offset(0, 8),
+                          ),
+                        // Keyboard-focus ring — design.md §1.6. A solid 3px
+                        // spread with no blur, same shape as AionShadows.focus
+                        // but keyed to the button's own tone color rather
+                        // than the fixed `primary` that helper uses.
+                        if (_isFocused)
+                          BoxShadow(
+                            color: baseColor.withValues(
+                              alpha: t.isDark ? 0.30 : 0.16,
+                            ),
+                            blurRadius: 0,
+                            spreadRadius: 3,
+                          ),
+                      ],
                     ),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 15,
                         vertical: 10,
                       ),
-                      child: Text(
-                        label,
-                        textAlign: TextAlign.center,
-                        style: AionText.button.copyWith(
-                          color: const Color(
-                            0xFFFFFFFF,
-                          ).withValues(alpha: _isConfirming ? 0.45 : 1),
-                        ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (isFailure) ...[
+                            PhosphorIcon(
+                              PhosphorIcons.arrowClockwiseLight,
+                              size: 15,
+                              color: const Color(
+                                0xFFFFFFFF,
+                              ).withValues(alpha: _isConfirming ? 0.55 : 1),
+                            ),
+                            const SizedBox(width: 7),
+                          ],
+                          Text(
+                            label,
+                            textAlign: TextAlign.center,
+                            style: AionText.button.copyWith(
+                              color: const Color(
+                                0xFFFFFFFF,
+                              ).withValues(alpha: _isConfirming ? 0.45 : 1),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),

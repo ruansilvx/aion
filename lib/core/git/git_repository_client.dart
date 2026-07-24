@@ -35,7 +35,69 @@ class GitRepositoryClient {
     await _run(['commit', '-m', message], rootPath);
   }
 
+  /// Runs `git worktree add -b <branchName> <worktreePath>` in [rootPath],
+  /// creating a new branch checked out into an isolated working directory
+  /// at [worktreePath] — the branch starts from [rootPath]'s current HEAD.
+  /// Throws if `worktreePath` already exists or `branchName` is already
+  /// checked out elsewhere. Added for
+  /// `aion-arch/changes/coding-execution-reliability-and-safety` — isolates
+  /// a coding-execution run from the developer's real checkout.
+  Future<void> createWorktree(
+    String rootPath,
+    String worktreePath,
+    String branchName,
+  ) async {
+    await _runChecked(
+      ['worktree', 'add', '-b', branchName, worktreePath],
+      rootPath,
+    );
+  }
+
+  /// Runs `git worktree remove <worktreePath> --force` in [rootPath].
+  /// `--force` because the worktree may contain untracked build artifacts
+  /// (`.dart_tool/`, `build/`) from the `flutter pub get`/coding-execution
+  /// turn that ran inside it — git's default refuses removal with any
+  /// untracked content present. Does not delete the worktree's branch
+  /// itself; the branch survives (and stays pushed, if [push] below
+  /// already ran) after the worktree is gone.
+  Future<void> removeWorktree(String rootPath, String worktreePath) async {
+    await _runChecked(['worktree', 'remove', worktreePath, '--force'], rootPath);
+  }
+
+  /// Runs `git push -u origin <branchName>` in [worktreePath] — pushes the
+  /// branch created by [createWorktree] from inside the worktree itself
+  /// (not [rootPath]), since that's where the branch's commits actually
+  /// live.
+  Future<void> push(String worktreePath, String branchName) async {
+    await _runChecked(['push', '-u', 'origin', branchName], worktreePath);
+  }
+
   Future<ProcessResult> _run(List<String> args, String rootPath) {
     return Process.run('git', args, workingDirectory: rootPath);
+  }
+
+  /// Same as [_run], but throws a [ProcessException] (carrying `stderr`)
+  /// if `git` exits non-zero. [createWorktree]/[removeWorktree]/[push]
+  /// use this rather than [init]/[add]/[commit]/[hasChanges]'s existing
+  /// fire-and-forget shape, because a silently swallowed failure here
+  /// leaves a coding-execution run believing an isolated worktree exists
+  /// when it doesn't — confirmed via a live manual run: `git worktree
+  /// add` failing silently left the model's turn pointed at an empty
+  /// temp directory, which it escaped by finding and committing to the
+  /// developer's real checkout instead of throwing loudly and aborting.
+  /// A `/verify` follow-up fix for
+  /// `aion-arch/changes/coding-execution-reliability-and-safety`.
+  Future<ProcessResult> _runChecked(List<String> args, String rootPath) async {
+    final result = await _run(args, rootPath);
+    if (result.exitCode != 0) {
+      final stderr = result.stderr.toString().trim();
+      throw ProcessException(
+        'git',
+        args,
+        stderr.isEmpty ? 'git ${args.join(' ')} exited ${result.exitCode}' : stderr,
+        result.exitCode,
+      );
+    }
+    return result;
   }
 }

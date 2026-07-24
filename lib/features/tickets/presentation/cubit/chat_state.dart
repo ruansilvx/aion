@@ -24,8 +24,8 @@ class ChatInitial extends ChatState {
 /// far. `null` when no reply is in flight.
 class ChatLoaded extends ChatState {
   /// Creates a [ChatLoaded] state carrying [comments] and, optionally,
-  /// [streamingText].
-  const ChatLoaded(this.comments, {this.streamingText});
+  /// [streamingText]/[currentToolUse].
+  const ChatLoaded(this.comments, {this.streamingText, this.currentToolUse});
 
   /// The settled comment thread, oldest first (see
   /// [CommentRepository.getCommentsForTicket]).
@@ -35,8 +35,14 @@ class ChatLoaded extends ChatState {
   /// `AgentTextEvent` chunk. `null` when no reply is currently streaming.
   final String? streamingText;
 
+  /// A live "Running `<tool>`..."-style status string, updated on every
+  /// `AgentToolUseEvent` and cleared on the next `AgentTextEvent` chunk or
+  /// on completion. `null` when no tool call is currently in flight. Added
+  /// for `aion-arch/changes/coding-execution-reliability-and-safety`.
+  final String? currentToolUse;
+
   @override
-  List<Object?> get props => [comments, streamingText];
+  List<Object?> get props => [comments, streamingText, currentToolUse];
 }
 
 /// A [ChatCubit.loadMessages] or [ChatCubit.sendMessage] call failed.

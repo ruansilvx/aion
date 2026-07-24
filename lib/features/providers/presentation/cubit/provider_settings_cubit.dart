@@ -83,6 +83,7 @@ class ProviderSettingsCubit extends Cubit<ProviderSettingsState> {
       await for (final event in events) {
         switch (event) {
           case AgentTextEvent():
+          case AgentToolUseEvent():
           case AgentDoneEvent():
             break;
           case AgentOverageDetectedEvent(:final message):

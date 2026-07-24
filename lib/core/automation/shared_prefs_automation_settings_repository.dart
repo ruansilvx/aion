@@ -22,9 +22,16 @@ class SharedPrefsAutomationSettingsRepository
   static const _codingExecutionAutomationKey =
       'automation_settings.coding_execution_automation';
 
+  /// [AutomationContext.codingExecutionRetry]'s key. Added for
+  /// `aion-arch/changes/coding-execution-reliability-and-safety`.
+  static const _codingExecutionRetryAutomationKey =
+      'automation_settings.coding_execution_retry_automation';
+
   String _keyFor(AutomationContext context) => switch (context) {
     AutomationContext.sddStage => _sddStageAutomationKey,
     AutomationContext.codingExecution => _codingExecutionAutomationKey,
+    AutomationContext.codingExecutionRetry =>
+      _codingExecutionRetryAutomationKey,
   };
 
   @override

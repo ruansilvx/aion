@@ -111,6 +111,14 @@ enum TicketsErrorReason {
   /// `AutomationConfidence.gated` regardless of the configured
   /// confidence. Informational, surfaced once via `AppToast`.
   executionBudgetOverageDetected,
+
+  /// A coding-execution run's `flutter analyze` verify gate failed and the
+  /// effective `AutomationContext.codingExecutionRetry` confidence is
+  /// `gated` (or `auto` with its retry cap exhausted, forced to `gated`
+  /// visibility) — surfaced once via `AppToast`, alongside the Task
+  /// detail screen's failure banner. Added for
+  /// `aion-arch/changes/coding-execution-reliability-and-safety`.
+  executionVerificationFailed,
 }
 
 /// Why a Task ticket's coding-execution run was blocked from starting —
@@ -258,6 +266,9 @@ class TicketDetailLoaded extends TicketsState {
     this.isExecuting = false,
     this.executionQueuePosition,
     this.executionAwaitingReview = false,
+    this.executionFailureReason,
+    this.executionCanRetry = false,
+    this.executionLiveActivity,
   });
 
   /// The loaded ticket.
@@ -328,6 +339,35 @@ class TicketDetailLoaded extends TicketsState {
   /// `aion-arch/changes/task-to-coding-execution-trigger`.
   final bool executionAwaitingReview;
 
+  /// Why [ticket] (a `task`) is showing a coding-execution failure state —
+  /// a `flutter analyze` verify-gate failure (with its raw output), a
+  /// hard run error, or a fixed "ended without a clear result" message for
+  /// an orphaned/stalled run (e.g. after an app restart mid-run). `null`
+  /// when the run hasn't failed. Task-only, computed by
+  /// [TicketsCubit.getTicketById] from the most recent execution chat's
+  /// most recent comment — unlike [isExecuting]/[executionQueuePosition],
+  /// this survives an app restart, since it's derived from the persisted
+  /// comment thread rather than in-memory queue state. Added for
+  /// `aion-arch/changes/coding-execution-reliability-and-safety`.
+  final String? executionFailureReason;
+
+  /// Whether [executionFailureReason] has a retry action available —
+  /// always `true` whenever [executionFailureReason] is non-`null`, kept
+  /// as a separate field so the widget layer doesn't need to null-check
+  /// [executionFailureReason] to decide whether to show the retry button.
+  /// Added for `aion-arch/changes/coding-execution-reliability-and-safety`.
+  final bool executionCanRetry;
+
+  /// A live "Running `<tool>`..."-style status string for [ticket] (a
+  /// `task`) while [isExecuting] is `true`, re-emitted by
+  /// [TicketsCubit._runCodingExecution] on every tool call/text chunk of
+  /// the in-flight run (only while this Task's detail screen is the one
+  /// showing), and cleared once the run finishes. `null` whenever
+  /// [isExecuting] is `false`, or no tool call has happened yet. In-memory
+  /// only — does not survive an app restart, like [isExecuting] itself.
+  /// Added for `aion-arch/changes/coding-execution-reliability-and-safety`.
+  final String? executionLiveActivity;
+
   @override
   List<Object?> get props => [
     ticket,
@@ -341,6 +381,9 @@ class TicketDetailLoaded extends TicketsState {
     isExecuting,
     executionQueuePosition,
     executionAwaitingReview,
+    executionFailureReason,
+    executionCanRetry,
+    executionLiveActivity,
   ];
 }
 

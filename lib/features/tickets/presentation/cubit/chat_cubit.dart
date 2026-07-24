@@ -56,7 +56,8 @@ class ChatCubit extends Cubit<ChatState> {
   /// Posts a human comment with [content] on [chatTicketId], resolves the
   /// model via [_phaseForChat]/[_modelRoutingRepository], then calls it
   /// via [AgentModelClient.run], emitting [ChatLoaded] with
-  /// `streamingText` updated on every `AgentTextEvent` chunk for live
+  /// `streamingText` updated on every `AgentTextEvent` chunk, and
+  /// `currentToolUse` updated on every `AgentToolUseEvent`, for live
   /// rendering. On completion, the accumulated reply is persisted as one
   /// [CommentAuthorType.ai] comment (see [runChatTurn]) and the thread is
   /// reloaded. On failure, emits [ChatError] — the human message the user
@@ -81,14 +82,29 @@ class ChatCubit extends Cubit<ChatState> {
       final phase = await _phaseForChat(chatTicketId);
       final model = await _modelRoutingRepository.getModelForPhase(phase);
 
+      // Tracks the most recent onChunk text so onToolUse can carry it
+      // forward instead of blanking it — a tool call fired mid-turn
+      // (after some text already streamed) would otherwise reset
+      // ChatLoaded.streamingText to null via its constructor default.
+      String? latestStreamingText;
       final succeeded = await runChatTurn(
         client: _client,
         commentRepo: _repository,
         chatTicketId: chatTicketId,
         prompt: content,
         model: model,
-        onChunk: (textSoFar) => emit(
-          ChatLoaded(afterHuman, streamingText: textSoFar),
+        onChunk: (textSoFar) {
+          latestStreamingText = textSoFar;
+          emit(ChatLoaded(afterHuman, streamingText: textSoFar));
+        },
+        onToolUse: (toolName, summary) => emit(
+          ChatLoaded(
+            afterHuman,
+            streamingText: latestStreamingText,
+            currentToolUse: summary == null
+                ? 'Running $toolName...'
+                : 'Running $toolName: $summary...',
+          ),
         ),
       );
 
@@ -137,8 +153,12 @@ class ChatCubit extends Cubit<ChatState> {
   /// git, bash) scoped to that directory — only `TicketsCubit`'s
   /// coding-execution path sets these; every other caller leaves them at
   /// their text-only defaults. [onOverageDetected], if given, is called
-  /// once per `AgentOverageDetectedEvent`. Shared by [sendMessage] and
-  /// `TicketsCubit._spawnStageChat`/coding-execution
+  /// once per `AgentOverageDetectedEvent`. [onToolUse], if given, is
+  /// called once per `AgentToolUseEvent` with the tool's name and short
+  /// summary — added for
+  /// `aion-arch/changes/coding-execution-reliability-and-safety` so a
+  /// long-running turn has live progress visibility. Shared by
+  /// [sendMessage] and `TicketsCubit._spawnStageChat`/coding-execution
   /// (`tickets_cubit.dart`) so all call sites accumulate/persist
   /// identically and can't drift apart.
   static Future<bool> runChatTurn({
@@ -151,6 +171,7 @@ class ChatCubit extends Cubit<ChatState> {
     bool toolsEnabled = false,
     String? workingDirectory,
     void Function()? onOverageDetected,
+    void Function(String toolName, String? summary)? onToolUse,
   }) async {
     final buffer = StringBuffer();
     var succeeded = true;
@@ -169,6 +190,8 @@ class ChatCubit extends Cubit<ChatState> {
           case AgentTextEvent(:final text):
             buffer.write(text);
             onChunk?.call(buffer.toString());
+          case AgentToolUseEvent(:final toolName, :final summary):
+            onToolUse?.call(toolName, summary);
           case AgentDoneEvent():
             break;
           case AgentOverageDetectedEvent():

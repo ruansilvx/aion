@@ -10,4 +10,11 @@ enum AutomationContext {
 
   /// Coding-execution completion — see `TicketsCubit._runCodingExecution`.
   codingExecution,
+
+  /// Coding-execution verify-gate retry — whether a `flutter analyze`
+  /// failure feeds back for an automatic corrective turn, asks first, or
+  /// waits for a manual retry. Added for
+  /// `aion-arch/changes/coding-execution-reliability-and-safety`; see
+  /// `TicketsCubit._runCodingExecution`.
+  codingExecutionRetry,
 }

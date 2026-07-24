@@ -127,6 +127,17 @@ class SettingsScreen extends StatelessWidget {
                                   .l10n
                                   .settingsAutomationCodingExecutionDescription,
                             ),
+                            const SizedBox(height: 20),
+                            _AutomationSection(
+                              automationContext:
+                                  AutomationContext.codingExecutionRetry,
+                              label: context
+                                  .l10n
+                                  .settingsAutomationCodingExecutionRetryLabel,
+                              description: context
+                                  .l10n
+                                  .settingsAutomationCodingExecutionRetryDescription,
+                            ),
                           ],
                         );
                       },
@@ -173,6 +184,14 @@ String _confidenceSubLabel(
       context.l10n.settingsAutomationCodingExecutionGatedSubLabel,
     AutomationConfidence.manual =>
       context.l10n.settingsAutomationCodingExecutionManualSubLabel,
+  },
+  AutomationContext.codingExecutionRetry => switch (confidence) {
+    AutomationConfidence.auto =>
+      context.l10n.settingsAutomationCodingExecutionRetryAutoSubLabel,
+    AutomationConfidence.gated =>
+      context.l10n.settingsAutomationCodingExecutionRetryGatedSubLabel,
+    AutomationConfidence.manual =>
+      context.l10n.settingsAutomationCodingExecutionRetryManualSubLabel,
   },
 };
 

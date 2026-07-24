@@ -23,7 +23,7 @@ void main() {
 
   group('AutomationSettingsCubit', () {
     blocTest<AutomationSettingsCubit, AutomationSettingsState>(
-      'load fetches both AutomationContext values and emits a keyed map',
+      'load fetches every AutomationContext value and emits a keyed map',
       setUp: () {
         when(
           () => repository.getConfidence(AutomationContext.sddStage),
@@ -31,6 +31,11 @@ void main() {
         when(
           () => repository.getConfidence(AutomationContext.codingExecution),
         ).thenAnswer((_) async => AutomationConfidence.manual);
+        when(
+          () => repository.getConfidence(
+            AutomationContext.codingExecutionRetry,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.gated);
       },
       build: () => AutomationSettingsCubit(repository),
       act: (cubit) => cubit.load(),
@@ -38,6 +43,7 @@ void main() {
         const AutomationSettingsReady({
           AutomationContext.sddStage: AutomationConfidence.auto,
           AutomationContext.codingExecution: AutomationConfidence.manual,
+          AutomationContext.codingExecutionRetry: AutomationConfidence.gated,
         }),
       ],
     );

@@ -8,9 +8,12 @@ import 'package:mocktail/mocktail.dart';
 import 'package:aion/core/automation/automation_confidence.dart';
 import 'package:aion/core/automation/automation_context.dart';
 import 'package:aion/core/automation/automation_settings_repository.dart';
+import 'package:aion/core/build/flutter_verifier.dart';
 import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/core/contracts/embedding_provider.dart';
 import 'package:aion/core/database/app_database.dart';
+import 'package:aion/core/git/git_repository_client.dart';
+import 'package:aion/core/git/github_cli_client.dart';
 import 'package:aion/features/providers/domain/enums/agent_model.dart';
 import 'package:aion/features/providers/domain/enums/model_phase.dart';
 import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
@@ -34,6 +37,44 @@ class MockAutomationSettingsRepository extends Mock
 
 class MockModelRoutingRepository extends Mock
     implements ModelRoutingRepository {}
+
+class MockGitRepositoryClient extends Mock implements GitRepositoryClient {}
+
+class MockGitHubCliClient extends Mock implements GitHubCliClient {}
+
+class MockFlutterVerifier extends Mock implements FlutterVerifier {}
+
+/// Stubs [gitClient]/[gitHubClient]/[flutterVerifier] for a coding-
+/// execution run that isolates cleanly, verifies clean, and opens a PR —
+/// the happy path most `_runCodingExecution` tests exercise. Individual
+/// tests override specific stubs (e.g. `flutterVerifier.analyze`) to
+/// exercise the retry/failure paths. Added for
+/// `aion-arch/changes/coding-execution-reliability-and-safety`.
+void stubSuccessfulCodingExecutionInfra(
+  MockGitRepositoryClient gitClient,
+  MockGitHubCliClient gitHubClient,
+  MockFlutterVerifier flutterVerifier,
+) {
+  when(
+    () => gitClient.createWorktree(any(), any(), any()),
+  ).thenAnswer((_) async {});
+  when(() => flutterVerifier.pubGet(any())).thenAnswer((_) async {});
+  when(() => flutterVerifier.analyze(any())).thenAnswer(
+    (_) async => const FlutterVerifyResult(passed: true, output: ''),
+  );
+  when(() => gitClient.push(any(), any())).thenAnswer((_) async {});
+  when(
+    () => gitHubClient.openPullRequest(
+      rootPath: any(named: 'rootPath'),
+      branch: any(named: 'branch'),
+      title: any(named: 'title'),
+      body: any(named: 'body'),
+    ),
+  ).thenAnswer((_) async => 'https://example/pr/mock');
+  when(
+    () => gitClient.removeWorktree(any(), any()),
+  ).thenAnswer((_) async {});
+}
 
 void main() {
   late MockTicketRepository repository;
@@ -2232,11 +2273,18 @@ void main() {
     late MockAgentModelClient agentClient;
     late MockCommentRepository commentRepository;
     late MockAutomationSettingsRepository automationSettingsRepository;
+    late MockGitRepositoryClient gitClient;
+    late MockGitHubCliClient gitHubClient;
+    late MockFlutterVerifier flutterVerifier;
 
     setUp(() {
       agentClient = MockAgentModelClient();
       commentRepository = MockCommentRepository();
       automationSettingsRepository = MockAutomationSettingsRepository();
+      gitClient = MockGitRepositoryClient();
+      gitHubClient = MockGitHubCliClient();
+      flutterVerifier = MockFlutterVerifier();
+      stubSuccessfulCodingExecutionInfra(gitClient, gitHubClient, flutterVerifier);
     });
 
     TicketsCubit buildFullCubit() => TicketsCubit(
@@ -2244,6 +2292,10 @@ void main() {
       agentClient: agentClient,
       commentRepository: commentRepository,
       automationSettingsRepository: automationSettingsRepository,
+      projectRootPath: '/fake/project/root',
+      gitClient: gitClient,
+      gitHubClient: gitHubClient,
+      flutterVerifier: flutterVerifier,
     );
 
     blocTest<TicketsCubit, TicketsState>(
@@ -2530,6 +2582,10 @@ void main() {
         repository,
         agentClient: agentClient,
         commentRepository: commentRepository,
+        projectRootPath: '/fake/project/root',
+        gitClient: gitClient,
+        gitHubClient: gitHubClient,
+        flutterVerifier: flutterVerifier,
       ),
       setUp: () {
         final runGate = Completer<void>();
@@ -2879,6 +2935,10 @@ void main() {
         repository,
         agentClient: agentClient,
         commentRepository: commentRepository,
+        projectRootPath: '/fake/project/root',
+        gitClient: gitClient,
+        gitHubClient: gitHubClient,
+        flutterVerifier: flutterVerifier,
       ),
       setUp: () {
         when(() => repository.getTicketById(any())).thenAnswer((invocation) async {
@@ -2925,6 +2985,411 @@ void main() {
       },
     );
   });
+
+  group(
+    'coding-execution reliability (worktree isolation, verify gate, retry)',
+    () {
+      late MockAgentModelClient agentClient;
+      late MockCommentRepository commentRepository;
+      late MockAutomationSettingsRepository automationSettingsRepository;
+      late MockGitRepositoryClient gitClient;
+      late MockGitHubCliClient gitHubClient;
+      late MockFlutterVerifier flutterVerifier;
+
+      setUp(() {
+        agentClient = MockAgentModelClient();
+        commentRepository = MockCommentRepository();
+        automationSettingsRepository = MockAutomationSettingsRepository();
+        gitClient = MockGitRepositoryClient();
+        gitHubClient = MockGitHubCliClient();
+        flutterVerifier = MockFlutterVerifier();
+        stubSuccessfulCodingExecutionInfra(
+          gitClient,
+          gitHubClient,
+          flutterVerifier,
+        );
+        when(
+          () => repository.updateTicketStatus(any(), any()),
+        ).thenAnswer((_) async {});
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        when(
+          () => commentRepository.addComment(any()),
+        ).thenAnswer((_) async {});
+        // Any freshly-created "Coding Execution — ..." chat ticket's id
+        // (a fresh uuid, not knowable up front) also needs to resolve —
+        // falls back to returning it as the persisted chat ticket.
+        when(() => repository.getTicketById(any())).thenAnswer((
+          invocation,
+        ) async {
+          final id = invocation.positionalArguments[0] as String;
+          if (id == taskNoStory.id) {
+            return taskNoStory.copyWith(status: TicketStatus.inProgress);
+          }
+          return dummyExecutionChatTicket;
+        });
+        when(
+          () => repository.getTicketsByParent(
+            taskNoStory.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [dummyExecutionChatTicket]);
+        // Default: no PR confirmed yet — individual tests override this
+        // when they need `_executionSucceededWithPr` to see a specific
+        // comment (e.g. the PR-opened/system-author test below).
+        when(
+          () => commentRepository.getCommentsForTicket(
+            dummyExecutionChatTicket.id,
+          ),
+        ).thenAnswer((_) async => []);
+        // getTicketById's post-run refresh always consults the
+        // completion-flip confidence too, regardless of what this test
+        // is actually exercising.
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecution,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.gated);
+      });
+
+      TicketsCubit buildCubit() => TicketsCubit(
+        repository,
+        agentClient: agentClient,
+        commentRepository: commentRepository,
+        automationSettingsRepository: automationSettingsRepository,
+        projectRootPath: '/fake/project/root',
+        gitClient: gitClient,
+        gitHubClient: gitHubClient,
+        flutterVerifier: flutterVerifier,
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'creates a worktree before the run, verifies, pushes, opens a PR, '
+        'then removes the worktree, on a clean pass',
+        build: buildCubit,
+        setUp: () {
+          when(() => agentClient.run(any())).thenAnswer(
+            (_) async => Stream.fromIterable(const [
+              AgentTextEvent('Done.\n\nIMPLEMENTATION: DONE'),
+              AgentDoneEvent(),
+            ]),
+          );
+        },
+        act: (cubit) =>
+            cubit.changeTicketStatus(taskNoStory, TicketStatus.inProgress),
+        wait: const Duration(milliseconds: 50),
+        verify: (_) {
+          verify(
+            () => gitClient.createWorktree(any(), any(), any()),
+          ).called(1);
+          verify(() => flutterVerifier.pubGet(any())).called(1);
+          verify(() => flutterVerifier.analyze(any())).called(1);
+          verify(() => gitClient.push(any(), any())).called(1);
+          verify(
+            () => gitHubClient.openPullRequest(
+              rootPath: any(named: 'rootPath'),
+              branch: any(named: 'branch'),
+              title: any(named: 'title'),
+              body: any(named: 'body'),
+            ),
+          ).called(1);
+          verify(() => gitClient.removeWorktree(any(), any())).called(1);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'removes the worktree even when the implementation turn hard-fails, '
+        'and never reaches the verify/push/PR steps',
+        build: buildCubit,
+        setUp: () {
+          when(() => agentClient.run(any())).thenThrow(Exception('boom'));
+        },
+        act: (cubit) =>
+            cubit.changeTicketStatus(taskNoStory, TicketStatus.inProgress),
+        wait: const Duration(milliseconds: 50),
+        verify: (_) {
+          verify(
+            () => gitClient.createWorktree(any(), any(), any()),
+          ).called(1);
+          verify(() => gitClient.removeWorktree(any(), any())).called(1);
+          verifyNever(() => flutterVerifier.analyze(any()));
+          verifyNever(() => gitClient.push(any(), any()));
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'auto confidence retries a failing verify gate up to the cap, then '
+        'escalates to a failure comment + toast, without ever pushing',
+        build: buildCubit,
+        setUp: () {
+          when(() => agentClient.run(any())).thenAnswer(
+            (_) async => Stream.fromIterable(const [
+              AgentTextEvent('Done.\n\nIMPLEMENTATION: DONE'),
+              AgentDoneEvent(),
+            ]),
+          );
+          when(() => flutterVerifier.analyze(any())).thenAnswer(
+            (_) async =>
+                const FlutterVerifyResult(passed: false, output: 'error X'),
+          );
+          when(
+            () => automationSettingsRepository.getConfidence(
+              AutomationContext.codingExecutionRetry,
+            ),
+          ).thenAnswer((_) async => AutomationConfidence.auto);
+        },
+        act: (cubit) =>
+            cubit.changeTicketStatus(taskNoStory, TicketStatus.inProgress),
+        wait: const Duration(milliseconds: 50),
+        verify: (_) {
+          // 1 initial attempt + 2 automatic retries (the cap) = 3 turns.
+          verify(() => agentClient.run(any())).called(3);
+          verify(() => flutterVerifier.analyze(any())).called(3);
+          verifyNever(() => gitClient.push(any(), any()));
+          verify(
+            () => commentRepository.addComment(
+              any(
+                that: predicate<TicketComment>(
+                  (c) => c.content.startsWith('Execution failed verification:'),
+                ),
+              ),
+            ),
+          ).called(1);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'gated confidence stops after the first verify failure — no retry, '
+        'immediate failure comment + toast',
+        build: buildCubit,
+        setUp: () {
+          when(() => agentClient.run(any())).thenAnswer(
+            (_) async => Stream.fromIterable(const [
+              AgentTextEvent('Done.\n\nIMPLEMENTATION: DONE'),
+              AgentDoneEvent(),
+            ]),
+          );
+          when(() => flutterVerifier.analyze(any())).thenAnswer(
+            (_) async =>
+                const FlutterVerifyResult(passed: false, output: 'error Y'),
+          );
+          when(
+            () => automationSettingsRepository.getConfidence(
+              AutomationContext.codingExecutionRetry,
+            ),
+          ).thenAnswer((_) async => AutomationConfidence.gated);
+        },
+        act: (cubit) =>
+            cubit.changeTicketStatus(taskNoStory, TicketStatus.inProgress),
+        wait: const Duration(milliseconds: 50),
+        verify: (_) {
+          verify(() => agentClient.run(any())).called(1);
+          verifyNever(() => gitClient.push(any(), any()));
+          verify(
+            () => commentRepository.addComment(
+              any(
+                that: predicate<TicketComment>(
+                  (c) => c.content.startsWith('Execution failed verification:'),
+                ),
+              ),
+            ),
+          ).called(1);
+        },
+        expect: () => [
+          TicketDetailLoaded(
+            taskNoStory.copyWith(status: TicketStatus.inProgress),
+          ),
+          // The `gated` toast.
+          const TicketsError(
+            '',
+            reason: TicketsErrorReason.executionVerificationFailed,
+          ),
+          const TicketsLoading(),
+          // The post-run refresh — the mocked `getCommentsForTicket`
+          // stays fixed at `[]` regardless of what `addComment` was
+          // called with, so this reads as the "no terminal reply"
+          // (stalled) case rather than echoing the exact failure
+          // message; the `verify` block above already confirms the real
+          // failure comment was posted.
+          TicketDetailLoaded(
+            taskNoStory.copyWith(status: TicketStatus.inProgress),
+            executionFailureReason:
+                'Execution ended without a clear result — retry to try again.',
+            executionCanRetry: true,
+          ),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'manual confidence stops after the first verify failure without a '
+        'toast (the failure banner is the only surface)',
+        build: buildCubit,
+        setUp: () {
+          when(() => agentClient.run(any())).thenAnswer(
+            (_) async => Stream.fromIterable(const [
+              AgentTextEvent('Done.\n\nIMPLEMENTATION: DONE'),
+              AgentDoneEvent(),
+            ]),
+          );
+          when(() => flutterVerifier.analyze(any())).thenAnswer(
+            (_) async =>
+                const FlutterVerifyResult(passed: false, output: 'error Z'),
+          );
+          when(
+            () => automationSettingsRepository.getConfidence(
+              AutomationContext.codingExecutionRetry,
+            ),
+          ).thenAnswer((_) async => AutomationConfidence.manual);
+        },
+        act: (cubit) =>
+            cubit.changeTicketStatus(taskNoStory, TicketStatus.inProgress),
+        wait: const Duration(milliseconds: 50),
+        verify: (_) {
+          verify(() => agentClient.run(any())).called(1);
+          verifyNever(() => gitClient.push(any(), any()));
+          verify(
+            () => commentRepository.addComment(
+              any(
+                that: predicate<TicketComment>(
+                  (c) => c.content.startsWith('Execution failed verification:'),
+                ),
+              ),
+            ),
+          ).called(1);
+        },
+        expect: () => [
+          TicketDetailLoaded(
+            taskNoStory.copyWith(status: TicketStatus.inProgress),
+          ),
+          // No toast for `manual` — straight to the post-run refresh.
+          const TicketsLoading(),
+          TicketDetailLoaded(
+            taskNoStory.copyWith(status: TicketStatus.inProgress),
+            executionFailureReason:
+                'Execution ended without a clear result — retry to try again.',
+            executionCanRetry: true,
+          ),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'getTicketById surfaces a system-authored verify-failure comment as '
+        'executionFailureReason with executionCanRetry true',
+        build: () => TicketsCubit(repository, commentRepository: commentRepository),
+        setUp: () {
+          when(
+            () => commentRepository.getCommentsForTicket(
+              dummyExecutionChatTicket.id,
+            ),
+          ).thenAnswer(
+            (_) async => [
+              TicketComment(
+                id: 'c-verify-fail',
+                ticketId: dummyExecutionChatTicket.id,
+                content: 'Execution failed verification:\n\nerror output',
+                authorType: CommentAuthorType.system,
+                createdAt: DateTime(2026),
+              ),
+            ],
+          );
+        },
+        act: (cubit) => cubit.getTicketById(taskNoStory.id),
+        expect: () => [
+          const TicketsLoading(),
+          TicketDetailLoaded(
+            taskNoStory.copyWith(status: TicketStatus.inProgress),
+            executionFailureReason:
+                'Execution failed verification:\n\nerror output',
+            executionCanRetry: true,
+          ),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'getTicketById treats a chat with no comments at all as an '
+        'orphaned/stalled run, still offering a retry',
+        build: () => TicketsCubit(repository, commentRepository: commentRepository),
+        setUp: () {
+          when(
+            () => commentRepository.getCommentsForTicket(
+              dummyExecutionChatTicket.id,
+            ),
+          ).thenAnswer((_) async => []);
+        },
+        act: (cubit) => cubit.getTicketById(taskNoStory.id),
+        expect: () => [
+          const TicketsLoading(),
+          TicketDetailLoaded(
+            taskNoStory.copyWith(status: TicketStatus.inProgress),
+            executionFailureReason:
+                'Execution ended without a clear result — retry to try again.',
+            executionCanRetry: true,
+          ),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        '_executionSucceededWithPr (via getTicketById\'s executionAwaitingReview) '
+        'accepts a system-authored EXECUTION: PR_OPENED comment, not just ai',
+        build: () => TicketsCubit(
+          repository,
+          commentRepository: commentRepository,
+          automationSettingsRepository: automationSettingsRepository,
+        ),
+        setUp: () {
+          when(
+            () => commentRepository.getCommentsForTicket(
+              dummyExecutionChatTicket.id,
+            ),
+          ).thenAnswer(
+            (_) async => [
+              TicketComment(
+                id: 'c-pr-system',
+                ticketId: dummyExecutionChatTicket.id,
+                content: 'EXECUTION: PR_OPENED https://example/pr/system',
+                authorType: CommentAuthorType.system,
+                createdAt: DateTime(2026),
+              ),
+            ],
+          );
+          when(
+            () => automationSettingsRepository.getConfidence(
+              AutomationContext.codingExecution,
+            ),
+          ).thenAnswer((_) async => AutomationConfidence.gated);
+        },
+        act: (cubit) => cubit.getTicketById(taskNoStory.id),
+        expect: () => [
+          const TicketsLoading(),
+          TicketDetailLoaded(
+            taskNoStory.copyWith(status: TicketStatus.inProgress),
+            executionAwaitingReview: true,
+          ),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'retryCodingExecution re-triggers the run for the given Task',
+        build: buildCubit,
+        setUp: () {
+          when(() => agentClient.run(any())).thenAnswer(
+            (_) async => Stream.fromIterable(const [
+              AgentTextEvent('Done.\n\nIMPLEMENTATION: DONE'),
+              AgentDoneEvent(),
+            ]),
+          );
+        },
+        act: (cubit) => cubit.retryCodingExecution(taskNoStory),
+        wait: const Duration(milliseconds: 50),
+        verify: (_) {
+          verify(() => repository.createTicket(any())).called(1);
+          verify(() => agentClient.run(any())).called(1);
+          verify(
+            () => gitClient.createWorktree(any(), any(), any()),
+          ).called(1);
+        },
+      );
+    },
+  );
 
   group('promoteSignalToEpic', () {
     late MockTicketLinkRepository linkRepository;
@@ -3131,6 +3596,9 @@ void main() {
     late MockTicketLinkRepository linkRepository;
     late MockAutomationSettingsRepository automationSettingsRepository;
     late MockModelRoutingRepository modelRoutingRepository;
+    late MockGitRepositoryClient gitClient;
+    late MockGitHubCliClient gitHubClient;
+    late MockFlutterVerifier flutterVerifier;
 
     setUp(() {
       agentClient = MockAgentModelClient();
@@ -3138,6 +3606,10 @@ void main() {
       linkRepository = MockTicketLinkRepository();
       automationSettingsRepository = MockAutomationSettingsRepository();
       modelRoutingRepository = MockModelRoutingRepository();
+      gitClient = MockGitRepositoryClient();
+      gitHubClient = MockGitHubCliClient();
+      flutterVerifier = MockFlutterVerifier();
+      stubSuccessfulCodingExecutionInfra(gitClient, gitHubClient, flutterVerifier);
       when(() => agentClient.run(any())).thenAnswer(
         (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
       );
@@ -3175,6 +3647,10 @@ void main() {
       commentRepository: commentRepository,
       automationSettingsRepository: automationSettingsRepository,
       modelRoutingRepository: modelRoutingRepository,
+      projectRootPath: '/fake/project/root',
+      gitClient: gitClient,
+      gitHubClient: gitHubClient,
+      flutterVerifier: flutterVerifier,
     );
 
     blocTest<TicketsCubit, TicketsState>(

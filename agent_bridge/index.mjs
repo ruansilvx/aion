@@ -10,6 +10,7 @@
 // other caller keeps today's text-only behavior. Writes one NDJSON line per
 // resulting event to stdout:
 //   {"type":"text","text":"..."}
+//   {"type":"tool_use","name":"...","summary":"..."}
 //   {"type":"done"}
 //   {"type":"error","message":"..."}
 //   {"type":"overage","message":"..."}
@@ -21,6 +22,24 @@ import { createInterface } from 'node:readline';
 
 function emit(event) {
   process.stdout.write(`${JSON.stringify(event)}\n`);
+}
+
+// Derives a short, human-readable one-liner from a tool_use content
+// block's input, for the live progress indicator (coding-execution-
+// reliability-and-safety). Returns undefined for an unrecognized tool —
+// ClaudeAgentSdkClient._parseLine passes that through as `null`.
+// Truncated to ~120 chars: this is a live status hint, not a transcript.
+function summarizeToolInput(name, input) {
+  const raw =
+    name === 'Read' || name === 'Write' || name === 'Edit'
+      ? input?.file_path
+      : name === 'Bash'
+        ? input?.command
+        : name === 'Grep' || name === 'Glob'
+          ? input?.pattern
+          : undefined;
+  if (typeof raw !== 'string') return undefined;
+  return raw.length > 120 ? `${raw.slice(0, 120)}…` : raw;
 }
 
 async function readRequest() {
@@ -43,14 +62,36 @@ async function main() {
       // Tool-enabled runs (Task coding-execution) get the SDK's default
       // tool set; every other caller (Settings' "Test Connection",
       // SDD-stage chats) keeps today's text-only behavior.
-      ...(toolsEnabled ? {} : { allowedTools: [] }),
+      ...(toolsEnabled
+        ? {
+            // This process has no TTY (spawned via dart:io Process with
+            // piped stdio, no interactive terminal), so the SDK's default
+            // 'default' permissionMode — which prompts for dangerous
+            // operations like file writes — has no one to answer its
+            // prompts. Confirmed empirically: without this, a tool-enabled
+            // run can Read but every Edit/Write/git-write attempt is
+            // denied, and the model burns its run narrating workarounds
+            // instead of ever touching a file. bypassPermissions requires
+            // allowDangerouslySkipPermissions: true as a companion flag.
+            permissionMode: 'bypassPermissions',
+            allowDangerouslySkipPermissions: true,
+          }
+        : { allowedTools: [] }),
     },
   })) {
     if (message.type === 'assistant') {
-      const text = (message.message?.content ?? [])
+      const content = message.message?.content ?? [];
+      const text = content
         .filter((block) => block.type === 'text')
         .map((block) => block.text)
         .join('');
+      for (const block of content.filter((b) => b.type === 'tool_use')) {
+        emit({
+          type: 'tool_use',
+          name: block.name,
+          summary: summarizeToolInput(block.name, block.input),
+        });
+      }
       if (message.error) {
         // A real failure — `authentication_failed`, `rate_limit`,
         // `billing_error`, `invalid_request`, `server_error`, or

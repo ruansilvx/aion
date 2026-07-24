@@ -339,4 +339,15 @@ extension AionColorsHubTokens on AionColors {
   // [pendingTint]/[pendingSpinnerTrack] above rather than adding
   // numerically-identical duplicates — both represent the same "active
   // but calm" primary-family treatment.
+
+  // failure family — _ExecutionActionBanner, verificationFailed state.
+  // Added for coding-execution-reliability-and-safety; see that change's
+  // design.md §4.
+  /// `_ExecutionActionBanner`'s failure-tone fill.
+  Color dangerTint(bool isDark) =>
+      danger.withValues(alpha: isDark ? 0.16 : 0.11);
+
+  /// `_ExecutionActionBanner`'s failure-tone border.
+  Color dangerBorderTint(bool isDark) =>
+      danger.withValues(alpha: isDark ? 0.42 : 0.28);
 }
