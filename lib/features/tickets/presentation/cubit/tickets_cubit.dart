@@ -1107,8 +1107,17 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// prompt) runs automatically, up to [_maxAnalyzeRetries] attempts;
   /// once retries are exhausted (forced `gated`) or the confidence was
   /// never `auto`, posts a final `"Execution failed verification: ..."`
-  /// comment and stops — no PR. The worktree (never the branch) is always
-  /// removed in a `finally`, success or failure.
+  /// comment and stops — no PR. A `catch` around the whole worktree-
+  /// setup-through-PR sequence posts an `"Execution failed: ..."`
+  /// comment (same shape/detection as [ChatCubit.runChatTurn]'s own
+  /// hard-error comments) for any infra-level failure —
+  /// [GitRepositoryClient.createWorktree]/[GitHubCliClient.openPullRequest]/
+  /// etc. throwing — so the exception can't propagate out of this
+  /// `unawaited`-run method and permanently wedge
+  /// [_inFlightExecutionTaskId]. The worktree (never the branch) is
+  /// always removed in a `finally`, success or failure — itself wrapped
+  /// in its own try/catch, since a worktree that was never actually
+  /// created has nothing to remove.
   ///
   /// If a PR was confirmed (see [_executionSucceededWithPr]) and
   /// [_automationSettingsRepository] is configured, flips [task] straight
@@ -1294,8 +1303,36 @@ class TicketsCubit extends Cubit<TicketsState> {
           ),
         );
       }
+    } catch (e) {
+      // A setup/infra failure — createWorktree, pubGet, push, or
+      // openPullRequest throwing (see GitRepositoryClient._runChecked's
+      // dartdoc and FlutterVerifier.pubGet). Posts the same
+      // "Execution failed: ..." shape ChatCubit.runChatTurn's own
+      // hard-error path already uses, so _computeExecutionFailure's
+      // existing detection picks this up with no new state needed.
+      // Without this catch, the exception would propagate out of
+      // _runCodingExecution uncaught (it's run via `unawaited`),
+      // skipping everything below — including clearing
+      // _inFlightExecutionTaskId — and permanently wedging the
+      // execution queue.
+      await commentRepo.addComment(
+        TicketComment(
+          id: '',
+          ticketId: persistedChat.id,
+          content: 'Execution failed: $e',
+          authorType: CommentAuthorType.system,
+          createdAt: DateTime.now(),
+        ),
+      );
     } finally {
-      await gitClient.removeWorktree(rootPath, worktreePath);
+      try {
+        await gitClient.removeWorktree(rootPath, worktreePath);
+      } catch (_) {
+        // Best-effort cleanup only — createWorktree may itself have
+        // failed (caught above), in which case there's nothing to
+        // remove. Swallowed so it never masks whichever failure (if
+        // any) the catch above already recorded.
+      }
     }
 
     final prConfirmed = await _executionSucceededWithPr(task.id);
@@ -1430,14 +1467,21 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Assembles the plain-text context a spawned coding-execution chat
   /// opens with: [task]'s title/description, plus an instruction to
-  /// implement it using the available file, git, and bash tools —
-  /// ending the reply with exactly one line, `IMPLEMENTATION: DONE`.
-  /// Unlike before `aion-arch/changes/coding-execution-reliability-and-safety`,
-  /// this no longer instructs the model to push or open a PR itself —
-  /// that only happens after [_runCodingExecution]'s own
-  /// [FlutterVerifier] gate passes, driven by Aion directly (see
-  /// [_assembleCorrectiveContext] for the retry-turn prompt used instead
-  /// when that gate fails).
+  /// implement it using the available file, git, and bash tools, commit
+  /// the result, and end the reply with exactly one line,
+  /// `IMPLEMENTATION: DONE`. Unlike before
+  /// `aion-arch/changes/coding-execution-reliability-and-safety`, this no
+  /// longer instructs the model to push or open a PR itself — that only
+  /// happens after [_runCodingExecution]'s own [FlutterVerifier] gate
+  /// passes, driven by Aion directly (see [_assembleCorrectiveContext]
+  /// for the retry-turn prompt used instead when that gate fails). The
+  /// explicit "commit your changes" instruction was added after a real
+  /// manual pass caught the model finishing `IMPLEMENTATION: DONE`
+  /// having only edited files on disk without ever running `git commit`
+  /// — `flutter analyze` doesn't care about git state, so verification
+  /// passed anyway, Aion pushed a branch with nothing new, and `gh pr
+  /// create` correctly rejected it with "No commits between main and
+  /// ...", losing the edit entirely once the worktree was torn down.
   String _assembleExecutionContext(Ticket task) {
     final buffer = StringBuffer()..writeln('# ${task.title}');
     final description = task.description;
@@ -1450,9 +1494,10 @@ class TicketsCubit extends Cubit<TicketsState> {
       ..writeln()
       ..writeln(
         'Implement this Task using the available file, git, and bash '
-        'tools. Do not push or open a pull request — Aion verifies and '
-        'does that itself once you\'re done. End your reply with exactly '
-        'one line: "IMPLEMENTATION: DONE".',
+        'tools, then commit your changes (git add + git commit). Do not '
+        'push or open a pull request — Aion verifies and does that '
+        'itself once you\'re done. End your reply with exactly one '
+        'line: "IMPLEMENTATION: DONE".',
       );
     return buffer.toString().trim();
   }
@@ -1461,13 +1506,14 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [FlutterVerifier.analyze] fails and the effective
   /// `AutomationContext.codingExecutionRetry` confidence is
   /// [AutomationConfidence.auto] — the raw analyze [result], plus a
-  /// repeat of [_assembleExecutionContext]'s `IMPLEMENTATION: DONE`
-  /// completion-signal instruction. Added for
+  /// repeat of [_assembleExecutionContext]'s commit +
+  /// `IMPLEMENTATION: DONE` completion-signal instruction. Added for
   /// `aion-arch/changes/coding-execution-reliability-and-safety`.
   String _assembleCorrectiveContext(FlutterVerifyResult result) {
     return '`flutter analyze` reported the following issues:\n\n'
         '${result.output}\n\n'
-        'Fix these issues, then end your reply with exactly one line: '
+        'Fix these issues and commit your changes (git add + git '
+        'commit), then end your reply with exactly one line: '
         '"IMPLEMENTATION: DONE".';
   }
 

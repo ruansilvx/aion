@@ -47,7 +47,10 @@ class GitRepositoryClient {
     String worktreePath,
     String branchName,
   ) async {
-    await _run(['worktree', 'add', '-b', branchName, worktreePath], rootPath);
+    await _runChecked(
+      ['worktree', 'add', '-b', branchName, worktreePath],
+      rootPath,
+    );
   }
 
   /// Runs `git worktree remove <worktreePath> --force` in [rootPath].
@@ -58,7 +61,7 @@ class GitRepositoryClient {
   /// itself; the branch survives (and stays pushed, if [push] below
   /// already ran) after the worktree is gone.
   Future<void> removeWorktree(String rootPath, String worktreePath) async {
-    await _run(['worktree', 'remove', worktreePath, '--force'], rootPath);
+    await _runChecked(['worktree', 'remove', worktreePath, '--force'], rootPath);
   }
 
   /// Runs `git push -u origin <branchName>` in [worktreePath] — pushes the
@@ -66,10 +69,35 @@ class GitRepositoryClient {
   /// (not [rootPath]), since that's where the branch's commits actually
   /// live.
   Future<void> push(String worktreePath, String branchName) async {
-    await _run(['push', '-u', 'origin', branchName], worktreePath);
+    await _runChecked(['push', '-u', 'origin', branchName], worktreePath);
   }
 
   Future<ProcessResult> _run(List<String> args, String rootPath) {
     return Process.run('git', args, workingDirectory: rootPath);
+  }
+
+  /// Same as [_run], but throws a [ProcessException] (carrying `stderr`)
+  /// if `git` exits non-zero. [createWorktree]/[removeWorktree]/[push]
+  /// use this rather than [init]/[add]/[commit]/[hasChanges]'s existing
+  /// fire-and-forget shape, because a silently swallowed failure here
+  /// leaves a coding-execution run believing an isolated worktree exists
+  /// when it doesn't — confirmed via a live manual run: `git worktree
+  /// add` failing silently left the model's turn pointed at an empty
+  /// temp directory, which it escaped by finding and committing to the
+  /// developer's real checkout instead of throwing loudly and aborting.
+  /// A `/verify` follow-up fix for
+  /// `aion-arch/changes/coding-execution-reliability-and-safety`.
+  Future<ProcessResult> _runChecked(List<String> args, String rootPath) async {
+    final result = await _run(args, rootPath);
+    if (result.exitCode != 0) {
+      final stderr = result.stderr.toString().trim();
+      throw ProcessException(
+        'git',
+        args,
+        stderr.isEmpty ? 'git ${args.join(' ')} exited ${result.exitCode}' : stderr,
+        result.exitCode,
+      );
+    }
+    return result;
   }
 }
