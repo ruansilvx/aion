@@ -12,12 +12,11 @@ import 'package:aion/features/projects/domain/repositories/baseline_repository.d
 import 'package:aion/features/projects/domain/repositories/project_repository.dart';
 
 /// Reads baseline manifests from the app's bundled
-/// `assets/baseline/<version>/manifest.json` assets, and lists a
-/// project's local override files from
-/// `<rootPath>/.aion/overrides/`. Depends on [ProjectRepository] to
-/// resolve a project id to its `rootPath` for [readOverrides] — pure
-/// reads only, no validation (see
-/// `aion-arch/changes/multi-project-hub/design.md` §3).
+/// `assets/baseline/<version>/manifest.json` assets, lists and edits a
+/// project's local override files under `<rootPath>/.aion/overrides/`.
+/// Depends on [ProjectRepository] to resolve a project id to its
+/// `rootPath` for [readOverrides]/[writeOverride] — pure I/O, no content
+/// validation (see `aion-arch/changes/multi-project-hub/design.md` §3).
 class BundledBaselineRepository implements BaselineRepository {
   /// Creates a [BundledBaselineRepository]. [_projectRepository] resolves
   /// a project id to its `rootPath` for [readOverrides]; [_bundle]
@@ -32,7 +31,7 @@ class BundledBaselineRepository implements BaselineRepository {
   /// the single version shipped in `assets/baseline/` — a future
   /// baseline release adds an entry here alongside its own asset
   /// directory.
-  static const _bundledVersions = ['0.1.0', '0.2.0'];
+  static const _bundledVersions = ['0.1.0', '0.2.0', '0.3.0'];
 
   @override
   Future<List<String>> getAvailableBaselineVersions() async {
@@ -82,25 +81,71 @@ class BundledBaselineRepository implements BaselineRepository {
     );
     if (!overridesDir.existsSync()) return const [];
 
+    // Cross-reference the project's pinned manifest to reconstruct each
+    // override's full, slash-qualified asset key (e.g. `skills/propose`)
+    // from its flat file name (`propose.md`) — [writeOverride] stores
+    // overrides in one flat directory keyed by [BaselineAsset.key]'s
+    // last path segment only, since a segment is unique across a
+    // manifest today, but that segment alone doesn't match
+    // [BaselineAsset.key] by `==`. Falls back to the bare file-name
+    // segment if no manifest asset matches (e.g. a leftover override
+    // file for an asset since removed from the manifest).
+    final manifest = await getManifest(project!.baselineVersion);
+    final keyBySegment = <String, String>{
+      for (final asset in manifest.assets) asset.key.split('/').last: asset.key,
+    };
+
     return overridesDir
         .listSync()
         .whereType<File>()
-        .map(
-          (file) => ProjectOverride(
+        .map((file) {
+          final segment = _assetKeyFromFileName(file.path);
+          return ProjectOverride(
             projectId: projectId,
-            assetKey: _assetKeyFromFileName(file.path),
+            assetKey: keyBySegment[segment] ?? segment,
             overridePath: file.path,
-          ),
-        )
+          );
+        })
         .toList();
   }
 
-  /// Derives a baseline asset key from an override file's name — the
-  /// file name without its extension (e.g. `propose.md` → `"propose"`).
-  /// Matched against [BaselineAsset.key] by the caller.
+  /// Derives a baseline asset key *segment* from an override file's
+  /// name — the file name without its extension (e.g. `propose.md` →
+  /// `"propose"`). Not itself a full [BaselineAsset.key] (see
+  /// [readOverrides]'s manifest cross-reference, which reconstructs the
+  /// full key from this segment).
   String _assetKeyFromFileName(String path) {
     final fileName = path.split(Platform.pathSeparator).last;
     final dotIndex = fileName.lastIndexOf('.');
     return dotIndex == -1 ? fileName : fileName.substring(0, dotIndex);
+  }
+
+  @override
+  Future<String> readBundledContent(BaselineAsset asset) =>
+      _bundle.loadString(asset.bundledPath);
+
+  @override
+  Future<String> readOverrideContent(String overridePath) =>
+      File(overridePath).readAsString();
+
+  @override
+  Future<void> writeOverride({
+    required String projectId,
+    required BaselineAsset asset,
+    required String content,
+  }) async {
+    final project = await _projectRepository.getProject(projectId);
+    final rootPath = project?.rootPath;
+    if (rootPath == null) return;
+
+    final overridesDir = Directory(
+      '$rootPath${Platform.pathSeparator}.aion${Platform.pathSeparator}overrides',
+    )..createSync(recursive: true);
+    final keySegment = asset.key.split('/').last;
+    final ext = asset.bundledPath.split('.').last;
+    final file = File(
+      '${overridesDir.path}${Platform.pathSeparator}$keySegment.$ext',
+    );
+    await file.writeAsString(content);
   }
 }

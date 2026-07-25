@@ -112,8 +112,9 @@ enum TicketsErrorReason {
   /// confidence. Informational, surfaced once via `AppToast`.
   executionBudgetOverageDetected,
 
-  /// A coding-execution run's `flutter analyze` verify gate failed and the
-  /// effective `AutomationContext.codingExecutionRetry` confidence is
+  /// A coding-execution run's agentic verify turn reported
+  /// `VERIFICATION: FAILED` and the effective
+  /// `AutomationContext.codingExecutionRetry` confidence is
   /// `gated` (or `auto` with its retry cap exhausted, forced to `gated`
   /// visibility) — surfaced once via `AppToast`, alongside the Task
   /// detail screen's failure banner. Added for
@@ -340,7 +341,7 @@ class TicketDetailLoaded extends TicketsState {
   final bool executionAwaitingReview;
 
   /// Why [ticket] (a `task`) is showing a coding-execution failure state —
-  /// a `flutter analyze` verify-gate failure (with its raw output), a
+  /// an agentic verify-turn failure (with its reported reason), a
   /// hard run error, or a fixed "ended without a clear result" message for
   /// an orphaned/stalled run (e.g. after an app restart mid-run). `null`
   /// when the run hasn't failed. Task-only, computed by

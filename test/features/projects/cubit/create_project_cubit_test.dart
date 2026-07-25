@@ -4,15 +4,20 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
+import 'package:aion/features/projects/data/services/baseline_tailoring_service.dart';
 import 'package:aion/features/projects/projects.dart';
 
 class MockProjectRepository extends Mock implements ProjectRepository {}
 
 class MockBaselineRepository extends Mock implements BaselineRepository {}
 
+class MockBaselineTailoringService extends Mock
+    implements BaselineTailoringService {}
+
 void main() {
   late MockProjectRepository projectRepository;
   late MockBaselineRepository baselineRepository;
+  late MockBaselineTailoringService baselineTailoringService;
   late Directory tempDir;
 
   final existing = Project(
@@ -31,6 +36,7 @@ void main() {
   setUp(() async {
     projectRepository = MockProjectRepository();
     baselineRepository = MockBaselineRepository();
+    baselineTailoringService = MockBaselineTailoringService();
     tempDir = await Directory.systemTemp.createTemp('create_project_test_');
     when(
       () => projectRepository.getAllProjects(),
@@ -38,6 +44,12 @@ void main() {
     when(
       () => baselineRepository.getAvailableBaselineVersions(),
     ).thenAnswer((_) async => ['0.1.0']);
+    when(
+      () => baselineTailoringService.tailorForDetectedStack(
+        projectId: any(named: 'projectId'),
+        rootPath: any(named: 'rootPath'),
+      ),
+    ).thenAnswer((_) async {});
   });
 
   tearDown(() async {
@@ -50,7 +62,11 @@ void main() {
     blocTest<CreateProjectCubit, CreateProjectState>(
       'submit rejects a name that collides with an existing project '
       '(case-insensitive)',
-      build: () => CreateProjectCubit(projectRepository, baselineRepository),
+      build: () => CreateProjectCubit(
+        projectRepository,
+        baselineRepository,
+        baselineTailoringService,
+      ),
       act: (cubit) =>
           cubit.submit(name: 'existing project', rootPath: tempDir.path),
       expect: () => [
@@ -73,7 +89,11 @@ void main() {
           '${tempDir.path}${Platform.pathSeparator}.aion${Platform.pathSeparator}manifest.json',
         ).writeAsStringSync('{}');
       },
-      build: () => CreateProjectCubit(projectRepository, baselineRepository),
+      build: () => CreateProjectCubit(
+        projectRepository,
+        baselineRepository,
+        baselineTailoringService,
+      ),
       act: (cubit) =>
           cubit.submit(name: 'A New Project', rootPath: tempDir.path),
       expect: () => [
@@ -95,7 +115,11 @@ void main() {
           () => projectRepository.createProject(any()),
         ).thenAnswer((_) async {});
       },
-      build: () => CreateProjectCubit(projectRepository, baselineRepository),
+      build: () => CreateProjectCubit(
+        projectRepository,
+        baselineRepository,
+        baselineTailoringService,
+      ),
       act: (cubit) =>
           cubit.submit(name: 'A New Project', rootPath: tempDir.path),
       expect: () => [
@@ -106,6 +130,12 @@ void main() {
       ],
       verify: (_) {
         verify(() => projectRepository.createProject(any())).called(1);
+        verify(
+          () => baselineTailoringService.tailorForDetectedStack(
+            projectId: any(named: 'projectId'),
+            rootPath: tempDir.path,
+          ),
+        ).called(1);
       },
     );
 
@@ -117,7 +147,11 @@ void main() {
           () => projectRepository.createProject(any()),
         ).thenThrow(Exception('disk write error'));
       },
-      build: () => CreateProjectCubit(projectRepository, baselineRepository),
+      build: () => CreateProjectCubit(
+        projectRepository,
+        baselineRepository,
+        baselineTailoringService,
+      ),
       act: (cubit) =>
           cubit.submit(name: 'A New Project', rootPath: tempDir.path),
       expect: () => [

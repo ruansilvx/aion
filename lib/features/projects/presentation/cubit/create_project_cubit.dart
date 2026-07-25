@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:aion/core/core.dart';
+import 'package:aion/features/projects/data/services/baseline_tailoring_service.dart';
 import 'package:aion/features/projects/domain/entities/project.dart';
 import 'package:aion/features/projects/domain/repositories/baseline_repository.dart';
 import 'package:aion/features/projects/domain/repositories/project_repository.dart';
@@ -17,16 +18,22 @@ import 'package:aion/features/projects/presentation/cubit/create_project_state.d
 /// Validates the name (non-empty, unique) and — desktop only — that the
 /// chosen directory isn't already an Aion project (no existing
 /// `.aion/manifest.json` marker), then persists via [ProjectRepository]
-/// and, on desktop, writes the marker and initializes an empty git
-/// repository at `rootPath`.
+/// and, on desktop, writes the marker, initializes an empty git
+/// repository at `rootPath`, and asks [_baselineTailoringService] to
+/// tailor a starting `conventions/architecture-conventions` override
+/// from the detected stack.
 class CreateProjectCubit extends Cubit<CreateProjectState> {
-  /// Creates a [CreateProjectCubit] backed by [_projectRepository] and
-  /// [_baselineRepository].
-  CreateProjectCubit(this._projectRepository, this._baselineRepository)
-    : super(const CreateProjectInitial());
+  /// Creates a [CreateProjectCubit] backed by [_projectRepository],
+  /// [_baselineRepository], and [_baselineTailoringService].
+  CreateProjectCubit(
+    this._projectRepository,
+    this._baselineRepository,
+    this._baselineTailoringService,
+  ) : super(const CreateProjectInitial());
 
   final ProjectRepository _projectRepository;
   final BaselineRepository _baselineRepository;
+  final BaselineTailoringService _baselineTailoringService;
   static const _uuid = Uuid();
 
   /// Marker file written at `<rootPath>/.aion/manifest.json` on project
@@ -125,6 +132,10 @@ class CreateProjectCubit extends Cubit<CreateProjectState> {
 
       if (isDesktop && rootPath != null) {
         await _initializeDesktopProject(rootPath, resolvedVersion);
+        await _baselineTailoringService.tailorForDetectedStack(
+          projectId: id,
+          rootPath: rootPath,
+        );
       }
 
       await _projectRepository.createProject(project);

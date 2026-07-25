@@ -138,6 +138,15 @@ class SettingsScreen extends StatelessWidget {
                                   .l10n
                                   .settingsAutomationCodingExecutionRetryDescription,
                             ),
+                            const SizedBox(height: 22),
+                            Text(
+                              context.l10n.settingsOverridesEyebrow,
+                              style: AionText.caption.copyWith(
+                                color: c.textMuted,
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            const _OverridesSummarySection(),
                           ],
                         );
                       },
@@ -519,6 +528,39 @@ class _ProviderStatusCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// "OVERRIDES" section on [SettingsScreen] — a short summary plus a
+/// button into `OverridesListScreen`, where a user browses every
+/// baseline skill/convention asset for the active project and edits a
+/// plain-text local override for any one of them.
+class _OverridesSummarySection extends StatelessWidget {
+  const _OverridesSummarySection();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          context.l10n.settingsOverridesSummary,
+          style: AionText.bodySm.copyWith(color: c.textMuted, height: 1.5),
+        ),
+        const SizedBox(height: AionSpacing.sp8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: AppButton(
+            label: context.l10n.settingsOverridesManageButton,
+            variant: AppButtonVariant.secondary,
+            icon: PhosphorIcons.stackLight,
+            onPressed: () => context.go('/workspace/settings/overrides'),
+          ),
+        ),
+      ],
     );
   }
 }

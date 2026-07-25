@@ -18,7 +18,6 @@ abstract final class AionShadows {
           color: c.primary.withValues(alpha: 0.12),
           blurRadius: 8,
           spreadRadius: -4,
-          inset: true,
         ),
       ];
     }
