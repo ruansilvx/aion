@@ -118,6 +118,39 @@ class _OverridesList extends StatelessWidget {
   }
 }
 
+/// The two kinds a baseline asset renders as in this list — drives only
+/// the kind glyph and its color (`_kindGlyphs`/[kindGlyphColor]). Distinct
+/// from the wider [BaselineAssetKind] (which also has `modelConfig`, an
+/// asset kind this list treats visually as a convention — see
+/// [overrideKindOf]) — this narrower enum is the row's actual view model,
+/// per `aion-arch/changes/project-type-aware-conventions-and-
+/// verification/design.md` §5.
+enum OverrideKind {
+  /// A `skills/*` baseline asset — rendered with the sparkle glyph in
+  /// [AionColors.primary].
+  skill,
+
+  /// Any non-skill baseline asset (`conventions/*`, `config/*`) —
+  /// rendered with the ruler glyph in [AionColors.secondary].
+  convention,
+}
+
+/// Maps a manifest asset's [BaselineAssetKind] to the row's narrower
+/// [OverrideKind] — only [BaselineAssetKind.skill] is visually distinct;
+/// every other kind (`modelConfig`, `architectureConvention`) reads as a
+/// [OverrideKind.convention].
+OverrideKind overrideKindOf(BaselineAssetKind kind) =>
+    kind == BaselineAssetKind.skill
+        ? OverrideKind.skill
+        : OverrideKind.convention;
+
+/// The kind icon well's glyph color for [kind] — [AionColors.primary] for
+/// [OverrideKind.skill], [AionColors.secondary] for
+/// [OverrideKind.convention]. The only place [OverrideKind] affects color;
+/// everything else in a row is kind-agnostic (design.md §2.4).
+Color kindGlyphColor(OverrideKind kind, AionColors colors) =>
+    kind == OverrideKind.skill ? colors.primary : colors.secondary;
+
 /// One baseline asset row — its key, a short human-readable descriptor
 /// derived from the key, and an "Overridden" chip when a local override
 /// is in effect for it.
@@ -133,9 +166,8 @@ class _OverrideListRow extends StatelessWidget {
   final VoidCallback onTap;
 
   static const _kindGlyphs = {
-    BaselineAssetKind.skill: PhosphorIcons.sparkleLight,
-    BaselineAssetKind.modelConfig: PhosphorIcons.slidersLight,
-    BaselineAssetKind.architectureConvention: PhosphorIcons.rulerLight,
+    OverrideKind.skill: PhosphorIcons.sparkleLight,
+    OverrideKind.convention: PhosphorIcons.rulerLight,
   };
 
   /// A short, readable label derived from [asset]'s key segment (e.g.
@@ -169,11 +201,9 @@ class _OverrideListRow extends StatelessWidget {
                 height: 32,
                 child: Center(
                   child: PhosphorIcon(
-                    _kindGlyphs[asset.kind] ?? PhosphorIcons.fileLight,
+                    _kindGlyphs[overrideKindOf(asset.kind)]!,
                     size: 18,
-                    color: asset.kind == BaselineAssetKind.skill
-                        ? c.primary
-                        : c.secondary,
+                    color: kindGlyphColor(overrideKindOf(asset.kind), c),
                   ),
                 ),
               ),

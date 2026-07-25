@@ -9,6 +9,20 @@ import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/projects/presentation/cubit/override_editor_cubit.dart';
 import 'package:aion/features/projects/presentation/cubit/override_editor_state.dart';
 
+/// Which text [OverrideEditorScreen] was opened on — drives the status
+/// line's copy/color (§3.2) and the Save button's label (§3.4). No stored
+/// override → [editingDefault]. A view-model enum, per `aion-arch/
+/// changes/project-type-aware-conventions-and-verification/design.md`
+/// §5 — carries no design tokens of its own.
+enum OverrideEditorMode {
+  /// The editor opened on an existing project-local override.
+  editingOverride,
+
+  /// The editor opened on the bundled default — no override exists yet
+  /// for this asset; saving creates one.
+  editingDefault,
+}
+
 /// The `/workspace/settings/overrides/:assetKey` route: a full-page plain
 /// multi-line editor for one baseline asset's project-local override —
 /// its existing override content if one exists, otherwise the bundled
@@ -117,7 +131,9 @@ class _OverrideEditorScreenState extends State<OverrideEditorScreen> {
                   ),
                   OverrideEditorReady(:final isOverridden) => _EditorBody(
                     controller: _controller,
-                    isOverridden: isOverridden,
+                    mode: isOverridden
+                        ? OverrideEditorMode.editingOverride
+                        : OverrideEditorMode.editingDefault,
                     isDirty: _isDirty,
                     isSaving: false,
                     onSave: () => context
@@ -126,7 +142,7 @@ class _OverrideEditorScreenState extends State<OverrideEditorScreen> {
                   ),
                   OverrideEditorSaving() => _EditorBody(
                     controller: _controller,
-                    isOverridden: true,
+                    mode: OverrideEditorMode.editingOverride,
                     isDirty: false,
                     isSaving: true,
                     onSave: null,
@@ -145,14 +161,14 @@ class _OverrideEditorScreenState extends State<OverrideEditorScreen> {
 class _EditorBody extends StatelessWidget {
   const _EditorBody({
     required this.controller,
-    required this.isOverridden,
+    required this.mode,
     required this.isDirty,
     required this.isSaving,
     required this.onSave,
   });
 
   final TextEditingController controller;
-  final bool isOverridden;
+  final OverrideEditorMode mode;
   final bool isDirty;
   final bool isSaving;
   final VoidCallback? onSave;
@@ -160,6 +176,7 @@ class _EditorBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = ThemeScope.of(context).colors;
+    final isEditingOverride = mode == OverrideEditorMode.editingOverride;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -168,11 +185,11 @@ class _EditorBody extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: isOverridden
+              color: isEditingOverride
                   ? c.primarySubtle
                   : c.noticeFill(ThemeScope.of(context).isDark),
               border: Border.all(
-                color: isOverridden
+                color: isEditingOverride
                     ? c.aiBubbleBorder(ThemeScope.of(context).isDark)
                     : c.noticeBorder(ThemeScope.of(context).isDark),
                 width: 1,
@@ -185,7 +202,7 @@ class _EditorBody extends StatelessWidget {
                 vertical: 9,
               ),
               child: Text(
-                isOverridden
+                isEditingOverride
                     ? context.l10n.overrideEditorOverriddenNotice
                     : context.l10n.overrideEditorDefaultNotice,
                 style: AionText.bodySm.copyWith(
@@ -212,7 +229,7 @@ class _EditorBody extends StatelessWidget {
             child: AppButton(
               label: isSaving
                   ? context.l10n.overrideEditorSavingLabel
-                  : isOverridden
+                  : isEditingOverride
                   ? context.l10n.overrideEditorSaveButton
                   : context.l10n.overrideEditorCreateButton,
               isFullWidth: true,
