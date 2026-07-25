@@ -66,7 +66,7 @@ void main() {
 
       expect(
         await repository.getAvailableBaselineVersions(),
-        ['0.1.0', '0.2.0'],
+        ['0.1.0', '0.2.0', '0.3.0'],
       );
     });
   });
@@ -144,8 +144,8 @@ void main() {
       expect(await repository.readOverrides('1'), isEmpty);
     });
 
-    test('lists override files under .aion/overrides, keyed by file '
-        'name without extension', () async {
+    test('lists override files under .aion/overrides, resolving each '
+        "file's bare name back to its full manifest key", () async {
       final project = Project(
         id: '1',
         name: 'Desktop Project',
@@ -172,8 +172,147 @@ void main() {
       final overrides = await repository.readOverrides('1');
 
       expect(overrides, hasLength(1));
-      expect(overrides.first.assetKey, 'propose');
+      expect(overrides.first.assetKey, 'skills/propose');
       expect(overrides.first.projectId, '1');
+    });
+
+    test('falls back to the bare file-name segment when no manifest '
+        'asset matches it', () async {
+      final project = Project(
+        id: '1',
+        name: 'Desktop Project',
+        storageKey: '1',
+        rootPath: tempDir.path,
+        baselineVersion: '0.1.0',
+        createdAt: DateTime(2026, 1, 1),
+        lastOpenedAt: DateTime(2026, 1, 1),
+      );
+      when(
+        () => projectRepository.getProject('1'),
+      ).thenAnswer((_) async => project);
+      final overridesDir = Directory(
+        '${tempDir.path}${Platform.pathSeparator}.aion${Platform.pathSeparator}overrides',
+      )..createSync(recursive: true);
+      File(
+        '${overridesDir.path}${Platform.pathSeparator}orphaned.md',
+      ).writeAsStringSync('leftover override for a removed asset');
+
+      final repository = BundledBaselineRepository(
+        projectRepository,
+        bundle: _FakeAssetBundle(manifestJson),
+      );
+      final overrides = await repository.readOverrides('1');
+
+      expect(overrides, hasLength(1));
+      expect(overrides.first.assetKey, 'orphaned');
+    });
+  });
+
+  group('readBundledContent', () {
+    test('loads content from the asset bundle at bundledPath', () async {
+      final repository = BundledBaselineRepository(
+        projectRepository,
+        bundle: _FakeAssetBundle(manifestJson),
+      );
+
+      final content = await repository.readBundledContent(
+        const BaselineAsset(
+          key: 'config/model-config',
+          kind: BaselineAssetKind.modelConfig,
+          bundledPath: 'assets/baseline/0.1.0/manifest.json',
+        ),
+      );
+
+      expect(content, manifestJson);
+    });
+  });
+
+  group('readOverrideContent', () {
+    test('reads the raw content of an override file', () async {
+      final overridePath =
+          '${tempDir.path}${Platform.pathSeparator}override.md';
+      File(overridePath).writeAsStringSync('custom content');
+      final repository = BundledBaselineRepository(
+        projectRepository,
+        bundle: _FakeAssetBundle(manifestJson),
+      );
+
+      expect(
+        await repository.readOverrideContent(overridePath),
+        'custom content',
+      );
+    });
+  });
+
+  group('writeOverride', () {
+    const asset = BaselineAsset(
+      key: 'skills/propose',
+      kind: BaselineAssetKind.skill,
+      bundledPath: 'assets/baseline/0.1.0/skills/propose.md',
+    );
+
+    test('no-ops when the project has no rootPath (mobile/web)', () async {
+      final project = Project(
+        id: '1',
+        name: 'Mobile Project',
+        storageKey: '1',
+        baselineVersion: '0.1.0',
+        createdAt: DateTime(2026, 1, 1),
+        lastOpenedAt: DateTime(2026, 1, 1),
+      );
+      when(
+        () => projectRepository.getProject('1'),
+      ).thenAnswer((_) async => project);
+      final repository = BundledBaselineRepository(
+        projectRepository,
+        bundle: _FakeAssetBundle(manifestJson),
+      );
+
+      await repository.writeOverride(
+        projectId: '1',
+        asset: asset,
+        content: 'my override',
+      );
+
+      expect(
+        Directory(
+          '${tempDir.path}${Platform.pathSeparator}.aion',
+        ).existsSync(),
+        isFalse,
+      );
+    });
+
+    test('creates the overrides directory if missing and writes the '
+        'correctly-named file', () async {
+      final project = Project(
+        id: '1',
+        name: 'Desktop Project',
+        storageKey: '1',
+        rootPath: tempDir.path,
+        baselineVersion: '0.1.0',
+        createdAt: DateTime(2026, 1, 1),
+        lastOpenedAt: DateTime(2026, 1, 1),
+      );
+      when(
+        () => projectRepository.getProject('1'),
+      ).thenAnswer((_) async => project);
+      final repository = BundledBaselineRepository(
+        projectRepository,
+        bundle: _FakeAssetBundle(manifestJson),
+      );
+
+      await repository.writeOverride(
+        projectId: '1',
+        asset: asset,
+        content: 'my override',
+      );
+
+      final written = File(
+        '${tempDir.path}${Platform.pathSeparator}.aion'
+        '${Platform.pathSeparator}overrides${Platform.pathSeparator}propose.md',
+      );
+      expect(written.existsSync(), isTrue);
+      expect(written.readAsStringSync(), 'my override');
     });
   });
 }

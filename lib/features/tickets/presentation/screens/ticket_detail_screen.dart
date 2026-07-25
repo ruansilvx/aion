@@ -2488,7 +2488,9 @@ class _ExecutionRunningHintState extends State<_ExecutionRunningHint>
 
 /// Secondary status line shown below [_ExecutionRunningHint]'s gear row
 /// while a tool call is in flight, reflecting the run's current activity
-/// (e.g. "Running `flutter analyze`..."). Indented to align under the
+/// (e.g. "Running `npm test`..." — whatever tool the model's implement
+/// or agentic verify turn is actually invoking, not a fixed command).
+/// Indented to align under the
 /// hint's *text* (not its gear): `15` (gear box) + `8` (hint row gap) =
 /// `23`. A slow, low-contrast opacity pulse signals liveness without
 /// competing with the gear's own rotation — static at full opacity under
@@ -2670,8 +2672,9 @@ class _ExecutionActionBanner extends StatelessWidget {
   /// "Verification failed — PR not opened").
   final String title;
 
-  /// The raw `flutter analyze`/error output, shown in a scrollable well
-  /// below the title — `tone: .failure` only. `null` for `tone: .success`
+  /// The raw agentic verify-turn failure reason/error output, shown in a
+  /// scrollable well below the title — `tone: .failure` only. `null` for
+  /// `tone: .success`
   /// (no PR metadata is parsed from the run's reply today, so per the
   /// original design's fallback rule the sub-line/detail is omitted
   /// rather than showing placeholder copy).
@@ -2747,16 +2750,17 @@ class _ExecutionActionBanner extends StatelessWidget {
 
 /// [_ExecutionActionBanner]'s failure-tone scrollable error well — a
 /// fixed-max-height (`96`), vertically scrollable mono region for the raw
-/// `flutter analyze`/error output, with a persistent bottom fade
-/// signaling "more below." Chosen over a "show details" disclosure so the
-/// banner's height stays constant regardless of error length, and
-/// recovery-critical info stays visible with no extra tap. Per
+/// agentic verify-turn failure reason/error output, with a persistent
+/// bottom fade signaling "more below." Chosen over a "show details"
+/// disclosure so the banner's height stays constant regardless of error
+/// length, and recovery-critical info stays visible with no extra tap.
+/// Per
 /// `aion-arch/changes/coding-execution-reliability-and-safety/design.md`
 /// §1.4.
 class _ExecutionErrorWell extends StatelessWidget {
   const _ExecutionErrorWell({required this.text});
 
-  /// The raw `flutter analyze`/error output to display.
+  /// The raw agentic verify-turn failure reason/error output to display.
   final String text;
 
   @override

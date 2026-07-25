@@ -91,6 +91,8 @@ flutter:
     - assets/baseline/0.1.0/skills/
     - assets/baseline/0.2.0/
     - assets/baseline/0.2.0/skills/
+    - assets/baseline/0.3.0/
+    - assets/baseline/0.3.0/skills/
     - assets/models/
   fonts:
     - family: Manrope

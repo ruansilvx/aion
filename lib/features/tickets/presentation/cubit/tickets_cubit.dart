@@ -12,11 +12,12 @@ import 'package:uuid/uuid.dart';
 import 'package:aion/core/automation/automation_confidence.dart';
 import 'package:aion/core/automation/automation_context.dart';
 import 'package:aion/core/automation/automation_settings_repository.dart';
-import 'package:aion/core/build/flutter_verifier.dart';
 import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/core/contracts/embedding_provider.dart';
 import 'package:aion/core/git/git_repository_client.dart';
 import 'package:aion/core/git/github_cli_client.dart';
+import 'package:aion/features/projects/domain/entities/baseline_asset.dart';
+import 'package:aion/features/projects/domain/repositories/baseline_repository.dart';
 import 'package:aion/features/providers/domain/enums/agent_model.dart';
 import 'package:aion/features/providers/domain/enums/model_phase.dart';
 import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
@@ -59,20 +60,28 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// resolution fall back to [AgentModel.sonnet] (see [_resolveModel]),
   /// today's pre-per-phase-routing default; real usage
   /// (`app_router.dart`) always supplies one.
-  /// [_gitClient]/[_gitHubClient]/[_flutterVerifier] follow the same
-  /// optional-dependency pattern too — `null` makes
-  /// [_runCodingExecution] no-op entirely (same guard as
-  /// [_agentClient]/[_commentRepository]), since a worktree-isolated,
-  /// verify-gated run can't proceed without all three; real usage
-  /// (`app_router.dart`) always supplies them. Added for
+  /// [_gitClient]/[_gitHubClient] follow the same optional-dependency
+  /// pattern too — `null` makes [_runCodingExecution] no-op entirely
+  /// (same guard as [_agentClient]/[_commentRepository]), since a
+  /// worktree-isolated, verify-gated run can't proceed without them;
+  /// real usage (`app_router.dart`) always supplies them. Added for
   /// `aion-arch/changes/coding-execution-reliability-and-safety`.
+  /// [_baselineRepository]/[_projectId]/[_baselineVersion] follow the
+  /// same pattern again — `null` on any of them also no-ops
+  /// [_runCodingExecution], since resolving the effective `skills/
+  /// verify`/`conventions/architecture-conventions` content
+  /// ([_effectiveAssetContent]) needs all three; real usage always
+  /// supplies them too. Added for `aion-arch/changes/project-type-
+  /// aware-conventions-and-verification` (replaces the prior
+  /// `FlutterVerifier`-based mechanical verify gate with an agentic one
+  /// — see [_assembleVerificationContext]).
   // The public param names below (embeddingProvider/gitProjector/
   // projectRootPath/agentClient/commentRepository/
   // automationSettingsRepository/modelRoutingRepository/gitClient/
-  // gitHubClient/flutterVerifier) intentionally differ from their private
-  // backing fields; a private identifier can't be used as an external
-  // named-parameter label from another library, so `this._foo` shorthand
-  // isn't usable here.
+  // gitHubClient/baselineRepository/projectId/baselineVersion)
+  // intentionally differ from their private backing fields; a private
+  // identifier can't be used as an external named-parameter label from
+  // another library, so `this._foo` shorthand isn't usable here.
   TicketsCubit(
     this._repository, {
     EmbeddingProvider? embeddingProvider,
@@ -85,7 +94,9 @@ class TicketsCubit extends Cubit<TicketsState> {
     ModelRoutingRepository? modelRoutingRepository,
     GitRepositoryClient? gitClient,
     GitHubCliClient? gitHubClient,
-    FlutterVerifier? flutterVerifier,
+    BaselineRepository? baselineRepository,
+    String? projectId,
+    String? baselineVersion,
   }) : super(const TicketsInitial()) {
     _embeddingProvider = embeddingProvider;
     _gitProjector = gitProjector;
@@ -97,7 +108,9 @@ class TicketsCubit extends Cubit<TicketsState> {
     _modelRoutingRepository = modelRoutingRepository;
     _gitClient = gitClient;
     _gitHubClient = gitHubClient;
-    _flutterVerifier = flutterVerifier;
+    _baselineRepository = baselineRepository;
+    _projectId = projectId;
+    _baselineVersion = baselineVersion;
   }
 
   final TicketRepository _repository;
@@ -111,18 +124,20 @@ class TicketsCubit extends Cubit<TicketsState> {
   late final ModelRoutingRepository? _modelRoutingRepository;
   late final GitRepositoryClient? _gitClient;
   late final GitHubCliClient? _gitHubClient;
-  late final FlutterVerifier? _flutterVerifier;
+  late final BaselineRepository? _baselineRepository;
+  late final String? _projectId;
+  late final String? _baselineVersion;
   static const _uuid = Uuid();
 
-  /// Cap on automatic corrective turns (analyze-fails →  feed errors back
-  /// → re-implement) when the effective
+  /// Cap on automatic corrective turns (verification fails → feed the
+  /// reason back → re-implement) when the effective
   /// `AutomationContext.codingExecutionRetry` confidence is `auto`. Once
   /// exhausted, the failure is treated as `gated` regardless of the
   /// configured confidence — mirrors
   /// [_effectiveCodingExecutionConfidence]'s existing overage-forces-
   /// `gated` precedent. Added for
   /// `aion-arch/changes/coding-execution-reliability-and-safety`.
-  static const _maxAnalyzeRetries = 2;
+  static const _maxVerifyRetries = 2;
 
   /// The Task id of the coding-execution run currently in flight, or
   /// `null` if none is running. In-memory only — does not survive an app
@@ -1083,34 +1098,40 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Runs [task]'s coding-execution turn end to end: creates an isolated
   /// `git worktree` (via [GitRepositoryClient.createWorktree]) on a fresh
-  /// `aion/task-<id>` branch and runs `flutter pub get` in it once, spawns
-  /// a visible `chat` child ticket (`"Coding Execution — <task.title>"`),
-  /// posts the assembled context (see [_assembleExecutionContext]) as a
-  /// [CommentAuthorType.system] comment, then loops an implement-then-
-  /// verify turn: [ChatCubit.runChatTurn] (model resolved via
+  /// `aion/task-<id>` branch, spawns a visible `chat` child ticket
+  /// (`"Coding Execution — <task.title>"`), posts the assembled context
+  /// (see [_assembleExecutionContext]) as a [CommentAuthorType.system]
+  /// comment, then loops an implement-then-verify pair of **model**
+  /// turns: an implement [ChatCubit.runChatTurn] (model resolved via
   /// [_resolveModel]/[ModelPhase.execution], `toolsEnabled: true`,
   /// `workingDirectory` pointed at the worktree — never [_projectRootPath]
-  /// itself, so the developer's real checkout is never touched), then
-  /// [FlutterVerifier.analyze] in the worktree (no model call). On a
-  /// clean pass, pushes the branch ([GitRepositoryClient.push]) and opens
-  /// the PR itself ([GitHubCliClient.openPullRequest], no model call),
-  /// posting a system comment ending `EXECUTION: PR_OPENED <url>` (the
-  /// same terminal-signal convention [_executionSucceededWithPr] already
-  /// looks for). If [ChatCubit.runChatTurn] itself reports a hard failure
+  /// itself, so the developer's real checkout is never touched), then —
+  /// if that succeeded — a second `runChatTurn` in the same chat/
+  /// worktree fed [_assembleVerificationContext]'s prompt (the
+  /// project's effective `skills/verify` content), asking the model to
+  /// check its own work using whatever tooling fits this codebase and
+  /// end with a `VERIFICATION: PASSED`/`FAILED` terminal line — parsed
+  /// by [_verificationFailureReason] (fail-closed: only an explicit
+  /// `PASSED` line counts). On a pass, pushes the branch
+  /// ([GitRepositoryClient.push]) and opens the PR itself
+  /// ([GitHubCliClient.openPullRequest], no model call), posting a
+  /// system comment ending `EXECUTION: PR_OPENED <url>` (the same
+  /// terminal-signal convention [_executionSucceededWithPr] already
+  /// looks for). If either `runChatTurn` call reports a hard failure
   /// (already persisting its own `"Execution failed: ..."` comment), the
-  /// loop stops immediately without ever calling [FlutterVerifier] —
-  /// there's nothing to verify if the implementation turn never actually
-  /// completed. On an analyze failure, the effective
-  /// [AutomationContext.codingExecutionRetry] confidence (see
-  /// [_effectiveCodingExecutionRetryConfidence]) decides whether a
-  /// corrective turn (same chat, fed [_assembleCorrectiveContext]'s
-  /// prompt) runs automatically, up to [_maxAnalyzeRetries] attempts;
-  /// once retries are exhausted (forced `gated`) or the confidence was
-  /// never `auto`, posts a final `"Execution failed verification: ..."`
-  /// comment and stops — no PR. A `catch` around the whole worktree-
-  /// setup-through-PR sequence posts an `"Execution failed: ..."`
-  /// comment (same shape/detection as [ChatCubit.runChatTurn]'s own
-  /// hard-error comments) for any infra-level failure —
+  /// loop stops immediately — there's nothing to verify (or nothing
+  /// verified) if a turn never actually completed. On a verification
+  /// failure, the effective [AutomationContext.codingExecutionRetry]
+  /// confidence (see [_effectiveCodingExecutionRetryConfidence]) decides
+  /// whether a corrective turn (same chat, fed
+  /// [_assembleCorrectiveContext]'s prompt) runs automatically, up to
+  /// [_maxVerifyRetries] attempts; once retries are exhausted (forced
+  /// `gated`) or the confidence was never `auto`, posts a final
+  /// `"Execution failed verification: ..."` comment and stops — no PR.
+  /// A `catch` around the whole worktree-setup-through-PR sequence posts
+  /// an `"Execution failed: ..."` comment (same shape/detection as
+  /// [ChatCubit.runChatTurn]'s own hard-error comments) for any
+  /// infra-level failure —
   /// [GitRepositoryClient.createWorktree]/[GitHubCliClient.openPullRequest]/
   /// etc. throwing — so the exception can't propagate out of this
   /// `unawaited`-run method and permanently wedge
@@ -1136,20 +1157,25 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// Then dequeues the next run (see [_dequeueNext]), no-opping
   /// gracefully if constructed without an [AgentModelClient]/
   /// [CommentRepository]/[GitRepositoryClient]/[GitHubCliClient]/
-  /// [FlutterVerifier]/`projectRootPath` (see the constructor's dartdoc).
+  /// [BaselineRepository]/`projectId`/`baselineVersion`/`projectRootPath`
+  /// (see the constructor's dartdoc).
   Future<void> _runCodingExecution(Ticket task) async {
     final client = _agentClient;
     final commentRepo = _commentRepository;
     final automationRepo = _automationSettingsRepository;
     final gitClient = _gitClient;
     final gitHubClient = _gitHubClient;
-    final flutterVerifier = _flutterVerifier;
+    final baselineRepo = _baselineRepository;
+    final projectId = _projectId;
+    final baselineVersion = _baselineVersion;
     final rootPath = _projectRootPath;
     if (client == null ||
         commentRepo == null ||
         gitClient == null ||
         gitHubClient == null ||
-        flutterVerifier == null ||
+        baselineRepo == null ||
+        projectId == null ||
+        baselineVersion == null ||
         rootPath == null) {
       _inFlightExecutionTaskId = null;
       unawaited(_dequeueNext());
@@ -1191,9 +1217,8 @@ class TicketsCubit extends Cubit<TicketsState> {
 
     try {
       await gitClient.createWorktree(rootPath, worktreePath, branchName);
-      await flutterVerifier.pubGet(worktreePath);
 
-      var prompt = _assembleExecutionContext(task);
+      var prompt = await _assembleExecutionContext(task);
       await commentRepo.addComment(
         TicketComment(
           id: '',
@@ -1204,10 +1229,34 @@ class TicketsCubit extends Cubit<TicketsState> {
         ),
       );
 
+      // Shared by both the implement and verify turns below — same live
+      // "Running <tool>..." activity feed and overage handling either way.
+      void onChunk(String _) =>
+          _emitLiveExecutionActivity(task.id, wasShowingTaskDetail, null);
+      void onToolUse(String toolName, String? summary) =>
+          _emitLiveExecutionActivity(
+            task.id,
+            wasShowingTaskDetail,
+            summary == null
+                ? 'Running $toolName...'
+                : 'Running $toolName: $summary...',
+          );
+      void onOverageDetected() {
+        if (!_overageDetectedThisSession) {
+          _overageDetectedThisSession = true;
+          emit(
+            const TicketsError(
+              '',
+              reason: TicketsErrorReason.executionBudgetOverageDetected,
+            ),
+          );
+        }
+      }
+
       var attempt = 0;
       var verified = false;
       while (true) {
-        final turnSucceeded = await ChatCubit.runChatTurn(
+        final implementSucceeded = await ChatCubit.runChatTurn(
           client: client,
           commentRepo: commentRepo,
           chatTicketId: persistedChat.id,
@@ -1215,37 +1264,40 @@ class TicketsCubit extends Cubit<TicketsState> {
           model: await _resolveModel(ModelPhase.execution),
           toolsEnabled: true,
           workingDirectory: worktreePath,
-          onChunk: (_) =>
-              _emitLiveExecutionActivity(task.id, wasShowingTaskDetail, null),
-          onToolUse: (toolName, summary) => _emitLiveExecutionActivity(
-            task.id,
-            wasShowingTaskDetail,
-            summary == null
-                ? 'Running $toolName...'
-                : 'Running $toolName: $summary...',
-          ),
-          onOverageDetected: () {
-            if (!_overageDetectedThisSession) {
-              _overageDetectedThisSession = true;
-              emit(
-                const TicketsError(
-                  '',
-                  reason: TicketsErrorReason.executionBudgetOverageDetected,
-                ),
-              );
-            }
-          },
+          onChunk: onChunk,
+          onToolUse: onToolUse,
+          onOverageDetected: onOverageDetected,
         );
-        if (!turnSucceeded) {
+        if (!implementSucceeded) {
           // A hard error (API failure, thrown exception) — `runChatTurn`
           // already persisted an "Execution failed: ..." comment itself.
-          // Don't run the verify gate against a worktree whose
+          // Don't run a verify turn against a worktree whose
           // implementation turn never actually completed.
           break;
         }
 
-        final verifyResult = await flutterVerifier.analyze(worktreePath);
-        if (verifyResult.passed) {
+        final verifyPrompt = await _assembleVerificationContext(task);
+        final verifySucceeded = await ChatCubit.runChatTurn(
+          client: client,
+          commentRepo: commentRepo,
+          chatTicketId: persistedChat.id,
+          prompt: verifyPrompt,
+          model: await _resolveModel(ModelPhase.execution),
+          toolsEnabled: true,
+          workingDirectory: worktreePath,
+          onChunk: onChunk,
+          onToolUse: onToolUse,
+          onOverageDetected: onOverageDetected,
+        );
+        if (!verifySucceeded) {
+          // A hard error during the verify turn itself — same shape as
+          // above; `runChatTurn` already posted the failure comment.
+          break;
+        }
+
+        final verifyReply = await _lastCommentContent(persistedChat.id);
+        final failureReason = _verificationFailureReason(verifyReply);
+        if (failureReason == null) {
           verified = true;
           break;
         }
@@ -1256,7 +1308,7 @@ class TicketsCubit extends Cubit<TicketsState> {
           attempt,
         );
         if (retryConfidence == AutomationConfidence.auto) {
-          prompt = _assembleCorrectiveContext(verifyResult);
+          prompt = _assembleCorrectiveContext(failureReason);
           continue;
         }
 
@@ -1264,8 +1316,7 @@ class TicketsCubit extends Cubit<TicketsState> {
           TicketComment(
             id: '',
             ticketId: persistedChat.id,
-            content: 'Execution failed verification:\n\n'
-                '${verifyResult.output}',
+            content: 'Execution failed verification:\n\n$failureReason',
             authorType: CommentAuthorType.system,
             createdAt: DateTime.now(),
           ),
@@ -1304,10 +1355,9 @@ class TicketsCubit extends Cubit<TicketsState> {
         );
       }
     } catch (e) {
-      // A setup/infra failure — createWorktree, pubGet, push, or
-      // openPullRequest throwing (see GitRepositoryClient._runChecked's
-      // dartdoc and FlutterVerifier.pubGet). Posts the same
-      // "Execution failed: ..." shape ChatCubit.runChatTurn's own
+      // A setup/infra failure — createWorktree, push, or openPullRequest
+      // throwing (see GitRepositoryClient._runChecked's dartdoc). Posts
+      // the same "Execution failed: ..." shape ChatCubit.runChatTurn's own
       // hard-error path already uses, so _computeExecutionFailure's
       // existing detection picks this up with no new state needed.
       // Without this catch, the exception would propagate out of
@@ -1411,20 +1461,20 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// [automationRepo]'s persisted [AutomationContext.codingExecutionRetry]
-  /// confidence for [attempt] (1-based: how many analyze failures have
-  /// happened so far this run), forced to [AutomationConfidence.gated]
-  /// once [attempt] exceeds [_maxAnalyzeRetries] regardless of what's
-  /// persisted — mirrors [_effectiveCodingExecutionConfidence]'s own
-  /// overage-forces-`gated` precedent. Falls back to
-  /// [AutomationConfidence.gated] (the safe default for a recovery action
-  /// that re-spawns a tool-enabled run) when constructed without an
-  /// [AutomationSettingsRepository]. Added for
-  /// `aion-arch/changes/coding-execution-reliability-and-safety`.
+  /// confidence for [attempt] (1-based: how many verification failures
+  /// have happened so far this run), forced to
+  /// [AutomationConfidence.gated] once [attempt] exceeds
+  /// [_maxVerifyRetries] regardless of what's persisted — mirrors
+  /// [_effectiveCodingExecutionConfidence]'s own overage-forces-`gated`
+  /// precedent. Falls back to [AutomationConfidence.gated] (the safe
+  /// default for a recovery action that re-spawns a tool-enabled run)
+  /// when constructed without an [AutomationSettingsRepository]. Added
+  /// for `aion-arch/changes/coding-execution-reliability-and-safety`.
   Future<AutomationConfidence> _effectiveCodingExecutionRetryConfidence(
     AutomationSettingsRepository? automationRepo,
     int attempt,
   ) async {
-    if (attempt > _maxAnalyzeRetries) return AutomationConfidence.gated;
+    if (attempt > _maxVerifyRetries) return AutomationConfidence.gated;
     if (automationRepo == null) return AutomationConfidence.gated;
     return automationRepo.getConfidence(
       AutomationContext.codingExecutionRetry,
@@ -1465,24 +1515,67 @@ class TicketsCubit extends Cubit<TicketsState> {
     unawaited(_runCodingExecution(next));
   }
 
+  /// Resolves the effective content for baseline asset [assetKey] in the
+  /// active project — its local `ProjectOverride` content if one exists,
+  /// otherwise the bundled default for the project's pinned
+  /// [_baselineVersion]. Returns `null` if any of [_baselineRepository]/
+  /// [_projectId]/[_baselineVersion] is unset, or if [assetKey] isn't
+  /// present in the pinned manifest at all (e.g. a project pinned to
+  /// `0.1.0`/`0.2.0`, which predate the `conventions/
+  /// architecture-conventions` key). Callers treat a `null` return as
+  /// "no guidance available," not an error. Added for
+  /// `aion-arch/changes/project-type-aware-conventions-and-
+  /// verification` — the narrowly-scoped mechanism
+  /// [_assembleExecutionContext]/[_assembleVerificationContext] use to
+  /// read `conventions/architecture-conventions`/`skills/verify`
+  /// content into a coding-execution prompt; no other prompt in this
+  /// class consults [_baselineRepository].
+  Future<String?> _effectiveAssetContent(String assetKey) async {
+    final baselineRepo = _baselineRepository;
+    final projectId = _projectId;
+    final baselineVersion = _baselineVersion;
+    if (baselineRepo == null || projectId == null || baselineVersion == null) {
+      return null;
+    }
+
+    final manifest = await baselineRepo.getManifest(baselineVersion);
+    BaselineAsset? asset;
+    for (final candidate in manifest.assets) {
+      if (candidate.key == assetKey) {
+        asset = candidate;
+        break;
+      }
+    }
+    if (asset == null) return null;
+
+    final overrides = await baselineRepo.readOverrides(projectId);
+    for (final override in overrides) {
+      if (override.assetKey == assetKey) {
+        return baselineRepo.readOverrideContent(override.overridePath);
+      }
+    }
+    return baselineRepo.readBundledContent(asset);
+  }
+
   /// Assembles the plain-text context a spawned coding-execution chat
-  /// opens with: [task]'s title/description, plus an instruction to
-  /// implement it using the available file, git, and bash tools, commit
-  /// the result, and end the reply with exactly one line,
-  /// `IMPLEMENTATION: DONE`. Unlike before
-  /// `aion-arch/changes/coding-execution-reliability-and-safety`, this no
-  /// longer instructs the model to push or open a PR itself — that only
-  /// happens after [_runCodingExecution]'s own [FlutterVerifier] gate
-  /// passes, driven by Aion directly (see [_assembleCorrectiveContext]
-  /// for the retry-turn prompt used instead when that gate fails). The
-  /// explicit "commit your changes" instruction was added after a real
-  /// manual pass caught the model finishing `IMPLEMENTATION: DONE`
-  /// having only edited files on disk without ever running `git commit`
-  /// — `flutter analyze` doesn't care about git state, so verification
-  /// passed anyway, Aion pushed a branch with nothing new, and `gh pr
-  /// create` correctly rejected it with "No commits between main and
-  /// ...", losing the edit entirely once the worktree was torn down.
-  String _assembleExecutionContext(Ticket task) {
+  /// opens with: [task]'s title/description, the project's effective
+  /// `conventions/architecture-conventions` content (see
+  /// [_effectiveAssetContent]) if any, plus an instruction to implement
+  /// the task using the available file, git, and bash tools, commit the
+  /// result, and end the reply with exactly one line, `IMPLEMENTATION:
+  /// DONE`. This no longer instructs the model to push or open a PR
+  /// itself — that only happens after [_runCodingExecution]'s own
+  /// agentic verify turn passes (see [_assembleVerificationContext]/
+  /// [_assembleCorrectiveContext] for the retry-turn prompt used instead
+  /// when that turn reports a failure). The explicit "commit your
+  /// changes" instruction was added after a real manual pass caught the
+  /// model finishing `IMPLEMENTATION: DONE` having only edited files on
+  /// disk without ever running `git commit` — verification doesn't
+  /// inherently care about git state, so it passed anyway, Aion pushed a
+  /// branch with nothing new, and `gh pr create` correctly rejected it
+  /// with "No commits between main and ...", losing the edit entirely
+  /// once the worktree was torn down.
+  Future<String> _assembleExecutionContext(Ticket task) async {
     final buffer = StringBuffer()..writeln('# ${task.title}');
     final description = task.description;
     if (description != null && description.isNotEmpty) {
@@ -1490,11 +1583,26 @@ class TicketsCubit extends Cubit<TicketsState> {
         ..writeln()
         ..writeln(description);
     }
+
+    final conventions = await _effectiveAssetContent(
+      'conventions/architecture-conventions',
+    );
+    if (conventions != null && conventions.isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('## Project conventions')
+        ..writeln()
+        ..writeln(conventions);
+    }
+
     buffer
       ..writeln()
       ..writeln(
-        'Implement this Task using the available file, git, and bash '
-        'tools, then commit your changes (git add + git commit). Do not '
+        'If this worktree needs dependencies installed or a build step '
+        'run before you can work effectively, do that first (see any '
+        'suggested command in Project conventions above). Then '
+        'implement this Task using the available file, git, and bash '
+        'tools, and commit your changes (git add + git commit). Do not '
         'push or open a pull request — Aion verifies and does that '
         'itself once you\'re done. End your reply with exactly one '
         'line: "IMPLEMENTATION: DONE".',
@@ -1502,16 +1610,89 @@ class TicketsCubit extends Cubit<TicketsState> {
     return buffer.toString().trim();
   }
 
+  /// Assembles the verify-turn prompt run immediately after a successful
+  /// implement turn (see [_runCodingExecution]) — the project's
+  /// effective `skills/verify` content (see [_effectiveAssetContent]),
+  /// which is written as operative instructions (see `assets/baseline/
+  /// 0.3.0/skills/verify.md`), plus a one-line reminder of what's being
+  /// verified. Runs in the same chat/worktree as the implement turn, so
+  /// the model still has the diff it just produced in context; this
+  /// reminder is cheap insurance against that continuity, not a full
+  /// re-statement of the task. Added for `aion-arch/changes/project-
+  /// type-aware-conventions-and-verification` — replaces the
+  /// `FlutterVerifier`-based mechanical verify gate with this agentic
+  /// one.
+  Future<String> _assembleVerificationContext(Ticket task) async {
+    final verifySkill = await _effectiveAssetContent('skills/verify');
+    final buffer = StringBuffer();
+    if (verifySkill != null && verifySkill.isNotEmpty) {
+      buffer
+        ..writeln(verifySkill)
+        ..writeln();
+    }
+    buffer.writeln(
+      'Verify the change you just implemented and committed for '
+      '"${task.title}", following the instructions above.',
+    );
+    return buffer.toString().trim();
+  }
+
+  /// Returns [chatTicketId]'s most recently created comment's raw
+  /// content, or `null` if it has none. Used by [_runCodingExecution] to
+  /// read back the verify turn's own reply — mirrors
+  /// [_executionSucceededWithPr]'s existing "find the most recent
+  /// comment" lookup, simplified since the caller already has the
+  /// chat's id directly rather than needing to look it up from a Task
+  /// id. Added for `aion-arch/changes/project-type-aware-conventions-
+  /// and-verification`.
+  Future<String?> _lastCommentContent(String chatTicketId) async {
+    final commentRepo = _commentRepository;
+    if (commentRepo == null) return null;
+    final comments = await commentRepo.getCommentsForTicket(chatTicketId);
+    if (comments.isEmpty) return null;
+    final mostRecent = comments.reduce(
+      (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
+    );
+    return mostRecent.content;
+  }
+
+  /// Parses a verify turn's reply ([reply], from [_lastCommentContent])
+  /// for its terminal `VERIFICATION:` line. Returns `null` **only**
+  /// when [reply] contains the literal `VERIFICATION: PASSED` line — an
+  /// explicit `VERIFICATION: FAILED — <reason>` line returns that
+  /// reason; anything else (a missing terminal line, or a `null` reply)
+  /// fails closed, returning a generic reason. This "fail closed"
+  /// behavior is what preserves `coding-execution-reliability-and-
+  /// safety`'s actual safety property — a run must never open a PR on
+  /// an ambiguous or missing verification result, even though pass/fail
+  /// is no longer determined by an exit code. Added for `aion-arch/
+  /// changes/project-type-aware-conventions-and-verification`.
+  String? _verificationFailureReason(String? reply) {
+    if (reply == null) {
+      return 'The verification turn produced no reply.';
+    }
+    if (reply.contains('VERIFICATION: PASSED')) return null;
+    final match = RegExp(
+      r'VERIFICATION:\s*FAILED\s*(?:—|-)?\s*(.*)',
+    ).firstMatch(reply);
+    final reason = match?.group(1)?.trim();
+    if (reason != null && reason.isNotEmpty) return reason;
+    return reply.length > 500 ? '${reply.substring(0, 500)}...' : reply;
+  }
+
   /// Assembles the corrective-turn prompt fed back to the model when
-  /// [FlutterVerifier.analyze] fails and the effective
+  /// [_verificationFailureReason] reports a failure and the effective
   /// `AutomationContext.codingExecutionRetry` confidence is
-  /// [AutomationConfidence.auto] — the raw analyze [result], plus a
-  /// repeat of [_assembleExecutionContext]'s commit +
+  /// [AutomationConfidence.auto] — the verify turn's own failure
+  /// [reason], plus a repeat of [_assembleExecutionContext]'s commit +
   /// `IMPLEMENTATION: DONE` completion-signal instruction. Added for
-  /// `aion-arch/changes/coding-execution-reliability-and-safety`.
-  String _assembleCorrectiveContext(FlutterVerifyResult result) {
-    return '`flutter analyze` reported the following issues:\n\n'
-        '${result.output}\n\n'
+  /// `aion-arch/changes/coding-execution-reliability-and-safety`;
+  /// retyped from `FlutterVerifyResult` to a plain `String` for
+  /// `aion-arch/changes/project-type-aware-conventions-and-
+  /// verification`.
+  String _assembleCorrectiveContext(String reason) {
+    return 'Verification reported:\n\n'
+        '$reason\n\n'
         'Fix these issues and commit your changes (git add + git '
         'commit), then end your reply with exactly one line: '
         '"IMPLEMENTATION: DONE".';

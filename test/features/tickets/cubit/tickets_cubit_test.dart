@@ -8,12 +8,12 @@ import 'package:mocktail/mocktail.dart';
 import 'package:aion/core/automation/automation_confidence.dart';
 import 'package:aion/core/automation/automation_context.dart';
 import 'package:aion/core/automation/automation_settings_repository.dart';
-import 'package:aion/core/build/flutter_verifier.dart';
 import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/core/contracts/embedding_provider.dart';
 import 'package:aion/core/database/app_database.dart';
 import 'package:aion/core/git/git_repository_client.dart';
 import 'package:aion/core/git/github_cli_client.dart';
+import 'package:aion/features/projects/projects.dart';
 import 'package:aion/features/providers/domain/enums/agent_model.dart';
 import 'package:aion/features/providers/domain/enums/model_phase.dart';
 import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
@@ -42,26 +42,24 @@ class MockGitRepositoryClient extends Mock implements GitRepositoryClient {}
 
 class MockGitHubCliClient extends Mock implements GitHubCliClient {}
 
-class MockFlutterVerifier extends Mock implements FlutterVerifier {}
+class MockBaselineRepository extends Mock implements BaselineRepository {}
 
-/// Stubs [gitClient]/[gitHubClient]/[flutterVerifier] for a coding-
-/// execution run that isolates cleanly, verifies clean, and opens a PR —
-/// the happy path most `_runCodingExecution` tests exercise. Individual
-/// tests override specific stubs (e.g. `flutterVerifier.analyze`) to
-/// exercise the retry/failure paths. Added for
-/// `aion-arch/changes/coding-execution-reliability-and-safety`.
+/// Stubs [gitClient]/[gitHubClient] for a coding-execution run that
+/// isolates cleanly, pushes, and opens a PR — the happy path most
+/// `_runCodingExecution` tests exercise. Whether the run actually
+/// *reaches* that push/PR step now depends on the agentic verify turn's
+/// reply (see [stubStatefulComments]/[stubEmptyBaseline]), not on
+/// anything stubbed here. Added for `aion-arch/changes/coding-
+/// execution-reliability-and-safety`; simplified for `aion-arch/
+/// changes/project-type-aware-conventions-and-verification` (dropped
+/// the `FlutterVerifier` stubs it used to also set up here).
 void stubSuccessfulCodingExecutionInfra(
   MockGitRepositoryClient gitClient,
   MockGitHubCliClient gitHubClient,
-  MockFlutterVerifier flutterVerifier,
 ) {
   when(
     () => gitClient.createWorktree(any(), any(), any()),
   ).thenAnswer((_) async {});
-  when(() => flutterVerifier.pubGet(any())).thenAnswer((_) async {});
-  when(() => flutterVerifier.analyze(any())).thenAnswer(
-    (_) async => const FlutterVerifyResult(passed: true, output: ''),
-  );
   when(() => gitClient.push(any(), any())).thenAnswer((_) async {});
   when(
     () => gitHubClient.openPullRequest(
@@ -74,6 +72,46 @@ void stubSuccessfulCodingExecutionInfra(
   when(
     () => gitClient.removeWorktree(any(), any()),
   ).thenAnswer((_) async {});
+}
+
+/// Stubs [baselineRepository] with an empty manifest for [baselineVersion]
+/// — the minimal wiring `TicketsCubit._effectiveAssetContent` needs to
+/// resolve every asset key to `null` (no `Project conventions` section,
+/// no `skills/verify` guidance beyond the fallback sentence) without
+/// throwing, for tests that don't care about that content. Added for
+/// `aion-arch/changes/project-type-aware-conventions-and-verification`.
+void stubEmptyBaseline(
+  MockBaselineRepository baselineRepository, {
+  String baselineVersion = '0.1.0',
+}) {
+  when(() => baselineRepository.getManifest(baselineVersion)).thenAnswer(
+    (_) async => BaselineManifest(version: baselineVersion, assets: const []),
+  );
+}
+
+/// A minimal append-only comment store wired into [commentRepository]'s
+/// `getCommentsForTicket`/`addComment` stubs for ticket [chatId] — so
+/// `TicketsCubit`'s mid-run read (the agentic verify turn reading back
+/// its own reply, see `_lastCommentContent`) and its end-of-run read
+/// (`_executionSucceededWithPr`) each see comments in the order
+/// production code actually posts them, rather than a single static
+/// snapshot frozen at "final state" (which can't represent both reads
+/// correctly once there's more than one). Added for `aion-arch/
+/// changes/project-type-aware-conventions-and-verification`.
+void stubStatefulComments(
+  MockCommentRepository commentRepository,
+  String chatId,
+) {
+  final comments = <TicketComment>[];
+  when(
+    () => commentRepository.getCommentsForTicket(chatId),
+  ).thenAnswer((_) async => List<TicketComment>.of(comments));
+  when(() => commentRepository.addComment(any())).thenAnswer((
+    invocation,
+  ) async {
+    final comment = invocation.positionalArguments[0] as TicketComment;
+    if (comment.ticketId == chatId) comments.add(comment);
+  });
 }
 
 void main() {
@@ -2275,7 +2313,7 @@ void main() {
     late MockAutomationSettingsRepository automationSettingsRepository;
     late MockGitRepositoryClient gitClient;
     late MockGitHubCliClient gitHubClient;
-    late MockFlutterVerifier flutterVerifier;
+    late MockBaselineRepository baselineRepository;
 
     setUp(() {
       agentClient = MockAgentModelClient();
@@ -2283,8 +2321,9 @@ void main() {
       automationSettingsRepository = MockAutomationSettingsRepository();
       gitClient = MockGitRepositoryClient();
       gitHubClient = MockGitHubCliClient();
-      flutterVerifier = MockFlutterVerifier();
-      stubSuccessfulCodingExecutionInfra(gitClient, gitHubClient, flutterVerifier);
+      baselineRepository = MockBaselineRepository();
+      stubSuccessfulCodingExecutionInfra(gitClient, gitHubClient);
+      stubEmptyBaseline(baselineRepository);
     });
 
     TicketsCubit buildFullCubit() => TicketsCubit(
@@ -2295,7 +2334,9 @@ void main() {
       projectRootPath: '/fake/project/root',
       gitClient: gitClient,
       gitHubClient: gitHubClient,
-      flutterVerifier: flutterVerifier,
+      baselineRepository: baselineRepository,
+      projectId: 'project-1',
+      baselineVersion: '0.1.0',
     );
 
     blocTest<TicketsCubit, TicketsState>(
@@ -2419,21 +2460,7 @@ void main() {
             types: const [TicketType.chat],
           ),
         ).thenAnswer((_) async => [dummyExecutionChatTicket]);
-        when(
-          () => commentRepository.getCommentsForTicket(
-            dummyExecutionChatTicket.id,
-          ),
-        ).thenAnswer(
-          (_) async => [
-            TicketComment(
-              id: 'c5',
-              ticketId: dummyExecutionChatTicket.id,
-              content: 'Done.\n\nEXECUTION: PR_OPENED https://example/pr/1',
-              authorType: CommentAuthorType.ai,
-              createdAt: DateTime(2026),
-            ),
-          ],
-        );
+        stubStatefulComments(commentRepository, dummyExecutionChatTicket.id);
         when(() => repository.getTicketById(any())).thenAnswer((invocation) async {
           final id = invocation.positionalArguments[0] as String;
           if (id == storyForExecution.id) return storyForExecution;
@@ -2446,12 +2473,9 @@ void main() {
           () => repository.updateTicketStatus(any(), any()),
         ).thenAnswer((_) async {});
         when(() => repository.createTicket(any())).thenAnswer((_) async {});
-        when(() => commentRepository.addComment(any())).thenAnswer(
-          (_) async {},
-        );
         when(() => agentClient.run(any())).thenAnswer(
           (_) async => Stream.fromIterable(const [
-            AgentTextEvent('Done.\n\nEXECUTION: PR_OPENED https://example/pr/1'),
+            AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
             AgentDoneEvent(),
           ]),
         );
@@ -2472,7 +2496,8 @@ void main() {
           ),
         ).called(1);
         verify(() => repository.createTicket(any())).called(1);
-        verify(() => agentClient.run(any())).called(1);
+        // 2 model turns: implement, then agentic verify.
+        verify(() => agentClient.run(any())).called(2);
         verify(
           () => repository.updateTicketStatus(
             taskUnderStory.id,
@@ -2520,21 +2545,7 @@ void main() {
             types: const [TicketType.chat],
           ),
         ).thenAnswer((_) async => [dummyExecutionChatTicket]);
-        when(
-          () => commentRepository.getCommentsForTicket(
-            dummyExecutionChatTicket.id,
-          ),
-        ).thenAnswer(
-          (_) async => [
-            TicketComment(
-              id: 'c7',
-              ticketId: dummyExecutionChatTicket.id,
-              content: 'Done.\n\nEXECUTION: PR_OPENED https://example/pr/2',
-              authorType: CommentAuthorType.ai,
-              createdAt: DateTime(2026),
-            ),
-          ],
-        );
+        stubStatefulComments(commentRepository, dummyExecutionChatTicket.id);
         when(() => repository.getTicketById(any())).thenAnswer((invocation) async {
           final id = invocation.positionalArguments[0] as String;
           if (id == storyForExecution.id) return storyForExecution;
@@ -2547,12 +2558,9 @@ void main() {
           () => repository.updateTicketStatus(any(), any()),
         ).thenAnswer((_) async {});
         when(() => repository.createTicket(any())).thenAnswer((_) async {});
-        when(() => commentRepository.addComment(any())).thenAnswer(
-          (_) async {},
-        );
         when(() => agentClient.run(any())).thenAnswer(
           (_) async => Stream.fromIterable(const [
-            AgentTextEvent('Done.\n\nEXECUTION: PR_OPENED https://example/pr/2'),
+            AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
             AgentDoneEvent(),
           ]),
         );
@@ -2585,7 +2593,9 @@ void main() {
         projectRootPath: '/fake/project/root',
         gitClient: gitClient,
         gitHubClient: gitHubClient,
-        flutterVerifier: flutterVerifier,
+        baselineRepository: baselineRepository,
+        projectId: 'project-1',
+        baselineVersion: '0.1.0',
       ),
       setUp: () {
         final runGate = Completer<void>();
@@ -2760,21 +2770,7 @@ void main() {
             types: const [TicketType.chat],
           ),
         ).thenAnswer((_) async => [dummyExecutionChatTicket]);
-        when(
-          () => commentRepository.getCommentsForTicket(
-            dummyExecutionChatTicket.id,
-          ),
-        ).thenAnswer(
-          (_) async => [
-            TicketComment(
-              id: 'c9',
-              ticketId: dummyExecutionChatTicket.id,
-              content: "Couldn't finish.\n\nEXECUTION: NO_PR",
-              authorType: CommentAuthorType.ai,
-              createdAt: DateTime(2026),
-            ),
-          ],
-        );
+        stubStatefulComments(commentRepository, dummyExecutionChatTicket.id);
         when(() => repository.getTicketById(any())).thenAnswer((invocation) async {
           final id = invocation.positionalArguments[0] as String;
           if (id == storyForExecution.id) return storyForExecution;
@@ -2787,9 +2783,9 @@ void main() {
           () => repository.updateTicketStatus(any(), any()),
         ).thenAnswer((_) async {});
         when(() => repository.createTicket(any())).thenAnswer((_) async {});
-        when(() => commentRepository.addComment(any())).thenAnswer(
-          (_) async {},
-        );
+        // The model's reply never claims VERIFICATION: PASSED — the
+        // agentic verify turn fails closed, so no push/PR is ever
+        // attempted and no EXECUTION: PR_OPENED comment is ever posted.
         when(() => agentClient.run(any())).thenAnswer(
           (_) async => Stream.fromIterable(const [
             AgentTextEvent("Couldn't finish.\n\nEXECUTION: NO_PR"),
@@ -2801,6 +2797,11 @@ void main() {
             AutomationContext.codingExecution,
           ),
         ).thenAnswer((_) async => AutomationConfidence.auto);
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecutionRetry,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.gated);
       },
       act: (cubit) =>
           cubit.changeTicketStatus(taskUnderStory, TicketStatus.inProgress),
@@ -2853,21 +2854,7 @@ void main() {
             types: const [TicketType.chat],
           ),
         ).thenAnswer((_) async => [dummyExecutionChatTicket]);
-        when(
-          () => commentRepository.getCommentsForTicket(
-            dummyExecutionChatTicket.id,
-          ),
-        ).thenAnswer(
-          (_) async => [
-            TicketComment(
-              id: 'c11',
-              ticketId: dummyExecutionChatTicket.id,
-              content: 'Done.\n\nEXECUTION: PR_OPENED https://example/pr/3',
-              authorType: CommentAuthorType.ai,
-              createdAt: DateTime(2026),
-            ),
-          ],
-        );
+        stubStatefulComments(commentRepository, dummyExecutionChatTicket.id);
         when(() => repository.getTicketById(any())).thenAnswer((invocation) async {
           final id = invocation.positionalArguments[0] as String;
           if (id == storyForExecution.id) return storyForExecution;
@@ -2880,15 +2867,13 @@ void main() {
           () => repository.updateTicketStatus(any(), any()),
         ).thenAnswer((_) async {});
         when(() => repository.createTicket(any())).thenAnswer((_) async {});
-        when(() => commentRepository.addComment(any())).thenAnswer(
-          (_) async {},
-        );
         // The run itself reports overage mid-stream, then still finishes
-        // with a confirmed PR — the override must still force `gated`.
+        // with a passing agentic verify turn (and thus a confirmed PR) —
+        // the override must still force `gated`.
         when(() => agentClient.run(any())).thenAnswer(
           (_) async => Stream.fromIterable(const [
             AgentOverageDetectedEvent('Usage limit reached'),
-            AgentTextEvent('Done.\n\nEXECUTION: PR_OPENED https://example/pr/3'),
+            AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
             AgentDoneEvent(),
           ]),
         );
@@ -2938,7 +2923,9 @@ void main() {
         projectRootPath: '/fake/project/root',
         gitClient: gitClient,
         gitHubClient: gitHubClient,
-        flutterVerifier: flutterVerifier,
+        baselineRepository: baselineRepository,
+        projectId: 'project-1',
+        baselineVersion: '0.1.0',
       ),
       setUp: () {
         when(() => repository.getTicketById(any())).thenAnswer((invocation) async {
@@ -2958,6 +2945,12 @@ void main() {
         when(() => commentRepository.addComment(any())).thenAnswer(
           (_) async {},
         );
+        // No text in the stubbed stream below means runChatTurn never
+        // posts a comment — the agentic verify turn's mid-run read
+        // (_lastCommentContent) still needs a non-throwing stub.
+        when(
+          () => commentRepository.getCommentsForTicket(any()),
+        ).thenAnswer((_) async => []);
         // _executionSucceededWithPr's chat lookup — no execution chats
         // found means no PR to confirm, exercised without needing an
         // AutomationSettingsRepository (neither Task has one wired here).
@@ -2979,9 +2972,10 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 50));
       },
       verify: (_) {
-        // Both Tasks' chats were eventually spawned and run, in order.
+        // Both Tasks' chats were eventually spawned and run, in order —
+        // 2 model turns (implement + agentic verify) each.
         verify(() => repository.createTicket(any())).called(2);
-        verify(() => agentClient.run(any())).called(2);
+        verify(() => agentClient.run(any())).called(4);
       },
     );
   });
@@ -2994,7 +2988,7 @@ void main() {
       late MockAutomationSettingsRepository automationSettingsRepository;
       late MockGitRepositoryClient gitClient;
       late MockGitHubCliClient gitHubClient;
-      late MockFlutterVerifier flutterVerifier;
+      late MockBaselineRepository baselineRepository;
 
       setUp(() {
         agentClient = MockAgentModelClient();
@@ -3002,19 +2996,13 @@ void main() {
         automationSettingsRepository = MockAutomationSettingsRepository();
         gitClient = MockGitRepositoryClient();
         gitHubClient = MockGitHubCliClient();
-        flutterVerifier = MockFlutterVerifier();
-        stubSuccessfulCodingExecutionInfra(
-          gitClient,
-          gitHubClient,
-          flutterVerifier,
-        );
+        baselineRepository = MockBaselineRepository();
+        stubSuccessfulCodingExecutionInfra(gitClient, gitHubClient);
+        stubEmptyBaseline(baselineRepository);
         when(
           () => repository.updateTicketStatus(any(), any()),
         ).thenAnswer((_) async {});
         when(() => repository.createTicket(any())).thenAnswer((_) async {});
-        when(
-          () => commentRepository.addComment(any()),
-        ).thenAnswer((_) async {});
         // Any freshly-created "Coding Execution — ..." chat ticket's id
         // (a fresh uuid, not knowable up front) also needs to resolve —
         // falls back to returning it as the persisted chat ticket.
@@ -3033,14 +3021,13 @@ void main() {
             types: const [TicketType.chat],
           ),
         ).thenAnswer((_) async => [dummyExecutionChatTicket]);
-        // Default: no PR confirmed yet — individual tests override this
-        // when they need `_executionSucceededWithPr` to see a specific
-        // comment (e.g. the PR-opened/system-author test below).
-        when(
-          () => commentRepository.getCommentsForTicket(
-            dummyExecutionChatTicket.id,
-          ),
-        ).thenAnswer((_) async => []);
+        // Reflects comments as production code actually posts them —
+        // both the agentic verify turn's mid-run read and
+        // `_executionSucceededWithPr`'s end-of-run read see this same,
+        // genuinely-growing list. Individual tests only need to control
+        // what `agentClient.run` streams back, not hand-craft a "final
+        // state" comment list.
+        stubStatefulComments(commentRepository, dummyExecutionChatTicket.id);
         // getTicketById's post-run refresh always consults the
         // completion-flip confidence too, regardless of what this test
         // is actually exercising.
@@ -3059,7 +3046,9 @@ void main() {
         projectRootPath: '/fake/project/root',
         gitClient: gitClient,
         gitHubClient: gitHubClient,
-        flutterVerifier: flutterVerifier,
+        baselineRepository: baselineRepository,
+        projectId: 'project-1',
+        baselineVersion: '0.1.0',
       );
 
       blocTest<TicketsCubit, TicketsState>(
@@ -3069,7 +3058,7 @@ void main() {
         setUp: () {
           when(() => agentClient.run(any())).thenAnswer(
             (_) async => Stream.fromIterable(const [
-              AgentTextEvent('Done.\n\nIMPLEMENTATION: DONE'),
+              AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
               AgentDoneEvent(),
             ]),
           );
@@ -3081,8 +3070,8 @@ void main() {
           verify(
             () => gitClient.createWorktree(any(), any(), any()),
           ).called(1);
-          verify(() => flutterVerifier.pubGet(any())).called(1);
-          verify(() => flutterVerifier.analyze(any())).called(1);
+          // 2 model turns: implement, then agentic verify.
+          verify(() => agentClient.run(any())).called(2);
           verify(() => gitClient.push(any(), any())).called(1);
           verify(
             () => gitHubClient.openPullRequest(
@@ -3111,7 +3100,9 @@ void main() {
             () => gitClient.createWorktree(any(), any(), any()),
           ).called(1);
           verify(() => gitClient.removeWorktree(any(), any())).called(1);
-          verifyNever(() => flutterVerifier.analyze(any()));
+          // Only the implement turn ran — no agentic verify turn follows
+          // a hard implement failure.
+          verify(() => agentClient.run(any())).called(1);
           verifyNever(() => gitClient.push(any(), any()));
         },
       );
@@ -3121,15 +3112,15 @@ void main() {
         'escalates to a failure comment + toast, without ever pushing',
         build: buildCubit,
         setUp: () {
+          // Every model reply — implement or verify — reports the same
+          // failure; only the verify-turn replies are ever inspected for
+          // pass/fail, so this uniformly drives the retry loop through
+          // every attempt.
           when(() => agentClient.run(any())).thenAnswer(
             (_) async => Stream.fromIterable(const [
-              AgentTextEvent('Done.\n\nIMPLEMENTATION: DONE'),
+              AgentTextEvent('VERIFICATION: FAILED — error X'),
               AgentDoneEvent(),
             ]),
-          );
-          when(() => flutterVerifier.analyze(any())).thenAnswer(
-            (_) async =>
-                const FlutterVerifyResult(passed: false, output: 'error X'),
           );
           when(
             () => automationSettingsRepository.getConfidence(
@@ -3141,9 +3132,9 @@ void main() {
             cubit.changeTicketStatus(taskNoStory, TicketStatus.inProgress),
         wait: const Duration(milliseconds: 50),
         verify: (_) {
-          // 1 initial attempt + 2 automatic retries (the cap) = 3 turns.
-          verify(() => agentClient.run(any())).called(3);
-          verify(() => flutterVerifier.analyze(any())).called(3);
+          // 1 initial attempt + 2 automatic retries (the cap) = 3
+          // implement-then-verify pairs = 6 model turns.
+          verify(() => agentClient.run(any())).called(6);
           verifyNever(() => gitClient.push(any(), any()));
           verify(
             () => commentRepository.addComment(
@@ -3164,13 +3155,9 @@ void main() {
         setUp: () {
           when(() => agentClient.run(any())).thenAnswer(
             (_) async => Stream.fromIterable(const [
-              AgentTextEvent('Done.\n\nIMPLEMENTATION: DONE'),
+              AgentTextEvent('VERIFICATION: FAILED — error Y'),
               AgentDoneEvent(),
             ]),
-          );
-          when(() => flutterVerifier.analyze(any())).thenAnswer(
-            (_) async =>
-                const FlutterVerifyResult(passed: false, output: 'error Y'),
           );
           when(
             () => automationSettingsRepository.getConfidence(
@@ -3182,7 +3169,9 @@ void main() {
             cubit.changeTicketStatus(taskNoStory, TicketStatus.inProgress),
         wait: const Duration(milliseconds: 50),
         verify: (_) {
-          verify(() => agentClient.run(any())).called(1);
+          // 2 model turns: implement, then agentic verify (which fails,
+          // and gated confidence means no retry).
+          verify(() => agentClient.run(any())).called(2);
           verifyNever(() => gitClient.push(any(), any()));
           verify(
             () => commentRepository.addComment(
@@ -3204,16 +3193,13 @@ void main() {
             reason: TicketsErrorReason.executionVerificationFailed,
           ),
           const TicketsLoading(),
-          // The post-run refresh — the mocked `getCommentsForTicket`
-          // stays fixed at `[]` regardless of what `addComment` was
-          // called with, so this reads as the "no terminal reply"
-          // (stalled) case rather than echoing the exact failure
-          // message; the `verify` block above already confirms the real
-          // failure comment was posted.
+          // The post-run refresh — `getCommentsForTicket` now genuinely
+          // reflects the failure comment `_runCodingExecution` posted
+          // (see `stubStatefulComments`), so it's echoed verbatim here.
           TicketDetailLoaded(
             taskNoStory.copyWith(status: TicketStatus.inProgress),
             executionFailureReason:
-                'Execution ended without a clear result — retry to try again.',
+                'Execution failed verification:\n\nerror Y',
             executionCanRetry: true,
           ),
         ],
@@ -3226,13 +3212,9 @@ void main() {
         setUp: () {
           when(() => agentClient.run(any())).thenAnswer(
             (_) async => Stream.fromIterable(const [
-              AgentTextEvent('Done.\n\nIMPLEMENTATION: DONE'),
+              AgentTextEvent('VERIFICATION: FAILED — error Z'),
               AgentDoneEvent(),
             ]),
-          );
-          when(() => flutterVerifier.analyze(any())).thenAnswer(
-            (_) async =>
-                const FlutterVerifyResult(passed: false, output: 'error Z'),
           );
           when(
             () => automationSettingsRepository.getConfidence(
@@ -3244,7 +3226,8 @@ void main() {
             cubit.changeTicketStatus(taskNoStory, TicketStatus.inProgress),
         wait: const Duration(milliseconds: 50),
         verify: (_) {
-          verify(() => agentClient.run(any())).called(1);
+          // 2 model turns: implement, then agentic verify.
+          verify(() => agentClient.run(any())).called(2);
           verifyNever(() => gitClient.push(any(), any()));
           verify(
             () => commentRepository.addComment(
@@ -3265,7 +3248,7 @@ void main() {
           TicketDetailLoaded(
             taskNoStory.copyWith(status: TicketStatus.inProgress),
             executionFailureReason:
-                'Execution ended without a clear result — retry to try again.',
+                'Execution failed verification:\n\nerror Z',
             executionCanRetry: true,
           ),
         ],
@@ -3373,7 +3356,7 @@ void main() {
         setUp: () {
           when(() => agentClient.run(any())).thenAnswer(
             (_) async => Stream.fromIterable(const [
-              AgentTextEvent('Done.\n\nIMPLEMENTATION: DONE'),
+              AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
               AgentDoneEvent(),
             ]),
           );
@@ -3382,7 +3365,8 @@ void main() {
         wait: const Duration(milliseconds: 50),
         verify: (_) {
           verify(() => repository.createTicket(any())).called(1);
-          verify(() => agentClient.run(any())).called(1);
+          // 2 model turns: implement, then agentic verify.
+          verify(() => agentClient.run(any())).called(2);
           verify(
             () => gitClient.createWorktree(any(), any(), any()),
           ).called(1);
@@ -3598,7 +3582,7 @@ void main() {
     late MockModelRoutingRepository modelRoutingRepository;
     late MockGitRepositoryClient gitClient;
     late MockGitHubCliClient gitHubClient;
-    late MockFlutterVerifier flutterVerifier;
+    late MockBaselineRepository baselineRepository;
 
     setUp(() {
       agentClient = MockAgentModelClient();
@@ -3608,8 +3592,9 @@ void main() {
       modelRoutingRepository = MockModelRoutingRepository();
       gitClient = MockGitRepositoryClient();
       gitHubClient = MockGitHubCliClient();
-      flutterVerifier = MockFlutterVerifier();
-      stubSuccessfulCodingExecutionInfra(gitClient, gitHubClient, flutterVerifier);
+      baselineRepository = MockBaselineRepository();
+      stubSuccessfulCodingExecutionInfra(gitClient, gitHubClient);
+      stubEmptyBaseline(baselineRepository);
       when(() => agentClient.run(any())).thenAnswer(
         (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
       );
@@ -3650,7 +3635,9 @@ void main() {
       projectRootPath: '/fake/project/root',
       gitClient: gitClient,
       gitHubClient: gitHubClient,
-      flutterVerifier: flutterVerifier,
+      baselineRepository: baselineRepository,
+      projectId: 'project-1',
+      baselineVersion: '0.1.0',
     );
 
     blocTest<TicketsCubit, TicketsState>(
@@ -3830,15 +3817,22 @@ void main() {
             AutomationContext.codingExecution,
           ),
         ).thenAnswer((_) async => AutomationConfidence.gated);
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecutionRetry,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.gated);
       },
       build: buildCubit,
       act: (cubit) =>
           cubit.changeTicketStatus(taskUnderStory, TicketStatus.inProgress),
       wait: const Duration(milliseconds: 50),
       verify: (_) {
+        // Resolved twice: once for the implement turn, once for the
+        // agentic verify turn that follows it.
         verify(
           () => modelRoutingRepository.getModelForPhase(ModelPhase.execution),
-        ).called(1);
+        ).called(2);
         verify(
           () => agentClient.run(
             any(
@@ -3849,7 +3843,7 @@ void main() {
               ),
             ),
           ),
-        ).called(1);
+        ).called(2);
       },
     );
   });

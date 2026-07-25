@@ -12,7 +12,7 @@ import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/core/contracts/embedding_provider.dart';
 import 'package:aion/core/contracts/page_ticket_provider.dart';
 import 'package:aion/core/database/app_database.dart';
-import 'package:aion/core/build/flutter_verifier.dart';
+import 'package:aion/core/build/project_stack_detector.dart';
 import 'package:aion/core/git/git_repository_client.dart';
 import 'package:aion/core/git/github_cli_client.dart';
 import 'package:aion/core/markdown/ticket_markdown_serializer.dart';
@@ -20,6 +20,7 @@ import 'package:aion/core/routing/workspace_nav_shell.dart';
 import 'package:aion/core/utils/platform_utils.dart';
 import 'package:aion/features/pages/presentation/screens/page_create_screen.dart';
 import 'package:aion/features/pages/presentation/screens/page_detail_screen.dart';
+import 'package:aion/features/projects/data/services/baseline_tailoring_service.dart';
 import 'package:aion/features/projects/projects.dart';
 import 'package:aion/features/providers/providers.dart';
 import 'package:aion/features/tickets/data/page_ticket_provider_impl.dart';
@@ -68,6 +69,10 @@ final appRouter = GoRouter(
         create: (context) => CreateProjectCubit(
           context.read<ProjectRepository>(),
           context.read<BaselineRepository>(),
+          BaselineTailoringService(
+            context.read<BaselineRepository>(),
+            ProjectStackDetector(),
+          ),
         ),
         child: NewProjectScreen(
           onBack: () => context.go('/hub'),
@@ -206,6 +211,38 @@ final appRouter = GoRouter(
             child: const SettingsScreen(),
           ),
         ),
+        // Registered before `/workspace/settings` would otherwise matter
+        // if that route ever grew a wildcard segment — kept after it here
+        // for readability, since `/overrides` and `/overrides/:assetKey`
+        // are unambiguous, more specific sub-paths.
+        GoRoute(
+          path: '/workspace/settings/overrides',
+          builder: (context, state) => BlocProvider<OverridesCubit>(
+            create: (context) => OverridesCubit(
+              context.read<BaselineRepository>(),
+              _activeProject(context).id,
+              _activeProject(context).baselineVersion,
+            )..load(),
+            child: const OverridesListScreen(),
+          ),
+        ),
+        GoRoute(
+          path: '/workspace/settings/overrides/:assetKey',
+          builder: (context, state) {
+            final assetKey = Uri.decodeComponent(
+              state.pathParameters['assetKey']!,
+            );
+            return BlocProvider<OverrideEditorCubit>(
+              create: (context) => OverrideEditorCubit(
+                context.read<BaselineRepository>(),
+                _activeProject(context).id,
+                _activeProject(context).baselineVersion,
+                assetKey,
+              )..load(),
+              child: OverrideEditorScreen(assetKey: assetKey),
+            );
+          },
+        ),
       ],
     ),
   ],
@@ -233,6 +270,19 @@ String? _redirect(BuildContext context, GoRouterState state) {
 Future<void> _openProject(BuildContext context, Project project) async {
   await context.read<ActiveProjectCubit>().switchTo(project);
   if (context.mounted) context.go('/workspace/tickets');
+}
+
+/// The active project, read from [ActiveProjectCubit]. Safe to call from
+/// any `/workspace/*` route builder — [_redirect] guarantees a project is
+/// active before such a route is ever reached, so [ActiveProjectOpen] is
+/// the only state possible here. `WorkspaceShell`'s own `widget.project`
+/// isn't reachable from these route builders (they're descendants of
+/// `_WorkspaceShellState`'s built tree, not its own methods), so this
+/// re-derives the same project from the same source `WorkspaceShell`
+/// itself reads from.
+Project _activeProject(BuildContext context) {
+  final state = context.read<ActiveProjectCubit>().state;
+  return (state as ActiveProjectOpen).project;
 }
 
 /// Permanently purges trashed tickets older than
@@ -427,7 +477,9 @@ class _WorkspaceShellState extends State<WorkspaceShell>
               modelRoutingRepository: context.read<ModelRoutingRepository>(),
               gitClient: GitRepositoryClient(),
               gitHubClient: GitHubCliClient(),
-              flutterVerifier: FlutterVerifier(),
+              baselineRepository: context.read<BaselineRepository>(),
+              projectId: widget.project.id,
+              baselineVersion: widget.project.baselineVersion,
             ),
             child: Builder(
               builder: (context) => RepositoryProvider<PageTicketProvider>(

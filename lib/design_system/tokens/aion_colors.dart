@@ -350,4 +350,15 @@ extension AionColorsHubTokens on AionColors {
   /// `_ExecutionActionBanner`'s failure-tone border.
   Color dangerBorderTint(bool isDark) =>
       danger.withValues(alpha: isDark ? 0.42 : 0.28);
+
+  // AI/override-tone family — a `primary`-keyed border distinct from the
+  // neutral `noticeBorder` family, for surfaces that read as "this is
+  // AI/skill-authored," matching `primarySubtle`'s existing "AI comment
+  // bubble" role. Added for project-type-aware-conventions-and-verification;
+  // see that change's design.md (Skill/Convention Overrides spec) §2.5/§3.2.
+  /// `OverridesListScreen`'s "Overridden" chip border and
+  /// `OverrideEditorScreen`'s status-line variant A ("editing an
+  /// override") border.
+  Color aiBubbleBorder(bool isDark) =>
+      primary.withValues(alpha: isDark ? 0.42 : 0.28);
 }
