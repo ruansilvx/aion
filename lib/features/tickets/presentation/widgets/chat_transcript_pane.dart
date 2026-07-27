@@ -380,8 +380,11 @@ class _StaticExpandedHeader extends StatelessWidget {
 
 /// Renders an in-progress AI reply at the tail of the transcript —
 /// [toolUse] (design.md §2.3a, "Running `<tool>`…") shown ahead of
-/// [text] once streaming begins, both inside a bubble with an animated
-/// border glow signaling "in progress." Adapted from the former
+/// [text] once streaming begins, flat (no bubble) matching a settled
+/// `_AiMessage`'s treatment — a pulsing dot (pre-text) and a blinking
+/// caret (once text arrives) are the only "in progress" signals; there
+/// is no bubble edge left to glow around (design.md §9.3, supersedes
+/// the former animated-border-glow treatment). Adapted from the former
 /// `TicketDetailScreen._StreamingBubble`: renders [text] via
 /// [MarkdownView] instead of a plain `TextSpan`, and adds [toolUse]
 /// (previously tracked by [ChatState] but never rendered anywhere).
@@ -407,15 +410,9 @@ class _StreamingBubbleState extends State<_StreamingBubble>
     duration: const Duration(milliseconds: 1000),
   )..repeat(reverse: true);
 
-  late final AnimationController _glowController = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1600),
-  )..repeat(reverse: true);
-
   @override
   void dispose() {
     _caretController.dispose();
-    _glowController.dispose();
     super.dispose();
   }
 
@@ -460,85 +457,60 @@ class _StreamingBubbleState extends State<_StreamingBubble>
                   ],
                 ),
                 const SizedBox(height: 6),
-                AnimatedBuilder(
-                  animation: _glowController,
-                  builder: (context, child) {
-                    final glowOpacity = 0.35 + (_glowController.value * 0.5);
-                    return DecoratedBox(
-                      decoration: BoxDecoration(
-                        borderRadius: const BorderRadius.only(
-                          topLeft: Radius.circular(5),
-                          topRight: Radius.circular(16),
-                          bottomLeft: Radius.circular(16),
-                          bottomRight: Radius.circular(16),
-                        ),
-                        color: c.primarySubtle,
-                        border: Border.all(
-                          color: c.primary.withValues(alpha: glowOpacity),
-                          width: 1,
-                        ),
-                      ),
-                      child: child,
-                    );
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(13, 11, 13, 11),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (widget.toolUse != null && widget.text == null) ...[
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              AnimatedBuilder(
-                                animation: _caretController,
-                                builder: (context, _) => Opacity(
-                                  opacity:
-                                      0.35 + (_caretController.value * 0.65),
-                                  child: DecoratedBox(
-                                    decoration: BoxDecoration(
-                                      color: c.primary,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const SizedBox(width: 7, height: 7),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Flexible(
-                                child: Text(
-                                  widget.toolUse!,
-                                  style: AionText.streamStatus.copyWith(
-                                    color: c.textSecondary,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                        if (widget.text != null)
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Flexible(
-                                child: MarkdownView(source: widget.text!),
-                              ),
-                              const SizedBox(width: 3),
-                              FadeTransition(
-                                opacity: _caretController,
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (widget.toolUse != null && widget.text == null) ...[
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            AnimatedBuilder(
+                              animation: _caretController,
+                              builder: (context, _) => Opacity(
+                                opacity: 0.35 + (_caretController.value * 0.65),
                                 child: DecoratedBox(
                                   decoration: BoxDecoration(
                                     color: c.primary,
-                                    borderRadius: BorderRadius.circular(1),
+                                    shape: BoxShape.circle,
                                   ),
-                                  child: const SizedBox(width: 2, height: 15),
+                                  child: const SizedBox(width: 7, height: 7),
                                 ),
                               ),
-                            ],
-                          ),
+                            ),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                widget.toolUse!,
+                                style: AionText.streamStatus.copyWith(
+                                  color: c.textSecondary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ],
-                    ),
+                      if (widget.text != null)
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Flexible(child: MarkdownView(source: widget.text!)),
+                            const SizedBox(width: 3),
+                            FadeTransition(
+                              opacity: _caretController,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: c.primary,
+                                  borderRadius: BorderRadius.circular(1),
+                                ),
+                                child: const SizedBox(width: 2, height: 15),
+                              ),
+                            ),
+                          ],
+                        ),
+                    ],
                   ),
                 ),
               ],
