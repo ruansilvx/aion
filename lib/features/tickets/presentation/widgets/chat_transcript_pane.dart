@@ -276,7 +276,10 @@ class _CollapsingChatHeaderDelegate extends SliverPersistentHeaderDelegate {
   final void Function(Ticket ticket, bool canAdvance) onMaybeAutoAdvance;
 
   static const _expandedHeight = 560.0;
-  static const _collapsedHeight = 140.0;
+  // Generous fixed estimate for ChatMetaHeader's natural height (nav row
+  // + a 2-line title + meta row) — confirmed via manual testing that
+  // 140 overflowed by ~53px for a real long title; 210 leaves headroom.
+  static const _collapsedHeight = 210.0;
 
   @override
   double get minExtent => _collapsedHeight;
@@ -293,7 +296,15 @@ class _CollapsingChatHeaderDelegate extends SliverPersistentHeaderDelegate {
     final c = ThemeScope.of(context).colors;
     final range = maxExtent - minExtent;
     final progress = range <= 0 ? 1.0 : (shrinkOffset / range).clamp(0.0, 1.0);
-    final currentHeight = maxExtent - shrinkOffset;
+    // `shrinkOffset` isn't guaranteed to stay within [0, maxExtent -
+    // minExtent] even for a pinned delegate — fast-flung scrolls/
+    // overscroll can transiently report a larger value, which would
+    // otherwise drive currentHeight below minExtent and overflow
+    // ChatMetaHeader's content (observed via manual testing).
+    final currentHeight = (maxExtent - shrinkOffset).clamp(
+      minExtent,
+      maxExtent,
+    );
 
     return ColoredBox(
       color: c.background,
@@ -302,10 +313,7 @@ class _CollapsingChatHeaderDelegate extends SliverPersistentHeaderDelegate {
         child: ClipRect(
           child: Stack(
             children: [
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
+              Positioned.fill(
                 child: IgnorePointer(
                   ignoring: progress > 0.5,
                   child: Opacity(
@@ -324,10 +332,7 @@ class _CollapsingChatHeaderDelegate extends SliverPersistentHeaderDelegate {
                   ),
                 ),
               ),
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
+              Positioned.fill(
                 child: IgnorePointer(
                   ignoring: progress < 0.5,
                   child: Opacity(
@@ -396,7 +401,7 @@ class _StreamingBubble extends StatefulWidget {
 }
 
 class _StreamingBubbleState extends State<_StreamingBubble>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final AnimationController _caretController = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1000),
