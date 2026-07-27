@@ -33,7 +33,10 @@ class ChatMessageBubble extends StatelessWidget {
         return Semantics(
           label: 'system comment: ${comment.content}',
           child: Padding(
-            padding: const EdgeInsets.only(bottom: AionSpacing.sp16),
+            // Tighter than the sp16 human/AI messages use (design.md
+            // §9.2) — a system divider should read as a light separator,
+            // not a peer message, so it gets a smaller trailing gap.
+            padding: const EdgeInsets.only(bottom: AionSpacing.sp8),
             child: LayoutBuilder(
               builder: (context, constraints) => _SystemMessage(
                 comment: comment,
@@ -250,44 +253,45 @@ class _SystemMessage extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = ThemeScope.of(context).colors;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AionSpacing.sp8),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: maxWidth),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              PhosphorIcon(
-                PhosphorIcons.diamondLight,
-                size: 10,
-                color: c.textMuted,
-              ),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  comment.content,
-                  style: AionText.caption.copyWith(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    letterSpacing: 0,
-                    color: c.textMuted,
-                  ),
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+    // No self-padding here — unlike a bubbled message this widget relies
+    // solely on ChatMessageBubble's outer wrapper for its vertical gap
+    // (sp8, deliberately tighter than a normal message's sp16), matching
+    // how _HumanMessage/_AiMessage also carry no padding of their own.
+    return Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxWidth),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            PhosphorIcon(
+              PhosphorIcons.diamondLight,
+              size: 10,
+              color: c.textMuted,
+            ),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                comment.content,
+                style: AionText.caption.copyWith(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: 0,
+                  color: c.textMuted,
                 ),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(width: 6),
-              Text('·', style: AionText.time.copyWith(color: c.textMuted)),
-              const SizedBox(width: 6),
-              Text(
-                _formatTime(comment.createdAt),
-                style: AionText.time.copyWith(color: c.textMuted),
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(width: 6),
+            Text('·', style: AionText.time.copyWith(color: c.textMuted)),
+            const SizedBox(width: 6),
+            Text(
+              _formatTime(comment.createdAt),
+              style: AionText.time.copyWith(color: c.textMuted),
+            ),
+          ],
         ),
       ),
     );
