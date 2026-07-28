@@ -1,0 +1,10 @@
+# Freedesktop .desktop entry consumed by linuxdeploy (see build_appimage.sh)
+# to build the AppImage's desktop integration (app menu entry, icon).
+[Desktop Entry]
+Type=Application
+Name=Aion
+Comment=Spec-based AI agentic code assistant
+Exec=aion
+Icon=aion
+Categories=Development;IDE;
+Terminal=false
