@@ -40,18 +40,51 @@ class ActiveProjectCubit extends Cubit<ActiveProjectState>
     },
   );
 
+  @override
+  bool get offerCodebaseAnalysis => switch (state) {
+    ActiveProjectOpen(:final offerCodebaseAnalysis) => offerCodebaseAnalysis,
+    _ => false,
+  };
+
   /// Makes [project] the active project. Emits
   /// [ActiveProjectSwitching] (carrying the previously active project,
   /// if any) immediately, persists `lastOpenedAt` via
   /// [ProjectRepository.updateLastOpened], then emits
-  /// [ActiveProjectOpen].
-  Future<void> switchTo(Project project) async {
+  /// [ActiveProjectOpen] carrying [offerCodebaseAnalysis] (default
+  /// `false` — pass `true` only right after creating a project from an
+  /// already-git-tracked directory; see `NewProjectScreen.onCreated`).
+  Future<void> switchTo(
+    Project project, {
+    bool offerCodebaseAnalysis = false,
+  }) async {
     final previous = activeProject;
     emit(ActiveProjectSwitching(from: previous, to: project));
 
     final now = DateTime.now();
     await _repository.updateLastOpened(project.id, now);
-    emit(ActiveProjectOpen(_withLastOpened(project, now)));
+    emit(
+      ActiveProjectOpen(
+        _withLastOpened(project, now),
+        offerCodebaseAnalysis: offerCodebaseAnalysis,
+      ),
+    );
+  }
+
+  /// Clears the current [ActiveProjectOpen.offerCodebaseAnalysis] flag
+  /// back to `false`, re-emitting the same project unchanged. Called by
+  /// `TicketsListScreen.initState` once it has read the flag and shown
+  /// (or decided not to show) the codebase-analysis offer, so the offer
+  /// never reappears on a later rebuild within the same session. No-ops
+  /// if the current state isn't [ActiveProjectOpen], or the flag is
+  /// already `false`. Added for
+  /// `aion-arch/changes/new-project-onboarding`.
+  @override
+  void consumeCodebaseAnalysisOffer() {
+    final current = state;
+    if (current is! ActiveProjectOpen || !current.offerCodebaseAnalysis) {
+      return;
+    }
+    emit(ActiveProjectOpen(current.project));
   }
 
   Project _withLastOpened(Project project, DateTime lastOpenedAt) {

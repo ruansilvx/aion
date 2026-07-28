@@ -28,6 +28,27 @@
   "ticketsListNoResultsHint": "Try a different term, or reset a filter to its \"All\" option.",
   "ticketsListLoadMoreRetry": "Couldn't load more — tap to retry",
 
+  "codebaseAnalysisOfferTitle": "Draft a starting backlog from this codebase",
+  "codebaseAnalysisOfferBadge": "SIGNALS",
+  "codebaseAnalysisOfferBody": "Aion can read this codebase and draft signal tickets for the work it infers — you review before anything is kept.",
+  "codebaseAnalysisShallowLabel": "Shallow scan",
+  "codebaseAnalysisShallowHint": "Fast structural pass",
+  "codebaseAnalysisFullLabel": "Full scan",
+  "codebaseAnalysisFullHint": "Deeper agentic read",
+  "codebaseAnalysisRunningTitle": "Analyzing codebase",
+  "codebaseAnalysisRunningDefaultStatus": "Starting…",
+  "codebaseAnalysisHideAction": "Hide",
+  "codebaseAnalysisDoneTitle": "{count, plural, one{Drafted 1 signal ticket} other{Drafted {count} signal tickets}}",
+  "@codebaseAnalysisDoneTitle": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "codebaseAnalysisDoneBody": "They're in your ticket list below, ready to review, edit, or delete.",
+  "codebaseAnalysisFailedTitle": "Codebase analysis couldn't finish",
+  "codebaseAnalysisFailedBody": "The scan stopped before drafting any tickets. Your project is unaffected — add tickets manually for now.",
+  "codebaseAnalysisDismissLabel": "Dismiss",
+
   "ticketsBoardEmptyColumn": "No tickets",
   "ticketsBoardLoadMoreLabel": "Load more",
   "ticketsBoardMoveTicketLabel": "Move {ticketId} to another status",
@@ -346,7 +367,7 @@
   "newProjectLocationDesktopQualifier": "Desktop",
   "newProjectLocationPlaceholder": "Choose a folder…",
   "newProjectLocationBrowseAction": "Browse…",
-  "newProjectLocationHint": "Where this project's data is stored on disk. Hidden on mobile & web builds.",
+  "newProjectLocationHint": "Where this project's data is stored on disk. Can be an empty folder to start fresh, or an existing codebase to attach Aion to it. Hidden on mobile & web builds.",
   "newProjectLocationDirectoryInUseError": "This directory is already used by another project.",
   "newProjectNoDirectoryNotice": "Stored in this device's app storage. There's no folder to choose on mobile & web — the directory picker is hidden here.",
   "newProjectBaselineVersionLabel": "Baseline version",
@@ -355,6 +376,16 @@
   "newProjectDuplicateNameError": "A project with this name already exists.",
   "newProjectSubmitAction": "Create project",
   "newProjectSubmittingAction": "Creating…",
+
+  "newProjectGitignoreBannerTitle": "This folder is already a Git repository",
+  "newProjectGitignoreBannerBodyBefore": "Aion keeps its own bookkeeping in ",
+  "newProjectGitignoreBannerBodyMiddle": " and ",
+  "newProjectGitignoreBannerBodyAfter": " here. Keep them out of your repo's history?",
+  "newProjectGitignoreCheckboxLabelBefore": "Add ",
+  "newProjectGitignoreCheckboxLabelMiddle": " and ",
+  "newProjectGitignoreCheckboxLabelAfter": " to .gitignore",
+  "newProjectGitignoreUncheckedHint": "Aion's files will be committed to your repo unless you exclude them yourself.",
+  "newProjectGitignoreDeclineToast": "Aion's bookkeeping files will be tracked in this repo's history unless you exclude .aion/ and tickets/ manually.",
 
   "projectSwitcherMenuLabel": "Switch Project",
 

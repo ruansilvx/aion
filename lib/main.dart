@@ -118,23 +118,33 @@ class _AionAppState extends State<AionApp> with WidgetsBindingObserver {
       child: BlocProvider<ActiveProjectCubit>(
         create: (context) =>
             ActiveProjectCubit(context.read<ProjectRepository>()),
-        child: ThemeScope(
-          theme: _theme,
-          child: WidgetsApp.router(
-            routerConfig: appRouter,
-            color: aionThemeArctic.colors.primary,
-            // TextField (the sole permitted Material widget, see design.md
-            // Material Coupling Audit) reads MaterialLocalizations
-            // internally regardless of MaterialApp/Scaffold usage.
-            // AppLocalizations.delegate is generated (see l10n.yaml) and
-            // resolves context.l10n (core/localization/context_localizations_x.dart)
-            // for every user-facing string in the app.
-            localizationsDelegates: const [
-              AppLocalizations.delegate,
-              GlobalMaterialLocalizations.delegate,
-              GlobalWidgetsLocalizations.delegate,
-            ],
-            supportedLocales: AppLocalizations.supportedLocales,
+        child: RepositoryProvider<ActiveProjectProvider>(
+          // Exposes the same ActiveProjectCubit instance under its
+          // core/contracts/ interface type too, so any feature can
+          // `context.read<ActiveProjectProvider>()` per project.md's
+          // Pattern 1 without importing features/projects/ directly —
+          // BlocProvider<ActiveProjectCubit> alone only registers under
+          // the concrete ActiveProjectCubit type. Added for
+          // aion-arch/changes/new-project-onboarding.
+          create: (context) => context.read<ActiveProjectCubit>(),
+          child: ThemeScope(
+            theme: _theme,
+            child: WidgetsApp.router(
+              routerConfig: appRouter,
+              color: aionThemeArctic.colors.primary,
+              // TextField (the sole permitted Material widget, see design.md
+              // Material Coupling Audit) reads MaterialLocalizations
+              // internally regardless of MaterialApp/Scaffold usage.
+              // AppLocalizations.delegate is generated (see l10n.yaml) and
+              // resolves context.l10n (core/localization/context_localizations_x.dart)
+              // for every user-facing string in the app.
+              localizationsDelegates: const [
+                AppLocalizations.delegate,
+                GlobalMaterialLocalizations.delegate,
+                GlobalWidgetsLocalizations.delegate,
+              ],
+              supportedLocales: AppLocalizations.supportedLocales,
+            ),
           ),
         ),
       ),

@@ -43,12 +43,26 @@ class ActiveProjectSwitching extends ActiveProjectState {
 
 /// [project] is the active project and its workspace subtree is ready.
 class ActiveProjectOpen extends ActiveProjectState {
-  /// Creates an [ActiveProjectOpen] state carrying [project].
-  const ActiveProjectOpen(this.project);
+  /// Creates an [ActiveProjectOpen] state carrying [project] and whether
+  /// the codebase-analysis offer should be shown on first ticket-list
+  /// open.
+  const ActiveProjectOpen(this.project, {this.offerCodebaseAnalysis = false});
 
   /// The currently active project.
   final Project project;
 
+  /// Whether `TicketsListScreen` should show the opt-in
+  /// codebase-summarization offer banner the next time it builds.
+  /// `true` only immediately after [ActiveProjectCubit.switchTo] was
+  /// called with `offerCodebaseAnalysis: true` (i.e. [project] was just
+  /// created from an already-git-tracked directory) — in-memory only,
+  /// not persisted, so it's naturally "shown once, right after
+  /// creation" rather than a standing flag.
+  /// [ActiveProjectCubit.consumeCodebaseAnalysisOffer] clears it back to
+  /// `false` once the screen has read it. Added for
+  /// `aion-arch/changes/new-project-onboarding`.
+  final bool offerCodebaseAnalysis;
+
   @override
-  List<Object?> get props => [project];
+  List<Object?> get props => [project, offerCodebaseAnalysis];
 }

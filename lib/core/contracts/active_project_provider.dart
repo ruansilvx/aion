@@ -19,4 +19,17 @@ abstract interface class ActiveProjectProvider {
 
   /// Emits [activeProject] every time it changes.
   Stream<Project?> get activeProjectStream;
+
+  /// Whether the ticket list should show the opt-in codebase-
+  /// summarization offer banner the next time it builds. `true` only
+  /// immediately after [activeProject] was switched to with the
+  /// "created from an already-git-tracked directory" flag set — in-memory
+  /// only, not persisted. Call [consumeCodebaseAnalysisOffer] once the
+  /// offer has been shown (or deliberately not shown) so it never
+  /// reappears. Added for `aion-arch/changes/new-project-onboarding`.
+  bool get offerCodebaseAnalysis;
+
+  /// Clears [offerCodebaseAnalysis] back to `false` for the current
+  /// [activeProject]. No-ops if it's already `false`.
+  void consumeCodebaseAnalysisOffer();
 }

@@ -18,6 +18,7 @@ import 'package:aion/features/tickets/presentation/cubit/ticket_selection_cubit.
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart';
+import 'package:aion/features/tickets/presentation/widgets/codebase_analysis_banner.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_overflow_menu.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_selection_bar.dart';
 
@@ -28,7 +29,13 @@ import 'package:aion/features/tickets/presentation/widgets/ticket_selection_bar.
 /// further pages automatically as the user scrolls near the bottom (via
 /// [TicketsCubit.loadMoreTickets]); board mode, which has no single
 /// scroll container to hook that trigger onto, exposes an explicit
-/// [_BoardLoadMoreButton] instead.
+/// [_BoardLoadMoreButton] instead. When `ActiveProjectCubit`'s current
+/// project was just created from an already-git-tracked directory, shows
+/// a one-time [CodebaseAnalysisBanner] between the header and the
+/// search/filter row (consumed via
+/// `ActiveProjectCubit.consumeCodebaseAnalysisOffer` in [State.initState]
+/// so it never reappears) — see `aion-arch/changes/
+/// new-project-onboarding/design.md` §4.2.
 class TicketsListScreen extends StatefulWidget {
   /// Creates a [TicketsListScreen].
   const TicketsListScreen({super.key});
@@ -51,6 +58,12 @@ enum _TicketViewMode {
 
 class _TicketsListScreenState extends State<TicketsListScreen> {
   _TicketViewMode _viewMode = _TicketViewMode.list;
+
+  /// Whether to show [CodebaseAnalysisBanner] — set once in [initState]
+  /// from `ActiveProjectProvider.offerCodebaseAnalysis`, then owned
+  /// locally so dismissing it doesn't depend on the provider's state
+  /// (which is already consumed/cleared by the time the user dismisses).
+  bool _showCodebaseAnalysisOffer = false;
 
   /// Controls and reads the search field's text.
   final TextEditingController _searchController = TextEditingController();
@@ -89,6 +102,11 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
   @override
   void initState() {
     super.initState();
+    final activeProjectProvider = context.read<ActiveProjectProvider>();
+    if (activeProjectProvider.offerCodebaseAnalysis) {
+      _showCodebaseAnalysisOffer = true;
+      activeProjectProvider.consumeCodebaseAnalysisOffer();
+    }
     _searchController.addListener(_handleSearchTextChanged);
     _scrollController.addListener(_handleScroll);
     _runSearch();
@@ -299,6 +317,14 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                         ],
                       ),
                     ),
+                    if (_showCodebaseAnalysisOffer)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+                        child: CodebaseAnalysisBanner(
+                          onDismiss: () =>
+                              setState(() => _showCodebaseAnalysisOffer = false),
+                        ),
+                      ),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
                       child: Column(

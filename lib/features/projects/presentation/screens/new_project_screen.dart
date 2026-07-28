@@ -11,12 +11,25 @@ import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/projects/domain/entities/project.dart';
 import 'package:aion/features/projects/presentation/cubit/create_project_cubit.dart';
 import 'package:aion/features/projects/presentation/cubit/create_project_state.dart';
+import 'package:aion/features/projects/presentation/widgets/gitignore_confirmation_banner.dart';
+
+/// Called with the newly created [project] once [NewProjectScreen]
+/// submits successfully. [offerCodebaseAnalysis] is `true` when
+/// [project]'s `rootPath` was already a git repository — the caller
+/// should offer the opt-in codebase-summarization banner on first open
+/// (see `TicketsListScreen`). Added for
+/// `aion-arch/changes/new-project-onboarding`.
+typedef ProjectCreatedCallback =
+    void Function(Project project, {required bool offerCodebaseAnalysis});
 
 /// The `/hub/new` route: name, a desktop-only directory picker, and a
 /// (currently read-only) baseline-version selector, followed by a
 /// submit button. On mobile/web the directory field is omitted from the
 /// tree entirely (not merely hidden) and replaced by an informational
-/// notice. See
+/// notice. When the chosen directory is already a git repository, an
+/// inline [GitignoreConfirmationBanner] appears between the directory
+/// picker and the baseline-version field (desktop only) — see
+/// `aion-arch/changes/new-project-onboarding/design.md` §2/§4.1. See also
 /// `aion-arch/changes/multi-project-hub/design.md` §4.
 class NewProjectScreen extends StatefulWidget {
   /// Creates a [NewProjectScreen]. [onBack] returns to the Hub without
@@ -32,7 +45,7 @@ class NewProjectScreen extends StatefulWidget {
   final VoidCallback onBack;
 
   /// Called with the newly created project on success.
-  final ValueChanged<Project> onCreated;
+  final ProjectCreatedCallback onCreated;
 
   @override
   State<NewProjectScreen> createState() => _NewProjectScreenState();
@@ -41,7 +54,10 @@ class NewProjectScreen extends StatefulWidget {
 class _NewProjectScreenState extends State<NewProjectScreen> {
   final _nameController = TextEditingController();
   final _nameFocus = FocusNode();
+  final _gitClient = GitRepositoryClient();
   String? _chosenDirectory;
+  bool _isExistingGitRepo = false;
+  bool _appendGitignore = true;
 
   @override
   void dispose() {
@@ -52,15 +68,20 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
 
   Future<void> _browseDirectory() async {
     final result = await getDirectoryPath();
-    if (result != null) {
-      setState(() => _chosenDirectory = result);
-    }
+    if (result == null) return;
+    final isExistingGitRepo = await _gitClient.isGitRepository(result);
+    if (!mounted) return;
+    setState(() {
+      _chosenDirectory = result;
+      _isExistingGitRepo = isExistingGitRepo;
+    });
   }
 
   void _submit() {
     context.read<CreateProjectCubit>().submit(
       name: _nameController.text,
       rootPath: _chosenDirectory,
+      appendGitignore: _appendGitignore,
     );
   }
 
@@ -72,7 +93,13 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
     return BlocListener<CreateProjectCubit, CreateProjectState>(
       listener: (context, state) {
         if (state is CreateProjectSuccess) {
-          widget.onCreated(state.project);
+          if (state.wasExistingGitRepo && !_appendGitignore) {
+            AppToast.show(context, context.l10n.newProjectGitignoreDeclineToast);
+          }
+          widget.onCreated(
+            state.project,
+            offerCodebaseAnalysis: state.wasExistingGitRepo,
+          );
         }
       },
       child: ColoredBox(
@@ -101,6 +128,10 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
                         nameController: _nameController,
                         nameFocus: _nameFocus,
                         chosenDirectory: _chosenDirectory,
+                        isExistingGitRepo: _isExistingGitRepo,
+                        appendGitignore: _appendGitignore,
+                        onAppendGitignoreChanged: (value) =>
+                            setState(() => _appendGitignore = value),
                         onBrowseDirectory: _browseDirectory,
                         onSubmit: _submit,
                       ),
@@ -117,7 +148,8 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
 }
 
 /// The create-project form body: name field, directory picker/notice,
-/// baseline version field, and submit footer.
+/// (desktop, existing-repo only) gitignore-confirmation banner, baseline
+/// version field, and submit footer.
 class _Form extends StatelessWidget {
   const _Form({
     required this.colors,
@@ -125,6 +157,9 @@ class _Form extends StatelessWidget {
     required this.nameController,
     required this.nameFocus,
     required this.chosenDirectory,
+    required this.isExistingGitRepo,
+    required this.appendGitignore,
+    required this.onAppendGitignoreChanged,
     required this.onBrowseDirectory,
     required this.onSubmit,
   });
@@ -134,6 +169,9 @@ class _Form extends StatelessWidget {
   final TextEditingController nameController;
   final FocusNode nameFocus;
   final String? chosenDirectory;
+  final bool isExistingGitRepo;
+  final bool appendGitignore;
+  final ValueChanged<bool> onAppendGitignoreChanged;
   final VoidCallback onBrowseDirectory;
   final VoidCallback onSubmit;
 
@@ -173,6 +211,13 @@ class _Form extends StatelessWidget {
             onBrowseDirectory: onBrowseDirectory,
           ),
         if (!isDesktop) _NoDirectoryNotice(colors: c),
+        if (isDesktop && isExistingGitRepo) ...[
+          const SizedBox(height: 18),
+          GitignoreConfirmationBanner(
+            excludeAionPaths: appendGitignore,
+            onChanged: onAppendGitignoreChanged,
+          ),
+        ],
         const SizedBox(height: AionSpacing.sp20),
         _BaselineVersionField(colors: c),
         const SizedBox(height: AionSpacing.sp24),

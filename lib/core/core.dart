@@ -15,6 +15,7 @@ export 'database/registry_database.dart';
 export 'embeddings/bundled_embedding_provider.dart';
 export 'embeddings/wordpiece_tokenizer.dart';
 export 'git/git_repository_client.dart';
+export 'git/gitignore_editor.dart';
 export 'localization/context_localizations_x.dart';
 export 'markdown/ticket_markdown_linter.dart';
 export 'markdown/ticket_markdown_parse_result.dart';

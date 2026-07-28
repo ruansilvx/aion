@@ -60,14 +60,27 @@ class CreateProjectSubmitting extends CreateProjectState {
 /// The project was created successfully. Carries the new [Project] so
 /// the widget layer can navigate straight into it.
 class CreateProjectSuccess extends CreateProjectState {
-  /// Creates a [CreateProjectSuccess] state carrying [project].
-  const CreateProjectSuccess(this.project);
+  /// Creates a [CreateProjectSuccess] state carrying [project] and
+  /// whether its `rootPath` was already a git repository.
+  const CreateProjectSuccess(
+    this.project, {
+    required this.wasExistingGitRepo,
+  });
 
   /// The newly created project.
   final Project project;
 
+  /// Whether [project]'s `rootPath` was already a git repository at
+  /// creation time (desktop only; always `false` on mobile/web, where
+  /// there's no `rootPath` to check). Lets the widget layer decide the
+  /// gitignore-decline warning toast and the downstream
+  /// codebase-analysis offer without re-deriving the check
+  /// [CreateProjectCubit.submit] already ran. Added for
+  /// `aion-arch/changes/new-project-onboarding`.
+  final bool wasExistingGitRepo;
+
   @override
-  List<Object?> get props => [project];
+  List<Object?> get props => [project, wasExistingGitRepo];
 }
 
 /// Categorizes a [CreateProjectFailure] so it can be localized at the

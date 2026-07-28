@@ -15,6 +15,7 @@ import 'package:aion/core/database/app_database.dart';
 import 'package:aion/core/build/project_stack_detector.dart';
 import 'package:aion/core/git/git_repository_client.dart';
 import 'package:aion/core/git/github_cli_client.dart';
+import 'package:aion/core/git/gitignore_editor.dart';
 import 'package:aion/core/markdown/ticket_markdown_serializer.dart';
 import 'package:aion/core/routing/workspace_nav_shell.dart';
 import 'package:aion/core/utils/platform_utils.dart';
@@ -73,10 +74,17 @@ final appRouter = GoRouter(
             context.read<BaselineRepository>(),
             ProjectStackDetector(),
           ),
+          GitRepositoryClient(),
+          GitignoreEditor(),
         ),
         child: NewProjectScreen(
           onBack: () => context.go('/hub'),
-          onCreated: (project) => _openProject(context, project),
+          onCreated: (project, {required offerCodebaseAnalysis}) =>
+              _openProject(
+                context,
+                project,
+                offerCodebaseAnalysis: offerCodebaseAnalysis,
+              ),
         ),
       ),
     ),
@@ -265,10 +273,18 @@ String? _redirect(BuildContext context, GoRouterState state) {
   return null;
 }
 
-/// Switches the active project via [ActiveProjectCubit.switchTo], then
-/// navigates into the workspace once the switch completes.
-Future<void> _openProject(BuildContext context, Project project) async {
-  await context.read<ActiveProjectCubit>().switchTo(project);
+/// Switches the active project via [ActiveProjectCubit.switchTo]
+/// (forwarding [offerCodebaseAnalysis], default `false`), then navigates
+/// into the workspace once the switch completes.
+Future<void> _openProject(
+  BuildContext context,
+  Project project, {
+  bool offerCodebaseAnalysis = false,
+}) async {
+  await context.read<ActiveProjectCubit>().switchTo(
+    project,
+    offerCodebaseAnalysis: offerCodebaseAnalysis,
+  );
   if (context.mounted) context.go('/workspace/tickets');
 }
 
@@ -480,6 +496,7 @@ class _WorkspaceShellState extends State<WorkspaceShell>
               baselineRepository: context.read<BaselineRepository>(),
               projectId: widget.project.id,
               baselineVersion: widget.project.baselineVersion,
+              projectName: widget.project.name,
             ),
             child: Builder(
               builder: (context) => RepositoryProvider<PageTicketProvider>(
