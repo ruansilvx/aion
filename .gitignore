@@ -95,6 +95,9 @@ agent_bridge/node_modules/
 # this checkout is registered as an Aion "project" root for dogfooding
 # self-iteration (ticket git-projection has no separate storage target
 # yet — see aion-arch/ideas/self-iteration-sequencing.md). Never part
-# of the app's own source.
-.aion/
-tickets/
+# of the app's own source. Both anchored to the repo root (`/`) —
+# unanchored `tickets/` previously matched any directory named
+# `tickets` anywhere in the tree, silently hiding new files under the
+# real source directory `lib/features/tickets/` from `git status`.
+/.aion/
+/tickets/
