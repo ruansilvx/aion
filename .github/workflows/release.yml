@@ -81,7 +81,8 @@ jobs:
       - name: Extract changelog section for this version
         run: |
           version="${GITHUB_REF_NAME#v}"
-          awk -v ver="$version" '
+          ver_regex=$(echo "$version" | sed 's/\./\\./g')
+          awk -v ver="$ver_regex" '
             BEGIN { found=0 }
             /^## \[/ {
               if (found) exit

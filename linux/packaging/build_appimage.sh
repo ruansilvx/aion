@@ -36,10 +36,11 @@ fetch_tool "$LINUXDEPLOY_URL" "$TOOLS_DIR/linuxdeploy.AppImage"
 fetch_tool "$APPIMAGETOOL_URL" "$TOOLS_DIR/appimagetool.AppImage"
 
 # linuxdeploy expects the icon file's basename (minus extension) to match
-# the .desktop file's Icon= key ("aion") — the closest existing app icon
-# in this repo is the macOS 1024x1024 PNG, since no dedicated Linux/AppImage
-# icon asset exists yet.
-ICON_SRC="$REPO_ROOT/macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_1024.png"
+# the .desktop file's Icon= key ("aion"). assets/icons/aion_icon.png is
+# currently Flutter's default template icon (same placeholder every
+# platform in this repo still ships) — not real Aion branding yet; see
+# aion-arch/ideas/aion-needs-a-real-app-icon.md.
+ICON_SRC="$REPO_ROOT/assets/icons/aion_icon.png"
 ICON_STAGED="$WORK_DIR/aion.png"
 cp "$ICON_SRC" "$ICON_STAGED"
 
