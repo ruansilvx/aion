@@ -211,18 +211,60 @@ class _Form extends StatelessWidget {
             onBrowseDirectory: onBrowseDirectory,
           ),
         if (!isDesktop) _NoDirectoryNotice(colors: c),
-        if (isDesktop && isExistingGitRepo) ...[
-          const SizedBox(height: 18),
-          GitignoreConfirmationBanner(
-            excludeAionPaths: appendGitignore,
-            onChanged: onAppendGitignoreChanged,
-          ),
-        ],
+        _AnimatedGitignoreBanner(
+          show: isDesktop && isExistingGitRepo,
+          excludeAionPaths: appendGitignore,
+          onChanged: onAppendGitignoreChanged,
+        ),
         const SizedBox(height: AionSpacing.sp20),
         _BaselineVersionField(colors: c),
         const SizedBox(height: AionSpacing.sp24),
         _Footer(isSubmitting: isSubmitting, onSubmit: onSubmit),
       ],
+    );
+  }
+}
+
+/// Wraps [GitignoreConfirmationBanner] in the `AnimatedSize` +
+/// `FadeTransition`, 180ms `Curves.easeOut` mount/unmount treatment
+/// design.md §2.4/§5 specifies, so the banner grows/shrinks and
+/// crossfades as [show] flips (e.g. picking a different directory)
+/// instead of popping in/out abruptly.
+class _AnimatedGitignoreBanner extends StatelessWidget {
+  const _AnimatedGitignoreBanner({
+    required this.show,
+    required this.excludeAionPaths,
+    required this.onChanged,
+  });
+
+  final bool show;
+  final bool excludeAionPaths;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    const duration = Duration(milliseconds: 180);
+    return AnimatedSize(
+      duration: duration,
+      curve: Curves.easeOut,
+      alignment: Alignment.topCenter,
+      child: AnimatedSwitcher(
+        duration: duration,
+        switchInCurve: Curves.easeOut,
+        switchOutCurve: Curves.easeOut,
+        transitionBuilder: (child, animation) =>
+            FadeTransition(opacity: animation, child: child),
+        child: show
+            ? Padding(
+                key: const ValueKey('shown'),
+                padding: const EdgeInsets.only(top: 18),
+                child: GitignoreConfirmationBanner(
+                  excludeAionPaths: excludeAionPaths,
+                  onChanged: onChanged,
+                ),
+              )
+            : const SizedBox.shrink(key: ValueKey('hidden')),
+      ),
     );
   }
 }

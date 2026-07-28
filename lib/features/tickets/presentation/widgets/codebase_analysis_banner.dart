@@ -52,14 +52,17 @@ class CodebaseAnalysisBanner extends StatelessWidget {
             key: ValueKey(status.runtimeType),
             child: switch (status) {
               CodebaseAnalysisIdle() => _OfferBanner(
+                projectName: cubit.projectName,
                 onPickDepth: (depth) =>
                     cubit.runCodebaseSummarization(depth: depth),
                 onDismiss: onDismiss,
               ),
-              CodebaseAnalysisRunning(:final statusText) => _RunningBanner(
-                statusText: statusText,
-                onHide: onDismiss,
-              ),
+              CodebaseAnalysisRunning(:final depth, :final statusText) =>
+                _RunningBanner(
+                  depth: depth,
+                  statusText: statusText,
+                  onHide: onDismiss,
+                ),
               CodebaseAnalysisDone(:final count) => _DoneBanner(
                 count: count,
                 onDismiss: onDismiss,
@@ -205,7 +208,16 @@ class _IconChip extends StatelessWidget {
 /// The [CodebaseAnalysisIdle] state: an offer to scan, a depth choice
 /// (shallow/full), and a dismiss ×.
 class _OfferBanner extends StatelessWidget {
-  const _OfferBanner({required this.onPickDepth, required this.onDismiss});
+  const _OfferBanner({
+    required this.projectName,
+    required this.onPickDepth,
+    required this.onDismiss,
+  });
+
+  /// The active project's display name, inlined (monospace) into the
+  /// body copy per design.md §3.1 — `null` falls back to generic
+  /// wording (`codebaseAnalysisOfferBodyFallbackName`).
+  final String? projectName;
 
   final ValueChanged<SummarizationDepth> onPickDepth;
   final VoidCallback onDismiss;
@@ -274,11 +286,38 @@ class _OfferBanner extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        context.l10n.codebaseAnalysisOfferBody,
-                        style: AionText.bodySm.copyWith(
-                          color: c.textSecondary,
-                          height: 1.5,
+                      Text.rich(
+                        TextSpan(
+                          style: AionText.bodySm.copyWith(
+                            color: c.textSecondary,
+                            height: 1.5,
+                          ),
+                          children: [
+                            TextSpan(
+                              text: context.l10n.codebaseAnalysisOfferBodyBefore,
+                            ),
+                            _InlineCodeSpan(
+                              text:
+                                  projectName ??
+                                  context
+                                      .l10n
+                                      .codebaseAnalysisOfferBodyFallbackName,
+                              colors: c,
+                            ),
+                            TextSpan(
+                              text:
+                                  context.l10n.codebaseAnalysisOfferBodyMiddle,
+                            ),
+                            TextSpan(
+                              text: context.l10n.codebaseAnalysisOfferBodySignal,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ).copyWith(color: c.typeSignal),
+                            ),
+                            TextSpan(
+                              text: context.l10n.codebaseAnalysisOfferBodyAfter,
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -316,6 +355,32 @@ class _OfferBanner extends StatelessWidget {
       ),
     );
   }
+}
+
+/// An inline monospace pill (`surfaceHover`-tinted background) for the
+/// project name embedded in [_OfferBanner]'s body text, per design.md
+/// §3.1 (mirrors `GitignoreConfirmationBanner`'s `_PathChip`).
+class _InlineCodeSpan extends WidgetSpan {
+  _InlineCodeSpan({required String text, required AionColors colors})
+    : super(
+        alignment: PlaceholderAlignment.middle,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: colors.surfaceHover,
+            borderRadius: const BorderRadius.all(Radius.circular(4)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+            child: Text(
+              text,
+              style: AionText.key.copyWith(
+                fontSize: 12,
+                color: colors.textSecondary,
+              ),
+            ),
+          ),
+        ),
+      );
 }
 
 /// A two-line (label + hint) depth-choice button — `AppButton` only
@@ -417,11 +482,19 @@ class _DepthChoiceButtonState extends State<_DepthChoiceButton> {
   }
 }
 
-/// The [CodebaseAnalysisRunning] state: a spinner, a title, and a live
-/// status line, plus a "Hide" control instead of a dismiss ×.
+/// The [CodebaseAnalysisRunning] state: a spinner, a depth-specific
+/// title, and a live status line, plus a "Hide" control instead of a
+/// dismiss ×.
 class _RunningBanner extends StatelessWidget {
-  const _RunningBanner({required this.statusText, required this.onHide});
+  const _RunningBanner({
+    required this.depth,
+    required this.statusText,
+    required this.onHide,
+  });
 
+  /// Which scan depth is running — selects between the "— shallow scan"
+  /// and "— full scan" title variants (design.md §3.2).
+  final SummarizationDepth depth;
   final String? statusText;
   final VoidCallback onHide;
 
@@ -454,7 +527,9 @@ class _RunningBanner extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  context.l10n.codebaseAnalysisRunningTitle,
+                  depth == SummarizationDepth.shallow
+                      ? context.l10n.codebaseAnalysisRunningTitleShallow
+                      : context.l10n.codebaseAnalysisRunningTitleFull,
                   style: AionText.h2.copyWith(
                     fontSize: 15,
                     color: c.textPrimary,

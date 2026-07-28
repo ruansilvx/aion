@@ -154,6 +154,13 @@ class TicketsCubit extends Cubit<TicketsState> {
   Stream<CodebaseAnalysisStatus> get codebaseAnalysisStatus =>
       _codebaseAnalysisController.stream;
 
+  /// The active project's display name, if this cubit was constructed
+  /// with one (`app_router.dart` always supplies it). Read by
+  /// `CodebaseAnalysisBanner` to name the codebase in its offer copy —
+  /// `null` falls back to generic wording. Added for
+  /// `aion-arch/changes/new-project-onboarding`.
+  String? get projectName => _projectName;
+
   @override
   Future<void> close() {
     _codebaseAnalysisController.close();
@@ -2405,7 +2412,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       return;
     }
 
-    _codebaseAnalysisController.add(const CodebaseAnalysisRunning());
+    _codebaseAnalysisController.add(CodebaseAnalysisRunning(depth: depth));
 
     final now = DateTime.now();
     final runTicket = Ticket(
@@ -2501,7 +2508,10 @@ class TicketsCubit extends Cubit<TicketsState> {
         case AgentTextEvent(:final text):
           buffer.write(text);
           _codebaseAnalysisController.add(
-            CodebaseAnalysisRunning(statusText: _lastLine(buffer.toString())),
+            CodebaseAnalysisRunning(
+              depth: SummarizationDepth.shallow,
+              statusText: _lastLine(buffer.toString()),
+            ),
           );
         case AgentDoneEvent():
           break;
@@ -2588,10 +2598,14 @@ class TicketsCubit extends Cubit<TicketsState> {
         toolsEnabled: true,
         workingDirectory: worktreePath,
         onChunk: (textSoFar) => _codebaseAnalysisController.add(
-          CodebaseAnalysisRunning(statusText: _lastLine(textSoFar)),
+          CodebaseAnalysisRunning(
+            depth: SummarizationDepth.full,
+            statusText: _lastLine(textSoFar),
+          ),
         ),
         onToolUse: (toolName, summary) => _codebaseAnalysisController.add(
           CodebaseAnalysisRunning(
+            depth: SummarizationDepth.full,
             statusText: summary == null
                 ? 'Running $toolName...'
                 : 'Running $toolName: $summary...',

@@ -2,6 +2,8 @@
 
 import 'package:equatable/equatable.dart';
 
+import 'package:aion/features/tickets/domain/enums/summarization_depth.dart';
+
 /// The state emitted on `TicketsCubit.codebaseAnalysisStatus` as
 /// `TicketsCubit.runCodebaseSummarization` progresses. Deliberately kept
 /// separate from `TicketsState` — this is a transient, first-open-only
@@ -23,18 +25,23 @@ class CodebaseAnalysisIdle extends CodebaseAnalysisStatus {
 
 /// A codebase-summarization run is in progress.
 class CodebaseAnalysisRunning extends CodebaseAnalysisStatus {
-  /// Creates a [CodebaseAnalysisRunning] state, optionally carrying a
-  /// live [statusText] snippet (the most recent non-empty line of the
+  /// Creates a [CodebaseAnalysisRunning] state carrying which [depth] is
+  /// running (so `CodebaseAnalysisBanner` can title itself "— shallow
+  /// scan" vs "— full scan" per design.md §3.2), optionally with a live
+  /// [statusText] snippet (the most recent non-empty line of the
   /// model's streamed reply, or a tool-use summary) for the banner to
   /// display.
-  const CodebaseAnalysisRunning({this.statusText});
+  const CodebaseAnalysisRunning({required this.depth, this.statusText});
+
+  /// Which scan depth is currently running.
+  final SummarizationDepth depth;
 
   /// A short, human-readable live status snippet, or `null` before the
   /// first chunk/tool-use event arrives.
   final String? statusText;
 
   @override
-  List<Object?> get props => [statusText];
+  List<Object?> get props => [depth, statusText];
 }
 
 /// A codebase-summarization run finished successfully, creating [count]
