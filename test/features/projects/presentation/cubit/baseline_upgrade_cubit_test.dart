@@ -45,6 +45,7 @@ void main() {
       build: buildCubit,
       act: (cubit) => cubit.load(),
       expect: () => [
+        isA<BaselineUpgradeLoading>(),
         isA<BaselineUpgradeReady>()
             .having((s) => s.currentVersion, 'currentVersion', '0.1.0')
             .having((s) => s.latestVersion, 'latestVersion', '0.2.0'),
@@ -76,6 +77,7 @@ void main() {
         await cubit.upgrade();
       },
       expect: () => [
+        isA<BaselineUpgradeLoading>(),
         isA<BaselineUpgradeReady>().having(
           (s) => s.currentVersion,
           'currentVersion',
@@ -111,6 +113,7 @@ void main() {
         await cubit.upgrade();
       },
       expect: () => [
+        isA<BaselineUpgradeLoading>(),
         isA<BaselineUpgradeReady>().having(
           (s) => s.isUpToDate,
           'isUpToDate',

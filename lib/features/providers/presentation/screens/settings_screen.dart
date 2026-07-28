@@ -611,21 +611,14 @@ class _BaselineUpgradeSection extends StatelessWidget {
             const SizedBox(height: 10),
             if (state.isUpToDate)
               _UpToDateMessage(colors: c)
+            else if (state.isUpgrading)
+              const _BaselineUpgradingButton()
             else
-              Align(
-                alignment: Alignment.centerLeft,
-                child: AppButton(
-                  label: state.isUpgrading
-                      ? context.l10n.settingsBaselineUpgradingLabel
-                      : context.l10n.settingsBaselineUpgradeButton(
-                          'v${state.latestVersion}',
-                        ),
-                  variant: AppButtonVariant.secondary,
-                  icon: PhosphorIcons.arrowUpLight,
-                  onPressed: state.isUpgrading
-                      ? null
-                      : () => context.read<BaselineUpgradeCubit>().upgrade(),
+              _BaselineUpgradeButton(
+                label: context.l10n.settingsBaselineUpgradeButton(
+                  'v${state.latestVersion}',
                 ),
+                onTap: () => context.read<BaselineUpgradeCubit>().upgrade(),
               ),
           ],
         );
@@ -669,6 +662,137 @@ class _CurrentVersionRow extends StatelessWidget {
                 fontSize: 13.5,
                 color: c.textPrimary,
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The enabled "Upgrade to vX.Y.Z" action inside [_BaselineUpgradeSection]
+/// — hand-rolled rather than [AppButton] because design.md §2.2 specifies
+/// a `primary`-colored leading icon, which [AppButton]'s secondary
+/// variant can't produce (its icon always matches the label color).
+/// Mirrors the hover/press treatment `CodebaseAnalysisBanner`'s
+/// `_DepthChoiceButton` already hand-rolls for the same kind of
+/// AppButton-capability gap.
+class _BaselineUpgradeButton extends StatefulWidget {
+  /// Creates a [_BaselineUpgradeButton] labeled [label], calling [onTap]
+  /// when activated.
+  const _BaselineUpgradeButton({required this.label, required this.onTap});
+
+  /// The button's text label (e.g. "Upgrade to v0.3.0").
+  final String label;
+
+  /// Called when the button is activated.
+  final VoidCallback onTap;
+
+  @override
+  State<_BaselineUpgradeButton> createState() =>
+      _BaselineUpgradeButtonState();
+}
+
+class _BaselineUpgradeButtonState extends State<_BaselineUpgradeButton> {
+  bool _isHovered = false;
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+
+    final fill = _isPressed
+        ? c.surface
+        : (_isHovered
+              ? Color.alphaBlend(
+                  c.primary.withValues(alpha: 0.06),
+                  c.surfaceHover,
+                )
+              : c.surfaceHover);
+    final border = _isHovered
+        ? c.primary.withValues(alpha: t.isDark ? 0.30 : 0.20)
+        : c.borderStrong;
+
+    return Semantics(
+      button: true,
+      label: widget.label,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: GestureDetector(
+          onTap: widget.onTap,
+          onTapDown: (_) => setState(() => _isPressed = true),
+          onTapUp: (_) => setState(() => _isPressed = false),
+          onTapCancel: () => setState(() => _isPressed = false),
+          child: AnimatedScale(
+            scale: _isPressed ? 0.98 : 1.0,
+            duration: const Duration(milliseconds: 80),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: fill,
+                border: Border.all(color: border),
+                borderRadius: const BorderRadius.all(AionRadius.md),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 15,
+                  vertical: 10,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    PhosphorIcon(
+                      PhosphorIcons.arrowUpLight,
+                      size: 16,
+                      color: c.primary,
+                    ),
+                    const SizedBox(width: 9),
+                    Text(
+                      widget.label,
+                      style: AionText.button.copyWith(color: c.textPrimary),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The non-interactive, spinner-labeled "Upgrading…" state
+/// [_BaselineUpgradeSection] shows in place of
+/// [_BaselineUpgradeButton] while an upgrade is in flight — same
+/// footprint as [_BaselineUpgradeButton] so the section doesn't reflow,
+/// per design.md §2.3.
+class _BaselineUpgradingButton extends StatelessWidget {
+  const _BaselineUpgradingButton();
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.surfaceHover,
+        border: Border.all(color: c.border),
+        borderRadius: const BorderRadius.all(AionRadius.md),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(width: 14, height: 14, child: AppSpinner(size: 14)),
+            const SizedBox(width: 9),
+            Text(
+              context.l10n.settingsBaselineUpgradingLabel,
+              style: AionText.button.copyWith(color: c.textMuted),
             ),
           ],
         ),

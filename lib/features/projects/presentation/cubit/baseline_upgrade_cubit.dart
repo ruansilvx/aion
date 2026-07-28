@@ -23,8 +23,15 @@ class BaselineUpgradeCubit extends Cubit<BaselineUpgradeState> {
   final ActiveProjectProvider _activeProjectProvider;
 
   /// Loads the active project's currently pinned baseline version and
-  /// the latest bundled version, emitting [BaselineUpgradeReady].
+  /// the latest bundled version, emitting [BaselineUpgradeLoading] then
+  /// [BaselineUpgradeReady]. The leading [BaselineUpgradeLoading] emit
+  /// only matters if [load] is ever called again after already
+  /// [BaselineUpgradeReady] (there's no such call site today —
+  /// `app_router.dart` calls this once, on creation) — kept anyway so a
+  /// future re-load shows a transient spinner instead of jumping
+  /// straight between two ready states.
   Future<void> load() async {
+    emit(const BaselineUpgradeLoading());
     final versions = await _baselineRepository.getAvailableBaselineVersions();
     final project = _activeProjectProvider.activeProject!;
     emit(

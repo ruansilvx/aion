@@ -22,7 +22,10 @@ class BannerShell extends StatelessWidget {
     required this.child,
     this.onDismiss,
     this.dismissSemanticLabel,
-  });
+  }) : assert(
+         onDismiss == null || dismissSemanticLabel != null,
+         'dismissSemanticLabel is required whenever onDismiss is set',
+       );
 
   /// The banner's background fill color.
   final Color fill;
