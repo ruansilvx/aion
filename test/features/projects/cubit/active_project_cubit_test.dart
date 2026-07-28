@@ -75,5 +75,65 @@ void main() {
         isA<ActiveProjectOpen>().having((s) => s.project.id, 'project.id', '2'),
       ],
     );
+
+    blocTest<ActiveProjectCubit, ActiveProjectState>(
+      'switchTo with offerCodebaseAnalysis true carries it on ActiveProjectOpen',
+      build: () => ActiveProjectCubit(repository),
+      act: (cubit) => cubit.switchTo(project, offerCodebaseAnalysis: true),
+      expect: () => [
+        isA<ActiveProjectSwitching>(),
+        isA<ActiveProjectOpen>().having(
+          (s) => s.offerCodebaseAnalysis,
+          'offerCodebaseAnalysis',
+          isTrue,
+        ),
+      ],
+    );
+
+    blocTest<ActiveProjectCubit, ActiveProjectState>(
+      'consumeCodebaseAnalysisOffer clears a true flag back to false',
+      build: () => ActiveProjectCubit(repository),
+      act: (cubit) async {
+        await cubit.switchTo(project, offerCodebaseAnalysis: true);
+        cubit.consumeCodebaseAnalysisOffer();
+      },
+      expect: () => [
+        isA<ActiveProjectSwitching>(),
+        isA<ActiveProjectOpen>().having(
+          (s) => s.offerCodebaseAnalysis,
+          'offerCodebaseAnalysis',
+          isTrue,
+        ),
+        isA<ActiveProjectOpen>().having(
+          (s) => s.offerCodebaseAnalysis,
+          'offerCodebaseAnalysis',
+          isFalse,
+        ),
+      ],
+    );
+
+    blocTest<ActiveProjectCubit, ActiveProjectState>(
+      'consumeCodebaseAnalysisOffer no-ops when the flag is already false',
+      build: () => ActiveProjectCubit(repository),
+      act: (cubit) async {
+        await cubit.switchTo(project);
+        cubit.consumeCodebaseAnalysisOffer();
+      },
+      expect: () => [
+        isA<ActiveProjectSwitching>(),
+        isA<ActiveProjectOpen>().having(
+          (s) => s.offerCodebaseAnalysis,
+          'offerCodebaseAnalysis',
+          isFalse,
+        ),
+      ],
+    );
+
+    blocTest<ActiveProjectCubit, ActiveProjectState>(
+      'consumeCodebaseAnalysisOffer no-ops when not in ActiveProjectOpen',
+      build: () => ActiveProjectCubit(repository),
+      act: (cubit) => cubit.consumeCodebaseAnalysisOffer(),
+      expect: () => <ActiveProjectState>[],
+    );
   });
 }

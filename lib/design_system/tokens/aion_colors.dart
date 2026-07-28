@@ -361,4 +361,46 @@ extension AionColorsHubTokens on AionColors {
   /// override") border.
   Color aiBubbleBorder(bool isDark) =>
       primary.withValues(alpha: isDark ? 0.42 : 0.28);
+
+  // primary family — icon-chip fill behind the gitignore-banner branch
+  // glyph. Added for new-project-onboarding; see that change's
+  // design.md §1.2.
+  /// `GitignoreConfirmationBanner`'s leading icon-chip fill.
+  Color noticeIconTint(bool isDark) =>
+      primary.withValues(alpha: isDark ? 0.22 : 0.14);
+
+  // primary family — icon-chip fill behind CodebaseAnalysisBanner's
+  // running spinner. Added for new-project-onboarding; see
+  // design.md §1.2.
+  /// `CodebaseAnalysisBanner`'s leading icon-chip fill in the `running`
+  /// state.
+  Color pendingIconTint(bool isDark) =>
+      primary.withValues(alpha: isDark ? 0.20 : 0.12);
+
+  // danger family — icon-chip fill behind CodebaseAnalysisBanner's
+  // failure glyph. Added for new-project-onboarding; see design.md §1.2.
+  /// `CodebaseAnalysisBanner`'s leading icon-chip fill in the `failed`
+  /// state.
+  Color dangerIconTint(bool isDark) =>
+      danger.withValues(alpha: isDark ? 0.24 : 0.16);
+
+  // signal family — CodebaseAnalysisBanner's identity accent
+  // (typeSignal), since a scan's output is `signal` tickets. No prior
+  // consumer of typeSignal as a tint family. Added for
+  // new-project-onboarding; see design.md §1.2.
+  /// `CodebaseAnalysisBanner`'s `offer`-state fill.
+  Color signalFill(bool isDark) =>
+      typeSignal.withValues(alpha: isDark ? 0.13 : 0.08);
+
+  /// `CodebaseAnalysisBanner`'s `offer`-state border.
+  Color signalBorderTint(bool isDark) =>
+      typeSignal.withValues(alpha: isDark ? 0.34 : 0.26);
+
+  /// `CodebaseAnalysisBanner`'s `offer`-state leading icon-chip fill.
+  Color signalIconTint(bool isDark) =>
+      typeSignal.withValues(alpha: isDark ? 0.22 : 0.15);
+
+  /// `CodebaseAnalysisBanner`'s "SIGNALS" badge fill.
+  Color signalChipTint(bool isDark) =>
+      typeSignal.withValues(alpha: isDark ? 0.20 : 0.13);
 }

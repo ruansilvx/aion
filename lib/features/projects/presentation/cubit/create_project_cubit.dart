@@ -19,21 +19,28 @@ import 'package:aion/features/projects/presentation/cubit/create_project_state.d
 /// chosen directory isn't already an Aion project (no existing
 /// `.aion/manifest.json` marker), then persists via [ProjectRepository]
 /// and, on desktop, writes the marker, initializes an empty git
-/// repository at `rootPath`, and asks [_baselineTailoringService] to
-/// tailor a starting `conventions/architecture-conventions` override
-/// from the detected stack.
+/// repository at `rootPath` (skipped if one already exists — see
+/// [submit]'s `appendGitignore` parameter), and asks
+/// [_baselineTailoringService] to tailor a starting
+/// `conventions/architecture-conventions` override from the detected
+/// stack.
 class CreateProjectCubit extends Cubit<CreateProjectState> {
   /// Creates a [CreateProjectCubit] backed by [_projectRepository],
-  /// [_baselineRepository], and [_baselineTailoringService].
+  /// [_baselineRepository], [_baselineTailoringService], [_gitClient],
+  /// and [_gitignoreEditor].
   CreateProjectCubit(
     this._projectRepository,
     this._baselineRepository,
     this._baselineTailoringService,
+    this._gitClient,
+    this._gitignoreEditor,
   ) : super(const CreateProjectInitial());
 
   final ProjectRepository _projectRepository;
   final BaselineRepository _baselineRepository;
   final BaselineTailoringService _baselineTailoringService;
+  final GitRepositoryClient _gitClient;
+  final GitignoreEditor _gitignoreEditor;
   static const _uuid = Uuid();
 
   /// Marker file written at `<rootPath>/.aion/manifest.json` on project
@@ -47,15 +54,27 @@ class CreateProjectCubit extends Cubit<CreateProjectState> {
   /// mobile/web, where a project is isolated purely by its generated
   /// storage key.
   ///
+  /// [appendGitignore] (default `true`) is consulted only when
+  /// [rootPath] is already a git repository: `true` appends `.aion/`
+  /// and `tickets/` to that repo's `.gitignore` (creating one if
+  /// absent) before any bookkeeping is written; `false` proceeds
+  /// without touching `.gitignore` — declining doesn't block creation,
+  /// matching Aion's inform-don't-block posture (see
+  /// `aion-arch/changes/new-project-onboarding/design.md`). Ignored
+  /// entirely when [rootPath] isn't already a git repository, since
+  /// `git init` there needs no gitignore gate.
+  ///
   /// Emits [CreateProjectValidating], then either [CreateProjectFailure]
   /// (classified via [CreateProjectFailureReason]) or
   /// [CreateProjectReady] followed immediately by
-  /// [CreateProjectSubmitting] and finally [CreateProjectSuccess] or a
+  /// [CreateProjectSubmitting] and finally [CreateProjectSuccess]
+  /// (carrying whether [rootPath] was already a git repository) or a
   /// [CreateProjectFailure] carrying a raw repository/filesystem error.
   Future<void> submit({
     required String name,
     String? rootPath,
     String? baselineVersion,
+    bool appendGitignore = true,
   }) async {
     emit(const CreateProjectValidating());
 
@@ -130,8 +149,15 @@ class CreateProjectCubit extends Cubit<CreateProjectState> {
         lastOpenedAt: now,
       );
 
+      var wasExistingGitRepo = false;
       if (isDesktop && rootPath != null) {
-        await _initializeDesktopProject(rootPath, resolvedVersion);
+        wasExistingGitRepo = await _gitClient.isGitRepository(rootPath);
+        await _initializeDesktopProject(
+          rootPath,
+          resolvedVersion,
+          alreadyGitRepo: wasExistingGitRepo,
+          appendGitignore: appendGitignore,
+        );
         await _baselineTailoringService.tailorForDetectedStack(
           projectId: id,
           rootPath: rootPath,
@@ -139,23 +165,41 @@ class CreateProjectCubit extends Cubit<CreateProjectState> {
       }
 
       await _projectRepository.createProject(project);
-      emit(CreateProjectSuccess(project));
+      emit(
+        CreateProjectSuccess(project, wasExistingGitRepo: wasExistingGitRepo),
+      );
     } catch (e) {
       emit(CreateProjectFailure(e.toString()));
     }
   }
 
-  /// Writes the `.aion/manifest.json` marker, creates the `tickets/`
+  /// Writes the `.aion/manifest.json` marker and creates the `tickets/`
   /// subdirectory that ticket git-projection writes into (see
-  /// `aion-arch/changes/storage-embedding-git-sync/design.md`), and
-  /// initializes an empty git repository at [rootPath]. Desktop only —
-  /// see `aion-arch/changes/multi-project-hub/proposal.md`'s platform
-  /// note for why mobile/web don't get git-backed version history in
-  /// this change.
+  /// `aion-arch/changes/storage-embedding-git-sync/design.md`). Desktop
+  /// only — see `aion-arch/changes/multi-project-hub/proposal.md`'s
+  /// platform note for why mobile/web don't get git-backed version
+  /// history in this change.
+  ///
+  /// When [alreadyGitRepo] is `false`, initializes a fresh empty git
+  /// repository at [rootPath] exactly as before. When `true`, [rootPath]
+  /// is left as whatever repository it already was — re-running `git
+  /// init` there is redundant — and, if [appendGitignore] is also
+  /// `true`, [_gitignoreEditor] excludes `.aion/`/`tickets/` from that
+  /// repo's own history before either bookkeeping path is written above.
+  /// Added for `aion-arch/changes/new-project-onboarding`.
   Future<void> _initializeDesktopProject(
     String rootPath,
-    String baselineVersion,
-  ) async {
+    String baselineVersion, {
+    required bool alreadyGitRepo,
+    required bool appendGitignore,
+  }) async {
+    if (alreadyGitRepo && appendGitignore) {
+      await _gitignoreEditor.ensureIgnored(rootPath, [
+        '.aion/',
+        'tickets/',
+      ]);
+    }
+
     final aionDir = Directory('$rootPath${Platform.pathSeparator}.aion')
       ..createSync(recursive: true);
     final manifest = File(
@@ -167,7 +211,9 @@ class CreateProjectCubit extends Cubit<CreateProjectState> {
       '$rootPath${Platform.pathSeparator}tickets',
     ).createSync(recursive: true);
 
-    await GitRepositoryClient().init(rootPath);
+    if (!alreadyGitRepo) {
+      await _gitClient.init(rootPath);
+    }
   }
 
   File _manifestFile(String rootPath) {

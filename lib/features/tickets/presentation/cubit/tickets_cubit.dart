@@ -12,6 +12,7 @@ import 'package:uuid/uuid.dart';
 import 'package:aion/core/automation/automation_confidence.dart';
 import 'package:aion/core/automation/automation_context.dart';
 import 'package:aion/core/automation/automation_settings_repository.dart';
+import 'package:aion/core/build/project_stack_detector.dart';
 import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/core/contracts/embedding_provider.dart';
 import 'package:aion/core/git/git_repository_client.dart';
@@ -26,6 +27,7 @@ import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
 import 'package:aion/features/tickets/domain/enums/comment_author_type.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
+import 'package:aion/features/tickets/domain/enums/summarization_depth.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_complexity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
@@ -35,6 +37,7 @@ import 'package:aion/features/tickets/domain/repositories/comment_repository.dar
 import 'package:aion/features/tickets/domain/repositories/ticket_link_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
 import 'package:aion/features/tickets/presentation/cubit/chat_cubit.dart';
+import 'package:aion/features/tickets/presentation/cubit/codebase_analysis_status.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 
 /// Loads, lists, and creates tickets via [TicketRepository]. Root-scoped —
@@ -75,13 +78,19 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// aware-conventions-and-verification` (replaces the prior
   /// `FlutterVerifier`-based mechanical verify gate with an agentic one
   /// — see [_assembleVerificationContext]).
+  /// [_projectName] follows the same optional-dependency pattern once
+  /// more — `null` falls back to a generic title in
+  /// [runCodebaseSummarization]'s spawned run ticket; real usage
+  /// (`app_router.dart`) supplies the active `Project.name`. Added for
+  /// `aion-arch/changes/new-project-onboarding`.
   // The public param names below (embeddingProvider/gitProjector/
   // projectRootPath/agentClient/commentRepository/
   // automationSettingsRepository/modelRoutingRepository/gitClient/
-  // gitHubClient/baselineRepository/projectId/baselineVersion)
-  // intentionally differ from their private backing fields; a private
-  // identifier can't be used as an external named-parameter label from
-  // another library, so `this._foo` shorthand isn't usable here.
+  // gitHubClient/baselineRepository/projectId/baselineVersion/
+  // projectName) intentionally differ from their private backing
+  // fields; a private identifier can't be used as an external
+  // named-parameter label from another library, so `this._foo`
+  // shorthand isn't usable here.
   TicketsCubit(
     this._repository, {
     EmbeddingProvider? embeddingProvider,
@@ -97,6 +106,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     BaselineRepository? baselineRepository,
     String? projectId,
     String? baselineVersion,
+    String? projectName,
   }) : super(const TicketsInitial()) {
     _embeddingProvider = embeddingProvider;
     _gitProjector = gitProjector;
@@ -111,6 +121,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     _baselineRepository = baselineRepository;
     _projectId = projectId;
     _baselineVersion = baselineVersion;
+    _projectName = projectName;
   }
 
   final TicketRepository _repository;
@@ -127,7 +138,34 @@ class TicketsCubit extends Cubit<TicketsState> {
   late final BaselineRepository? _baselineRepository;
   late final String? _projectId;
   late final String? _baselineVersion;
+  late final String? _projectName;
   static const _uuid = Uuid();
+
+  /// Broadcasts [CodebaseAnalysisStatus] updates as
+  /// [runCodebaseSummarization] progresses. A broadcast controller (not
+  /// tied to [state]) since `CodebaseAnalysisBanner` is the only
+  /// subscriber and this is a transient, first-open-only concern
+  /// unrelated to the ticket list's own filter/sort/pagination state.
+  /// Added for `aion-arch/changes/new-project-onboarding`.
+  final _codebaseAnalysisController =
+      StreamController<CodebaseAnalysisStatus>.broadcast();
+
+  /// See [_codebaseAnalysisController]'s dartdoc.
+  Stream<CodebaseAnalysisStatus> get codebaseAnalysisStatus =>
+      _codebaseAnalysisController.stream;
+
+  /// The active project's display name, if this cubit was constructed
+  /// with one (`app_router.dart` always supplies it). Read by
+  /// `CodebaseAnalysisBanner` to name the codebase in its offer copy —
+  /// `null` falls back to generic wording. Added for
+  /// `aion-arch/changes/new-project-onboarding`.
+  String? get projectName => _projectName;
+
+  @override
+  Future<void> close() {
+    _codebaseAnalysisController.close();
+    return super.close();
+  }
 
   /// Cap on automatic corrective turns (verification fails → feed the
   /// reason back → re-implement) when the effective
@@ -2342,5 +2380,399 @@ class TicketsCubit extends Cubit<TicketsState> {
         backlinks: backlinks,
       ),
     );
+  }
+
+  /// Runs an opt-in codebase-summarization scan at [depth] and drafts one
+  /// root `signal` ticket per finding, each linked
+  /// ([TicketLinkType.relatesTo]) back to a "Codebase Analysis —
+  /// `<project name>`" run-record `signal` ticket that records the scan
+  /// itself (both depths get a run-record ticket, for consistent
+  /// traceability; only [SummarizationDepth.full] also spawns a visible
+  /// `chat` child under it, since only that depth's agentic turn has a
+  /// transcript worth persisting — see [_runFullSummarization]).
+  /// Every resulting `signal` ticket flows through the existing,
+  /// unmodified `promoteSignalToEpic` — no automatic ticket creation
+  /// beyond what this explicit, user-triggered call already represents.
+  ///
+  /// Progress is reported on [codebaseAnalysisStatus], not [state]:
+  /// [CodebaseAnalysisRunning] immediately, then either
+  /// [CodebaseAnalysisDone] (carrying the created-ticket count, `0` if
+  /// the model reported no findings) or [CodebaseAnalysisFailed]. No-ops
+  /// into an immediate [CodebaseAnalysisFailed] if constructed without
+  /// `projectRootPath`. Added for
+  /// `aion-arch/changes/new-project-onboarding`.
+  Future<void> runCodebaseSummarization({
+    required SummarizationDepth depth,
+  }) async {
+    final rootPath = _projectRootPath;
+    if (rootPath == null) {
+      _codebaseAnalysisController.add(
+        const CodebaseAnalysisFailed('No project directory to scan.'),
+      );
+      return;
+    }
+
+    _codebaseAnalysisController.add(CodebaseAnalysisRunning(depth: depth));
+
+    final now = DateTime.now();
+    final runTicket = Ticket(
+      id: _uuid.v4(),
+      ticketId: '',
+      type: TicketType.signal,
+      title: 'Codebase Analysis — ${_projectName ?? 'this project'}',
+      description: depth == SummarizationDepth.shallow
+          ? 'Shallow structural scan — detected stack and directory '
+                'listing only, no file contents read.'
+          : 'Full agentic scan — read the project\'s actual files via an '
+                'isolated, read-only worktree.',
+      status: TicketStatus.backlog,
+      createdAt: now,
+      updatedAt: now,
+    );
+    await _repository.createTicket(runTicket);
+    final persistedRun = await _repository.getTicketById(runTicket.id);
+    if (persistedRun == null) {
+      _codebaseAnalysisController.add(
+        const CodebaseAnalysisFailed('Could not start the analysis run.'),
+      );
+      return;
+    }
+
+    try {
+      final findings = depth == SummarizationDepth.shallow
+          ? await _runShallowSummarization(rootPath)
+          : await _runFullSummarization(rootPath, persistedRun);
+
+      var createdCount = 0;
+      final linkRepo = _linkRepository;
+      for (final finding in findings) {
+        final findingNow = DateTime.now();
+        final description = depth == SummarizationDepth.shallow
+            ? '[Shallow scan — structural only, may be incomplete]\n\n'
+                  '${finding.description}'
+            : finding.description;
+        final findingTicket = Ticket(
+          id: _uuid.v4(),
+          ticketId: '',
+          type: TicketType.signal,
+          title: finding.title,
+          description: description,
+          status: TicketStatus.backlog,
+          createdAt: findingNow,
+          updatedAt: findingNow,
+        );
+        await _repository.createTicket(findingTicket);
+        if (linkRepo != null) {
+          await linkRepo.createLink(
+            sourceTicketId: findingTicket.id,
+            targetTicketId: persistedRun.id,
+            linkType: TicketLinkType.relatesTo,
+          );
+        }
+        createdCount += 1;
+      }
+
+      _codebaseAnalysisController.add(CodebaseAnalysisDone(createdCount));
+    } catch (e) {
+      _codebaseAnalysisController.add(CodebaseAnalysisFailed(e.toString()));
+    }
+  }
+
+  /// [SummarizationDepth.shallow] path for [runCodebaseSummarization]: a
+  /// single non-tool-enabled [_agentClient] call (never a
+  /// [ChatCubit.runChatTurn] — there's no chat ticket to anchor a
+  /// no-tool text turn to) fed [_shallowSummaryPrompt]'s detected-stack +
+  /// directory-listing context. Throws [StateError] if constructed
+  /// without an [AgentModelClient], or if the model run itself reports
+  /// an [AgentErrorEvent].
+  Future<List<({String title, String description})>>
+  _runShallowSummarization(String rootPath) async {
+    final client = _agentClient;
+    if (client == null) {
+      throw StateError(
+        'Shallow codebase analysis requires an agent client.',
+      );
+    }
+
+    final detected = ProjectStackDetector().detect(rootPath);
+    final listing = await _shallowDirectoryListing(rootPath);
+    final prompt = _shallowSummaryPrompt(detected, listing);
+    final model = await _resolveModel(ModelPhase.frontier);
+
+    final buffer = StringBuffer();
+    final events = await client.run(
+      AgentRequest(prompt: prompt, model: model.id),
+    );
+    await for (final event in events) {
+      switch (event) {
+        case AgentTextEvent(:final text):
+          buffer.write(text);
+          _codebaseAnalysisController.add(
+            CodebaseAnalysisRunning(
+              depth: SummarizationDepth.shallow,
+              statusText: _lastLine(buffer.toString()),
+            ),
+          );
+        case AgentDoneEvent():
+          break;
+        case AgentOverageDetectedEvent():
+          break;
+        case AgentToolUseEvent():
+          break; // toolsEnabled is false — not expected, ignored defensively.
+        case AgentErrorEvent(:final message):
+          throw StateError(message);
+      }
+    }
+    return _parseSummaryFindings(buffer.toString());
+  }
+
+  /// [SummarizationDepth.full] path for [runCodebaseSummarization]:
+  /// mirrors [_runCodingExecution]'s worktree-isolation shape exactly —
+  /// a fresh [GitRepositoryClient.createWorktree] (never [rootPath]
+  /// itself), a visible `chat` child spawned under [runTicket] so the
+  /// scan's live progress is inspectable, then one tool-enabled
+  /// [ChatCubit.runChatTurn] fed [_fullSummaryPrompt] (explicitly
+  /// read-only — never instructs the model to edit/commit/push). The
+  /// worktree is always removed in a `finally`, exactly like
+  /// [_runCodingExecution]'s own cleanup, even though nothing is ever
+  /// pushed from it. Throws [StateError] if constructed without an
+  /// [AgentModelClient]/[CommentRepository]/[GitRepositoryClient], if the
+  /// spawned chat can't be persisted, or if the model turn doesn't
+  /// complete successfully.
+  Future<List<({String title, String description})>> _runFullSummarization(
+    String rootPath,
+    Ticket runTicket,
+  ) async {
+    final client = _agentClient;
+    final commentRepo = _commentRepository;
+    final gitClient = _gitClient;
+    if (client == null || commentRepo == null || gitClient == null) {
+      throw StateError(
+        'Full codebase analysis requires an agent client, comment '
+        'repository, and git client.',
+      );
+    }
+
+    final worktreePath = Directory.systemTemp
+        .createTempSync('aion_analysis_')
+        .path;
+    final branchName = 'aion/analysis-${runTicket.id}';
+
+    final now = DateTime.now();
+    final chatTicket = Ticket(
+      id: _uuid.v4(),
+      ticketId: '',
+      type: TicketType.chat,
+      title: runTicket.title,
+      status: TicketStatus.backlog,
+      parentId: runTicket.id,
+      createdAt: now,
+      updatedAt: now,
+    );
+    await _repository.createTicket(chatTicket);
+    final persistedChat = await _repository.getTicketById(chatTicket.id);
+    if (persistedChat == null) {
+      throw StateError('Could not create the analysis chat.');
+    }
+
+    try {
+      await gitClient.createWorktree(rootPath, worktreePath, branchName);
+
+      final prompt = _fullSummaryPrompt(runTicket.title);
+      await commentRepo.addComment(
+        TicketComment(
+          id: '',
+          ticketId: persistedChat.id,
+          content: prompt,
+          authorType: CommentAuthorType.system,
+          createdAt: DateTime.now(),
+        ),
+      );
+
+      final succeeded = await ChatCubit.runChatTurn(
+        client: client,
+        commentRepo: commentRepo,
+        chatTicketId: persistedChat.id,
+        prompt: prompt,
+        model: await _resolveModel(ModelPhase.execution),
+        toolsEnabled: true,
+        workingDirectory: worktreePath,
+        onChunk: (textSoFar) => _codebaseAnalysisController.add(
+          CodebaseAnalysisRunning(
+            depth: SummarizationDepth.full,
+            statusText: _lastLine(textSoFar),
+          ),
+        ),
+        onToolUse: (toolName, summary) => _codebaseAnalysisController.add(
+          CodebaseAnalysisRunning(
+            depth: SummarizationDepth.full,
+            statusText: summary == null
+                ? 'Running $toolName...'
+                : 'Running $toolName: $summary...',
+          ),
+        ),
+      );
+      if (!succeeded) {
+        throw StateError('The analysis turn did not complete successfully.');
+      }
+
+      final reply = await _lastCommentContent(persistedChat.id);
+      return _parseSummaryFindings(reply ?? '');
+    } finally {
+      try {
+        await gitClient.removeWorktree(rootPath, worktreePath);
+      } catch (_) {
+        // Best-effort cleanup only, mirrors _runCodingExecution's own
+        // finally block — createWorktree may itself have failed, in
+        // which case there's nothing to remove.
+      }
+    }
+  }
+
+  /// Returns a newline-joined, depth-limited (default 2 levels) listing
+  /// of [rootPath]'s entries (directories suffixed `/`), skipping Aion's
+  /// own bookkeeping (`.aion/`, `tickets/`) and `.git/` — names only, no
+  /// file content. Capped at [maxEntries] total entries so a very large
+  /// repository can't blow out [_shallowSummaryPrompt]'s token cost.
+  /// Unreadable subdirectories are silently skipped. Added for
+  /// `aion-arch/changes/new-project-onboarding`.
+  Future<String> _shallowDirectoryListing(
+    String rootPath, {
+    int maxDepth = 2,
+    int maxEntries = 200,
+  }) async {
+    final entries = <String>[];
+
+    void walk(Directory dir, int depth) {
+      if (depth > maxDepth || entries.length >= maxEntries) return;
+      List<FileSystemEntity> children;
+      try {
+        children = dir.listSync();
+      } catch (_) {
+        return;
+      }
+      for (final child in children) {
+        if (entries.length >= maxEntries) return;
+        final name = p.basename(child.path);
+        if (name == '.git' || name == '.aion' || name == 'tickets') continue;
+        final relative = p.relative(child.path, from: rootPath);
+        final isDir = child is Directory;
+        entries.add(isDir ? '$relative/' : relative);
+        if (isDir) walk(child, depth + 1);
+      }
+    }
+
+    walk(Directory(rootPath), 0);
+    return entries.join('\n');
+  }
+
+  /// Assembles [_runShallowSummarization]'s prompt: [detected]'s stack
+  /// (if any) plus [listing] (from [_shallowDirectoryListing]),
+  /// instructing the model to reply with one or more `FINDING:`-prefixed
+  /// entries terminated by a `SUMMARY: DONE` line — parsed by
+  /// [_parseSummaryFindings]. Added for
+  /// `aion-arch/changes/new-project-onboarding`.
+  String _shallowSummaryPrompt(DetectedStack? detected, String listing) {
+    final buffer = StringBuffer()
+      ..writeln(
+        'You are looking at the top-level structure of a software '
+        'project — not its file contents. Based only on the information '
+        'below, identify up to 5 notable things worth turning into '
+        'starting project-management tickets (apparent major '
+        'components, missing conventional files, anything structurally '
+        'unusual).',
+      )
+      ..writeln();
+    if (detected != null) {
+      buffer
+        ..writeln('Detected stack: ${detected.language}')
+        ..writeln();
+    }
+    buffer
+      ..writeln('Directory listing (depth-limited, names only):')
+      ..writeln(listing.isEmpty ? '(empty or unreadable)' : listing)
+      ..writeln()
+      ..writeln('For each finding, reply in exactly this format:')
+      ..writeln('FINDING: <short title>')
+      ..writeln('<one to two sentence description>')
+      ..writeln()
+      ..writeln('End your reply with exactly one line: "SUMMARY: DONE".');
+    return buffer.toString().trim();
+  }
+
+  /// Assembles [_runFullSummarization]'s prompt for the analysis run
+  /// titled [runTitle] — asks the model to explore the project's actual
+  /// files with the available read tools and reply in the same
+  /// `FINDING:`/`SUMMARY: DONE` format [_shallowSummaryPrompt] uses, so
+  /// [_parseSummaryFindings] handles both depths identically.
+  /// Explicitly read-only: unlike [_assembleExecutionContext], this
+  /// never instructs the model to edit, commit, or push — the worktree
+  /// is discarded, never pushed, once this turn finishes (see
+  /// [_runFullSummarization]). Added for
+  /// `aion-arch/changes/new-project-onboarding`.
+  String _fullSummaryPrompt(String runTitle) {
+    return 'You are exploring an existing codebase ("$runTitle") to help '
+        'draft a starting project-management backlog for it. Read '
+        'whatever files you need using the available tools — do not '
+        'edit, commit, or otherwise modify anything; this is a '
+        'read-only exploration.\n\n'
+        'Identify up to 8 notable things worth turning into starting '
+        'tickets (major components, apparent gaps, technical debt, '
+        'missing tests, anything structurally notable).\n\n'
+        'For each finding, reply in exactly this format:\n'
+        'FINDING: <short title>\n'
+        '<one to three sentence description>\n\n'
+        'End your reply with exactly one line: "SUMMARY: DONE".';
+  }
+
+  /// Parses a summarization reply (from either
+  /// [_runShallowSummarization] or [_runFullSummarization]) into
+  /// `(title, description)` finding pairs — every `FINDING: <title>`
+  /// line starts a new finding; every line until the next `FINDING:` or
+  /// the terminal `SUMMARY: DONE` line becomes that finding's
+  /// description. A finding with an empty title is dropped. Added for
+  /// `aion-arch/changes/new-project-onboarding`.
+  List<({String title, String description})> _parseSummaryFindings(
+    String reply,
+  ) {
+    final findings = <({String title, String description})>[];
+    String? currentTitle;
+    final currentBody = StringBuffer();
+
+    void flush() {
+      final title = currentTitle?.trim();
+      if (title != null && title.isNotEmpty) {
+        findings.add((title: title, description: currentBody.toString().trim()));
+      }
+      currentBody.clear();
+    }
+
+    for (final line in reply.split('\n')) {
+      final trimmed = line.trim();
+      final findingMatch = RegExp(r'^FINDING:\s*(.*)$').firstMatch(trimmed);
+      if (findingMatch != null) {
+        flush();
+        currentTitle = findingMatch.group(1);
+        continue;
+      }
+      if (trimmed == 'SUMMARY: DONE') {
+        flush();
+        currentTitle = null;
+        return findings;
+      }
+      if (currentTitle != null) {
+        currentBody.writeln(line);
+      }
+    }
+    flush();
+    return findings;
+  }
+
+  /// Returns the last non-empty line of [text], or `null` if [text] has
+  /// none — a short live-status snippet for [CodebaseAnalysisRunning].
+  /// Added for `aion-arch/changes/new-project-onboarding`.
+  String? _lastLine(String text) {
+    final lines = text.split('\n').where((l) => l.trim().isNotEmpty).toList();
+    return lines.isEmpty ? null : lines.last.trim();
   }
 }

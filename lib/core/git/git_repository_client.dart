@@ -12,6 +12,26 @@ import 'dart:io';
 /// Desktop-only, matching the existing desktop-only scope of per-project
 /// git repos (`CreateProjectCubit._initializeDesktopProject`).
 class GitRepositoryClient {
+  /// Returns whether [rootPath] is already inside a git working tree —
+  /// checked via `<rootPath>/.git` existing, not a `git` subprocess call
+  /// (cheap, consistent with `ProjectStackDetector`'s own
+  /// marker-file-only approach). `.git` may be a directory (an ordinary
+  /// repo) or a file (a linked worktree/submodule) — both count as
+  /// "already a repo" for this check's purposes; it doesn't distinguish
+  /// between them since neither should have `git init`/bookkeeping
+  /// written over it. Added for
+  /// `aion-arch/changes/new-project-onboarding` — lets
+  /// `CreateProjectCubit` skip re-`init`ing an already-git-tracked
+  /// directory and gate its gitignore-confirmation banner.
+  Future<bool> isGitRepository(String rootPath) async {
+    return File(
+          '$rootPath${Platform.pathSeparator}.git',
+        ).existsSync() ||
+        Directory(
+          '$rootPath${Platform.pathSeparator}.git',
+        ).existsSync();
+  }
+
   /// Runs `git init` in [rootPath].
   Future<void> init(String rootPath) async {
     await _run(['init'], rootPath);

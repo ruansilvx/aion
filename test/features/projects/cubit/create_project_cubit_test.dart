@@ -4,6 +4,8 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
+import 'package:aion/core/git/git_repository_client.dart';
+import 'package:aion/core/git/gitignore_editor.dart';
 import 'package:aion/features/projects/data/services/baseline_tailoring_service.dart';
 import 'package:aion/features/projects/projects.dart';
 
@@ -14,10 +16,16 @@ class MockBaselineRepository extends Mock implements BaselineRepository {}
 class MockBaselineTailoringService extends Mock
     implements BaselineTailoringService {}
 
+class MockGitRepositoryClient extends Mock implements GitRepositoryClient {}
+
+class MockGitignoreEditor extends Mock implements GitignoreEditor {}
+
 void main() {
   late MockProjectRepository projectRepository;
   late MockBaselineRepository baselineRepository;
   late MockBaselineTailoringService baselineTailoringService;
+  late MockGitRepositoryClient gitClient;
+  late MockGitignoreEditor gitignoreEditor;
   late Directory tempDir;
 
   final existing = Project(
@@ -37,6 +45,8 @@ void main() {
     projectRepository = MockProjectRepository();
     baselineRepository = MockBaselineRepository();
     baselineTailoringService = MockBaselineTailoringService();
+    gitClient = MockGitRepositoryClient();
+    gitignoreEditor = MockGitignoreEditor();
     tempDir = await Directory.systemTemp.createTemp('create_project_test_');
     when(
       () => projectRepository.getAllProjects(),
@@ -49,6 +59,13 @@ void main() {
         projectId: any(named: 'projectId'),
         rootPath: any(named: 'rootPath'),
       ),
+    ).thenAnswer((_) async {});
+    when(
+      () => gitClient.isGitRepository(any()),
+    ).thenAnswer((_) async => false);
+    when(() => gitClient.init(any())).thenAnswer((_) async {});
+    when(
+      () => gitignoreEditor.ensureIgnored(any(), any()),
     ).thenAnswer((_) async {});
   });
 
@@ -66,6 +83,8 @@ void main() {
         projectRepository,
         baselineRepository,
         baselineTailoringService,
+        gitClient,
+        gitignoreEditor,
       ),
       act: (cubit) =>
           cubit.submit(name: 'existing project', rootPath: tempDir.path),
@@ -93,6 +112,8 @@ void main() {
         projectRepository,
         baselineRepository,
         baselineTailoringService,
+        gitClient,
+        gitignoreEditor,
       ),
       act: (cubit) =>
           cubit.submit(name: 'A New Project', rootPath: tempDir.path),
@@ -109,7 +130,8 @@ void main() {
     );
 
     blocTest<CreateProjectCubit, CreateProjectState>(
-      'submit with valid input reaches Success',
+      'submit with valid input reaches Success on a non-repo directory, '
+      'initializing a fresh git repo and skipping the gitignore editor',
       setUp: () {
         when(
           () => projectRepository.createProject(any()),
@@ -119,6 +141,8 @@ void main() {
         projectRepository,
         baselineRepository,
         baselineTailoringService,
+        gitClient,
+        gitignoreEditor,
       ),
       act: (cubit) =>
           cubit.submit(name: 'A New Project', rootPath: tempDir.path),
@@ -126,16 +150,106 @@ void main() {
         const CreateProjectValidating(),
         isA<CreateProjectReady>(),
         const CreateProjectSubmitting(),
-        isA<CreateProjectSuccess>(),
+        isA<CreateProjectSuccess>().having(
+          (s) => s.wasExistingGitRepo,
+          'wasExistingGitRepo',
+          isFalse,
+        ),
       ],
       verify: (_) {
         verify(() => projectRepository.createProject(any())).called(1);
+        verify(() => gitClient.init(tempDir.path)).called(1);
+        verifyNever(() => gitignoreEditor.ensureIgnored(any(), any()));
         verify(
           () => baselineTailoringService.tailorForDetectedStack(
             projectId: any(named: 'projectId'),
             rootPath: tempDir.path,
           ),
         ).called(1);
+      },
+    );
+
+    blocTest<CreateProjectCubit, CreateProjectState>(
+      'submit on an already-git-tracked directory with appendGitignore '
+      'true skips git init and appends .aion//tickets/ to .gitignore',
+      setUp: () {
+        when(
+          () => projectRepository.createProject(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => gitClient.isGitRepository(tempDir.path),
+        ).thenAnswer((_) async => true);
+      },
+      build: () => CreateProjectCubit(
+        projectRepository,
+        baselineRepository,
+        baselineTailoringService,
+        gitClient,
+        gitignoreEditor,
+      ),
+      act: (cubit) => cubit.submit(
+        name: 'A New Project',
+        rootPath: tempDir.path,
+        appendGitignore: true,
+      ),
+      expect: () => [
+        const CreateProjectValidating(),
+        isA<CreateProjectReady>(),
+        const CreateProjectSubmitting(),
+        isA<CreateProjectSuccess>().having(
+          (s) => s.wasExistingGitRepo,
+          'wasExistingGitRepo',
+          isTrue,
+        ),
+      ],
+      verify: (_) {
+        verifyNever(() => gitClient.init(any()));
+        verify(
+          () => gitignoreEditor.ensureIgnored(tempDir.path, [
+            '.aion/',
+            'tickets/',
+          ]),
+        ).called(1);
+      },
+    );
+
+    blocTest<CreateProjectCubit, CreateProjectState>(
+      'submit on an already-git-tracked directory with appendGitignore '
+      'false skips both git init and the gitignore editor, still succeeds',
+      setUp: () {
+        when(
+          () => projectRepository.createProject(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => gitClient.isGitRepository(tempDir.path),
+        ).thenAnswer((_) async => true);
+      },
+      build: () => CreateProjectCubit(
+        projectRepository,
+        baselineRepository,
+        baselineTailoringService,
+        gitClient,
+        gitignoreEditor,
+      ),
+      act: (cubit) => cubit.submit(
+        name: 'A New Project',
+        rootPath: tempDir.path,
+        appendGitignore: false,
+      ),
+      expect: () => [
+        const CreateProjectValidating(),
+        isA<CreateProjectReady>(),
+        const CreateProjectSubmitting(),
+        isA<CreateProjectSuccess>().having(
+          (s) => s.wasExistingGitRepo,
+          'wasExistingGitRepo',
+          isTrue,
+        ),
+      ],
+      verify: (_) {
+        verify(() => projectRepository.createProject(any())).called(1);
+        verifyNever(() => gitClient.init(any()));
+        verifyNever(() => gitignoreEditor.ensureIgnored(any(), any()));
       },
     );
 
@@ -151,6 +265,8 @@ void main() {
         projectRepository,
         baselineRepository,
         baselineTailoringService,
+        gitClient,
+        gitignoreEditor,
       ),
       act: (cubit) =>
           cubit.submit(name: 'A New Project', rootPath: tempDir.path),
