@@ -32,4 +32,28 @@ abstract interface class ActiveProjectProvider {
   /// Clears [offerCodebaseAnalysis] back to `false` for the current
   /// [activeProject]. No-ops if it's already `false`.
   void consumeCodebaseAnalysisOffer();
+
+  /// Whether the ticket list should show the baseline-upgrade offer
+  /// banner the next time it builds. `true` whenever [activeProject]'s
+  /// pinned baseline version isn't the latest version bundled in the
+  /// running build — recomputed fresh every time [activeProject]
+  /// switches, never persisted, so declining only dismisses the current
+  /// instance: it can reappear the next time this project is opened.
+  /// Call [consumeBaselineUpgradeOffer] once the offer has been shown
+  /// (or deliberately not shown) so it doesn't reappear within the same
+  /// open. Added for
+  /// `aion-arch/changes/baseline-version-upgrade-flow`.
+  bool get offerBaselineUpgrade;
+
+  /// Clears [offerBaselineUpgrade] back to `false` for the current
+  /// [activeProject]. No-ops if it's already `false`.
+  void consumeBaselineUpgradeOffer();
+
+  /// Bumps [activeProject]'s pinned baseline to the latest bundled
+  /// version: updates the registry, rewrites the project's
+  /// `.aion/manifest.json` (desktop only), and tailors any
+  /// newly-introduced `architectureConvention`-kind asset (desktop
+  /// only). A no-op if [activeProject] is already pinned to the latest
+  /// version.
+  Future<void> acceptBaselineUpgrade();
 }

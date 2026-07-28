@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:aion/core/automation/automation_settings_repository.dart';
+import 'package:aion/core/contracts/active_project_provider.dart';
 import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/core/contracts/embedding_provider.dart';
 import 'package:aion/core/contracts/page_ticket_provider.dart';
@@ -213,6 +214,12 @@ final appRouter = GoRouter(
               BlocProvider<ModelRoutingCubit>(
                 create: (context) => ModelRoutingCubit(
                   context.read<ModelRoutingRepository>(),
+                )..load(),
+              ),
+              BlocProvider<BaselineUpgradeCubit>(
+                create: (context) => BaselineUpgradeCubit(
+                  context.read<BaselineRepository>(),
+                  context.read<ActiveProjectProvider>(),
                 )..load(),
               ),
             ],

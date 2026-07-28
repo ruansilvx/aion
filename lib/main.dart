@@ -6,11 +6,13 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
+import 'package:aion/core/build/project_stack_detector.dart';
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/l10n/generated/app_localizations.dart';
 import 'package:aion/features/projects/data/repositories/bundled_baseline_repository.dart';
 import 'package:aion/features/projects/data/repositories/drift_project_repository.dart';
+import 'package:aion/features/projects/data/services/baseline_tailoring_service.dart';
 import 'package:aion/features/projects/projects.dart';
 import 'package:aion/features/providers/data/repositories/shared_prefs_model_routing_repository.dart';
 import 'package:aion/features/providers/providers.dart';
@@ -116,8 +118,14 @@ class _AionAppState extends State<AionApp> with WidgetsBindingObserver {
         ),
       ],
       child: BlocProvider<ActiveProjectCubit>(
-        create: (context) =>
-            ActiveProjectCubit(context.read<ProjectRepository>()),
+        create: (context) => ActiveProjectCubit(
+          context.read<ProjectRepository>(),
+          context.read<BaselineRepository>(),
+          BaselineTailoringService(
+            context.read<BaselineRepository>(),
+            ProjectStackDetector(),
+          ),
+        ),
         child: RepositoryProvider<ActiveProjectProvider>(
           // Exposes the same ActiveProjectCubit instance under its
           // core/contracts/ interface type too, so any feature can

@@ -44,9 +44,15 @@ class ActiveProjectSwitching extends ActiveProjectState {
 /// [project] is the active project and its workspace subtree is ready.
 class ActiveProjectOpen extends ActiveProjectState {
   /// Creates an [ActiveProjectOpen] state carrying [project] and whether
-  /// the codebase-analysis offer should be shown on first ticket-list
-  /// open.
-  const ActiveProjectOpen(this.project, {this.offerCodebaseAnalysis = false});
+  /// the codebase-analysis offer and/or the baseline-upgrade offer
+  /// should be shown on first ticket-list open. The two flags are
+  /// independent of each other and must not clobber one another when
+  /// either is individually consumed.
+  const ActiveProjectOpen(
+    this.project, {
+    this.offerCodebaseAnalysis = false,
+    this.offerBaselineUpgrade = false,
+  });
 
   /// The currently active project.
   final Project project;
@@ -63,6 +69,23 @@ class ActiveProjectOpen extends ActiveProjectState {
   /// `aion-arch/changes/new-project-onboarding`.
   final bool offerCodebaseAnalysis;
 
+  /// Whether `TicketsListScreen` should show the baseline-upgrade offer
+  /// banner the next time it builds. `true` whenever [project]'s pinned
+  /// `baselineVersion` isn't the latest version bundled in the running
+  /// build — recomputed fresh on every [ActiveProjectCubit.switchTo]
+  /// call, never persisted, so declining only dismisses the current
+  /// instance: the same check re-runs (and the banner reappears) the
+  /// next time this project is switched into, for as long as a newer
+  /// version remains available.
+  /// [ActiveProjectCubit.consumeBaselineUpgradeOffer] clears it back to
+  /// `false` once the screen has read it. Added for
+  /// `aion-arch/changes/baseline-version-upgrade-flow`.
+  final bool offerBaselineUpgrade;
+
   @override
-  List<Object?> get props => [project, offerCodebaseAnalysis];
+  List<Object?> get props => [
+    project,
+    offerCodebaseAnalysis,
+    offerBaselineUpgrade,
+  ];
 }

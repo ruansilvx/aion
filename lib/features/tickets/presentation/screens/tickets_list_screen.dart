@@ -17,7 +17,9 @@ import 'package:aion/features/tickets/domain/repositories/ticket_link_repository
 import 'package:aion/features/tickets/presentation/cubit/ticket_selection_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
+import 'package:aion/features/projects/domain/repositories/baseline_repository.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart';
+import 'package:aion/features/tickets/presentation/widgets/baseline_upgrade_banner.dart';
 import 'package:aion/features/tickets/presentation/widgets/codebase_analysis_banner.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_overflow_menu.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_selection_bar.dart';
@@ -35,7 +37,14 @@ import 'package:aion/features/tickets/presentation/widgets/ticket_selection_bar.
 /// search/filter row (consumed via
 /// `ActiveProjectCubit.consumeCodebaseAnalysisOffer` in [State.initState]
 /// so it never reappears) — see `aion-arch/changes/
-/// new-project-onboarding/design.md` §4.2.
+/// new-project-onboarding/design.md` §4.2. When the active project's
+/// pinned baseline version isn't the latest bundled one, also shows a
+/// [BaselineUpgradeBanner] above [CodebaseAnalysisBanner] (consumed via
+/// `ActiveProjectCubit.consumeBaselineUpgradeOffer`) — unlike
+/// [CodebaseAnalysisBanner]'s persisted-once-only offer, this one can
+/// reappear on a later open for as long as a newer version remains
+/// available. See `aion-arch/changes/baseline-version-upgrade-flow/
+/// design.md` §4.1.
 class TicketsListScreen extends StatefulWidget {
   /// Creates a [TicketsListScreen].
   const TicketsListScreen({super.key});
@@ -64,6 +73,17 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
   /// locally so dismissing it doesn't depend on the provider's state
   /// (which is already consumed/cleared by the time the user dismisses).
   bool _showCodebaseAnalysisOffer = false;
+
+  /// Whether to show [BaselineUpgradeBanner] — set once in [initState]
+  /// from `ActiveProjectProvider.offerBaselineUpgrade`, then owned
+  /// locally, same rationale as [_showCodebaseAnalysisOffer].
+  bool _showBaselineUpgradeOffer = false;
+
+  /// The latest bundled baseline version, fetched asynchronously in
+  /// [initState] once [_showBaselineUpgradeOffer] is set — `null` until
+  /// that fetch resolves, in which case [BaselineUpgradeBanner] isn't
+  /// built yet.
+  String? _baselineUpgradeTargetVersion;
 
   /// Controls and reads the search field's text.
   final TextEditingController _searchController = TextEditingController();
@@ -107,6 +127,11 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
       _showCodebaseAnalysisOffer = true;
       activeProjectProvider.consumeCodebaseAnalysisOffer();
     }
+    if (activeProjectProvider.offerBaselineUpgrade) {
+      _showBaselineUpgradeOffer = true;
+      activeProjectProvider.consumeBaselineUpgradeOffer();
+      unawaited(_loadBaselineUpgradeTargetVersion());
+    }
     _searchController.addListener(_handleSearchTextChanged);
     _scrollController.addListener(_handleScroll);
     _runSearch();
@@ -121,6 +146,22 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
     _scrollController.removeListener(_handleScroll);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  /// Fetches the latest bundled baseline version for
+  /// [BaselineUpgradeBanner]'s target-version display, storing it in
+  /// [_baselineUpgradeTargetVersion] once resolved. `BaselineRepository`
+  /// is read directly rather than through `ActiveProjectProvider`
+  /// (`core/contracts/`), matching `TicketsCubit`'s existing direct
+  /// `BaselineRepository` dependency for asset content — it isn't part
+  /// of the "what project is active" cross-feature contract Pattern 1
+  /// covers.
+  Future<void> _loadBaselineUpgradeTargetVersion() async {
+    final versions = await context
+        .read<BaselineRepository>()
+        .getAvailableBaselineVersions();
+    if (!mounted) return;
+    setState(() => _baselineUpgradeTargetVersion = versions.last);
   }
 
   /// Triggers [TicketsCubit.loadMoreTickets] once the flat list has been
@@ -317,6 +358,20 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                         ],
                       ),
                     ),
+                    if (_showBaselineUpgradeOffer &&
+                        _baselineUpgradeTargetVersion != null)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+                        child: BaselineUpgradeBanner(
+                          currentVersion: context
+                              .read<ActiveProjectProvider>()
+                              .activeProject!
+                              .baselineVersion,
+                          targetVersion: _baselineUpgradeTargetVersion!,
+                          onDismiss: () =>
+                              setState(() => _showBaselineUpgradeOffer = false),
+                        ),
+                      ),
                     if (_showCodebaseAnalysisOffer)
                       Padding(
                         padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),

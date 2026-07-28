@@ -30,6 +30,16 @@ abstract interface class ProjectRepository {
   /// @throws if [id] does not exist.
   Future<void> updateLastOpened(String id, DateTime timestamp);
 
+  /// Updates only the `baselineVersion` field of the project with id
+  /// [id] to [version]. Does not touch any other field. The legitimate
+  /// post-creation write path for
+  /// [Project.baselineVersion](../entities/project.dart) — called by
+  /// `ActiveProjectCubit.acceptBaselineUpgrade` on a baseline version
+  /// upgrade.
+  ///
+  /// @throws if [id] does not exist.
+  Future<void> updateBaselineVersion(String id, String version);
+
   /// Removes the registry entry for project [id]. Does **not** delete
   /// the project's on-disk data (desktop) or storage namespace
   /// (mobile/web) — see

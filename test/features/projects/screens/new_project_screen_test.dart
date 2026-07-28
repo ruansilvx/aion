@@ -86,6 +86,7 @@ void main() {
 
   setUpAll(() {
     registerFallbackValue(existing);
+    registerFallbackValue(const BaselineManifest(version: '0.1.0', assets: []));
   });
 
   setUp(() async {
@@ -112,9 +113,13 @@ void main() {
       () => baselineRepository.getAvailableBaselineVersions(),
     ).thenAnswer((_) async => ['0.1.0']);
     when(
+      () => baselineRepository.getManifest('0.1.0'),
+    ).thenAnswer((_) async => const BaselineManifest(version: '0.1.0', assets: []));
+    when(
       () => baselineTailoringService.tailorForDetectedStack(
         projectId: any(named: 'projectId'),
         rootPath: any(named: 'rootPath'),
+        manifest: any(named: 'manifest'),
       ),
     ).thenAnswer((_) async {});
     when(
