@@ -159,4 +159,14 @@ abstract final class AionText {
     letterSpacing: -0.06,
     height: 1.0,
   );
+
+  /// Live tool-use status line during an in-flight chat reply (e.g.
+  /// "Running `read_file`…") — `ChatTranscriptPane`'s streaming variant.
+  /// Added for `aion-arch/changes/chat-transcript-ux-redesign`.
+  static const streamStatus = TextStyle(
+    fontFamily: _mono,
+    fontSize: 12.5,
+    fontWeight: FontWeight.w400,
+    height: 1.35,
+  );
 }

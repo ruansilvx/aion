@@ -101,6 +101,15 @@
   "ticketDetailYouAuthor": "You",
   "ticketDetailSystemAuthor": "System",
   "ticketDetailTyping": "typing…",
+  "ticketDetailChatComposeHint": "Message the agent…",
+  "ticketDetailChatMessagesCount": "MESSAGES · {count}",
+  "@ticketDetailChatMessagesCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "ticketDetailChatEmptyTitle": "No messages yet",
+  "ticketDetailChatEmptyCaption": "Send the first message to start the run.",
 
   "ticketDetailSddStageEyebrow": "SDD STAGE",
   "ticketDetailSddStageNotStarted": "Not started",
