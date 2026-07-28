@@ -82,6 +82,23 @@ void main() {
     expect(found.name, 'Test Project');
   });
 
+  test('updateBaselineVersion changes only the baselineVersion field', () async {
+    await repository.createProject(buildProject(id: '1'));
+
+    await repository.updateBaselineVersion('1', '0.3.0');
+    final found = await repository.getProject('1');
+
+    expect(found!.baselineVersion, '0.3.0');
+    expect(found.name, 'Test Project');
+  });
+
+  test('updateBaselineVersion throws for an unknown id', () async {
+    expect(
+      () => repository.updateBaselineVersion('missing', '0.3.0'),
+      throwsStateError,
+    );
+  });
+
   test('removeProject deletes the registry entry', () async {
     await repository.createProject(buildProject(id: '1'));
     await repository.removeProject('1');

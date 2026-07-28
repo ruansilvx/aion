@@ -54,6 +54,21 @@
   "codebaseAnalysisFailedBody": "The scan stopped before drafting any tickets. Your project is unaffected — add tickets manually for now.",
   "codebaseAnalysisDismissLabel": "Dismiss",
 
+  "baselineUpgradeOfferTitle": "A newer baseline is available",
+  "baselineUpgradeOfferBodyBefore": "Update this project to baseline ",
+  "baselineUpgradeOfferBodyAfter": " for the latest default skills, model config, and conventions.",
+  "baselineUpgradeAcceptLabel": "Upgrade",
+  "baselineUpgradeUpgradingLabel": "Upgrading…",
+  "baselineUpgradeDismissLabel": "Dismiss",
+  "baselineUpgradeUpgradingTitle": "Upgrading baseline",
+  "baselineUpgradeUpgradingStatus": "Applying {oldVersion} → {newVersion}…",
+  "@baselineUpgradeUpgradingStatus": {
+    "placeholders": {
+      "oldVersion": { "type": "String" },
+      "newVersion": { "type": "String" }
+    }
+  },
+
   "ticketsBoardEmptyColumn": "No tickets",
   "ticketsBoardLoadMoreLabel": "Load more",
   "ticketsBoardMoveTicketLabel": "Move {ticketId} to another status",
@@ -480,6 +495,19 @@
   "settingsOverridesEyebrow": "OVERRIDES",
   "settingsOverridesSummary": "Browse every baseline skill and convention for this project and edit a plain-text local override for any one of them.",
   "settingsOverridesManageButton": "Manage Overrides",
+
+  "settingsBaselineEyebrow": "BASELINE",
+  "settingsBaselineDescription": "The versioned bundle of default skills, model config, and conventions this project pins.",
+  "settingsBaselineCurrentVersionLabel": "Current version",
+  "settingsBaselineUpToDateMessage": "Your baseline is up to date",
+  "settingsBaselineUpgradeButton": "Upgrade to {version}",
+  "@settingsBaselineUpgradeButton": {
+    "placeholders": {
+      "version": { "type": "String" }
+    }
+  },
+  "settingsBaselineUpgradingLabel": "Upgrading…",
+
   "overridesListTitle": "Overrides",
   "overridesListEmptyState": "This project has no baseline assets to override yet.",
   "overridesListOverriddenChip": "OVERRIDDEN",

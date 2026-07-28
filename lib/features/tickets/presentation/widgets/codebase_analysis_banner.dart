@@ -9,6 +9,7 @@ import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/domain/enums/summarization_depth.dart';
 import 'package:aion/features/tickets/presentation/cubit/codebase_analysis_status.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
+import 'package:aion/features/tickets/presentation/widgets/banner_shell.dart';
 
 /// Once-only, dismissible banner offering an opt-in codebase-summarization
 /// scan — shown on `TicketsListScreen` immediately after a project is
@@ -79,132 +80,6 @@ class CodebaseAnalysisBanner extends StatelessWidget {
   }
 }
 
-/// Shared outer shell every [CodebaseAnalysisBanner] state renders inside
-/// — fill/border color, radius, padding, and an optional dismiss ×
-/// (omitted in the running state, which uses [_RunningBanner]'s own
-/// trailing "Hide" control instead).
-class _BannerShell extends StatelessWidget {
-  const _BannerShell({
-    required this.fill,
-    required this.border,
-    required this.child,
-    this.onDismiss,
-  });
-
-  final Color fill;
-  final Color border;
-  final Widget child;
-  final VoidCallback? onDismiss;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 26),
-      decoration: BoxDecoration(
-        color: fill,
-        border: Border.all(color: border),
-        borderRadius: const BorderRadius.all(AionRadius.lg),
-      ),
-      child: Stack(
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-            child: child,
-          ),
-          if (onDismiss != null)
-            Positioned(
-              top: 8,
-              right: 8,
-              child: _DismissButton(onTap: onDismiss!),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DismissButton extends StatefulWidget {
-  const _DismissButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  State<_DismissButton> createState() => _DismissButtonState();
-}
-
-class _DismissButtonState extends State<_DismissButton> {
-  bool _isHovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = ThemeScope.of(context);
-    final c = t.colors;
-
-    return Semantics(
-      button: true,
-      label: context.l10n.codebaseAnalysisDismissLabel,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => _isHovered = true),
-        onExit: (_) => setState(() => _isHovered = false),
-        child: GestureDetector(
-          onTap: widget.onTap,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: _isHovered ? c.surfaceHover : const Color(0x00000000),
-              borderRadius: const BorderRadius.all(AionRadius.sm),
-            ),
-            child: SizedBox(
-              width: 26,
-              height: 26,
-              child: Center(
-                child: PhosphorIcon(
-                  PhosphorIcons.xLight,
-                  size: 15,
-                  color: _isHovered ? c.textSecondary : c.textMuted,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// A leading icon-chip, shared shape across every banner state — only the
-/// fill/icon color and glyph vary.
-class _IconChip extends StatelessWidget {
-  const _IconChip({
-    required this.fill,
-    required this.icon,
-    required this.iconColor,
-    this.iconSize = 19,
-  });
-
-  final Color fill;
-  final PhosphorIconData icon;
-  final Color iconColor;
-  final double iconSize;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: fill,
-        borderRadius: const BorderRadius.all(AionRadius.sm),
-      ),
-      child: SizedBox(
-        width: 34,
-        height: 34,
-        child: Center(
-          child: PhosphorIcon(icon, size: iconSize, color: iconColor),
-        ),
-      ),
-    );
-  }
-}
-
 /// The [CodebaseAnalysisIdle] state: an offer to scan, a depth choice
 /// (shallow/full), and a dismiss ×.
 class _OfferBanner extends StatelessWidget {
@@ -228,10 +103,11 @@ class _OfferBanner extends StatelessWidget {
     final c = t.colors;
     final isDark = t.isDark;
 
-    return _BannerShell(
+    return BannerShell(
       fill: c.signalFill(isDark),
       border: c.signalBorderTint(isDark),
       onDismiss: onDismiss,
+      dismissSemanticLabel: context.l10n.codebaseAnalysisDismissLabel,
       child: Padding(
         padding: const EdgeInsets.only(right: 26),
         child: Column(
@@ -240,7 +116,7 @@ class _OfferBanner extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _IconChip(
+                BannerIconChip(
                   fill: c.signalIconTint(isDark),
                   icon: PhosphorIcons.magnifyingGlassPlusLight,
                   iconColor: c.typeSignal,
@@ -504,7 +380,7 @@ class _RunningBanner extends StatelessWidget {
     final c = t.colors;
     final isDark = t.isDark;
 
-    return _BannerShell(
+    return BannerShell(
       fill: c.pendingTint(isDark),
       border: c.pendingTint(isDark),
       child: Row(
@@ -614,16 +490,17 @@ class _DoneBanner extends StatelessWidget {
     final c = t.colors;
     final isDark = t.isDark;
 
-    return _BannerShell(
+    return BannerShell(
       fill: c.repairedTint(isDark),
       border: c.repairedBorderTint(isDark),
       onDismiss: onDismiss,
+      dismissSemanticLabel: context.l10n.codebaseAnalysisDismissLabel,
       child: Padding(
         padding: const EdgeInsets.only(right: 26),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            _IconChip(
+            BannerIconChip(
               fill: c.repairedIconTint(isDark),
               icon: PhosphorIcons.checkLight,
               iconColor: c.success,
@@ -672,16 +549,17 @@ class _FailedBanner extends StatelessWidget {
     final c = t.colors;
     final isDark = t.isDark;
 
-    return _BannerShell(
+    return BannerShell(
       fill: c.dangerTint(isDark),
       border: c.dangerBorderTint(isDark),
       onDismiss: onDismiss,
+      dismissSemanticLabel: context.l10n.codebaseAnalysisDismissLabel,
       child: Padding(
         padding: const EdgeInsets.only(right: 26),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            _IconChip(
+            BannerIconChip(
               fill: c.dangerIconTint(isDark),
               icon: PhosphorIcons.warningLight,
               iconColor: c.danger,

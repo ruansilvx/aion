@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 
+import 'package:aion/core/build/project_manifest_writer.dart';
 import 'package:aion/core/core.dart';
 import 'package:aion/features/projects/data/services/baseline_tailoring_service.dart';
 import 'package:aion/features/projects/domain/entities/project.dart';
@@ -158,9 +159,13 @@ class CreateProjectCubit extends Cubit<CreateProjectState> {
           alreadyGitRepo: wasExistingGitRepo,
           appendGitignore: appendGitignore,
         );
+        final manifest = await _baselineRepository.getManifest(
+          resolvedVersion,
+        );
         await _baselineTailoringService.tailorForDetectedStack(
           projectId: id,
           rootPath: rootPath,
+          manifest: manifest,
         );
       }
 
@@ -173,8 +178,9 @@ class CreateProjectCubit extends Cubit<CreateProjectState> {
     }
   }
 
-  /// Writes the `.aion/manifest.json` marker and creates the `tickets/`
-  /// subdirectory that ticket git-projection writes into (see
+  /// Writes the `.aion/manifest.json` marker (via [ProjectManifestWriter])
+  /// and creates the `tickets/` subdirectory that ticket git-projection
+  /// writes into (see
   /// `aion-arch/changes/storage-embedding-git-sync/design.md`). Desktop
   /// only — see `aion-arch/changes/multi-project-hub/proposal.md`'s
   /// platform note for why mobile/web don't get git-backed version
@@ -200,12 +206,7 @@ class CreateProjectCubit extends Cubit<CreateProjectState> {
       ]);
     }
 
-    final aionDir = Directory('$rootPath${Platform.pathSeparator}.aion')
-      ..createSync(recursive: true);
-    final manifest = File(
-      '${aionDir.path}${Platform.pathSeparator}$_manifestFileName',
-    );
-    manifest.writeAsStringSync('{"baselineVersion": "$baselineVersion"}');
+    await ProjectManifestWriter.write(rootPath, baselineVersion);
 
     Directory(
       '$rootPath${Platform.pathSeparator}tickets',

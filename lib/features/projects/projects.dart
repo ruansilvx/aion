@@ -13,6 +13,8 @@ export 'domain/repositories/baseline_repository.dart';
 export 'domain/repositories/project_repository.dart';
 export 'presentation/cubit/active_project_cubit.dart';
 export 'presentation/cubit/active_project_state.dart';
+export 'presentation/cubit/baseline_upgrade_cubit.dart';
+export 'presentation/cubit/baseline_upgrade_state.dart';
 export 'presentation/cubit/create_project_cubit.dart';
 export 'presentation/cubit/create_project_state.dart';
 export 'presentation/cubit/override_editor_cubit.dart';

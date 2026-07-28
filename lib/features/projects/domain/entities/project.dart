@@ -28,8 +28,9 @@ class Project extends Equatable {
   final String? rootPath;
 
   /// The pinned baseline version this project was created against (e.g.
-  /// `"0.1.0"`). Immutable through this change's UI — upgrading a
-  /// project's pin is a future change.
+  /// `"0.1.0"`). The legitimate post-creation write path is
+  /// `ActiveProjectCubit.acceptBaselineUpgrade`, which bumps this to the
+  /// latest bundled version.
   final String baselineVersion;
 
   /// When this project was created.

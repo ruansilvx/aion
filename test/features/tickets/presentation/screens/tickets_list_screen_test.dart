@@ -10,6 +10,8 @@ import 'package:mocktail/mocktail.dart';
 import 'package:aion/core/contracts/active_project_provider.dart';
 import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/design_system/design_system.dart';
+import 'package:aion/features/projects/domain/entities/project.dart';
+import 'package:aion/features/projects/domain/repositories/baseline_repository.dart';
 import 'package:aion/features/tickets/tickets.dart';
 import 'package:aion/l10n/generated/app_localizations.dart';
 
@@ -21,9 +23,12 @@ class MockAgentModelClient extends Mock implements AgentModelClient {}
 
 class MockActiveProjectProvider extends Mock implements ActiveProjectProvider {}
 
+class MockBaselineRepository extends Mock implements BaselineRepository {}
+
 Widget _wrap({
   required TicketsCubit ticketsCubit,
   required ActiveProjectProvider activeProjectProvider,
+  required BaselineRepository baselineRepository,
 }) {
   final router = GoRouter(
     initialLocation: '/',
@@ -34,6 +39,9 @@ Widget _wrap({
           providers: [
             RepositoryProvider<ActiveProjectProvider>.value(
               value: activeProjectProvider,
+            ),
+            RepositoryProvider<BaselineRepository>.value(
+              value: baselineRepository,
             ),
           ],
           child: MultiBlocProvider(
@@ -73,6 +81,16 @@ void main() {
   late MockTicketLinkRepository linkRepository;
   late MockAgentModelClient agentClient;
   late MockActiveProjectProvider activeProjectProvider;
+  late MockBaselineRepository baselineRepository;
+
+  final activeProject = Project(
+    id: '1',
+    name: 'Fake Project',
+    storageKey: '1',
+    baselineVersion: '0.1.0',
+    createdAt: DateTime(2026, 1, 1),
+    lastOpenedAt: DateTime(2026, 1, 1),
+  );
 
   setUpAll(() {
     registerFallbackValue(const AgentRequest(prompt: '', model: ''));
@@ -103,6 +121,7 @@ void main() {
     linkRepository = MockTicketLinkRepository();
     agentClient = MockAgentModelClient();
     activeProjectProvider = MockActiveProjectProvider();
+    baselineRepository = MockBaselineRepository();
 
     when(
       () => repository.searchTickets(
@@ -133,6 +152,19 @@ void main() {
     when(
       () => activeProjectProvider.consumeCodebaseAnalysisOffer(),
     ).thenReturn(null);
+    when(
+      () => activeProjectProvider.offerCodebaseAnalysis,
+    ).thenReturn(false);
+    when(
+      () => activeProjectProvider.offerBaselineUpgrade,
+    ).thenReturn(false);
+    when(
+      () => activeProjectProvider.consumeBaselineUpgradeOffer(),
+    ).thenReturn(null);
+    when(() => activeProjectProvider.activeProject).thenReturn(activeProject);
+    when(
+      () => baselineRepository.getAvailableBaselineVersions(),
+    ).thenAnswer((_) async => ['0.1.0']);
   });
 
   TicketsCubit buildCubit() => TicketsCubit(
@@ -155,6 +187,7 @@ void main() {
         _wrap(
           ticketsCubit: buildCubit(),
           activeProjectProvider: activeProjectProvider,
+          baselineRepository: baselineRepository,
         ),
       );
       await tester.pumpAndSettle();
@@ -179,6 +212,7 @@ void main() {
         _wrap(
           ticketsCubit: buildCubit(),
           activeProjectProvider: activeProjectProvider,
+          baselineRepository: baselineRepository,
         ),
       );
       await tester.pumpAndSettle();
@@ -213,6 +247,7 @@ void main() {
         _wrap(
           ticketsCubit: buildCubit(),
           activeProjectProvider: activeProjectProvider,
+          baselineRepository: baselineRepository,
         ),
       );
       await tester.pumpAndSettle();
@@ -243,6 +278,101 @@ void main() {
       verify(
         () => activeProjectProvider.consumeCodebaseAnalysisOffer(),
       ).called(1);
+    },
+  );
+
+  testWidgets(
+    'shows the baseline-upgrade banner only when the active project '
+    'provider reports offerBaselineUpgrade: true',
+    (tester) async {
+      when(
+        () => activeProjectProvider.offerBaselineUpgrade,
+      ).thenReturn(true);
+      when(
+        () => baselineRepository.getAvailableBaselineVersions(),
+      ).thenAnswer((_) async => ['0.1.0', '0.2.0']);
+
+      await tester.pumpWidget(
+        _wrap(
+          ticketsCubit: buildCubit(),
+          activeProjectProvider: activeProjectProvider,
+          baselineRepository: baselineRepository,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('A newer baseline is available'), findsOneWidget);
+      verify(
+        () => activeProjectProvider.consumeBaselineUpgradeOffer(),
+      ).called(1);
+    },
+  );
+
+  testWidgets(
+    'tapping "Upgrade" calls acceptBaselineUpgrade and the banner never '
+    'reappears after consumeBaselineUpgradeOffer fires',
+    (tester) async {
+      when(
+        () => activeProjectProvider.offerBaselineUpgrade,
+      ).thenReturn(true);
+      when(
+        () => baselineRepository.getAvailableBaselineVersions(),
+      ).thenAnswer((_) async => ['0.1.0', '0.2.0']);
+      when(
+        () => activeProjectProvider.acceptBaselineUpgrade(),
+      ).thenAnswer((_) async {});
+
+      await tester.pumpWidget(
+        _wrap(
+          ticketsCubit: buildCubit(),
+          activeProjectProvider: activeProjectProvider,
+          baselineRepository: baselineRepository,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Upgrade'));
+      await tester.pumpAndSettle();
+
+      verify(() => activeProjectProvider.acceptBaselineUpgrade()).called(1);
+      expect(find.text('A newer baseline is available'), findsNothing);
+
+      // Still only consumed once, at initState.
+      verify(
+        () => activeProjectProvider.consumeBaselineUpgradeOffer(),
+      ).called(1);
+    },
+  );
+
+  testWidgets(
+    'both the baseline-upgrade and codebase-analysis banners render '
+    'simultaneously without layout errors when both offer flags are true',
+    (tester) async {
+      when(
+        () => activeProjectProvider.offerBaselineUpgrade,
+      ).thenReturn(true);
+      when(
+        () => activeProjectProvider.offerCodebaseAnalysis,
+      ).thenReturn(true);
+      when(
+        () => baselineRepository.getAvailableBaselineVersions(),
+      ).thenAnswer((_) async => ['0.1.0', '0.2.0']);
+
+      await tester.pumpWidget(
+        _wrap(
+          ticketsCubit: buildCubit(),
+          activeProjectProvider: activeProjectProvider,
+          baselineRepository: baselineRepository,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('A newer baseline is available'), findsOneWidget);
+      expect(
+        find.text('Draft a starting backlog from this codebase'),
+        findsOneWidget,
+      );
     },
   );
 }

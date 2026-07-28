@@ -50,6 +50,21 @@ class DriftProjectRepository implements ProjectRepository {
   }
 
   @override
+  Future<void> updateBaselineVersion(String id, String version) async {
+    // Unlike updateLastOpened (which silently no-ops on an unknown id
+    // despite its own doc comment claiming otherwise), this explicitly
+    // checks existence first — the interface doc promises a throw here,
+    // and a test (drift_project_repository_test.dart) exercises it.
+    final existing = await getProject(id);
+    if (existing == null) {
+      throw StateError('Project $id does not exist');
+    }
+    await (_db.update(_db.projectsTable)..where((t) => t.id.equals(id))).write(
+      ProjectsTableCompanion(baselineVersion: Value(version)),
+    );
+  }
+
+  @override
   Future<void> removeProject(String id) async {
     await (_db.delete(_db.projectsTable)..where((t) => t.id.equals(id))).go();
   }

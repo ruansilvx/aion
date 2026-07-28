@@ -7,6 +7,8 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
+import 'package:aion/features/projects/presentation/cubit/baseline_upgrade_cubit.dart';
+import 'package:aion/features/projects/presentation/cubit/baseline_upgrade_state.dart';
 import 'package:aion/features/providers/domain/enums/agent_model.dart';
 import 'package:aion/features/providers/domain/enums/model_phase.dart';
 import 'package:aion/features/providers/domain/enums/provider_connection_status.dart';
@@ -20,8 +22,13 @@ import 'package:aion/features/providers/presentation/widgets/provider_connection
 
 /// The `/workspace/settings` route: shows the configured provider's
 /// connection status (auto-checked on open, with a manual "Test
-/// Connection" action) and a model picker. Reached from
-/// `WorkspaceNavShell`'s secondary-actions popover. Per
+/// Connection" action), a model picker, automation-confidence pickers, an
+/// "OVERRIDES" section linking to `OverridesListScreen`, and a "BASELINE"
+/// section (`_BaselineUpgradeSection`) offering a manual baseline-version
+/// upgrade — always available regardless of whether
+/// `BaselineUpgradeBanner` has already been shown/declined this session
+/// (see `aion-arch/changes/baseline-version-upgrade-flow/design.md` §2).
+/// Reached from `WorkspaceNavShell`'s secondary-actions popover. Per
 /// `aion-arch/changes/provider-configuration/design.md`'s Settings Screen
 /// Component Spec §2.
 ///
@@ -147,6 +154,15 @@ class SettingsScreen extends StatelessWidget {
                             ),
                             const SizedBox(height: 14),
                             const _OverridesSummarySection(),
+                            const SizedBox(height: 22),
+                            Text(
+                              context.l10n.settingsBaselineEyebrow,
+                              style: AionText.caption.copyWith(
+                                color: c.textMuted,
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            const _BaselineUpgradeSection(),
                           ],
                         );
                       },
@@ -558,6 +574,257 @@ class _OverridesSummarySection extends StatelessWidget {
             variant: AppButtonVariant.secondary,
             icon: PhosphorIcons.stackLight,
             onPressed: () => context.go('/workspace/settings/overrides'),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// "BASELINE" section on [SettingsScreen] — a description, the active
+/// project's currently pinned baseline version, and a manual upgrade
+/// action, mirroring [_OverridesSummarySection]'s shape. Always present
+/// regardless of whether `BaselineUpgradeBanner` has already been
+/// shown/declined this session. Added for
+/// `aion-arch/changes/baseline-version-upgrade-flow`.
+class _BaselineUpgradeSection extends StatelessWidget {
+  const _BaselineUpgradeSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+
+    return BlocBuilder<BaselineUpgradeCubit, BaselineUpgradeState>(
+      builder: (context, state) {
+        if (state is! BaselineUpgradeReady) {
+          return const Center(child: AppSpinner());
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              context.l10n.settingsBaselineDescription,
+              style: AionText.bodySm.copyWith(color: c.textMuted, height: 1.5),
+            ),
+            const SizedBox(height: 10),
+            _CurrentVersionRow(version: state.currentVersion),
+            const SizedBox(height: 10),
+            if (state.isUpToDate)
+              _UpToDateMessage(colors: c)
+            else if (state.isUpgrading)
+              const _BaselineUpgradingButton()
+            else
+              _BaselineUpgradeButton(
+                label: context.l10n.settingsBaselineUpgradeButton(
+                  'v${state.latestVersion}',
+                ),
+                onTap: () => context.read<BaselineUpgradeCubit>().upgrade(),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// The "Current version" row inside [_BaselineUpgradeSection], showing
+/// the active project's pinned baseline version.
+class _CurrentVersionRow extends StatelessWidget {
+  const _CurrentVersionRow({required this.version});
+
+  final String version;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border.all(color: c.border),
+        borderRadius: const BorderRadius.all(Radius.circular(11)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              context.l10n.settingsBaselineCurrentVersionLabel,
+              style: AionText.label.copyWith(
+                fontSize: 12,
+                color: c.textSecondary,
+              ),
+            ),
+            Text(
+              'v$version',
+              style: AionText.key.copyWith(
+                fontSize: 13.5,
+                color: c.textPrimary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The enabled "Upgrade to vX.Y.Z" action inside [_BaselineUpgradeSection]
+/// — hand-rolled rather than [AppButton] because design.md §2.2 specifies
+/// a `primary`-colored leading icon, which [AppButton]'s secondary
+/// variant can't produce (its icon always matches the label color).
+/// Mirrors the hover/press treatment `CodebaseAnalysisBanner`'s
+/// `_DepthChoiceButton` already hand-rolls for the same kind of
+/// AppButton-capability gap.
+class _BaselineUpgradeButton extends StatefulWidget {
+  /// Creates a [_BaselineUpgradeButton] labeled [label], calling [onTap]
+  /// when activated.
+  const _BaselineUpgradeButton({required this.label, required this.onTap});
+
+  /// The button's text label (e.g. "Upgrade to v0.3.0").
+  final String label;
+
+  /// Called when the button is activated.
+  final VoidCallback onTap;
+
+  @override
+  State<_BaselineUpgradeButton> createState() =>
+      _BaselineUpgradeButtonState();
+}
+
+class _BaselineUpgradeButtonState extends State<_BaselineUpgradeButton> {
+  bool _isHovered = false;
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+
+    final fill = _isPressed
+        ? c.surface
+        : (_isHovered
+              ? Color.alphaBlend(
+                  c.primary.withValues(alpha: 0.06),
+                  c.surfaceHover,
+                )
+              : c.surfaceHover);
+    final border = _isHovered
+        ? c.primary.withValues(alpha: t.isDark ? 0.30 : 0.20)
+        : c.borderStrong;
+
+    return Semantics(
+      button: true,
+      label: widget.label,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: GestureDetector(
+          onTap: widget.onTap,
+          onTapDown: (_) => setState(() => _isPressed = true),
+          onTapUp: (_) => setState(() => _isPressed = false),
+          onTapCancel: () => setState(() => _isPressed = false),
+          child: AnimatedScale(
+            scale: _isPressed ? 0.98 : 1.0,
+            duration: const Duration(milliseconds: 80),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: fill,
+                border: Border.all(color: border),
+                borderRadius: const BorderRadius.all(AionRadius.md),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 15,
+                  vertical: 10,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    PhosphorIcon(
+                      PhosphorIcons.arrowUpLight,
+                      size: 16,
+                      color: c.primary,
+                    ),
+                    const SizedBox(width: 9),
+                    Text(
+                      widget.label,
+                      style: AionText.button.copyWith(color: c.textPrimary),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The non-interactive, spinner-labeled "Upgrading…" state
+/// [_BaselineUpgradeSection] shows in place of
+/// [_BaselineUpgradeButton] while an upgrade is in flight — same
+/// footprint as [_BaselineUpgradeButton] so the section doesn't reflow,
+/// per design.md §2.3.
+class _BaselineUpgradingButton extends StatelessWidget {
+  const _BaselineUpgradingButton();
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.surfaceHover,
+        border: Border.all(color: c.border),
+        borderRadius: const BorderRadius.all(AionRadius.md),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(width: 14, height: 14, child: AppSpinner(size: 14)),
+            const SizedBox(width: 9),
+            Text(
+              context.l10n.settingsBaselineUpgradingLabel,
+              style: AionText.button.copyWith(color: c.textMuted),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The quiet "up to date" message [_BaselineUpgradeSection] shows in
+/// place of an upgrade action when there's nothing to upgrade to.
+class _UpToDateMessage extends StatelessWidget {
+  const _UpToDateMessage({required this.colors});
+
+  final AionColors colors;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        PhosphorIcon(
+          PhosphorIcons.checkLight,
+          size: 16,
+          color: colors.success,
+        ),
+        const SizedBox(width: AionSpacing.sp8),
+        Text(
+          context.l10n.settingsBaselineUpToDateMessage,
+          style: AionText.bodySm.copyWith(
+            fontSize: 13.5,
+            fontWeight: FontWeight.w600,
+            color: colors.textSecondary,
           ),
         ),
       ],
