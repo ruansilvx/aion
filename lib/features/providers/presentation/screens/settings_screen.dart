@@ -585,6 +585,7 @@ class _ExecutionContextCapSectionState
               text: text,
               parsed: parsed,
               limit: limit,
+              isClamped: isClamped,
             ),
           ],
         );
@@ -594,18 +595,22 @@ class _ExecutionContextCapSectionState
 }
 
 /// The dynamic helper row below [_ExecutionContextCapSection]'s field —
-/// exactly one of three variants per build, chosen from [text]/[parsed]
+/// exactly one of three variants per build, chosen from [text]/[isClamped]
 /// vs. [limit] (design.md §2.4/§6.1): neutral (no override), an
 /// `OVERRIDE`-tagged effective-cap line (a valid override), or a caution
 /// chip (the live entry would be clamped). Added for
 /// `aion-arch/changes/dont-spawn-new-chat-ticket-per-execution-trigger`.
 class _ExecutionContextCapHelperRow extends StatelessWidget {
   /// Creates an [_ExecutionContextCapHelperRow] for the live field
-  /// [text]/[parsed] against the model's real [limit].
+  /// [text]/[parsed] against the model's real [limit], with [isClamped]
+  /// (computed once by [_ExecutionContextCapSectionState], which also uses
+  /// it for the field-to-helper-row spacing) passed in rather than
+  /// re-derived here, so the two can never disagree.
   const _ExecutionContextCapHelperRow({
     required this.text,
     required this.parsed,
     required this.limit,
+    required this.isClamped,
   });
 
   /// The field's live, uncommitted text.
@@ -618,6 +623,10 @@ class _ExecutionContextCapHelperRow extends StatelessWidget {
 
   /// The execution-phase model's real `AgentModel.contextWindowTokens`.
   final int limit;
+
+  /// Whether [parsed] is at or above [limit] — the live entry would be
+  /// clamped on commit.
+  final bool isClamped;
 
   @override
   Widget build(BuildContext context) {
@@ -634,7 +643,7 @@ class _ExecutionContextCapHelperRow extends StatelessWidget {
       );
     }
 
-    if (parsed != null && parsed! >= 1 && parsed! < limit) {
+    if (!isClamped && parsed != null && parsed! >= 1) {
       return Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
