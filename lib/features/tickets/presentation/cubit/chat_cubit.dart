@@ -123,7 +123,11 @@ class ChatCubit extends Cubit<ChatState> {
   /// Infers which [ModelPhase] governs [chatTicketId]'s model calls, from
   /// its parent ticket: an `epic`/`story` parent's current
   /// `Ticket.sddStage` (via [SddStageModelPhase.modelPhase]), or
-  /// [ModelPhase.execution] for a `task` parent. Every chat ticket in the
+  /// [ModelPhase.execution] for a Task or Bug parent (see
+  /// `TicketTypeHierarchy.isExecutable` — `aion-arch/changes/bug-ticket-type`
+  /// gave `bug` full coding-execution parity with `task`, so a manual chat
+  /// reply on a Bug's execution transcript resolves to the same tier a
+  /// Task's would). Every chat ticket in the
   /// app is spawned exclusively by `TicketsCubit._spawnStageChat`/
   /// `_runCodingExecution` (the only two `createTicket` call sites for
   /// `TicketType.chat` in the codebase), so a chat always has a
@@ -136,7 +140,7 @@ class ChatCubit extends Cubit<ChatState> {
     if (parentId == null) return ModelPhase.capable;
     final parent = await _ticketRepository.getTicketById(parentId);
     if (parent == null) return ModelPhase.capable;
-    if (parent.type == TicketType.task) return ModelPhase.execution;
+    if (parent.type.isExecutable) return ModelPhase.execution;
     return parent.sddStage?.modelPhase ?? ModelPhase.capable;
   }
 
