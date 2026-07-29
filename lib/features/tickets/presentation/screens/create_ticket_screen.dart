@@ -9,6 +9,7 @@ import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_complexity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_severity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
@@ -37,8 +38,12 @@ class CreateTicketRouteExtra {
 /// and description fields followed by a full-width submit button. The parent
 /// field is hidden whenever the selected type is always a subtree root
 /// ([TicketType.epic], [TicketType.signal], or [TicketType.release] — see
-/// [TicketTypeHierarchy.isAlwaysRoot]). Reads [TicketsCubit] from the
-/// root-level provider and navigates back to `/tickets` on success.
+/// [TicketTypeHierarchy.isAlwaysRoot]). When the selected type is
+/// [TicketType.bug], an additional field block (severity — required —
+/// plus optional steps-to-reproduce/expected-behavior/actual-behavior
+/// text fields) slides in between the Priority/Complexity row and the
+/// Description field. Reads [TicketsCubit] from the root-level provider
+/// and navigates back to `/tickets` on success.
 class CreateTicketScreen extends StatefulWidget {
   /// Creates a [CreateTicketScreen]. [initialType]/[initialParentId] seed
   /// the type/parent fields — used when opened from `DocumentationScreen`'s
@@ -62,17 +67,25 @@ class CreateTicketScreen extends StatefulWidget {
 class _CreateTicketScreenState extends State<CreateTicketScreen> {
   final _titleController = TextEditingController();
   final _descController = TextEditingController();
+  final _stepsController = TextEditingController();
+  final _expectedController = TextEditingController();
+  final _actualController = TextEditingController();
   final _titleFocus = FocusNode();
   final _typeFocus = FocusNode();
   final _priorityFocus = FocusNode();
   final _complexityFocus = FocusNode();
+  final _stepsFocus = FocusNode();
+  final _expectedFocus = FocusNode();
+  final _actualFocus = FocusNode();
   final _descFocus = FocusNode();
 
   late TicketType _selectedType;
   TicketPriority _selectedPriority = TicketPriority.none;
   TicketComplexity? _selectedComplexity;
+  TicketSeverity? _selectedSeverity;
   String? _selectedParentId;
   bool _isSubmitting = false;
+  String? _severityError;
 
   @override
   void initState() {
@@ -85,16 +98,31 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
   void dispose() {
     _titleController.dispose();
     _descController.dispose();
+    _stepsController.dispose();
+    _expectedController.dispose();
+    _actualController.dispose();
     _titleFocus.dispose();
     _typeFocus.dispose();
     _priorityFocus.dispose();
     _complexityFocus.dispose();
+    _stepsFocus.dispose();
+    _expectedFocus.dispose();
+    _actualFocus.dispose();
     _descFocus.dispose();
     super.dispose();
   }
 
   void _submit() {
-    setState(() => _isSubmitting = true);
+    if (_selectedType == TicketType.bug && _selectedSeverity == null) {
+      setState(
+        () => _severityError = context.l10n.createTicketSeverityRequired,
+      );
+      return;
+    }
+    setState(() {
+      _severityError = null;
+      _isSubmitting = true;
+    });
     context.read<TicketsCubit>().createTicket(
       type: _selectedType,
       title: _titleController.text.trim(),
@@ -104,6 +132,16 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
       priority: _selectedPriority,
       parentId: _selectedParentId,
       complexity: _selectedComplexity,
+      severity: _selectedSeverity,
+      stepsToReproduce: _stepsController.text.trim().isEmpty
+          ? null
+          : _stepsController.text.trim(),
+      expectedBehavior: _expectedController.text.trim().isEmpty
+          ? null
+          : _expectedController.text.trim(),
+      actualBehavior: _actualController.text.trim().isEmpty
+          ? null
+          : _actualController.text.trim(),
     );
   }
 
@@ -161,6 +199,7 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                         onChanged: (v) => setState(() {
                           _selectedType = v;
                           _selectedParentId = null;
+                          if (v != TicketType.bug) _severityError = null;
                         }),
                         itemLabel: (v) => ticketTypeLabel(context, v),
                         focusNode: _typeFocus,
@@ -242,6 +281,80 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                             ),
                           ),
                         ],
+                      ),
+                      AnimatedSize(
+                        duration: const Duration(milliseconds: 150),
+                        curve: Curves.easeOut,
+                        alignment: Alignment.topCenter,
+                        child: _selectedType != TicketType.bug
+                            ? const SizedBox.shrink()
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const SizedBox(height: AionSpacing.sp16),
+                                  SeverityPicker(
+                                    value: _selectedSeverity,
+                                    onChanged: (v) => setState(() {
+                                      _selectedSeverity = v;
+                                      _severityError = null;
+                                    }),
+                                    labelText:
+                                        context.l10n.createTicketSeverityLabel,
+                                    isRequired: true,
+                                    errorText: _severityError,
+                                    isDisabled: _isSubmitting,
+                                  ),
+                                  const SizedBox(height: AionSpacing.sp16),
+                                  AppTextField(
+                                    labelText: context
+                                        .l10n
+                                        .createTicketStepsToReproduceLabel,
+                                    isOptional: true,
+                                    hintText: context
+                                        .l10n
+                                        .createTicketStepsToReproduceHint,
+                                    controller: _stepsController,
+                                    focusNode: _stepsFocus,
+                                    maxLines: 3,
+                                    textInputAction: TextInputAction.next,
+                                    onSubmitted: (_) =>
+                                        _expectedFocus.requestFocus(),
+                                  ),
+                                  const SizedBox(height: AionSpacing.sp16),
+                                  AppTextField(
+                                    labelText: context
+                                        .l10n
+                                        .createTicketExpectedBehaviorLabel,
+                                    isOptional: true,
+                                    hintText: context
+                                        .l10n
+                                        .createTicketExpectedBehaviorHint,
+                                    controller: _expectedController,
+                                    focusNode: _expectedFocus,
+                                    maxLines: 3,
+                                    textInputAction: TextInputAction.next,
+                                    onSubmitted: (_) =>
+                                        _actualFocus.requestFocus(),
+                                  ),
+                                  const SizedBox(height: AionSpacing.sp16),
+                                  AppTextField(
+                                    labelText: context
+                                        .l10n
+                                        .createTicketActualBehaviorLabel,
+                                    isOptional: true,
+                                    hintText: context
+                                        .l10n
+                                        .createTicketActualBehaviorHint,
+                                    controller: _actualController,
+                                    focusNode: _actualFocus,
+                                    maxLines: 3,
+                                    textInputAction: TextInputAction.next,
+                                    onSubmitted: (_) =>
+                                        _descFocus.requestFocus(),
+                                  ),
+                                  const SizedBox(height: AionSpacing.sp16),
+                                ],
+                              ),
                       ),
                       const SizedBox(height: AionSpacing.sp20),
                       AppTextField(

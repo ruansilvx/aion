@@ -9,6 +9,7 @@ import 'package:aion/features/tickets/domain/entities/ticket_search_page.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_complexity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_severity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sync_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
@@ -60,6 +61,10 @@ class DriftTicketRepository implements TicketRepository {
       estimate: Value(ticket.estimate),
       timeSpent: Value(ticket.timeSpent),
       complexity: Value(ticket.complexity?.name),
+      severity: Value(ticket.severity?.name),
+      stepsToReproduce: Value(ticket.stepsToReproduce),
+      expectedBehavior: Value(ticket.expectedBehavior),
+      actualBehavior: Value(ticket.actualBehavior),
       createdAt: ticket.createdAt.millisecondsSinceEpoch,
       updatedAt: ticket.updatedAt.millisecondsSinceEpoch,
     );
@@ -102,6 +107,10 @@ class DriftTicketRepository implements TicketRepository {
         estimate: Value(ticket.estimate),
         timeSpent: Value(ticket.timeSpent),
         complexity: Value(ticket.complexity?.name),
+        severity: Value(ticket.severity?.name),
+        stepsToReproduce: Value(ticket.stepsToReproduce),
+        expectedBehavior: Value(ticket.expectedBehavior),
+        actualBehavior: Value(ticket.actualBehavior),
         updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
       ),
     );
@@ -342,6 +351,10 @@ class DriftTicketRepository implements TicketRepository {
           : DateTime.fromMillisecondsSinceEpoch(row.deletedAt!),
       complexity: _parseNullableEnum(TicketComplexity.values, row.complexity),
       sddStage: _parseNullableEnum(SddStage.values, row.sddStage),
+      severity: _parseNullableEnum(TicketSeverity.values, row.severity),
+      stepsToReproduce: row.stepsToReproduce,
+      expectedBehavior: row.expectedBehavior,
+      actualBehavior: row.actualBehavior,
     );
   }
 

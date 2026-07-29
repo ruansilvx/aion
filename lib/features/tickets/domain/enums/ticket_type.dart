@@ -14,7 +14,9 @@ enum TicketType {
 
   /// A concrete unit of execution. A task whose `parentId` points to a
   /// story is the Aion subtask convention (no dedicated type);
-  /// task-under-task is not permitted — see [TicketTypeHierarchy.canParent].
+  /// task-under-task is not permitted — see [TicketTypeHierarchy.canParent];
+  /// a [bug] ticket occupies the same rank and is likewise unparentable
+  /// by a task.
   task,
 
   /// A reference or supporting artifact (link, file, note) attached to work.
@@ -39,6 +41,17 @@ enum TicketType {
   /// release without that release being its structural parent. See
   /// [TicketTypeHierarchy.isAlwaysRoot].
   release,
+
+  /// A defect: something existing that doesn't work as intended. Ranked
+  /// like [task] in the epic→story→task chain (see
+  /// [TicketTypeHierarchy]) — a bug is fundamentally a unit of execution,
+  /// with extra diagnostic fields ([Ticket.severity],
+  /// [Ticket.stepsToReproduce], [Ticket.expectedBehavior],
+  /// [Ticket.actualBehavior]) a plain [task] has no use for. Its affected
+  /// version/environment is expressed via a `TicketLinkType.relatesTo`
+  /// link to a [release] ticket, not a dedicated field — the same
+  /// mechanism [release] already has with [epic]/[story]/[task].
+  bug,
 }
 
 /// Structural parent/child rules between [TicketType] values. A ticket's
@@ -46,16 +59,19 @@ enum TicketType {
 /// independent of the self-parent/cycle checks `TicketsCubit` already
 /// performs, which apply regardless of type.
 extension TicketTypeHierarchy on TicketType {
-  /// This type's rank in the epic > story > task work-breakdown chain, or
-  /// `null` for a type ([TicketType.resource], [TicketType.page],
-  /// [TicketType.chat], [TicketType.signal], [TicketType.release]) with no
-  /// rank in that chain. Note that `page`, `signal`, and `release` each
-  /// still have their own nesting rule — see [canParent] — despite having
-  /// no rank here.
+  /// This type's rank in the epic > story > task/bug work-breakdown
+  /// chain, or `null` for a type ([TicketType.resource],
+  /// [TicketType.page], [TicketType.chat], [TicketType.signal],
+  /// [TicketType.release]) with no rank in that chain. Note that `page`,
+  /// `signal`, and `release` each still have their own nesting rule —
+  /// see [canParent] — despite having no rank here. [TicketType.task]
+  /// and [TicketType.bug] share the same literal rank value, which is
+  /// what makes them siblings: neither can parent the other, exactly
+  /// like every other same-rank pair.
   int? get _rank => switch (this) {
     TicketType.epic => 0,
     TicketType.story => 1,
-    TicketType.task => 2,
+    TicketType.task || TicketType.bug => 2,
     TicketType.resource ||
     TicketType.page ||
     TicketType.chat ||
@@ -74,13 +90,15 @@ extension TicketTypeHierarchy on TicketType {
   ///   [TicketType.chat] only — neither is part of the epic→story→task
   ///   decomposition chain (a `signal` is promoted *into* an `epic` by a
   ///   separate mechanism, not parented by one).
-  /// - A work type (epic/story/task) may parent another work type only if
-  ///   strictly higher in the chain (epic > story > task, e.g. task cannot
-  ///   parent story), and may still parent [TicketType.chat]
-  ///   unconditionally. Work types can no longer parent
-  ///   [TicketType.resource] or [TicketType.page] — those relocated under
-  ///   the Documentation section and link back to work tickets via
-  ///   `TicketLink` instead of `parentId`.
+  /// - A work type (epic/story/task/bug) may parent another work type
+  ///   only if strictly higher in the chain (epic > story > task/bug,
+  ///   e.g. task cannot parent story), and may still parent
+  ///   [TicketType.chat] unconditionally. [TicketType.task] and
+  ///   [TicketType.bug] share the same rank, so neither can parent the
+  ///   other — same-rank nesting is always rejected. Work types can no
+  ///   longer parent [TicketType.resource] or [TicketType.page] — those
+  ///   relocated under the Documentation section and link back to work
+  ///   tickets via `TicketLink` instead of `parentId`.
   /// - [TicketType.resource] and [TicketType.chat] remain full leaves and
   ///   can never parent anything, including each other.
   bool canParent(TicketType child) {
@@ -105,4 +123,20 @@ extension TicketTypeHierarchy on TicketType {
       this == TicketType.epic ||
       this == TicketType.signal ||
       this == TicketType.release;
+
+  /// The [TicketType] values whose move to `TicketStatus.inProgress`
+  /// triggers a real coding-execution run — see
+  /// `TicketsCubit._interceptTaskExecutionTrigger`. [TicketType.bug] was
+  /// added here for full execution parity with [TicketType.task];
+  /// anywhere a Story's rank-2 children are gathered for
+  /// design-review-gate or SDD-readiness purposes should use this list
+  /// instead of a `task`-only literal.
+  static const List<TicketType> executableTypes = [
+    TicketType.task,
+    TicketType.bug,
+  ];
+
+  /// Whether this type's move to `TicketStatus.inProgress` triggers
+  /// coding-execution. See [executableTypes].
+  bool get isExecutable => executableTypes.contains(this);
 }

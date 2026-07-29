@@ -76,7 +76,9 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
 /// adds [TicketsTable.deletedAt] for the trash/soft-delete model — see
 /// `TicketRepository.trashTicket`/`restoreTicket`. Version 5 adds
 /// `TicketsTable.complexity`/`TicketsTable.sddStage` — see
-/// `TicketRepository.updateTicketSddStage`.
+/// `TicketRepository.updateTicketSddStage`. Version 6 adds
+/// `TicketsTable.severity`/`stepsToReproduce`/`expectedBehavior`/
+/// `actualBehavior` — see `TicketType.bug`.
 @DriftDatabase(
   tables: [
     TicketsTable,
@@ -96,7 +98,7 @@ class AppDatabase extends _$AppDatabase {
     : super(executor ?? _openConnection(project));
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -120,6 +122,12 @@ class AppDatabase extends _$AppDatabase {
       if (from < 5) {
         await m.addColumn(ticketsTable, ticketsTable.complexity);
         await m.addColumn(ticketsTable, ticketsTable.sddStage);
+      }
+      if (from < 6) {
+        await m.addColumn(ticketsTable, ticketsTable.severity);
+        await m.addColumn(ticketsTable, ticketsTable.stepsToReproduce);
+        await m.addColumn(ticketsTable, ticketsTable.expectedBehavior);
+        await m.addColumn(ticketsTable, ticketsTable.actualBehavior);
       }
     },
   );

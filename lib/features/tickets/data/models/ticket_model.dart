@@ -68,6 +68,22 @@ class TicketsTable extends Table {
   /// `TicketRepository.updateTicketSddStage`.
   TextColumn get sddStage => text().named('sdd_stage').nullable()();
 
+  /// `TicketSeverity.name`, nullable. Meaningful only for
+  /// `TicketType.bug`.
+  TextColumn get severity => text().nullable()();
+
+  /// Reproduction steps. Meaningful only for `TicketType.bug`.
+  TextColumn get stepsToReproduce =>
+      text().named('steps_to_reproduce').nullable()();
+
+  /// Expected behavior. Meaningful only for `TicketType.bug`.
+  TextColumn get expectedBehavior =>
+      text().named('expected_behavior').nullable()();
+
+  /// Actual behavior. Meaningful only for `TicketType.bug`.
+  TextColumn get actualBehavior =>
+      text().named('actual_behavior').nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
 }

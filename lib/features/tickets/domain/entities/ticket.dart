@@ -7,6 +7,7 @@ import 'package:equatable/equatable.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_complexity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_severity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sync_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
@@ -83,6 +84,22 @@ class Ticket extends Equatable {
   /// plain edit.
   final SddStage? sddStage;
 
+  /// Impact of a [TicketType.bug] ticket. `null` until sized. Meaningless
+  /// for every other type.
+  final TicketSeverity? severity;
+
+  /// Reproduction steps for a [TicketType.bug] ticket. `null` until set.
+  /// Meaningless for every other type.
+  final String? stepsToReproduce;
+
+  /// What should have happened, for a [TicketType.bug] ticket. `null`
+  /// until set. Meaningless for every other type.
+  final String? expectedBehavior;
+
+  /// What actually happened, for a [TicketType.bug] ticket. `null` until
+  /// set. Meaningless for every other type.
+  final String? actualBehavior;
+
   /// Creates a [Ticket]. [priority] defaults to [TicketPriority.none].
   const Ticket({
     required this.id,
@@ -102,6 +119,10 @@ class Ticket extends Equatable {
     this.deletedAt,
     this.complexity,
     this.sddStage,
+    this.severity,
+    this.stepsToReproduce,
+    this.expectedBehavior,
+    this.actualBehavior,
   });
 
   @override
@@ -123,10 +144,15 @@ class Ticket extends Equatable {
     deletedAt,
     complexity,
     sddStage,
+    severity,
+    stepsToReproduce,
+    expectedBehavior,
+    actualBehavior,
   ];
 
   /// Returns a copy of this ticket with the given fields replaced.
-  /// [description], [estimate], [timeSpent], and [complexity] are
+  /// [description], [estimate], [timeSpent], [complexity], [severity],
+  /// [stepsToReproduce], [expectedBehavior], and [actualBehavior] are
   /// nullable and therefore take a zero-arg setter instead of a bare
   /// value — pass `() => null` to explicitly clear one of them, or omit
   /// the parameter entirely to leave it unchanged. A plain `?? this.x`
@@ -145,6 +171,10 @@ class Ticket extends Equatable {
     TicketFieldSetter<int?>? estimate,
     TicketFieldSetter<int?>? timeSpent,
     TicketFieldSetter<TicketComplexity?>? complexity,
+    TicketFieldSetter<TicketSeverity?>? severity,
+    TicketFieldSetter<String?>? stepsToReproduce,
+    TicketFieldSetter<String?>? expectedBehavior,
+    TicketFieldSetter<String?>? actualBehavior,
     DateTime? updatedAt,
   }) {
     return Ticket(
@@ -164,6 +194,16 @@ class Ticket extends Equatable {
       updatedAt: updatedAt ?? this.updatedAt,
       complexity: complexity != null ? complexity() : this.complexity,
       sddStage: sddStage,
+      severity: severity != null ? severity() : this.severity,
+      stepsToReproduce: stepsToReproduce != null
+          ? stepsToReproduce()
+          : this.stepsToReproduce,
+      expectedBehavior: expectedBehavior != null
+          ? expectedBehavior()
+          : this.expectedBehavior,
+      actualBehavior: actualBehavior != null
+          ? actualBehavior()
+          : this.actualBehavior,
     );
   }
 }

@@ -31,6 +31,7 @@ import 'package:aion/features/tickets/domain/enums/summarization_depth.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_complexity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_severity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/repositories/comment_repository.dart';
@@ -344,7 +345,10 @@ class TicketsCubit extends Cubit<TicketsState> {
   ///
   /// [status] always starts at [TicketStatus.backlog]. [complexity]
   /// defaults to `null` (unset), matching [Ticket.complexity]'s own
-  /// default. Emits
+  /// default. [severity]/[stepsToReproduce]/[expectedBehavior]/
+  /// [actualBehavior] are meaningful only when [type] is
+  /// [TicketType.bug]; `null` (unset) for every other type, matching
+  /// [Ticket.severity] etc.'s own defaults. Emits
   /// [TicketCreating] (carrying the list as it was before this call) then
   /// [TicketCreated] (carrying the refreshed page) on success, or
   /// [TicketsError] if the repository call throws. The refresh re-applies
@@ -368,6 +372,10 @@ class TicketsCubit extends Cubit<TicketsState> {
     TicketPriority priority = TicketPriority.none,
     String? parentId,
     TicketComplexity? complexity,
+    TicketSeverity? severity,
+    String? stepsToReproduce,
+    String? expectedBehavior,
+    String? actualBehavior,
   }) async {
     _searchGeneration++;
     final currentTickets = switch (state) {
@@ -387,6 +395,10 @@ class TicketsCubit extends Cubit<TicketsState> {
         id: _uuid.v4(),
         ticketId: '',
         complexity: complexity,
+        severity: severity,
+        stepsToReproduce: stepsToReproduce,
+        expectedBehavior: expectedBehavior,
+        actualBehavior: actualBehavior,
         type: type,
         title: title,
         description: description,
@@ -427,8 +439,9 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// refresh re-applies the filters [searchTickets] was last called with
   /// and requests at least as many tickets as were already loaded, so a
   /// background status update (e.g. a board drag) never collapses an
-  /// infinite-scrolled list back down to one page. When [id] is a Task
-  /// moving to [TicketStatus.inProgress], first runs
+  /// infinite-scrolled list back down to one page. When [id] is a Task or
+  /// Bug (see `TicketTypeHierarchy.isExecutable`) moving to
+  /// [TicketStatus.inProgress], first runs
   /// [_interceptTaskExecutionTrigger] — a rejected trigger skips the
   /// write entirely (emitting the classified error + a re-emitted
   /// detail state instead of the usual list-shaped states); an allowed
@@ -470,8 +483,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       final updated = await _repository.getTicketById(id);
       if (updated != null) {
         unawaited(_triggerGitProjection(updated, 'status-changed'));
-        if (updated.type == TicketType.task &&
-            status == TicketStatus.inProgress) {
+        if (updated.type.isExecutable && status == TicketStatus.inProgress) {
           unawaited(_triggerOrQueueCodingExecution(updated));
         }
       }
@@ -537,8 +549,9 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [TicketDetailLoaded] with the refreshed ticket — unlike
   /// [updateTicketStatus], which emits list-shaped optimistic states built
   /// for the board and would fall through `TicketDetailScreen`'s state
-  /// switch. Emits [TicketsError] on failure. When [ticket] is a Task
-  /// moving to [TicketStatus.inProgress], first runs
+  /// switch. Emits [TicketsError] on failure. When [ticket] is a Task or
+  /// Bug (see `TicketTypeHierarchy.isExecutable`) moving to
+  /// [TicketStatus.inProgress], first runs
   /// [_interceptTaskExecutionTrigger] — a rejected trigger skips the
   /// write entirely; an allowed one proceeds as normal, then
   /// [_triggerOrQueueCodingExecution] starts (or queues) the
@@ -551,7 +564,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       if (refreshed != null) {
         emit(TicketDetailLoaded(refreshed));
         unawaited(_triggerGitProjection(refreshed, 'status-changed'));
-        if (refreshed.type == TicketType.task &&
+        if (refreshed.type.isExecutable &&
             status == TicketStatus.inProgress) {
           unawaited(_triggerOrQueueCodingExecution(refreshed));
         }
@@ -862,7 +875,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         if (ticket.type != TicketType.story) return SddStage.verifying;
         final tasks = await _repository.getTicketsByParent(
           ticket.id,
-          types: const [TicketType.task],
+          types: TicketTypeHierarchy.executableTypes,
         );
         return _storyNeedsDesignReview(tasks)
             ? SddStage.designBrief
@@ -880,7 +893,7 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Whether any of [tasks] indicates UI work, using the same keyword
   /// heuristic `/propose`'s own design-gate block already applies to a
-  /// change's touched files — here applied to each Task's title +
+  /// change's touched files — here applied to each Task/Bug's title +
   /// description instead of a file path. Case-insensitive substring
   /// match against: "widget", "screen", "component", "ui". Computed
   /// fresh every time, not persisted — mirrors how the existing
@@ -937,7 +950,9 @@ class TicketsCubit extends Cubit<TicketsState> {
             : TicketType.story;
         final children = await _repository.getTicketsByParent(
           ticket.id,
-          types: [nextRank],
+          types: nextRank == TicketType.task
+              ? TicketTypeHierarchy.executableTypes
+              : [nextRank],
         );
         final needsDesign =
             ticket.type == TicketType.story &&
@@ -972,7 +987,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         final approved = await _designSyncApproved(ticket.id);
         final tasks = await _repository.getTicketsByParent(
           ticket.id,
-          types: const [TicketType.task],
+          types: TicketTypeHierarchy.executableTypes,
         );
         final ready =
             approved &&
@@ -1045,12 +1060,12 @@ class TicketsCubit extends Cubit<TicketsState> {
         mostRecent.content.contains('DESIGN GATE: APPROVED');
   }
 
-  /// Whether a Task's coding-execution run may start, built directly on
-  /// the now-correctly-gated [_storyNeedsDesignReview]/
+  /// Whether a Task or Bug's coding-execution run may start, built
+  /// directly on the now-correctly-gated [_storyNeedsDesignReview]/
   /// [_designSyncApproved] pair — not on [SddStage] position, sidestepping
   /// [_sddStageAdvanceCheck]'s fixed bug entirely rather than depending on
   /// it being exactly right. `canStart` is always `true` when [task] has
-  /// no governing Story (see [_governingStory]) or that Story's Tasks
+  /// no governing Story (see [_governingStory]) or that Story's Tasks/Bugs
   /// don't indicate UI work.
   Future<({bool canStart, CodingExecutionBlockReason? reason})>
   _codingExecutionGateCheck(Ticket task) async {
@@ -1058,7 +1073,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     if (story == null) return (canStart: true, reason: null);
     final siblingTasks = await _repository.getTicketsByParent(
       story.id,
-      types: const [TicketType.task],
+      types: TicketTypeHierarchy.executableTypes,
     );
     if (!_storyNeedsDesignReview(siblingTasks)) {
       return (canStart: true, reason: null);
@@ -1093,18 +1108,19 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Checked by [changeTicketStatus]/[updateTicketStatus] before their
   /// repository write, for the one status transition that can be
-  /// rejected: a Task moving to [TicketStatus.inProgress] while
-  /// [_codingExecutionGateCheck] disallows it. Every other type/status
-  /// combination always returns `true` (not a trigger — proceed as
-  /// normal). On rejection, emits [TicketsErrorReason.codingExecutionBlocked]
-  /// then a re-emitted unchanged [TicketDetailLoaded], mirroring
+  /// rejected: a Task or Bug (see `TicketTypeHierarchy.isExecutable`)
+  /// moving to [TicketStatus.inProgress] while [_codingExecutionGateCheck]
+  /// disallows it. Every other type/status combination always returns
+  /// `true` (not a trigger — proceed as normal). On rejection, emits
+  /// [TicketsErrorReason.codingExecutionBlocked] then a re-emitted
+  /// unchanged [TicketDetailLoaded], mirroring
   /// [_emitInvalidParent]/[_emitSddStagePreconditionNotMet], and returns
   /// `false` so the caller skips the write entirely.
   Future<bool> _interceptTaskExecutionTrigger(
     Ticket task,
     TicketStatus status,
   ) async {
-    if (task.type != TicketType.task || status != TicketStatus.inProgress) {
+    if (!task.type.isExecutable || status != TicketStatus.inProgress) {
       return true;
     }
     final check = await _codingExecutionGateCheck(task);
@@ -1965,7 +1981,9 @@ class TicketsCubit extends Cubit<TicketsState> {
           : TicketType.story;
       final children = await _repository.getTicketsByParent(
         parent.id,
-        types: [nextRank],
+        types: nextRank == TicketType.task
+            ? TicketTypeHierarchy.executableTypes
+            : [nextRank],
       );
       if (children.isNotEmpty) {
         buffer
@@ -2152,7 +2170,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       if (ticket.type == TicketType.story) {
         final tasks = await _repository.getTicketsByParent(
           ticket.id,
-          types: const [TicketType.task],
+          types: TicketTypeHierarchy.executableTypes,
         );
         needsDesignReview = tasks.isEmpty
             ? null
@@ -2167,7 +2185,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       var executionAwaitingReview = false;
       String? executionFailureReason;
       var executionCanRetry = false;
-      if (ticket.type == TicketType.task) {
+      if (ticket.type.isExecutable) {
         isExecuting = _inFlightExecutionTaskId == ticket.id;
         final queueIndex = _executionQueue.indexOf(ticket.id);
         // 1-based: the first entry in the FIFO queue is "next in line"
