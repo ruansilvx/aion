@@ -2339,14 +2339,19 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
   }
 
-  /// Loads the Documentation-section relations for the `page`/`resource`
-  /// ticket with id [ticketId] — its direct sub-page/resource children (if
-  /// it's a `page`) and its `TicketLink`s, grouped into [linkedTickets]
-  /// (the other side is a board type: epic/story/task/chat) and
+  /// Loads the Documentation-section relations for the `page`/`resource`/
+  /// `bug` ticket with id [ticketId] — its direct sub-page/resource
+  /// children (if it's a `page`) and its `TicketLink`s, grouped into
+  /// [linkedTickets]
+  /// (the other side is a board type: epic/story/task/bug/chat) and
   /// [backlinks] (the other side is itself `page`/`resource`) — then
-  /// re-emits [TicketDetailLoaded] with those fields populated. No-ops
-  /// (does not emit) if the ticket isn't found, isn't a `page`/`resource`
-  /// type, or the cubit has since moved on to a different ticket's detail
+  /// re-emits [TicketDetailLoaded] with those fields populated. `bug` was
+  /// added here for `aion-arch/changes/bug-ticket-type`'s widened Linked
+  /// Tickets/Backlinks gate — a Bug's `relatesTo` link to a `release`
+  /// ticket would otherwise never be reflected in the loaded state, even
+  /// though the link itself was created successfully. No-ops
+  /// (does not emit) if the ticket isn't found, isn't a `page`/`resource`/
+  /// `bug` type, or the cubit has since moved on to a different ticket's detail
   /// state (a stale response from an earlier navigation). Only actually
   /// populates [linkedTickets]/[backlinks] when constructed with a
   /// [TicketLinkRepository] — every other call site is unaffected by this
@@ -2355,7 +2360,9 @@ class TicketsCubit extends Cubit<TicketsState> {
   Future<void> loadDocumentRelations(String ticketId) async {
     final ticket = await _repository.getTicketById(ticketId);
     if (ticket == null) return;
-    if (ticket.type != TicketType.page && ticket.type != TicketType.resource) {
+    if (ticket.type != TicketType.page &&
+        ticket.type != TicketType.resource &&
+        ticket.type != TicketType.bug) {
       return;
     }
 

@@ -1643,7 +1643,7 @@ void main() {
     );
 
     blocTest<TicketsCubit, TicketsState>(
-      'no-ops for a non-page/resource ticket type',
+      'no-ops for a non-page/resource/bug ticket type',
       setUp: () {
         when(
           () => repository.getTicketById(ticket.id),
@@ -1653,6 +1653,66 @@ void main() {
       seed: () => TicketDetailLoaded(ticket),
       act: (cubit) => cubit.loadDocumentRelations(ticket.id),
       expect: () => [],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'populates linkedTickets for a bug ticket linked to a release',
+      setUp: () {
+        final bugTicket = Ticket(
+          id: 'bug-1',
+          ticketId: 'AIO-15',
+          type: TicketType.bug,
+          title: 'A bug',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final linkedRelease = Ticket(
+          id: 'release-1',
+          ticketId: 'AIO-16',
+          type: TicketType.release,
+          title: 'v1.0',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        when(
+          () => repository.getTicketById(bugTicket.id),
+        ).thenAnswer((_) async => bugTicket);
+        when(
+          () => repository.getTicketById(linkedRelease.id),
+        ).thenAnswer((_) async => linkedRelease);
+        when(() => linkRepository.getLinksForTicket(bugTicket.id)).thenAnswer(
+          (_) async => [
+            TicketLinkData(
+              id: 'link-3',
+              sourceTicketId: bugTicket.id,
+              targetTicketId: linkedRelease.id,
+              linkType: TicketLinkType.relatesTo.name,
+            ),
+          ],
+        );
+      },
+      build: buildCubit,
+      seed: () => TicketDetailLoaded(
+        Ticket(
+          id: 'bug-1',
+          ticketId: 'AIO-15',
+          type: TicketType.bug,
+          title: 'A bug',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        ),
+      ),
+      act: (cubit) => cubit.loadDocumentRelations('bug-1'),
+      expect: () => [
+        isA<TicketDetailLoaded>().having(
+          (s) => s.linkedTickets.map((t) => t.id),
+          'linkedTickets ids',
+          ['release-1'],
+        ),
+      ],
     );
 
     blocTest<TicketsCubit, TicketsState>(
