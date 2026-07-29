@@ -259,13 +259,15 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
   };
 
   /// Narrows [tickets] to whatever [_viewMode] actually renders as
-  /// selectable rows/cards — the board view only shows task/story types,
-  /// so "select all" while on the board must not silently include ids
-  /// for tickets that have no checkbox on screen.
+  /// selectable rows/cards — the board view only shows story/task/bug
+  /// types, so "select all" while on the board must not silently include
+  /// ids for tickets that have no checkbox on screen.
   List<Ticket> _visibleTickets(List<Ticket> tickets) {
     if (_viewMode == _TicketViewMode.board) {
       return tickets
-          .where((t) => t.type == TicketType.task || t.type == TicketType.story)
+          .where(
+            (t) => t.type == TicketType.story || t.type.isExecutable,
+          )
           .toList();
     }
     return tickets;
@@ -442,6 +444,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                                     TicketType.epic,
                                     TicketType.story,
                                     TicketType.task,
+                                    TicketType.bug,
                                     TicketType.chat,
                                   ],
                                   isActive: _typeFilter != null,
@@ -689,8 +692,7 @@ class _TicketsBody extends StatelessWidget {
       final boardTickets = tickets
           .where(
             (ticket) =>
-                ticket.type == TicketType.task ||
-                ticket.type == TicketType.story,
+                ticket.type == TicketType.story || ticket.type.isExecutable,
           )
           .toList();
       return TicketBoardView(tickets: boardTickets);
