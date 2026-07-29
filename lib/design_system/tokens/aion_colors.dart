@@ -435,6 +435,17 @@ extension AionColorsHubTokens on AionColors {
   Color dangerBorderTint(bool isDark) =>
       danger.withValues(alpha: isDark ? 0.42 : 0.28);
 
+  // warning family — legibility-boosted text shade for copy rendered over
+  // a warningTint-filled chip (raw `warning` is low-contrast there). Added
+  // for dont-spawn-new-chat-ticket-per-execution-trigger; see that
+  // change's design.md §5.1.
+  /// A `warning`-derived text color legible as body copy over
+  /// `needsRepairTint`/`needsRepairBorderTint`-style warning chips —
+  /// blended toward white in dark mode, toward black in light mode.
+  Color warningText(bool isDark) => isDark
+      ? Color.lerp(warning, const Color(0xFFFFFFFF), 0.30)!
+      : Color.lerp(warning, const Color(0xFF000000), 0.45)!;
+
   // AI/override-tone family — a `primary`-keyed border distinct from the
   // neutral `noticeBorder` family, for surfaces that read as "this is
   // AI/skill-authored," matching `primarySubtle`'s existing "AI comment

@@ -498,6 +498,28 @@
   "settingsModelCapableDescription": "Used for design briefs, design sync, and archival — mechanical, checklist-style work.",
   "settingsModelExecutionLabel": "Execution Model",
   "settingsModelExecutionDescription": "Used for Task coding-execution runs.",
+  "settingsExecutionContextCapLabel": "Execution Context Cap",
+  "settingsExecutionContextCapDescription": "Overrides when a coding-execution chat hands off to a new one. Leave blank to use the execution model's real limit.",
+  "settingsExecutionContextCapEffective": "Effective cap: {tokens} tokens",
+  "@settingsExecutionContextCapEffective": {
+    "placeholders": {
+      "tokens": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsExecutionContextCapOverrideTag": "OVERRIDE",
+  "settingsExecutionContextCapClampWarning": "Above the model's {limit} limit — will be clamped to {clampedTo} tokens.",
+  "@settingsExecutionContextCapClampWarning": {
+    "placeholders": {
+      "limit": {
+        "type": "String"
+      },
+      "clampedTo": {
+        "type": "String"
+      }
+    }
+  },
   "settingsAutomationEyebrow": "AUTOMATION",
   "settingsAutomationLabel": "SDD Stage Automation",
   "settingsAutomationDescription": "Controls whether tickets advance through Explore, Propose, Verify, and Archive on their own, or wait for you.",

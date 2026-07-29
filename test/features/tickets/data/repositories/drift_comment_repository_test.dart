@@ -36,6 +36,8 @@ void main() {
     String content = 'A comment',
     CommentAuthorType authorType = CommentAuthorType.human,
     String? aiModel,
+    int? inputTokens,
+    int? outputTokens,
     DateTime? createdAt,
   }) {
     return TicketComment(
@@ -44,6 +46,8 @@ void main() {
       content: content,
       authorType: authorType,
       aiModel: aiModel,
+      inputTokens: inputTokens,
+      outputTokens: outputTokens,
       createdAt: createdAt ?? DateTime(2026, 1, 1),
     );
   }
@@ -124,6 +128,32 @@ void main() {
       final comments = await repository.getCommentsForTicket('ticket-1');
 
       expect(comments, hasLength(2));
+    },
+  );
+
+  test(
+    'inputTokens/outputTokens round-trip through addComment + '
+    'getCommentsForTicket, and stay null when omitted',
+    () async {
+      await repository.addComment(
+        buildComment(authorType: CommentAuthorType.human),
+      );
+      await repository.addComment(
+        buildComment(
+          authorType: CommentAuthorType.ai,
+          aiModel: 'claude-sonnet-5',
+          inputTokens: 1234,
+          outputTokens: 567,
+          createdAt: DateTime(2026, 1, 2),
+        ),
+      );
+
+      final comments = await repository.getCommentsForTicket('ticket-1');
+
+      expect(comments[0].inputTokens, isNull);
+      expect(comments[0].outputTokens, isNull);
+      expect(comments[1].inputTokens, 1234);
+      expect(comments[1].outputTokens, 567);
     },
   );
 }

@@ -33,6 +33,8 @@ class DriftCommentRepository implements CommentRepository {
       content: comment.content,
       authorType: comment.authorType.name,
       aiModel: Value(comment.aiModel),
+      inputTokens: Value(comment.inputTokens),
+      outputTokens: Value(comment.outputTokens),
       createdAt: comment.createdAt.millisecondsSinceEpoch,
     );
 
@@ -52,6 +54,8 @@ class DriftCommentRepository implements CommentRepository {
         orElse: () => CommentAuthorType.human,
       ),
       aiModel: row.aiModel,
+      inputTokens: row.inputTokens,
+      outputTokens: row.outputTokens,
       createdAt: DateTime.fromMillisecondsSinceEpoch(row.createdAt),
     );
   }

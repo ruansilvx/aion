@@ -216,6 +216,12 @@ final appRouter = GoRouter(
                   context.read<ModelRoutingRepository>(),
                 )..load(),
               ),
+              BlocProvider<ExecutionContextCapCubit>(
+                create: (context) => ExecutionContextCapCubit(
+                  context.read<ExecutionContextCapRepository>(),
+                  context.read<ModelRoutingRepository>(),
+                )..load(),
+              ),
               BlocProvider<BaselineUpgradeCubit>(
                 create: (context) => BaselineUpgradeCubit(
                   context.read<BaselineRepository>(),
@@ -504,6 +510,8 @@ class _WorkspaceShellState extends State<WorkspaceShell>
               projectId: widget.project.id,
               baselineVersion: widget.project.baselineVersion,
               projectName: widget.project.name,
+              executionContextCapRepository: context
+                  .read<ExecutionContextCapRepository>(),
             ),
             child: Builder(
               builder: (context) => RepositoryProvider<PageTicketProvider>(

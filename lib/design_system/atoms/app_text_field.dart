@@ -2,7 +2,8 @@
 
 import 'package:flutter/material.dart'
     show Material, MaterialType, TextField, InputDecoration, OutlineInputBorder;
-import 'package:flutter/services.dart' show TextInputAction;
+import 'package:flutter/services.dart'
+    show TextInputAction, TextInputType, TextInputFormatter;
 import 'package:flutter/widgets.dart';
 
 import 'package:aion/core/core.dart';
@@ -31,6 +32,8 @@ class AppTextField extends StatefulWidget {
     this.isRequired = false,
     this.isOptional = false,
     this.prefixIcon,
+    this.keyboardType,
+    this.inputFormatters,
   });
 
   /// Controls and reads the field's text.
@@ -70,6 +73,14 @@ class AppTextField extends StatefulWidget {
   /// and any per-state styling are the caller's responsibility — this
   /// widget renders whatever is passed as-is via [InputDecoration.prefixIcon].
   final Widget? prefixIcon;
+
+  /// Which on-screen keyboard variant to show (e.g. `TextInputType.number`
+  /// for a numeric-only field). `null` uses `TextField`'s own default.
+  final TextInputType? keyboardType;
+
+  /// Input formatters applied to every keystroke (e.g.
+  /// `FilteringTextInputFormatter.digitsOnly`). `null` applies none.
+  final List<TextInputFormatter>? inputFormatters;
 
   @override
   State<AppTextField> createState() => _AppTextFieldState();
@@ -145,6 +156,8 @@ class _AppTextFieldState extends State<AppTextField> {
               focusNode: _focusNode,
               maxLines: widget.maxLines,
               minLines: isMultiline ? 5 : 1,
+              keyboardType: widget.keyboardType,
+              inputFormatters: widget.inputFormatters,
               textInputAction: widget.textInputAction,
               onSubmitted: widget.onSubmitted,
               textAlignVertical: isMultiline ? TextAlignVertical.top : null,

@@ -1036,13 +1036,14 @@ void main() {
         addTearDown(() => tempDir.deleteSync(recursive: true));
 
         // A fresh AppDatabase always runs onCreate at the *current*
-        // schemaVersion (6), which already includes the search
+        // schemaVersion (7), which already includes the search
         // infrastructure, the `deleted_at` column, the `sync_status`
-        // column, the `complexity`/`sdd_stage` columns, and the
+        // column, the `complexity`/`sdd_stage` columns, the
         // `severity`/`steps_to_reproduce`/`expected_behavior`/
-        // `actual_behavior` columns — so the v1 shape has to be built by
-        // hand: strip back down to just the bare tables, insert data,
-        // then stamp user_version back to 1.
+        // `actual_behavior` columns, and `ticket_comments`'
+        // `input_tokens`/`output_tokens` columns — so the v1 shape has to
+        // be built by hand: strip back down to just the bare tables,
+        // insert data, then stamp user_version back to 1.
         final v1Db = AppDatabase(_testProject, NativeDatabase(dbFile));
         await v1Db.customStatement('DROP TABLE IF EXISTS tickets_fts;');
         await v1Db.customStatement('DROP TRIGGER IF EXISTS tickets_fts_ai;');
@@ -1089,12 +1090,23 @@ void main() {
         await v1Db.customStatement(
           'ALTER TABLE tickets DROP COLUMN actual_behavior;',
         );
+        // ticket_comments' input_tokens/output_tokens (v7) — dropped even
+        // though this test's assertions never touch that table, since
+        // onUpgrade's `from < 7` addColumn step still runs unconditionally
+        // and would otherwise fail with "duplicate column name" against a
+        // column createAll() already created.
+        await v1Db.customStatement(
+          'ALTER TABLE ticket_comments DROP COLUMN input_tokens;',
+        );
+        await v1Db.customStatement(
+          'ALTER TABLE ticket_comments DROP COLUMN output_tokens;',
+        );
         await v1Db.customStatement('PRAGMA user_version = 1;');
         await v1Db.close();
 
-        // Reopen against the same file at the current schemaVersion (6).
-        // Drift reads user_version=1, sees schemaVersion=6, and runs
-        // onUpgrade automatically (the v2 through v6 steps).
+        // Reopen against the same file at the current schemaVersion (7).
+        // Drift reads user_version=1, sees schemaVersion=7, and runs
+        // onUpgrade automatically (the v2 through v7 steps).
         final v2Db = AppDatabase(_testProject, NativeDatabase(dbFile));
         final upgradedRepo = DriftTicketRepository(v2Db);
 

@@ -416,4 +416,62 @@ void main() {
       },
     );
   });
+
+  group('runChatTurn usage capture', () {
+    test('persists inputTokens/outputTokens from a terminal AgentDoneEvent '
+        'that carries them', () async {
+      TicketComment? persisted;
+      when(() => repository.addComment(any())).thenAnswer((invocation) async {
+        persisted = invocation.positionalArguments.first as TicketComment;
+      });
+      when(() => client.run(any())).thenAnswer(
+        (_) async => Stream.fromIterable(const [
+          AgentTextEvent('Hi there'),
+          AgentDoneEvent(inputTokens: 123, outputTokens: 456),
+        ]),
+      );
+
+      final succeeded = await ChatCubit.runChatTurn(
+        client: client,
+        commentRepo: repository,
+        chatTicketId: 'chat-1',
+        prompt: 'Hello',
+        model: AgentModel.sonnet,
+      );
+
+      expect(succeeded, isTrue);
+      expect(persisted?.inputTokens, 123);
+      expect(persisted?.outputTokens, 456);
+    });
+
+    test(
+      'persists null/null usage when the terminal event is an '
+      'AgentErrorEvent (no done event ever seen)',
+      () async {
+        TicketComment? persisted;
+        when(() => repository.addComment(any())).thenAnswer((
+          invocation,
+        ) async {
+          persisted = invocation.positionalArguments.first as TicketComment;
+        });
+        when(() => client.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentErrorEvent('model unavailable'),
+          ]),
+        );
+
+        final succeeded = await ChatCubit.runChatTurn(
+          client: client,
+          commentRepo: repository,
+          chatTicketId: 'chat-1',
+          prompt: 'Hello',
+          model: AgentModel.sonnet,
+        );
+
+        expect(succeeded, isFalse);
+        expect(persisted?.inputTokens, isNull);
+        expect(persisted?.outputTokens, isNull);
+      },
+    );
+  });
 }

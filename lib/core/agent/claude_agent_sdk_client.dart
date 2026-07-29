@@ -101,7 +101,8 @@ class ClaudeAgentSdkClient implements AgentModelClient {
 
   /// Parses one NDJSON line from `agent_bridge/index.mjs`'s stdout into an
   /// [AgentEvent], matching the shapes it emits:
-  /// `{"type":"text",...}`, `{"type":"tool_use",...}`, `{"type":"done"}`,
+  /// `{"type":"text",...}`, `{"type":"tool_use",...}`,
+  /// `{"type":"done","inputTokens":123,"outputTokens":456}`,
   /// `{"type":"error",...}`, `{"type":"overage",...}`. Returns `null` for
   /// a blank or unrecognized line rather than throwing — a malformed line
   /// shouldn't crash the run.
@@ -119,7 +120,10 @@ class ClaudeAgentSdkClient implements AgentModelClient {
         json['name'] as String? ?? 'tool',
         json['summary'] as String?,
       ),
-      'done' => const AgentDoneEvent(),
+      'done' => AgentDoneEvent(
+        inputTokens: json['inputTokens'] as int?,
+        outputTokens: json['outputTokens'] as int?,
+      ),
       'error' => AgentErrorEvent(
         json['message'] as String? ?? 'Unknown error.',
       ),

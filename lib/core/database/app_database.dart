@@ -78,7 +78,9 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
 /// `TicketsTable.complexity`/`TicketsTable.sddStage` — see
 /// `TicketRepository.updateTicketSddStage`. Version 6 adds
 /// `TicketsTable.severity`/`stepsToReproduce`/`expectedBehavior`/
-/// `actualBehavior` — see `TicketType.bug`.
+/// `actualBehavior` — see `TicketType.bug`. Version 7 adds
+/// `TicketCommentsTable.inputTokens`/`outputTokens` — see
+/// `TicketsCubit._executionChatOverCap`.
 @DriftDatabase(
   tables: [
     TicketsTable,
@@ -98,7 +100,7 @@ class AppDatabase extends _$AppDatabase {
     : super(executor ?? _openConnection(project));
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -128,6 +130,16 @@ class AppDatabase extends _$AppDatabase {
         await m.addColumn(ticketsTable, ticketsTable.stepsToReproduce);
         await m.addColumn(ticketsTable, ticketsTable.expectedBehavior);
         await m.addColumn(ticketsTable, ticketsTable.actualBehavior);
+      }
+      if (from < 7) {
+        await m.addColumn(
+          ticketCommentsTable,
+          ticketCommentsTable.inputTokens,
+        );
+        await m.addColumn(
+          ticketCommentsTable,
+          ticketCommentsTable.outputTokens,
+        );
       }
     },
   );

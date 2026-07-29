@@ -6,9 +6,12 @@
 export 'domain/enums/agent_model.dart';
 export 'domain/enums/model_phase.dart';
 export 'domain/enums/provider_connection_status.dart';
+export 'domain/repositories/execution_context_cap_repository.dart';
 export 'domain/repositories/model_routing_repository.dart';
 export 'presentation/cubit/automation_settings_cubit.dart';
 export 'presentation/cubit/automation_settings_state.dart';
+export 'presentation/cubit/execution_context_cap_cubit.dart';
+export 'presentation/cubit/execution_context_cap_state.dart';
 export 'presentation/cubit/model_routing_cubit.dart';
 export 'presentation/cubit/model_routing_state.dart';
 export 'presentation/cubit/provider_settings_cubit.dart';

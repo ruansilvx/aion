@@ -25,6 +25,12 @@ class TicketCommentsTable extends Table {
   /// Set only when [authorType] is `'ai'`.
   TextColumn get aiModel => text().named('ai_model').nullable()();
 
+  /// Set only when [authorType] is `'ai'` and the turn reported usage.
+  IntColumn get inputTokens => integer().named('input_tokens').nullable()();
+
+  /// See [inputTokens].
+  IntColumn get outputTokens => integer().named('output_tokens').nullable()();
+
   /// Unix milliseconds.
   IntColumn get createdAt => integer().named('created_at')();
 

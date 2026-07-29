@@ -11,7 +11,7 @@
 // resulting event to stdout:
 //   {"type":"text","text":"..."}
 //   {"type":"tool_use","name":"...","summary":"..."}
-//   {"type":"done"}
+//   {"type":"done","inputTokens":123,"outputTokens":456}
 //   {"type":"error","message":"..."}
 //   {"type":"overage","message":"..."}
 // Exactly one request per process invocation — ClaudeAgentSdkClient spawns a
@@ -111,7 +111,12 @@ async function main() {
       }
     } else if (message.type === 'result') {
       if (message.subtype === 'success') {
-        emit({ type: 'done' });
+        const usage = message.usage ?? {};
+        emit({
+          type: 'done',
+          inputTokens: usage.input_tokens ?? null,
+          outputTokens: usage.output_tokens ?? null,
+        });
       } else {
         const errorMessage =
           (message.errors ?? []).join('; ') ||

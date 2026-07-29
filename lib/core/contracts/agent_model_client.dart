@@ -72,11 +72,21 @@ class AgentTextEvent extends AgentEvent {
 /// The run finished successfully. Always the last event on a successful
 /// stream.
 class AgentDoneEvent extends AgentEvent {
-  /// Creates an [AgentDoneEvent].
-  const AgentDoneEvent();
+  /// Creates an [AgentDoneEvent], optionally carrying [inputTokens] and
+  /// [outputTokens].
+  const AgentDoneEvent({this.inputTokens, this.outputTokens});
+
+  /// Input tokens the SDK reported for this turn, or `null` if the bridge
+  /// process didn't report usage (should not happen in practice, but
+  /// `ClaudeAgentSdkClient._parseLine` treats a missing field as `null`
+  /// rather than throwing).
+  final int? inputTokens;
+
+  /// Output tokens the SDK reported for this turn. See [inputTokens].
+  final int? outputTokens;
 
   @override
-  List<Object?> get props => [];
+  List<Object?> get props => [inputTokens, outputTokens];
 }
 
 /// The run failed. Always the last event on a failed stream — no
