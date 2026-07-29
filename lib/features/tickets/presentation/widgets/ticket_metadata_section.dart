@@ -34,8 +34,10 @@ import 'package:aion/features/tickets/presentation/widgets/ticket_parent_picker.
 /// A ticket's metadata content: priority/complexity/title/type/status
 /// row, parent picker, estimate/time-spent fields, an optional linked-
 /// design-page chip, the SDD-stage tracker (`epic`/`story`) or coding-
-/// execution section (`task`), description, created-on timestamp, and
-/// (for `resource` tickets) Linked Tickets/Backlinks. Extracted from
+/// execution section (`task`/`bug` — see `TicketTypeHierarchy.isExecutable`),
+/// a "Bug details" section (`bug` only: severity, steps to reproduce,
+/// expected/actual behavior), description, created-on timestamp, and
+/// (for `resource`/`bug` tickets) Linked Tickets/Backlinks. Extracted from
 /// `TicketDetailScreen`'s single-scroll body — verbatim content, no
 /// behavior change — so it can render both in `TicketDetailScreen`'s
 /// non-chat layout and inside `ChatTranscriptPane`'s collapsing header
@@ -419,7 +421,7 @@ class TicketMetadataSection extends StatelessWidget {
                               ),
                               const SizedBox(height: AionSpacing.sp16),
                               Container(color: c.border, height: 1),
-                            ] else if (ticket.type == TicketType.task &&
+                            ] else if (ticket.type.isExecutable &&
                                 (isExecuting ||
                                     executionQueuePosition != null ||
                                     executionAwaitingReview ||
@@ -441,6 +443,131 @@ class TicketMetadataSection extends StatelessWidget {
                                 onRetry: () => context
                                     .read<TicketsCubit>()
                                     .retryCodingExecution(ticket),
+                              ),
+                              const SizedBox(height: AionSpacing.sp16),
+                              Container(color: c.border, height: 1),
+                            ],
+                            if (ticket.type == TicketType.bug) ...[
+                              const SizedBox(height: AionSpacing.sp16),
+                              Text(
+                                context.l10n.ticketDetailBugDetailsCaption,
+                                style: AionText.caption.copyWith(
+                                  color: c.textMuted,
+                                ),
+                              ),
+                              const SizedBox(height: AionSpacing.sp16),
+                              Text(
+                                context.l10n.ticketDetailSeverityCaption,
+                                style: AionText.caption.copyWith(
+                                  color: c.textMuted,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              SeverityPicker(
+                                value: ticket.severity,
+                                isLarge: true,
+                                onChanged: (v) =>
+                                    context.read<TicketsCubit>().updateTicket(
+                                      ticket.copyWith(severity: () => v),
+                                    ),
+                              ),
+                              const SizedBox(height: AionSpacing.sp16),
+                              Text(
+                                context
+                                    .l10n
+                                    .ticketDetailStepsToReproduceCaption,
+                                style: AionText.caption.copyWith(
+                                  color: c.textMuted,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              InlineEditableField<String?>(
+                                displayText: ticket.stepsToReproduce ?? '',
+                                editText: ticket.stepsToReproduce ?? '',
+                                maxLines: 6,
+                                placeholder: context
+                                    .l10n
+                                    .ticketDetailStepsToReproducePlaceholder,
+                                textStyle: AionText.body.copyWith(
+                                  color: c.textSecondary,
+                                ),
+                                semanticsLabel: context
+                                    .l10n
+                                    .ticketDetailEditStepsToReproduce,
+                                parser: (raw) {
+                                  final trimmed = raw.trim();
+                                  return trimmed.isEmpty ? null : trimmed;
+                                },
+                                onCommit: (v) =>
+                                    context.read<TicketsCubit>().updateTicket(
+                                      ticket.copyWith(
+                                        stepsToReproduce: () => v,
+                                      ),
+                                    ),
+                              ),
+                              const SizedBox(height: AionSpacing.sp16),
+                              Text(
+                                context
+                                    .l10n
+                                    .ticketDetailExpectedBehaviorCaption,
+                                style: AionText.caption.copyWith(
+                                  color: c.textMuted,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              InlineEditableField<String?>(
+                                displayText: ticket.expectedBehavior ?? '',
+                                editText: ticket.expectedBehavior ?? '',
+                                maxLines: 6,
+                                placeholder: context
+                                    .l10n
+                                    .ticketDetailExpectedBehaviorPlaceholder,
+                                textStyle: AionText.body.copyWith(
+                                  color: c.textSecondary,
+                                ),
+                                semanticsLabel: context
+                                    .l10n
+                                    .ticketDetailEditExpectedBehavior,
+                                parser: (raw) {
+                                  final trimmed = raw.trim();
+                                  return trimmed.isEmpty ? null : trimmed;
+                                },
+                                onCommit: (v) =>
+                                    context.read<TicketsCubit>().updateTicket(
+                                      ticket.copyWith(
+                                        expectedBehavior: () => v,
+                                      ),
+                                    ),
+                              ),
+                              const SizedBox(height: AionSpacing.sp16),
+                              Text(
+                                context.l10n.ticketDetailActualBehaviorCaption,
+                                style: AionText.caption.copyWith(
+                                  color: c.textMuted,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              InlineEditableField<String?>(
+                                displayText: ticket.actualBehavior ?? '',
+                                editText: ticket.actualBehavior ?? '',
+                                maxLines: 6,
+                                placeholder: context
+                                    .l10n
+                                    .ticketDetailActualBehaviorPlaceholder,
+                                textStyle: AionText.body.copyWith(
+                                  color: c.textSecondary,
+                                ),
+                                semanticsLabel: context
+                                    .l10n
+                                    .ticketDetailEditActualBehavior,
+                                parser: (raw) {
+                                  final trimmed = raw.trim();
+                                  return trimmed.isEmpty ? null : trimmed;
+                                },
+                                onCommit: (v) =>
+                                    context.read<TicketsCubit>().updateTicket(
+                                      ticket.copyWith(actualBehavior: () => v),
+                                    ),
                               ),
                               const SizedBox(height: AionSpacing.sp16),
                               Container(color: c.border, height: 1),
@@ -499,12 +626,16 @@ class TicketMetadataSection extends StatelessWidget {
             final ticket = state.ticket;
             // `page` tickets never reach this far — the
             // `TicketDetailLoaded` listener above redirects
-            // them to `PageDetailScreen` first. Only
-            // `resource` renders Linked Tickets/Backlinks
-            // here (sub-pages moved to `PageDetailScreen`
-            // entirely, since only `page` tickets have
-            // sub-pages).
-            if (ticket.type != TicketType.resource) {
+            // them to `PageDetailScreen` first. `resource` and
+            // `bug` render Linked Tickets/Backlinks here
+            // (sub-pages moved to `PageDetailScreen` entirely,
+            // since only `page` tickets have sub-pages) — `bug`
+            // uses this generic picker to link an affected
+            // `release` via `TicketLinkType.relatesTo`, the same
+            // mechanism `release` already has with
+            // `epic`/`story`/`task`.
+            if (ticket.type != TicketType.resource &&
+                ticket.type != TicketType.bug) {
               return const SizedBox.shrink();
             }
             return Column(

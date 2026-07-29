@@ -29,6 +29,7 @@ Widget _wrap({
   required TicketsCubit ticketsCubit,
   required ActiveProjectProvider activeProjectProvider,
   required BaselineRepository baselineRepository,
+  TicketLinkRepository? ticketLinkRepository,
 }) {
   final router = GoRouter(
     initialLocation: '/',
@@ -43,6 +44,10 @@ Widget _wrap({
             RepositoryProvider<BaselineRepository>.value(
               value: baselineRepository,
             ),
+            if (ticketLinkRepository != null)
+              RepositoryProvider<TicketLinkRepository>.value(
+                value: ticketLinkRepository,
+              ),
           ],
           child: MultiBlocProvider(
             providers: [
@@ -373,6 +378,76 @@ void main() {
         find.text('Draft a starting backlog from this codebase'),
         findsOneWidget,
       );
+    },
+  );
+
+  testWidgets(
+    'switching to board view shows story, task, and bug tickets',
+    (tester) async {
+      final story = Ticket(
+        id: 'story-1',
+        ticketId: 'AIO-1',
+        type: TicketType.story,
+        title: 'A story',
+        status: TicketStatus.backlog,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+      final task = Ticket(
+        id: 'task-1',
+        ticketId: 'AIO-2',
+        type: TicketType.task,
+        title: 'A task',
+        status: TicketStatus.backlog,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+      final bug = Ticket(
+        id: 'bug-1',
+        ticketId: 'AIO-3',
+        type: TicketType.bug,
+        title: 'A bug',
+        status: TicketStatus.backlog,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+      when(
+        () => repository.searchTickets(
+          query: any(named: 'query'),
+          status: any(named: 'status'),
+          type: any(named: 'type'),
+          priority: any(named: 'priority'),
+          limit: any(named: 'limit'),
+          offset: any(named: 'offset'),
+        ),
+      ).thenAnswer(
+        (_) async =>
+            TicketSearchPage(tickets: [story, task, bug], hasMore: false),
+      );
+      when(
+        () => linkRepository.getLinksForTicket(any()),
+      ).thenAnswer((_) async => []);
+
+      await tester.pumpWidget(
+        _wrap(
+          ticketsCubit: buildCubit(),
+          activeProjectProvider: activeProjectProvider,
+          baselineRepository: baselineRepository,
+          ticketLinkRepository: linkRepository,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final boardToggleFinder = find.byWidgetPredicate(
+        (w) => w is Semantics && w.properties.label == 'Switch to board view',
+      );
+      expect(boardToggleFinder, findsOneWidget);
+      await tester.tap(boardToggleFinder);
+      await tester.pumpAndSettle();
+
+      expect(find.text('A story'), findsOneWidget);
+      expect(find.text('A task'), findsOneWidget);
+      expect(find.text('A bug'), findsOneWidget);
     },
   );
 }

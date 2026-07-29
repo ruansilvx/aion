@@ -13,6 +13,7 @@ export 'domain/enums/summarization_depth.dart';
 export 'domain/enums/ticket_complexity.dart';
 export 'domain/enums/ticket_link_type.dart';
 export 'domain/enums/ticket_priority.dart';
+export 'domain/enums/ticket_severity.dart';
 export 'domain/enums/ticket_status.dart';
 export 'domain/enums/ticket_sync_status.dart';
 export 'domain/enums/ticket_type.dart';

@@ -44,7 +44,7 @@ import 'package:aion/features/tickets/presentation/widgets/ticket_overflow_menu.
 ///   `epic`/`story` an SDD-stage section, for `task` a coding-execution
 ///   section) inside a `SingleChildScrollView`, a plain [CommentTile]
 ///   thread via [CommentsCubit], and a single-line pill compose row.
-///   For `resource` tickets specifically, also renders two
+///   For `resource`/`bug` tickets specifically, also renders two
 ///   Documentation-section sections — Linked Tickets and Backlinks —
 ///   populated via [TicketsCubit.loadDocumentRelations].
 /// `page` tickets never reach either layout: since
@@ -269,7 +269,8 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
           }
           _currentTicket = ticket;
           _registerActiveTicket(ticket.ticketId);
-          if (ticket.type == TicketType.resource &&
+          if ((ticket.type == TicketType.resource ||
+                  ticket.type == TicketType.bug) &&
               _relationsLoadedForId != ticket.id) {
             _relationsLoadedForId = ticket.id;
             context.read<TicketsCubit>().loadDocumentRelations(ticket.id);

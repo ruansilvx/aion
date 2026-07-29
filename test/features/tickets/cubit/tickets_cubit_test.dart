@@ -442,6 +442,27 @@ void main() {
     updatedAt: DateTime(2026),
   );
 
+  // bug-ticket-type fixtures: execution parity between Task and Bug.
+  final bugNoStory = Ticket(
+    id: '28',
+    ticketId: 'AIO-28',
+    type: TicketType.bug,
+    title: 'Bug with no governing Story',
+    status: TicketStatus.todo,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+  final bugUnderStory = Ticket(
+    id: '29',
+    ticketId: 'AIO-29',
+    type: TicketType.bug,
+    title: 'Redesign the ticket filter widget',
+    status: TicketStatus.todo,
+    parentId: storyForExecution.id,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+
   setUpAll(() {
     registerFallbackValue(ticket);
     registerFallbackValue(TicketStatus.backlog);
@@ -1622,7 +1643,7 @@ void main() {
     );
 
     blocTest<TicketsCubit, TicketsState>(
-      'no-ops for a non-page/resource ticket type',
+      'no-ops for a non-page/resource/bug ticket type',
       setUp: () {
         when(
           () => repository.getTicketById(ticket.id),
@@ -1632,6 +1653,66 @@ void main() {
       seed: () => TicketDetailLoaded(ticket),
       act: (cubit) => cubit.loadDocumentRelations(ticket.id),
       expect: () => [],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'populates linkedTickets for a bug ticket linked to a release',
+      setUp: () {
+        final bugTicket = Ticket(
+          id: 'bug-1',
+          ticketId: 'AIO-15',
+          type: TicketType.bug,
+          title: 'A bug',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final linkedRelease = Ticket(
+          id: 'release-1',
+          ticketId: 'AIO-16',
+          type: TicketType.release,
+          title: 'v1.0',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        when(
+          () => repository.getTicketById(bugTicket.id),
+        ).thenAnswer((_) async => bugTicket);
+        when(
+          () => repository.getTicketById(linkedRelease.id),
+        ).thenAnswer((_) async => linkedRelease);
+        when(() => linkRepository.getLinksForTicket(bugTicket.id)).thenAnswer(
+          (_) async => [
+            TicketLinkData(
+              id: 'link-3',
+              sourceTicketId: bugTicket.id,
+              targetTicketId: linkedRelease.id,
+              linkType: TicketLinkType.relatesTo.name,
+            ),
+          ],
+        );
+      },
+      build: buildCubit,
+      seed: () => TicketDetailLoaded(
+        Ticket(
+          id: 'bug-1',
+          ticketId: 'AIO-15',
+          type: TicketType.bug,
+          title: 'A bug',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        ),
+      ),
+      act: (cubit) => cubit.loadDocumentRelations('bug-1'),
+      expect: () => [
+        isA<TicketDetailLoaded>().having(
+          (s) => s.linkedTickets.map((t) => t.id),
+          'linkedTickets ids',
+          ['release-1'],
+        ),
+      ],
     );
 
     blocTest<TicketsCubit, TicketsState>(
@@ -2185,7 +2266,7 @@ void main() {
         when(
           () => repository.getTicketsByParent(
             storyDesignSync.id,
-            types: const [TicketType.task],
+            types: TicketTypeHierarchy.executableTypes,
           ),
         ).thenAnswer((_) async => [taskChildDone]);
         when(
@@ -2349,7 +2430,7 @@ void main() {
         when(
           () => repository.getTicketsByParent(
             storyForExecution.id,
-            types: const [TicketType.task],
+            types: TicketTypeHierarchy.executableTypes,
           ),
         ).thenAnswer((_) async => [taskUnderStory]);
         when(
@@ -2430,7 +2511,7 @@ void main() {
         when(
           () => repository.getTicketsByParent(
             storyForExecution.id,
-            types: const [TicketType.task],
+            types: TicketTypeHierarchy.executableTypes,
           ),
         ).thenAnswer((_) async => [taskUnderStory]);
         when(
@@ -2515,7 +2596,7 @@ void main() {
         when(
           () => repository.getTicketsByParent(
             storyForExecution.id,
-            types: const [TicketType.task],
+            types: TicketTypeHierarchy.executableTypes,
           ),
         ).thenAnswer((_) async => [taskUnderStory]);
         when(
@@ -2645,7 +2726,7 @@ void main() {
         when(
           () => repository.getTicketsByParent(
             storyNoDesignNeeded.id,
-            types: const [TicketType.task],
+            types: TicketTypeHierarchy.executableTypes,
           ),
         ).thenAnswer((_) async => [taskUnderStoryNoDesign]);
         when(
@@ -2740,7 +2821,7 @@ void main() {
         when(
           () => repository.getTicketsByParent(
             storyForExecution.id,
-            types: const [TicketType.task],
+            types: TicketTypeHierarchy.executableTypes,
           ),
         ).thenAnswer((_) async => [taskUnderStory]);
         when(
@@ -2824,7 +2905,7 @@ void main() {
         when(
           () => repository.getTicketsByParent(
             storyForExecution.id,
-            types: const [TicketType.task],
+            types: TicketTypeHierarchy.executableTypes,
           ),
         ).thenAnswer((_) async => [taskUnderStory]);
         when(
@@ -2977,6 +3058,94 @@ void main() {
         verify(() => repository.createTicket(any())).called(2);
         verify(() => agentClient.run(any())).called(4);
       },
+    );
+  });
+
+  group('bug coding-execution parity', () {
+    blocTest<TicketsCubit, TicketsState>(
+      'allows a Bug with no governing Story to start unconditionally, '
+      'exactly like a Task',
+      build: () => TicketsCubit(repository),
+      setUp: () {
+        when(
+          () => repository.updateTicketStatus(
+            bugNoStory.id,
+            TicketStatus.inProgress,
+          ),
+        ).thenAnswer((_) async {});
+        when(() => repository.getTicketById(bugNoStory.id)).thenAnswer(
+          (_) async => bugNoStory.copyWith(status: TicketStatus.inProgress),
+        );
+      },
+      act: (cubit) =>
+          cubit.changeTicketStatus(bugNoStory, TicketStatus.inProgress),
+      verify: (_) {
+        verify(
+          () => repository.updateTicketStatus(
+            bugNoStory.id,
+            TicketStatus.inProgress,
+          ),
+        ).called(1);
+      },
+      expect: () => [
+        TicketDetailLoaded(
+          bugNoStory.copyWith(status: TicketStatus.inProgress),
+        ),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'blocks a Bug under a Story needing design review that is not yet '
+      'approved, without calling the repository — same gate a Task '
+      'sibling would hit',
+      build: () {
+        final commentRepository = MockCommentRepository();
+        when(
+          () => commentRepository.getCommentsForTicket(
+            designSyncChatForExecution.id,
+          ),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'bug-gate-c1',
+              ticketId: designSyncChatForExecution.id,
+              content: 'Found one issue.\n\nDESIGN GATE: PENDING',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+        return TicketsCubit(repository, commentRepository: commentRepository);
+      },
+      setUp: () {
+        when(
+          () => repository.getTicketById(storyForExecution.id),
+        ).thenAnswer((_) async => storyForExecution);
+        when(
+          () => repository.getTicketsByParent(
+            storyForExecution.id,
+            types: TicketTypeHierarchy.executableTypes,
+          ),
+        ).thenAnswer((_) async => [bugUnderStory]);
+        when(
+          () => repository.getTicketsByParent(
+            storyForExecution.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [designSyncChatForExecution]);
+      },
+      act: (cubit) =>
+          cubit.changeTicketStatus(bugUnderStory, TicketStatus.inProgress),
+      verify: (_) {
+        verifyNever(() => repository.updateTicketStatus(any(), any()));
+      },
+      expect: () => [
+        const TicketsError(
+          '',
+          reason: TicketsErrorReason.codingExecutionBlocked,
+        ),
+        TicketDetailLoaded(bugUnderStory),
+      ],
     );
   });
 
@@ -3766,7 +3935,7 @@ void main() {
         when(
           () => repository.getTicketsByParent(
             storyForExecution.id,
-            types: const [TicketType.task],
+            types: TicketTypeHierarchy.executableTypes,
           ),
         ).thenAnswer((_) async => [taskUnderStory]);
         when(

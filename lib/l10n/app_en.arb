@@ -91,6 +91,12 @@
   "ticketPriorityLow": "Low",
   "ticketPriorityNone": "None",
 
+  "ticketSeverityCritical": "Critical",
+  "ticketSeverityHigh": "High",
+  "ticketSeverityMedium": "Medium",
+  "ticketSeverityLow": "Low",
+  "ticketSeverityPlaceholder": "SEVERITY",
+
   "ticketTypeEpic": "Epic",
   "ticketTypeStory": "Story",
   "ticketTypeTask": "Task",
@@ -99,6 +105,7 @@
   "ticketTypeChat": "Chat",
   "ticketTypeSignal": "Signal",
   "ticketTypeRelease": "Release",
+  "ticketTypeBug": "Bug",
 
   "ticketDetailAddPriority": "+ PRIORITY",
   "ticketDetailChangePriority": "Change priority",
@@ -123,6 +130,17 @@
   "ticketDetailDescriptionCaption": "DESCRIPTION",
   "ticketDetailDescriptionPlaceholder": "Add a description…",
   "ticketDetailEditDescription": "Edit description",
+  "ticketDetailBugDetailsCaption": "BUG DETAILS",
+  "ticketDetailSeverityCaption": "SEVERITY",
+  "ticketDetailStepsToReproduceCaption": "STEPS TO REPRODUCE",
+  "ticketDetailStepsToReproducePlaceholder": "Add steps to reproduce…",
+  "ticketDetailEditStepsToReproduce": "Edit steps to reproduce",
+  "ticketDetailExpectedBehaviorCaption": "EXPECTED BEHAVIOR",
+  "ticketDetailExpectedBehaviorPlaceholder": "Add expected behavior…",
+  "ticketDetailEditExpectedBehavior": "Edit expected behavior",
+  "ticketDetailActualBehaviorCaption": "ACTUAL BEHAVIOR",
+  "ticketDetailActualBehaviorPlaceholder": "Add actual behavior…",
+  "ticketDetailEditActualBehavior": "Edit actual behavior",
   "ticketDetailCreatedOn": "Created {date}",
   "@ticketDetailCreatedOn": {
     "placeholders": {
@@ -225,6 +243,14 @@
   "createTicketDescriptionHint": "Add details…",
   "createTicketComplexityLabel": "Complexity",
   "createTicketComplexityHint": "Select complexity",
+  "createTicketSeverityLabel": "Severity",
+  "createTicketSeverityRequired": "Choose a severity",
+  "createTicketStepsToReproduceLabel": "Steps to reproduce",
+  "createTicketStepsToReproduceHint": "Numbered steps to reproduce the defect…",
+  "createTicketExpectedBehaviorLabel": "Expected behavior",
+  "createTicketExpectedBehaviorHint": "What should happen instead…",
+  "createTicketActualBehaviorLabel": "Actual behavior",
+  "createTicketActualBehaviorHint": "What actually happens…",
 
   "ticketComplexitySmall": "Small",
   "ticketComplexityMedium": "Medium",

@@ -317,6 +317,64 @@ void main() {
     );
 
     blocTest<ChatCubit, ChatState>(
+      'resolves ModelPhase.execution for a chat under a bug parent',
+      setUp: () {
+        final bugParent = Ticket(
+          id: 'bug-1',
+          ticketId: 'AIO-bug-1',
+          type: TicketType.bug,
+          title: 'Bug',
+          status: TicketStatus.inProgress,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final chatUnderBug = Ticket(
+          id: 'chat-bug',
+          ticketId: 'AIO-chat-bug',
+          type: TicketType.chat,
+          title: 'Execution chat',
+          status: TicketStatus.backlog,
+          parentId: bugParent.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        when(
+          () => ticketRepository.getTicketById('chat-bug'),
+        ).thenAnswer((_) async => chatUnderBug);
+        when(
+          () => ticketRepository.getTicketById(bugParent.id),
+        ).thenAnswer((_) async => bugParent);
+        when(
+          () => modelRoutingRepository.getModelForPhase(ModelPhase.execution),
+        ).thenAnswer((_) async => AgentModel.haiku);
+        when(() => repository.addComment(any())).thenAnswer((_) async {});
+        when(
+          () => repository.getCommentsForTicket('chat-bug'),
+        ).thenAnswer((_) async => []);
+        when(() => client.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) =>
+          cubit.sendMessage(chatTicketId: 'chat-bug', content: 'Hello'),
+      verify: (_) {
+        verify(
+          () => modelRoutingRepository.getModelForPhase(ModelPhase.execution),
+        ).called(1);
+        verify(
+          () => client.run(
+            any(
+              that: predicate<AgentRequest>(
+                (request) => request.model == AgentModel.haiku.id,
+              ),
+            ),
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<ChatCubit, ChatState>(
       "falls back to ModelPhase.capable when the chat's parent can't be "
       'resolved (defensive — never hit for a real, TicketsCubit-spawned '
       'chat)',

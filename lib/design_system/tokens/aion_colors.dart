@@ -46,6 +46,51 @@ class AionPriorityColors {
   });
 }
 
+/// The four-level severity color scale (background + foreground pairs) for
+/// a `TicketType.bug` ticket. Deliberately a single-temperature "ember
+/// ramp" (fire-red → orange → clay → ash-gray, cooling from critical to
+/// low) rather than [AionPriorityColors]'s four-hue set, plus a leading
+/// triangle marker on `SeverityBadge`, so severity is never visually
+/// confused with priority.
+@immutable
+class AionSeverityColors {
+  /// Background for a critical-severity badge.
+  final Color criticalBg;
+
+  /// Text/foreground for a critical-severity badge.
+  final Color criticalFg;
+
+  /// Background for a high-severity badge.
+  final Color highBg;
+
+  /// Text/foreground for a high-severity badge.
+  final Color highFg;
+
+  /// Background for a medium-severity badge.
+  final Color mediumBg;
+
+  /// Text/foreground for a medium-severity badge.
+  final Color mediumFg;
+
+  /// Background for a low-severity badge.
+  final Color lowBg;
+
+  /// Text/foreground for a low-severity badge.
+  final Color lowFg;
+
+  /// Creates an [AionSeverityColors] palette. All eight colors are required.
+  const AionSeverityColors({
+    required this.criticalBg,
+    required this.criticalFg,
+    required this.highBg,
+    required this.highFg,
+    required this.mediumBg,
+    required this.mediumFg,
+    required this.lowBg,
+    required this.lowFg,
+  });
+}
+
 /// A complete Aion color palette for one theme variant (Arctic or Obsidian).
 ///
 /// This is the sole source of color in Aion — there is no `ThemeData`,
@@ -129,6 +174,15 @@ class AionColors {
   /// [typeTask] for `chat` tickets.
   final Color typeChat;
 
+  /// Base accent color for [TicketType.bug] chips. Added for
+  /// `aion-arch/changes/bug-ticket-type`.
+  final Color typeBug;
+
+  /// The four-level severity badge palette for this theme, for
+  /// [TicketType.bug] tickets. Added for
+  /// `aion-arch/changes/bug-ticket-type`.
+  final AionSeverityColors severity;
+
   /// Creates an [AionColors] palette. All fields are required.
   const AionColors({
     required this.background,
@@ -155,6 +209,8 @@ class AionColors {
     required this.typeSignal,
     required this.typeRelease,
     required this.typeChat,
+    required this.typeBug,
+    required this.severity,
   });
 }
 
@@ -180,6 +236,30 @@ const AionPriorityColors obsidianPriority = AionPriorityColors(
   mediumFg: Color(0xFF4FC3D6),
   lowBg: Color(0xFF1E2534),
   lowFg: Color(0xFF94A1BD),
+);
+
+/// Severity palette for [arctic] (light theme).
+const AionSeverityColors arcticSeverity = AionSeverityColors(
+  criticalBg: Color(0xFFFAE1DB),
+  criticalFg: Color(0xFFC22F1D),
+  highBg: Color(0xFFFBE7D5),
+  highFg: Color(0xFFC1631A),
+  mediumBg: Color(0xFFF6E6D8),
+  mediumFg: Color(0xFFA9683A),
+  lowBg: Color(0xFFEDEAE5),
+  lowFg: Color(0xFF7C7267),
+);
+
+/// Severity palette for [obsidian] (dark theme).
+const AionSeverityColors obsidianSeverity = AionSeverityColors(
+  criticalBg: Color(0xFF3A1D18),
+  criticalFg: Color(0xFFFF6E4D),
+  highBg: Color(0xFF33251A),
+  highFg: Color(0xFFF5924A),
+  mediumBg: Color(0xFF2C2419),
+  mediumFg: Color(0xFFD69A5E),
+  lowBg: Color(0xFF26231F),
+  lowFg: Color(0xFF9A8E7E),
 );
 
 /// Arctic — the light, celestial theme palette.
@@ -208,6 +288,8 @@ const AionColors arctic = AionColors(
   typeSignal: Color(0xFF0E8C9E),
   typeRelease: Color(0xFFD8402C),
   typeChat: Color(0xFF4C6FDE),
+  typeBug: Color(0xFF5E8C1E),
+  severity: arcticSeverity,
 );
 
 /// Obsidian — the dark, abyssal theme palette.
@@ -236,6 +318,8 @@ const AionColors obsidian = AionColors(
   typeSignal: Color(0xFF34C6D6),
   typeRelease: Color(0xFFF26A4B),
   typeChat: Color(0xFF7C93FF),
+  typeBug: Color(0xFF98D13C),
+  severity: obsidianSeverity,
 );
 
 /// Opacity applied to tinted chip fills (e.g. `c.typeTask.withOpacity(a)`)

@@ -154,6 +154,83 @@ void main() {
     expect(withValues.timeSpent, 15);
   });
 
+  test(
+    'bug fields (severity/stepsToReproduce/expectedBehavior/'
+    'actualBehavior) survive createTicket write/read',
+    () async {
+      final now = DateTime(2026, 1, 1);
+      final bug = Ticket(
+        id: 'bug-1',
+        ticketId: '',
+        type: TicketType.bug,
+        title: 'Login button unresponsive on Safari',
+        status: TicketStatus.backlog,
+        severity: TicketSeverity.critical,
+        stepsToReproduce: '1. Open Safari\n2. Click login',
+        expectedBehavior: 'The login modal opens',
+        actualBehavior: 'Nothing happens',
+        createdAt: now,
+        updatedAt: now,
+      );
+
+      await repository.createTicket(bug);
+      final found = await repository.getTicketById('bug-1');
+
+      expect(found!.severity, TicketSeverity.critical);
+      expect(found.stepsToReproduce, '1. Open Safari\n2. Click login');
+      expect(found.expectedBehavior, 'The login modal opens');
+      expect(found.actualBehavior, 'Nothing happens');
+    },
+  );
+
+  test(
+    'bug fields default to null for a Task, and null bug fields survive '
+    'write/read for a Bug',
+    () async {
+      await repository.createTicket(buildTicket(id: 'task-1'));
+      final task = await repository.getTicketById('task-1');
+
+      expect(task!.severity, isNull);
+      expect(task.stepsToReproduce, isNull);
+      expect(task.expectedBehavior, isNull);
+      expect(task.actualBehavior, isNull);
+    },
+  );
+
+  test(
+    'updateTicket persists changes to severity/stepsToReproduce/'
+    'expectedBehavior/actualBehavior',
+    () async {
+      final now = DateTime(2026, 1, 1);
+      final bug = Ticket(
+        id: 'bug-2',
+        ticketId: '',
+        type: TicketType.bug,
+        title: 'Bug to update',
+        status: TicketStatus.backlog,
+        createdAt: now,
+        updatedAt: now,
+      );
+      await repository.createTicket(bug);
+      final persisted = await repository.getTicketById('bug-2');
+
+      await repository.updateTicket(
+        persisted!.copyWith(
+          severity: () => TicketSeverity.low,
+          stepsToReproduce: () => 'steps',
+          expectedBehavior: () => 'expected',
+          actualBehavior: () => 'actual',
+        ),
+      );
+      final updated = await repository.getTicketById('bug-2');
+
+      expect(updated!.severity, TicketSeverity.low);
+      expect(updated.stepsToReproduce, 'steps');
+      expect(updated.expectedBehavior, 'expected');
+      expect(updated.actualBehavior, 'actual');
+    },
+  );
+
   test('first ticket generated ticketId is "AIO-1" (default prefix)', () async {
     await repository.createTicket(buildTicket());
     final tickets = await repository.getAllTickets();
@@ -959,11 +1036,13 @@ void main() {
         addTearDown(() => tempDir.deleteSync(recursive: true));
 
         // A fresh AppDatabase always runs onCreate at the *current*
-        // schemaVersion (5), which already includes the search
+        // schemaVersion (6), which already includes the search
         // infrastructure, the `deleted_at` column, the `sync_status`
-        // column, and the `complexity`/`sdd_stage` columns — so the v1
-        // shape has to be built by hand: strip back down to just the bare
-        // tables, insert data, then stamp user_version back to 1.
+        // column, the `complexity`/`sdd_stage` columns, and the
+        // `severity`/`steps_to_reproduce`/`expected_behavior`/
+        // `actual_behavior` columns — so the v1 shape has to be built by
+        // hand: strip back down to just the bare tables, insert data,
+        // then stamp user_version back to 1.
         final v1Db = AppDatabase(_testProject, NativeDatabase(dbFile));
         await v1Db.customStatement('DROP TABLE IF EXISTS tickets_fts;');
         await v1Db.customStatement('DROP TRIGGER IF EXISTS tickets_fts_ai;');
@@ -981,12 +1060,13 @@ void main() {
           'ALTER TABLE tickets DROP COLUMN sdd_stage;',
         );
 
-        // sync_status/complexity can't be dropped yet — createTicket's
-        // generated companion sets both explicitly (unlike deleted_at/
-        // sdd_stage, which it never touches), so both columns must still
-        // exist for this insert to succeed. Drop them immediately after,
-        // before stamping user_version, to finish simulating the pre-v4
-        // shape.
+        // sync_status/complexity/severity/steps_to_reproduce/
+        // expected_behavior/actual_behavior can't be dropped yet —
+        // createTicket's generated companion sets all of them explicitly
+        // (unlike deleted_at/sdd_stage, which it never touches), so they
+        // must still exist for this insert to succeed. Drop them
+        // immediately after, before stamping user_version, to finish
+        // simulating the pre-v4 shape.
         final preMigrationRepo = DriftTicketRepository(v1Db);
         await preMigrationRepo.createTicket(
           buildSearchable(id: 'pre-existing', title: 'Fix authentication bug'),
@@ -997,12 +1077,24 @@ void main() {
         await v1Db.customStatement(
           'ALTER TABLE tickets DROP COLUMN complexity;',
         );
+        await v1Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN severity;',
+        );
+        await v1Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN steps_to_reproduce;',
+        );
+        await v1Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN expected_behavior;',
+        );
+        await v1Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN actual_behavior;',
+        );
         await v1Db.customStatement('PRAGMA user_version = 1;');
         await v1Db.close();
 
-        // Reopen against the same file at the current schemaVersion (5).
-        // Drift reads user_version=1, sees schemaVersion=5, and runs
-        // onUpgrade automatically (the v2 through v5 steps).
+        // Reopen against the same file at the current schemaVersion (6).
+        // Drift reads user_version=1, sees schemaVersion=6, and runs
+        // onUpgrade automatically (the v2 through v6 steps).
         final v2Db = AppDatabase(_testProject, NativeDatabase(dbFile));
         final upgradedRepo = DriftTicketRepository(v2Db);
 
