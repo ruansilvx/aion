@@ -28,7 +28,13 @@ class TicketsLoading extends TicketsState {
 /// The ticket list loaded successfully. Carries the page to render.
 class TicketsLoaded extends TicketsState {
   /// Creates a [TicketsLoaded] state carrying [tickets] and [hasMore].
-  const TicketsLoaded(this.tickets, {required this.hasMore});
+  const TicketsLoaded(
+    this.tickets, {
+    required this.hasMore,
+    this.inFlightExecutionIds = const {},
+    this.executionQueuePositions = const {},
+    this.inFlightAdvanceIds = const {},
+  });
 
   /// The tickets loaded so far, most recently created first (or by
   /// relevance, when a text query is active).
@@ -38,8 +44,35 @@ class TicketsLoaded extends TicketsState {
   /// [TicketsCubit.loadMoreTickets] no-ops when this is `false`.
   final bool hasMore;
 
+  /// Task/Bug ids with a coding-execution run currently in flight —
+  /// mirrors [TicketsCubit._inFlightExecutionTaskId] as a set so the
+  /// Board (`TicketBoardCard`) can look up a specific ticket's status
+  /// without calling [TicketsCubit.getTicketById] per card. Recomputed by
+  /// [TicketsCubit._refreshInFlightBoardState]. Added for
+  /// `aion-arch/changes/board-execution-indicators-and-notifications`.
+  final Set<String> inFlightExecutionIds;
+
+  /// Task/Bug ids waiting on [TicketsCubit._executionQueue], mapped to
+  /// their 1-based queue position. Recomputed by
+  /// [TicketsCubit._refreshInFlightBoardState]. Added for
+  /// `aion-arch/changes/board-execution-indicators-and-notifications`.
+  final Map<String, int> executionQueuePositions;
+
+  /// Epic/Story ids (and their in-flight stage chat's own id) currently
+  /// mid-`advanceSddStage` — mirrors
+  /// [TicketsCubit._inFlightStageAdvanceIds]. Recomputed by
+  /// [TicketsCubit._refreshInFlightBoardState]. Added for
+  /// `aion-arch/changes/board-execution-indicators-and-notifications`.
+  final Set<String> inFlightAdvanceIds;
+
   @override
-  List<Object?> get props => [tickets, hasMore];
+  List<Object?> get props => [
+    tickets,
+    hasMore,
+    inFlightExecutionIds,
+    executionQueuePositions,
+    inFlightAdvanceIds,
+  ];
 }
 
 /// A [TicketsCubit.loadMoreTickets] call is in flight. Carries the tickets
@@ -120,6 +153,13 @@ enum TicketsErrorReason {
   /// detail screen's failure banner. Added for
   /// `aion-arch/changes/coding-execution-reliability-and-safety`.
   executionVerificationFailed,
+
+  /// A spawned SDD-stage chat's turn (see `TicketsCubit
+  /// ._runStageChatTurn`) hard-failed. Informational, surfaced once via
+  /// `AppToast`, alongside the Epic/Story detail screen's failure banner
+  /// (`TicketDetailLoaded.sddStageFailureReason`). Added for
+  /// `aion-arch/changes/board-execution-indicators-and-notifications`.
+  sddStageAdvanceFailed,
 }
 
 /// Why a Task ticket's coding-execution run was blocked from starting —
@@ -270,6 +310,9 @@ class TicketDetailLoaded extends TicketsState {
     this.executionFailureReason,
     this.executionCanRetry = false,
     this.executionLiveActivity,
+    this.isAdvancingStage = false,
+    this.sddStageFailureReason,
+    this.sddStageCanRetry = false,
   });
 
   /// The loaded ticket.
@@ -369,6 +412,29 @@ class TicketDetailLoaded extends TicketsState {
   /// Added for `aion-arch/changes/coding-execution-reliability-and-safety`.
   final String? executionLiveActivity;
 
+  /// Whether [ticket] (an `epic`/`story`) has an
+  /// [TicketsCubit.advanceSddStage] chat spawn currently in flight, or
+  /// [ticket] (a `chat`) *is* that in-flight spawn's own chat ticket.
+  /// Computed by [TicketsCubit.getTicketById] from
+  /// [TicketsCubit._inFlightStageAdvanceIds]. Mirrors [isExecuting]'s
+  /// shape exactly, one level up the ticket-type hierarchy. Added for
+  /// `aion-arch/changes/board-execution-indicators-and-notifications`.
+  final bool isAdvancingStage;
+
+  /// Why [ticket]'s (an `epic`/`story`) most recent stage-advance
+  /// attempt failed, `null` if it hasn't or the current attempt is still
+  /// running. Survives an app restart — derived from the persisted
+  /// comment thread, like [executionFailureReason]. Computed by
+  /// [TicketsCubit.getTicketById] via
+  /// [TicketsCubit._computeStageAdvanceFailure]. Added for
+  /// `aion-arch/changes/board-execution-indicators-and-notifications`.
+  final String? sddStageFailureReason;
+
+  /// Whether [sddStageFailureReason] has a retry action available —
+  /// always `true` whenever [sddStageFailureReason] is non-`null`. Added
+  /// for `aion-arch/changes/board-execution-indicators-and-notifications`.
+  final bool sddStageCanRetry;
+
   @override
   List<Object?> get props => [
     ticket,
@@ -385,6 +451,9 @@ class TicketDetailLoaded extends TicketsState {
     executionFailureReason,
     executionCanRetry,
     executionLiveActivity,
+    isAdvancingStage,
+    sddStageFailureReason,
+    sddStageCanRetry,
   ];
 }
 

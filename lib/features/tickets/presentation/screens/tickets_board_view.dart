@@ -63,6 +63,8 @@ String ticketsErrorMessage(BuildContext context, TicketsErrorReason reason) {
       l10n.executionBudgetOverageDetectedToast,
     TicketsErrorReason.executionVerificationFailed =>
       l10n.executionVerificationFailedToast,
+    TicketsErrorReason.sddStageAdvanceFailed =>
+      l10n.sddStageAdvanceFailedToast,
   };
 }
 
@@ -311,8 +313,42 @@ class TicketBoardCard extends StatelessWidget {
   }
 }
 
+/// Compact per-card status derived from [TicketsLoaded]'s in-flight
+/// fields (see
+/// `aion-arch/changes/board-execution-indicators-and-notifications/design.md`
+/// §1.4) for a specific ticket. `none` when the cubit's current state
+/// isn't [TicketsLoaded] (e.g. a detail screen is the last thing that
+/// ran) or nothing about that ticket is in flight. Renders as
+/// [_BoardCardStatusBadge] in [_CardVisual].
+enum _CardExecutionState { none, running, queued, advancing }
+
+/// Resolves [t]'s [_CardExecutionState] (plus, for `queued`, its 1-based
+/// queue position) from cubit state [s]. Task/Bug cards resolve to
+/// `running`/`queued`/`none`; Epic/Story cards resolve to
+/// `advancing`/`none` — the two families never co-occur on one card, so
+/// checking all three fields unconditionally is safe. Added for
+/// `aion-arch/changes/board-execution-indicators-and-notifications`.
+(_CardExecutionState, int?) _cardExecutionState(TicketsState s, Ticket t) {
+  if (s is! TicketsLoaded) return (_CardExecutionState.none, null);
+  if (s.inFlightExecutionIds.contains(t.id)) {
+    return (_CardExecutionState.running, null);
+  }
+  final queuePos = s.executionQueuePositions[t.id];
+  if (queuePos != null) return (_CardExecutionState.queued, queuePos);
+  if (s.inFlightAdvanceIds.contains(t.id)) {
+    return (_CardExecutionState.advancing, null);
+  }
+  return (_CardExecutionState.none, null);
+}
+
 /// The visual card body shared by [TicketBoardCard]'s in-place, drag
-/// feedback, and drag-placeholder renderings.
+/// feedback, and drag-placeholder renderings. Also renders a trailing
+/// [_BoardCardStatusBadge] in the meta-chip row (beside [TypeChip]/
+/// [PriorityBadge]) reflecting [ticket]'s live [_cardExecutionState],
+/// via a `context.select` scoped to [ticket]'s own id so a card only
+/// rebuilds when *its* status changes, not on every board-wide in-flight
+/// emission. Added for
+/// `aion-arch/changes/board-execution-indicators-and-notifications`.
 class _CardVisual extends StatelessWidget {
   const _CardVisual({
     required this.ticket,
@@ -349,6 +385,9 @@ class _CardVisual extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = ThemeScope.of(context);
     final c = t.colors;
+    final (execState, queuePosition) = context.select(
+      (TicketsCubit cubit) => _cardExecutionState(cubit.state, ticket),
+    );
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -419,7 +458,148 @@ class _CardVisual extends StatelessWidget {
                   const SizedBox(width: AionSpacing.sp8),
                   PriorityBadge(priority: ticket.priority),
                 ],
+                if (execState != _CardExecutionState.none) ...[
+                  const Spacer(),
+                  _BoardCardStatusBadge(
+                    status: execState,
+                    queuePosition: queuePosition,
+                  ),
+                ],
               ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A compact, non-interactive filled pill rendering [status] on
+/// [TicketBoardCard] — `running`/`queued` for a Task/Bug's coding-
+/// execution state, `advancing` for an Epic/Story's stage-advance
+/// state. `none` never reaches this widget ([_CardVisual] omits it from
+/// the row entirely in that case). No hover/focused/pressed/disabled/
+/// error states — the only motion is `running`'s rotating gear glyph
+/// (static under reduced motion). Per Component Spec §1
+/// (`aion-arch/changes/board-execution-indicators-and-notifications/design.md`).
+class _BoardCardStatusBadge extends StatefulWidget {
+  const _BoardCardStatusBadge({required this.status, this.queuePosition});
+
+  /// Which state to render — must not be [_CardExecutionState.none].
+  final _CardExecutionState status;
+
+  /// The 1-based coding-execution queue position, required iff [status]
+  /// is [_CardExecutionState.queued]; renders as `"Queued #N"`.
+  final int? queuePosition;
+
+  @override
+  State<_BoardCardStatusBadge> createState() => _BoardCardStatusBadgeState();
+}
+
+class _BoardCardStatusBadgeState extends State<_BoardCardStatusBadge>
+    with SingleTickerProviderStateMixin {
+  // Nullable, created on demand rather than a `late final` field — most
+  // badges (`queued`/`advancing`) never rotate at all, and a `late`
+  // field's deferred-until-first-read semantics would otherwise construct
+  // (and immediately try to look up the `vsync` ancestor for) the
+  // controller for the first time inside `dispose()`, which throws
+  // ("Looking up a deactivated widget's ancestor is unsafe").
+  AnimationController? _gearController;
+
+  bool _startedSpinning = false;
+
+  AnimationController _ensureGearController() {
+    return _gearController ??= AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2400),
+    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (widget.status == _CardExecutionState.running &&
+        !_startedSpinning &&
+        !MediaQuery.of(context).disableAnimations) {
+      _startedSpinning = true;
+      _ensureGearController().repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _gearController?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    final isDark = t.isDark;
+
+    final (IconData glyph, String label, Color fg, Color fill, Color? border) =
+        switch (widget.status) {
+          _CardExecutionState.running => (
+            PhosphorIcons.gearSixLight,
+            context.l10n.ticketDetailBoardBadgeRunning,
+            c.primary,
+            c.pendingTint(isDark),
+            null,
+          ),
+          _CardExecutionState.queued => (
+            PhosphorIcons.stackLight,
+            context.l10n.ticketDetailBoardBadgeQueuedNth(
+              widget.queuePosition!,
+            ),
+            c.secondary,
+            c.secondary.withValues(alpha: t.fillAlpha),
+            c.secondary.withValues(alpha: isDark ? 0.24 : 0.18),
+          ),
+          _CardExecutionState.advancing => (
+            PhosphorIcons.pencilSimpleLight,
+            context.l10n.ticketDetailBoardBadgeAdvancing,
+            c.primary,
+            c.pendingTint(isDark),
+            null,
+          ),
+          _CardExecutionState.none => (
+            PhosphorIcons.gearSixLight,
+            '',
+            c.primary,
+            c.pendingTint(isDark),
+            null,
+          ),
+        };
+
+    final icon = PhosphorIcon(glyph, size: 11, color: fg);
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: BorderRadius.all(AionRadius.pill),
+        border: border != null ? Border.all(color: border, width: 1) : null,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            widget.status == _CardExecutionState.running
+                ? RotationTransition(
+                    turns: _ensureGearController(),
+                    child: icon,
+                  )
+                : icon,
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: AionText.chip.copyWith(
+                color: fg,
+                letterSpacing: 0.2,
+                height: 1.0,
+              ),
             ),
           ],
         ),
