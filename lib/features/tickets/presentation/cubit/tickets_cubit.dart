@@ -21,6 +21,7 @@ import 'package:aion/features/projects/domain/entities/baseline_asset.dart';
 import 'package:aion/features/projects/domain/repositories/baseline_repository.dart';
 import 'package:aion/features/providers/domain/enums/agent_model.dart';
 import 'package:aion/features/providers/domain/enums/model_phase.dart';
+import 'package:aion/features/providers/domain/repositories/execution_context_cap_repository.dart';
 import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
 import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
@@ -84,6 +85,14 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [runCodebaseSummarization]'s spawned run ticket; real usage
   /// (`app_router.dart`) supplies the active `Project.name`. Added for
   /// `aion-arch/changes/new-project-onboarding`.
+  /// [_executionContextCapRepository] follows the same optional-dependency
+  /// pattern once more — `null` (every existing construction site except
+  /// `app_router.dart`) makes [_effectiveExecutionContextCap] always
+  /// resolve to the execution-phase model's real
+  /// `AgentModel.contextWindowTokens` with no user override available —
+  /// the handoff mechanism itself still works, only the user-configurable
+  /// lowering of the threshold doesn't. Added for
+  /// `aion-arch/changes/dont-spawn-new-chat-ticket-per-execution-trigger`.
   // The public param names below (embeddingProvider/gitProjector/
   // projectRootPath/agentClient/commentRepository/
   // automationSettingsRepository/modelRoutingRepository/gitClient/
@@ -108,6 +117,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     String? projectId,
     String? baselineVersion,
     String? projectName,
+    ExecutionContextCapRepository? executionContextCapRepository,
   }) : super(const TicketsInitial()) {
     _embeddingProvider = embeddingProvider;
     _gitProjector = gitProjector;
@@ -123,6 +133,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     _projectId = projectId;
     _baselineVersion = baselineVersion;
     _projectName = projectName;
+    _executionContextCapRepository = executionContextCapRepository;
   }
 
   final TicketRepository _repository;
@@ -140,6 +151,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   late final String? _projectId;
   late final String? _baselineVersion;
   late final String? _projectName;
+  late final ExecutionContextCapRepository? _executionContextCapRepository;
   static const _uuid = Uuid();
 
   /// Broadcasts [CodebaseAnalysisStatus] updates as
@@ -1150,11 +1162,231 @@ class TicketsCubit extends Cubit<TicketsState> {
     unawaited(_runCodingExecution(task));
   }
 
+  /// Resolves which chat [task]'s next implement/verify turn(s) post to:
+  /// its existing execution chat (see [_mostRecentExecutionChat]), reused
+  /// as-is; a handoff (see [_handoffExecutionChat]) to a new one if that
+  /// chat has crossed [_handoffThresholdRatio] of its effective cap
+  /// ([_effectiveExecutionContextCap]); or a brand-new one if [task] has
+  /// no execution chat at all yet. Returns `(chat, handoffSummary)` —
+  /// `handoffSummary` is non-null only right after a handoff just
+  /// happened, for the caller to feed into [_assembleExecutionContext].
+  /// `(null, null)` only when constructed without an [AgentModelClient]/
+  /// [CommentRepository] (mirrors every other chat-spawning path's guard)
+  /// or a create write fails to persist. Added for
+  /// `aion-arch/changes/dont-spawn-new-chat-ticket-per-execution-trigger`.
+  Future<(Ticket?, String?)> _resolveExecutionChat(Ticket task) async {
+    final existing = await _mostRecentExecutionChat(task.id);
+    if (existing == null) {
+      final created = await _createExecutionChat(
+        task,
+        _executionChatTitle(task.title),
+      );
+      return (created, null);
+    }
+    if (!await _executionChatOverCap(existing)) {
+      return (existing, null);
+    }
+    return _handoffExecutionChat(task, existing);
+  }
+
+  /// Creates a new `chat` child ticket titled [title] under [task], and
+  /// re-fetches it as persisted. `null` if the create write fails to
+  /// persist. Shared by [_resolveExecutionChat] (first-ever trigger) and
+  /// [_handoffExecutionChat] (a continuation chat). Added for
+  /// `aion-arch/changes/dont-spawn-new-chat-ticket-per-execution-trigger`.
+  Future<Ticket?> _createExecutionChat(Ticket task, String title) async {
+    final now = DateTime.now();
+    final chat = Ticket(
+      id: _uuid.v4(),
+      ticketId: '',
+      type: TicketType.chat,
+      title: title,
+      status: TicketStatus.backlog,
+      parentId: task.id,
+      createdAt: now,
+      updatedAt: now,
+    );
+    await _repository.createTicket(chat);
+    return _repository.getTicketById(chat.id);
+  }
+
+  /// `"Coding Execution — <taskTitle>"`, or a numbered `"(continued
+  /// N)"`-suffixed variant per [continuationIndex] (0 = the original,
+  /// unsuffixed; 1 = the first handoff, suffixed `"(continued)"` with no
+  /// number; 2+ = `"(continued 2)"`, `"(continued 3)"`, ...) — resolves
+  /// open question #3 from `dont-spawn-new-chat-ticket-per-execution-
+  /// trigger.md`: unlike a bare repeated `"(continued)"`, a third+
+  /// continuation stays distinguishable from the second. Added for
+  /// `aion-arch/changes/dont-spawn-new-chat-ticket-per-execution-trigger`.
+  String _executionChatTitle(String taskTitle, [int continuationIndex = 0]) {
+    final base = 'Coding Execution — $taskTitle';
+    if (continuationIndex <= 0) return base;
+    return continuationIndex == 1
+        ? '$base (continued)'
+        : '$base (continued $continuationIndex)';
+  }
+
+  /// How many `"Coding Execution — "`-prefixed children [taskId] already
+  /// has — the next one's [_executionChatTitle] continuation index. Added
+  /// for `aion-arch/changes/dont-spawn-new-chat-ticket-per-execution-
+  /// trigger`.
+  Future<int> _executionChatCount(String taskId) async {
+    final chats = await _repository.getTicketsByParent(
+      taskId,
+      types: const [TicketType.chat],
+    );
+    return chats.where((c) => c.title.startsWith('Coding Execution — ')).length;
+  }
+
+  /// Whether [chat]'s accumulated token usage (every comment's
+  /// `inputTokens + outputTokens`, `0` for a comment with neither — a
+  /// human/system comment, or an ai comment predating this change) has
+  /// crossed [_handoffThresholdRatio] of [_effectiveExecutionContextCap].
+  /// Added for `aion-arch/changes/dont-spawn-new-chat-ticket-per-
+  /// execution-trigger`.
+  Future<bool> _executionChatOverCap(Ticket chat) async {
+    final commentRepo = _commentRepository;
+    if (commentRepo == null) return false;
+    final comments = await commentRepo.getCommentsForTicket(chat.id);
+    final used = comments.fold<int>(
+      0,
+      (sum, c) => sum + (c.inputTokens ?? 0) + (c.outputTokens ?? 0),
+    );
+    final cap = await _effectiveExecutionContextCap();
+    return used >= cap * _handoffThresholdRatio;
+  }
+
+  /// The execution-phase model's real `AgentModel.contextWindowTokens`,
+  /// lowered to [_executionContextCapRepository]'s persisted override
+  /// when one is set and it's a smaller, positive value — an override can
+  /// never raise the cap past the model's real limit
+  /// ([ExecutionContextCapCubit] enforces the same ceiling when
+  /// persisting one, this is defense in depth). Falls back to the
+  /// model's real limit with no override available when constructed
+  /// without an [ExecutionContextCapRepository] (see the constructor's
+  /// dartdoc). Added for `aion-arch/changes/dont-spawn-new-chat-ticket-
+  /// per-execution-trigger`.
+  Future<int> _effectiveExecutionContextCap() async {
+    final model = await _resolveModel(ModelPhase.execution);
+    final override = await _executionContextCapRepository
+        ?.getContextCapOverride();
+    if (override != null &&
+        override > 0 &&
+        override < model.contextWindowTokens) {
+      return override;
+    }
+    return model.contextWindowTokens;
+  }
+
+  /// Fraction of [_effectiveExecutionContextCap] an execution chat's
+  /// accumulated usage must cross before [_resolveExecutionChat] hands
+  /// off to a new chat (see [_executionChatOverCap]). Not user-
+  /// configurable (proposal.md's Out of scope) — only the cap it's a
+  /// fraction of is. Added for `aion-arch/changes/dont-spawn-new-chat-
+  /// ticket-per-execution-trigger`.
+  static const _handoffThresholdRatio = 0.9;
+
+  /// Retires [oldChat] and starts a new linked one for [task]: one
+  /// summary-only [ChatCubit.runChatTurn] on [oldChat] (no tools, no
+  /// `workingDirectory` — the worktree that turn's run owned is already
+  /// gone by the time a later trigger's [_resolveExecutionChat] call gets
+  /// here) asks the model to write a handoff summary from [oldChat]'s own
+  /// transcript, then a new chat is created ([_createExecutionChat],
+  /// [_executionChatTitle]/[_executionChatCount] for its numbered title)
+  /// and linked back to [oldChat] via [TicketLinkType.relatesTo] — a
+  /// human can navigate between them via the existing generic "linked
+  /// tickets" UI, no new widget needed. Falls back to `(oldChat, null)` —
+  /// reuse the old, now-over-cap chat rather than block the run — if the
+  /// summary turn itself hard-fails, or if constructed without an
+  /// [AgentModelClient]/[CommentRepository]: a soft context-budget
+  /// overrun that risks a truncated next turn is preferable to a run that
+  /// can't proceed at all, matching this project's fail-open precedent
+  /// for [_computeExecutionFailure]'s "ended without a clear result"
+  /// stalled case.
+  ///
+  /// The summary turn's own usage is recorded on [oldChat]'s total (it's
+  /// just another comment there) but can never trigger a second,
+  /// recursive handoff — [oldChat] is retired unconditionally once this
+  /// runs, regardless of that comment's size. Resolves open question #2
+  /// from `dont-spawn-new-chat-ticket-per-execution-trigger.md`. Added
+  /// for `aion-arch/changes/dont-spawn-new-chat-ticket-per-execution-
+  /// trigger`.
+  Future<(Ticket?, String?)> _handoffExecutionChat(
+    Ticket task,
+    Ticket oldChat,
+  ) async {
+    final client = _agentClient;
+    final commentRepo = _commentRepository;
+    if (client == null || commentRepo == null) return (oldChat, null);
+
+    final transcript = _assembleChatTranscript(
+      await commentRepo.getCommentsForTicket(oldChat.id),
+    );
+    final summarized = await ChatCubit.runChatTurn(
+      client: client,
+      commentRepo: commentRepo,
+      chatTicketId: oldChat.id,
+      prompt: _assembleHandoffContext(transcript),
+      model: await _resolveModel(ModelPhase.execution),
+    );
+    if (!summarized) return (oldChat, null);
+
+    final summary = await _lastCommentContent(oldChat.id);
+    final continuationIndex = await _executionChatCount(task.id);
+    final newChat = await _createExecutionChat(
+      task,
+      _executionChatTitle(task.title, continuationIndex),
+    );
+    if (newChat == null) return (oldChat, null);
+
+    final linkRepo = _linkRepository;
+    if (linkRepo != null) {
+      await linkRepo.createLink(
+        sourceTicketId: newChat.id,
+        targetTicketId: oldChat.id,
+        linkType: TicketLinkType.relatesTo,
+      );
+    }
+    return (newChat, summary);
+  }
+
+  /// Renders [comments] (a chat's full history, oldest first — matches
+  /// [CommentRepository.getCommentsForTicket]'s own ordering) as a plain
+  /// transcript for the handoff-summary prompt: one `[authorType]` line
+  /// per comment followed by its content, blank-line separated. Added for
+  /// `aion-arch/changes/dont-spawn-new-chat-ticket-per-execution-trigger`.
+  String _assembleChatTranscript(List<TicketComment> comments) {
+    final buffer = StringBuffer();
+    for (final comment in comments) {
+      buffer
+        ..writeln('[${comment.authorType.name}]')
+        ..writeln(comment.content)
+        ..writeln();
+    }
+    return buffer.toString().trim();
+  }
+
+  /// The handoff-summary turn's prompt: [transcript] plus an instruction
+  /// to summarize what's done/left/decided for whoever picks this Task up
+  /// next in a new chat, explicitly told not to use any tools — there is
+  /// no worktree for this turn to act in (see [_handoffExecutionChat]'s
+  /// dartdoc). Added for `aion-arch/changes/dont-spawn-new-chat-ticket-
+  /// per-execution-trigger`.
+  String _assembleHandoffContext(String transcript) {
+    return 'This coding-execution chat is nearing its model context '
+        'limit, and a new chat will continue this Task\'s work from here. '
+        'Write a handoff summary for whoever picks it up next: what has '
+        'been done, what is left, and any key decisions or gotchas '
+        'discovered so far. Do not use any tools — reply with the summary '
+        'only.\n\n'
+        '--- Transcript so far ---\n\n$transcript';
+  }
+
   /// Runs [task]'s coding-execution turn end to end: creates an isolated
   /// `git worktree` (via [GitRepositoryClient.createWorktree]) on a fresh
-  /// `aion/task-<id>` branch, spawns a visible `chat` child ticket
-  /// (`"Coding Execution — <task.title>"`), posts the assembled context
-  /// (see [_assembleExecutionContext]) as a [CommentAuthorType.system]
+  /// `aion/task-<id>` branch, finds-or-creates-or-hands-off [task]'s
+  /// execution chat (see [_resolveExecutionChat]), posts the assembled
+  /// context (see [_assembleExecutionContext]) as a [CommentAuthorType.system]
   /// comment, then loops an implement-then-verify pair of **model**
   /// turns: an implement [ChatCubit.runChatTurn] (model resolved via
   /// [_resolveModel]/[ModelPhase.execution], `toolsEnabled: true`,
@@ -1250,20 +1482,8 @@ class TicketsCubit extends Cubit<TicketsState> {
         .path;
     final branchName = 'aion/task-${task.id}';
 
-    final now = DateTime.now();
-    final chatTicket = Ticket(
-      id: _uuid.v4(),
-      ticketId: '',
-      type: TicketType.chat,
-      title: 'Coding Execution — ${task.title}',
-      status: TicketStatus.backlog,
-      parentId: task.id,
-      createdAt: now,
-      updatedAt: now,
-    );
-    await _repository.createTicket(chatTicket);
-    final persistedChat = await _repository.getTicketById(chatTicket.id);
-    if (persistedChat == null) {
+    final (chat, handoffSummary) = await _resolveExecutionChat(task);
+    if (chat == null) {
       _inFlightExecutionTaskId = null;
       unawaited(_dequeueNext());
       return;
@@ -1272,11 +1492,14 @@ class TicketsCubit extends Cubit<TicketsState> {
     try {
       await gitClient.createWorktree(rootPath, worktreePath, branchName);
 
-      var prompt = await _assembleExecutionContext(task);
+      var prompt = await _assembleExecutionContext(
+        task,
+        handoffSummary: handoffSummary,
+      );
       await commentRepo.addComment(
         TicketComment(
           id: '',
-          ticketId: persistedChat.id,
+          ticketId: chat.id,
           content: prompt,
           authorType: CommentAuthorType.system,
           createdAt: DateTime.now(),
@@ -1313,7 +1536,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         final implementSucceeded = await ChatCubit.runChatTurn(
           client: client,
           commentRepo: commentRepo,
-          chatTicketId: persistedChat.id,
+          chatTicketId: chat.id,
           prompt: prompt,
           model: await _resolveModel(ModelPhase.execution),
           toolsEnabled: true,
@@ -1334,7 +1557,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         final verifySucceeded = await ChatCubit.runChatTurn(
           client: client,
           commentRepo: commentRepo,
-          chatTicketId: persistedChat.id,
+          chatTicketId: chat.id,
           prompt: verifyPrompt,
           model: await _resolveModel(ModelPhase.execution),
           toolsEnabled: true,
@@ -1349,7 +1572,7 @@ class TicketsCubit extends Cubit<TicketsState> {
           break;
         }
 
-        final verifyReply = await _lastCommentContent(persistedChat.id);
+        final verifyReply = await _lastCommentContent(chat.id);
         final failureReason = _verificationFailureReason(verifyReply);
         if (failureReason == null) {
           verified = true;
@@ -1369,7 +1592,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         await commentRepo.addComment(
           TicketComment(
             id: '',
-            ticketId: persistedChat.id,
+            ticketId: chat.id,
             content: 'Execution failed verification:\n\n$failureReason',
             authorType: CommentAuthorType.system,
             createdAt: DateTime.now(),
@@ -1401,7 +1624,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         await commentRepo.addComment(
           TicketComment(
             id: '',
-            ticketId: persistedChat.id,
+            ticketId: chat.id,
             content: 'EXECUTION: PR_OPENED $prUrl',
             authorType: CommentAuthorType.system,
             createdAt: DateTime.now(),
@@ -1422,7 +1645,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       await commentRepo.addComment(
         TicketComment(
           id: '',
-          ticketId: persistedChat.id,
+          ticketId: chat.id,
           content: 'Execution failed: $e',
           authorType: CommentAuthorType.system,
           createdAt: DateTime.now(),
@@ -1464,14 +1687,21 @@ class TicketsCubit extends Cubit<TicketsState> {
     unawaited(_dequeueNext());
   }
 
-  /// Re-enters the coding-execution flow for [task] from scratch — a
-  /// fresh worktree/branch, exactly as a first attempt would (a prior
-  /// failed attempt's worktree is already removed by [_runCodingExecution]
-  /// itself, and its never-pushed branch is simply abandoned). The
-  /// failure banner's manual-retry action, and what the `gated`/
-  /// exhausted-`auto` toast (see
-  /// [TicketsErrorReason.executionVerificationFailed]) links to. Added
-  /// for `aion-arch/changes/coding-execution-reliability-and-safety`.
+  /// Re-enters the coding-execution flow for [task] from scratch in the
+  /// worktree/branch sense only — a fresh `git worktree` and branch,
+  /// exactly as a first attempt would (a prior failed attempt's worktree
+  /// is already removed by [_runCodingExecution] itself, and its
+  /// never-pushed branch is simply abandoned). The chat itself is *not*
+  /// started fresh: [_runCodingExecution] resolves it via
+  /// [_resolveExecutionChat], which reuses [task]'s existing execution
+  /// chat (or hands off to a new, linked one — see
+  /// [_handoffExecutionChat] — if it's crossed its context-window cap)
+  /// exactly as any other trigger would. The failure banner's
+  /// manual-retry action, and what the `gated`/exhausted-`auto` toast
+  /// (see [TicketsErrorReason.executionVerificationFailed]) links to.
+  /// Added for `aion-arch/changes/coding-execution-reliability-and-safety`;
+  /// dartdoc updated for `aion-arch/changes/dont-spawn-new-chat-ticket-
+  /// per-execution-trigger`.
   Future<void> retryCodingExecution(Ticket task) async {
     await _triggerOrQueueCodingExecution(task);
   }
@@ -1628,9 +1858,30 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// inherently care about git state, so it passed anyway, Aion pushed a
   /// branch with nothing new, and `gh pr create` correctly rejected it
   /// with "No commits between main and ...", losing the edit entirely
-  /// once the worktree was torn down.
-  Future<String> _assembleExecutionContext(Ticket task) async {
-    final buffer = StringBuffer()..writeln('# ${task.title}');
+  /// once the worktree was torn down. When [handoffSummary] is non-null
+  /// (a handoff — see [_handoffExecutionChat] — just seeded this chat),
+  /// it's prepended so the new chat's opening context makes clear this
+  /// Task is being picked up mid-flight rather than started fresh. Added
+  /// for `aion-arch/changes/dont-spawn-new-chat-ticket-per-execution-
+  /// trigger`.
+  Future<String> _assembleExecutionContext(
+    Ticket task, {
+    String? handoffSummary,
+  }) async {
+    final buffer = StringBuffer();
+    if (handoffSummary != null) {
+      buffer
+        ..writeln(
+          'Picking up this Task from a prior coding-execution chat that '
+          'reached its context limit. Handoff summary from that chat:',
+        )
+        ..writeln()
+        ..writeln(handoffSummary)
+        ..writeln()
+        ..writeln('---')
+        ..writeln();
+    }
+    buffer.writeln('# ${task.title}');
     final description = task.description;
     if (description != null && description.isNotEmpty) {
       buffer
@@ -1752,23 +2003,16 @@ class TicketsCubit extends Cubit<TicketsState> {
         '"IMPLEMENTATION: DONE".';
   }
 
-  /// Whether [taskId]'s most recently created `"Coding Execution — "`-
-  /// prefixed `chat` child's most recent comment contains the literal
-  /// `EXECUTION: PR_OPENED` line — mirrors [_designSyncApproved]'s own
-  /// lookup shape exactly (that one takes the *Story's* id and finds its
-  /// `"Design Sync — "`-prefixed chat; this takes the *Task's* id and
-  /// finds its `"Coding Execution — "`-prefixed chat), so both
-  /// [_runCodingExecution] and [getTicketById] can call it identically
-  /// without needing to know the spawned chat's own id. Accepts either
-  /// [CommentAuthorType.ai] or [CommentAuthorType.system] as the
-  /// comment's author — before
-  /// `aion-arch/changes/coding-execution-reliability-and-safety`, only
-  /// the model itself (`ai`) ever posted this line; now Aion posts it
-  /// itself (`system`) once its own verify-then-push-then-PR sequence
-  /// succeeds (see [_runCodingExecution]).
-  Future<bool> _executionSucceededWithPr(String taskId) async {
-    final commentRepo = _commentRepository;
-    if (commentRepo == null) return false;
+  /// The Task/Bug [taskId]'s current coding-execution chat — its most
+  /// recently created `"Coding Execution — "`-prefixed child. Covers a
+  /// `"(continued)"` handoff descendant (see [_handoffExecutionChat])
+  /// automatically: it shares the same prefix and is simply created
+  /// later, so it naturally sorts first. `null` if [taskId] has no
+  /// execution chat yet. Shared by [_executionSucceededWithPr],
+  /// [_computeExecutionFailure], and [_resolveExecutionChat]. Added for
+  /// `aion-arch/changes/dont-spawn-new-chat-ticket-per-execution-trigger`
+  /// (extracted from what were previously two duplicated inline lookups).
+  Future<Ticket?> _mostRecentExecutionChat(String taskId) async {
     final chats = await _repository.getTicketsByParent(
       taskId,
       types: const [TicketType.chat],
@@ -1776,10 +2020,29 @@ class TicketsCubit extends Cubit<TicketsState> {
     final executionChats =
         chats.where((c) => c.title.startsWith('Coding Execution — ')).toList()
           ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    if (executionChats.isEmpty) return false;
-    final comments = await commentRepo.getCommentsForTicket(
-      executionChats.first.id,
-    );
+    return executionChats.isEmpty ? null : executionChats.first;
+  }
+
+  /// Whether [taskId]'s most recently created `"Coding Execution — "`-
+  /// prefixed `chat` child's most recent comment contains the literal
+  /// `EXECUTION: PR_OPENED` line — mirrors [_designSyncApproved]'s own
+  /// lookup shape exactly (that one takes the *Story's* id and finds its
+  /// `"Design Sync — "`-prefixed chat; this takes the *Task's* id and
+  /// finds its `"Coding Execution — "`-prefixed chat via
+  /// [_mostRecentExecutionChat]), so both [_runCodingExecution] and
+  /// [getTicketById] can call it identically without needing to know the
+  /// spawned chat's own id. Accepts either [CommentAuthorType.ai] or
+  /// [CommentAuthorType.system] as the comment's author — before
+  /// `aion-arch/changes/coding-execution-reliability-and-safety`, only
+  /// the model itself (`ai`) ever posted this line; now Aion posts it
+  /// itself (`system`) once its own verify-then-push-then-PR sequence
+  /// succeeds (see [_runCodingExecution]).
+  Future<bool> _executionSucceededWithPr(String taskId) async {
+    final commentRepo = _commentRepository;
+    if (commentRepo == null) return false;
+    final executionChat = await _mostRecentExecutionChat(taskId);
+    if (executionChat == null) return false;
+    final comments = await commentRepo.getCommentsForTicket(executionChat.id);
     if (comments.isEmpty) return false;
     final mostRecent = comments.reduce(
       (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
@@ -1793,33 +2056,26 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [taskId] once its coding-execution run has finished without a
   /// confirmed PR (see [_executionSucceededWithPr]) — used by
   /// [getTicketById]. Finds the Task's most recent `"Coding Execution —
-  /// "`-prefixed chat (mirrors [_executionSucceededWithPr]'s own lookup)
-  /// and inspects its most recent comment: an `"Execution failed
-  /// verification: ..."` or `"Execution failed: ..."` system/ai comment
-  /// (posted by [_runCodingExecution]/[ChatCubit.runChatTurn]
-  /// respectively) surfaces that content verbatim; anything else —
-  /// including no comments at all, which can happen after an app restart
-  /// mid-run — surfaces a fixed "ended without a clear result" message.
-  /// Either case always pairs with `canRetry: true`. Returns `(null,
-  /// false)` only when no execution chat exists at all yet (a Task moved
-  /// to `inProgress` a moment before its chat is spawned). Added for
+  /// "`-prefixed chat via [_mostRecentExecutionChat] (mirrors
+  /// [_executionSucceededWithPr]'s own lookup) and inspects its most
+  /// recent comment: an `"Execution failed verification: ..."` or
+  /// `"Execution failed: ..."` system/ai comment (posted by
+  /// [_runCodingExecution]/[ChatCubit.runChatTurn] respectively) surfaces
+  /// that content verbatim; anything else — including no comments at all,
+  /// which can happen after an app restart mid-run — surfaces a fixed
+  /// "ended without a clear result" message. Either case always pairs
+  /// with `canRetry: true`. Returns `(null, false)` only when no
+  /// execution chat exists at all yet (a Task moved to `inProgress` a
+  /// moment before its chat is spawned). Added for
   /// `aion-arch/changes/coding-execution-reliability-and-safety`.
   Future<(String?, bool)> _computeExecutionFailure(String taskId) async {
     final commentRepo = _commentRepository;
     if (commentRepo == null) return (null, false);
-    final chats = await _repository.getTicketsByParent(
-      taskId,
-      types: const [TicketType.chat],
-    );
-    final executionChats =
-        chats.where((c) => c.title.startsWith('Coding Execution — ')).toList()
-          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    if (executionChats.isEmpty) return (null, false);
+    final executionChat = await _mostRecentExecutionChat(taskId);
+    if (executionChat == null) return (null, false);
     const stalledMessage =
         'Execution ended without a clear result — retry to try again.';
-    final comments = await commentRepo.getCommentsForTicket(
-      executionChats.first.id,
-    );
+    final comments = await commentRepo.getCommentsForTicket(executionChat.id);
     if (comments.isEmpty) return (stalledMessage, true);
     final mostRecent = comments.reduce(
       (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,

@@ -1,8 +1,11 @@
 // presentation/screens/settings_screen.dart — Settings screen (presentation layer).
 
+import 'package:flutter/services.dart'
+    show FilteringTextInputFormatter, TextInputAction, TextInputType;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart' show NumberFormat;
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:aion/core/core.dart';
@@ -14,6 +17,8 @@ import 'package:aion/features/providers/domain/enums/model_phase.dart';
 import 'package:aion/features/providers/domain/enums/provider_connection_status.dart';
 import 'package:aion/features/providers/presentation/cubit/automation_settings_cubit.dart';
 import 'package:aion/features/providers/presentation/cubit/automation_settings_state.dart';
+import 'package:aion/features/providers/presentation/cubit/execution_context_cap_cubit.dart';
+import 'package:aion/features/providers/presentation/cubit/execution_context_cap_state.dart';
 import 'package:aion/features/providers/presentation/cubit/model_routing_cubit.dart';
 import 'package:aion/features/providers/presentation/cubit/model_routing_state.dart';
 import 'package:aion/features/providers/presentation/cubit/provider_settings_cubit.dart';
@@ -109,6 +114,8 @@ class SettingsScreen extends StatelessWidget {
                                   .l10n
                                   .settingsModelExecutionDescription,
                             ),
+                            const SizedBox(height: 20),
+                            const _ExecutionContextCapSection(),
                             const SizedBox(height: 22),
                             Text(
                               context.l10n.settingsAutomationEyebrow,
@@ -457,6 +464,286 @@ class _ModelPhaseSection extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// The "MODELS" group's fourth row — a numeric override for the
+/// coding-execution context-window handoff cap, backed by
+/// [ExecutionContextCapCubit]. Rendered once, directly below the
+/// Execution Model [_ModelPhaseSection] row (same shared "MODELS"
+/// eyebrow). Its label/description geometry is byte-identical to
+/// [_ModelPhaseSection]'s so it reads as one more MODELS row; its input
+/// is the existing [AppTextField] atom (digits-only, numeric keyboard);
+/// its helper line below the field is the field's sole feedback channel
+/// — neutral ("Effective cap: N tokens"), an `OVERRIDE` pill when a valid
+/// override is set, or a caution chip when the live entry would be
+/// clamped to just under the model's real limit. Per design.md
+/// "Execution Context Cap: Settings Component Spec" §1-§2 (some spacing
+/// values below are not multiples of 4, per the design gate's explicit
+/// note in proposal.md — implemented as specified rather than rounded to
+/// the nearest [AionSpacing] token). Uses [AionColorsHubTokens]'s
+/// existing `needsRepairTint`/`needsRepairBorderTint` for the clamp
+/// chip's fill/border (not new `warningTint`/`warningBorderTint`
+/// helpers — see proposal.md's design gate). Added for
+/// `aion-arch/changes/dont-spawn-new-chat-ticket-per-execution-trigger`.
+class _ExecutionContextCapSection extends StatefulWidget {
+  /// Creates an [_ExecutionContextCapSection].
+  const _ExecutionContextCapSection();
+
+  @override
+  State<_ExecutionContextCapSection> createState() =>
+      _ExecutionContextCapSectionState();
+}
+
+class _ExecutionContextCapSectionState
+    extends State<_ExecutionContextCapSection> {
+  final _controller = TextEditingController();
+  final _focusNode = FocusNode();
+  bool _seeded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Rebuilds on every keystroke so the helper row (derived live from
+    // `_controller.text`, never stored — design.md §2.4) tracks what's
+    // being typed before it's committed.
+    _controller.addListener(() => setState(() {}));
+    _focusNode.addListener(() {
+      if (!_focusNode.hasFocus) _commit(_controller.text);
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _commit(String value) {
+    context.read<ExecutionContextCapCubit>().setOverride(
+      int.tryParse(value),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+
+    return BlocBuilder<ExecutionContextCapCubit, ExecutionContextCapState>(
+      builder: (context, state) {
+        if (state is! ExecutionContextCapReady) {
+          return const SizedBox.shrink();
+        }
+
+        final expected = state.overrideTokens?.toString() ?? '';
+        if (!_seeded) {
+          _seeded = true;
+          _controller.text = expected;
+        } else if (!_focusNode.hasFocus && _controller.text != expected) {
+          // Re-syncs after a commit clamps (or clears) the value — only
+          // when not actively focused, so a live keystroke is never
+          // overwritten mid-edit.
+          _controller.text = expected;
+        }
+
+        final limit = state.modelDefaultTokens;
+        final text = _controller.text;
+        final parsed = int.tryParse(text);
+        final isClamped = parsed != null && parsed >= limit;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              context.l10n.settingsExecutionContextCapLabel,
+              style: AionText.label.copyWith(color: c.textSecondary),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              context.l10n.settingsExecutionContextCapDescription,
+              style: AionText.bodySm.copyWith(
+                color: c.textMuted,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 10),
+            AppTextField(
+              controller: _controller,
+              focusNode: _focusNode,
+              hintText: limit.toString(),
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              maxLines: 1,
+              textInputAction: TextInputAction.done,
+              onSubmitted: _commit,
+            ),
+            SizedBox(height: isClamped ? 6 : 8),
+            _ExecutionContextCapHelperRow(
+              text: text,
+              parsed: parsed,
+              limit: limit,
+              isClamped: isClamped,
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// The dynamic helper row below [_ExecutionContextCapSection]'s field —
+/// exactly one of three variants per build, chosen from [text]/[isClamped]
+/// vs. [limit] (design.md §2.4/§6.1): neutral (no override), an
+/// `OVERRIDE`-tagged effective-cap line (a valid override), or a caution
+/// chip (the live entry would be clamped). Added for
+/// `aion-arch/changes/dont-spawn-new-chat-ticket-per-execution-trigger`.
+class _ExecutionContextCapHelperRow extends StatelessWidget {
+  /// Creates an [_ExecutionContextCapHelperRow] for the live field
+  /// [text]/[parsed] against the model's real [limit], with [isClamped]
+  /// (computed once by [_ExecutionContextCapSectionState], which also uses
+  /// it for the field-to-helper-row spacing) passed in rather than
+  /// re-derived here, so the two can never disagree.
+  const _ExecutionContextCapHelperRow({
+    required this.text,
+    required this.parsed,
+    required this.limit,
+    required this.isClamped,
+  });
+
+  /// The field's live, uncommitted text.
+  final String text;
+
+  /// `int.tryParse(text)` — `null` for empty/unparseable text (the
+  /// digits-only input formatter makes the latter unreachable in
+  /// practice).
+  final int? parsed;
+
+  /// The execution-phase model's real `AgentModel.contextWindowTokens`.
+  final int limit;
+
+  /// Whether [parsed] is at or above [limit] — the live entry would be
+  /// clamped on commit.
+  final bool isClamped;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    final numberFormat = NumberFormat.decimalPattern();
+
+    if (text.isEmpty) {
+      return Text(
+        context.l10n.settingsExecutionContextCapEffective(
+          numberFormat.format(limit),
+        ),
+        style: AionText.bodySm.copyWith(fontSize: 13, color: c.textMuted),
+      );
+    }
+
+    if (!isClamped && parsed != null && parsed! >= 1) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Flexible(
+            child: Text(
+              context.l10n.settingsExecutionContextCapEffective(
+                numberFormat.format(parsed),
+              ),
+              style: AionText.bodySm.copyWith(
+                fontSize: 13,
+                color: c.textPrimary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: c.primarySubtle,
+              borderRadius: BorderRadius.all(AionRadius.pill),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 7,
+                vertical: 2,
+              ),
+              child: Text(
+                context.l10n.settingsExecutionContextCapOverrideTag,
+                style: AionText.caption.copyWith(
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 1.2,
+                  color: c.primary,
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    // Clamped / would-be-invalid — a value at or above the model's real
+    // limit. `parsed == null` here is unreachable given non-empty `text`
+    // and the digits-only formatter, but this branch is still the safe
+    // fallback rather than a thrown assertion.
+    final clampedTo = limit - 1;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.needsRepairTint(t.isDark),
+        border: Border.all(
+          color: c.needsRepairBorderTint(t.isDark),
+          width: 1,
+        ),
+        borderRadius: const BorderRadius.all(Radius.circular(8)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 1),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: c.warning,
+                  shape: BoxShape.circle,
+                ),
+                child: SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: Center(
+                    child: Text(
+                      '!',
+                      style: AionText.label.copyWith(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        color: c.background,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                context.l10n.settingsExecutionContextCapClampWarning(
+                  numberFormat.format(limit),
+                  numberFormat.format(clampedTo),
+                ),
+                style: AionText.bodySm.copyWith(
+                  fontSize: 12.5,
+                  height: 1.45,
+                  color: c.warningText(t.isDark),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

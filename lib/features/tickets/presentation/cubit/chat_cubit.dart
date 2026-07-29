@@ -164,7 +164,12 @@ class ChatCubit extends Cubit<ChatState> {
   /// long-running turn has live progress visibility. Shared by
   /// [sendMessage] and `TicketsCubit._spawnStageChat`/coding-execution
   /// (`tickets_cubit.dart`) so all call sites accumulate/persist
-  /// identically and can't drift apart.
+  /// identically and can't drift apart. Captures the terminal
+  /// [AgentDoneEvent]'s `inputTokens`/`outputTokens` and carries them onto
+  /// whichever comment (success or hard-failure) it persists — `null`/
+  /// `null` if the stream never reaches a `done` event (e.g. an
+  /// [AgentErrorEvent] hard failure). Added for
+  /// `aion-arch/changes/dont-spawn-new-chat-ticket-per-execution-trigger`.
   static Future<bool> runChatTurn({
     required AgentModelClient client,
     required CommentRepository commentRepo,
@@ -180,6 +185,7 @@ class ChatCubit extends Cubit<ChatState> {
     final buffer = StringBuffer();
     var succeeded = true;
     String? failureMessage;
+    AgentDoneEvent? doneEvent;
     try {
       final events = await client.run(
         AgentRequest(
@@ -196,8 +202,11 @@ class ChatCubit extends Cubit<ChatState> {
             onChunk?.call(buffer.toString());
           case AgentToolUseEvent(:final toolName, :final summary):
             onToolUse?.call(toolName, summary);
-          case AgentDoneEvent():
-            break;
+          case AgentDoneEvent(:final inputTokens, :final outputTokens):
+            doneEvent = AgentDoneEvent(
+              inputTokens: inputTokens,
+              outputTokens: outputTokens,
+            );
           case AgentOverageDetectedEvent():
             onOverageDetected?.call();
           case AgentErrorEvent(:final message):
@@ -218,6 +227,8 @@ class ChatCubit extends Cubit<ChatState> {
           content: buffer.toString(),
           authorType: CommentAuthorType.ai,
           aiModel: model.id,
+          inputTokens: doneEvent?.inputTokens,
+          outputTokens: doneEvent?.outputTokens,
           createdAt: DateTime.now(),
         ),
       );
@@ -229,6 +240,8 @@ class ChatCubit extends Cubit<ChatState> {
           content: 'Execution failed: ${failureMessage ?? 'unknown error'}',
           authorType: CommentAuthorType.ai,
           aiModel: model.id,
+          inputTokens: doneEvent?.inputTokens,
+          outputTokens: doneEvent?.outputTokens,
           createdAt: DateTime.now(),
         ),
       );

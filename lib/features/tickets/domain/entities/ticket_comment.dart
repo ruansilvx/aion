@@ -26,6 +26,16 @@ class TicketComment extends Equatable {
   /// is [CommentAuthorType.ai].
   final String? aiModel;
 
+  /// Input tokens the model call that produced this comment used, if
+  /// known. Set only on [CommentAuthorType.ai] comments whose terminal
+  /// `AgentDoneEvent` reported usage — `null` for every human/system
+  /// comment, and for an ai comment predating this field or whose turn
+  /// hard-failed before a `done` event arrived.
+  final int? inputTokens;
+
+  /// Output tokens for the same call. See [inputTokens].
+  final int? outputTokens;
+
   /// When the comment was posted.
   final DateTime createdAt;
 
@@ -36,6 +46,8 @@ class TicketComment extends Equatable {
     required this.content,
     required this.authorType,
     this.aiModel,
+    this.inputTokens,
+    this.outputTokens,
     required this.createdAt,
   });
 
@@ -46,6 +58,8 @@ class TicketComment extends Equatable {
     content,
     authorType,
     aiModel,
+    inputTokens,
+    outputTokens,
     createdAt,
   ];
 }

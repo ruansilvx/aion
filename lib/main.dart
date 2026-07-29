@@ -14,6 +14,7 @@ import 'package:aion/features/projects/data/repositories/bundled_baseline_reposi
 import 'package:aion/features/projects/data/repositories/drift_project_repository.dart';
 import 'package:aion/features/projects/data/services/baseline_tailoring_service.dart';
 import 'package:aion/features/projects/projects.dart';
+import 'package:aion/features/providers/data/repositories/shared_prefs_execution_context_cap_repository.dart';
 import 'package:aion/features/providers/data/repositories/shared_prefs_model_routing_repository.dart';
 import 'package:aion/features/providers/providers.dart';
 
@@ -110,6 +111,12 @@ class _AionAppState extends State<AionApp> with WidgetsBindingObserver {
         ),
         RepositoryProvider<ModelRoutingRepository>(
           create: (_) => SharedPrefsModelRoutingRepository(),
+        ),
+        // The coding-execution context-window handoff cap override — also
+        // global, mirroring ModelRoutingRepository's own scope. Added for
+        // aion-arch/changes/dont-spawn-new-chat-ticket-per-execution-trigger.
+        RepositoryProvider<ExecutionContextCapRepository>(
+          create: (_) => SharedPrefsExecutionContextCapRepository(),
         ),
         // Global (not per-project) SDD-stage-triggering confidence
         // setting — see aion-arch/changes/sdd-ticket-execution/design.md.

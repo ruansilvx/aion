@@ -2535,12 +2535,21 @@ void main() {
             ),
           ],
         );
+        // No execution chat exists yet when _resolveExecutionChat first
+        // looks (the create-new branch runs); once
+        // repository.createTicket is called, it becomes findable — the
+        // same sequencing production code produces, and what
+        // _executionSucceededWithPr's post-run check relies on.
+        var executionChatCreated = false;
         when(
           () => repository.getTicketsByParent(
             taskUnderStory.id,
             types: const [TicketType.chat],
           ),
-        ).thenAnswer((_) async => [dummyExecutionChatTicket]);
+        ).thenAnswer(
+          (_) async =>
+              executionChatCreated ? [dummyExecutionChatTicket] : [],
+        );
         stubStatefulComments(commentRepository, dummyExecutionChatTicket.id);
         when(() => repository.getTicketById(any())).thenAnswer((invocation) async {
           final id = invocation.positionalArguments[0] as String;
@@ -2553,7 +2562,9 @@ void main() {
         when(
           () => repository.updateTicketStatus(any(), any()),
         ).thenAnswer((_) async {});
-        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        when(() => repository.createTicket(any())).thenAnswer((_) async {
+          executionChatCreated = true;
+        });
         when(() => agentClient.run(any())).thenAnswer(
           (_) async => Stream.fromIterable(const [
             AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
@@ -2694,6 +2705,12 @@ void main() {
           () => repository.updateTicketStatus(any(), any()),
         ).thenAnswer((_) async {});
         when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        // Neither Task has an execution chat yet — both trigger the
+        // create-new branch of _resolveExecutionChat.
+        when(
+          () =>
+              repository.getTicketsByParent(any(), types: const [TicketType.chat]),
+        ).thenAnswer((_) async => []);
         when(() => commentRepository.addComment(any())).thenAnswer(
           (_) async {},
         );
@@ -3158,6 +3175,7 @@ void main() {
       late MockGitRepositoryClient gitClient;
       late MockGitHubCliClient gitHubClient;
       late MockBaselineRepository baselineRepository;
+      late MockTicketLinkRepository linkRepository;
 
       setUp(() {
         agentClient = MockAgentModelClient();
@@ -3166,6 +3184,7 @@ void main() {
         gitClient = MockGitRepositoryClient();
         gitHubClient = MockGitHubCliClient();
         baselineRepository = MockBaselineRepository();
+        linkRepository = MockTicketLinkRepository();
         stubSuccessfulCodingExecutionInfra(gitClient, gitHubClient);
         stubEmptyBaseline(baselineRepository);
         when(
@@ -3184,6 +3203,12 @@ void main() {
           }
           return dummyExecutionChatTicket;
         });
+        // Default fixture: an existing, under-cap execution chat already
+        // exists for taskNoStory — the common case every test but the
+        // dedicated "first-ever trigger" one below exercises.
+        // `_resolveExecutionChat` reuses it rather than creating a new
+        // one; `stubStatefulComments` below starts it at zero accumulated
+        // usage, well under the (default, unconfigured) 200,000-token cap.
         when(
           () => repository.getTicketsByParent(
             taskNoStory.id,
@@ -3205,6 +3230,15 @@ void main() {
             AutomationContext.codingExecution,
           ),
         ).thenAnswer((_) async => AutomationConfidence.gated);
+        // A handoff's link-back — literal linkType (not `any()`) so no
+        // `registerFallbackValue(TicketLinkType...)` is needed here.
+        when(
+          () => linkRepository.createLink(
+            sourceTicketId: any(named: 'sourceTicketId'),
+            targetTicketId: any(named: 'targetTicketId'),
+            linkType: TicketLinkType.relatesTo,
+          ),
+        ).thenAnswer((_) async {});
       });
 
       TicketsCubit buildCubit() => TicketsCubit(
@@ -3218,6 +3252,7 @@ void main() {
         baselineRepository: baselineRepository,
         projectId: 'project-1',
         baselineVersion: '0.1.0',
+        linkRepository: linkRepository,
       );
 
       blocTest<TicketsCubit, TicketsState>(
@@ -3520,7 +3555,9 @@ void main() {
       );
 
       blocTest<TicketsCubit, TicketsState>(
-        'retryCodingExecution re-triggers the run for the given Task',
+        'retryCodingExecution reuses the Task\'s existing, under-cap '
+        'execution chat — no new chat ticket is created, and the run '
+        'posts to the existing chat\'s id',
         build: buildCubit,
         setUp: () {
           when(() => agentClient.run(any())).thenAnswer(
@@ -3533,13 +3570,197 @@ void main() {
         act: (cubit) => cubit.retryCodingExecution(taskNoStory),
         wait: const Duration(milliseconds: 50),
         verify: (_) {
-          verify(() => repository.createTicket(any())).called(1);
+          verifyNever(() => repository.createTicket(any()));
           // 2 model turns: implement, then agentic verify.
           verify(() => agentClient.run(any())).called(2);
           verify(
             () => gitClient.createWorktree(any(), any(), any()),
           ).called(1);
+          verify(
+            () => commentRepository.addComment(
+              any(
+                that: predicate<TicketComment>(
+                  (c) => c.ticketId == dummyExecutionChatTicket.id,
+                ),
+              ),
+            ),
+          ).called(greaterThan(0));
         },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'a first-ever trigger (no existing execution chat) still creates '
+        'exactly one chat',
+        build: buildCubit,
+        setUp: () {
+          when(
+            () => repository.getTicketsByParent(
+              taskNoStory.id,
+              types: const [TicketType.chat],
+            ),
+          ).thenAnswer((_) async => []);
+          when(() => agentClient.run(any())).thenAnswer(
+            (_) async => Stream.fromIterable(const [
+              AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+              AgentDoneEvent(),
+            ]),
+          );
+        },
+        act: (cubit) =>
+            cubit.changeTicketStatus(taskNoStory, TicketStatus.inProgress),
+        wait: const Duration(milliseconds: 50),
+        verify: (_) {
+          verify(() => repository.createTicket(any())).called(1);
+          verify(() => agentClient.run(any())).called(2);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'a chat at/over the handoff threshold hands off to a new linked '
+        'chat instead of reusing the over-cap one',
+        build: buildCubit,
+        setUp: () {
+          // No ModelRoutingRepository is supplied to this group's
+          // buildCubit, so the execution model resolves to
+          // AgentModel.sonnet's real 200,000-token contextWindowTokens
+          // (see TicketsCubit._resolveModel), and with no
+          // ExecutionContextCapRepository either, the effective cap is
+          // that same 200,000 with no override available. 190,000 >=
+          // 90% of that, so the existing chat is already over the
+          // handoff threshold before this run's own turns add anything.
+          when(
+            () => commentRepository.getCommentsForTicket(
+              dummyExecutionChatTicket.id,
+            ),
+          ).thenAnswer(
+            (_) async => [
+              TicketComment(
+                id: 'c-heavy',
+                ticketId: dummyExecutionChatTicket.id,
+                content: 'prior turn',
+                authorType: CommentAuthorType.ai,
+                inputTokens: 150000,
+                outputTokens: 40000,
+                createdAt: DateTime(2026),
+              ),
+            ],
+          );
+          when(() => agentClient.run(any())).thenAnswer(
+            (_) async => Stream.fromIterable(const [
+              AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+              AgentDoneEvent(),
+            ]),
+          );
+        },
+        act: (cubit) => cubit.retryCodingExecution(taskNoStory),
+        wait: const Duration(milliseconds: 50),
+        verify: (_) {
+          // Summary turn (handoff), then implement, then agentic verify.
+          verify(() => agentClient.run(any())).called(3);
+          verify(() => repository.createTicket(any())).called(1);
+          verify(
+            () => linkRepository.createLink(
+              sourceTicketId: any(named: 'sourceTicketId'),
+              targetTicketId: any(named: 'targetTicketId'),
+              linkType: TicketLinkType.relatesTo,
+            ),
+          ).called(1);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'a hard-failed handoff summary turn falls back to reusing the '
+        'old, over-cap chat rather than blocking the run — no new chat '
+        'is created',
+        build: buildCubit,
+        setUp: () {
+          when(
+            () => commentRepository.getCommentsForTicket(
+              dummyExecutionChatTicket.id,
+            ),
+          ).thenAnswer(
+            (_) async => [
+              TicketComment(
+                id: 'c-heavy',
+                ticketId: dummyExecutionChatTicket.id,
+                content: 'prior turn',
+                authorType: CommentAuthorType.ai,
+                inputTokens: 150000,
+                outputTokens: 40000,
+                createdAt: DateTime(2026),
+              ),
+            ],
+          );
+          when(() => agentClient.run(any())).thenThrow(Exception('boom'));
+        },
+        act: (cubit) => cubit.retryCodingExecution(taskNoStory),
+        wait: const Duration(milliseconds: 50),
+        verify: (_) {
+          verifyNever(() => repository.createTicket(any()));
+          verifyNever(
+            () => linkRepository.createLink(
+              sourceTicketId: any(named: 'sourceTicketId'),
+              targetTicketId: any(named: 'targetTicketId'),
+              linkType: TicketLinkType.relatesTo,
+            ),
+          );
+          // The failed summary turn, then the failed implement turn — no
+          // verify turn follows a hard implement failure.
+          verify(() => agentClient.run(any())).called(2);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        '_executionSucceededWithPr/_computeExecutionFailure (via '
+        'getTicketById) resolve against a "(continued)" handoff chat, not '
+        'the original',
+        build: () => TicketsCubit(
+          repository,
+          commentRepository: commentRepository,
+          automationSettingsRepository: automationSettingsRepository,
+        ),
+        setUp: () {
+          final continuedChat = Ticket(
+            id: 'dummy-exec-chat-continued',
+            ticketId: 'AIO-98',
+            type: TicketType.chat,
+            title:
+                'Coding Execution — ${taskUnderStory.title} (continued)',
+            status: TicketStatus.backlog,
+            parentId: taskUnderStory.id,
+            createdAt: DateTime(2026, 1, 2),
+            updatedAt: DateTime(2026, 1, 2),
+          );
+          when(
+            () => repository.getTicketsByParent(
+              taskNoStory.id,
+              types: const [TicketType.chat],
+            ),
+          ).thenAnswer(
+            (_) async => [dummyExecutionChatTicket, continuedChat],
+          );
+          when(
+            () => commentRepository.getCommentsForTicket(continuedChat.id),
+          ).thenAnswer(
+            (_) async => [
+              TicketComment(
+                id: 'c-pr-continued',
+                ticketId: continuedChat.id,
+                content: 'EXECUTION: PR_OPENED https://example/pr/continued',
+                authorType: CommentAuthorType.system,
+                createdAt: DateTime(2026, 1, 2),
+              ),
+            ],
+          );
+        },
+        act: (cubit) => cubit.getTicketById(taskNoStory.id),
+        expect: () => [
+          const TicketsLoading(),
+          TicketDetailLoaded(
+            taskNoStory.copyWith(status: TicketStatus.inProgress),
+            executionAwaitingReview: true,
+          ),
+        ],
       );
     },
   );
@@ -3997,11 +4218,14 @@ void main() {
           cubit.changeTicketStatus(taskUnderStory, TicketStatus.inProgress),
       wait: const Duration(milliseconds: 50),
       verify: (_) {
-        // Resolved twice: once for the implement turn, once for the
-        // agentic verify turn that follows it.
+        // Resolved three times: once by _resolveExecutionChat's cap check
+        // against the existing dummyExecutionChatTicket
+        // (_effectiveExecutionContextCap needs the model to know its real
+        // contextWindowTokens), then once each for the implement turn and
+        // the agentic verify turn that follows it.
         verify(
           () => modelRoutingRepository.getModelForPhase(ModelPhase.execution),
-        ).called(2);
+        ).called(3);
         verify(
           () => agentClient.run(
             any(
