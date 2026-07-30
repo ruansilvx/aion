@@ -498,4 +498,17 @@ extension AionColorsHubTokens on AionColors {
   /// `CodebaseAnalysisBanner`'s "SIGNALS" badge fill.
   Color signalChipTint(bool isDark) =>
       typeSignal.withValues(alpha: isDark ? 0.20 : 0.13);
+
+  // Generic accent tint, parameterized on an explicit accent rather than
+  // one fixed instance field — every other *Tint method above closes over
+  // a single color (e.g. primary/danger/typeSignal); the widened signal
+  // "Promote" menu's suggested-row treatment needs the same fill formula
+  // for whichever of typeEpic/typeBug the classifier suggested. Added for
+  // new-project-onboarding-inbox; see that change's design.md §7.3.1.
+  /// A resting-state tint of [accent] at the "whisper" alpha used by the
+  /// widened signal "Promote" menu's suggested-row background — fainter
+  /// than [surfaceHover] so hover still reads as a state change on top of
+  /// it.
+  Color accentTint(Color accent, bool isDark) =>
+      accent.withValues(alpha: isDark ? 0.09 : 0.06);
 }

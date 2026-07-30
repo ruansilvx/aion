@@ -222,6 +222,84 @@ void main() {
     expect(updated.actualBehavior, 'actual');
   });
 
+  test('suggestedType and inboxPurpose survive createTicket write/read, '
+      'null and populated', () async {
+    final now = DateTime(2026, 1, 1);
+    await repository.createTicket(
+      Ticket(
+        id: 'plain',
+        ticketId: '',
+        type: TicketType.task,
+        title: 'No inbox fields',
+        status: TicketStatus.backlog,
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+    await repository.createTicket(
+      Ticket(
+        id: 'signal-1',
+        ticketId: '',
+        type: TicketType.signal,
+        title: 'Brain-dumped idea',
+        status: TicketStatus.backlog,
+        suggestedType: TicketType.epic,
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+    await repository.createTicket(
+      Ticket(
+        id: 'chat-1',
+        ticketId: '',
+        type: TicketType.chat,
+        title: 'Inbox chat',
+        status: TicketStatus.backlog,
+        inboxPurpose: InboxPurpose.brainDump,
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+
+    final plain = await repository.getTicketById('plain');
+    final signal = await repository.getTicketById('signal-1');
+    final chat = await repository.getTicketById('chat-1');
+
+    expect(plain!.suggestedType, isNull);
+    expect(plain.inboxPurpose, isNull);
+    expect(signal!.suggestedType, TicketType.epic);
+    expect(signal.inboxPurpose, isNull);
+    expect(chat!.inboxPurpose, InboxPurpose.brainDump);
+    expect(chat.suggestedType, isNull);
+  });
+
+  test('updateTicket persists changes to suggestedType and inboxPurpose', () async {
+    final now = DateTime(2026, 1, 1);
+    await repository.createTicket(
+      Ticket(
+        id: 'signal-2',
+        ticketId: '',
+        type: TicketType.signal,
+        title: 'Signal to update',
+        status: TicketStatus.backlog,
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+    final persisted = await repository.getTicketById('signal-2');
+
+    await repository.updateTicket(
+      persisted!.copyWith(
+        suggestedType: () => TicketType.bug,
+        inboxPurpose: () => InboxPurpose.brainDump,
+      ),
+    );
+    final updated = await repository.getTicketById('signal-2');
+
+    expect(updated!.suggestedType, TicketType.bug);
+    expect(updated.inboxPurpose, InboxPurpose.brainDump);
+  });
+
   test('first ticket generated ticketId is "AIO-1" (default prefix)', () async {
     await repository.createTicket(buildTicket());
     final tickets = await repository.getAllTickets();
@@ -1102,12 +1180,13 @@ void main() {
         addTearDown(() => tempDir.deleteSync(recursive: true));
 
         // A fresh AppDatabase always runs onCreate at the *current*
-        // schemaVersion (7), which already includes the search
+        // schemaVersion (8), which already includes the search
         // infrastructure, the `deleted_at` column, the `sync_status`
         // column, the `complexity`/`sdd_stage` columns, the
         // `severity`/`steps_to_reproduce`/`expected_behavior`/
-        // `actual_behavior` columns, and `ticket_comments`'
-        // `input_tokens`/`output_tokens` columns — so the v1 shape has to
+        // `actual_behavior` columns, `ticket_comments`'
+        // `input_tokens`/`output_tokens` columns, and the
+        // `suggested_type`/`inbox_purpose` columns — so the v1 shape has to
         // be built by hand: strip back down to just the bare tables,
         // insert data, then stamp user_version back to 1.
         final v1Db = AppDatabase(_testProject, NativeDatabase(dbFile));
@@ -1128,12 +1207,12 @@ void main() {
         );
 
         // sync_status/complexity/severity/steps_to_reproduce/
-        // expected_behavior/actual_behavior can't be dropped yet —
-        // createTicket's generated companion sets all of them explicitly
-        // (unlike deleted_at/sdd_stage, which it never touches), so they
-        // must still exist for this insert to succeed. Drop them
-        // immediately after, before stamping user_version, to finish
-        // simulating the pre-v4 shape.
+        // expected_behavior/actual_behavior/suggested_type/inbox_purpose
+        // can't be dropped yet — createTicket's generated companion sets
+        // all of them explicitly (unlike deleted_at/sdd_stage, which it
+        // never touches), so they must still exist for this insert to
+        // succeed. Drop them immediately after, before stamping
+        // user_version, to finish simulating the pre-v4 shape.
         final preMigrationRepo = DriftTicketRepository(v1Db);
         await preMigrationRepo.createTicket(
           buildSearchable(id: 'pre-existing', title: 'Fix authentication bug'),
@@ -1154,6 +1233,12 @@ void main() {
         await v1Db.customStatement(
           'ALTER TABLE tickets DROP COLUMN actual_behavior;',
         );
+        await v1Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN suggested_type;',
+        );
+        await v1Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN inbox_purpose;',
+        );
         // ticket_comments' input_tokens/output_tokens (v7) — dropped even
         // though this test's assertions never touch that table, since
         // onUpgrade's `from < 7` addColumn step still runs unconditionally
@@ -1168,9 +1253,9 @@ void main() {
         await v1Db.customStatement('PRAGMA user_version = 1;');
         await v1Db.close();
 
-        // Reopen against the same file at the current schemaVersion (7).
-        // Drift reads user_version=1, sees schemaVersion=7, and runs
-        // onUpgrade automatically (the v2 through v7 steps).
+        // Reopen against the same file at the current schemaVersion (8).
+        // Drift reads user_version=1, sees schemaVersion=8, and runs
+        // onUpgrade automatically (the v2 through v8 steps).
         final v2Db = AppDatabase(_testProject, NativeDatabase(dbFile));
         final upgradedRepo = DriftTicketRepository(v2Db);
 
@@ -1184,6 +1269,51 @@ void main() {
         // trashed, since it existed before trash was ever a concept.
         expect(await upgradedRepo.getTrashedTickets(), isEmpty);
         await v2Db.close();
+      },
+    );
+
+    test(
+      'onUpgrade from v7 adds suggested_type/inbox_purpose, defaulting to '
+      'null on existing rows',
+      () async {
+        final tempDir = Directory.systemTemp.createTempSync(
+          'aion_migration_v8_test',
+        );
+        final dbFile = File('${tempDir.path}/test.sqlite');
+        addTearDown(() => tempDir.deleteSync(recursive: true));
+
+        final v7Db = AppDatabase(_testProject, NativeDatabase(dbFile));
+        final preMigrationRepo = DriftTicketRepository(v7Db);
+        await preMigrationRepo.createTicket(
+          buildSearchable(id: 'pre-existing', title: 'Pre-v8 ticket'),
+        );
+        // suggested_type/inbox_purpose can't be dropped until after the
+        // insert above, since createTicket's companion sets them
+        // explicitly — same reasoning as the v1 simulation above.
+        await v7Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN suggested_type;',
+        );
+        await v7Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN inbox_purpose;',
+        );
+        await v7Db.customStatement('PRAGMA user_version = 7;');
+        await v7Db.close();
+
+        final v8Db = AppDatabase(_testProject, NativeDatabase(dbFile));
+        final upgradedRepo = DriftTicketRepository(v8Db);
+
+        final found = await upgradedRepo.getTicketById('pre-existing');
+        expect(found, isNotNull);
+        expect(found!.suggestedType, isNull);
+        expect(found.inboxPurpose, isNull);
+
+        await upgradedRepo.updateTicket(
+          found.copyWith(suggestedType: () => TicketType.epic),
+        );
+        final updated = await upgradedRepo.getTicketById('pre-existing');
+        expect(updated!.suggestedType, TicketType.epic);
+
+        await v8Db.close();
       },
     );
   });

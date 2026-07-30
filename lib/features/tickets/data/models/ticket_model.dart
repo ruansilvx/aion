@@ -84,6 +84,18 @@ class TicketsTable extends Table {
   TextColumn get actualBehavior =>
       text().named('actual_behavior').nullable()();
 
+  /// `TicketType.name`, nullable. Meaningful only for `TicketType.signal`
+  /// tickets created by the Inbox brain-dump purpose — the model's
+  /// suggested promotion target (epic or bug).
+  TextColumn get suggestedType =>
+      text().named('suggested_type').nullable()();
+
+  /// `InboxPurpose.name`, nullable. Set exactly once, at creation, on the
+  /// parentless `chat` ticket an Inbox launch spawns. `null` for every
+  /// other ticket.
+  TextColumn get inboxPurpose =>
+      text().named('inbox_purpose').nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
 }

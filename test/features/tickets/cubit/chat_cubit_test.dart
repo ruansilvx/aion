@@ -417,6 +417,113 @@ void main() {
     );
   });
 
+  group('_phaseForChat — Inbox purpose (new-project-onboarding-inbox)', () {
+    ChatCubit buildCubitForPurpose() =>
+        ChatCubit(repository, client, ticketRepository, modelRoutingRepository);
+
+    Ticket inboxChat({
+      required String id,
+      required InboxPurpose purpose,
+      String? parentId,
+    }) => Ticket(
+      id: id,
+      ticketId: 'AIO-$id',
+      type: TicketType.chat,
+      title: 'Inbox chat',
+      status: TicketStatus.backlog,
+      inboxPurpose: purpose,
+      parentId: parentId,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    void stubTurn(String chatId, ModelPhase phase) {
+      when(
+        () => modelRoutingRepository.getModelForPhase(phase),
+      ).thenAnswer((_) async => AgentModel.sonnet);
+      when(() => repository.addComment(any())).thenAnswer((_) async {});
+      when(
+        () => repository.getCommentsForTicket(chatId),
+      ).thenAnswer((_) async => []);
+      when(() => client.run(any())).thenAnswer(
+        (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+      );
+    }
+
+    for (final purpose in [
+      InboxPurpose.brainDump,
+      InboxPurpose.whatNextGuidance,
+      InboxPurpose.releasePlanning,
+    ]) {
+      blocTest<ChatCubit, ChatState>(
+        'resolves ModelPhase.frontier for a parentless ${purpose.name} chat',
+        setUp: () {
+          final chat = inboxChat(id: 'inbox-${purpose.name}', purpose: purpose);
+          when(
+            () => ticketRepository.getTicketById(chat.id),
+          ).thenAnswer((_) async => chat);
+          stubTurn(chat.id, ModelPhase.frontier);
+        },
+        build: buildCubitForPurpose,
+        act: (cubit) => cubit.sendMessage(
+          chatTicketId: 'inbox-${purpose.name}',
+          content: 'Hello',
+        ),
+        verify: (_) {
+          verify(
+            () => modelRoutingRepository.getModelForPhase(ModelPhase.frontier),
+          ).called(1);
+        },
+      );
+    }
+
+    blocTest<ChatCubit, ChatState>(
+      'resolves ModelPhase.capable for a parentless qa chat',
+      setUp: () {
+        final chat = inboxChat(id: 'inbox-qa', purpose: InboxPurpose.qa);
+        when(
+          () => ticketRepository.getTicketById(chat.id),
+        ).thenAnswer((_) async => chat);
+        stubTurn(chat.id, ModelPhase.capable);
+      },
+      build: buildCubitForPurpose,
+      act: (cubit) =>
+          cubit.sendMessage(chatTicketId: 'inbox-qa', content: 'Hello'),
+      verify: (_) {
+        verify(
+          () => modelRoutingRepository.getModelForPhase(ModelPhase.capable),
+        ).called(1);
+      },
+    );
+
+    blocTest<ChatCubit, ChatState>(
+      'resolves via inboxPurpose (frontier) even when parentId is set, '
+      'never consulting the parent walk',
+      setUp: () {
+        final chat = inboxChat(
+          id: 'inbox-with-parent',
+          purpose: InboxPurpose.brainDump,
+          parentId: 'should-never-be-looked-up',
+        );
+        when(
+          () => ticketRepository.getTicketById(chat.id),
+        ).thenAnswer((_) async => chat);
+        stubTurn(chat.id, ModelPhase.frontier);
+      },
+      build: buildCubitForPurpose,
+      act: (cubit) => cubit.sendMessage(
+        chatTicketId: 'inbox-with-parent',
+        content: 'Hello',
+      ),
+      verify: (_) {
+        verify(
+          () => modelRoutingRepository.getModelForPhase(ModelPhase.frontier),
+        ).called(1);
+        verifyNever(() => ticketRepository.getTicketById('should-never-be-looked-up'));
+      },
+    );
+  });
+
   group('runChatTurn usage capture', () {
     test('persists inputTokens/outputTokens from a terminal AgentDoneEvent '
         'that carries them', () async {

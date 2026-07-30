@@ -14,9 +14,10 @@ import 'package:aion/features/tickets/presentation/widgets/ticket_link_picker.da
 /// The ticket "more actions" `⋯` trigger, shared across
 /// `TicketDetailScreen`'s header, `TicketListTile` (list rows), and
 /// `TicketBoardCard` (board cards). Opens a small overlay listing "Delete
-/// ticket" plus, for `signal` tickets only, "Promote to Epic" (linking to
-/// an existing epic via [TicketLinkPicker], or creating a new one, via
-/// [TicketsCubit.promoteSignalToEpic]) above it. Same `Overlay`/
+/// ticket" plus, for `signal` tickets only, "Promote to Epic"/"Promote to
+/// Bug" (linking to an existing ticket of that type via
+/// [TicketLinkPicker], or creating a new one, via
+/// [TicketsCubit.promoteSignal]) above it. Same `Overlay`/
 /// `LayerLink`/`CompositedTransformFollower`/`mounted`-guard mechanics as
 /// `MoveToStatusMenu` (`tickets_board_view.dart`) — a third instance of
 /// that pattern, since this is an *action list* rather than a *value
@@ -58,10 +59,10 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
   bool _isFocused = false;
   bool _isPressed = false;
 
-  /// Whether the overlay is currently showing the "Promote to Epic"
-  /// existing-vs-new chooser (§5.2) instead of the root action list.
-  /// Reset to `false` whenever the overlay closes.
-  bool _showPromoteChooser = false;
+  /// The target type of the existing-vs-new promote chooser (§5.2)
+  /// currently showing, or `null` when the overlay is showing the root
+  /// action list instead. Reset to `null` whenever the overlay closes.
+  TicketType? _promoteTargetType;
 
   @override
   void dispose() {
@@ -113,37 +114,48 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
                     minWidth: 180,
-                    maxWidth: _showPromoteChooser ? 208 : 240,
+                    maxWidth: _promoteTargetType != null
+                        ? 210
+                        : (widget.ticket.type == TicketType.signal
+                              ? 210
+                              : 240),
                   ),
                   child: StatefulBuilder(
                     builder: (context, setOverlayState) {
-                      return _showPromoteChooser
+                      final targetType = _promoteTargetType;
+                      return targetType != null
                           ? _PromoteChooser(
+                              targetType: targetType,
                               onBack: () => setOverlayState(
-                                () => _showPromoteChooser = false,
+                                () => _promoteTargetType = null,
                               ),
                               candidatesLoader: () async {
                                 final all = await ticketsCubit.getAllTickets();
                                 return all
-                                    .where((t) => t.type == TicketType.epic)
+                                    .where((t) => t.type == targetType)
                                     .toList();
                               },
-                              onLinkSelected: (epic) {
-                                ticketsCubit.promoteSignalToEpic(
+                              onLinkSelected: (existing) {
+                                ticketsCubit.promoteSignal(
                                   widget.ticket,
-                                  existingEpicId: epic.id,
+                                  targetType: targetType,
+                                  existingTicketId: existing.id,
                                 );
                                 _removeOverlay();
                               },
                               onCreateNewTap: () {
-                                ticketsCubit.promoteSignalToEpic(widget.ticket);
+                                ticketsCubit.promoteSignal(
+                                  widget.ticket,
+                                  targetType: targetType,
+                                );
                                 _removeOverlay();
                               },
                             )
                           : _RootMenu(
                               ticketType: widget.ticket.type,
-                              onPromoteTap: () => setOverlayState(
-                                () => _showPromoteChooser = true,
+                              suggestedType: widget.ticket.suggestedType,
+                              onPromoteTap: (type) => setOverlayState(
+                                () => _promoteTargetType = type,
                               ),
                               onDeleteTap: () {
                                 _removeOverlay();
@@ -167,7 +179,7 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
   void _removeOverlay() {
     _overlayEntry?.remove();
     _overlayEntry = null;
-    _showPromoteChooser = false;
+    _promoteTargetType = null;
     // Guards against setState-after-dispose — the same class of bug
     // project.md's AppDropdown overlay-dismiss crash note warns about.
     if (mounted) {
@@ -271,21 +283,29 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
   }
 }
 
-/// The root action-list content (Promote to Epic, for `signal` tickets
-/// only, then Delete ticket). Per design.md §5.1.
+/// The root action-list content ("Promote to Epic"/"Promote to Bug", for
+/// `signal` tickets only, then Delete ticket). Per design.md §7.1 Widened
+/// "Promote" menu.
 class _RootMenu extends StatelessWidget {
   const _RootMenu({
     required this.ticketType,
+    required this.suggestedType,
     required this.onPromoteTap,
     required this.onDeleteTap,
   });
 
-  /// The overflow menu's ticket's type — "Promote to Epic" renders only
+  /// The overflow menu's ticket's type — the promote rows render only
   /// when this is [TicketType.signal].
   final TicketType ticketType;
 
-  /// Called when "Promote to Epic" is tapped.
-  final VoidCallback onPromoteTap;
+  /// The signal's AI-suggested promotion target ([Ticket.suggestedType]),
+  /// if any — the matching promote row renders the "Suggested" treatment
+  /// (§7.3).
+  final TicketType? suggestedType;
+
+  /// Called with [TicketType.epic] or [TicketType.bug] when the
+  /// corresponding promote row is tapped.
+  final ValueChanged<TicketType> onPromoteTap;
 
   /// Called when "Delete ticket" is tapped.
   final VoidCallback onDeleteTap;
@@ -299,12 +319,19 @@ class _RootMenu extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (ticketType == TicketType.signal) ...[
-            _MenuActionRow(
+            _PromoteRootRow(
               icon: PhosphorIcons.crownLight,
-              iconColor: c.textSecondary,
-              labelColor: c.textPrimary,
-              label: context.l10n.ticketPromoteToEpicMenuItem,
-              onTap: onPromoteTap,
+              label: context.l10n.ticketOverflowPromoteToEpic,
+              accent: c.typeEpic,
+              suggested: suggestedType == TicketType.epic,
+              onTap: () => onPromoteTap(TicketType.epic),
+            ),
+            _PromoteRootRow(
+              icon: PhosphorIcons.bugLight,
+              label: context.l10n.ticketOverflowPromoteToBug,
+              accent: c.typeBug,
+              suggested: suggestedType == TicketType.bug,
+              onTap: () => onPromoteTap(TicketType.bug),
             ),
             Container(color: c.border, height: 1),
           ],
@@ -321,8 +348,101 @@ class _RootMenu extends StatelessWidget {
   }
 }
 
-/// A single tappable, intrinsically-sized icon+label row — shared by
-/// [_RootMenu]'s two actions.
+/// A single "Promote to Epic"/"Promote to Bug" root row (design.md §7.1).
+/// When [suggested] is `true`, the row gets a resting accent-tinted
+/// background (§7.3.1) plus a trailing "Suggested" pill (§7.3) — two
+/// redundant cues so the classifier's best-guess target reads instantly.
+class _PromoteRootRow extends StatelessWidget {
+  const _PromoteRootRow({
+    required this.icon,
+    required this.label,
+    required this.accent,
+    required this.suggested,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+
+  /// The target type's own accent (`typeEpic`/`typeBug`) — used for the
+  /// resting tint and the "Suggested" pill when [suggested] is `true`.
+  final Color accent;
+
+  /// Whether this row matches the signal's `Ticket.suggestedType`.
+  final bool suggested;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    return Semantics(
+      button: true,
+      label: label,
+      child: GestureDetector(
+        onTap: onTap,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: suggested ? c.accentTint(accent, t.isDark) : null,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+            child: Row(
+              children: [
+                PhosphorIcon(icon, size: 16, color: c.textSecondary),
+                const SizedBox(width: AionSpacing.sp8),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: AionText.bodySm.copyWith(
+                      color: c.textPrimary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                if (suggested) ...[
+                  const SizedBox(width: 8),
+                  _SuggestedPill(accent: accent),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The "Suggested" pill (design.md §7.3) rendered on whichever promote
+/// root row matches [Ticket.suggestedType].
+class _SuggestedPill extends StatelessWidget {
+  const _SuggestedPill({required this.accent});
+
+  /// The suggested target type's own accent (`typeEpic`/`typeBug`).
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.accentTint(accent, t.isDark),
+        borderRadius: BorderRadius.all(AionRadius.sm),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+        child: Text(
+          context.l10n.ticketOverflowSuggestedPill,
+          style: AionText.chip.copyWith(color: accent),
+        ),
+      ),
+    );
+  }
+}
+
+/// A single tappable icon+label row — used by [_RootMenu]'s "Delete
+/// ticket" action.
 class _MenuActionRow extends StatelessWidget {
   const _MenuActionRow({
     required this.icon,
@@ -348,15 +468,18 @@ class _MenuActionRow extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
           child: Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
               PhosphorIcon(icon, size: 16, color: iconColor),
               const SizedBox(width: AionSpacing.sp8),
-              Text(
-                label,
-                style: AionText.bodySm.copyWith(
-                  color: labelColor,
-                  fontWeight: FontWeight.w600,
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AionText.bodySm.copyWith(
+                    color: labelColor,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
@@ -367,9 +490,10 @@ class _MenuActionRow extends StatelessWidget {
   }
 }
 
-/// The "Promote to Epic" existing-vs-new chooser (§5.2/§5.3): a back
-/// header, then "Link to existing epic" (an embedded [TicketLinkPicker])
-/// and "Create new epic" (a direct action, no further dialog).
+/// The "Promote to Epic"/"Promote to Bug" existing-vs-new chooser
+/// (§5.2/§5.3, filtered by [targetType]): a back header, then "Link to
+/// existing epic/bug" (an embedded [TicketLinkPicker]) and "Create new
+/// epic/bug" (a direct action, no further dialog).
 /// [candidatesLoader]/[onLinkSelected]/[onCreateNewTap] are supplied by
 /// [_TicketOverflowMenuState._showOverlay] using its own `context` —
 /// this widget itself never reads `TicketsCubit`, since it's mounted
@@ -377,34 +501,47 @@ class _MenuActionRow extends StatelessWidget {
 /// route's provider scope.
 class _PromoteChooser extends StatelessWidget {
   const _PromoteChooser({
+    required this.targetType,
     required this.onBack,
     required this.candidatesLoader,
     required this.onLinkSelected,
     required this.onCreateNewTap,
   });
 
+  /// Which type this chooser's candidates/labels are filtered to —
+  /// [TicketType.epic] or [TicketType.bug].
+  final TicketType targetType;
+
   /// Called when the back caret is tapped, returning to [_RootMenu].
   final VoidCallback onBack;
 
-  /// Loads [TicketLinkPicker]'s candidate epics.
+  /// Loads [TicketLinkPicker]'s candidates, already filtered to
+  /// [targetType].
   final Future<List<Ticket>> Function() candidatesLoader;
 
-  /// Called with the selected epic when "Link to existing epic" resolves.
+  /// Called with the selected ticket when "Link to existing" resolves.
   final ValueChanged<Ticket> onLinkSelected;
 
-  /// Called when "Create new epic" is tapped.
+  /// Called when "Create new" is tapped.
   final VoidCallback onCreateNewTap;
 
   @override
   Widget build(BuildContext context) {
     final c = ThemeScope.of(context).colors;
+    final isEpic = targetType == TicketType.epic;
+    final headerTitle = isEpic
+        ? context.l10n.ticketOverflowPromoteToEpic
+        : context.l10n.ticketOverflowPromoteToBug;
+    final linkExistingLabel = isEpic
+        ? context.l10n.ticketPromoteLinkExistingEpic
+        : context.l10n.ticketPromoteLinkExistingBug;
+    final createNewLabel = isEpic
+        ? context.l10n.ticketPromoteCreateNewEpic
+        : context.l10n.ticketPromoteCreateNewBug;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _ChooserHeader(
-          onBack: onBack,
-          title: context.l10n.ticketPromoteToEpicMenuItem,
-        ),
+        _ChooserHeader(onBack: onBack, title: headerTitle),
         Container(color: c.border, height: 1),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
@@ -418,7 +555,7 @@ class _PromoteChooser extends StatelessWidget {
               const SizedBox(width: 11),
               Expanded(
                 child: Text(
-                  context.l10n.ticketPromoteLinkExisting,
+                  linkExistingLabel,
                   style: AionText.bodySm.copyWith(
                     color: c.textPrimary,
                     fontWeight: FontWeight.w600,
@@ -429,10 +566,10 @@ class _PromoteChooser extends StatelessWidget {
               TicketLinkPicker(
                 candidatesLoader: candidatesLoader,
                 // This picker is reused here purely as a searchable
-                // "pick an existing epic" control (see
-                // `promoteSignalToEpic`) — no `TicketLink` is ever
-                // created from this call site, so no link-type choice
-                // is offered and the picked type is discarded.
+                // "pick an existing epic/bug" control (see
+                // `promoteSignal`) — no `TicketLink` is ever created
+                // from this call site, so no link-type choice is
+                // offered and the picked type is discarded.
                 linkTypeOptions: const [],
                 onSelected: (ticket, _) => onLinkSelected(ticket),
               ),
@@ -442,7 +579,7 @@ class _PromoteChooser extends StatelessWidget {
         Container(color: c.border, height: 1),
         Semantics(
           button: true,
-          label: context.l10n.ticketPromoteCreateNew,
+          label: createNewLabel,
           child: GestureDetector(
             onTap: onCreateNewTap,
             child: Padding(
@@ -457,7 +594,7 @@ class _PromoteChooser extends StatelessWidget {
                   const SizedBox(width: 11),
                   Expanded(
                     child: Text(
-                      context.l10n.ticketPromoteCreateNew,
+                      createNewLabel,
                       style: AionText.bodySm.copyWith(
                         color: c.primary,
                         fontWeight: FontWeight.w600,
@@ -507,7 +644,14 @@ class _ChooserHeader extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          Text(title, style: AionText.label.copyWith(color: c.textSecondary)),
+          Expanded(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AionText.label.copyWith(color: c.textSecondary),
+            ),
+          ),
         ],
       ),
     );
