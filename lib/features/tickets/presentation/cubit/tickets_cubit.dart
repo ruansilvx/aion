@@ -1870,6 +1870,10 @@ class TicketsCubit extends Cubit<TicketsState> {
     final nextId = _executionQueue.removeAt(0);
     final next = await _repository.getTicketById(nextId);
     if (next == null) {
+      // The pop above already changed _executionQueue's positions, even
+      // though nothing started running — refresh so the Board doesn't
+      // show a stale queue position for the ids behind the skipped one.
+      _refreshInFlightBoardState();
       unawaited(_dequeueNext());
       return;
     }
