@@ -199,6 +199,21 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// runs next.
   final List<String> _executionQueue = [];
 
+  /// Epic/Story ids currently mid-advance (their [advanceSddStage] chat
+  /// spawn hasn't finished its stage-chat turn yet), plus — once known —
+  /// the id of the chat ticket that spawn is running against. Both ids
+  /// for the same in-flight advance are added/removed together, so
+  /// [getTicketById] can compute `isAdvancingStage` uniformly whether the
+  /// currently loaded ticket is the Epic/Story itself or its freshly
+  /// spawned stage chat. Unlike [_inFlightExecutionTaskId], this is a
+  /// `Set`, not a single nullable id plus a FIFO queue — stage chats
+  /// share no exclusive resource (no git worktree, unlike
+  /// coding-execution), so multiple Epic/Story advances can run fully
+  /// concurrently. In-memory only, does not survive an app restart
+  /// (mirrors [_inFlightExecutionTaskId]). Added for
+  /// `aion-arch/changes/board-execution-indicators-and-notifications`.
+  final Set<String> _inFlightStageAdvanceIds = {};
+
   /// Whether an `AgentOverageDetectedEvent` has fired during any
   /// coding-execution run this session — once `true`, every subsequent
   /// completion is treated as [AutomationConfidence.gated] regardless of
@@ -709,20 +724,30 @@ class TicketsCubit extends Cubit<TicketsState> {
   ///
   /// On success: persists the new stage via
   /// [TicketRepository.updateTicketSddStage], re-emits
-  /// [TicketDetailLoaded] (so the tracker/current-stage line update
-  /// immediately, independent of how long the spawned chat's model call
-  /// below takes), then spawns the next stage's chat (see
-  /// [_spawnStageChat]) unless the new stage is [SddStage.archived]
-  /// (nothing to spawn after Archival).
+  /// [TicketDetailLoaded] (so the tracker/current-stage line updates
+  /// immediately), then creates the next stage's chat (see
+  /// [_createStageChat]) and backgrounds its AI turn (see
+  /// [_runStageChatTurn]) unless the new stage is [SddStage.archived]
+  /// (nothing to spawn after Archival). No-ops (returns `null` without
+  /// starting a second concurrent spawn) if [ticket.id] is already in
+  /// [_inFlightStageAdvanceIds] — a double-tap/rebuild race.
   ///
-  /// @returns the spawned chat ticket's id once it and its first AI reply
-  /// have been persisted, so a caller (`TicketDetailScreen`'s Advance
-  /// button handlers) can navigate straight to it; `null` when nothing
-  /// was spawned (the new stage is [SddStage.archived]) or nothing to
-  /// advance (a rejection already emitted [TicketsError]).
+  /// @returns the spawned chat ticket's id once it has been persisted,
+  /// so a caller (`TicketDetailScreen`'s Advance button handlers) can
+  /// navigate straight to it; `null` when nothing was spawned (the new
+  /// stage is [SddStage.archived]) or nothing to advance (a rejection
+  /// already emitted [TicketsError]). Unlike before
+  /// `aion-arch/changes/board-execution-indicators-and-notifications`,
+  /// this now resolves once the chat ticket exists — **not** once its
+  /// first AI reply has landed; [isAdvancingStage] stays `true` on both
+  /// the Epic/Story and the freshly created chat ticket until
+  /// [_runStageChatTurn] finishes.
   Future<String?> advanceSddStage(Ticket ticket) async {
     if (ticket.type != TicketType.epic && ticket.type != TicketType.story) {
       await _emitSddStagePreconditionNotMet(ticket.id);
+      return null;
+    }
+    if (_inFlightStageAdvanceIds.contains(ticket.id)) {
       return null;
     }
 
@@ -740,10 +765,26 @@ class TicketsCubit extends Cubit<TicketsState> {
       await _repository.updateTicketSddStage(ticket.id, nextStage);
       final refreshed = await _repository.getTicketById(ticket.id);
       if (refreshed == null) return null;
-      emit(TicketDetailLoaded(refreshed));
-      if (nextStage == SddStage.archived) return null;
-      return await _spawnStageChat(refreshed, nextStage);
+      if (nextStage == SddStage.archived) {
+        emit(TicketDetailLoaded(refreshed));
+        return null;
+      }
+
+      _inFlightStageAdvanceIds.add(ticket.id);
+      emit(TicketDetailLoaded(refreshed, isAdvancingStage: true));
+      _refreshInFlightBoardState();
+
+      final chatId = await _createStageChat(refreshed, nextStage);
+      if (chatId == null) {
+        _inFlightStageAdvanceIds.remove(ticket.id);
+        _refreshInFlightBoardState();
+        return null;
+      }
+      _inFlightStageAdvanceIds.add(chatId);
+      unawaited(_runStageChatTurn(refreshed, nextStage, chatId));
+      return chatId;
     } catch (e) {
+      _inFlightStageAdvanceIds.remove(ticket.id);
       emit(TicketsError(e.toString()));
       return null;
     }
@@ -1156,10 +1197,44 @@ class TicketsCubit extends Cubit<TicketsState> {
   Future<void> _triggerOrQueueCodingExecution(Ticket task) async {
     if (_inFlightExecutionTaskId != null) {
       _executionQueue.add(task.id);
+      _refreshInFlightBoardState();
       return;
     }
     _inFlightExecutionTaskId = task.id;
+    _refreshInFlightBoardState();
     unawaited(_runCodingExecution(task));
+  }
+
+  /// Re-emits the current list-shaped state (`TicketsLoaded` only — a
+  /// no-op while a detail screen or a mutation-in-flight state is
+  /// active, since there's no Board to refresh in that case) with
+  /// [TicketsLoaded.inFlightExecutionIds]/
+  /// [TicketsLoaded.executionQueuePositions]/
+  /// [TicketsLoaded.inFlightAdvanceIds] recomputed from
+  /// [_inFlightExecutionTaskId]/[_executionQueue]/
+  /// [_inFlightStageAdvanceIds]. Called at every mutation site of those
+  /// three: [_triggerOrQueueCodingExecution], [_dequeueNext],
+  /// [_runCodingExecution]'s completion and catch-path clears, and every
+  /// [_inFlightStageAdvanceIds] mutation in [advanceSddStage]/
+  /// [_runStageChatTurn] — so `TicketBoardCard` never needs to poll.
+  /// Added for `aion-arch/changes/board-execution-indicators-and-notifications`.
+  void _refreshInFlightBoardState() {
+    final current = state;
+    if (current is! TicketsLoaded) return;
+    emit(
+      TicketsLoaded(
+        current.tickets,
+        hasMore: current.hasMore,
+        inFlightExecutionIds: _inFlightExecutionTaskId == null
+            ? const {}
+            : {_inFlightExecutionTaskId!},
+        executionQueuePositions: {
+          for (var i = 0; i < _executionQueue.length; i++)
+            _executionQueue[i]: i + 1,
+        },
+        inFlightAdvanceIds: Set.unmodifiable(_inFlightStageAdvanceIds),
+      ),
+    );
   }
 
   /// Resolves which chat [task]'s next implement/verify turn(s) post to:
@@ -1464,6 +1539,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         baselineVersion == null ||
         rootPath == null) {
       _inFlightExecutionTaskId = null;
+      _refreshInFlightBoardState();
       unawaited(_dequeueNext());
       return;
     }
@@ -1485,6 +1561,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     final (chat, handoffSummary) = await _resolveExecutionChat(task);
     if (chat == null) {
       _inFlightExecutionTaskId = null;
+      _refreshInFlightBoardState();
       unawaited(_dequeueNext());
       return;
     }
@@ -1679,6 +1756,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     // `isExecuting` computation correctly sees this run as finished,
     // rather than reporting the just-completed run as still in flight.
     _inFlightExecutionTaskId = null;
+    _refreshInFlightBoardState();
 
     if (wasShowingTaskDetail) {
       await getTicketById(task.id);
@@ -1792,10 +1870,15 @@ class TicketsCubit extends Cubit<TicketsState> {
     final nextId = _executionQueue.removeAt(0);
     final next = await _repository.getTicketById(nextId);
     if (next == null) {
+      // The pop above already changed _executionQueue's positions, even
+      // though nothing started running — refresh so the Board doesn't
+      // show a stale queue position for the ids behind the skipped one.
+      _refreshInFlightBoardState();
       unawaited(_dequeueNext());
       return;
     }
     _inFlightExecutionTaskId = next.id;
+    _refreshInFlightBoardState();
     unawaited(_runCodingExecution(next));
   }
 
@@ -2091,6 +2174,62 @@ class TicketsCubit extends Cubit<TicketsState> {
     return (stalledMessage, true);
   }
 
+  /// Computes the `(sddStageFailureReason, sddStageCanRetry)` pair for
+  /// [epicOrStoryId]'s most recent [advanceSddStage] attempt — used by
+  /// [getTicketById]. Mirrors [_computeExecutionFailure]'s shape, but
+  /// looks at the ticket's most recently created `chat` child directly
+  /// (unlike [_mostRecentExecutionChat], no title-prefix filter is
+  /// needed here — every `chat` child of an epic/story is a stage-
+  /// advance chat spawned by [_createStageChat], never a coding-
+  /// execution chat, which only ever parents under a Task/Bug) and
+  /// inspects its most recent comment:
+  /// - Starts with `"Stage advance failed: "` (posted by
+  ///   [_runStageChatTurn]'s catch block) → that comment's content,
+  ///   `canRetry: true`.
+  /// - No `chat` child exists yet, or the most recent comment is
+  ///   [CommentAuthorType.ai]-authored (the turn completed normally) →
+  ///   `(null, false)`.
+  /// - Anything else while [epicOrStoryId] is **not** in
+  ///   [_inFlightStageAdvanceIds] (orphaned — most likely an app restart
+  ///   happened mid-turn) → a fixed "ended without a clear result"
+  ///   message, `canRetry: true`, mirroring [_computeExecutionFailure]'s
+  ///   own orphaned/stalled fallback. While still in-flight, `(null,
+  ///   false)` — the turn just hasn't produced a terminal comment yet.
+  /// Added for `aion-arch/changes/board-execution-indicators-and-notifications`.
+  Future<(String?, bool)> _computeStageAdvanceFailure(
+    String epicOrStoryId,
+  ) async {
+    final commentRepo = _commentRepository;
+    if (commentRepo == null) return (null, false);
+    final chats = await _repository.getTicketsByParent(
+      epicOrStoryId,
+      types: const [TicketType.chat],
+    );
+    if (chats.isEmpty) return (null, false);
+    final mostRecentChat = chats.reduce(
+      (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
+    );
+    const stalledMessage = 'Stage advance ended without a clear result.';
+    final comments = await commentRepo.getCommentsForTicket(
+      mostRecentChat.id,
+    );
+    if (comments.isEmpty) {
+      return _inFlightStageAdvanceIds.contains(epicOrStoryId)
+          ? (null, false)
+          : (stalledMessage, true);
+    }
+    final mostRecent = comments.reduce(
+      (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
+    );
+    if (mostRecent.content.startsWith('Stage advance failed: ')) {
+      return (mostRecent.content, true);
+    }
+    if (mostRecent.authorType == CommentAuthorType.ai) return (null, false);
+    return _inFlightStageAdvanceIds.contains(epicOrStoryId)
+        ? (null, false)
+        : (stalledMessage, true);
+  }
+
   /// Whether [parentId]'s most recently created `chat` child ticket
   /// already has at least one [CommentAuthorType.ai] comment — the proxy
   /// this change uses for "that stage's chat has completed," since a
@@ -2127,25 +2266,22 @@ class TicketsCubit extends Cubit<TicketsState> {
     return repo.getModelForPhase(phase);
   }
 
-  /// Creates a `chat`-type child ticket for [stage] under [parent],
+  /// Creates a `chat`-type child ticket for [stage] under [parent] and
   /// posts an auto-assembled [CommentAuthorType.system] context comment
-  /// (see [_assembleStageContext]), then calls the configured
-  /// [AgentModelClient] and persists the streamed reply via
-  /// [ChatCubit.runChatTurn] — the same accumulate-then-persist logic
-  /// [ChatCubit.sendMessage] uses, so the spawn path and the user-message
-  /// path can't drift apart. Returns the spawned chat ticket's id, or
-  /// `null` if constructed without an [AgentModelClient]/
-  /// [CommentRepository] (see the constructor's dartdoc) — real usage
-  /// (`app_router.dart`) always supplies both. The model is resolved via
-  /// [_resolveModel] using [stage]'s [SddStageModelPhase.modelPhase] (see
-  /// `aion-arch/changes/per-phase-tier-based-model-routing`), replacing
-  /// the previous hardcoded [AgentModel.sonnet] default. For
+  /// (see [_assembleStageContext]) — the `await`ed half of what used to
+  /// be a single blocking `_spawnStageChat` call before
+  /// `aion-arch/changes/board-execution-indicators-and-notifications`
+  /// split it so [advanceSddStage] no longer blocks on the chat's AI
+  /// reply (see [_runStageChatTurn] for that half). Returns the
+  /// persisted chat ticket's id, or `null` if constructed without an
+  /// [AgentModelClient]/[CommentRepository] (see the constructor's
+  /// dartdoc) — real usage (`app_router.dart`) always supplies both. For
   /// [SddStage.designBrief] specifically, also creates a `page`-type
   /// design ticket (`"Design — <parent.title>"`) and links it to
   /// [parent] via [TicketLinkRepository.createLink] before the chat
   /// itself is created — see [_linkedDesignPage]. Added for
   /// `aion-arch/changes/sdd-design-gate`.
-  Future<String?> _spawnStageChat(Ticket parent, SddStage stage) async {
+  Future<String?> _createStageChat(Ticket parent, SddStage stage) async {
     final client = _agentClient;
     final commentRepo = _commentRepository;
     if (client == null || commentRepo == null) return null;
@@ -2203,14 +2339,74 @@ class TicketsCubit extends Cubit<TicketsState> {
       ),
     );
 
-    await ChatCubit.runChatTurn(
-      client: client,
-      commentRepo: commentRepo,
-      chatTicketId: persistedChat.id,
-      prompt: context,
-      model: await _resolveModel(stage.modelPhase),
-    );
     return persistedChat.id;
+  }
+
+  /// Runs [chatId]'s stage-advance AI turn for [parent]/[stage] — the
+  /// `unawaited` half of what used to be a single blocking
+  /// `_spawnStageChat` call (see [_createStageChat] for the `await`ed
+  /// chat-creation half). Calls the configured [AgentModelClient] and
+  /// persists the streamed reply via [ChatCubit.runChatTurn] — the same
+  /// accumulate-then-persist logic [ChatCubit.sendMessage] uses, so the
+  /// spawn path and the user-message path can't drift apart. The model
+  /// is resolved via [_resolveModel] using [stage]'s
+  /// [SddStageModelPhase.modelPhase] (see
+  /// `aion-arch/changes/per-phase-tier-based-model-routing`). Re-runs
+  /// [_assembleStageContext] to get [chatId]'s turn prompt (cheap —
+  /// local ticket/comment reads only, no network) rather than threading
+  /// [_createStageChat]'s already-computed context through an extra
+  /// parameter. A hard error escaping [ChatCubit.runChatTurn] — this
+  /// method runs `unawaited`, so nothing else would ever observe it — is
+  /// caught, posts a `"Stage advance failed: <e>"` system comment
+  /// (mirrors [_runCodingExecution]'s own `"Execution failed: ..."`
+  /// catch-comment shape) and emits
+  /// [TicketsErrorReason.sddStageAdvanceFailed] so the failure surfaces
+  /// in the chat transcript and as a one-shot toast instead of silently
+  /// vanishing into a discarded `unawaited` future. On completion
+  /// (success or failure), removes both [parent]'s id and [chatId] from
+  /// [_inFlightStageAdvanceIds] and calls [_refreshInFlightBoardState].
+  /// Added for
+  /// `aion-arch/changes/board-execution-indicators-and-notifications`.
+  Future<void> _runStageChatTurn(
+    Ticket parent,
+    SddStage stage,
+    String chatId,
+  ) async {
+    final client = _agentClient;
+    final commentRepo = _commentRepository;
+    if (client == null || commentRepo == null) return;
+
+    try {
+      final context = await _assembleStageContext(parent, stage);
+      await ChatCubit.runChatTurn(
+        client: client,
+        commentRepo: commentRepo,
+        chatTicketId: chatId,
+        prompt: context,
+        model: await _resolveModel(stage.modelPhase),
+      );
+    } catch (e) {
+      await commentRepo.addComment(
+        TicketComment(
+          id: '',
+          ticketId: chatId,
+          content: 'Stage advance failed: $e',
+          authorType: CommentAuthorType.system,
+          createdAt: DateTime.now(),
+        ),
+      );
+      emit(
+        const TicketsError(
+          '',
+          reason: TicketsErrorReason.sddStageAdvanceFailed,
+        ),
+      );
+    } finally {
+      _inFlightStageAdvanceIds
+        ..remove(parent.id)
+        ..remove(chatId);
+      _refreshInFlightBoardState();
+    }
   }
 
   /// Assembles the plain-text context a spawned stage chat opens with:
@@ -2410,7 +2606,17 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [TicketDetailLoaded.executionFailureReason]/
   /// [TicketDetailLoaded.executionCanRetry] via
   /// [_computeExecutionFailure]. Added for
-  /// `aion-arch/changes/coding-execution-reliability-and-safety`.
+  /// `aion-arch/changes/coding-execution-reliability-and-safety`. Also
+  /// computes [TicketDetailLoaded.isAdvancingStage] from
+  /// [_inFlightStageAdvanceIds] for **any** ticket type — `true` for an
+  /// `epic`/`story` with an [advanceSddStage] chat spawn in flight, or
+  /// for a `chat` ticket that *is* that in-flight spawn's own chat
+  /// ticket. For an `epic`/`story` with a current [Ticket.sddStage] that
+  /// isn't mid-advance, also computes
+  /// [TicketDetailLoaded.sddStageFailureReason]/
+  /// [TicketDetailLoaded.sddStageCanRetry] via
+  /// [_computeStageAdvanceFailure]. Added for
+  /// `aion-arch/changes/board-execution-indicators-and-notifications`.
   Future<void> getTicketById(String id) async {
     emit(const TicketsLoading());
     try {
@@ -2469,6 +2675,21 @@ class TicketsCubit extends Cubit<TicketsState> {
         }
       }
 
+      final isAdvancingStage = _inFlightStageAdvanceIds.contains(ticket.id);
+
+      String? sddStageFailureReason;
+      var sddStageCanRetry = false;
+      if ((ticket.type == TicketType.epic ||
+              ticket.type == TicketType.story) &&
+          !isAdvancingStage &&
+          ticket.sddStage != null) {
+        final (reason, canRetry) = await _computeStageAdvanceFailure(
+          ticket.id,
+        );
+        sddStageFailureReason = reason;
+        sddStageCanRetry = canRetry;
+      }
+
       emit(
         TicketDetailLoaded(
           ticket,
@@ -2481,6 +2702,9 @@ class TicketsCubit extends Cubit<TicketsState> {
           executionAwaitingReview: executionAwaitingReview,
           executionFailureReason: executionFailureReason,
           executionCanRetry: executionCanRetry,
+          isAdvancingStage: isAdvancingStage,
+          sddStageFailureReason: sddStageFailureReason,
+          sddStageCanRetry: sddStageCanRetry,
         ),
       );
     } catch (e) {

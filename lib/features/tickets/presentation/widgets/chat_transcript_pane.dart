@@ -35,6 +35,7 @@ class ChatTranscriptPane extends StatefulWidget {
     required this.automationConfidence,
     required this.onAdvanceSddStage,
     required this.onMaybeAutoAdvance,
+    this.isAdvancingStage = false,
   });
 
   /// Internal id of the chat ticket whose transcript this pane renders.
@@ -53,6 +54,14 @@ class ChatTranscriptPane extends StatefulWidget {
 
   /// Forwarded to [TicketMetadataSection].
   final void Function(Ticket ticket, bool canAdvance) onMaybeAutoAdvance;
+
+  /// Whether [ticket] itself is the live target of a
+  /// `TicketsCubit._runStageChatTurn` spawn (`TicketDetailLoaded
+  /// .isAdvancingStage`, sourced from `ticket_detail_screen.dart`'s own
+  /// `TicketsCubit` subscription) — drives [_WaitingForReplyIndicator]
+  /// at the transcript's tail while `true`. Added for
+  /// `aion-arch/changes/board-execution-indicators-and-notifications`.
+  final bool isAdvancingStage;
 
   @override
   State<ChatTranscriptPane> createState() => _ChatTranscriptPaneState();
@@ -141,6 +150,20 @@ class _ChatTranscriptPaneState extends State<ChatTranscriptPane> {
                           ),
                         ),
                       ),
+                      // TicketsCubit._runStageChatTurn runs outside this
+                      // screen's own ChatCubit, so streamingText/
+                      // currentToolUse never reflect it — this is the
+                      // only "something is happening" signal available
+                      // while its reply is still in flight.
+                      if (widget.isAdvancingStage &&
+                          streamingText == null &&
+                          currentToolUse == null)
+                        SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+                          sliver: const SliverToBoxAdapter(
+                            child: _WaitingForReplyIndicator(),
+                          ),
+                        ),
                     ],
                   ),
         };
@@ -374,6 +397,93 @@ class _StaticExpandedHeader extends StatelessWidget {
     return SizedBox(
       height: delegate.maxExtent,
       child: delegate.build(context, 0, false),
+    );
+  }
+}
+
+/// Shown at the tail of a chat ticket's transcript while a spawned
+/// [TicketsCubit] stage-advance turn (see `TicketsCubit
+/// ._runStageChatTurn`) hasn't posted its reply for *this* chat ticket
+/// yet. Reuses [_StreamingBubble]'s pulsing-dot pre-text treatment
+/// (design.md §2.3a) — fixed text only, no `{tool}` emphasis, since
+/// `_runStageChatTurn` calls `ChatCubit.runChatTurn`'s static helper
+/// directly rather than through this screen's own [ChatCubit], so
+/// there's no live `currentToolUse`/`streamingText` to show instead.
+/// Removed the instant the real reply lands and
+/// `ChatTranscriptPane.isAdvancingStage` flips to `false` (driving
+/// `ticket_detail_screen.dart`'s `BlocListener` to call
+/// `ChatCubit.loadMessages`, which replaces this row with the real
+/// reply bubble). Added for
+/// `aion-arch/changes/board-execution-indicators-and-notifications`.
+class _WaitingForReplyIndicator extends StatefulWidget {
+  const _WaitingForReplyIndicator();
+
+  @override
+  State<_WaitingForReplyIndicator> createState() =>
+      _WaitingForReplyIndicatorState();
+}
+
+class _WaitingForReplyIndicatorState extends State<_WaitingForReplyIndicator>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulseController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  );
+
+  bool _startedPulsing = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_startedPulsing && !MediaQuery.of(context).disableAnimations) {
+      _startedPulsing = true;
+      _pulseController.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    final reducedMotion = MediaQuery.of(context).disableAnimations;
+    final dot = DecoratedBox(
+      decoration: BoxDecoration(color: c.primary, shape: BoxShape.circle),
+      child: const SizedBox(width: 7, height: 7),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          reducedMotion
+              ? dot
+              : ScaleTransition(
+                  scale: Tween<double>(
+                    begin: 0.8,
+                    end: 1.0,
+                  ).animate(_pulseController),
+                  child: FadeTransition(
+                    opacity: Tween<double>(
+                      begin: 0.35,
+                      end: 1.0,
+                    ).animate(_pulseController),
+                    child: dot,
+                  ),
+                ),
+          const SizedBox(width: 8),
+          Text(
+            context.l10n.ticketDetailWaitingForReply,
+            style: AionText.streamStatus.copyWith(color: c.textSecondary),
+          ),
+        ],
+      ),
     );
   }
 }

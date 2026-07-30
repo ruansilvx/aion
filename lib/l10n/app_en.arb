@@ -227,6 +227,19 @@
   "ticketDetailCodingExecutionMarkReadyButton": "Mark ready for review",
   "ticketDetailCodingExecutionFailedTitle": "Verification failed — PR not opened",
   "ticketDetailCodingExecutionRetryButton": "Retry",
+  "ticketDetailStageAdvancingHintPrefix": "Advancing to ",
+  "ticketDetailStageAdvancingHintSuffix": " — running the stage chat.",
+  "ticketDetailStageAdvanceFailedTitle": "Stage advance failed",
+  "ticketDetailStageAdvanceRetryButton": "Retry advance",
+  "ticketDetailWaitingForReply": "Waiting for reply…",
+  "ticketDetailBoardBadgeRunning": "Running",
+  "ticketDetailBoardBadgeQueuedNth": "Queued #{n}",
+  "@ticketDetailBoardBadgeQueuedNth": {
+    "placeholders": {
+      "n": { "type": "int" }
+    }
+  },
+  "ticketDetailBoardBadgeAdvancing": "Advancing",
   "ticketDetailViaModel": "via {model}",
   "@ticketDetailViaModel": {
     "placeholders": {
@@ -285,6 +298,7 @@
   "executionBudgetOverageDetectedToast": "Usage limit reached — coding execution now requires confirmation for the rest of this session.",
 
   "executionVerificationFailedToast": "Coding run failed verification — see the Task for details.",
+  "sddStageAdvanceFailedToast": "Stage advance failed — see the ticket for details.",
 
   "ticketTrashConfirmMessage": "{total, plural, one{This ticket will move to Trash.} other{These {total} tickets will move to Trash.}} You can restore it from Trash later.",
   "@ticketTrashConfirmMessage": {

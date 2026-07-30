@@ -1,11 +1,16 @@
 // core/routing/workspace_nav_shell.dart — WorkspaceNavShell persistent navigation chrome (core layer).
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
+import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
+import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
+import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart'
+    show ticketsErrorMessage;
 
 /// Persistent navigation chrome wrapping every `/workspace/*` route's
 /// content: a left sidebar on wide layouts, a bottom tab bar on narrow
@@ -17,6 +22,15 @@ import 'package:aion/design_system/design_system.dart';
 /// (`_SwitchProjectButton`/`_DocumentationEntryButton`/`_TrashEntryButton`)
 /// that `TicketsListScreen` used to own alone, and gives `DocumentationScreen`
 /// a way back to Tickets for the first time on every platform.
+///
+/// Also owns an app-wide `BlocListener<TicketsCubit, TicketsState>`
+/// that shows an [AppToast] for every classified [TicketsErrorReason]
+/// [TicketsCubit] emits, regardless of which `/workspace/*` screen is
+/// currently active — `app_router.dart`'s single `ShellRoute` wraps
+/// Tickets, Documentation, and Settings alike, and
+/// `BlocProvider<TicketsCubit>` sits above this widget in the tree, so
+/// no new provider wiring is needed. Added for
+/// `aion-arch/changes/board-execution-indicators-and-notifications`.
 class WorkspaceNavShell extends StatelessWidget {
   /// Creates a [WorkspaceNavShell]. [currentLocation] drives which
   /// destination renders as active; [child] is the routed screen content.
@@ -40,23 +54,31 @@ class WorkspaceNavShell extends StatelessWidget {
     void selectTickets() => context.go('/workspace/tickets');
     void selectDocumentation() => context.go('/workspace/documentation');
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isCompact = constraints.maxWidth <= _kBreakpoint;
-        return isCompact
-            ? _CompactShell(
-                active: destination,
-                onSelectTickets: selectTickets,
-                onSelectDocumentation: selectDocumentation,
-                child: child,
-              )
-            : _WideShell(
-                active: destination,
-                onSelectTickets: selectTickets,
-                onSelectDocumentation: selectDocumentation,
-                child: child,
-              );
+    return BlocListener<TicketsCubit, TicketsState>(
+      listenWhen: (previous, current) => current is TicketsError,
+      listener: (context, state) {
+        final reason = (state as TicketsError).reason;
+        if (reason == null) return; // raw/unclassified — screen-local only
+        AppToast.show(context, ticketsErrorMessage(context, reason));
       },
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isCompact = constraints.maxWidth <= _kBreakpoint;
+          return isCompact
+              ? _CompactShell(
+                  active: destination,
+                  onSelectTickets: selectTickets,
+                  onSelectDocumentation: selectDocumentation,
+                  child: child,
+                )
+              : _WideShell(
+                  active: destination,
+                  onSelectTickets: selectTickets,
+                  onSelectDocumentation: selectDocumentation,
+                  child: child,
+                );
+        },
+      ),
     );
   }
 }

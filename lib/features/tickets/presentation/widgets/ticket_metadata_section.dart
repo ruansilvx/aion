@@ -133,6 +133,9 @@ class TicketMetadataSection extends StatelessWidget {
                   :final executionAwaitingReview,
                   :final executionFailureReason,
                   :final executionLiveActivity,
+                  :final isAdvancingStage,
+                  :final sddStageFailureReason,
+                  :final sddStageCanRetry,
                 ) =>
                   Semantics(
                     header: true,
@@ -418,6 +421,11 @@ class TicketMetadataSection extends StatelessWidget {
                                 automationConfidence: automationConfidence,
                                 needsDesignReview: needsDesignReview,
                                 onAdvance: () => onAdvanceSddStage(ticket),
+                                isAdvancingStage: isAdvancingStage,
+                                sddStageFailureReason: sddStageFailureReason,
+                                sddStageCanRetry: sddStageCanRetry,
+                                onRetryStageAdvance: () =>
+                                    onAdvanceSddStage(ticket),
                               ),
                               const SizedBox(height: AionSpacing.sp16),
                               Container(color: c.border, height: 1),
@@ -832,14 +840,21 @@ class _LinkedDesignPageChip extends StatelessWidget {
 /// Brief/Design Sync inserted between Propose and Verify when
 /// [needsDesignReview] isn't `false`; see
 /// `aion-arch/changes/sdd-design-gate/design.md` §1), the current-stage
-/// line, and one of three mutually-exclusive footers per
-/// `aion-arch/changes/sdd-ticket-execution/design.md` §2: when
-/// [canAdvance] is `true`, an [automationConfidence]-dependent control
-/// (gated banner, plain manual button, or a silent auto-note — see
-/// proposal.md's AutomationConfidence semantics section); when it's
-/// `false` and [blockReason] is non-null, the "Not ready" hint row (§2.2)
-/// explaining what's still pending; otherwise (nothing left to advance
-/// to) neither renders.
+/// line, and one of five mutually-exclusive, priority-ordered footers
+/// (`aion-arch/changes/board-execution-indicators-and-notifications/
+/// design.md`'s Component Spec §0 "Action-slot state resolution"
+/// table, extending `aion-arch/changes/sdd-ticket-execution/design.md`
+/// §2): [isAdvancingStage] takes priority over everything else and
+/// shows [_StageAdvancingHint] (no Advance button regardless of
+/// [automationConfidence] — a spawn is already running); otherwise
+/// [sddStageFailureReason] non-null shows [_StageAdvanceFailureBanner];
+/// otherwise, when [canAdvance] is `true`, an
+/// [automationConfidence]-dependent control (gated banner, plain manual
+/// button, or a silent auto-note — see proposal.md's
+/// AutomationConfidence semantics section); when it's `false` and
+/// [blockReason] is non-null, the "Not ready" hint row (§2.2) explaining
+/// what's still pending; otherwise (nothing left to advance to) none of
+/// the five renders.
 class _SddStageSection extends StatelessWidget {
   const _SddStageSection({
     required this.ticket,
@@ -848,6 +863,10 @@ class _SddStageSection extends StatelessWidget {
     required this.automationConfidence,
     required this.onAdvance,
     this.needsDesignReview,
+    this.isAdvancingStage = false,
+    this.sddStageFailureReason,
+    this.sddStageCanRetry = false,
+    this.onRetryStageAdvance,
   });
 
   final Ticket ticket;
@@ -861,6 +880,30 @@ class _SddStageSection extends StatelessWidget {
   /// `false` collapses [_stages] to the original 4 nodes; `null`/`true`
   /// show the full 6. Added for `aion-arch/changes/sdd-design-gate`.
   final bool? needsDesignReview;
+
+  /// Whether [ticket] has an [TicketsCubit.advanceSddStage] spawn
+  /// currently in flight — takes priority over every other action-slot
+  /// state (Component Spec §0's "Action-slot state resolution" table):
+  /// no Advance button is offered while `true`, regardless of
+  /// [automationConfidence]. Added for
+  /// `aion-arch/changes/board-execution-indicators-and-notifications`.
+  final bool isAdvancingStage;
+
+  /// Why [ticket]'s most recent stage-advance attempt failed, `null` if
+  /// it hasn't. Checked only when [isAdvancingStage] is `false`. Added
+  /// for `aion-arch/changes/board-execution-indicators-and-notifications`.
+  final String? sddStageFailureReason;
+
+  /// Whether [sddStageFailureReason] has a retry action available.
+  /// Added for
+  /// `aion-arch/changes/board-execution-indicators-and-notifications`.
+  final bool sddStageCanRetry;
+
+  /// Called when [_StageAdvanceFailureBanner]'s retry button is pressed
+  /// — re-calls [TicketsCubit.advanceSddStage] for [ticket]. Only
+  /// meaningful when [sddStageFailureReason] is non-`null`. Added for
+  /// `aion-arch/changes/board-execution-indicators-and-notifications`.
+  final VoidCallback? onRetryStageAdvance;
 
   static const _fullStages = [
     SddStage.exploring,
@@ -984,7 +1027,21 @@ class _SddStageSection extends StatelessWidget {
             ),
           ],
         ),
-        if (canAdvance && automationConfidence != null) ...[
+        if (isAdvancingStage) ...[
+          const SizedBox(height: AionSpacing.sp12),
+          _StageAdvancingHint(nextStageLabel: nextStageLabel),
+        ] else if (sddStageFailureReason != null) ...[
+          const SizedBox(height: AionSpacing.sp12),
+          // design.md §1.6 rules out an auto-retry loop entirely — even
+          // under AutomationConfidence.auto, this banner always renders
+          // and retry stays a manual action (onRetryStageAdvance), unlike
+          // Component Spec §0's illustrative "silent retry" note.
+          _StageAdvanceFailureBanner(
+            reason: sddStageFailureReason!,
+            canRetry: sddStageCanRetry,
+            onRetry: onRetryStageAdvance,
+          ),
+        ] else if (canAdvance && automationConfidence != null) ...[
           const SizedBox(height: AionSpacing.sp12),
           switch (automationConfidence!) {
             AutomationConfidence.gated => _GatedBanner(
@@ -1042,6 +1099,133 @@ class _NotReadyHint extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Shown in [_SddStageSection]'s action slot while an
+/// [TicketsCubit.advanceSddStage] chat spawn is running for the
+/// section's ticket. Mirrors [_ExecutionRunningHint]'s informational-row
+/// shape (rotating gear glyph + text, no background/border/padding box)
+/// but — unlike a coding-execution run — a stage chat has no tool
+/// access, so there's no [_ExecutionLiveToolLine]-equivalent live-
+/// activity sub-line. Per Component Spec §2
+/// (`aion-arch/changes/board-execution-indicators-and-notifications/design.md`).
+class _StageAdvancingHint extends StatefulWidget {
+  const _StageAdvancingHint({required this.nextStageLabel});
+
+  /// The present-progressive name of the stage the in-flight advance is
+  /// heading to (e.g. `"Verifying"`), emphasized in `textPrimary` within
+  /// the hint's copy.
+  final String nextStageLabel;
+
+  @override
+  State<_StageAdvancingHint> createState() => _StageAdvancingHintState();
+}
+
+class _StageAdvancingHintState extends State<_StageAdvancingHint>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _gearController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 2400),
+  );
+
+  bool _startedSpinning = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_startedSpinning && !MediaQuery.of(context).disableAnimations) {
+      _startedSpinning = true;
+      _gearController.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _gearController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        RotationTransition(
+          turns: _gearController,
+          child: PhosphorIcon(
+            PhosphorIcons.gearSixLight,
+            size: 15,
+            color: c.primary,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text.rich(
+            TextSpan(
+              style: AionText.bodySm.copyWith(color: c.textSecondary),
+              children: [
+                TextSpan(
+                  text: context.l10n.ticketDetailStageAdvancingHintPrefix,
+                ),
+                TextSpan(
+                  text: widget.nextStageLabel,
+                  style: TextStyle(color: c.textPrimary),
+                ),
+                TextSpan(
+                  text: context.l10n.ticketDetailStageAdvancingHintSuffix,
+                ),
+              ],
+            ),
+            maxLines: 2,
+            softWrap: true,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Shown in [_SddStageSection]'s action slot when the last
+/// [TicketsCubit.advanceSddStage] attempt failed. Delegates to
+/// [_ExecutionActionBanner]'s existing `failure`-tone shape (tinted
+/// container, warning glyph + title, scrollable reason well, full-width
+/// `secondary` retry button — the `Color(0xFFFFFFFF)`/`Color(0xFF000000)`
+/// hover-shade fix from `/design-sync` applies here unchanged, since it
+/// lives in the shared [_ExecutionActionButton]) rather than duplicating
+/// that geometry, per Component Spec §3
+/// (`aion-arch/changes/board-execution-indicators-and-notifications/design.md`).
+class _StageAdvanceFailureBanner extends StatelessWidget {
+  const _StageAdvanceFailureBanner({
+    required this.reason,
+    required this.canRetry,
+    required this.onRetry,
+  });
+
+  /// The raw stage-advance failure reason, shown in the scrollable well.
+  final String reason;
+
+  /// Whether [onRetry] represents a real retry action — always `true`
+  /// in practice whenever this banner renders (mirrors
+  /// [TicketDetailLoaded.executionCanRetry]'s own always-true-when-
+  /// relevant contract), kept as an explicit field for parity with the
+  /// state layer rather than inferring it from [onRetry]'s nullability.
+  final bool canRetry;
+
+  /// Called when the retry button is pressed — re-calls
+  /// [TicketsCubit.advanceSddStage] for the failed ticket.
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return _ExecutionActionBanner(
+      tone: _BannerTone.failure,
+      title: context.l10n.ticketDetailStageAdvanceFailedTitle,
+      errorDetail: reason,
+      actionLabel: context.l10n.ticketDetailStageAdvanceRetryButton,
+      onAction: onRetry ?? () {},
     );
   }
 }

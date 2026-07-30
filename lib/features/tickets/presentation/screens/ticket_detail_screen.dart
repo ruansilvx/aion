@@ -51,6 +51,18 @@ import 'package:aion/features/tickets/presentation/widgets/ticket_overflow_menu.
 /// `page-content-markdown-editor`, a loaded `page` ticket immediately
 /// redirects to `PageDetailScreen` via `/workspace/pages/:id` (see the
 /// `TicketDetailLoaded` branch below).
+///
+/// The top-level [BlocListener]'s [TicketDetailLoaded] branch also
+/// tracks [_wasAdvancingStageForCurrentChat] so a `chat` ticket that is
+/// itself the live target of a [TicketsCubit] stage-advance spawn
+/// re-loads its [ChatCubit] messages the instant that spawn's reply
+/// lands — the reply is posted through a static helper this screen's
+/// own [ChatCubit] instance never observes directly. Classified
+/// [TicketsError] toasts (`invalidParent`/`codingExecutionBlocked`/
+/// `executionBudgetOverageDetected`/etc.) are no longer shown from this
+/// screen's listener at all — they're now handled app-wide by
+/// `WorkspaceNavShell`. Added for
+/// `aion-arch/changes/board-execution-indicators-and-notifications`.
 class TicketDetailScreen extends StatefulWidget {
   /// Creates a [TicketDetailScreen] for the ticket with internal id [ticketId].
   const TicketDetailScreen({super.key, required this.ticketId});
@@ -106,6 +118,19 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   /// `aion-arch/changes/sdd-design-gate`.
   bool _retryingDesignSync = false;
 
+  /// Whether the top-level [BlocListener]'s most recently seen
+  /// [TicketDetailLoaded] had `isAdvancingStage: true` for the
+  /// currently-viewed `chat` ticket — tracked so the listener can detect
+  /// the `true` → `false` transition (the spawned stage-advance turn
+  /// finishing) and re-trigger [ChatCubit.loadMessages], since
+  /// `TicketsCubit._runStageChatTurn` posts the reply through a static
+  /// helper this screen's own [ChatCubit] instance never observes. Reset
+  /// implicitly whenever a different ticket loads (its id doesn't match
+  /// [_currentTicket] anymore, so the flip check is naturally scoped to
+  /// the ticket currently on screen). Added for
+  /// `aion-arch/changes/board-execution-indicators-and-notifications`.
+  bool _wasAdvancingStageForCurrentChat = false;
+
   /// Calls [TicketsCubit.retryDesignSync], toggling [_retryingDesignSync]
   /// around the call so `_RetryValidationButton` can show its in-flight
   /// state and ignore further taps until this one resolves.
@@ -154,10 +179,17 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   }
 
   /// Calls [TicketsCubit.advanceSddStage] for an explicit gated/manual
-  /// "Advance" tap, then navigates to the spawned chat ticket once it and
-  /// its first AI reply are ready — an intentional user action, unlike
+  /// "Advance" tap (or a `_StageAdvanceFailureBanner` retry, which reuses
+  /// this same handler — see `TicketMetadataSection`'s
+  /// `onRetryStageAdvance` wiring), then navigates to the spawned chat
+  /// ticket once it exists — an intentional user action, unlike
   /// [_maybeAutoAdvanceSddStage]'s passive auto-advance, which never
-  /// yanks the user off the screen they're already viewing.
+  /// yanks the user off the screen they're already viewing. Since
+  /// `aion-arch/changes/board-execution-indicators-and-notifications`,
+  /// [TicketsCubit.advanceSddStage] resolves once the chat ticket is
+  /// created, **not** once its first AI reply lands — the destination
+  /// screen shows a "Waiting for reply…" indicator (see
+  /// `ChatTranscriptPane`) until that reply arrives.
   Future<void> _advanceSddStage(Ticket ticket) async {
     final chatId = await context.read<TicketsCubit>().advanceSddStage(ticket);
     if (chatId != null && mounted) {
@@ -242,21 +274,6 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
       listener: (context, state) {
         if (state is TicketTrashed) {
           context.go('/workspace/tickets');
-        } else if (state is TicketsError &&
-            state.reason == TicketsErrorReason.invalidParent) {
-          AppToast.show(context, context.l10n.ticketInvalidParentError);
-        } else if (state is TicketsError &&
-            state.reason == TicketsErrorReason.codingExecutionBlocked) {
-          AppToast.show(
-            context,
-            context.l10n.ticketCodingExecutionBlockedError,
-          );
-        } else if (state is TicketsError &&
-            state.reason == TicketsErrorReason.executionBudgetOverageDetected) {
-          AppToast.show(
-            context,
-            context.l10n.executionBudgetOverageDetectedToast,
-          );
         } else if (state is TicketDetailLoaded) {
           final ticket = state.ticket;
           if (ticket.type == TicketType.page) {
@@ -267,6 +284,18 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
             context.go(ticketDetailRoute(ticket));
             return;
           }
+          // A stage-advance turn just finished for the chat ticket
+          // currently on screen (see _wasAdvancingStageForCurrentChat's
+          // dartdoc) — re-load its messages so the real reply replaces
+          // the "Waiting for reply…" indicator.
+          if (ticket.type == TicketType.chat &&
+              ticket.id == _currentTicket?.id &&
+              _wasAdvancingStageForCurrentChat &&
+              !state.isAdvancingStage) {
+            context.read<ChatCubit>().loadMessages(ticket.id);
+          }
+          _wasAdvancingStageForCurrentChat =
+              ticket.type == TicketType.chat && state.isAdvancingStage;
           _currentTicket = ticket;
           _registerActiveTicket(ticket.ticketId);
           if ((ticket.type == TicketType.resource ||
@@ -341,6 +370,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                             onAdvanceSddStage: (t) => _advanceSddStage(t),
                             onMaybeAutoAdvance: (t, canAdvance) =>
                                 _maybeAutoAdvanceSddStage(t, canAdvance),
+                            isAdvancingStage: state.isAdvancingStage,
                           );
                         }
                         return SingleChildScrollView(

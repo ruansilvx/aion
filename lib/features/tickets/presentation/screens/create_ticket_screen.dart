@@ -154,11 +154,13 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
       listener: (context, state) {
         if (state is TicketCreated) {
           context.go('/workspace/tickets');
-        } else if (state is TicketsError) {
-          final message = state.reason != null
-              ? ticketsErrorMessage(context, state.reason!)
-              : state.message;
-          AppToast.show(context, message);
+        } else if (state is TicketsError && state.reason == null) {
+          // A classified reason (state.reason != null) is toasted app-wide
+          // by WorkspaceNavShell instead — not duplicated here. This
+          // screen only handles the raw/unclassified case (e.g. a
+          // generic repository-write failure), which the shell-level
+          // listener skips.
+          AppToast.show(context, state.message);
           setState(() => _isSubmitting = false);
         }
       },
