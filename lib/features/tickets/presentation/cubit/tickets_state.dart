@@ -34,6 +34,7 @@ class TicketsLoaded extends TicketsState {
     this.inFlightExecutionIds = const {},
     this.executionQueuePositions = const {},
     this.inFlightAdvanceIds = const {},
+    this.blockedTicketIds = const {},
   });
 
   /// The tickets loaded so far, most recently created first (or by
@@ -65,6 +66,17 @@ class TicketsLoaded extends TicketsState {
   /// `aion-arch/changes/board-execution-indicators-and-notifications`.
   final Set<String> inFlightAdvanceIds;
 
+  /// Work-ticket (epic/story/task/bug) ids with an unresolved
+  /// `blocks`/`blockedBy` relationship — the ticket that blocks them
+  /// exists, is live, and isn't
+  /// [TicketStatus.done](../../domain/enums/ticket_status.dart) yet.
+  /// Recomputed by
+  /// [TicketsCubit._computeBlockedTicketIds] from persisted link data
+  /// (not in-memory/ephemeral, unlike [inFlightExecutionIds] and its
+  /// siblings above). Drives the Board's `_BlockedBadge`. Added for
+  /// `aion-arch/changes/board-task-ordering-indication`.
+  final Set<String> blockedTicketIds;
+
   @override
   List<Object?> get props => [
     tickets,
@@ -72,6 +84,7 @@ class TicketsLoaded extends TicketsState {
     inFlightExecutionIds,
     executionQueuePositions,
     inFlightAdvanceIds,
+    blockedTicketIds,
   ];
 }
 

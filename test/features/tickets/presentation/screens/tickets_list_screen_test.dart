@@ -137,7 +137,9 @@ void main() {
         limit: any(named: 'limit'),
         offset: any(named: 'offset'),
       ),
-    ).thenAnswer((_) async => const TicketSearchPage(tickets: [], hasMore: false));
+    ).thenAnswer(
+      (_) async => const TicketSearchPage(tickets: [], hasMore: false),
+    );
     final ticketStore = <String, Ticket>{};
     when(() => repository.createTicket(any())).thenAnswer((invocation) async {
       final ticket = invocation.positionalArguments[0] as Ticket;
@@ -154,15 +156,18 @@ void main() {
         linkType: any(named: 'linkType'),
       ),
     ).thenAnswer((_) async {});
+    // Default for TicketsCubit._computeBlockedTicketIds, called on every
+    // searchTickets/loadMoreTickets success — board-task-ordering-
+    // indication. No test in this file exercises actual blocked-badge
+    // state, so an empty result everywhere is the correct default.
+    when(
+      () => linkRepository.getLinksByTypes(any()),
+    ).thenAnswer((_) async => []);
     when(
       () => activeProjectProvider.consumeCodebaseAnalysisOffer(),
     ).thenReturn(null);
-    when(
-      () => activeProjectProvider.offerCodebaseAnalysis,
-    ).thenReturn(false);
-    when(
-      () => activeProjectProvider.offerBaselineUpgrade,
-    ).thenReturn(false);
+    when(() => activeProjectProvider.offerCodebaseAnalysis).thenReturn(false);
+    when(() => activeProjectProvider.offerBaselineUpgrade).thenReturn(false);
     when(
       () => activeProjectProvider.consumeBaselineUpgradeOffer(),
     ).thenReturn(null);
@@ -184,9 +189,7 @@ void main() {
     'does not show the codebase-analysis banner when the active project '
     'has no pending offer',
     (tester) async {
-      when(
-        () => activeProjectProvider.offerCodebaseAnalysis,
-      ).thenReturn(false);
+      when(() => activeProjectProvider.offerCodebaseAnalysis).thenReturn(false);
 
       await tester.pumpWidget(
         _wrap(
@@ -209,9 +212,7 @@ void main() {
     'shows the codebase-analysis offer banner and consumes the flag when '
     'the active project has a pending offer',
     (tester) async {
-      when(
-        () => activeProjectProvider.offerCodebaseAnalysis,
-      ).thenReturn(true);
+      when(() => activeProjectProvider.offerCodebaseAnalysis).thenReturn(true);
 
       await tester.pumpWidget(
         _wrap(
@@ -236,14 +237,10 @@ void main() {
     'picking a depth calls TicketsCubit.runCodebaseSummarization, and the '
     'banner never reappears after being dismissed',
     (tester) async {
-      when(
-        () => activeProjectProvider.offerCodebaseAnalysis,
-      ).thenReturn(true);
+      when(() => activeProjectProvider.offerCodebaseAnalysis).thenReturn(true);
       when(() => agentClient.run(any())).thenAnswer(
         (_) async => Stream.fromIterable(const [
-          AgentTextEvent(
-            'FINDING: A finding\nA description.\nSUMMARY: DONE',
-          ),
+          AgentTextEvent('FINDING: A finding\nA description.\nSUMMARY: DONE'),
           AgentDoneEvent(),
         ]),
       );
@@ -286,40 +283,31 @@ void main() {
     },
   );
 
-  testWidgets(
-    'shows the baseline-upgrade banner only when the active project '
-    'provider reports offerBaselineUpgrade: true',
-    (tester) async {
-      when(
-        () => activeProjectProvider.offerBaselineUpgrade,
-      ).thenReturn(true);
-      when(
-        () => baselineRepository.getAvailableBaselineVersions(),
-      ).thenAnswer((_) async => ['0.1.0', '0.2.0']);
+  testWidgets('shows the baseline-upgrade banner only when the active project '
+      'provider reports offerBaselineUpgrade: true', (tester) async {
+    when(() => activeProjectProvider.offerBaselineUpgrade).thenReturn(true);
+    when(
+      () => baselineRepository.getAvailableBaselineVersions(),
+    ).thenAnswer((_) async => ['0.1.0', '0.2.0']);
 
-      await tester.pumpWidget(
-        _wrap(
-          ticketsCubit: buildCubit(),
-          activeProjectProvider: activeProjectProvider,
-          baselineRepository: baselineRepository,
-        ),
-      );
-      await tester.pumpAndSettle();
+    await tester.pumpWidget(
+      _wrap(
+        ticketsCubit: buildCubit(),
+        activeProjectProvider: activeProjectProvider,
+        baselineRepository: baselineRepository,
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      expect(find.text('A newer baseline is available'), findsOneWidget);
-      verify(
-        () => activeProjectProvider.consumeBaselineUpgradeOffer(),
-      ).called(1);
-    },
-  );
+    expect(find.text('A newer baseline is available'), findsOneWidget);
+    verify(() => activeProjectProvider.consumeBaselineUpgradeOffer()).called(1);
+  });
 
   testWidgets(
     'tapping "Upgrade" calls acceptBaselineUpgrade and the banner never '
     'reappears after consumeBaselineUpgradeOffer fires',
     (tester) async {
-      when(
-        () => activeProjectProvider.offerBaselineUpgrade,
-      ).thenReturn(true);
+      when(() => activeProjectProvider.offerBaselineUpgrade).thenReturn(true);
       when(
         () => baselineRepository.getAvailableBaselineVersions(),
       ).thenAnswer((_) async => ['0.1.0', '0.2.0']);
@@ -349,105 +337,99 @@ void main() {
     },
   );
 
-  testWidgets(
-    'both the baseline-upgrade and codebase-analysis banners render '
-    'simultaneously without layout errors when both offer flags are true',
-    (tester) async {
-      when(
-        () => activeProjectProvider.offerBaselineUpgrade,
-      ).thenReturn(true);
-      when(
-        () => activeProjectProvider.offerCodebaseAnalysis,
-      ).thenReturn(true);
-      when(
-        () => baselineRepository.getAvailableBaselineVersions(),
-      ).thenAnswer((_) async => ['0.1.0', '0.2.0']);
+  testWidgets('both the baseline-upgrade and codebase-analysis banners render '
+      'simultaneously without layout errors when both offer flags are true', (
+    tester,
+  ) async {
+    when(() => activeProjectProvider.offerBaselineUpgrade).thenReturn(true);
+    when(() => activeProjectProvider.offerCodebaseAnalysis).thenReturn(true);
+    when(
+      () => baselineRepository.getAvailableBaselineVersions(),
+    ).thenAnswer((_) async => ['0.1.0', '0.2.0']);
 
-      await tester.pumpWidget(
-        _wrap(
-          ticketsCubit: buildCubit(),
-          activeProjectProvider: activeProjectProvider,
-          baselineRepository: baselineRepository,
-        ),
-      );
-      await tester.pumpAndSettle();
+    await tester.pumpWidget(
+      _wrap(
+        ticketsCubit: buildCubit(),
+        activeProjectProvider: activeProjectProvider,
+        baselineRepository: baselineRepository,
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      expect(tester.takeException(), isNull);
-      expect(find.text('A newer baseline is available'), findsOneWidget);
-      expect(
-        find.text('Draft a starting backlog from this codebase'),
-        findsOneWidget,
-      );
-    },
-  );
+    expect(tester.takeException(), isNull);
+    expect(find.text('A newer baseline is available'), findsOneWidget);
+    expect(
+      find.text('Draft a starting backlog from this codebase'),
+      findsOneWidget,
+    );
+  });
 
-  testWidgets(
-    'switching to board view shows story, task, and bug tickets',
-    (tester) async {
-      final story = Ticket(
-        id: 'story-1',
-        ticketId: 'AIO-1',
-        type: TicketType.story,
-        title: 'A story',
-        status: TicketStatus.backlog,
-        createdAt: DateTime(2026),
-        updatedAt: DateTime(2026),
-      );
-      final task = Ticket(
-        id: 'task-1',
-        ticketId: 'AIO-2',
-        type: TicketType.task,
-        title: 'A task',
-        status: TicketStatus.backlog,
-        createdAt: DateTime(2026),
-        updatedAt: DateTime(2026),
-      );
-      final bug = Ticket(
-        id: 'bug-1',
-        ticketId: 'AIO-3',
-        type: TicketType.bug,
-        title: 'A bug',
-        status: TicketStatus.backlog,
-        createdAt: DateTime(2026),
-        updatedAt: DateTime(2026),
-      );
-      when(
-        () => repository.searchTickets(
-          query: any(named: 'query'),
-          status: any(named: 'status'),
-          type: any(named: 'type'),
-          priority: any(named: 'priority'),
-          limit: any(named: 'limit'),
-          offset: any(named: 'offset'),
-        ),
-      ).thenAnswer(
-        (_) async =>
-            TicketSearchPage(tickets: [story, task, bug], hasMore: false),
-      );
-      when(
-        () => linkRepository.getLinksForTicket(any()),
-      ).thenAnswer((_) async => []);
+  testWidgets('switching to board view shows story, task, and bug tickets', (
+    tester,
+  ) async {
+    final story = Ticket(
+      id: 'story-1',
+      ticketId: 'AIO-1',
+      type: TicketType.story,
+      title: 'A story',
+      status: TicketStatus.backlog,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final task = Ticket(
+      id: 'task-1',
+      ticketId: 'AIO-2',
+      type: TicketType.task,
+      title: 'A task',
+      status: TicketStatus.backlog,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final bug = Ticket(
+      id: 'bug-1',
+      ticketId: 'AIO-3',
+      type: TicketType.bug,
+      title: 'A bug',
+      status: TicketStatus.backlog,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    when(
+      () => repository.searchTickets(
+        query: any(named: 'query'),
+        status: any(named: 'status'),
+        type: any(named: 'type'),
+        priority: any(named: 'priority'),
+        limit: any(named: 'limit'),
+        offset: any(named: 'offset'),
+      ),
+    ).thenAnswer(
+      (_) async =>
+          TicketSearchPage(tickets: [story, task, bug], hasMore: false),
+    );
+    when(
+      () => linkRepository.getLinksForTicket(any()),
+    ).thenAnswer((_) async => []);
 
-      await tester.pumpWidget(
-        _wrap(
-          ticketsCubit: buildCubit(),
-          activeProjectProvider: activeProjectProvider,
-          baselineRepository: baselineRepository,
-          ticketLinkRepository: linkRepository,
-        ),
-      );
-      await tester.pumpAndSettle();
+    await tester.pumpWidget(
+      _wrap(
+        ticketsCubit: buildCubit(),
+        activeProjectProvider: activeProjectProvider,
+        baselineRepository: baselineRepository,
+        ticketLinkRepository: linkRepository,
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      final boardToggleFinder = find.byWidgetPredicate(
-        (w) => w is Semantics && w.properties.label == 'Switch to board view',
-      );
-      expect(boardToggleFinder, findsOneWidget);
-      await tester.tap(boardToggleFinder);
-      await tester.pumpAndSettle();
+    final boardToggleFinder = find.byWidgetPredicate(
+      (w) => w is Semantics && w.properties.label == 'Switch to board view',
+    );
+    expect(boardToggleFinder, findsOneWidget);
+    await tester.tap(boardToggleFinder);
+    await tester.pumpAndSettle();
 
-      expect(find.text('A story'), findsOneWidget);
-      expect(find.text('A task'), findsOneWidget);
-      expect(find.text('A bug'), findsOneWidget);
-    },
-  );
+    expect(find.text('A story'), findsOneWidget);
+    expect(find.text('A task'), findsOneWidget);
+    expect(find.text('A bug'), findsOneWidget);
+  });
 }

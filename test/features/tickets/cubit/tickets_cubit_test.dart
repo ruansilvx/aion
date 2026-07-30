@@ -69,9 +69,7 @@ void stubSuccessfulCodingExecutionInfra(
       body: any(named: 'body'),
     ),
   ).thenAnswer((_) async => 'https://example/pr/mock');
-  when(
-    () => gitClient.removeWorktree(any(), any()),
-  ).thenAnswer((_) async {});
+  when(() => gitClient.removeWorktree(any(), any())).thenAnswer((_) async {});
 }
 
 /// Stubs [baselineRepository] with an empty manifest for [baselineVersion]
@@ -1643,15 +1641,20 @@ void main() {
     );
 
     blocTest<TicketsCubit, TicketsState>(
-      'no-ops for a non-page/resource/bug ticket type',
+      // `task` used to no-op here too, before
+      // `aion-arch/changes/board-task-ordering-indication` widened the
+      // gate to include `epic`/`story`/`task` alongside `page`/
+      // `resource`/`bug` — `chat` remains one of the few types with no
+      // `TicketLink` use case, so it still exercises the no-op path.
+      'no-ops for a chat ticket (still outside the widened gate)',
       setUp: () {
         when(
-          () => repository.getTicketById(ticket.id),
-        ).thenAnswer((_) async => ticket);
+          () => repository.getTicketById(chatTicket.id),
+        ).thenAnswer((_) async => chatTicket);
       },
       build: buildCubit,
-      seed: () => TicketDetailLoaded(ticket),
-      act: (cubit) => cubit.loadDocumentRelations(ticket.id),
+      seed: () => TicketDetailLoaded(chatTicket),
+      act: (cubit) => cubit.loadDocumentRelations(chatTicket.id),
       expect: () => [],
     );
 
@@ -1872,9 +1875,9 @@ void main() {
       agentClient = MockAgentModelClient();
       commentRepository = MockCommentRepository();
       linkRepository = MockTicketLinkRepository();
-      when(() => agentClient.run(any())).thenAnswer(
-        (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
-      );
+      when(
+        () => agentClient.run(any()),
+      ).thenAnswer((_) async => Stream.fromIterable(const [AgentDoneEvent()]));
       when(() => commentRepository.addComment(any())).thenAnswer((_) async {});
       when(() => repository.createTicket(any())).thenAnswer((_) async {});
       when(
@@ -1909,9 +1912,9 @@ void main() {
             SddStage.designBrief,
           ),
         ).thenAnswer((_) async {});
-        when(() => repository.getTicketById(any())).thenAnswer(
-          (_) async => dummyChatTicket,
-        );
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
         when(() => repository.getTicketById(storyProposed.id)).thenAnswer(
           (_) async => Ticket(
             id: storyProposed.id,
@@ -1967,9 +1970,9 @@ void main() {
             SddStage.designBrief,
           ),
         ).thenAnswer((_) async {});
-        when(() => repository.getTicketById(any())).thenAnswer(
-          (_) async => dummyChatTicket,
-        );
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
         when(() => repository.getTicketById(storyProposed.id)).thenAnswer(
           (_) async => Ticket(
             id: storyProposed.id,
@@ -2012,12 +2015,12 @@ void main() {
             SddStage.verifying,
           ),
         ).thenAnswer((_) async {});
-        when(() => repository.getTicketById(any())).thenAnswer(
-          (_) async => dummyChatTicket,
-        );
-        when(() => repository.getTicketById(storyProposed.id)).thenAnswer(
-          (_) async => storyProposed,
-        );
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(
+          () => repository.getTicketById(storyProposed.id),
+        ).thenAnswer((_) async => storyProposed);
       },
       build: buildCubit,
       act: (cubit) => cubit.advanceSddStage(storyProposed),
@@ -2057,9 +2060,9 @@ void main() {
             SddStage.designBrief,
           ),
         ).thenAnswer((_) async {});
-        when(() => repository.getTicketById(any())).thenAnswer(
-          (_) async => dummyChatTicket,
-        );
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
         when(() => repository.getTicketById(storyProposed.id)).thenAnswer(
           (_) async => Ticket(
             id: storyProposed.id,
@@ -2129,9 +2132,9 @@ void main() {
             ),
           ],
         );
-        when(() => repository.getTicketById(any())).thenAnswer(
-          (_) async => dummyChatTicket,
-        );
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
         when(
           () => repository.getTicketById(designPageEmpty.id),
         ).thenAnswer((_) async => designPageEmpty);
@@ -2178,9 +2181,9 @@ void main() {
         // Registered least-specific first — mocktail resolves overlapping
         // stubs last-registered-wins, so the two id-specific overrides
         // below must come after this catch-all, not before.
-        when(() => repository.getTicketById(any())).thenAnswer(
-          (_) async => dummyChatTicket,
-        );
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
         when(
           () => repository.getTicketById(designPageFilled.id),
         ).thenAnswer((_) async => designPageFilled);
@@ -2288,12 +2291,12 @@ void main() {
             SddStage.verifying,
           ),
         ).thenAnswer((_) async {});
-        when(() => repository.getTicketById(any())).thenAnswer(
-          (_) async => dummyChatTicket,
-        );
-        when(() => repository.getTicketById(storyDesignSync.id)).thenAnswer(
-          (_) async => storyDesignSync,
-        );
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(
+          () => repository.getTicketById(storyDesignSync.id),
+        ).thenAnswer((_) async => storyDesignSync);
       },
       build: buildCubit,
       act: (cubit) => cubit.advanceSddStage(storyDesignSync),
@@ -2345,9 +2348,7 @@ void main() {
         () => repository.getTicketById(epic.id),
       ).thenAnswer((_) async => advancedEpic);
       when(() => repository.createTicket(any())).thenAnswer((_) async {});
-      when(
-        () => commentRepository.addComment(any()),
-      ).thenAnswer((_) async {});
+      when(() => commentRepository.addComment(any())).thenAnswer((_) async {});
       when(() => agentClient.run(any())).thenAnswer((_) => pauseOn.future);
     }
 
@@ -2413,10 +2414,12 @@ void main() {
           () => repository.getTicketById(epic.id),
         ).thenAnswer((_) async => advancedEpic);
         when(() => repository.createTicket(any())).thenAnswer((_) async {});
-        when(() => repository.getTicketsByParent(
-              epic.id,
-              types: const [TicketType.chat],
-            )).thenAnswer((_) async => [dummyChatTicket]);
+        when(
+          () => repository.getTicketsByParent(
+            epic.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [dummyChatTicket]);
         // The agent turn itself succeeds with text — ChatCubit.runChatTurn
         // already swallows an agentClient.run failure internally (posting
         // its own "Execution failed: ..." comment and returning `false`,
@@ -2469,13 +2472,16 @@ void main() {
       '_inFlightStageAdvanceIds is cleared on the success path too — a '
       'subsequent getTicketById reports isAdvancingStage false',
       setUp: () {
-        stubHappyPath(pauseOn: Completer<Stream<AgentEvent>>()..complete(
-          Stream.fromIterable(const [AgentDoneEvent()]),
-        ));
-        when(() => repository.getTicketsByParent(
-              epic.id,
-              types: const [TicketType.chat],
-            )).thenAnswer((_) async => <Ticket>[]);
+        stubHappyPath(
+          pauseOn: Completer<Stream<AgentEvent>>()
+            ..complete(Stream.fromIterable(const [AgentDoneEvent()])),
+        );
+        when(
+          () => repository.getTicketsByParent(
+            epic.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => <Ticket>[]);
       },
       build: buildCubit,
       act: (cubit) async {
@@ -2560,9 +2566,9 @@ void main() {
         when(
           () => repository.getTicketById(storyDesignSync.id),
         ).thenAnswer((_) async => storyDesignSync);
-        when(() => commentRepository.addComment(any())).thenAnswer(
-          (_) async {},
-        );
+        when(
+          () => commentRepository.addComment(any()),
+        ).thenAnswer((_) async {});
       },
       build: buildCubit,
       act: (cubit) => cubit.retryDesignSync(designSyncChat),
@@ -2738,11 +2744,12 @@ void main() {
             types: const [TicketType.chat],
           ),
         ).thenAnswer(
-          (_) async =>
-              executionChatCreated ? [dummyExecutionChatTicket] : [],
+          (_) async => executionChatCreated ? [dummyExecutionChatTicket] : [],
         );
         stubStatefulComments(commentRepository, dummyExecutionChatTicket.id);
-        when(() => repository.getTicketById(any())).thenAnswer((invocation) async {
+        when(() => repository.getTicketById(any())).thenAnswer((
+          invocation,
+        ) async {
           final id = invocation.positionalArguments[0] as String;
           if (id == storyForExecution.id) return storyForExecution;
           if (id == taskUnderStory.id) {
@@ -2829,7 +2836,9 @@ void main() {
           ),
         ).thenAnswer((_) async => [dummyExecutionChatTicket]);
         stubStatefulComments(commentRepository, dummyExecutionChatTicket.id);
-        when(() => repository.getTicketById(any())).thenAnswer((invocation) async {
+        when(() => repository.getTicketById(any())).thenAnswer((
+          invocation,
+        ) async {
           final id = invocation.positionalArguments[0] as String;
           if (id == storyForExecution.id) return storyForExecution;
           if (id == taskUnderStory.id) {
@@ -2885,7 +2894,9 @@ void main() {
         addTearDown(() {
           if (!runGate.isCompleted) runGate.complete();
         });
-        when(() => repository.getTicketById(any())).thenAnswer((invocation) async {
+        when(() => repository.getTicketById(any())).thenAnswer((
+          invocation,
+        ) async {
           final id = invocation.positionalArguments[0] as String;
           if (id == taskNoStory.id) {
             return taskNoStory.copyWith(status: TicketStatus.inProgress);
@@ -2899,12 +2910,14 @@ void main() {
         // Neither Task has an execution chat yet — both trigger the
         // create-new branch of _resolveExecutionChat.
         when(
-          () =>
-              repository.getTicketsByParent(any(), types: const [TicketType.chat]),
+          () => repository.getTicketsByParent(
+            any(),
+            types: const [TicketType.chat],
+          ),
         ).thenAnswer((_) async => []);
-        when(() => commentRepository.addComment(any())).thenAnswer(
-          (_) async {},
-        );
+        when(
+          () => commentRepository.addComment(any()),
+        ).thenAnswer((_) async {});
         // The first run never resolves during this test, so the second
         // trigger must observe the slot as still occupied.
         when(() => agentClient.run(any())).thenAnswer((_) async {
@@ -2946,9 +2959,8 @@ void main() {
         when(
           () => repository.getTicketById(taskUnderStoryNoDesign.id),
         ).thenAnswer(
-          (_) async => taskUnderStoryNoDesign.copyWith(
-            status: TicketStatus.inProgress,
-          ),
+          (_) async =>
+              taskUnderStoryNoDesign.copyWith(status: TicketStatus.inProgress),
         );
       },
       act: (cubit) => cubit.changeTicketStatus(
@@ -2993,8 +3005,7 @@ void main() {
           ),
         ).thenAnswer((_) async {});
         when(() => repository.getTicketById(taskUnderEpic.id)).thenAnswer(
-          (_) async =>
-              taskUnderEpic.copyWith(status: TicketStatus.inProgress),
+          (_) async => taskUnderEpic.copyWith(status: TicketStatus.inProgress),
         );
       },
       act: (cubit) =>
@@ -3060,7 +3071,9 @@ void main() {
           ),
         ).thenAnswer((_) async => [dummyExecutionChatTicket]);
         stubStatefulComments(commentRepository, dummyExecutionChatTicket.id);
-        when(() => repository.getTicketById(any())).thenAnswer((invocation) async {
+        when(() => repository.getTicketById(any())).thenAnswer((
+          invocation,
+        ) async {
           final id = invocation.positionalArguments[0] as String;
           if (id == storyForExecution.id) return storyForExecution;
           if (id == taskUnderStory.id) {
@@ -3144,7 +3157,9 @@ void main() {
           ),
         ).thenAnswer((_) async => [dummyExecutionChatTicket]);
         stubStatefulComments(commentRepository, dummyExecutionChatTicket.id);
-        when(() => repository.getTicketById(any())).thenAnswer((invocation) async {
+        when(() => repository.getTicketById(any())).thenAnswer((
+          invocation,
+        ) async {
           final id = invocation.positionalArguments[0] as String;
           if (id == storyForExecution.id) return storyForExecution;
           if (id == taskUnderStory.id) {
@@ -3217,7 +3232,9 @@ void main() {
         baselineVersion: '0.1.0',
       ),
       setUp: () {
-        when(() => repository.getTicketById(any())).thenAnswer((invocation) async {
+        when(() => repository.getTicketById(any())).thenAnswer((
+          invocation,
+        ) async {
           final id = invocation.positionalArguments[0] as String;
           if (id == taskNoStory.id) {
             return taskNoStory.copyWith(status: TicketStatus.inProgress);
@@ -3231,9 +3248,9 @@ void main() {
           () => repository.updateTicketStatus(any(), any()),
         ).thenAnswer((_) async {});
         when(() => repository.createTicket(any())).thenAnswer((_) async {});
-        when(() => commentRepository.addComment(any())).thenAnswer(
-          (_) async {},
-        );
+        when(
+          () => commentRepository.addComment(any()),
+        ).thenAnswer((_) async {});
         // No text in the stubbed stream below means runChatTurn never
         // posts a comment — the agentic verify turn's mid-run read
         // (_lastCommentContent) still needs a non-throwing stub.
@@ -3269,43 +3286,43 @@ void main() {
     );
   });
 
-  group('_refreshInFlightBoardState (board-execution-indicators-and-notifications)', () {
-    late MockAgentModelClient agentClient;
-    late MockCommentRepository commentRepository;
-    late MockAutomationSettingsRepository automationSettingsRepository;
-    late MockGitRepositoryClient gitClient;
-    late MockGitHubCliClient gitHubClient;
-    late MockBaselineRepository baselineRepository;
+  group(
+    '_refreshInFlightBoardState (board-execution-indicators-and-notifications)',
+    () {
+      late MockAgentModelClient agentClient;
+      late MockCommentRepository commentRepository;
+      late MockAutomationSettingsRepository automationSettingsRepository;
+      late MockGitRepositoryClient gitClient;
+      late MockGitHubCliClient gitHubClient;
+      late MockBaselineRepository baselineRepository;
 
-    setUp(() {
-      agentClient = MockAgentModelClient();
-      commentRepository = MockCommentRepository();
-      automationSettingsRepository = MockAutomationSettingsRepository();
-      gitClient = MockGitRepositoryClient();
-      gitHubClient = MockGitHubCliClient();
-      baselineRepository = MockBaselineRepository();
-      stubSuccessfulCodingExecutionInfra(gitClient, gitHubClient);
-      stubEmptyBaseline(baselineRepository);
-    });
+      setUp(() {
+        agentClient = MockAgentModelClient();
+        commentRepository = MockCommentRepository();
+        automationSettingsRepository = MockAutomationSettingsRepository();
+        gitClient = MockGitRepositoryClient();
+        gitHubClient = MockGitHubCliClient();
+        baselineRepository = MockBaselineRepository();
+        stubSuccessfulCodingExecutionInfra(gitClient, gitHubClient);
+        stubEmptyBaseline(baselineRepository);
+      });
 
-    TicketsCubit buildFullCubit() => TicketsCubit(
-      repository,
-      agentClient: agentClient,
-      commentRepository: commentRepository,
-      automationSettingsRepository: automationSettingsRepository,
-      projectRootPath: '/fake/project/root',
-      gitClient: gitClient,
-      gitHubClient: gitHubClient,
-      baselineRepository: baselineRepository,
-      projectId: 'project-1',
-      baselineVersion: '0.1.0',
-    );
+      TicketsCubit buildFullCubit() => TicketsCubit(
+        repository,
+        agentClient: agentClient,
+        commentRepository: commentRepository,
+        automationSettingsRepository: automationSettingsRepository,
+        projectRootPath: '/fake/project/root',
+        gitClient: gitClient,
+        gitHubClient: gitHubClient,
+        baselineRepository: baselineRepository,
+        projectId: 'project-1',
+        baselineVersion: '0.1.0',
+      );
 
-    test(
-      'a queued Task appears in inFlightExecutionIds once the run it was '
-      'waiting behind clears and it is dequeued, while TicketsLoaded is '
-      'the current state',
-      () async {
+      test('a queued Task appears in inFlightExecutionIds once the run it was '
+          'waiting behind clears and it is dequeued, while TicketsLoaded is '
+          'the current state', () async {
         var runCallCount = 0;
         final firstRunPause = Completer<Stream<AgentEvent>>();
         when(() => agentClient.run(any())).thenAnswer((_) {
@@ -3364,23 +3381,23 @@ void main() {
             taskNoStory.id,
             types: const [TicketType.chat],
           ),
-        ).thenAnswer(
-          (_) async => task1ChatCreated ? [execChatTask1] : [],
-        );
+        ).thenAnswer((_) async => task1ChatCreated ? [execChatTask1] : []);
         when(
           () => repository.getTicketsByParent(
             otherTask.id,
             types: const [TicketType.chat],
           ),
-        ).thenAnswer(
-          (_) async => task2ChatCreated ? [execChatTask2] : [],
-        );
-        when(() => repository.createTicket(any())).thenAnswer((invocation) async {
+        ).thenAnswer((_) async => task2ChatCreated ? [execChatTask2] : []);
+        when(() => repository.createTicket(any())).thenAnswer((
+          invocation,
+        ) async {
           final created = invocation.positionalArguments[0] as Ticket;
           if (created.parentId == taskNoStory.id) task1ChatCreated = true;
           if (created.parentId == otherTask.id) task2ChatCreated = true;
         });
-        when(() => repository.getTicketById(any())).thenAnswer((invocation) async {
+        when(() => repository.getTicketById(any())).thenAnswer((
+          invocation,
+        ) async {
           final id = invocation.positionalArguments[0] as String;
           if (id == taskNoStory.id) {
             return taskNoStory.copyWith(status: TicketStatus.inProgress);
@@ -3449,214 +3466,215 @@ void main() {
           ),
           isTrue,
         );
-      },
-    );
+      });
 
-    blocTest<TicketsCubit, TicketsState>(
-      'is a no-op (no new emission) when the cubit\'s last state was '
-      'TicketDetailLoaded, not TicketsLoaded',
-      // A cubit missing git/baseline deps — _runCodingExecution hits its
-      // own missing-deps guard immediately, so this test only needs to
-      // observe changeTicketStatus's own single emission, not a full run.
-      build: () => TicketsCubit(
-        repository,
-        agentClient: agentClient,
-        commentRepository: commentRepository,
-      ),
-      setUp: () {
-        when(
-          () => repository.updateTicketStatus(
-            otherTask.id,
-            TicketStatus.inProgress,
-          ),
-        ).thenAnswer((_) async {});
-        when(() => repository.getTicketById(otherTask.id)).thenAnswer(
-          (_) async => otherTask.copyWith(status: TicketStatus.inProgress),
-        );
-      },
-      act: (cubit) =>
-          cubit.changeTicketStatus(otherTask, TicketStatus.inProgress),
-      wait: const Duration(milliseconds: 50),
-      expect: () => [
-        TicketDetailLoaded(
-          otherTask.copyWith(status: TicketStatus.inProgress),
+      blocTest<TicketsCubit, TicketsState>(
+        'is a no-op (no new emission) when the cubit\'s last state was '
+        'TicketDetailLoaded, not TicketsLoaded',
+        // A cubit missing git/baseline deps — _runCodingExecution hits its
+        // own missing-deps guard immediately, so this test only needs to
+        // observe changeTicketStatus's own single emission, not a full run.
+        build: () => TicketsCubit(
+          repository,
+          agentClient: agentClient,
+          commentRepository: commentRepository,
         ),
-      ],
-    );
-  });
-
-  group('_computeStageAdvanceFailure (board-execution-indicators-and-notifications)', () {
-    late MockCommentRepository commentRepository;
-
-    final epicExploring = Ticket(
-      id: epic.id,
-      ticketId: epic.ticketId,
-      type: epic.type,
-      title: epic.title,
-      status: epic.status,
-      sddStage: SddStage.exploring,
-      createdAt: epic.createdAt,
-      updatedAt: epic.updatedAt,
-    );
-
-    setUp(() {
-      commentRepository = MockCommentRepository();
-    });
-
-    TicketsCubit buildCubit() => TicketsCubit(
-      repository,
-      commentRepository: commentRepository,
-    );
-
-    blocTest<TicketsCubit, TicketsState>(
-      'no stage chat yet — not failed',
-      build: buildCubit,
-      setUp: () {
-        when(
-          () => repository.getTicketById(epic.id),
-        ).thenAnswer((_) async => epicExploring);
-        when(
-          () => repository.getTicketsByParent(
-            epic.id,
-            types: const [TicketType.chat],
-          ),
-        ).thenAnswer((_) async => <Ticket>[]);
-      },
-      act: (cubit) => cubit.getTicketById(epic.id),
-      expect: () => [
-        const TicketsLoading(),
-        isA<TicketDetailLoaded>()
-            .having(
-              (s) => s.sddStageFailureReason,
-              'sddStageFailureReason',
-              isNull,
-            )
-            .having((s) => s.sddStageCanRetry, 'sddStageCanRetry', false),
-      ],
-    );
-
-    blocTest<TicketsCubit, TicketsState>(
-      'most recent comment ai-authored — not failed',
-      build: buildCubit,
-      setUp: () {
-        when(
-          () => repository.getTicketById(epic.id),
-        ).thenAnswer((_) async => epicExploring);
-        when(
-          () => repository.getTicketsByParent(
-            epic.id,
-            types: const [TicketType.chat],
-          ),
-        ).thenAnswer((_) async => [dummyChatTicket]);
-        when(
-          () => commentRepository.getCommentsForTicket(dummyChatTicket.id),
-        ).thenAnswer(
-          (_) async => [
-            TicketComment(
-              id: 'c-ai',
-              ticketId: dummyChatTicket.id,
-              content: 'All done.',
-              authorType: CommentAuthorType.ai,
-              createdAt: DateTime(2026),
+        setUp: () {
+          when(
+            () => repository.updateTicketStatus(
+              otherTask.id,
+              TicketStatus.inProgress,
             ),
-          ],
-        );
-      },
-      act: (cubit) => cubit.getTicketById(epic.id),
-      expect: () => [
-        const TicketsLoading(),
-        isA<TicketDetailLoaded>()
-            .having(
-              (s) => s.sddStageFailureReason,
-              'sddStageFailureReason',
-              isNull,
-            )
-            .having((s) => s.sddStageCanRetry, 'sddStageCanRetry', false),
-      ],
-    );
-
-    blocTest<TicketsCubit, TicketsState>(
-      'most recent comment "Stage advance failed: ..." — failed, retriable',
-      build: buildCubit,
-      setUp: () {
-        when(
-          () => repository.getTicketById(epic.id),
-        ).thenAnswer((_) async => epicExploring);
-        when(
-          () => repository.getTicketsByParent(
-            epic.id,
-            types: const [TicketType.chat],
+          ).thenAnswer((_) async {});
+          when(() => repository.getTicketById(otherTask.id)).thenAnswer(
+            (_) async => otherTask.copyWith(status: TicketStatus.inProgress),
+          );
+        },
+        act: (cubit) =>
+            cubit.changeTicketStatus(otherTask, TicketStatus.inProgress),
+        wait: const Duration(milliseconds: 50),
+        expect: () => [
+          TicketDetailLoaded(
+            otherTask.copyWith(status: TicketStatus.inProgress),
           ),
-        ).thenAnswer((_) async => [dummyChatTicket]);
-        when(
-          () => commentRepository.getCommentsForTicket(dummyChatTicket.id),
-        ).thenAnswer(
-          (_) async => [
-            TicketComment(
-              id: 'c-fail',
-              ticketId: dummyChatTicket.id,
-              content: 'Stage advance failed: boom',
-              authorType: CommentAuthorType.system,
-              createdAt: DateTime(2026),
-            ),
-          ],
-        );
-      },
-      act: (cubit) => cubit.getTicketById(epic.id),
-      expect: () => [
-        const TicketsLoading(),
-        isA<TicketDetailLoaded>()
-            .having(
-              (s) => s.sddStageFailureReason,
-              'sddStageFailureReason',
-              'Stage advance failed: boom',
-            )
-            .having((s) => s.sddStageCanRetry, 'sddStageCanRetry', true),
-      ],
-    );
+        ],
+      );
+    },
+  );
 
-    blocTest<TicketsCubit, TicketsState>(
-      'a non-ai most-recent comment while not in-flight (simulating a '
-      'post-restart orphan) — fixed "ended without a clear result" '
-      'message, retriable',
-      build: buildCubit,
-      setUp: () {
-        when(
-          () => repository.getTicketById(epic.id),
-        ).thenAnswer((_) async => epicExploring);
-        when(
-          () => repository.getTicketsByParent(
-            epic.id,
-            types: const [TicketType.chat],
-          ),
-        ).thenAnswer((_) async => [dummyChatTicket]);
-        when(
-          () => commentRepository.getCommentsForTicket(dummyChatTicket.id),
-        ).thenAnswer(
-          (_) async => [
-            TicketComment(
-              id: 'c-context',
-              ticketId: dummyChatTicket.id,
-              content: 'Context for the stage.',
-              authorType: CommentAuthorType.system,
-              createdAt: DateTime(2026),
+  group(
+    '_computeStageAdvanceFailure (board-execution-indicators-and-notifications)',
+    () {
+      late MockCommentRepository commentRepository;
+
+      final epicExploring = Ticket(
+        id: epic.id,
+        ticketId: epic.ticketId,
+        type: epic.type,
+        title: epic.title,
+        status: epic.status,
+        sddStage: SddStage.exploring,
+        createdAt: epic.createdAt,
+        updatedAt: epic.updatedAt,
+      );
+
+      setUp(() {
+        commentRepository = MockCommentRepository();
+      });
+
+      TicketsCubit buildCubit() =>
+          TicketsCubit(repository, commentRepository: commentRepository);
+
+      blocTest<TicketsCubit, TicketsState>(
+        'no stage chat yet — not failed',
+        build: buildCubit,
+        setUp: () {
+          when(
+            () => repository.getTicketById(epic.id),
+          ).thenAnswer((_) async => epicExploring);
+          when(
+            () => repository.getTicketsByParent(
+              epic.id,
+              types: const [TicketType.chat],
             ),
-          ],
-        );
-      },
-      act: (cubit) => cubit.getTicketById(epic.id),
-      expect: () => [
-        const TicketsLoading(),
-        isA<TicketDetailLoaded>()
-            .having(
-              (s) => s.sddStageFailureReason,
-              'sddStageFailureReason',
-              'Stage advance ended without a clear result.',
-            )
-            .having((s) => s.sddStageCanRetry, 'sddStageCanRetry', true),
-      ],
-    );
-  });
+          ).thenAnswer((_) async => <Ticket>[]);
+        },
+        act: (cubit) => cubit.getTicketById(epic.id),
+        expect: () => [
+          const TicketsLoading(),
+          isA<TicketDetailLoaded>()
+              .having(
+                (s) => s.sddStageFailureReason,
+                'sddStageFailureReason',
+                isNull,
+              )
+              .having((s) => s.sddStageCanRetry, 'sddStageCanRetry', false),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'most recent comment ai-authored — not failed',
+        build: buildCubit,
+        setUp: () {
+          when(
+            () => repository.getTicketById(epic.id),
+          ).thenAnswer((_) async => epicExploring);
+          when(
+            () => repository.getTicketsByParent(
+              epic.id,
+              types: const [TicketType.chat],
+            ),
+          ).thenAnswer((_) async => [dummyChatTicket]);
+          when(
+            () => commentRepository.getCommentsForTicket(dummyChatTicket.id),
+          ).thenAnswer(
+            (_) async => [
+              TicketComment(
+                id: 'c-ai',
+                ticketId: dummyChatTicket.id,
+                content: 'All done.',
+                authorType: CommentAuthorType.ai,
+                createdAt: DateTime(2026),
+              ),
+            ],
+          );
+        },
+        act: (cubit) => cubit.getTicketById(epic.id),
+        expect: () => [
+          const TicketsLoading(),
+          isA<TicketDetailLoaded>()
+              .having(
+                (s) => s.sddStageFailureReason,
+                'sddStageFailureReason',
+                isNull,
+              )
+              .having((s) => s.sddStageCanRetry, 'sddStageCanRetry', false),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'most recent comment "Stage advance failed: ..." — failed, retriable',
+        build: buildCubit,
+        setUp: () {
+          when(
+            () => repository.getTicketById(epic.id),
+          ).thenAnswer((_) async => epicExploring);
+          when(
+            () => repository.getTicketsByParent(
+              epic.id,
+              types: const [TicketType.chat],
+            ),
+          ).thenAnswer((_) async => [dummyChatTicket]);
+          when(
+            () => commentRepository.getCommentsForTicket(dummyChatTicket.id),
+          ).thenAnswer(
+            (_) async => [
+              TicketComment(
+                id: 'c-fail',
+                ticketId: dummyChatTicket.id,
+                content: 'Stage advance failed: boom',
+                authorType: CommentAuthorType.system,
+                createdAt: DateTime(2026),
+              ),
+            ],
+          );
+        },
+        act: (cubit) => cubit.getTicketById(epic.id),
+        expect: () => [
+          const TicketsLoading(),
+          isA<TicketDetailLoaded>()
+              .having(
+                (s) => s.sddStageFailureReason,
+                'sddStageFailureReason',
+                'Stage advance failed: boom',
+              )
+              .having((s) => s.sddStageCanRetry, 'sddStageCanRetry', true),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'a non-ai most-recent comment while not in-flight (simulating a '
+        'post-restart orphan) — fixed "ended without a clear result" '
+        'message, retriable',
+        build: buildCubit,
+        setUp: () {
+          when(
+            () => repository.getTicketById(epic.id),
+          ).thenAnswer((_) async => epicExploring);
+          when(
+            () => repository.getTicketsByParent(
+              epic.id,
+              types: const [TicketType.chat],
+            ),
+          ).thenAnswer((_) async => [dummyChatTicket]);
+          when(
+            () => commentRepository.getCommentsForTicket(dummyChatTicket.id),
+          ).thenAnswer(
+            (_) async => [
+              TicketComment(
+                id: 'c-context',
+                ticketId: dummyChatTicket.id,
+                content: 'Context for the stage.',
+                authorType: CommentAuthorType.system,
+                createdAt: DateTime(2026),
+              ),
+            ],
+          );
+        },
+        act: (cubit) => cubit.getTicketById(epic.id),
+        expect: () => [
+          const TicketsLoading(),
+          isA<TicketDetailLoaded>()
+              .having(
+                (s) => s.sddStageFailureReason,
+                'sddStageFailureReason',
+                'Stage advance ended without a clear result.',
+              )
+              .having((s) => s.sddStageCanRetry, 'sddStageCanRetry', true),
+        ],
+      );
+    },
+  );
 
   group('bug coding-execution parity', () {
     blocTest<TicketsCubit, TicketsState>(
@@ -3851,9 +3869,7 @@ void main() {
             cubit.changeTicketStatus(taskNoStory, TicketStatus.inProgress),
         wait: const Duration(milliseconds: 50),
         verify: (_) {
-          verify(
-            () => gitClient.createWorktree(any(), any(), any()),
-          ).called(1);
+          verify(() => gitClient.createWorktree(any(), any(), any())).called(1);
           // 2 model turns: implement, then agentic verify.
           verify(() => agentClient.run(any())).called(2);
           verify(() => gitClient.push(any(), any())).called(1);
@@ -3880,9 +3896,7 @@ void main() {
             cubit.changeTicketStatus(taskNoStory, TicketStatus.inProgress),
         wait: const Duration(milliseconds: 50),
         verify: (_) {
-          verify(
-            () => gitClient.createWorktree(any(), any(), any()),
-          ).called(1);
+          verify(() => gitClient.createWorktree(any(), any(), any())).called(1);
           verify(() => gitClient.removeWorktree(any(), any())).called(1);
           // Only the implement turn ran — no agentic verify turn follows
           // a hard implement failure.
@@ -3982,8 +3996,7 @@ void main() {
           // (see `stubStatefulComments`), so it's echoed verbatim here.
           TicketDetailLoaded(
             taskNoStory.copyWith(status: TicketStatus.inProgress),
-            executionFailureReason:
-                'Execution failed verification:\n\nerror Y',
+            executionFailureReason: 'Execution failed verification:\n\nerror Y',
             executionCanRetry: true,
           ),
         ],
@@ -4031,8 +4044,7 @@ void main() {
           const TicketsLoading(),
           TicketDetailLoaded(
             taskNoStory.copyWith(status: TicketStatus.inProgress),
-            executionFailureReason:
-                'Execution failed verification:\n\nerror Z',
+            executionFailureReason: 'Execution failed verification:\n\nerror Z',
             executionCanRetry: true,
           ),
         ],
@@ -4041,7 +4053,8 @@ void main() {
       blocTest<TicketsCubit, TicketsState>(
         'getTicketById surfaces a system-authored verify-failure comment as '
         'executionFailureReason with executionCanRetry true',
-        build: () => TicketsCubit(repository, commentRepository: commentRepository),
+        build: () =>
+            TicketsCubit(repository, commentRepository: commentRepository),
         setUp: () {
           when(
             () => commentRepository.getCommentsForTicket(
@@ -4074,7 +4087,8 @@ void main() {
       blocTest<TicketsCubit, TicketsState>(
         'getTicketById treats a chat with no comments at all as an '
         'orphaned/stalled run, still offering a retry',
-        build: () => TicketsCubit(repository, commentRepository: commentRepository),
+        build: () =>
+            TicketsCubit(repository, commentRepository: commentRepository),
         setUp: () {
           when(
             () => commentRepository.getCommentsForTicket(
@@ -4153,9 +4167,7 @@ void main() {
           verifyNever(() => repository.createTicket(any()));
           // 2 model turns: implement, then agentic verify.
           verify(() => agentClient.run(any())).called(2);
-          verify(
-            () => gitClient.createWorktree(any(), any(), any()),
-          ).called(1);
+          verify(() => gitClient.createWorktree(any(), any(), any())).called(1);
           verify(
             () => commentRepository.addComment(
               any(
@@ -4304,8 +4316,7 @@ void main() {
             id: 'dummy-exec-chat-continued',
             ticketId: 'AIO-98',
             type: TicketType.chat,
-            title:
-                'Coding Execution — ${taskUnderStory.title} (continued)',
+            title: 'Coding Execution — ${taskUnderStory.title} (continued)',
             status: TicketStatus.backlog,
             parentId: taskUnderStory.id,
             createdAt: DateTime(2026, 1, 2),
@@ -4316,9 +4327,7 @@ void main() {
               taskNoStory.id,
               types: const [TicketType.chat],
             ),
-          ).thenAnswer(
-            (_) async => [dummyExecutionChatTicket, continuedChat],
-          );
+          ).thenAnswer((_) async => [dummyExecutionChatTicket, continuedChat]);
           when(
             () => commentRepository.getCommentsForTicket(continuedChat.id),
           ).thenAnswer(
@@ -4565,9 +4574,9 @@ void main() {
       baselineRepository = MockBaselineRepository();
       stubSuccessfulCodingExecutionInfra(gitClient, gitHubClient);
       stubEmptyBaseline(baselineRepository);
-      when(() => agentClient.run(any())).thenAnswer(
-        (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
-      );
+      when(
+        () => agentClient.run(any()),
+      ).thenAnswer((_) async => Stream.fromIterable(const [AgentDoneEvent()]));
       when(() => commentRepository.addComment(any())).thenAnswer((_) async {});
       when(() => repository.createTicket(any())).thenAnswer((_) async {});
       when(
@@ -4669,9 +4678,9 @@ void main() {
             SddStage.designBrief,
           ),
         ).thenAnswer((_) async {});
-        when(() => repository.getTicketById(any())).thenAnswer(
-          (_) async => dummyChatTicket,
-        );
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
         when(() => repository.getTicketById(storyProposed.id)).thenAnswer(
           (_) async => Ticket(
             id: storyProposed.id,
@@ -4771,7 +4780,9 @@ void main() {
             dummyExecutionChatTicket.id,
           ),
         ).thenAnswer((_) async => []);
-        when(() => repository.getTicketById(any())).thenAnswer((invocation) async {
+        when(() => repository.getTicketById(any())).thenAnswer((
+          invocation,
+        ) async {
           final id = invocation.positionalArguments[0] as String;
           if (id == storyForExecution.id) return storyForExecution;
           if (id == taskUnderStory.id) {
@@ -4819,5 +4830,504 @@ void main() {
         ).called(2);
       },
     );
+  });
+
+  group('blockedTicketIds (board-task-ordering-indication)', () {
+    late MockTicketLinkRepository linkRepository;
+
+    final blockerTicket = Ticket(
+      id: 'blocker-1',
+      ticketId: 'AIO-30',
+      type: TicketType.task,
+      title: 'Blocker task',
+      status: TicketStatus.todo,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final blockedTicket = Ticket(
+      id: 'blocked-1',
+      ticketId: 'AIO-31',
+      type: TicketType.task,
+      title: 'Blocked task',
+      status: TicketStatus.todo,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    setUp(() {
+      linkRepository = MockTicketLinkRepository();
+    });
+
+    TicketsCubit buildCubit() =>
+        TicketsCubit(repository, linkRepository: linkRepository);
+
+    void stubSearch(List<Ticket> tickets) {
+      when(
+        () => repository.searchTickets(
+          query: any(named: 'query'),
+          status: any(named: 'status'),
+          type: any(named: 'type'),
+          priority: any(named: 'priority'),
+          limit: any(named: 'limit'),
+          offset: any(named: 'offset'),
+        ),
+      ).thenAnswer(
+        (_) async => TicketSearchPage(tickets: tickets, hasMore: false),
+      );
+    }
+
+    blocTest<TicketsCubit, TicketsState>(
+      'a ticket with a blockedBy link to a non-done ticket appears in '
+      'blockedTicketIds',
+      setUp: () {
+        stubSearch([blockerTicket, blockedTicket]);
+        when(
+          () => linkRepository.getLinksByTypes([
+            TicketLinkType.blocks,
+            TicketLinkType.blockedBy,
+          ]),
+        ).thenAnswer(
+          (_) async => [
+            TicketLinkData(
+              id: 'link-1',
+              sourceTicketId: blockedTicket.id,
+              targetTicketId: blockerTicket.id,
+              linkType: TicketLinkType.blockedBy.name,
+            ),
+          ],
+        );
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.searchTickets(),
+      expect: () => [
+        const TicketsLoading(),
+        isA<TicketsLoaded>().having(
+          (s) => s.blockedTicketIds,
+          'blockedTicketIds',
+          {blockedTicket.id},
+        ),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'the same link with the blocker done does not appear in '
+      'blockedTicketIds',
+      setUp: () {
+        stubSearch([
+          blockerTicket.copyWith(status: TicketStatus.done),
+          blockedTicket,
+        ]);
+        when(
+          () => linkRepository.getLinksByTypes([
+            TicketLinkType.blocks,
+            TicketLinkType.blockedBy,
+          ]),
+        ).thenAnswer(
+          (_) async => [
+            TicketLinkData(
+              id: 'link-1',
+              sourceTicketId: blockedTicket.id,
+              targetTicketId: blockerTicket.id,
+              linkType: TicketLinkType.blockedBy.name,
+            ),
+          ],
+        );
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.searchTickets(),
+      expect: () => [
+        const TicketsLoading(),
+        isA<TicketsLoaded>().having(
+          (s) => s.blockedTicketIds,
+          'blockedTicketIds',
+          isEmpty,
+        ),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'a blocks link (reversed direction) resolves the target as blocked',
+      setUp: () {
+        stubSearch([blockerTicket, blockedTicket]);
+        when(
+          () => linkRepository.getLinksByTypes([
+            TicketLinkType.blocks,
+            TicketLinkType.blockedBy,
+          ]),
+        ).thenAnswer(
+          (_) async => [
+            TicketLinkData(
+              id: 'link-1',
+              sourceTicketId: blockerTicket.id,
+              targetTicketId: blockedTicket.id,
+              linkType: TicketLinkType.blocks.name,
+            ),
+          ],
+        );
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.searchTickets(),
+      expect: () => [
+        const TicketsLoading(),
+        isA<TicketsLoaded>().having(
+          (s) => s.blockedTicketIds,
+          'blockedTicketIds',
+          {blockedTicket.id},
+        ),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'updateTicketStatus moving a blocker to done removes the blockee '
+      'from blockedTicketIds on the next TicketsLoaded emission',
+      setUp: () {
+        // updateTicketStatus's own success emission is TicketStatusUpdated
+        // (list-shaped, not TicketsLoaded) — _refreshBlockedBoardState's
+        // no-op-unless-TicketsLoaded guard means blockedTicketIds isn't
+        // recomputed again until the next TicketsLoaded-producing call.
+        // This mutable flag lets the searchTickets stub reflect the
+        // persisted status change on that next call.
+        var blockerStatus = TicketStatus.todo;
+        when(
+          () => repository.searchTickets(
+            query: any(named: 'query'),
+            status: any(named: 'status'),
+            type: any(named: 'type'),
+            priority: any(named: 'priority'),
+            limit: any(named: 'limit'),
+            offset: any(named: 'offset'),
+          ),
+        ).thenAnswer(
+          (_) async => TicketSearchPage(
+            tickets: [
+              blockerTicket.copyWith(status: blockerStatus),
+              blockedTicket,
+            ],
+            hasMore: false,
+          ),
+        );
+        when(
+          () => linkRepository.getLinksByTypes([
+            TicketLinkType.blocks,
+            TicketLinkType.blockedBy,
+          ]),
+        ).thenAnswer(
+          (_) async => [
+            TicketLinkData(
+              id: 'link-1',
+              sourceTicketId: blockedTicket.id,
+              targetTicketId: blockerTicket.id,
+              linkType: TicketLinkType.blockedBy.name,
+            ),
+          ],
+        );
+        when(
+          () => repository.updateTicketStatus(
+            blockerTicket.id,
+            TicketStatus.done,
+          ),
+        ).thenAnswer((_) async {
+          blockerStatus = TicketStatus.done;
+        });
+        when(() => repository.getTicketById(blockerTicket.id)).thenAnswer(
+          (_) async => blockerTicket.copyWith(status: blockerStatus),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        await cubit.searchTickets();
+        await cubit.updateTicketStatus(blockerTicket.id, TicketStatus.done);
+        await cubit.searchTickets();
+      },
+      expect: () => [
+        const TicketsLoading(),
+        isA<TicketsLoaded>().having(
+          (s) => s.blockedTicketIds,
+          'blockedTicketIds',
+          {blockedTicket.id},
+        ),
+        isA<TicketStatusUpdating>(),
+        isA<TicketStatusUpdated>(),
+        isA<TicketsLoaded>().having(
+          (s) => s.blockedTicketIds,
+          'blockedTicketIds',
+          isEmpty,
+        ),
+      ],
+    );
+  });
+
+  group('decomposition materialization (board-task-ordering-indication)', () {
+    late MockAgentModelClient agentClient;
+    late MockCommentRepository commentRepository;
+    late MockTicketLinkRepository linkRepository;
+
+    final decompEpic = Ticket(
+      id: 'decomp-epic',
+      ticketId: 'AIO-40',
+      type: TicketType.epic,
+      title: 'Epic to decompose',
+      status: TicketStatus.backlog,
+      sddStage: SddStage.exploring,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final existingChat = Ticket(
+      id: 'decomp-existing-chat',
+      ticketId: 'AIO-41',
+      type: TicketType.chat,
+      title: 'Exploring — Epic to decompose',
+      status: TicketStatus.backlog,
+      parentId: decompEpic.id,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final newStageChat = Ticket(
+      id: 'decomp-new-chat',
+      ticketId: 'AIO-42',
+      type: TicketType.chat,
+      title: 'Proposed — Epic to decompose',
+      status: TicketStatus.backlog,
+      parentId: decompEpic.id,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    setUp(() {
+      agentClient = MockAgentModelClient();
+      commentRepository = MockCommentRepository();
+      linkRepository = MockTicketLinkRepository();
+    });
+
+    TicketsCubit buildCubit() => TicketsCubit(
+      repository,
+      agentClient: agentClient,
+      commentRepository: commentRepository,
+      linkRepository: linkRepository,
+    );
+
+    /// Wires the precondition (exploring → proposed needs the most
+    /// recently created chat child to have an AI reply already), the
+    /// stage transition's own persistence round trip, and the new stage
+    /// chat's creation — everything short of the AI turn itself, which
+    /// each test stubs with its own reply text via [agentClient.run].
+    void stubAdvanceToProposed() {
+      when(
+        () => repository.updateTicketSddStage(decompEpic.id, SddStage.proposed),
+      ).thenAnswer((_) async {});
+      when(
+        () => repository.getTicketById(any()),
+      ).thenAnswer((_) async => newStageChat);
+      when(() => repository.getTicketById(decompEpic.id)).thenAnswer(
+        (_) async => Ticket(
+          id: decompEpic.id,
+          ticketId: decompEpic.ticketId,
+          type: decompEpic.type,
+          title: decompEpic.title,
+          status: decompEpic.status,
+          sddStage: SddStage.proposed,
+          createdAt: decompEpic.createdAt,
+          updatedAt: decompEpic.updatedAt,
+        ),
+      );
+      when(
+        () => repository.getTicketsByParent(
+          decompEpic.id,
+          types: const [TicketType.chat],
+        ),
+      ).thenAnswer((_) async => [existingChat]);
+      when(
+        () => commentRepository.getCommentsForTicket(existingChat.id),
+      ).thenAnswer(
+        (_) async => [
+          TicketComment(
+            id: 'existing-reply',
+            ticketId: existingChat.id,
+            content: 'An earlier AI reply.',
+            authorType: CommentAuthorType.ai,
+            createdAt: DateTime(2026),
+          ),
+        ],
+      );
+      when(() => repository.createTicket(any())).thenAnswer((_) async {});
+    }
+
+    test(
+      'a successful proposed-stage turn materializes one child ticket per '
+      'parsed line, and a blockedBy link for the resolvable sibling title',
+      () async {
+        stubAdvanceToProposed();
+        stubStatefulComments(commentRepository, newStageChat.id);
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent(
+              'Here is the plan.\n\n'
+              '## Decomposition\n'
+              '- Story: Build backend\n'
+              '- Story: Build UI (blockedBy: Build backend)\n',
+            ),
+            AgentDoneEvent(),
+          ]),
+        );
+        final createdTickets = <Ticket>[];
+        when(() => repository.createTicket(any())).thenAnswer((
+          invocation,
+        ) async {
+          final t = invocation.positionalArguments[0] as Ticket;
+          createdTickets.add(t);
+        });
+
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+        await cubit.advanceSddStage(decompEpic);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        // 1 for the stage chat itself (_createStageChat) + 2 decomposition
+        // children.
+        final children = createdTickets
+            .where(
+              (t) => t.parentId == decompEpic.id && t.type == TicketType.story,
+            )
+            .toList();
+        expect(children, hasLength(2));
+        final backend = children.firstWhere((t) => t.title == 'Build backend');
+        final ui = children.firstWhere((t) => t.title == 'Build UI');
+
+        verify(
+          () => linkRepository.createLink(
+            sourceTicketId: ui.id,
+            targetTicketId: backend.id,
+            linkType: TicketLinkType.blockedBy,
+          ),
+        ).called(1);
+      },
+    );
+
+    test('an unresolved blockedByTitle still creates the child ticket, just '
+        'no link', () async {
+      stubAdvanceToProposed();
+      stubStatefulComments(commentRepository, newStageChat.id);
+      when(() => agentClient.run(any())).thenAnswer(
+        (_) async => Stream.fromIterable(const [
+          AgentTextEvent(
+            '## Decomposition\n'
+            '- Story: Build UI (blockedBy: Nonexistent sibling)\n',
+          ),
+          AgentDoneEvent(),
+        ]),
+      );
+      final createdTickets = <Ticket>[];
+      when(() => repository.createTicket(any())).thenAnswer((invocation) async {
+        final t = invocation.positionalArguments[0] as Ticket;
+        createdTickets.add(t);
+      });
+
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      await cubit.advanceSddStage(decompEpic);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      final children = createdTickets
+          .where(
+            (t) => t.parentId == decompEpic.id && t.type == TicketType.story,
+          )
+          .toList();
+      expect(children, hasLength(1));
+      expect(children.single.title, 'Build UI');
+      verifyNever(
+        () => linkRepository.createLink(
+          sourceTicketId: any(named: 'sourceTicketId'),
+          targetTicketId: any(named: 'targetTicketId'),
+          linkType: any(named: 'linkType'),
+        ),
+      );
+    });
+
+    test('a reply with no Decomposition block creates no child tickets '
+        '(silent no-op, not an error)', () async {
+      stubAdvanceToProposed();
+      stubStatefulComments(commentRepository, newStageChat.id);
+      when(() => agentClient.run(any())).thenAnswer(
+        (_) async => Stream.fromIterable(const [
+          AgentTextEvent('Just some plain-text thoughts, no block at all.'),
+          AgentDoneEvent(),
+        ]),
+      );
+      final createdTickets = <Ticket>[];
+      when(() => repository.createTicket(any())).thenAnswer((invocation) async {
+        final t = invocation.positionalArguments[0] as Ticket;
+        createdTickets.add(t);
+      });
+
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      await cubit.advanceSddStage(decompEpic);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(
+        createdTickets.where(
+          (t) => t.parentId == decompEpic.id && t.type == TicketType.story,
+        ),
+        isEmpty,
+      );
+    });
+
+    test('a stage advance other than proposed never materializes, even if the '
+        'reply happens to contain a Decomposition-shaped block', () async {
+      // null -> exploring: no precondition, mirrors the existing
+      // 'advanceSddStage — backgrounded stage-chat turn' happy path.
+      final freshEpic = Ticket(
+        id: 'fresh-epic',
+        ticketId: 'AIO-43',
+        type: TicketType.epic,
+        title: 'Fresh epic',
+        status: TicketStatus.backlog,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+      when(
+        () => repository.updateTicketSddStage(freshEpic.id, SddStage.exploring),
+      ).thenAnswer((_) async {});
+      when(
+        () => repository.getTicketById(any()),
+      ).thenAnswer((_) async => newStageChat);
+      when(() => repository.getTicketById(freshEpic.id)).thenAnswer(
+        (_) async => Ticket(
+          id: freshEpic.id,
+          ticketId: freshEpic.ticketId,
+          type: freshEpic.type,
+          title: freshEpic.title,
+          status: freshEpic.status,
+          sddStage: SddStage.exploring,
+          createdAt: freshEpic.createdAt,
+          updatedAt: freshEpic.updatedAt,
+        ),
+      );
+      when(() => repository.createTicket(any())).thenAnswer((_) async {});
+      stubStatefulComments(commentRepository, newStageChat.id);
+      when(() => agentClient.run(any())).thenAnswer(
+        (_) async => Stream.fromIterable(const [
+          AgentTextEvent('## Decomposition\n- Story: Should not be created\n'),
+          AgentDoneEvent(),
+        ]),
+      );
+      final createdTickets = <Ticket>[];
+      when(() => repository.createTicket(any())).thenAnswer((invocation) async {
+        final t = invocation.positionalArguments[0] as Ticket;
+        createdTickets.add(t);
+      });
+
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      await cubit.advanceSddStage(freshEpic);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(
+        createdTickets.where(
+          (t) => t.parentId == freshEpic.id && t.type == TicketType.story,
+        ),
+        isEmpty,
+      );
+    });
   });
 }

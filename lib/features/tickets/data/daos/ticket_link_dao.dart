@@ -5,6 +5,7 @@ import 'package:drift/drift.dart';
 import 'package:aion/core/core.dart';
 import 'package:aion/features/tickets/data/models/ticket_link_model.dart';
 import 'package:aion/features/tickets/data/models/ticket_model.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
 
 part 'ticket_link_dao.g.dart';
 
@@ -26,31 +27,31 @@ class TicketLinkDao extends DatabaseAccessor<AppDatabase>
   /// ticket linked to itself) would otherwise match both the source-side
   /// and target-side query below and be returned twice.
   Future<List<TicketLinkData>> getLinksForTicket(String ticketId) async {
-    final asSource = await (select(ticketLinksTable).join([
-          innerJoin(
-            ticketsTable,
-            ticketsTable.id.equalsExp(ticketLinksTable.targetTicketId),
-          ),
-        ])
-          ..where(
-            ticketLinksTable.sourceTicketId.equals(ticketId) &
-                ticketsTable.deletedAt.isNull(),
-          ))
-        .map((row) => row.readTable(ticketLinksTable))
-        .get();
+    final asSource =
+        await (select(ticketLinksTable).join([
+              innerJoin(
+                ticketsTable,
+                ticketsTable.id.equalsExp(ticketLinksTable.targetTicketId),
+              ),
+            ])..where(
+              ticketLinksTable.sourceTicketId.equals(ticketId) &
+                  ticketsTable.deletedAt.isNull(),
+            ))
+            .map((row) => row.readTable(ticketLinksTable))
+            .get();
 
-    final asTarget = await (select(ticketLinksTable).join([
-          innerJoin(
-            ticketsTable,
-            ticketsTable.id.equalsExp(ticketLinksTable.sourceTicketId),
-          ),
-        ])
-          ..where(
-            ticketLinksTable.targetTicketId.equals(ticketId) &
-                ticketsTable.deletedAt.isNull(),
-          ))
-        .map((row) => row.readTable(ticketLinksTable))
-        .get();
+    final asTarget =
+        await (select(ticketLinksTable).join([
+              innerJoin(
+                ticketsTable,
+                ticketsTable.id.equalsExp(ticketLinksTable.sourceTicketId),
+              ),
+            ])..where(
+              ticketLinksTable.targetTicketId.equals(ticketId) &
+                  ticketsTable.deletedAt.isNull(),
+            ))
+            .map((row) => row.readTable(ticketLinksTable))
+            .get();
 
     final byId = <String, TicketLinkData>{};
     for (final link in [...asSource, ...asTarget]) {
@@ -74,5 +75,41 @@ class TicketLinkDao extends DatabaseAccessor<AppDatabase>
               t.targetTicketId.isIn(ticketIds),
         ))
         .go();
+  }
+
+  /// Returns every live link row app-wide whose [TicketLinkData.linkType]
+  /// (matched by [TicketLinkType.name]) is one of [types], excluding rows
+  /// where either side's ticket is currently trashed. Whole-table-scoped,
+  /// like [deleteLinksForTickets] — no per-ticket-id filter — because
+  /// callers (the Board's blocked-set computation) need every matching row
+  /// at once rather than one ticket's links at a time. Both sides of each
+  /// link are joined against [ticketsTable] in a single query (aliased as
+  /// source/target) so trashed-ticket filtering applies to each side
+  /// independently, rather than [getLinksForTicket]'s two-pass
+  /// source/target union.
+  Future<List<TicketLinkData>> getLinksByTypes(
+    List<TicketLinkType> types,
+  ) async {
+    final sourceTickets = alias(ticketsTable, 'source_tickets');
+    final targetTickets = alias(ticketsTable, 'target_tickets');
+
+    final rows =
+        await (select(ticketLinksTable).join([
+              innerJoin(
+                sourceTickets,
+                sourceTickets.id.equalsExp(ticketLinksTable.sourceTicketId),
+              ),
+              innerJoin(
+                targetTickets,
+                targetTickets.id.equalsExp(ticketLinksTable.targetTicketId),
+              ),
+            ])..where(
+              ticketLinksTable.linkType.isIn(types.map((t) => t.name)) &
+                  sourceTickets.deletedAt.isNull() &
+                  targetTickets.deletedAt.isNull(),
+            ))
+            .get();
+
+    return rows.map((row) => row.readTable(ticketLinksTable)).toList();
   }
 }

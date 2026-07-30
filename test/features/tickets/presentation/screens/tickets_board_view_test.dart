@@ -10,7 +10,8 @@ import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/tickets.dart';
 import 'package:aion/l10n/generated/app_localizations.dart';
 
-class MockTicketsCubit extends MockCubit<TicketsState> implements TicketsCubit {}
+class MockTicketsCubit extends MockCubit<TicketsState>
+    implements TicketsCubit {}
 
 /// Wraps [card] with the providers/localization/theme scaffolding
 /// `TicketBoardCard` needs to build: a [MockTicketsCubit] fixed to
@@ -38,12 +39,11 @@ Widget _wrap({required TicketsState ticketsState, required Widget card}) {
           GlobalWidgetsLocalizations.delegate,
         ],
         supportedLocales: AppLocalizations.supportedLocales,
-        pageRouteBuilder:
-            <T>(RouteSettings settings, WidgetBuilder builder) =>
-                PageRouteBuilder<T>(
-                  settings: settings,
-                  pageBuilder: (context, _, _) => builder(context),
-                ),
+        pageRouteBuilder: <T>(RouteSettings settings, WidgetBuilder builder) =>
+            PageRouteBuilder<T>(
+              settings: settings,
+              pageBuilder: (context, _, _) => builder(context),
+            ),
         // `home` (not `builder`) so WidgetsApp mounts a Navigator, whose
         // Overlay ancestor `TicketBoardCard`'s Draggable requires.
         home: MultiBlocProvider(
@@ -152,4 +152,81 @@ void main() {
     expect(find.textContaining('Queued'), findsNothing);
     expect(find.text('Advancing'), findsNothing);
   });
+
+  testWidgets(
+    'a card whose ticket id is in blockedTicketIds renders the Blocked '
+    'badge (board-task-ordering-indication)',
+    (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          ticketsState: TicketsLoaded(
+            [task],
+            hasMore: false,
+            blockedTicketIds: {task.id},
+          ),
+          card: TicketBoardCard(ticket: task),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Blocked'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'a card whose id is absent from blockedTicketIds renders no Blocked '
+    "badge, no change to today's existing badge layout "
+    '(board-task-ordering-indication)',
+    (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          ticketsState: TicketsLoaded(
+            [task],
+            hasMore: false,
+            blockedTicketIds: const {'some-other-ticket'},
+          ),
+          card: TicketBoardCard(ticket: task),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Blocked'), findsNothing);
+      expect(find.text('Running'), findsNothing);
+      expect(find.textContaining('Queued'), findsNothing);
+      expect(find.text('Advancing'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'a card that is both blocked and has an execution-state badge renders '
+    'both, Blocked before the execution badge '
+    '(board-task-ordering-indication)',
+    (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          ticketsState: TicketsLoaded(
+            [task],
+            hasMore: false,
+            inFlightExecutionIds: {task.id},
+            blockedTicketIds: {task.id},
+          ),
+          card: TicketBoardCard(ticket: task),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Blocked'), findsOneWidget);
+      expect(find.text('Running'), findsOneWidget);
+
+      final blockedCenter = tester.getCenter(find.text('Blocked'));
+      final runningCenter = tester.getCenter(find.text('Running'));
+      expect(
+        blockedCenter.dx,
+        lessThan(runningCenter.dx),
+        reason:
+            'Blocked badge should render before (left of) the '
+            'execution-state badge, per the meta-row insertion order',
+      );
+    },
+  );
 }

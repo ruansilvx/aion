@@ -34,4 +34,9 @@ class DriftTicketLinkRepository implements TicketLinkRepository {
 
     return _db.ticketLinkDao.insertLink(companion);
   }
+
+  @override
+  Future<List<TicketLinkData>> getLinksByTypes(List<TicketLinkType> types) {
+    return _db.ticketLinkDao.getLinksByTypes(types);
+  }
 }

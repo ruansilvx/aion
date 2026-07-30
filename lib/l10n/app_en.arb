@@ -240,6 +240,7 @@
     }
   },
   "ticketDetailBoardBadgeAdvancing": "Advancing",
+  "ticketDetailBoardBadgeBlocked": "Blocked",
   "ticketDetailViaModel": "via {model}",
   "@ticketDetailViaModel": {
     "placeholders": {
@@ -486,6 +487,11 @@
   "documentationAddAction": "Add",
   "ticketLinkPickerSearchHint": "Search tickets",
   "ticketLinkPickerNoResults": "No matching tickets",
+  "ticketLinkPickerChangeLinkType": "Change link type",
+  "ticketLinkTypeBlocks": "Blocks",
+  "ticketLinkTypeBlockedBy": "Blocked by",
+  "ticketLinkTypeRelatesTo": "Relates to",
+  "ticketLinkTypeDuplicates": "Duplicates",
 
   "pageDetailContentPlaceholder": "Write the page content in Markdown…",
   "pageDetailEditContent": "Edit page content",

@@ -18,4 +18,10 @@ abstract interface class TicketLinkRepository {
     required String targetTicketId,
     required TicketLinkType linkType,
   });
+
+  /// Returns every live link row app-wide whose type is one of [types],
+  /// regardless of which tickets it connects. Used by the Board's
+  /// blocked-set computation to resolve every `blocks`/`blockedBy`
+  /// relationship in one bulk query rather than per-ticket lookups.
+  Future<List<TicketLinkData>> getLinksByTypes(List<TicketLinkType> types);
 }

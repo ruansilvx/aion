@@ -63,8 +63,7 @@ String ticketsErrorMessage(BuildContext context, TicketsErrorReason reason) {
       l10n.executionBudgetOverageDetectedToast,
     TicketsErrorReason.executionVerificationFailed =>
       l10n.executionVerificationFailedToast,
-    TicketsErrorReason.sddStageAdvanceFailed =>
-      l10n.sddStageAdvanceFailedToast,
+    TicketsErrorReason.sddStageAdvanceFailed => l10n.sddStageAdvanceFailedToast,
   };
 }
 
@@ -341,14 +340,25 @@ enum _CardExecutionState { none, running, queued, advancing }
   return (_CardExecutionState.none, null);
 }
 
+/// Whether [t] currently has an unresolved `blocks`/`blockedBy`
+/// dependency, per [TicketsLoaded.blockedTicketIds]. `false` whenever
+/// the cubit's current state isn't [TicketsLoaded] — mirrors
+/// [_cardExecutionState]'s same no-signal-outside-`TicketsLoaded` floor.
+/// Added for `aion-arch/changes/board-task-ordering-indication`.
+bool _cardIsBlocked(TicketsState s, Ticket t) =>
+    s is TicketsLoaded && s.blockedTicketIds.contains(t.id);
+
 /// The visual card body shared by [TicketBoardCard]'s in-place, drag
 /// feedback, and drag-placeholder renderings. Also renders a trailing
 /// [_BoardCardStatusBadge] in the meta-chip row (beside [TypeChip]/
-/// [PriorityBadge]) reflecting [ticket]'s live [_cardExecutionState],
-/// via a `context.select` scoped to [ticket]'s own id so a card only
-/// rebuilds when *its* status changes, not on every board-wide in-flight
+/// [PriorityBadge]) reflecting [ticket]'s live [_cardExecutionState], and
+/// (inserted right after [PriorityBadge], before that trailing badge) a
+/// [_BlockedBadge] reflecting [_cardIsBlocked] — both via a
+/// `context.select` scoped to [ticket]'s own id so a card only rebuilds
+/// when *its own* status/blocked state changes, not on every board-wide
 /// emission. Added for
-/// `aion-arch/changes/board-execution-indicators-and-notifications`.
+/// `aion-arch/changes/board-execution-indicators-and-notifications` and
+/// `aion-arch/changes/board-task-ordering-indication`.
 class _CardVisual extends StatelessWidget {
   const _CardVisual({
     required this.ticket,
@@ -387,6 +397,9 @@ class _CardVisual extends StatelessWidget {
     final c = t.colors;
     final (execState, queuePosition) = context.select(
       (TicketsCubit cubit) => _cardExecutionState(cubit.state, ticket),
+    );
+    final isBlocked = context.select(
+      (TicketsCubit cubit) => _cardIsBlocked(cubit.state, ticket),
     );
 
     return DecoratedBox(
@@ -457,6 +470,10 @@ class _CardVisual extends StatelessWidget {
                 if (ticket.priority != TicketPriority.none) ...[
                   const SizedBox(width: AionSpacing.sp8),
                   PriorityBadge(priority: ticket.priority),
+                ],
+                if (isBlocked) ...[
+                  const SizedBox(width: AionSpacing.sp8),
+                  const _BlockedBadge(),
                 ],
                 if (execState != _CardExecutionState.none) ...[
                   const Spacer(),
@@ -538,39 +555,42 @@ class _BoardCardStatusBadgeState extends State<_BoardCardStatusBadge>
     final c = t.colors;
     final isDark = t.isDark;
 
-    final (IconData glyph, String label, Color fg, Color fill, Color? border) =
-        switch (widget.status) {
-          _CardExecutionState.running => (
-            PhosphorIcons.gearSixLight,
-            context.l10n.ticketDetailBoardBadgeRunning,
-            c.primary,
-            c.pendingTint(isDark),
-            null,
-          ),
-          _CardExecutionState.queued => (
-            PhosphorIcons.stackLight,
-            context.l10n.ticketDetailBoardBadgeQueuedNth(
-              widget.queuePosition!,
-            ),
-            c.secondary,
-            c.secondary.withValues(alpha: t.fillAlpha),
-            c.secondary.withValues(alpha: isDark ? 0.24 : 0.18),
-          ),
-          _CardExecutionState.advancing => (
-            PhosphorIcons.pencilSimpleLight,
-            context.l10n.ticketDetailBoardBadgeAdvancing,
-            c.primary,
-            c.pendingTint(isDark),
-            null,
-          ),
-          _CardExecutionState.none => (
-            PhosphorIcons.gearSixLight,
-            '',
-            c.primary,
-            c.pendingTint(isDark),
-            null,
-          ),
-        };
+    final (
+      IconData glyph,
+      String label,
+      Color fg,
+      Color fill,
+      Color? border,
+    ) = switch (widget.status) {
+      _CardExecutionState.running => (
+        PhosphorIcons.gearSixLight,
+        context.l10n.ticketDetailBoardBadgeRunning,
+        c.primary,
+        c.pendingTint(isDark),
+        null,
+      ),
+      _CardExecutionState.queued => (
+        PhosphorIcons.stackLight,
+        context.l10n.ticketDetailBoardBadgeQueuedNth(widget.queuePosition!),
+        c.secondary,
+        c.secondary.withValues(alpha: t.fillAlpha),
+        c.secondary.withValues(alpha: isDark ? 0.24 : 0.18),
+      ),
+      _CardExecutionState.advancing => (
+        PhosphorIcons.pencilSimpleLight,
+        context.l10n.ticketDetailBoardBadgeAdvancing,
+        c.primary,
+        c.pendingTint(isDark),
+        null,
+      ),
+      _CardExecutionState.none => (
+        PhosphorIcons.gearSixLight,
+        '',
+        c.primary,
+        c.pendingTint(isDark),
+        null,
+      ),
+    };
 
     final icon = PhosphorIcon(glyph, size: 11, color: fg);
 
@@ -597,6 +617,63 @@ class _BoardCardStatusBadgeState extends State<_BoardCardStatusBadge>
               label,
               style: AionText.chip.copyWith(
                 color: fg,
+                letterSpacing: 0.2,
+                height: 1.0,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A small, non-interactive "Blocked" pill shown in [_CardVisual]'s
+/// meta-chip row whenever the card's ticket id is in
+/// [TicketsLoaded.blockedTicketIds] — purely informational, no gate on
+/// drag/status-change (per the idea file's resolved Q4). Rendered right
+/// after [PriorityBadge] and before the trailing [Spacer] +
+/// [_BoardCardStatusBadge], in the same row
+/// `board-execution-indicators-and-notifications` left room for. Static
+/// (no animation, unlike [_BoardCardStatusBadge]'s spinning-gear
+/// `running` state) — a broken-link glyph + "Blocked" label in the
+/// `danger` tint family, distinct from [_BoardCardStatusBadge]'s neutral
+/// `pendingTint`/`secondary` fills, since an open dependency reads as a
+/// caution state rather than an active/queued one. Per Component Spec
+/// §2 (`aion-arch/changes/board-task-ordering-indication/design.md`).
+/// Added for `aion-arch/changes/board-task-ordering-indication`.
+class _BlockedBadge extends StatelessWidget {
+  /// Creates a [_BlockedBadge].
+  const _BlockedBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    final isDark = t.isDark;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.dangerTint(isDark),
+        borderRadius: BorderRadius.all(AionRadius.pill),
+        border: Border.all(color: c.dangerBorderTint(isDark), width: 1),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            PhosphorIcon(
+              PhosphorIcons.linkBreakLight,
+              size: 11,
+              color: c.danger,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              context.l10n.ticketDetailBoardBadgeBlocked,
+              style: AionText.chip.copyWith(
+                color: c.danger,
                 letterSpacing: 0.2,
                 height: 1.0,
               ),
