@@ -1184,6 +1184,32 @@ void main() {
       );
 
       blocTest<TicketsCubit, TicketsState>(
+        'rejects reparenting an Inbox-purpose chat (inboxPurpose set) '
+        'without calling the repository, even though chat is not '
+        'type-level isAlwaysRoot',
+        setUp: () {
+          final inboxChat = chatTicket.copyWith(
+            inboxPurpose: () => InboxPurpose.qa,
+          );
+          when(
+            () => repository.getTicketById(inboxChat.id),
+          ).thenAnswer((_) async => inboxChat);
+        },
+        build: () => TicketsCubit(repository),
+        act: (cubit) => cubit.updateTicketParent(
+          chatTicket.copyWith(inboxPurpose: () => InboxPurpose.qa),
+          ticket.id,
+        ),
+        verify: (_) {
+          verifyNever(() => repository.updateTicketParent(any(), any()));
+        },
+        expect: () => [
+          const TicketsError('', reason: TicketsErrorReason.invalidParent),
+          TicketDetailLoaded(chatTicket.copyWith(inboxPurpose: () => InboxPurpose.qa)),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
         'rejects reparenting onto a descendant without calling the repository',
         setUp: () {
           when(
@@ -4354,7 +4380,7 @@ void main() {
     },
   );
 
-  group('promoteSignalToEpic', () {
+  group('promoteSignal', () {
     late MockTicketLinkRepository linkRepository;
 
     setUp(() {
@@ -4372,7 +4398,7 @@ void main() {
         ).thenAnswer((_) async => ticket);
       },
       build: buildCubit,
-      act: (cubit) => cubit.promoteSignalToEpic(ticket),
+      act: (cubit) => cubit.promoteSignal(ticket, targetType: TicketType.epic),
       verify: (_) {
         verifyNever(() => repository.createTicket(any()));
         verifyNever(
@@ -4387,7 +4413,31 @@ void main() {
     );
 
     blocTest<TicketsCubit, TicketsState>(
-      'creates a new epic and links it when existingEpicId is omitted',
+      'rejects an invalid targetType without calling the repository',
+      setUp: () {
+        when(
+          () => repository.getTicketById(signalTicket.id),
+        ).thenAnswer((_) async => signalTicket);
+      },
+      build: buildCubit,
+      act: (cubit) =>
+          cubit.promoteSignal(signalTicket, targetType: TicketType.task),
+      verify: (_) {
+        verifyNever(() => repository.createTicket(any()));
+        verifyNever(
+          () => linkRepository.createLink(
+            sourceTicketId: any(named: 'sourceTicketId'),
+            targetTicketId: any(named: 'targetTicketId'),
+            linkType: any(named: 'linkType'),
+          ),
+        );
+      },
+      expect: () => [isA<TicketsError>(), TicketDetailLoaded(signalTicket)],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'creates a new epic and links it when existingTicketId is omitted '
+      'and targetType is epic',
       setUp: () {
         when(() => repository.createTicket(any())).thenAnswer((_) async {});
         when(
@@ -4402,9 +4452,48 @@ void main() {
         ).thenAnswer((_) async => signalTicket);
       },
       build: buildCubit,
-      act: (cubit) => cubit.promoteSignalToEpic(signalTicket),
+      act: (cubit) =>
+          cubit.promoteSignal(signalTicket, targetType: TicketType.epic),
       verify: (_) {
-        verify(() => repository.createTicket(any())).called(1);
+        final created =
+            verify(() => repository.createTicket(captureAny())).captured;
+        expect(created, hasLength(1));
+        expect((created.first as Ticket).type, TicketType.epic);
+        verify(
+          () => linkRepository.createLink(
+            sourceTicketId: signalTicket.id,
+            targetTicketId: any(named: 'targetTicketId'),
+            linkType: TicketLinkType.relatesTo,
+          ),
+        ).called(1);
+      },
+      expect: () => [TicketDetailLoaded(signalTicket)],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'creates a new bug and links it when existingTicketId is omitted '
+      'and targetType is bug',
+      setUp: () {
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        when(
+          () => linkRepository.createLink(
+            sourceTicketId: signalTicket.id,
+            targetTicketId: any(named: 'targetTicketId'),
+            linkType: TicketLinkType.relatesTo,
+          ),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(signalTicket.id),
+        ).thenAnswer((_) async => signalTicket);
+      },
+      build: buildCubit,
+      act: (cubit) =>
+          cubit.promoteSignal(signalTicket, targetType: TicketType.bug),
+      verify: (_) {
+        final created =
+            verify(() => repository.createTicket(captureAny())).captured;
+        expect(created, hasLength(1));
+        expect((created.first as Ticket).type, TicketType.bug);
         verify(
           () => linkRepository.createLink(
             sourceTicketId: signalTicket.id,
@@ -4418,7 +4507,7 @@ void main() {
 
     blocTest<TicketsCubit, TicketsState>(
       'links to an existing epic without creating a new one when '
-      'existingEpicId is given',
+      'existingTicketId is given',
       setUp: () {
         when(
           () => linkRepository.createLink(
@@ -4432,8 +4521,11 @@ void main() {
         ).thenAnswer((_) async => signalTicket);
       },
       build: buildCubit,
-      act: (cubit) =>
-          cubit.promoteSignalToEpic(signalTicket, existingEpicId: epic.id),
+      act: (cubit) => cubit.promoteSignal(
+        signalTicket,
+        targetType: TicketType.epic,
+        existingTicketId: epic.id,
+      ),
       verify: (_) {
         verifyNever(() => repository.createTicket(any()));
         verify(

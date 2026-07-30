@@ -169,4 +169,17 @@ abstract final class AionText {
     fontWeight: FontWeight.w400,
     height: 1.35,
   );
+
+  /// The Inbox launcher card's compact title label — matches the
+  /// [cardTitle]/[button] family (Manrope, semi-condensed tracking) but
+  /// at its own size/weight. Added for
+  /// `aion-arch/changes/new-project-onboarding-inbox`; see that change's
+  /// design.md §0.3.
+  static const inboxCardLabel = TextStyle(
+    fontFamily: _ui,
+    fontSize: 15,
+    fontWeight: FontWeight.w700,
+    letterSpacing: -0.1,
+    height: 1.15,
+  );
 }

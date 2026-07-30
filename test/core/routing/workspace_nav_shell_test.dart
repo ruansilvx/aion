@@ -7,6 +7,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:mocktail/mocktail.dart';
 
 import 'package:aion/core/routing/workspace_nav_shell.dart';
@@ -54,6 +55,63 @@ Widget _wrap({
             child: const SizedBox.shrink(),
           ),
         ),
+      ),
+    ),
+  );
+}
+
+/// Wraps a real [GoRouter] with three routes standing in for
+/// `/workspace/tickets`/`/workspace/documentation`/`/workspace/inbox`,
+/// each rendering [WorkspaceNavShell] around a distinctive [Text] so a
+/// test can assert both which nav item is active and that tapping each
+/// one actually navigates. [width] drives whether [WorkspaceNavShell]
+/// renders `_WideShell`/`_Sidebar` or `_CompactShell`/`_BottomTabBar`.
+Widget _wrapRouted({required double width}) {
+  final ticketsCubit = MockTicketsCubit();
+  when(() => ticketsCubit.state).thenReturn(const TicketsInitial());
+  when(
+    () => ticketsCubit.stream,
+  ).thenAnswer((_) => const Stream<TicketsState>.empty());
+
+  Widget shellFor(GoRouterState state, String label) => BlocProvider<TicketsCubit>.value(
+    value: ticketsCubit,
+    child: WorkspaceNavShell(
+      currentLocation: state.uri.path,
+      child: Text(label),
+    ),
+  );
+
+  final router = GoRouter(
+    initialLocation: '/workspace/tickets',
+    routes: [
+      GoRoute(
+        path: '/workspace/tickets',
+        builder: (context, state) => shellFor(state, 'Tickets screen'),
+      ),
+      GoRoute(
+        path: '/workspace/documentation',
+        builder: (context, state) => shellFor(state, 'Documentation screen'),
+      ),
+      GoRoute(
+        path: '/workspace/inbox',
+        builder: (context, state) => shellFor(state, 'Inbox screen'),
+      ),
+    ],
+  );
+
+  return MediaQuery(
+    data: MediaQueryData(size: Size(width, 800)),
+    child: ThemeScope(
+      theme: aionThemeArctic,
+      child: WidgetsApp.router(
+        routerConfig: router,
+        color: aionThemeArctic.colors.primary,
+        localizationsDelegates: const [
+          AppLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
+        supportedLocales: AppLocalizations.supportedLocales,
       ),
     ),
   );
@@ -110,4 +168,72 @@ void main() {
       expect(find.text('a raw, unclassified error'), findsNothing);
     },
   );
+
+  /// Finds the single [Semantics] widget labeling the nav item [label] —
+  /// reads its `properties.selected` directly off the widget (no
+  /// semantics-tree binding needed) to check which destination
+  /// `_destinationFor` resolved as active.
+  Semantics navItemSemantics(WidgetTester tester, String label) {
+    return tester
+        .widgetList<Semantics>(find.byType(Semantics))
+        .firstWhere((s) => s.properties.label == label);
+  }
+
+  group('destination navigation (new-project-onboarding-inbox)', () {
+    for (final width in [1200.0, 500.0]) {
+      final layoutName = width > 900 ? 'wide sidebar' : 'compact bottom bar';
+
+      testWidgets(
+        '$layoutName: tapping each of the three destinations navigates '
+        'correctly, and /workspace/inbox resolves Inbox as active',
+        (tester) async {
+          await tester.pumpWidget(_wrapRouted(width: width));
+          await tester.pumpAndSettle();
+
+          expect(find.text('Tickets screen'), findsOneWidget);
+          expect(navItemSemantics(tester, 'Tickets').properties.selected, isTrue);
+          expect(
+            navItemSemantics(tester, 'Documentation').properties.selected,
+            isFalse,
+          );
+          expect(
+            navItemSemantics(tester, 'Inbox').properties.selected,
+            isFalse,
+          );
+
+          await tester.tap(find.text('Documentation'));
+          await tester.pumpAndSettle();
+          expect(find.text('Documentation screen'), findsOneWidget);
+          expect(
+            navItemSemantics(tester, 'Documentation').properties.selected,
+            isTrue,
+          );
+
+          await tester.tap(find.text('Inbox'));
+          await tester.pumpAndSettle();
+          expect(find.text('Inbox screen'), findsOneWidget);
+          expect(
+            navItemSemantics(tester, 'Inbox').properties.selected,
+            isTrue,
+          );
+          expect(
+            navItemSemantics(tester, 'Tickets').properties.selected,
+            isFalse,
+          );
+          expect(
+            navItemSemantics(tester, 'Documentation').properties.selected,
+            isFalse,
+          );
+
+          await tester.tap(find.text('Tickets'));
+          await tester.pumpAndSettle();
+          expect(find.text('Tickets screen'), findsOneWidget);
+          expect(
+            navItemSemantics(tester, 'Tickets').properties.selected,
+            isTrue,
+          );
+        },
+      );
+    }
+  });
 }

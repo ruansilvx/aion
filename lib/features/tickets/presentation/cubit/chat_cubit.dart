@@ -8,6 +8,7 @@ import 'package:aion/features/providers/domain/enums/model_phase.dart';
 import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
 import 'package:aion/features/tickets/domain/enums/comment_author_type.dart';
+import 'package:aion/features/tickets/domain/enums/inbox_purpose.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/repositories/comment_repository.dart';
@@ -120,22 +121,33 @@ class ChatCubit extends Cubit<ChatState> {
     }
   }
 
-  /// Infers which [ModelPhase] governs [chatTicketId]'s model calls, from
-  /// its parent ticket: an `epic`/`story` parent's current
-  /// `Ticket.sddStage` (via [SddStageModelPhase.modelPhase]), or
-  /// [ModelPhase.execution] for a Task or Bug parent (see
-  /// `TicketTypeHierarchy.isExecutable` — `aion-arch/changes/bug-ticket-type`
-  /// gave `bug` full coding-execution parity with `task`, so a manual chat
-  /// reply on a Bug's execution transcript resolves to the same tier a
-  /// Task's would). Every chat ticket in the
-  /// app is spawned exclusively by `TicketsCubit._spawnStageChat`/
-  /// `_runCodingExecution` (the only two `createTicket` call sites for
-  /// `TicketType.chat` in the codebase), so a chat always has a
-  /// resolvable parent in real usage — the [ModelPhase.capable] fallback
-  /// below only matters defensively (a malformed/orphaned chat in tests).
-  /// Added for `aion-arch/changes/per-phase-tier-based-model-routing`.
+  /// Infers which [ModelPhase] governs [chatTicketId]'s model calls, via
+  /// two independent resolution paths. First, and parent-independent: if
+  /// the chat's own `Ticket.inboxPurpose` is set (an Inbox-spawned chat,
+  /// see `aion-arch/changes/new-project-onboarding-inbox/design.md` §1.3),
+  /// resolve directly from [_phaseForInboxPurpose] and return — Inbox
+  /// chats are deliberately parentless (see
+  /// `TicketsCubit.updateTicketParent`'s reparent guard), so the
+  /// parent-walk below would otherwise always hit its defensive fallback
+  /// for them. Otherwise, fall back to the original parent-based
+  /// inference: an `epic`/`story` parent's current `Ticket.sddStage` (via
+  /// [SddStageModelPhase.modelPhase]), or [ModelPhase.execution] for a
+  /// Task or Bug parent (see `TicketTypeHierarchy.isExecutable` —
+  /// `aion-arch/changes/bug-ticket-type` gave `bug` full coding-execution
+  /// parity with `task`, so a manual chat reply on a Bug's execution
+  /// transcript resolves to the same tier a Task's would). Every non-Inbox
+  /// chat ticket in the app is spawned exclusively by
+  /// `TicketsCubit._spawnStageChat`/`_runCodingExecution` (the only other
+  /// `createTicket` call sites for `TicketType.chat` in the codebase), so
+  /// such a chat always has a resolvable parent in real usage — the
+  /// [ModelPhase.capable] fallback below only matters defensively (a
+  /// malformed/orphaned chat in tests). Added for
+  /// `aion-arch/changes/per-phase-tier-based-model-routing`.
   Future<ModelPhase> _phaseForChat(String chatTicketId) async {
     final chat = await _ticketRepository.getTicketById(chatTicketId);
+    final inboxPurpose = chat?.inboxPurpose;
+    if (inboxPurpose != null) return _phaseForInboxPurpose(inboxPurpose);
+
     final parentId = chat?.parentId;
     if (parentId == null) return ModelPhase.capable;
     final parent = await _ticketRepository.getTicketById(parentId);
@@ -143,6 +155,19 @@ class ChatCubit extends Cubit<ChatState> {
     if (parent.type.isExecutable) return ModelPhase.execution;
     return parent.sddStage?.modelPhase ?? ModelPhase.capable;
   }
+
+  /// Maps an Inbox-spawned chat's [InboxPurpose] to the [ModelPhase] its
+  /// human-follow-up replies resolve through, per
+  /// `aion-arch/changes/new-project-onboarding-inbox/design.md` §2:
+  /// brain-dump/what-next-guidance/release-planning are judgment-heavy
+  /// (`frontier`, the same weight as epic/story-level SDD decisions);
+  /// Q&A is comparatively mechanical lookup/read-and-answer (`capable`).
+  ModelPhase _phaseForInboxPurpose(InboxPurpose purpose) => switch (purpose) {
+    InboxPurpose.brainDump ||
+    InboxPurpose.whatNextGuidance ||
+    InboxPurpose.releasePlanning => ModelPhase.frontier,
+    InboxPurpose.qa => ModelPhase.capable,
+  };
 
   /// Calls [client]'s `run` with [prompt]/[model], accumulating every
   /// `AgentTextEvent` chunk (reported to [onChunk], if given) and, on a

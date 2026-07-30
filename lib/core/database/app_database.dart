@@ -80,7 +80,9 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
 /// `TicketsTable.severity`/`stepsToReproduce`/`expectedBehavior`/
 /// `actualBehavior` — see `TicketType.bug`. Version 7 adds
 /// `TicketCommentsTable.inputTokens`/`outputTokens` — see
-/// `TicketsCubit._executionChatOverCap`.
+/// `TicketsCubit._executionChatOverCap`. Version 8 adds
+/// `TicketsTable.suggestedType`/`inboxPurpose` — see
+/// `aion-arch/changes/new-project-onboarding-inbox/design.md` §1.4.
 @DriftDatabase(
   tables: [
     TicketsTable,
@@ -100,7 +102,7 @@ class AppDatabase extends _$AppDatabase {
     : super(executor ?? _openConnection(project));
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -140,6 +142,10 @@ class AppDatabase extends _$AppDatabase {
           ticketCommentsTable,
           ticketCommentsTable.outputTokens,
         );
+      }
+      if (from < 8) {
+        await m.addColumn(ticketsTable, ticketsTable.suggestedType);
+        await m.addColumn(ticketsTable, ticketsTable.inboxPurpose);
       }
     },
   );

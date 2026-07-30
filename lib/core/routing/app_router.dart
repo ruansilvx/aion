@@ -42,8 +42,9 @@ import 'package:aion/features/tickets/tickets.dart';
 /// active project needed), and `/workspace/tickets`,
 /// `/workspace/tickets/new`, `/workspace/tickets/trash`,
 /// `/workspace/tickets/:id`, `/workspace/documentation`,
-/// `/workspace/pages/new`, `/workspace/pages/:id`, `/workspace/settings`
-/// (gated on an active project — see [_redirect]). See
+/// `/workspace/inbox`, `/workspace/pages/new`, `/workspace/pages/:id`,
+/// `/workspace/settings` (gated on an active project — see [_redirect]).
+/// See
 /// `aion-arch/changes/multi-project-hub/design.md` §9.
 ///
 /// Clean (path-based, no `#`) URLs are go_router's default. Deploying the
@@ -149,6 +150,25 @@ final appRouter = GoRouter(
               ),
             ),
             child: const DocumentationScreen(),
+          ),
+        ),
+        // Registered before `/workspace/tickets/:id` for the same reason as
+        // `/workspace/documentation` above.
+        GoRoute(
+          path: '/workspace/inbox',
+          builder: (context, state) => BlocProvider<InboxCubit>(
+            create: (context) => InboxCubit(
+              context.read<TicketRepository>(),
+              context.read<CommentRepository>(),
+              context.read<TicketLinkRepository>(),
+              context.read<AgentModelClient>(),
+              context.read<ModelRoutingRepository>(),
+              gitClient: _activeProject(context).rootPath != null
+                  ? context.read<GitRepositoryClient>()
+                  : null,
+              projectRootPath: _activeProject(context).rootPath,
+            ),
+            child: const InboxScreen(),
           ),
         ),
         GoRoute(

@@ -670,7 +670,13 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [TicketType.release] — see [TicketTypeHierarchy.isAlwaysRoot]) — and
   /// any candidate parent whose type cannot structurally parent [ticket]'s
   /// type per [TicketTypeHierarchy.canParent], via the same rejection
-  /// path. On a valid reparent, persists via
+  /// path. A second, instance-level (not type-level) rejection applies to
+  /// an Inbox-spawned chat: a ticket with `type == TicketType.chat` and a
+  /// non-null `Ticket.inboxPurpose` is also rejected for any non-null
+  /// [newParentId], since [TicketTypeHierarchy.isAlwaysRoot] has no way to
+  /// express "only when this specific ticket came from the Inbox" — every
+  /// other `chat` ticket keeps its existing, unrestricted reparent
+  /// behavior. On a valid reparent, persists via
   /// [TicketRepository.updateTicketParent] and emits the refreshed
   /// [TicketDetailLoaded].
   Future<void> updateTicketParent(Ticket ticket, String? newParentId) async {
@@ -680,6 +686,10 @@ class TicketsCubit extends Cubit<TicketsState> {
         return;
       }
       if (ticket.type.isAlwaysRoot) {
+        await _emitInvalidParent(ticket.id);
+        return;
+      }
+      if (ticket.type == TicketType.chat && ticket.inboxPurpose != null) {
         await _emitInvalidParent(ticket.id);
         return;
       }
@@ -808,24 +818,36 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
   }
 
-  /// Promotes [signal] into an epic: if [existingEpicId] is given, links
-  /// [signal] to that epic via [TicketLinkRepository.createLink] (as
-  /// [TicketLinkType.relatesTo]); otherwise creates a new
-  /// [TicketType.epic] ticket copying `signal.title`/`description`, then
-  /// links the two the same way. Does not delete or change [signal]'s
-  /// own type or status — promotion is a link, not a conversion,
-  /// consistent with `release`'s existing cross-cutting-link precedent.
-  /// Emits [TicketsError] (raw message, no classified reason — this
-  /// guard is defensive, since the UI only ever calls this for a
-  /// `signal` ticket) if `signal.type` isn't [TicketType.signal]. No-ops
-  /// (does not touch the repository) if constructed without a
-  /// [TicketLinkRepository] (see the constructor's dartdoc).
-  Future<void> promoteSignalToEpic(
+  /// Promotes [signal] into an epic or a bug (per [targetType]): if
+  /// [existingTicketId] is given, links [signal] to that ticket via
+  /// [TicketLinkRepository.createLink] (as [TicketLinkType.relatesTo]);
+  /// otherwise creates a new [targetType] ticket copying
+  /// `signal.title`/`description`, then links the two the same way. Does
+  /// not delete or change [signal]'s own type or status — promotion is a
+  /// link, not a conversion, consistent with `release`'s existing
+  /// cross-cutting-link precedent. Emits [TicketsError] (raw message, no
+  /// classified reason — these guards are defensive, since the UI only
+  /// ever calls this for a `signal` ticket with [targetType] set to
+  /// [TicketType.epic] or [TicketType.bug]) if `signal.type` isn't
+  /// [TicketType.signal], or if [targetType] is neither
+  /// [TicketType.epic] nor [TicketType.bug]. No-ops (does not touch the
+  /// repository) if constructed without a [TicketLinkRepository] (see
+  /// the constructor's dartdoc).
+  Future<void> promoteSignal(
     Ticket signal, {
-    String? existingEpicId,
+    required TicketType targetType,
+    String? existingTicketId,
   }) async {
     if (signal.type != TicketType.signal) {
-      emit(TicketsError('Only signal tickets can be promoted to an epic.'));
+      emit(TicketsError('Only signal tickets can be promoted.'));
+      final ticket = await _repository.getTicketById(signal.id);
+      if (ticket != null) {
+        emit(TicketDetailLoaded(ticket));
+      }
+      return;
+    }
+    if (targetType != TicketType.epic && targetType != TicketType.bug) {
+      emit(TicketsError('Signals can only be promoted to an epic or a bug.'));
       final ticket = await _repository.getTicketById(signal.id);
       if (ticket != null) {
         emit(TicketDetailLoaded(ticket));
@@ -837,27 +859,27 @@ class TicketsCubit extends Cubit<TicketsState> {
     if (linkRepo == null) return;
 
     try {
-      String epicId;
-      if (existingEpicId != null) {
-        epicId = existingEpicId;
+      String targetId;
+      if (existingTicketId != null) {
+        targetId = existingTicketId;
       } else {
         final now = DateTime.now();
-        final epic = Ticket(
+        final target = Ticket(
           id: _uuid.v4(),
           ticketId: '',
-          type: TicketType.epic,
+          type: targetType,
           title: signal.title,
           description: signal.description,
           status: TicketStatus.backlog,
           createdAt: now,
           updatedAt: now,
         );
-        await _repository.createTicket(epic);
-        epicId = epic.id;
+        await _repository.createTicket(target);
+        targetId = target.id;
       }
       await linkRepo.createLink(
         sourceTicketId: signal.id,
-        targetTicketId: epicId,
+        targetTicketId: targetId,
         linkType: TicketLinkType.relatesTo,
       );
       final refreshed = await _repository.getTicketById(signal.id);
@@ -3114,8 +3136,8 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// `chat` child under it, since only that depth's agentic turn has a
   /// transcript worth persisting — see [_runFullSummarization]).
   /// Every resulting `signal` ticket flows through the existing,
-  /// unmodified `promoteSignalToEpic` — no automatic ticket creation
-  /// beyond what this explicit, user-triggered call already represents.
+  /// unmodified `promoteSignal` — no automatic ticket creation beyond
+  /// what this explicit, user-triggered call already represents.
   ///
   /// Progress is reported on [codebaseAnalysisStatus], not [state]:
   /// [CodebaseAnalysisRunning] immediately, then either

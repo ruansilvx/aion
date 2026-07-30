@@ -14,8 +14,10 @@ import 'package:aion/features/tickets/presentation/screens/tickets_board_view.da
 
 /// Persistent navigation chrome wrapping every `/workspace/*` route's
 /// content: a left sidebar on wide layouts, a bottom tab bar on narrow
-/// ones, both offering the same two destinations (Tickets, Documentation)
-/// plus a shared secondary-actions trigger (Switch Project, Trash).
+/// ones, both offering the same three destinations (Tickets,
+/// Documentation, Inbox — see
+/// `aion-arch/changes/new-project-onboarding-inbox/design.md` §1) plus a
+/// shared secondary-actions trigger (Switch Project, Trash).
 ///
 /// Rendered by `WorkspaceShell` around its routed `child` — see
 /// `app_router.dart`. Replaces the ad hoc per-screen header buttons
@@ -53,6 +55,7 @@ class WorkspaceNavShell extends StatelessWidget {
 
     void selectTickets() => context.go('/workspace/tickets');
     void selectDocumentation() => context.go('/workspace/documentation');
+    void selectInbox() => context.go('/workspace/inbox');
 
     return BlocListener<TicketsCubit, TicketsState>(
       listenWhen: (previous, current) => current is TicketsError,
@@ -69,12 +72,14 @@ class WorkspaceNavShell extends StatelessWidget {
                   active: destination,
                   onSelectTickets: selectTickets,
                   onSelectDocumentation: selectDocumentation,
+                  onSelectInbox: selectInbox,
                   child: child,
                 )
               : _WideShell(
                   active: destination,
                   onSelectTickets: selectTickets,
                   onSelectDocumentation: selectDocumentation,
+                  onSelectInbox: selectInbox,
                   child: child,
                 );
         },
@@ -89,10 +94,9 @@ class WorkspaceNavShell extends StatelessWidget {
 /// responsive convention (`MarkdownEditor`'s 640, `TrashScreen`'s 380).
 const double _kBreakpoint = 900;
 
-/// The two top-level sections [WorkspaceNavShell] can switch between.
-/// Built to make adding a future section (e.g. a Chat section) a matter
-/// of extending this enum plus [_destinationFor], not restructuring the
-/// shell.
+/// The three top-level sections [WorkspaceNavShell] can switch between.
+/// Built to make adding a future section a matter of extending this enum
+/// plus [_destinationFor], not restructuring the shell.
 enum _NavDestination {
   /// `/workspace/tickets` and its sub-routes (`/new`, `/trash`, `/:id`).
   tickets,
@@ -101,16 +105,28 @@ enum _NavDestination {
   /// Documentation's content even though their routes live outside the
   /// `/workspace/documentation` path prefix.
   documentation,
+
+  /// `/workspace/inbox` — the Inbox launcher/history destination. An
+  /// Inbox-spawned chat does **not** get its own route prefix; it renders
+  /// via the existing `/workspace/tickets/:id` route, so opening one from
+  /// the Inbox history list resolves to [tickets], not this destination —
+  /// same as any other ticket detail view. Added for
+  /// `aion-arch/changes/new-project-onboarding-inbox`.
+  inbox,
 }
 
 /// Resolves [location] to the [_NavDestination] it belongs to.
 /// `/workspace/documentation` and `/workspace/pages/*` both resolve to
-/// [_NavDestination.documentation]; everything else under
-/// `/workspace/tickets*` resolves to [_NavDestination.tickets].
+/// [_NavDestination.documentation]; `/workspace/inbox` resolves to
+/// [_NavDestination.inbox]; everything else under `/workspace/tickets*`
+/// resolves to [_NavDestination.tickets].
 _NavDestination _destinationFor(String location) {
   if (location.startsWith('/workspace/documentation') ||
       location.startsWith('/workspace/pages')) {
     return _NavDestination.documentation;
+  }
+  if (location.startsWith('/workspace/inbox')) {
+    return _NavDestination.inbox;
   }
   return _NavDestination.tickets;
 }
@@ -123,6 +139,7 @@ class _WideShell extends StatelessWidget {
     required this.active,
     required this.onSelectTickets,
     required this.onSelectDocumentation,
+    required this.onSelectInbox,
     required this.child,
   });
 
@@ -136,6 +153,9 @@ class _WideShell extends StatelessWidget {
   /// Navigates to `/workspace/documentation`.
   final VoidCallback onSelectDocumentation;
 
+  /// Navigates to `/workspace/inbox`.
+  final VoidCallback onSelectInbox;
+
   /// The routed screen content.
   final Widget child;
 
@@ -148,6 +168,7 @@ class _WideShell extends StatelessWidget {
           active: active,
           onSelectTickets: onSelectTickets,
           onSelectDocumentation: onSelectDocumentation,
+          onSelectInbox: onSelectInbox,
         ),
         Expanded(child: child),
       ],
@@ -184,7 +205,7 @@ class _BrandHeader extends StatelessWidget {
 }
 
 /// The fixed-width (244px) left sidebar rendered by [_WideShell]: the
-/// brand header, then the two [_NavItem] destinations, then flexible
+/// brand header, then the three [_NavItem] destinations, then flexible
 /// space, then the [_SecondaryActionsTrigger] anchored to the bottom.
 class _Sidebar extends StatelessWidget {
   /// Creates a [_Sidebar].
@@ -192,6 +213,7 @@ class _Sidebar extends StatelessWidget {
     required this.active,
     required this.onSelectTickets,
     required this.onSelectDocumentation,
+    required this.onSelectInbox,
   });
 
   /// The currently active destination.
@@ -202,6 +224,9 @@ class _Sidebar extends StatelessWidget {
 
   /// Navigates to `/workspace/documentation`.
   final VoidCallback onSelectDocumentation;
+
+  /// Navigates to `/workspace/inbox`.
+  final VoidCallback onSelectInbox;
 
   @override
   Widget build(BuildContext context) {
@@ -239,6 +264,14 @@ class _Sidebar extends StatelessWidget {
                     label: context.l10n.documentationTitle,
                     onTap: onSelectDocumentation,
                   ),
+                  const SizedBox(height: AionSpacing.sp4),
+                  _NavItem(
+                    compact: false,
+                    active: active == _NavDestination.inbox,
+                    icon: PhosphorIcons.trayLight,
+                    label: context.l10n.inboxScreenTitle,
+                    onTap: onSelectInbox,
+                  ),
                 ],
               ),
               const Spacer(),
@@ -262,6 +295,7 @@ class _CompactShell extends StatelessWidget {
     required this.active,
     required this.onSelectTickets,
     required this.onSelectDocumentation,
+    required this.onSelectInbox,
     required this.child,
   });
 
@@ -275,6 +309,9 @@ class _CompactShell extends StatelessWidget {
   /// Navigates to `/workspace/documentation`.
   final VoidCallback onSelectDocumentation;
 
+  /// Navigates to `/workspace/inbox`.
+  final VoidCallback onSelectInbox;
+
   /// The routed screen content.
   final Widget child;
 
@@ -287,6 +324,7 @@ class _CompactShell extends StatelessWidget {
           active: active,
           onSelectTickets: onSelectTickets,
           onSelectDocumentation: onSelectDocumentation,
+          onSelectInbox: onSelectInbox,
         ),
       ],
     );
@@ -294,14 +332,21 @@ class _CompactShell extends StatelessWidget {
 }
 
 /// The fixed-height (72px + bottom safe area) bottom tab bar rendered by
-/// [_CompactShell]: the two [_NavItem] destinations plus the
-/// [_SecondaryActionsTrigger], laid out as three equal cells.
+/// [_CompactShell]: the three [_NavItem] destinations plus the
+/// [_SecondaryActionsTrigger]. Per
+/// `aion-arch/changes/new-project-onboarding-inbox/design.md` §1.3, the
+/// trigger cell is a fixed 56px [SizedBox] (not `Expanded`) — the three
+/// destinations stay equal `Expanded` thirds of the remaining space,
+/// rather than all four cells splitting evenly, since a destination must
+/// stay tappable/legible while the trigger is just a fixed 38px avatar
+/// that never needed a full share.
 class _BottomTabBar extends StatelessWidget {
   /// Creates a [_BottomTabBar].
   const _BottomTabBar({
     required this.active,
     required this.onSelectTickets,
     required this.onSelectDocumentation,
+    required this.onSelectInbox,
   });
 
   /// The currently active destination.
@@ -312,6 +357,15 @@ class _BottomTabBar extends StatelessWidget {
 
   /// Navigates to `/workspace/documentation`.
   final VoidCallback onSelectDocumentation;
+
+  /// Navigates to `/workspace/inbox`.
+  final VoidCallback onSelectInbox;
+
+  /// Below this bar *content* width (the bar's own width minus its 12+12
+  /// horizontal padding), the three destination cells step down to a
+  /// tighter icon/label size — design.md §1.3's "Secondary tightening at
+  /// ultra-narrow widths."
+  static const _kUltraNarrowContentWidth = 360.0;
 
   @override
   Widget build(BuildContext context) {
@@ -328,30 +382,49 @@ class _BottomTabBar extends StatelessWidget {
         padding: EdgeInsets.fromLTRB(12, 8, 12, 14 + bottomInset),
         child: SizedBox(
           height: 72,
-          child: Row(
-            children: [
-              Expanded(
-                child: _NavItem(
-                  compact: true,
-                  active: active == _NavDestination.tickets,
-                  icon: PhosphorIcons.squaresFourLight,
-                  label: context.l10n.ticketsListTitle,
-                  onTap: onSelectTickets,
-                ),
-              ),
-              Expanded(
-                child: _NavItem(
-                  compact: true,
-                  active: active == _NavDestination.documentation,
-                  icon: PhosphorIcons.bookOpenLight,
-                  label: context.l10n.documentationTitle,
-                  onTap: onSelectDocumentation,
-                ),
-              ),
-              const Expanded(
-                child: Center(child: _SecondaryActionsTrigger()),
-              ),
-            ],
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final ultraNarrow =
+                  constraints.maxWidth < _kUltraNarrowContentWidth;
+              return Row(
+                children: [
+                  Expanded(
+                    child: _NavItem(
+                      compact: true,
+                      ultraNarrow: ultraNarrow,
+                      active: active == _NavDestination.tickets,
+                      icon: PhosphorIcons.squaresFourLight,
+                      label: context.l10n.ticketsListTitle,
+                      onTap: onSelectTickets,
+                    ),
+                  ),
+                  Expanded(
+                    child: _NavItem(
+                      compact: true,
+                      ultraNarrow: ultraNarrow,
+                      active: active == _NavDestination.documentation,
+                      icon: PhosphorIcons.bookOpenLight,
+                      label: context.l10n.documentationTitle,
+                      onTap: onSelectDocumentation,
+                    ),
+                  ),
+                  Expanded(
+                    child: _NavItem(
+                      compact: true,
+                      ultraNarrow: ultraNarrow,
+                      active: active == _NavDestination.inbox,
+                      icon: PhosphorIcons.trayLight,
+                      label: context.l10n.inboxScreenTitle,
+                      onTap: onSelectInbox,
+                    ),
+                  ),
+                  const SizedBox(
+                    width: 56,
+                    child: Center(child: _SecondaryActionsTrigger()),
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ),
@@ -367,6 +440,7 @@ class _NavItem extends StatefulWidget {
   /// Creates a [_NavItem].
   const _NavItem({
     required this.compact,
+    this.ultraNarrow = false,
     required this.active,
     required this.icon,
     required this.label,
@@ -376,6 +450,12 @@ class _NavItem extends StatefulWidget {
   /// `true` for the bottom-tab-bar (icon-above-label) layout, `false`
   /// for the sidebar (icon-beside-label) layout.
   final bool compact;
+
+  /// Only meaningful when [compact] is `true`: below the bottom tab
+  /// bar's 360px ultra-narrow content-width threshold, steps the icon
+  /// 22 → 20px and the label 11 → 10.5px (design.md §1.3). Ignored in
+  /// the (non-compact) sidebar layout.
+  final bool ultraNarrow;
 
   /// Whether this item represents the currently active destination.
   final bool active;
@@ -413,11 +493,18 @@ class _NavItemState extends State<_NavItem> {
         ? AionShadows.focus(c, t.isDark)
         : const <BoxShadow>[];
 
-    final icon = PhosphorIcon(widget.icon, size: widget.compact ? 22 : 20, color: foreground);
+    final compactAndUltraNarrow = widget.compact && widget.ultraNarrow;
+    final iconSize = widget.compact
+        ? (compactAndUltraNarrow ? 20.0 : 22.0)
+        : 20.0;
+    final icon = PhosphorIcon(widget.icon, size: iconSize, color: foreground);
     final label = Text(
       widget.label,
       style: widget.compact
-          ? AionText.navTabLabel.copyWith(color: foreground)
+          ? AionText.navTabLabel.copyWith(
+              color: foreground,
+              fontSize: compactAndUltraNarrow ? 10.5 : null,
+            )
           : AionText.cardTitle.copyWith(color: foreground, letterSpacing: -0.07),
       overflow: TextOverflow.ellipsis,
     );

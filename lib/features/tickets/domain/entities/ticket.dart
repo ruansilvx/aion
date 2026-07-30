@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:equatable/equatable.dart';
 
+import 'package:aion/features/tickets/domain/enums/inbox_purpose.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_complexity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
@@ -100,6 +101,21 @@ class Ticket extends Equatable {
   /// set. Meaningless for every other type.
   final String? actualBehavior;
 
+  /// The Inbox brain-dump purpose's suggested promotion target (Epic or
+  /// Bug), read by the widened promote-chooser to pre-select which target
+  /// type to promote to. Meaningful only for [TicketType.signal] tickets;
+  /// `null` for every ticket not created by the brain-dump purpose, and
+  /// `null` for a brain-dump signal until the model actually classifies it
+  /// (defensive default — a parse failure on one block shouldn't crash
+  /// the rest of the reply).
+  final TicketType? suggestedType;
+
+  /// Which Inbox purpose spawned this ticket, if any. Set exactly once, at
+  /// creation, on the parentless `chat` ticket an Inbox launch spawns.
+  /// `null` for every other ticket, including every other `chat`. See
+  /// [InboxPurpose].
+  final InboxPurpose? inboxPurpose;
+
   /// Creates a [Ticket]. [priority] defaults to [TicketPriority.none].
   const Ticket({
     required this.id,
@@ -123,6 +139,8 @@ class Ticket extends Equatable {
     this.stepsToReproduce,
     this.expectedBehavior,
     this.actualBehavior,
+    this.suggestedType,
+    this.inboxPurpose,
   });
 
   @override
@@ -148,20 +166,23 @@ class Ticket extends Equatable {
     stepsToReproduce,
     expectedBehavior,
     actualBehavior,
+    suggestedType,
+    inboxPurpose,
   ];
 
   /// Returns a copy of this ticket with the given fields replaced.
   /// [description], [estimate], [timeSpent], [complexity], [severity],
-  /// [stepsToReproduce], [expectedBehavior], and [actualBehavior] are
-  /// nullable and therefore take a zero-arg setter instead of a bare
-  /// value — pass `() => null` to explicitly clear one of them, or omit
-  /// the parameter entirely to leave it unchanged. A plain `?? this.x`
-  /// fallback can't tell "not passed" apart from "explicitly set to
-  /// null," since both look like `null` at the call site. `id`,
-  /// `ticketId`, `parentId`, `embedding`, `syncStatus`, `createdAt`, and
-  /// `sddStage` are never mutated by this method — `sddStage` is written
-  /// only via `TicketsCubit.advanceSddStage`, so its precondition can't
-  /// be bypassed by a plain edit.
+  /// [stepsToReproduce], [expectedBehavior], [actualBehavior],
+  /// [suggestedType], and [inboxPurpose] are nullable and therefore take a
+  /// zero-arg setter instead of a bare value — pass `() => null` to
+  /// explicitly clear one of them, or omit the parameter entirely to leave
+  /// it unchanged. A plain `?? this.x` fallback can't tell "not passed"
+  /// apart from "explicitly set to null," since both look like `null` at
+  /// the call site. `id`, `ticketId`, `parentId`, `embedding`,
+  /// `syncStatus`, `createdAt`, and `sddStage` are never mutated by this
+  /// method — `sddStage` is written only via
+  /// `TicketsCubit.advanceSddStage`, so its precondition can't be bypassed
+  /// by a plain edit.
   Ticket copyWith({
     String? title,
     TicketFieldSetter<String?>? description,
@@ -175,6 +196,8 @@ class Ticket extends Equatable {
     TicketFieldSetter<String?>? stepsToReproduce,
     TicketFieldSetter<String?>? expectedBehavior,
     TicketFieldSetter<String?>? actualBehavior,
+    TicketFieldSetter<TicketType?>? suggestedType,
+    TicketFieldSetter<InboxPurpose?>? inboxPurpose,
     DateTime? updatedAt,
   }) {
     return Ticket(
@@ -204,6 +227,10 @@ class Ticket extends Equatable {
       actualBehavior: actualBehavior != null
           ? actualBehavior()
           : this.actualBehavior,
+      suggestedType: suggestedType != null
+          ? suggestedType()
+          : this.suggestedType,
+      inboxPurpose: inboxPurpose != null ? inboxPurpose() : this.inboxPurpose,
     );
   }
 }

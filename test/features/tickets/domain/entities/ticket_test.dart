@@ -102,5 +102,60 @@ void main() {
       expect(result.embedding, baseTicket.embedding);
       expect(result.createdAt, baseTicket.createdAt);
     });
+
+    test('replaces suggestedType via a setter', () {
+      final result = baseTicket.copyWith(
+        suggestedType: () => TicketType.epic,
+      );
+      expect(result.suggestedType, TicketType.epic);
+    });
+
+    test('explicitly clears suggestedType to null via () => null', () {
+      final withSuggestion = baseTicket.copyWith(
+        suggestedType: () => TicketType.bug,
+      );
+      final result = withSuggestion.copyWith(suggestedType: () => null);
+      expect(result.suggestedType, isNull);
+    });
+
+    test('replaces inboxPurpose via a setter', () {
+      final result = baseTicket.copyWith(
+        inboxPurpose: () => InboxPurpose.brainDump,
+      );
+      expect(result.inboxPurpose, InboxPurpose.brainDump);
+    });
+
+    test('explicitly clears inboxPurpose to null via () => null', () {
+      final withPurpose = baseTicket.copyWith(
+        inboxPurpose: () => InboxPurpose.qa,
+      );
+      final result = withPurpose.copyWith(inboxPurpose: () => null);
+      expect(result.inboxPurpose, isNull);
+    });
+
+    test('suggestedType and inboxPurpose default to null and are left '
+        'unchanged when nothing is passed', () {
+      final result = baseTicket.copyWith();
+      expect(result.suggestedType, isNull);
+      expect(result.inboxPurpose, isNull);
+    });
+  });
+
+  group('Ticket equality (props)', () {
+    test('two otherwise-identical tickets differing only by suggestedType '
+        'are not equal', () {
+      final a = baseTicket.copyWith(suggestedType: () => TicketType.epic);
+      final b = baseTicket.copyWith(suggestedType: () => TicketType.bug);
+      expect(a, isNot(equals(b)));
+    });
+
+    test('two otherwise-identical tickets differing only by inboxPurpose '
+        'are not equal', () {
+      final a = baseTicket.copyWith(inboxPurpose: () => InboxPurpose.qa);
+      final b = baseTicket.copyWith(
+        inboxPurpose: () => InboxPurpose.brainDump,
+      );
+      expect(a, isNot(equals(b)));
+    });
   });
 }

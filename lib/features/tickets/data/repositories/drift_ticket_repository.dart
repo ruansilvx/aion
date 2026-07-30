@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:aion/core/core.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_search_page.dart';
+import 'package:aion/features/tickets/domain/enums/inbox_purpose.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_complexity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
@@ -65,6 +66,8 @@ class DriftTicketRepository implements TicketRepository {
       stepsToReproduce: Value(ticket.stepsToReproduce),
       expectedBehavior: Value(ticket.expectedBehavior),
       actualBehavior: Value(ticket.actualBehavior),
+      suggestedType: Value(ticket.suggestedType?.name),
+      inboxPurpose: Value(ticket.inboxPurpose?.name),
       createdAt: ticket.createdAt.millisecondsSinceEpoch,
       updatedAt: ticket.updatedAt.millisecondsSinceEpoch,
     );
@@ -111,6 +114,8 @@ class DriftTicketRepository implements TicketRepository {
         stepsToReproduce: Value(ticket.stepsToReproduce),
         expectedBehavior: Value(ticket.expectedBehavior),
         actualBehavior: Value(ticket.actualBehavior),
+        suggestedType: Value(ticket.suggestedType?.name),
+        inboxPurpose: Value(ticket.inboxPurpose?.name),
         updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
       ),
     );
@@ -355,6 +360,8 @@ class DriftTicketRepository implements TicketRepository {
       stepsToReproduce: row.stepsToReproduce,
       expectedBehavior: row.expectedBehavior,
       actualBehavior: row.actualBehavior,
+      suggestedType: _parseNullableEnum(TicketType.values, row.suggestedType),
+      inboxPurpose: _parseNullableEnum(InboxPurpose.values, row.inboxPurpose),
     );
   }
 
