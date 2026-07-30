@@ -123,8 +123,7 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
                                 () => _showPromoteChooser = false,
                               ),
                               candidatesLoader: () async {
-                                final all = await ticketsCubit
-                                    .getAllTickets();
+                                final all = await ticketsCubit.getAllTickets();
                                 return all
                                     .where((t) => t.type == TicketType.epic)
                                     .toList();
@@ -137,9 +136,7 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
                                 _removeOverlay();
                               },
                               onCreateNewTap: () {
-                                ticketsCubit.promoteSignalToEpic(
-                                  widget.ticket,
-                                );
+                                ticketsCubit.promoteSignalToEpic(widget.ticket);
                                 _removeOverlay();
                               },
                             )
@@ -431,7 +428,13 @@ class _PromoteChooser extends StatelessWidget {
               const SizedBox(width: 8),
               TicketLinkPicker(
                 candidatesLoader: candidatesLoader,
-                onSelected: onLinkSelected,
+                // This picker is reused here purely as a searchable
+                // "pick an existing epic" control (see
+                // `promoteSignalToEpic`) — no `TicketLink` is ever
+                // created from this call site, so no link-type choice
+                // is offered and the picked type is discarded.
+                linkTypeOptions: const [],
+                onSelected: (ticket, _) => onLinkSelected(ticket),
               ),
             ],
           ),
@@ -443,10 +446,7 @@ class _PromoteChooser extends StatelessWidget {
           child: GestureDetector(
             onTap: onCreateNewTap,
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 13,
-                vertical: 10,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
               child: Row(
                 children: [
                   PhosphorIcon(

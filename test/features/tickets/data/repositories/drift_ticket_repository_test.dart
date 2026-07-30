@@ -154,82 +154,73 @@ void main() {
     expect(withValues.timeSpent, 15);
   });
 
-  test(
-    'bug fields (severity/stepsToReproduce/expectedBehavior/'
-    'actualBehavior) survive createTicket write/read',
-    () async {
-      final now = DateTime(2026, 1, 1);
-      final bug = Ticket(
-        id: 'bug-1',
-        ticketId: '',
-        type: TicketType.bug,
-        title: 'Login button unresponsive on Safari',
-        status: TicketStatus.backlog,
-        severity: TicketSeverity.critical,
-        stepsToReproduce: '1. Open Safari\n2. Click login',
-        expectedBehavior: 'The login modal opens',
-        actualBehavior: 'Nothing happens',
-        createdAt: now,
-        updatedAt: now,
-      );
+  test('bug fields (severity/stepsToReproduce/expectedBehavior/'
+      'actualBehavior) survive createTicket write/read', () async {
+    final now = DateTime(2026, 1, 1);
+    final bug = Ticket(
+      id: 'bug-1',
+      ticketId: '',
+      type: TicketType.bug,
+      title: 'Login button unresponsive on Safari',
+      status: TicketStatus.backlog,
+      severity: TicketSeverity.critical,
+      stepsToReproduce: '1. Open Safari\n2. Click login',
+      expectedBehavior: 'The login modal opens',
+      actualBehavior: 'Nothing happens',
+      createdAt: now,
+      updatedAt: now,
+    );
 
-      await repository.createTicket(bug);
-      final found = await repository.getTicketById('bug-1');
+    await repository.createTicket(bug);
+    final found = await repository.getTicketById('bug-1');
 
-      expect(found!.severity, TicketSeverity.critical);
-      expect(found.stepsToReproduce, '1. Open Safari\n2. Click login');
-      expect(found.expectedBehavior, 'The login modal opens');
-      expect(found.actualBehavior, 'Nothing happens');
-    },
-  );
+    expect(found!.severity, TicketSeverity.critical);
+    expect(found.stepsToReproduce, '1. Open Safari\n2. Click login');
+    expect(found.expectedBehavior, 'The login modal opens');
+    expect(found.actualBehavior, 'Nothing happens');
+  });
 
-  test(
-    'bug fields default to null for a Task, and null bug fields survive '
-    'write/read for a Bug',
-    () async {
-      await repository.createTicket(buildTicket(id: 'task-1'));
-      final task = await repository.getTicketById('task-1');
+  test('bug fields default to null for a Task, and null bug fields survive '
+      'write/read for a Bug', () async {
+    await repository.createTicket(buildTicket(id: 'task-1'));
+    final task = await repository.getTicketById('task-1');
 
-      expect(task!.severity, isNull);
-      expect(task.stepsToReproduce, isNull);
-      expect(task.expectedBehavior, isNull);
-      expect(task.actualBehavior, isNull);
-    },
-  );
+    expect(task!.severity, isNull);
+    expect(task.stepsToReproduce, isNull);
+    expect(task.expectedBehavior, isNull);
+    expect(task.actualBehavior, isNull);
+  });
 
-  test(
-    'updateTicket persists changes to severity/stepsToReproduce/'
-    'expectedBehavior/actualBehavior',
-    () async {
-      final now = DateTime(2026, 1, 1);
-      final bug = Ticket(
-        id: 'bug-2',
-        ticketId: '',
-        type: TicketType.bug,
-        title: 'Bug to update',
-        status: TicketStatus.backlog,
-        createdAt: now,
-        updatedAt: now,
-      );
-      await repository.createTicket(bug);
-      final persisted = await repository.getTicketById('bug-2');
+  test('updateTicket persists changes to severity/stepsToReproduce/'
+      'expectedBehavior/actualBehavior', () async {
+    final now = DateTime(2026, 1, 1);
+    final bug = Ticket(
+      id: 'bug-2',
+      ticketId: '',
+      type: TicketType.bug,
+      title: 'Bug to update',
+      status: TicketStatus.backlog,
+      createdAt: now,
+      updatedAt: now,
+    );
+    await repository.createTicket(bug);
+    final persisted = await repository.getTicketById('bug-2');
 
-      await repository.updateTicket(
-        persisted!.copyWith(
-          severity: () => TicketSeverity.low,
-          stepsToReproduce: () => 'steps',
-          expectedBehavior: () => 'expected',
-          actualBehavior: () => 'actual',
-        ),
-      );
-      final updated = await repository.getTicketById('bug-2');
+    await repository.updateTicket(
+      persisted!.copyWith(
+        severity: () => TicketSeverity.low,
+        stepsToReproduce: () => 'steps',
+        expectedBehavior: () => 'expected',
+        actualBehavior: () => 'actual',
+      ),
+    );
+    final updated = await repository.getTicketById('bug-2');
 
-      expect(updated!.severity, TicketSeverity.low);
-      expect(updated.stepsToReproduce, 'steps');
-      expect(updated.expectedBehavior, 'expected');
-      expect(updated.actualBehavior, 'actual');
-    },
-  );
+    expect(updated!.severity, TicketSeverity.low);
+    expect(updated.stepsToReproduce, 'steps');
+    expect(updated.expectedBehavior, 'expected');
+    expect(updated.actualBehavior, 'actual');
+  });
 
   test('first ticket generated ticketId is "AIO-1" (default prefix)', () async {
     await repository.createTicket(buildTicket());
@@ -823,6 +814,81 @@ void main() {
     );
   });
 
+  group('getLinksByTypes', () {
+    late DriftTicketLinkRepository linkRepository;
+
+    setUp(() {
+      linkRepository = DriftTicketLinkRepository(database);
+    });
+
+    test(
+      'returns only rows matching the requested types across multiple tickets',
+      () async {
+        await repository.createTicket(buildTicket(id: 'a'));
+        await repository.createTicket(buildTicket(id: 'b'));
+        await repository.createTicket(buildTicket(id: 'c'));
+        await linkRepository.createLink(
+          sourceTicketId: 'a',
+          targetTicketId: 'b',
+          linkType: TicketLinkType.blocks,
+        );
+        await linkRepository.createLink(
+          sourceTicketId: 'b',
+          targetTicketId: 'c',
+          linkType: TicketLinkType.blockedBy,
+        );
+        await linkRepository.createLink(
+          sourceTicketId: 'a',
+          targetTicketId: 'c',
+          linkType: TicketLinkType.relatesTo,
+        );
+
+        final rows = await linkRepository.getLinksByTypes([
+          TicketLinkType.blocks,
+          TicketLinkType.blockedBy,
+        ]);
+
+        expect(rows, hasLength(2));
+        expect(
+          rows.map((r) => r.linkType),
+          containsAll(['blocks', 'blockedBy']),
+        );
+      },
+    );
+
+    test('excludes a row whose other side is trashed', () async {
+      await repository.createTicket(buildTicket(id: 'a'));
+      await repository.createTicket(buildTicket(id: 'b'));
+      await linkRepository.createLink(
+        sourceTicketId: 'a',
+        targetTicketId: 'b',
+        linkType: TicketLinkType.blocks,
+      );
+
+      await repository.trashTicket('b');
+
+      expect(
+        await linkRepository.getLinksByTypes([TicketLinkType.blocks]),
+        isEmpty,
+      );
+    });
+
+    test('returns [] when no rows match', () async {
+      await repository.createTicket(buildTicket(id: 'a'));
+      await repository.createTicket(buildTicket(id: 'b'));
+      await linkRepository.createLink(
+        sourceTicketId: 'a',
+        targetTicketId: 'b',
+        linkType: TicketLinkType.relatesTo,
+      );
+
+      expect(
+        await linkRepository.getLinksByTypes([TicketLinkType.blocks]),
+        isEmpty,
+      );
+    });
+  });
+
   group('searchTickets', () {
     test(
       'query matches title/description; a title hit ranks ahead of a description-only hit',
@@ -1078,9 +1144,7 @@ void main() {
         await v1Db.customStatement(
           'ALTER TABLE tickets DROP COLUMN complexity;',
         );
-        await v1Db.customStatement(
-          'ALTER TABLE tickets DROP COLUMN severity;',
-        );
+        await v1Db.customStatement('ALTER TABLE tickets DROP COLUMN severity;');
         await v1Db.customStatement(
           'ALTER TABLE tickets DROP COLUMN steps_to_reproduce;',
         );

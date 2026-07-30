@@ -36,8 +36,13 @@ import 'package:aion/features/tickets/presentation/widgets/ticket_parent_picker.
 /// design-page chip, the SDD-stage tracker (`epic`/`story`) or coding-
 /// execution section (`task`/`bug` — see `TicketTypeHierarchy.isExecutable`),
 /// a "Bug details" section (`bug` only: severity, steps to reproduce,
-/// expected/actual behavior), description, created-on timestamp, and
-/// (for `resource`/`bug` tickets) Linked Tickets/Backlinks. Extracted from
+/// expected/actual behavior), description, created-on timestamp, and —
+/// for every type except `page`/`chat`/`signal`/`release` — Linked
+/// Tickets/Backlinks (widened from `resource`/`bug`-only for
+/// `aion-arch/changes/board-task-ordering-indication`; `resource` keeps
+/// a single-tap `relatesTo`-only `TicketLinkPicker`, every other gated
+/// type offers the full `blocks`/`blockedBy`/`relatesTo`/`duplicates`
+/// set). Extracted from
 /// `TicketDetailScreen`'s single-scroll body — verbatim content, no
 /// behavior change — so it can render both in `TicketDetailScreen`'s
 /// non-chat layout and inside `ChatTranscriptPane`'s collapsing header
@@ -565,9 +570,8 @@ class TicketMetadataSection extends StatelessWidget {
                                 textStyle: AionText.body.copyWith(
                                   color: c.textSecondary,
                                 ),
-                                semanticsLabel: context
-                                    .l10n
-                                    .ticketDetailEditActualBehavior,
+                                semanticsLabel:
+                                    context.l10n.ticketDetailEditActualBehavior,
                                 parser: (raw) {
                                   final trimmed = raw.trim();
                                   return trimmed.isEmpty ? null : trimmed;
@@ -634,24 +638,38 @@ class TicketMetadataSection extends StatelessWidget {
             final ticket = state.ticket;
             // `page` tickets never reach this far — the
             // `TicketDetailLoaded` listener above redirects
-            // them to `PageDetailScreen` first. `resource` and
-            // `bug` render Linked Tickets/Backlinks here
-            // (sub-pages moved to `PageDetailScreen` entirely,
-            // since only `page` tickets have sub-pages) — `bug`
-            // uses this generic picker to link an affected
-            // `release` via `TicketLinkType.relatesTo`, the same
-            // mechanism `release` already has with
-            // `epic`/`story`/`task`.
-            if (ticket.type != TicketType.resource &&
-                ticket.type != TicketType.bug) {
+            // them to `PageDetailScreen` first. Every other type
+            // except `chat`/`signal`/`release` (no `TicketLink` use
+            // case) renders Linked Tickets/Backlinks here (sub-pages
+            // moved to `PageDetailScreen` entirely, since only `page`
+            // tickets have sub-pages). `resource` keeps its original
+            // single-tap `relatesTo`-only flow (see `linkTypeOptions`
+            // below); `epic`/`story`/`task`/`bug` gained this section
+            // for `aion-arch/changes/board-task-ordering-indication`,
+            // offering the full `blocks`/`blockedBy`/`relatesTo`/
+            // `duplicates` set — `bug`'s existing use case (linking an
+            // affected `release` via `relatesTo`) still works
+            // unchanged, just with more options available alongside it.
+            if (ticket.type == TicketType.chat ||
+                ticket.type == TicketType.signal ||
+                ticket.type == TicketType.release) {
               return const SizedBox.shrink();
             }
+            final linkTypeOptions = ticket.type == TicketType.resource
+                ? const [TicketLinkType.relatesTo]
+                : const [
+                    TicketLinkType.blocks,
+                    TicketLinkType.blockedBy,
+                    TicketLinkType.relatesTo,
+                    TicketLinkType.duplicates,
+                  ];
             return Column(
               children: [
                 LinkedTicketsSection(
                   tickets: state.linkedTickets,
                   onTap: (id) => context.go('/workspace/tickets/$id'),
                   trailing: TicketLinkPicker(
+                    linkTypeOptions: linkTypeOptions,
                     candidatesLoader: () async {
                       final all = await context
                           .read<TicketsCubit>()
@@ -670,16 +688,23 @@ class TicketMetadataSection extends StatelessWidget {
                           )
                           .toList();
                     },
-                    onSelected: (selected) async {
+                    onSelected: (selected, linkType) async {
                       await context.read<TicketLinkRepository>().createLink(
                         sourceTicketId: ticket.id,
                         targetTicketId: selected.id,
-                        linkType: TicketLinkType.relatesTo,
+                        linkType: linkType,
                       );
                       if (!context.mounted) return;
                       await context.read<TicketsCubit>().loadDocumentRelations(
                         ticket.id,
                       );
+                      if (linkType == TicketLinkType.blocks ||
+                          linkType == TicketLinkType.blockedBy) {
+                        if (!context.mounted) return;
+                        await context
+                            .read<TicketsCubit>()
+                            .refreshBlockedBoardState();
+                      }
                     },
                   ),
                 ),

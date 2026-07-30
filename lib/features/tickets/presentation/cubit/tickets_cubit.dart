@@ -284,7 +284,9 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// showing, the previous list stays visible until the new results
   /// arrive, so re-searching/re-filtering doesn't flash a spinner over
   /// the existing list on every keystroke. Emits [TicketsLoaded] on
-  /// success, [TicketsError] if the repository call throws.
+  /// success (with [TicketsLoaded.blockedTicketIds] freshly computed via
+  /// [_computeBlockedTicketIds]), [TicketsError] if the repository call
+  /// throws.
   Future<void> searchTickets({
     String? query,
     TicketStatus? status,
@@ -319,7 +321,15 @@ class TicketsCubit extends Cubit<TicketsState> {
         limit: _pageSize,
       );
       if (generation != _searchGeneration) return;
-      emit(TicketsLoaded(page.tickets, hasMore: page.hasMore));
+      final blockedTicketIds = await _computeBlockedTicketIds(page.tickets);
+      if (generation != _searchGeneration) return;
+      emit(
+        TicketsLoaded(
+          page.tickets,
+          hasMore: page.hasMore,
+          blockedTicketIds: blockedTicketIds,
+        ),
+      );
     } catch (e) {
       if (generation != _searchGeneration) return;
       emit(TicketsError(e.toString()));
@@ -334,10 +344,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// the concurrency guard against a fast/bouncy scroll firing the
   /// trigger multiple times before the first request resolves. Emits
   /// [TicketsLoadingMore] (carrying the tickets loaded so far)
-  /// immediately, then [TicketsLoaded] (carrying the combined list) on
-  /// success, or [TicketsLoadMoreFailed] (carrying the tickets loaded so
-  /// far, unchanged) if the repository call throws — the existing rows
-  /// are never discarded by a failed load-more.
+  /// immediately, then [TicketsLoaded] (carrying the combined list, with
+  /// [TicketsLoaded.blockedTicketIds] freshly computed via
+  /// [_computeBlockedTicketIds]) on success, or [TicketsLoadMoreFailed]
+  /// (carrying the tickets loaded so far, unchanged) if the repository
+  /// call throws — the existing rows are never discarded by a failed
+  /// load-more.
   Future<void> loadMoreTickets() async {
     final snapshot = _listSnapshot(state);
     if (snapshot == null || !snapshot.hasMore) return;
@@ -356,11 +368,15 @@ class TicketsCubit extends Cubit<TicketsState> {
         offset: currentTickets.length,
       );
       if (generation != _searchGeneration) return;
+      final combined = [...currentTickets, ...page.tickets];
+      final blockedTicketIds = await _computeBlockedTicketIds(combined);
+      if (generation != _searchGeneration) return;
       emit(
-        TicketsLoaded([
-          ...currentTickets,
-          ...page.tickets,
-        ], hasMore: page.hasMore),
+        TicketsLoaded(
+          combined,
+          hasMore: page.hasMore,
+          blockedTicketIds: blockedTicketIds,
+        ),
       );
     } catch (e) {
       if (generation != _searchGeneration) return;
@@ -473,7 +489,9 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// write entirely (emitting the classified error + a re-emitted
   /// detail state instead of the usual list-shaped states); an allowed
   /// one proceeds as normal, then [_triggerOrQueueCodingExecution] starts
-  /// (or queues) the coding-execution run once the write succeeds.
+  /// (or queues) the coding-execution run once the write succeeds. Also
+  /// calls [_refreshBlockedBoardState] on success, since [id] may be
+  /// another ticket's blocker.
   Future<void> updateTicketStatus(String id, TicketStatus status) async {
     // Only fetch the ticket up front when the status is the one
     // _interceptTaskExecutionTrigger can actually reject (inProgress) —
@@ -522,6 +540,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         limit: max(_pageSize, currentTickets.length),
       );
       emit(TicketStatusUpdated(page.tickets, hasMore: page.hasMore));
+      unawaited(_refreshBlockedBoardState());
     } catch (e) {
       emit(TicketsError(e.toString()));
     }
@@ -591,8 +610,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       if (refreshed != null) {
         emit(TicketDetailLoaded(refreshed));
         unawaited(_triggerGitProjection(refreshed, 'status-changed'));
-        if (refreshed.type.isExecutable &&
-            status == TicketStatus.inProgress) {
+        if (refreshed.type.isExecutable && status == TicketStatus.inProgress) {
           unawaited(_triggerOrQueueCodingExecution(refreshed));
         }
       }
@@ -1028,9 +1046,7 @@ class TicketsCubit extends Cubit<TicketsState> {
             page != null && (page.description?.trim().isNotEmpty ?? false);
         return (
           canAdvance: ready,
-          blockReason: ready
-              ? null
-              : SddStageBlockReason.awaitingDesignPaste,
+          blockReason: ready ? null : SddStageBlockReason.awaitingDesignPaste,
         );
       case SddStage.designSync:
         // Also requires every child Task done — restoring the check to
@@ -1233,9 +1249,86 @@ class TicketsCubit extends Cubit<TicketsState> {
             _executionQueue[i]: i + 1,
         },
         inFlightAdvanceIds: Set.unmodifiable(_inFlightStageAdvanceIds),
+        blockedTicketIds: current.blockedTicketIds,
       ),
     );
   }
+
+  /// Computes the current set of blocked work-ticket ids: a ticket whose
+  /// blocking counterpart (the other side of a `blocks`/`blockedBy` row)
+  /// exists, is live, and is not [TicketStatus.done]. Queries
+  /// [TicketLinkRepository.getLinksByTypes] once for every live
+  /// `blocks`/`blockedBy` row app-wide, resolves each row's blockee/blocker
+  /// pair — a `blockedBy` row's blockee is its `source` (blocked by its
+  /// `target`); a `blocks` row's blockee is its `target` (blocked by its
+  /// `source`) — then looks up each blocker's current status from
+  /// [allTickets] (already loaded for the Board, no extra per-ticket
+  /// fetch). A blocker missing from [allTickets] (trashed, or simply not
+  /// loaded on this page) is treated as *not* blocking, consistent with
+  /// [TicketLinkDao](../../data/daos/ticket_link_dao.dart)
+  /// `.getLinksByTypes`'s live-only join. Returns `{}` if
+  /// constructed without a [TicketLinkRepository]. Called by
+  /// [searchTickets]/[loadMoreTickets]'s [TicketsLoaded] emission and by
+  /// [_refreshBlockedBoardState]. Added for
+  /// `aion-arch/changes/board-task-ordering-indication`.
+  Future<Set<String>> _computeBlockedTicketIds(List<Ticket> allTickets) async {
+    final linkRepo = _linkRepository;
+    if (linkRepo == null) return {};
+
+    final rows = await linkRepo.getLinksByTypes([
+      TicketLinkType.blocks,
+      TicketLinkType.blockedBy,
+    ]);
+
+    final byId = {for (final t in allTickets) t.id: t};
+    final blocked = <String>{};
+    for (final row in rows) {
+      final (blockeeId, blockerId) = switch (row.linkType) {
+        'blockedBy' => (row.sourceTicketId, row.targetTicketId),
+        'blocks' => (row.targetTicketId, row.sourceTicketId),
+        _ => (null, null),
+      };
+      if (blockeeId == null || blockerId == null) continue;
+      if (byId[blockerId]?.status != TicketStatus.done) {
+        blocked.add(blockeeId);
+      }
+    }
+    return blocked;
+  }
+
+  /// Re-emits the current list-shaped state (`TicketsLoaded` only — a
+  /// no-op while a detail screen or a mutation-in-flight state is active)
+  /// with [TicketsLoaded.blockedTicketIds] recomputed via
+  /// [_computeBlockedTicketIds] against the state's own [TicketsLoaded
+  /// .tickets] — unlike [_refreshInFlightBoardState]'s in-memory-only
+  /// recomputation, this reads persisted link/status data. Called after
+  /// [updateTicketStatus] (a blocker's status may have just changed) and
+  /// after a `blocks`/`blockedBy` link is created via the widened
+  /// `TicketLinkPicker` (`ticket_metadata_section.dart`). Added for
+  /// `aion-arch/changes/board-task-ordering-indication`.
+  Future<void> _refreshBlockedBoardState() async {
+    final current = state;
+    if (current is! TicketsLoaded) return;
+    final blockedTicketIds = await _computeBlockedTicketIds(current.tickets);
+    emit(
+      TicketsLoaded(
+        current.tickets,
+        hasMore: current.hasMore,
+        inFlightExecutionIds: current.inFlightExecutionIds,
+        executionQueuePositions: current.executionQueuePositions,
+        inFlightAdvanceIds: current.inFlightAdvanceIds,
+        blockedTicketIds: blockedTicketIds,
+      ),
+    );
+  }
+
+  /// Public wrapper around [_refreshBlockedBoardState], for callers
+  /// outside this cubit that just created (or removed) a `blocks`/
+  /// `blockedBy` link and need the Board's blocked-badge state
+  /// recomputed — the widened `TicketLinkPicker` call site in
+  /// `ticket_metadata_section.dart` is the only caller today. Added for
+  /// `aion-arch/changes/board-task-ordering-indication`.
+  Future<void> refreshBlockedBoardState() => _refreshBlockedBoardState();
 
   /// Resolves which chat [task]'s next implement/verify turn(s) post to:
   /// its existing execution chat (see [_mostRecentExecutionChat]), reused
@@ -1553,9 +1646,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         state is TicketDetailLoaded &&
         (state as TicketDetailLoaded).ticket.id == task.id;
 
-    final worktreePath = Directory.systemTemp
-        .createTempSync('aion_exec_')
-        .path;
+    final worktreePath = Directory.systemTemp.createTempSync('aion_exec_').path;
     final branchName = 'aion/task-${task.id}';
 
     final (chat, handoffSummary) = await _resolveExecutionChat(task);
@@ -1838,9 +1929,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   ) async {
     if (attempt > _maxVerifyRetries) return AutomationConfidence.gated;
     if (automationRepo == null) return AutomationConfidence.gated;
-    return automationRepo.getConfidence(
-      AutomationContext.codingExecutionRetry,
-    );
+    return automationRepo.getConfidence(AutomationContext.codingExecutionRetry);
   }
 
   /// [automationRepo]'s persisted [AutomationContext.codingExecution]
@@ -2210,9 +2299,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
     );
     const stalledMessage = 'Stage advance ended without a clear result.';
-    final comments = await commentRepo.getCommentsForTicket(
-      mostRecentChat.id,
-    );
+    final comments = await commentRepo.getCommentsForTicket(mostRecentChat.id);
     if (comments.isEmpty) {
       return _inFlightStageAdvanceIds.contains(epicOrStoryId)
           ? (null, false)
@@ -2365,8 +2452,14 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// vanishing into a discarded `unawaited` future. On completion
   /// (success or failure), removes both [parent]'s id and [chatId] from
   /// [_inFlightStageAdvanceIds] and calls [_refreshInFlightBoardState].
-  /// Added for
-  /// `aion-arch/changes/board-execution-indicators-and-notifications`.
+  /// When `stage == SddStage.proposed` and the turn succeeds, also reads
+  /// [chatId]'s most recent comment back via
+  /// [CommentRepository.getCommentsForTicket] (mirrors
+  /// [_designSyncApproved]'s own read-back pattern — no change to
+  /// [ChatCubit.runChatTurn]'s shared return contract) and passes it to
+  /// [_materializeDecomposition]. Added for
+  /// `aion-arch/changes/board-execution-indicators-and-notifications`
+  /// and `aion-arch/changes/board-task-ordering-indication`.
   Future<void> _runStageChatTurn(
     Ticket parent,
     SddStage stage,
@@ -2378,13 +2471,22 @@ class TicketsCubit extends Cubit<TicketsState> {
 
     try {
       final context = await _assembleStageContext(parent, stage);
-      await ChatCubit.runChatTurn(
+      final succeeded = await ChatCubit.runChatTurn(
         client: client,
         commentRepo: commentRepo,
         chatTicketId: chatId,
         prompt: context,
         model: await _resolveModel(stage.modelPhase),
       );
+      if (succeeded && stage == SddStage.proposed) {
+        final comments = await commentRepo.getCommentsForTicket(chatId);
+        if (comments.isNotEmpty) {
+          final mostRecent = comments.reduce(
+            (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
+          );
+          await _materializeDecomposition(parent, mostRecent.content);
+        }
+      }
     } catch (e) {
       await commentRepo.addComment(
         TicketComment(
@@ -2415,11 +2517,13 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// — for [SddStage.designBrief]/[SddStage.designSync] — the existing
   /// design-token file contents (see [_readTokenFilesForContext]) and,
   /// for [SddStage.designSync] specifically, the linked design Page's
-  /// pasted content (see [_linkedDesignPage]). No embeddings, no
+  /// pasted content (see [_linkedDesignPage]), or — for
+  /// [SddStage.proposed] — instructions to end the reply with a fenced
+  /// `## Decomposition` block (parsed by [_parseDecomposition] once the
+  /// turn completes, see [_materializeDecomposition]). No embeddings, no
   /// repo-map-lite involvement (see proposal.md's Out of scope).
   Future<String> _assembleStageContext(Ticket parent, SddStage stage) async {
-    final buffer = StringBuffer()
-      ..writeln('# ${parent.title}');
+    final buffer = StringBuffer()..writeln('# ${parent.title}');
     final description = parent.description;
     if (description != null && description.isNotEmpty) {
       buffer
@@ -2481,9 +2585,119 @@ class TicketsCubit extends Cubit<TicketsState> {
           'End your reply with exactly one line: "DESIGN GATE: APPROVED" '
           'if there are no issues, or "DESIGN GATE: PENDING" if there are.',
         );
+    } else if (stage == SddStage.proposed) {
+      final childRank = parent.type == TicketType.epic
+          ? TicketType.story
+          : TicketType.task;
+      buffer
+        ..writeln()
+        ..writeln(
+          'Decompose this ${parent.type.name} into child '
+          '${childRank == TicketType.task ? "Tasks" : "Stories"}. End your '
+          'reply with a fenced block titled "## Decomposition", one line per '
+          'child in the exact form '
+          '"- ${childRank == TicketType.task ? "Task" : "Story"}: <title>" '
+          'optionally suffixed with " (blockedBy: <exact title of an earlier '
+          'line in this block>)" when that child cannot start until another '
+          'one finishes.',
+        );
     }
 
     return buffer.toString().trim();
+  }
+
+  /// Parses [reply]'s trailing `"## Decomposition"` fenced block (see
+  /// [_assembleStageContext]'s [SddStage.proposed] prompt) into an
+  /// ordered list of `(title, blockedByTitle)` pairs — `blockedByTitle`
+  /// is `null` when the line has no `(blockedBy: ...)` suffix. Matched
+  /// only against the block's content: the text between `"##
+  /// Decomposition"` and the next blank line or the end of [reply].
+  /// Regex per line: `^- (Story|Task): (.+?)(?: \(blockedBy:
+  /// (.+)\))?$`; [childType] picks which of `Story`/`Task` is accepted —
+  /// a line whose literal doesn't match [childType] is skipped, not an
+  /// error. Returns an empty list if no `"## Decomposition"` block is
+  /// found, or no line matches at all — parse failure is silent, not an
+  /// error (see proposal.md's fail-open note). Added for
+  /// `aion-arch/changes/board-task-ordering-indication`.
+  List<(String title, String? blockedByTitle)> _parseDecomposition(
+    String reply,
+    TicketType childType,
+  ) {
+    const heading = '## Decomposition';
+    final headingIndex = reply.indexOf(heading);
+    if (headingIndex == -1) return [];
+
+    final afterHeading = reply.substring(headingIndex + heading.length);
+    final blockEnd = afterHeading.indexOf('\n\n');
+    final block = blockEnd == -1
+        ? afterHeading
+        : afterHeading.substring(0, blockEnd);
+
+    final expectedPrefix = childType == TicketType.task ? 'Task' : 'Story';
+    final linePattern = RegExp(
+      r'^- (Story|Task): (.+?)(?: \(blockedBy: (.+)\))?$',
+      multiLine: true,
+    );
+
+    return [
+      for (final match in linePattern.allMatches(block))
+        if (match.group(1) == expectedPrefix)
+          (match.group(2)!.trim(), match.group(3)?.trim()),
+    ];
+  }
+
+  /// Runs once per `proposed`-stage chat turn (called from
+  /// [_runStageChatTurn] immediately after a successful turn, only when
+  /// `stage == SddStage.proposed`): parses [reply] via
+  /// [_parseDecomposition], creates one child ticket per parsed line
+  /// under [parent] (via [TicketRepository.createTicket]), then — for
+  /// every line whose `blockedByTitle` exact-matches (case-insensitive)
+  /// another parsed line's title — creates a `blockedBy` link from the
+  /// new child to its blocker sibling (via
+  /// [TicketLinkRepository.createLink]). An unresolved `blockedByTitle`
+  /// (no matching sibling title) is skipped for the link only — the
+  /// child ticket itself is still created. No block, a block with no
+  /// parseable lines, or no [TicketLinkRepository] configured is a
+  /// silent no-op: today's exact behavior (a human creates children by
+  /// hand) is preserved, not treated as a failure. Added for
+  /// `aion-arch/changes/board-task-ordering-indication`.
+  Future<void> _materializeDecomposition(Ticket parent, String reply) async {
+    final childType = parent.type == TicketType.epic
+        ? TicketType.story
+        : TicketType.task;
+    final parsed = _parseDecomposition(reply, childType);
+    if (parsed.isEmpty) return;
+
+    final now = DateTime.now();
+    final idByTitle = <String, String>{};
+    for (final (title, _) in parsed) {
+      final child = Ticket(
+        id: _uuid.v4(),
+        ticketId: '',
+        type: childType,
+        title: title,
+        status: TicketStatus.backlog,
+        parentId: parent.id,
+        createdAt: now,
+        updatedAt: now,
+      );
+      await _repository.createTicket(child);
+      idByTitle[title.toLowerCase()] = child.id;
+    }
+
+    final linkRepo = _linkRepository;
+    if (linkRepo == null) return;
+    for (final (title, blockedByTitle) in parsed) {
+      if (blockedByTitle == null) continue;
+      final childId = idByTitle[title.toLowerCase()];
+      final blockerId = idByTitle[blockedByTitle.toLowerCase()];
+      if (childId == null || blockerId == null) continue;
+      await linkRepo.createLink(
+        sourceTicketId: childId,
+        targetTicketId: blockerId,
+        linkType: TicketLinkType.blockedBy,
+      );
+    }
   }
 
   /// Reads `aion_colors.dart`/`aion_text.dart`/`aion_radius.dart`'s
@@ -2679,13 +2893,10 @@ class TicketsCubit extends Cubit<TicketsState> {
 
       String? sddStageFailureReason;
       var sddStageCanRetry = false;
-      if ((ticket.type == TicketType.epic ||
-              ticket.type == TicketType.story) &&
+      if ((ticket.type == TicketType.epic || ticket.type == TicketType.story) &&
           !isAdvancingStage &&
           ticket.sddStage != null) {
-        final (reason, canRetry) = await _computeStageAdvanceFailure(
-          ticket.id,
-        );
+        final (reason, canRetry) = await _computeStageAdvanceFailure(ticket.id);
         sddStageFailureReason = reason;
         sddStageCanRetry = canRetry;
       }
@@ -2829,20 +3040,27 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// added here for `aion-arch/changes/bug-ticket-type`'s widened Linked
   /// Tickets/Backlinks gate — a Bug's `relatesTo` link to a `release`
   /// ticket would otherwise never be reflected in the loaded state, even
-  /// though the link itself was created successfully. No-ops
-  /// (does not emit) if the ticket isn't found, isn't a `page`/`resource`/
-  /// `bug` type, or the cubit has since moved on to a different ticket's detail
-  /// state (a stale response from an earlier navigation). Only actually
-  /// populates [linkedTickets]/[backlinks] when constructed with a
-  /// [TicketLinkRepository] — every other call site is unaffected by this
-  /// optional dependency, same rationale as [_embeddingProvider]/
-  /// [_gitProjector]/[_projectRootPath].
+  /// though the link itself was created successfully. `epic`/`story`/
+  /// `task` were added here for
+  /// `aion-arch/changes/board-task-ordering-indication`'s widened Linked
+  /// Tickets gate (`ticket_metadata_section.dart`) — those types now
+  /// render the section too, and would otherwise never have it populated.
+  /// No-ops (does not emit) if the ticket isn't found, isn't one of the
+  /// gated types, or the cubit has since moved on to a different
+  /// ticket's detail state (a stale response from an earlier
+  /// navigation). Only actually populates [linkedTickets]/[backlinks]
+  /// when constructed with a [TicketLinkRepository] — every other call
+  /// site is unaffected by this optional dependency, same rationale as
+  /// [_embeddingProvider]/[_gitProjector]/[_projectRootPath].
   Future<void> loadDocumentRelations(String ticketId) async {
     final ticket = await _repository.getTicketById(ticketId);
     if (ticket == null) return;
     if (ticket.type != TicketType.page &&
         ticket.type != TicketType.resource &&
-        ticket.type != TicketType.bug) {
+        ticket.type != TicketType.bug &&
+        ticket.type != TicketType.epic &&
+        ticket.type != TicketType.story &&
+        ticket.type != TicketType.task) {
       return;
     }
 
@@ -2990,13 +3208,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// directory-listing context. Throws [StateError] if constructed
   /// without an [AgentModelClient], or if the model run itself reports
   /// an [AgentErrorEvent].
-  Future<List<({String title, String description})>>
-  _runShallowSummarization(String rootPath) async {
+  Future<List<({String title, String description})>> _runShallowSummarization(
+    String rootPath,
+  ) async {
     final client = _agentClient;
     if (client == null) {
-      throw StateError(
-        'Shallow codebase analysis requires an agent client.',
-      );
+      throw StateError('Shallow codebase analysis requires an agent client.');
     }
 
     final detected = ProjectStackDetector().detect(rootPath);
@@ -3247,7 +3464,10 @@ class TicketsCubit extends Cubit<TicketsState> {
     void flush() {
       final title = currentTitle?.trim();
       if (title != null && title.isNotEmpty) {
-        findings.add((title: title, description: currentBody.toString().trim()));
+        findings.add((
+          title: title,
+          description: currentBody.toString().trim(),
+        ));
       }
       currentBody.clear();
     }

@@ -7,23 +7,30 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
 
 /// A "+ Add" ghost-button trigger that opens a searchable overlay of
 /// [candidatesLoader]'s tickets, calling [onSelected] with the chosen
-/// ticket when a row is tapped. Renders the design.md §8.1 "+ Add"
-/// affordance for the Documentation section's Sub-pages/Linked Tickets
-/// headers — used to attach an *existing* ticket via `TicketLink`, as
-/// opposed to `TicketParentPicker` which reassigns structural `parentId`.
-/// Follows the same `Overlay`/`LayerLink`/`CompositedTransformFollower`
-/// mechanics as `TicketParentPicker` rather than a from-scratch overlay.
-/// This widget only renders the trigger and overlay list — it performs no
-/// repository writes itself; [onSelected] is responsible for actually
-/// creating the `TicketLink` and refreshing whatever state depends on it.
+/// ticket and the type of relationship picked via the overlay's leading
+/// [_LinkTypeSelectorRow] when a row is tapped. Renders the design.md
+/// §8.1 "+ Add" affordance for the Documentation section's Sub-pages/
+/// Linked Tickets headers — used to attach an *existing* ticket via
+/// `TicketLink`, as opposed to `TicketParentPicker` which reassigns
+/// structural `parentId`. Follows the same `Overlay`/`LayerLink`/
+/// `CompositedTransformFollower` mechanics as `TicketParentPicker`
+/// rather than a from-scratch overlay. This widget only renders the
+/// trigger and overlay list — it performs no repository writes itself;
+/// [onSelected] is responsible for actually creating the `TicketLink`
+/// and refreshing whatever state depends on it. Added
+/// `linkTypeOptions`/the link-type selector for
+/// `aion-arch/changes/board-task-ordering-indication` — previously this
+/// picker always implied `TicketLinkType.relatesTo`.
 class TicketLinkPicker extends StatefulWidget {
   /// Creates a [TicketLinkPicker].
   const TicketLinkPicker({
     super.key,
     required this.candidatesLoader,
+    required this.linkTypeOptions,
     required this.onSelected,
   });
 
@@ -33,8 +40,16 @@ class TicketLinkPicker extends StatefulWidget {
   /// tickets, the ticket itself).
   final Future<List<Ticket>> Function() candidatesLoader;
 
-  /// Called with the chosen ticket when a row is tapped.
-  final ValueChanged<Ticket> onSelected;
+  /// The link types offered by the overlay's [_LinkTypeSelectorRow] —
+  /// callers restrict this to whatever relationships make sense for
+  /// their ticket type (e.g. `[TicketLinkType.relatesTo]` only, to
+  /// preserve a single-tap flow with no picker step). Never includes
+  /// [TicketLinkType.duplicatedBy] — that's always the inverse reading
+  /// of a `duplicates` row, never a user-chosen value.
+  final List<TicketLinkType> linkTypeOptions;
+
+  /// Called with the chosen ticket and link type when a row is tapped.
+  final void Function(Ticket ticket, TicketLinkType linkType) onSelected;
 
   @override
   State<TicketLinkPicker> createState() => _TicketLinkPickerState();
@@ -46,6 +61,13 @@ class _TicketLinkPickerState extends State<TicketLinkPicker> {
   OverlayEntry? _overlayEntry;
   bool _isOpen = false;
 
+  /// The link type currently selected in the overlay's
+  /// [_LinkTypeSelectorRow], committed alongside the tapped candidate in
+  /// [_commit]. Reset to [TicketLinkType.relatesTo] every time the
+  /// overlay opens, mirroring [_candidates]'s no-stale-state-lingers
+  /// reset.
+  TicketLinkType _selectedLinkType = TicketLinkType.relatesTo;
+
   /// Candidates fetched for the currently-open overlay. `null` while a
   /// fetch is in flight; reset on every open so a stale list from an
   /// earlier link never lingers.
@@ -53,7 +75,15 @@ class _TicketLinkPickerState extends State<TicketLinkPicker> {
 
   @override
   void dispose() {
-    _removeOverlay();
+    // Inlines `_removeOverlay`'s overlay-teardown steps rather than
+    // calling it directly — `_removeOverlay`'s own `setState` (guarded
+    // only by `mounted`, not by dispose-in-progress) throws when called
+    // from here, since `mounted` is still `true` for the entire
+    // synchronous duration of `dispose()` itself. No rebuild is needed
+    // during teardown regardless.
+    _searchController.removeListener(_handleSearchChanged);
+    _overlayEntry?.remove();
+    _overlayEntry = null;
     _searchController.dispose();
     super.dispose();
   }
@@ -69,6 +99,7 @@ class _TicketLinkPickerState extends State<TicketLinkPicker> {
   Future<void> _showOverlay() async {
     final overlay = Overlay.of(context);
     _candidates = null;
+    _selectedLinkType = TicketLinkType.relatesTo;
     _searchController.clear();
     _searchController.addListener(_handleSearchChanged);
 
@@ -126,13 +157,29 @@ class _TicketLinkPickerState extends State<TicketLinkPicker> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        if (widget.linkTypeOptions.length > 1)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(
+                              AionSpacing.sp12,
+                              AionSpacing.sp12,
+                              AionSpacing.sp12,
+                              0,
+                            ),
+                            child: _LinkTypeSelectorRow(
+                              options: widget.linkTypeOptions,
+                              value: _selectedLinkType,
+                              onChanged: (type) {
+                                _selectedLinkType = type;
+                                _overlayEntry?.markNeedsBuild();
+                              },
+                            ),
+                          ),
                         Padding(
                           padding: const EdgeInsets.all(AionSpacing.sp12),
                           child: AppTextField(
                             controller: _searchController,
-                            hintText: overlayContext
-                                .l10n
-                                .ticketLinkPickerSearchHint,
+                            hintText:
+                                overlayContext.l10n.ticketLinkPickerSearchHint,
                           ),
                         ),
                         Container(color: c.border, height: 1),
@@ -195,7 +242,7 @@ class _TicketLinkPickerState extends State<TicketLinkPicker> {
   void _handleSearchChanged() => _overlayEntry?.markNeedsBuild();
 
   void _commit(Ticket ticket) {
-    widget.onSelected(ticket);
+    widget.onSelected(ticket, _selectedLinkType);
     _removeOverlay();
   }
 
@@ -221,6 +268,170 @@ class _TicketLinkPickerState extends State<TicketLinkPicker> {
         icon: PhosphorIcons.plusLight,
         variant: AppButtonVariant.ghost,
         onPressed: _toggleOverlay,
+      ),
+    );
+  }
+}
+
+/// The directional glyph for [type] in [_LinkTypeSelectorRow]'s trigger
+/// and menu rows — monochrome, per Component Spec §1.4 ("this is a
+/// relationship picker, not a type picker"). [TicketLinkType.duplicatedBy]
+/// is never offered by [_LinkTypeSelectorRow] (see
+/// [TicketLinkPicker.linkTypeOptions]'s dartdoc) but is handled here for
+/// switch exhaustiveness.
+IconData _linkTypeGlyph(TicketLinkType type) => switch (type) {
+  TicketLinkType.blocks => PhosphorIcons.arrowRightLight,
+  TicketLinkType.blockedBy => PhosphorIcons.arrowLeftLight,
+  TicketLinkType.relatesTo => PhosphorIcons.arrowsLeftRightLight,
+  TicketLinkType.duplicates => PhosphorIcons.copySimpleLight,
+  TicketLinkType.duplicatedBy => PhosphorIcons.copySimpleLight,
+};
+
+/// The localized label for [type], shared by [_LinkTypeSelectorRow]'s
+/// trigger and menu rows.
+String _linkTypeLabel(BuildContext context, TicketLinkType type) =>
+    switch (type) {
+      TicketLinkType.blocks => context.l10n.ticketLinkTypeBlocks,
+      TicketLinkType.blockedBy => context.l10n.ticketLinkTypeBlockedBy,
+      TicketLinkType.relatesTo => context.l10n.ticketLinkTypeRelatesTo,
+      TicketLinkType.duplicates => context.l10n.ticketLinkTypeDuplicates,
+      TicketLinkType.duplicatedBy => '',
+    };
+
+/// [TicketLinkPicker]'s overlay-header link-type picker — a
+/// [SelectionMenu]<[TicketLinkType]> restricted to [options], with a
+/// trigger showing [value]'s directional glyph + label (Component Spec
+/// §1.2/§1.3) and a menu row per option showing the same glyph + label
+/// (§1.6). Defaults to [TicketLinkType.relatesTo] via
+/// [_TicketLinkPickerState._selectedLinkType]'s own initializer/reset,
+/// not this widget. Added for
+/// `aion-arch/changes/board-task-ordering-indication`.
+class _LinkTypeSelectorRow extends StatefulWidget {
+  /// Creates a [_LinkTypeSelectorRow] offering [options], currently
+  /// showing [value], calling [onChanged] when the user picks another.
+  const _LinkTypeSelectorRow({
+    required this.options,
+    required this.value,
+    required this.onChanged,
+  });
+
+  /// The link types this row offers.
+  final List<TicketLinkType> options;
+
+  /// The currently selected link type.
+  final TicketLinkType value;
+
+  /// Called with the newly selected link type.
+  final ValueChanged<TicketLinkType> onChanged;
+
+  @override
+  State<_LinkTypeSelectorRow> createState() => _LinkTypeSelectorRowState();
+}
+
+class _LinkTypeSelectorRowState extends State<_LinkTypeSelectorRow> {
+  bool _isHovered = false;
+  bool _isFocused = false;
+  bool _isOpen = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    final isEmphasized = _isFocused || _isOpen;
+    final borderColor = isEmphasized
+        ? c.primary
+        : _isHovered
+        ? c.borderStrong
+        : c.border;
+    final boxShadow = isEmphasized
+        ? [
+            BoxShadow(
+              color: c.primary.withValues(alpha: t.isDark ? 0.30 : 0.16),
+              blurRadius: 0,
+              spreadRadius: 3,
+            ),
+          ]
+        : const <BoxShadow>[];
+    final chevronColor = isEmphasized || _isHovered
+        ? c.textSecondary
+        : c.textMuted;
+
+    final trigger = MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: BorderRadius.all(AionRadius.md),
+          border: Border.all(color: borderColor, width: isEmphasized ? 1.5 : 1),
+          boxShadow: boxShadow,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 16,
+                child: PhosphorIcon(
+                  _linkTypeGlyph(widget.value),
+                  size: 15,
+                  color: c.textSecondary,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                _linkTypeLabel(context, widget.value),
+                style: AionText.bodySm.copyWith(
+                  color: c.textPrimary,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const Spacer(),
+              PhosphorIcon(
+                _isOpen
+                    ? PhosphorIcons.caretUpLight
+                    : PhosphorIcons.caretDownLight,
+                size: 11,
+                color: chevronColor,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    return SelectionMenu<TicketLinkType>(
+      trigger: trigger,
+      items: widget.options,
+      currentValue: widget.value,
+      onSelected: widget.onChanged,
+      onOpenChanged: (open) => setState(() => _isOpen = open),
+      onFocusChange: (focused) => setState(() => _isFocused = focused),
+      semanticsLabel: context.l10n.ticketLinkPickerChangeLinkType,
+      itemLabel: (type) => _linkTypeLabel(context, type),
+      itemBuilder: (context, c, item) => Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 16,
+            child: PhosphorIcon(
+              _linkTypeGlyph(item),
+              size: 15,
+              color: c.textSecondary,
+            ),
+          ),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Text(
+              _linkTypeLabel(context, item),
+              style: AionText.bodySm.copyWith(
+                color: c.textPrimary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
