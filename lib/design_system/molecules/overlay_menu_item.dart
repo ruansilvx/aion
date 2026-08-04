@@ -94,6 +94,14 @@ class _OverlayMenuItemState extends State<OverlayMenuItem> {
   /// drives the same pressed feedback as a held mouse-down — the actual
   /// activation itself still runs through the `ActivateIntent` binding
   /// below, so this always returns [KeyEventResult.ignored].
+  ///
+  /// This lives on a bubbling ancestor `Focus` (see [build]) rather than
+  /// inside the `ActivateIntent` action itself, since a single
+  /// `CallbackAction.onInvoke` fires once per activation and can't
+  /// express a held-duration press state the way `GestureDetector`'s
+  /// `onTapDown`/`onTapUp` do for the mouse. Design.md §1.1's
+  /// "Implementation note" documents this against the structure
+  /// diagram above it.
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
     if (!widget.enabled) return KeyEventResult.ignored;
     final key = event.logicalKey;
@@ -140,10 +148,21 @@ class _OverlayMenuItemState extends State<OverlayMenuItem> {
       button: true,
       enabled: widget.enabled,
       label: widget.semanticsLabel,
+      // Doesn't request focus itself — it only observes key events
+      // bubbling up from whichever row below actually holds focus (see
+      // _handleKeyEvent's dartdoc).
       child: Focus(
         canRequestFocus: false,
         skipTraversal: true,
         onKeyEvent: _handleKeyEvent,
+        // MouseRegion wraps FocusableActionDetector (not the reverse)
+        // to match TicketOverflowMenu's own trigger button's real
+        // nesting, using a plain onEnter/onExit MouseRegion for
+        // _isHovered instead of FocusableActionDetector's own
+        // onShowHoverHighlight — that callback's input-modality
+        // suppression logic is meant for focus rings, not plain
+        // mouse-hover feedback. See design.md §1.1's Implementation
+        // note.
         child: MouseRegion(
           cursor: widget.enabled
               ? SystemMouseCursors.click
