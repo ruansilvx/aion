@@ -2,6 +2,8 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
+import 'package:aion/core/contracts/agent_model_descriptor.dart';
+import 'package:aion/core/contracts/provider_id.dart';
 import 'package:aion/features/providers/providers.dart';
 
 class MockExecutionContextCapRepository extends Mock
@@ -9,6 +11,19 @@ class MockExecutionContextCapRepository extends Mock
 
 class MockModelRoutingRepository extends Mock
     implements ModelRoutingRepository {}
+
+const _sonnet = AgentModelDescriptor(
+  providerId: ProviderId.claudeAgentSdk,
+  modelId: 'claude-sonnet-5',
+  label: 'Sonnet 5',
+  contextWindowTokens: 200000,
+);
+const _haiku = AgentModelDescriptor(
+  providerId: ProviderId.claudeAgentSdk,
+  modelId: 'claude-haiku-4-5',
+  label: 'Haiku 4.5',
+  contextWindowTokens: 200000,
+);
 
 void main() {
   late MockExecutionContextCapRepository capRepository;
@@ -32,7 +47,7 @@ void main() {
         ).thenAnswer((_) async => 50000);
         when(
           () => modelRoutingRepository.getModelForPhase(ModelPhase.execution),
-        ).thenAnswer((_) async => AgentModel.sonnet);
+        ).thenAnswer((_) async => _sonnet);
       },
       build: buildCubit,
       act: (cubit) => cubit.load(),
@@ -52,7 +67,7 @@ void main() {
         ).thenAnswer((_) async => null);
         when(
           () => modelRoutingRepository.getModelForPhase(ModelPhase.execution),
-        ).thenAnswer((_) async => AgentModel.haiku);
+        ).thenAnswer((_) async => _haiku);
       },
       build: buildCubit,
       act: (cubit) => cubit.load(),
@@ -186,7 +201,7 @@ void main() {
       setUp: () {
         when(
           () => modelRoutingRepository.getModelForPhase(ModelPhase.execution),
-        ).thenAnswer((_) async => AgentModel.sonnet);
+        ).thenAnswer((_) async => _sonnet);
         when(
           () => capRepository.setContextCapOverride(75000),
         ).thenAnswer((_) async {});

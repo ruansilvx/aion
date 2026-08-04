@@ -22,8 +22,9 @@ class ExecutionContextCapCubit extends Cubit<ExecutionContextCapState> {
   final ExecutionContextCapRepository _capRepository;
   final ModelRoutingRepository _modelRoutingRepository;
 
-  /// Loads the persisted override and the execution-phase model's real
-  /// `contextWindowTokens`, and emits [ExecutionContextCapReady].
+  /// Loads the persisted override and the execution-phase
+  /// `AgentModelDescriptor`'s real `contextWindowTokens`, and emits
+  /// [ExecutionContextCapReady].
   Future<void> load() async {
     final override = await _capRepository.getContextCapOverride();
     final model = await _modelRoutingRepository.getModelForPhase(

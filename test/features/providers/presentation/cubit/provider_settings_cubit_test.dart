@@ -5,28 +5,62 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
 import 'package:aion/core/contracts/agent_model_client.dart';
+import 'package:aion/core/contracts/agent_model_descriptor.dart';
+import 'package:aion/core/contracts/agent_provider.dart';
+import 'package:aion/core/contracts/provider_id.dart';
+import 'package:aion/core/contracts/provider_registry.dart';
 import 'package:aion/features/providers/providers.dart';
 
 class MockAgentModelClient extends Mock implements AgentModelClient {}
+
+class MockProviderRegistry extends Mock implements ProviderRegistry {}
+
+class MockAgentProvider extends Mock implements AgentProvider {}
 
 class MockModelRoutingRepository extends Mock
     implements ModelRoutingRepository {}
 
 class _FakeAgentRequest extends Fake implements AgentRequest {}
 
+const _sonnet = AgentModelDescriptor(
+  providerId: ProviderId.claudeAgentSdk,
+  modelId: 'claude-sonnet-5',
+  label: 'Sonnet 5',
+  contextWindowTokens: 200000,
+);
+const _haiku = AgentModelDescriptor(
+  providerId: ProviderId.claudeAgentSdk,
+  modelId: 'claude-haiku-4-5',
+  label: 'Haiku 4.5',
+  contextWindowTokens: 200000,
+);
+
 void main() {
   late MockAgentModelClient client;
+  late MockAgentProvider provider;
+  late MockProviderRegistry registry;
   late MockModelRoutingRepository repository;
 
   setUpAll(() {
     registerFallbackValue(_FakeAgentRequest());
-    registerFallbackValue(AgentModel.sonnet);
+    registerFallbackValue(_sonnet);
     registerFallbackValue(ModelPhase.frontier);
+    registerFallbackValue(ProviderId.claudeAgentSdk);
   });
 
   setUp(() {
     client = MockAgentModelClient();
+    provider = MockAgentProvider();
+    registry = MockProviderRegistry();
     repository = MockModelRoutingRepository();
+
+    when(() => provider.client).thenReturn(client);
+    when(
+      () => provider.normalizeErrorMessage(any()),
+    ).thenAnswer((invocation) => invocation.positionalArguments[0] as String);
+    when(
+      () => registry.providerById(ProviderId.claudeAgentSdk),
+    ).thenReturn(provider);
   });
 
   group('ProviderSettingsCubit', () {
@@ -36,24 +70,24 @@ void main() {
       setUp: () {
         when(
           () => repository.getModelForPhase(ModelPhase.frontier),
-        ).thenAnswer((_) async => AgentModel.sonnet);
+        ).thenAnswer((_) async => _sonnet);
         when(() => client.run(any())).thenAnswer(
           (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
         );
       },
-      build: () => ProviderSettingsCubit(client, repository),
+      build: () => ProviderSettingsCubit(registry, repository),
       act: (cubit) => cubit.load(),
       expect: () => [
         const ProviderSettingsReady(
-          selectedModel: AgentModel.sonnet,
+          selectedModel: _sonnet,
           status: ProviderConnectionStatus.unknown,
         ),
         const ProviderSettingsReady(
-          selectedModel: AgentModel.sonnet,
+          selectedModel: _sonnet,
           status: ProviderConnectionStatus.checking,
         ),
         const ProviderSettingsReady(
-          selectedModel: AgentModel.sonnet,
+          selectedModel: _sonnet,
           status: ProviderConnectionStatus.connected,
         ),
       ],
@@ -65,28 +99,65 @@ void main() {
       setUp: () {
         when(
           () => repository.getModelForPhase(ModelPhase.frontier),
-        ).thenAnswer((_) async => AgentModel.sonnet);
+        ).thenAnswer((_) async => _sonnet);
         when(() => client.run(any())).thenAnswer(
           (_) async => Stream.fromIterable(const [
             AgentErrorEvent('Node.js not found.'),
           ]),
         );
       },
-      build: () => ProviderSettingsCubit(client, repository),
+      build: () => ProviderSettingsCubit(registry, repository),
       act: (cubit) => cubit.load(),
       expect: () => [
         const ProviderSettingsReady(
-          selectedModel: AgentModel.sonnet,
+          selectedModel: _sonnet,
           status: ProviderConnectionStatus.unknown,
         ),
         const ProviderSettingsReady(
-          selectedModel: AgentModel.sonnet,
+          selectedModel: _sonnet,
           status: ProviderConnectionStatus.checking,
         ),
         const ProviderSettingsReady(
-          selectedModel: AgentModel.sonnet,
+          selectedModel: _sonnet,
           status: ProviderConnectionStatus.disconnected,
           statusMessage: 'Node.js not found.',
+        ),
+      ],
+    );
+
+    blocTest<ProviderSettingsCubit, ProviderSettingsState>(
+      "load emits Ready(disconnected) with the statusMessage passed "
+      'through AgentProvider.normalizeErrorMessage, not the raw message',
+      setUp: () {
+        when(
+          () => repository.getModelForPhase(ModelPhase.frontier),
+        ).thenAnswer((_) async => _sonnet);
+        when(() => client.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentErrorEvent('Please run `/login` to reauthenticate.'),
+          ]),
+        );
+        when(
+          () => provider.normalizeErrorMessage(
+            'Please run `/login` to reauthenticate.',
+          ),
+        ).thenReturn('Authentication failed.');
+      },
+      build: () => ProviderSettingsCubit(registry, repository),
+      act: (cubit) => cubit.load(),
+      expect: () => [
+        const ProviderSettingsReady(
+          selectedModel: _sonnet,
+          status: ProviderConnectionStatus.unknown,
+        ),
+        const ProviderSettingsReady(
+          selectedModel: _sonnet,
+          status: ProviderConnectionStatus.checking,
+        ),
+        const ProviderSettingsReady(
+          selectedModel: _sonnet,
+          status: ProviderConnectionStatus.disconnected,
+          statusMessage: 'Authentication failed.',
         ),
       ],
     );
@@ -97,7 +168,7 @@ void main() {
       setUp: () {
         when(
           () => repository.getModelForPhase(ModelPhase.frontier),
-        ).thenAnswer((_) async => AgentModel.sonnet);
+        ).thenAnswer((_) async => _sonnet);
         when(() => client.run(any())).thenAnswer(
           (_) async => Stream.fromIterable(const [
             AgentOverageDetectedEvent('Over your plan\'s usage limit.'),
@@ -105,19 +176,19 @@ void main() {
           ]),
         );
       },
-      build: () => ProviderSettingsCubit(client, repository),
+      build: () => ProviderSettingsCubit(registry, repository),
       act: (cubit) => cubit.load(),
       expect: () => [
         const ProviderSettingsReady(
-          selectedModel: AgentModel.sonnet,
+          selectedModel: _sonnet,
           status: ProviderConnectionStatus.unknown,
         ),
         const ProviderSettingsReady(
-          selectedModel: AgentModel.sonnet,
+          selectedModel: _sonnet,
           status: ProviderConnectionStatus.checking,
         ),
         const ProviderSettingsReady(
-          selectedModel: AgentModel.sonnet,
+          selectedModel: _sonnet,
           status: ProviderConnectionStatus.connected,
           statusMessage: 'Over your plan\'s usage limit.',
         ),
@@ -130,24 +201,24 @@ void main() {
       setUp: () {
         when(
           () => repository.getModelForPhase(ModelPhase.frontier),
-        ).thenAnswer((_) async => AgentModel.haiku);
+        ).thenAnswer((_) async => _haiku);
         when(() => client.run(any())).thenAnswer(
           (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
         );
       },
       seed: () => const ProviderSettingsReady(
-        selectedModel: AgentModel.sonnet,
+        selectedModel: _sonnet,
         status: ProviderConnectionStatus.connected,
       ),
-      build: () => ProviderSettingsCubit(client, repository),
+      build: () => ProviderSettingsCubit(registry, repository),
       act: (cubit) => cubit.testConnection(),
       expect: () => [
         const ProviderSettingsReady(
-          selectedModel: AgentModel.haiku,
+          selectedModel: _haiku,
           status: ProviderConnectionStatus.checking,
         ),
         const ProviderSettingsReady(
-          selectedModel: AgentModel.haiku,
+          selectedModel: _haiku,
           status: ProviderConnectionStatus.connected,
         ),
       ],
@@ -156,7 +227,7 @@ void main() {
           () => client.run(
             any(
               that: predicate<AgentRequest>(
-                (request) => request.model == AgentModel.haiku.id,
+                (request) => request.model == _haiku.modelId,
               ),
             ),
           ),
@@ -170,13 +241,13 @@ void main() {
       () async {
         when(
           () => repository.getModelForPhase(ModelPhase.frontier),
-        ).thenAnswer((_) async => AgentModel.sonnet);
+        ).thenAnswer((_) async => _sonnet);
         final controller = StreamController<AgentEvent>();
         when(
           () => client.run(any()),
         ).thenAnswer((_) async => controller.stream);
 
-        final cubit = ProviderSettingsCubit(client, repository);
+        final cubit = ProviderSettingsCubit(registry, repository);
         final loadFuture = cubit.load();
         // Yield once so `load()` reaches the `checking` state — the
         // `client.run` stream never emits until `controller` is closed

@@ -2,14 +2,22 @@
 
 export 'agent/agent_bridge_locator.dart';
 export 'agent/claude_agent_sdk_client.dart';
+export 'agent/claude_agent_sdk_provider.dart';
+export 'agent/static_provider_registry.dart';
 export 'automation/automation_confidence.dart';
 export 'automation/automation_context.dart';
 export 'automation/automation_settings_repository.dart';
 export 'automation/shared_prefs_automation_settings_repository.dart';
 export 'contracts/active_project_provider.dart';
 export 'contracts/agent_model_client.dart';
+export 'contracts/agent_model_descriptor.dart';
+export 'contracts/agent_provider.dart';
+export 'contracts/consumption_signal.dart';
 export 'contracts/embedding_provider.dart';
 export 'contracts/page_ticket_provider.dart';
+export 'contracts/provider_id.dart';
+export 'contracts/provider_registry.dart';
+export 'contracts/tool_access_tier.dart';
 export 'database/app_database.dart';
 export 'database/registry_database.dart';
 export 'embeddings/bundled_embedding_provider.dart';

@@ -30,6 +30,10 @@ class MockEmbeddingProvider extends Mock implements EmbeddingProvider {}
 
 class MockAgentModelClient extends Mock implements AgentModelClient {}
 
+class MockAgentProvider extends Mock implements AgentProvider {}
+
+class MockProviderRegistry extends Mock implements ProviderRegistry {}
+
 class MockModelRoutingRepository extends Mock
     implements ModelRoutingRepository {}
 
@@ -48,7 +52,7 @@ class MockExecutionContextCapRepository extends Mock
 /// `TicketRepository` backed by a real (temp-directory-addressed)
 /// `AppDatabase` — not a mock — so `InboxCubit.load()` genuinely round-trips
 /// through drift. Every other cross-feature dependency `WorkspaceShell`
-/// needs to build at all (`AgentModelClient`, `ModelRoutingRepository`,
+/// needs to build at all (`ProviderRegistry`, `ModelRoutingRepository`,
 /// `EmbeddingProvider`, `AutomationSettingsRepository`,
 /// `ExecutionContextCapRepository`, `BaselineRepository`,
 /// `ProjectRepository`) is mocked, since none of the four Inbox launch
@@ -131,8 +135,17 @@ void main() {
         RepositoryProvider<EmbeddingProvider>(
           create: (_) => MockEmbeddingProvider(),
         ),
-        RepositoryProvider<AgentModelClient>(
-          create: (_) => MockAgentModelClient(),
+        RepositoryProvider<ProviderRegistry>(
+          create: (_) {
+            final client = MockAgentModelClient();
+            final provider = MockAgentProvider();
+            final registry = MockProviderRegistry();
+            when(() => provider.client).thenReturn(client);
+            when(
+              () => registry.providerById(ProviderId.claudeAgentSdk),
+            ).thenReturn(provider);
+            return registry;
+          },
         ),
         RepositoryProvider<ModelRoutingRepository>(
           create: (_) => MockModelRoutingRepository(),

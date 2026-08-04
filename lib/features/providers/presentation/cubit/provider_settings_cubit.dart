@@ -3,7 +3,9 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:aion/core/contracts/agent_model_client.dart';
-import 'package:aion/features/providers/domain/enums/agent_model.dart';
+import 'package:aion/core/contracts/agent_model_descriptor.dart';
+import 'package:aion/core/contracts/agent_provider.dart';
+import 'package:aion/core/contracts/provider_registry.dart';
 import 'package:aion/features/providers/domain/enums/model_phase.dart';
 import 'package:aion/features/providers/domain/enums/provider_connection_status.dart';
 import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
@@ -15,21 +17,25 @@ import 'package:aion/features/providers/presentation/cubit/provider_settings_sta
 /// [testConnection] refuses to start a second test while one is already
 /// `checking`, rather than racing two in-flight tests.
 ///
-/// The connection test always pings whichever [AgentModel] is currently
-/// configured for [ModelPhase.frontier] — re-read fresh from
+/// The connection test always pings whichever [AgentModelDescriptor] is
+/// currently configured for [ModelPhase.frontier] — re-read fresh from
 /// [_repository] on every [load]/[testConnection] call rather than
 /// cached, so it always reflects the latest Frontier-tier setting without
-/// this cubit needing to listen to `ModelRoutingCubit`. Model *selection*
-/// itself happens exclusively through `ModelRoutingCubit`'s three tier
-/// dropdowns — this cubit no longer owns a `selectModel` method.
+/// this cubit needing to listen to `ModelRoutingCubit`. Its
+/// [AgentProvider] (resolved via [_registry]) supplies both the
+/// [AgentModelClient] to run the ping through and
+/// [AgentProvider.normalizeErrorMessage] to clean a `disconnected`
+/// result's failure text. Model *selection* itself happens exclusively
+/// through `ModelRoutingCubit`'s three tier dropdowns — this cubit no
+/// longer owns a `selectModel` method.
 class ProviderSettingsCubit extends Cubit<ProviderSettingsState> {
-  /// Creates a [ProviderSettingsCubit] backed by [_client] (the
-  /// configured [AgentModelClient]) and [_repository] (per-phase model
+  /// Creates a [ProviderSettingsCubit] backed by [_registry] (resolves
+  /// the configured [AgentProvider]) and [_repository] (per-phase model
   /// routing, used here only to resolve the Frontier-tier model to ping).
-  ProviderSettingsCubit(this._client, this._repository)
+  ProviderSettingsCubit(this._registry, this._repository)
     : super(const ProviderSettingsLoading());
 
-  final AgentModelClient _client;
+  final ProviderRegistry _registry;
   final ModelRoutingRepository _repository;
 
   /// Reads the currently configured Frontier-tier model, then immediately
@@ -61,12 +67,16 @@ class ProviderSettingsCubit extends Cubit<ProviderSettingsState> {
     await _runConnectionTest(model);
   }
 
-  /// Sends a minimal `ping` [AgentRequest] against [model] and maps the
-  /// resulting event stream to [ProviderConnectionStatus.connected]/
-  /// [ProviderConnectionStatus.disconnected]. An [AgentOverageDetectedEvent]
-  /// on an otherwise-successful run sets `connected` with that event's
-  /// message as the status message, rather than treating it as a failure.
-  Future<void> _runConnectionTest(AgentModel model) async {
+  /// Sends a minimal `ping` [AgentRequest] against [model], through its
+  /// [AgentProvider] (resolved via [_registry]), and maps the resulting
+  /// event stream to [ProviderConnectionStatus.connected]/
+  /// [ProviderConnectionStatus.disconnected]. An
+  /// [AgentOverageDetectedEvent] on an otherwise-successful run sets
+  /// `connected` with that event's message as the status message, rather
+  /// than treating it as a failure. A `disconnected` result's message is
+  /// passed through `AgentProvider.normalizeErrorMessage` before being
+  /// stored, so a leaked vendor-specific error never reaches the UI raw.
+  Future<void> _runConnectionTest(AgentModelDescriptor model) async {
     emit(
       ProviderSettingsReady(
         selectedModel: model,
@@ -74,11 +84,12 @@ class ProviderSettingsCubit extends Cubit<ProviderSettingsState> {
       ),
     );
 
+    final provider = _registry.providerById(model.providerId);
     String? overageMessage;
     String? errorMessage;
     try {
-      final events = await _client.run(
-        AgentRequest(prompt: 'ping', model: model.id),
+      final events = await provider.client.run(
+        AgentRequest(prompt: 'ping', model: model.modelId),
       );
       await for (final event in events) {
         switch (event) {
@@ -89,11 +100,11 @@ class ProviderSettingsCubit extends Cubit<ProviderSettingsState> {
           case AgentOverageDetectedEvent(:final message):
             overageMessage = message;
           case AgentErrorEvent(:final message):
-            errorMessage = message;
+            errorMessage = provider.normalizeErrorMessage(message);
         }
       }
     } catch (error) {
-      errorMessage = error.toString();
+      errorMessage = provider.normalizeErrorMessage(error.toString());
     }
 
     if (isClosed) return;

@@ -2,7 +2,7 @@
 
 import 'package:equatable/equatable.dart';
 
-import 'package:aion/features/providers/domain/enums/agent_model.dart';
+import 'package:aion/core/contracts/agent_model_descriptor.dart';
 import 'package:aion/features/providers/domain/enums/model_phase.dart';
 
 /// The state emitted by `ModelRoutingCubit`.
@@ -19,18 +19,24 @@ class ModelRoutingLoading extends ModelRoutingState {
   const ModelRoutingLoading();
 }
 
-/// Loaded — carries the persisted [AgentModel] selection for every
-/// [ModelPhase].
+/// Loaded — carries the persisted [AgentModelDescriptor] selection for
+/// every [ModelPhase], plus the models each phase's dropdown may offer.
 class ModelRoutingReady extends ModelRoutingState {
-  /// Creates a [ModelRoutingReady] state carrying [modelByPhase].
-  const ModelRoutingReady(this.modelByPhase);
+  /// Creates a [ModelRoutingReady] state carrying [modelByPhase] and
+  /// [availableModels].
+  const ModelRoutingReady(this.modelByPhase, this.availableModels);
 
-  /// The currently selected [AgentModel] for each [ModelPhase], keyed
-  /// rather than split into named fields — same reasoning as
+  /// The currently selected [AgentModelDescriptor] for each [ModelPhase],
+  /// keyed rather than split into named fields — same reasoning as
   /// `AutomationSettingsReady.confidenceByContext`: a future phase slots
   /// in with no state-shape change.
-  final Map<ModelPhase, AgentModel> modelByPhase;
+  final Map<ModelPhase, AgentModelDescriptor> modelByPhase;
+
+  /// Every [AgentModelDescriptor] a MODELS-tier dropdown may currently
+  /// offer, keyed by [ModelPhase] — filtered by which registered
+  /// providers support that phase's `ModelPhaseToolAccess.requiredToolAccessTier`.
+  final Map<ModelPhase, List<AgentModelDescriptor>> availableModels;
 
   @override
-  List<Object?> get props => [modelByPhase];
+  List<Object?> get props => [modelByPhase, availableModels];
 }

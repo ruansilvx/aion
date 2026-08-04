@@ -9,6 +9,11 @@ import 'package:mocktail/mocktail.dart';
 
 import 'package:aion/core/contracts/active_project_provider.dart';
 import 'package:aion/core/contracts/agent_model_client.dart';
+import 'package:aion/core/contracts/agent_model_descriptor.dart';
+import 'package:aion/core/contracts/agent_provider.dart';
+import 'package:aion/core/contracts/consumption_signal.dart';
+import 'package:aion/core/contracts/provider_id.dart';
+import 'package:aion/core/contracts/provider_registry.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/projects/domain/entities/project.dart';
 import 'package:aion/features/projects/domain/repositories/baseline_repository.dart';
@@ -20,6 +25,10 @@ class MockTicketRepository extends Mock implements TicketRepository {}
 class MockTicketLinkRepository extends Mock implements TicketLinkRepository {}
 
 class MockAgentModelClient extends Mock implements AgentModelClient {}
+
+class MockAgentProvider extends Mock implements AgentProvider {}
+
+class MockProviderRegistry extends Mock implements ProviderRegistry {}
 
 class MockActiveProjectProvider extends Mock implements ActiveProjectProvider {}
 
@@ -85,6 +94,7 @@ void main() {
   late MockTicketRepository repository;
   late MockTicketLinkRepository linkRepository;
   late MockAgentModelClient agentClient;
+  late MockProviderRegistry registry;
   late MockActiveProjectProvider activeProjectProvider;
   late MockBaselineRepository baselineRepository;
 
@@ -125,6 +135,28 @@ void main() {
     repository = MockTicketRepository();
     linkRepository = MockTicketLinkRepository();
     agentClient = MockAgentModelClient();
+    final provider = MockAgentProvider();
+    registry = MockProviderRegistry();
+    when(() => provider.client).thenReturn(agentClient);
+    when(() => provider.availableModels).thenReturn(const [
+      AgentModelDescriptor(
+        providerId: ProviderId.claudeAgentSdk,
+        modelId: 'claude-sonnet-5',
+        label: 'Sonnet 5',
+        contextWindowTokens: 200000,
+      ),
+    ]);
+    when(
+      () => provider.normalizeErrorMessage(any()),
+    ).thenAnswer((invocation) => invocation.positionalArguments[0] as String);
+    when(() => provider.describeOverage(any())).thenAnswer(
+      (invocation) =>
+          UsageWindowConsumption(invocation.positionalArguments[0] as String),
+    );
+    when(() => registry.availableProviders).thenReturn([provider]);
+    when(
+      () => registry.providerById(ProviderId.claudeAgentSdk),
+    ).thenReturn(provider);
     activeProjectProvider = MockActiveProjectProvider();
     baselineRepository = MockBaselineRepository();
 
@@ -180,7 +212,7 @@ void main() {
   TicketsCubit buildCubit() => TicketsCubit(
     repository,
     linkRepository: linkRepository,
-    agentClient: agentClient,
+    providerRegistry: registry,
     projectRootPath: '/fake/project/root',
     projectName: 'Fake Project',
   );

@@ -31,7 +31,7 @@ void main() {
 /// The Aion app root. Wires the [RegistryDatabase] and its repositories,
 /// [ActiveProjectCubit], [ThemeScope] (tracking system brightness), the
 /// app-level provider-configuration stack ([AgentBridgeLocator],
-/// [AgentModelClient], [ModelRoutingRepository] — global, not
+/// [ProviderRegistry], [ModelRoutingRepository] — global, not
 /// per-project, since per-phase model routing isn't a per-project
 /// concept), [AutomationSettingsRepository] (also global — SDD-stage-
 /// triggering confidence isn't a per-project concept either), and the
@@ -101,16 +101,20 @@ class _AionAppState extends State<AionApp> with WidgetsBindingObserver {
         // setting — see aion-arch/changes/provider-configuration/design.md
         // §5. Desktop-only (ClaudeAgentSdkClient spawns a Node subprocess);
         // still safe to construct on any platform, since construction
-        // itself does no I/O.
+        // itself does no I/O. ProviderRegistry is the one place a second
+        // provider gets registered later — see
+        // aion-arch/changes/pluggable-provider-abstraction/design.md §1, §8.
         RepositoryProvider<AgentBridgeLocator>(
           create: (_) => AgentBridgeLocator(),
         ),
-        RepositoryProvider<AgentModelClient>(
-          create: (context) =>
-              ClaudeAgentSdkClient(context.read<AgentBridgeLocator>()),
+        RepositoryProvider<ProviderRegistry>(
+          create: (context) => StaticProviderRegistry([
+            ClaudeAgentSdkProvider(context.read<AgentBridgeLocator>()),
+          ]),
         ),
         RepositoryProvider<ModelRoutingRepository>(
-          create: (_) => SharedPrefsModelRoutingRepository(),
+          create: (context) =>
+              SharedPrefsModelRoutingRepository(context.read<ProviderRegistry>()),
         ),
         // The coding-execution context-window handoff cap override — also
         // global, mirroring ModelRoutingRepository's own scope. Added for
