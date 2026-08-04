@@ -48,9 +48,31 @@ class DriftTicketRepository implements TicketRepository {
     final prefs = await SharedPreferences.getInstance();
     final prefix = prefs.getString(_prefixKey) ?? _defaultPrefix;
 
-    final companion = TicketsTableCompanion.insert(
+    final companion = _buildInsertCompanion(ticket, ticketId: '');
+    await _db.ticketDao.insertTicket(companion, prefix);
+  }
+
+  @override
+  Future<void> importTicket(Ticket ticket) async {
+    final companion = _buildInsertCompanion(
+      ticket,
+      ticketId: ticket.ticketId,
+    );
+    await _db.ticketDao.insertTicketPreservingId(companion);
+  }
+
+  /// Builds the insert companion shared by [createTicket] and
+  /// [importTicket] — every column from [ticket] except `ticketId`,
+  /// which the caller supplies directly: `''` for [createTicket] (the DAO
+  /// generates the real value), or [ticket]'s own [Ticket.ticketId] for
+  /// [importTicket] (preserved verbatim by the DAO).
+  TicketsTableCompanion _buildInsertCompanion(
+    Ticket ticket, {
+    required String ticketId,
+  }) {
+    return TicketsTableCompanion.insert(
       id: ticket.id,
-      ticketId: '',
+      ticketId: ticketId,
       type: ticket.type.name,
       title: ticket.title,
       description: Value(ticket.description),
@@ -71,8 +93,6 @@ class DriftTicketRepository implements TicketRepository {
       createdAt: ticket.createdAt.millisecondsSinceEpoch,
       updatedAt: ticket.updatedAt.millisecondsSinceEpoch,
     );
-
-    await _db.ticketDao.insertTicket(companion, prefix);
   }
 
   @override

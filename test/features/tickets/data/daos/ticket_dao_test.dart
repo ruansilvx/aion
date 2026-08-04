@@ -1,4 +1,5 @@
-// test/features/tickets/data/daos/ticket_dao_test.dart — TicketDao.searchTickets pagination tests.
+// test/features/tickets/data/daos/ticket_dao_test.dart — TicketDao.searchTickets
+// pagination and insertTicketPreservingId tests.
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -51,6 +52,41 @@ void main() {
         updatedAt: createdAtMs,
       ),
       'AIO',
+    );
+  }
+
+  Future<String> insertTicketReturningId({
+    required String id,
+    required String title,
+  }) {
+    return dao.insertTicket(
+      TicketsTableCompanion.insert(
+        id: id,
+        ticketId: '',
+        type: 'task',
+        title: title,
+        status: 'backlog',
+        createdAt: 0,
+        updatedAt: 0,
+      ),
+      'AIO',
+    );
+  }
+
+  Future<void> insertPreservingId({
+    required String id,
+    required String ticketId,
+  }) async {
+    await dao.insertTicketPreservingId(
+      TicketsTableCompanion.insert(
+        id: id,
+        ticketId: ticketId,
+        type: 'task',
+        title: id,
+        status: 'backlog',
+        createdAt: 0,
+        updatedAt: 0,
+      ),
     );
   }
 
@@ -272,5 +308,47 @@ void main() {
 
       expect(rows.map((t) => t.id), ['live']);
     });
+  });
+
+  group('insertTicketPreservingId', () {
+    test('preserves the given ticketId verbatim, not sequence-generated', () async {
+      await insertPreservingId(id: 'imported-1', ticketId: 'AIO-99');
+
+      final row = await dao.getTicketById('imported-1');
+
+      expect(row?.ticketId, 'AIO-99');
+    });
+
+    test(
+      'advances the sequence so a later insertTicket never re-issues an '
+      'already-imported number',
+      () async {
+        await insertPreservingId(id: 'imported-1', ticketId: 'AIO-5');
+
+        final generated = await insertTicketReturningId(
+          id: 'created-1',
+          title: 'Created after import',
+        );
+
+        expect(int.parse(generated.split('-').last), greaterThanOrEqualTo(6));
+      },
+    );
+
+    test(
+      'a non-numeric suffix still inserts successfully and leaves the '
+      'sequence unchanged',
+      () async {
+        await insertPreservingId(id: 'imported-1', ticketId: 'AIO-abc');
+
+        final row = await dao.getTicketById('imported-1');
+        final generated = await insertTicketReturningId(
+          id: 'created-1',
+          title: 'Created after import',
+        );
+
+        expect(row?.ticketId, 'AIO-abc');
+        expect(generated, 'AIO-1');
+      },
+    );
   });
 }

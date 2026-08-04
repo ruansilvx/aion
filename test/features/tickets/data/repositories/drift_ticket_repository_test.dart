@@ -92,6 +92,29 @@ void main() {
     expect(tickets.first.title, 'Test ticket');
   });
 
+  test(
+    'importTicket persists the caller-supplied ticketId verbatim',
+    () async {
+      final now = DateTime(2026, 1, 1);
+      await repository.importTicket(
+        Ticket(
+          id: 'imported-1',
+          ticketId: 'AIO-99',
+          type: TicketType.task,
+          title: 'Imported ticket',
+          status: TicketStatus.backlog,
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+
+      final tickets = await repository.getAllTickets();
+
+      expect(tickets, hasLength(1));
+      expect(tickets.first.ticketId, 'AIO-99');
+    },
+  );
+
   test('getTicketById returns correct ticket when found', () async {
     await repository.createTicket(buildTicket(id: 'abc'));
     final found = await repository.getTicketById('abc');

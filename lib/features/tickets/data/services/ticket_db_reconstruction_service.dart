@@ -42,17 +42,14 @@ class TicketReconstructionReport {
 /// it to be called from (see proposal.md's Non-goals). The natural
 /// future caller is whatever that flow ends up being.
 ///
-/// **Known limitation**: [TicketRepository.createTicket] always
-/// generates a fresh sequential `ticketId` and ignores whatever's on the
-/// passed [Ticket] (see its own dartdoc) — so importing a `.md` file
-/// whose `ticketId` has no matching existing row (the genuine
-/// second-machine case, not just re-running against an already-imported
-/// DB) currently gets assigned a *new* `ticketId` rather than preserving
-/// the one the file is named after. That breaks the file/DB naming
-/// correspondence this whole sync mechanism depends on. Fixing this
-/// needs a repository-level change (an insert path that preserves a
-/// caller-supplied `ticketId`) out of scope for this task list; flagged
-/// here rather than silently shipped as if it round-trips correctly.
+/// A true import (a `.md` file whose `ticketId` has no matching existing
+/// row — the genuine second-machine case, not just re-running against an
+/// already-imported DB) preserves the file's own `ticketId` via
+/// [TicketRepository.importTicket], keeping the file/DB naming
+/// correspondence this whole sync mechanism depends on intact. Only the
+/// update branch (a matching row already exists) reuses
+/// [TicketRepository.updateTicket], which never touches `ticketId` in
+/// the first place since it addresses the row by internal `id`.
 class TicketDbReconstructionService {
   /// Creates a [TicketDbReconstructionService] using [_repository],
   /// [_serializer], and [_embeddingProvider] (for the post-import bulk
@@ -72,6 +69,15 @@ class TicketDbReconstructionService {
   /// Unparseable files are skipped and reported, not fatal to the run.
   /// After import, triggers [_embeddingProvider] in bulk for every
   /// imported ticket lacking a local embedding.
+  ///
+  /// If two different files parse to the same `ticketId` within a single
+  /// call, only the first is a true import (via
+  /// [TicketRepository.importTicket]) — every subsequent file sharing
+  /// that `ticketId` is treated as an update to the same row (via
+  /// [TicketRepository.updateTicket]) rather than a second import, since
+  /// a same-`ticketId` import would violate the row's uniqueness
+  /// constraint. This mirrors how a `ticketId` that already had a DB row
+  /// before the call was handled.
   Future<TicketReconstructionReport> reconstruct(String rootPath) async {
     final ticketsDir = Directory('$rootPath/tickets');
     if (!await ticketsDir.exists()) {
@@ -101,8 +107,9 @@ class TicketDbReconstructionService {
       if (existingByTicketId.containsKey(ticket.ticketId)) {
         await _repository.updateTicket(ticket);
       } else {
-        await _repository.createTicket(ticket);
+        await _repository.importTicket(ticket);
       }
+      existingByTicketId[ticket.ticketId] = ticket;
       imported.add(ticket);
       importedCount++;
     }

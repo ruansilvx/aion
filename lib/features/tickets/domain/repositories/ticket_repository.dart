@@ -22,8 +22,18 @@ abstract interface class TicketRepository {
 
   /// Persists [ticket]. Implementations generate the human-readable
   /// [Ticket.ticketId] (prefix + sequence) at insert time, so
-  /// [ticket.ticketId] on the argument is ignored.
+  /// [ticket.ticketId] on the argument is ignored. For ordinary ticket
+  /// creation only — to preserve a caller-supplied `ticketId` instead,
+  /// use [importTicket].
   Future<void> createTicket(Ticket ticket);
+
+  /// Persists [ticket] with its own [Ticket.ticketId] preserved verbatim,
+  /// unlike [createTicket] which always generates a fresh one. Intended
+  /// only for `TicketDbReconstructionService`'s true-import path — a
+  /// `tickets/*.md` file whose `ticketId` has no matching existing row
+  /// (the genuine second-machine case). Throws if `ticket.ticketId`
+  /// already belongs to another row.
+  Future<void> importTicket(Ticket ticket);
 
   /// Updates only the [status] (and `updatedAt`) of the ticket with id
   /// [id]. Does not touch any other field. Throws if [id] does not exist.
