@@ -65,6 +65,44 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
     });
   }
 
+  /// Inserts [entry] with whatever `ticketId` it already carries,
+  /// preserving it verbatim instead of generating one from
+  /// [TicketIdSequenceTable] the way [insertTicket] does. Used by
+  /// `TicketDbReconstructionService`'s true-import path, where a
+  /// `tickets/*.md` file's own `ticketId` has no matching existing row
+  /// and must be kept rather than replaced — otherwise the
+  /// file/DB naming correspondence the git-projection/sync mechanism
+  /// depends on breaks.
+  ///
+  /// Runs in a single transaction: inserts [entry] as-is, then parses the
+  /// substring after the last `-` in its `ticketId` as an `int`; if it
+  /// parses and is greater than the current [TicketIdSequenceTable.seq],
+  /// advances `seq` to that value so a later [insertTicket] call can
+  /// never mint an id that collides with the one just inserted. A
+  /// `ticketId` whose suffix doesn't parse as an integer still inserts
+  /// successfully — only the sequence bump is skipped for it, since
+  /// `TicketsTable.ticketId` has no format constraint beyond uniqueness.
+  Future<void> insertTicketPreservingId(TicketsTableCompanion entry) {
+    return transaction(() async {
+      await into(ticketsTable).insert(entry);
+
+      final ticketId = entry.ticketId.value;
+      final dashIndex = ticketId.lastIndexOf('-');
+      if (dashIndex == -1) return;
+      final suffix = int.tryParse(ticketId.substring(dashIndex + 1));
+      if (suffix == null) return;
+
+      final current = await (select(
+        ticketIdSequenceTable,
+      )..where((t) => t.id.equals(1))).getSingleOrNull();
+      if ((current?.seq ?? 0) >= suffix) return;
+
+      await into(ticketIdSequenceTable).insertOnConflictUpdate(
+        TicketIdSequenceTableCompanion(id: const Value(1), seq: Value(suffix)),
+      );
+    });
+  }
+
   /// Applies [companion] to the ticket row with primary key [id]. Generic —
   /// [companion] may cover any subset of columns; both status-only updates
   /// ([DriftTicketRepository.updateTicketStatus]) and general field updates

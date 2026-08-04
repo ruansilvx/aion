@@ -44,6 +44,7 @@ void main() {
 
     when(() => repository.updateTicket(any())).thenAnswer((_) async {});
     when(() => repository.createTicket(any())).thenAnswer((_) async {});
+    when(() => repository.importTicket(any())).thenAnswer((_) async {});
     when(() => repository.updateEmbedding(any(), any())).thenAnswer((_) async {});
     when(() => embeddingProvider.embed(any())).thenAnswer(
       (_) async => Uint8List.fromList([9, 9, 9]),
@@ -84,7 +85,8 @@ void main() {
 
     expect(report.importedCount, 2);
     expect(report.skippedPaths, isEmpty);
-    verify(() => repository.createTicket(any())).called(2);
+    verify(() => repository.importTicket(any())).called(2);
+    verifyNever(() => repository.createTicket(any()));
     verifyNever(() => repository.updateTicket(any()));
   });
 
