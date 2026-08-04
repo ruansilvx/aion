@@ -2,7 +2,7 @@
 
 import 'package:equatable/equatable.dart';
 
-import 'package:aion/features/providers/domain/enums/agent_model.dart';
+import 'package:aion/core/contracts/agent_model_descriptor.dart';
 import 'package:aion/features/providers/domain/enums/provider_connection_status.dart';
 
 /// The state emitted by `ProviderSettingsCubit`.
@@ -29,11 +29,11 @@ class ProviderSettingsReady extends ProviderSettingsState {
     this.statusMessage,
   });
 
-  /// The [AgentModel] the connection test last pinged — always mirrors
-  /// whichever model is currently configured for `ModelPhase.frontier`
-  /// (see `ProviderSettingsCubit`'s class-level dartdoc), not a
-  /// standalone selection this state owns.
-  final AgentModel selectedModel;
+  /// The [AgentModelDescriptor] the connection test last pinged — always
+  /// mirrors whichever model is currently configured for
+  /// `ModelPhase.frontier` (see `ProviderSettingsCubit`'s class-level
+  /// dartdoc), not a standalone selection this state owns.
+  final AgentModelDescriptor selectedModel;
 
   /// The outcome of the most recent connection test.
   final ProviderConnectionStatus status;

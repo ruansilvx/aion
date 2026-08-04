@@ -14,12 +14,16 @@ import 'package:aion/core/automation/automation_context.dart';
 import 'package:aion/core/automation/automation_settings_repository.dart';
 import 'package:aion/core/build/project_stack_detector.dart';
 import 'package:aion/core/contracts/agent_model_client.dart';
+import 'package:aion/core/contracts/agent_model_descriptor.dart';
+import 'package:aion/core/contracts/agent_provider.dart';
+import 'package:aion/core/contracts/consumption_signal.dart';
 import 'package:aion/core/contracts/embedding_provider.dart';
+import 'package:aion/core/contracts/provider_id.dart';
+import 'package:aion/core/contracts/provider_registry.dart';
 import 'package:aion/core/git/git_repository_client.dart';
 import 'package:aion/core/git/github_cli_client.dart';
 import 'package:aion/features/projects/domain/entities/baseline_asset.dart';
 import 'package:aion/features/projects/domain/repositories/baseline_repository.dart';
-import 'package:aion/features/providers/domain/enums/agent_model.dart';
 import 'package:aion/features/providers/domain/enums/model_phase.dart';
 import 'package:aion/features/providers/domain/repositories/execution_context_cap_repository.dart';
 import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
@@ -46,7 +50,7 @@ import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 /// provided once at the app root, not per-screen.
 class TicketsCubit extends Cubit<TicketsState> {
   /// Creates a [TicketsCubit] backed by [_repository]. [_embeddingProvider],
-  /// [_gitProjector], [_projectRootPath], [_agentClient], and
+  /// [_gitProjector], [_projectRootPath], [_providerRegistry], and
   /// [_commentRepository] are optional — when any is `null` (the
   /// default, and every existing call site/test), the embedding-regen,
   /// git-projection, and stage-chat-spawning side effects documented on
@@ -54,7 +58,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [changeTicketStatus]/[trashTicket]/[trashTickets]/[advanceSddStage]
   /// simply no-op, rather than requiring every one of ~40 existing
   /// construction sites to be updated for a feature most of them don't
-  /// exercise. Real usage (`app_router.dart`) supplies [_agentClient]/
+  /// exercise. Real usage (`app_router.dart`) supplies [_providerRegistry]/
   /// [_commentRepository] so [advanceSddStage] always spawns its chat.
   /// [_automationSettingsRepository] follows the same optional-dependency
   /// pattern — `null` leaves a finished coding-execution run's status
@@ -62,12 +66,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// one; real usage (`app_router.dart`) always does.
   /// [_modelRoutingRepository] follows the same optional-dependency
   /// pattern too — `null` makes every stage-chat/coding-execution model
-  /// resolution fall back to [AgentModel.sonnet] (see [_resolveModel]),
-  /// today's pre-per-phase-routing default; real usage
-  /// (`app_router.dart`) always supplies one.
+  /// resolution fall back to the first registered provider's first model
+  /// (see [_resolveModel]), today's pre-per-phase-routing default; real
+  /// usage (`app_router.dart`) always supplies one.
   /// [_gitClient]/[_gitHubClient] follow the same optional-dependency
   /// pattern too — `null` makes [_runCodingExecution] no-op entirely
-  /// (same guard as [_agentClient]/[_commentRepository]), since a
+  /// (same guard as [_providerRegistry]/[_commentRepository]), since a
   /// worktree-isolated, verify-gated run can't proceed without them;
   /// real usage (`app_router.dart`) always supplies them. Added for
   /// `aion-arch/changes/coding-execution-reliability-and-safety`.
@@ -89,12 +93,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// pattern once more — `null` (every existing construction site except
   /// `app_router.dart`) makes [_effectiveExecutionContextCap] always
   /// resolve to the execution-phase model's real
-  /// `AgentModel.contextWindowTokens` with no user override available —
-  /// the handoff mechanism itself still works, only the user-configurable
-  /// lowering of the threshold doesn't. Added for
+  /// `AgentModelDescriptor.contextWindowTokens` with no user override
+  /// available — the handoff mechanism itself still works, only the
+  /// user-configurable lowering of the threshold doesn't. Added for
   /// `aion-arch/changes/dont-spawn-new-chat-ticket-per-execution-trigger`.
   // The public param names below (embeddingProvider/gitProjector/
-  // projectRootPath/agentClient/commentRepository/
+  // projectRootPath/providerRegistry/commentRepository/
   // automationSettingsRepository/modelRoutingRepository/gitClient/
   // gitHubClient/baselineRepository/projectId/baselineVersion/
   // projectName) intentionally differ from their private backing
@@ -107,7 +111,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     TicketGitProjector? gitProjector,
     String? projectRootPath,
     TicketLinkRepository? linkRepository,
-    AgentModelClient? agentClient,
+    ProviderRegistry? providerRegistry,
     CommentRepository? commentRepository,
     AutomationSettingsRepository? automationSettingsRepository,
     ModelRoutingRepository? modelRoutingRepository,
@@ -123,7 +127,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     _gitProjector = gitProjector;
     _projectRootPath = projectRootPath;
     _linkRepository = linkRepository;
-    _agentClient = agentClient;
+    _providerRegistry = providerRegistry;
     _commentRepository = commentRepository;
     _automationSettingsRepository = automationSettingsRepository;
     _modelRoutingRepository = modelRoutingRepository;
@@ -141,7 +145,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   late final TicketGitProjector? _gitProjector;
   late final String? _projectRootPath;
   late final TicketLinkRepository? _linkRepository;
-  late final AgentModelClient? _agentClient;
+  late final ProviderRegistry? _providerRegistry;
   late final CommentRepository? _commentRepository;
   late final AutomationSettingsRepository? _automationSettingsRepository;
   late final ModelRoutingRepository? _modelRoutingRepository;
@@ -900,14 +904,14 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [ChatCubit.runChatTurn] helper [_spawnStageChat] uses. No-ops
   /// (returns without posting) if [designSyncChat] isn't a `chat`
   /// ticket, its parent isn't at [SddStage.designSync], or the cubit was
-  /// constructed without an [AgentModelClient]/[CommentRepository] (see
+  /// constructed without a [ProviderRegistry]/[CommentRepository] (see
   /// the constructor's dartdoc). Added for
   /// `aion-arch/changes/sdd-design-gate`.
   Future<void> retryDesignSync(Ticket designSyncChat) async {
     if (designSyncChat.type != TicketType.chat) return;
-    final client = _agentClient;
+    final providerRegistry = _providerRegistry;
     final commentRepo = _commentRepository;
-    if (client == null || commentRepo == null) return;
+    if (providerRegistry == null || commentRepo == null) return;
     final parentId = designSyncChat.parentId;
     if (parentId == null) return;
     final parent = await _repository.getTicketById(parentId);
@@ -923,12 +927,16 @@ class TicketsCubit extends Cubit<TicketsState> {
         createdAt: DateTime.now(),
       ),
     );
+    final (model, provider) = await _resolveModelAndProvider(
+      SddStage.designSync.modelPhase,
+    );
     await ChatCubit.runChatTurn(
-      client: client,
+      client: provider.client,
+      provider: provider,
       commentRepo: commentRepo,
       chatTicketId: designSyncChat.id,
       prompt: context,
-      model: await _resolveModel(SddStage.designSync.modelPhase),
+      model: model,
     );
   }
 
@@ -1446,8 +1454,9 @@ class TicketsCubit extends Cubit<TicketsState> {
     return used >= cap * _handoffThresholdRatio;
   }
 
-  /// The execution-phase model's real `AgentModel.contextWindowTokens`,
-  /// lowered to [_executionContextCapRepository]'s persisted override
+  /// The execution-phase model's real
+  /// `AgentModelDescriptor.contextWindowTokens`, lowered to
+  /// [_executionContextCapRepository]'s persisted override
   /// when one is set and it's a smaller, positive value — an override can
   /// never raise the cap past the model's real limit
   /// ([ExecutionContextCapCubit] enforces the same ceiling when
@@ -1487,8 +1496,8 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// human can navigate between them via the existing generic "linked
   /// tickets" UI, no new widget needed. Falls back to `(oldChat, null)` —
   /// reuse the old, now-over-cap chat rather than block the run — if the
-  /// summary turn itself hard-fails, or if constructed without an
-  /// [AgentModelClient]/[CommentRepository]: a soft context-budget
+  /// summary turn itself hard-fails, or if constructed without a
+  /// [ProviderRegistry]/[CommentRepository]: a soft context-budget
   /// overrun that risks a truncated next turn is preferable to a run that
   /// can't proceed at all, matching this project's fail-open precedent
   /// for [_computeExecutionFailure]'s "ended without a clear result"
@@ -1505,19 +1514,25 @@ class TicketsCubit extends Cubit<TicketsState> {
     Ticket task,
     Ticket oldChat,
   ) async {
-    final client = _agentClient;
+    final providerRegistry = _providerRegistry;
     final commentRepo = _commentRepository;
-    if (client == null || commentRepo == null) return (oldChat, null);
+    if (providerRegistry == null || commentRepo == null) {
+      return (oldChat, null);
+    }
 
     final transcript = _assembleChatTranscript(
       await commentRepo.getCommentsForTicket(oldChat.id),
     );
+    final (model, provider) = await _resolveModelAndProvider(
+      ModelPhase.execution,
+    );
     final summarized = await ChatCubit.runChatTurn(
-      client: client,
+      client: provider.client,
+      provider: provider,
       commentRepo: commentRepo,
       chatTicketId: oldChat.id,
       prompt: _assembleHandoffContext(transcript),
-      model: await _resolveModel(ModelPhase.execution),
+      model: model,
     );
     if (!summarized) return (oldChat, null);
 
@@ -1631,12 +1646,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [_emitLiveExecutionActivity]) emitted mid-run would otherwise
   /// clobber `state` and make a live re-check wrongly skip the refresh.
   /// Then dequeues the next run (see [_dequeueNext]), no-opping
-  /// gracefully if constructed without an [AgentModelClient]/
+  /// gracefully if constructed without a [ProviderRegistry]/
   /// [CommentRepository]/[GitRepositoryClient]/[GitHubCliClient]/
   /// [BaselineRepository]/`projectId`/`baselineVersion`/`projectRootPath`
   /// (see the constructor's dartdoc).
   Future<void> _runCodingExecution(Ticket task) async {
-    final client = _agentClient;
+    final providerRegistry = _providerRegistry;
     final commentRepo = _commentRepository;
     final automationRepo = _automationSettingsRepository;
     final gitClient = _gitClient;
@@ -1645,7 +1660,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     final projectId = _projectId;
     final baselineVersion = _baselineVersion;
     final rootPath = _projectRootPath;
-    if (client == null ||
+    if (providerRegistry == null ||
         commentRepo == null ||
         gitClient == null ||
         gitHubClient == null ||
@@ -1660,7 +1675,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
 
     // Captured before the run starts, not re-read from `state` afterward:
-    // `onOverageDetected`/live-activity updates below can emit mid-run,
+    // `onConsumptionSignal`/live-activity updates below can emit mid-run,
     // which would otherwise clobber `state` and make a live re-check
     // wrongly conclude the detail screen isn't showing [task] anymore,
     // silently skipping the refresh.
@@ -1708,7 +1723,7 @@ class TicketsCubit extends Cubit<TicketsState> {
                 ? 'Running $toolName...'
                 : 'Running $toolName: $summary...',
           );
-      void onOverageDetected() {
+      void onConsumptionSignal(ConsumptionSignal _) {
         if (!_overageDetectedThisSession) {
           _overageDetectedThisSession = true;
           emit(
@@ -1723,17 +1738,20 @@ class TicketsCubit extends Cubit<TicketsState> {
       var attempt = 0;
       var verified = false;
       while (true) {
+        final (implementModel, implementProvider) =
+            await _resolveModelAndProvider(ModelPhase.execution);
         final implementSucceeded = await ChatCubit.runChatTurn(
-          client: client,
+          client: implementProvider.client,
+          provider: implementProvider,
           commentRepo: commentRepo,
           chatTicketId: chat.id,
           prompt: prompt,
-          model: await _resolveModel(ModelPhase.execution),
+          model: implementModel,
           toolsEnabled: true,
           workingDirectory: worktreePath,
           onChunk: onChunk,
           onToolUse: onToolUse,
-          onOverageDetected: onOverageDetected,
+          onConsumptionSignal: onConsumptionSignal,
         );
         if (!implementSucceeded) {
           // A hard error (API failure, thrown exception) — `runChatTurn`
@@ -1744,17 +1762,21 @@ class TicketsCubit extends Cubit<TicketsState> {
         }
 
         final verifyPrompt = await _assembleVerificationContext(task);
+        final (verifyModel, verifyProvider) = await _resolveModelAndProvider(
+          ModelPhase.execution,
+        );
         final verifySucceeded = await ChatCubit.runChatTurn(
-          client: client,
+          client: verifyProvider.client,
+          provider: verifyProvider,
           commentRepo: commentRepo,
           chatTicketId: chat.id,
           prompt: verifyPrompt,
-          model: await _resolveModel(ModelPhase.execution),
+          model: verifyModel,
           toolsEnabled: true,
           workingDirectory: worktreePath,
           onChunk: onChunk,
           onToolUse: onToolUse,
-          onOverageDetected: onOverageDetected,
+          onConsumptionSignal: onConsumptionSignal,
         );
         if (!verifySucceeded) {
           // A hard error during the verify turn itself — same shape as
@@ -2363,16 +2385,41 @@ class TicketsCubit extends Cubit<TicketsState> {
     return comments.any((c) => c.authorType == CommentAuthorType.ai);
   }
 
-  /// Resolves [phase] to its currently configured [AgentModel], via
-  /// [_modelRoutingRepository]. Falls back to [AgentModel.sonnet] — the
-  /// hardcoded default every call site used before per-phase routing
-  /// existed — when the cubit was constructed without a
+  /// Resolves [phase] to its currently configured [AgentModelDescriptor],
+  /// via [_modelRoutingRepository]. Falls back to the first registered
+  /// provider's first model — the closest available equivalent to the
+  /// hardcoded `AgentModel.sonnet` default every call site used before
+  /// per-phase routing existed — when the cubit was constructed without a
   /// [ModelRoutingRepository] (see the constructor's dartdoc). Added for
   /// `aion-arch/changes/per-phase-tier-based-model-routing`.
-  Future<AgentModel> _resolveModel(ModelPhase phase) async {
+  Future<AgentModelDescriptor> _resolveModel(ModelPhase phase) async {
     final repo = _modelRoutingRepository;
-    if (repo == null) return AgentModel.sonnet;
-    return repo.getModelForPhase(phase);
+    if (repo != null) return repo.getModelForPhase(phase);
+    final registry = _providerRegistry;
+    if (registry != null) {
+      return registry.availableProviders.first.availableModels.first;
+    }
+    return const AgentModelDescriptor(
+      providerId: ProviderId.claudeAgentSdk,
+      modelId: 'claude-sonnet-5',
+      label: 'Sonnet 5',
+      contextWindowTokens: 200000,
+    );
+  }
+
+  /// Resolves [phase] to its currently configured [AgentModelDescriptor]
+  /// (via [_resolveModel]) and that model's [AgentProvider] (via
+  /// [_providerRegistry]). Shared helper so every model call site
+  /// resolves the pair identically — see
+  /// `aion-arch/changes/pluggable-provider-abstraction/design.md` §7.
+  /// Only called from call sites already gated on [_providerRegistry]
+  /// being non-null.
+  Future<(AgentModelDescriptor, AgentProvider)> _resolveModelAndProvider(
+    ModelPhase phase,
+  ) async {
+    final model = await _resolveModel(phase);
+    final provider = _providerRegistry!.providerById(model.providerId);
+    return (model, provider);
   }
 
   /// Creates a `chat`-type child ticket for [stage] under [parent] and
@@ -2382,8 +2429,8 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// `aion-arch/changes/board-execution-indicators-and-notifications`
   /// split it so [advanceSddStage] no longer blocks on the chat's AI
   /// reply (see [_runStageChatTurn] for that half). Returns the
-  /// persisted chat ticket's id, or `null` if constructed without an
-  /// [AgentModelClient]/[CommentRepository] (see the constructor's
+  /// persisted chat ticket's id, or `null` if constructed without a
+  /// [ProviderRegistry]/[CommentRepository] (see the constructor's
   /// dartdoc) — real usage (`app_router.dart`) always supplies both. For
   /// [SddStage.designBrief] specifically, also creates a `page`-type
   /// design ticket (`"Design — <parent.title>"`) and links it to
@@ -2391,9 +2438,9 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// itself is created — see [_linkedDesignPage]. Added for
   /// `aion-arch/changes/sdd-design-gate`.
   Future<String?> _createStageChat(Ticket parent, SddStage stage) async {
-    final client = _agentClient;
+    final providerRegistry = _providerRegistry;
     final commentRepo = _commentRepository;
-    if (client == null || commentRepo == null) return null;
+    if (providerRegistry == null || commentRepo == null) return null;
 
     final now = DateTime.now();
 
@@ -2454,7 +2501,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// Runs [chatId]'s stage-advance AI turn for [parent]/[stage] — the
   /// `unawaited` half of what used to be a single blocking
   /// `_spawnStageChat` call (see [_createStageChat] for the `await`ed
-  /// chat-creation half). Calls the configured [AgentModelClient] and
+  /// chat-creation half). Calls the resolved [AgentProvider]'s client and
   /// persists the streamed reply via [ChatCubit.runChatTurn] — the same
   /// accumulate-then-persist logic [ChatCubit.sendMessage] uses, so the
   /// spawn path and the user-message path can't drift apart. The model
@@ -2487,18 +2534,22 @@ class TicketsCubit extends Cubit<TicketsState> {
     SddStage stage,
     String chatId,
   ) async {
-    final client = _agentClient;
+    final providerRegistry = _providerRegistry;
     final commentRepo = _commentRepository;
-    if (client == null || commentRepo == null) return;
+    if (providerRegistry == null || commentRepo == null) return;
 
     try {
       final context = await _assembleStageContext(parent, stage);
+      final (model, provider) = await _resolveModelAndProvider(
+        stage.modelPhase,
+      );
       final succeeded = await ChatCubit.runChatTurn(
-        client: client,
+        client: provider.client,
+        provider: provider,
         commentRepo: commentRepo,
         chatTicketId: chatId,
         prompt: context,
-        model: await _resolveModel(stage.modelPhase),
+        model: model,
       );
       if (succeeded && stage == SddStage.proposed) {
         final comments = await commentRepo.getCommentsForTicket(chatId);
@@ -3224,28 +3275,30 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// [SummarizationDepth.shallow] path for [runCodebaseSummarization]: a
-  /// single non-tool-enabled [_agentClient] call (never a
-  /// [ChatCubit.runChatTurn] — there's no chat ticket to anchor a
-  /// no-tool text turn to) fed [_shallowSummaryPrompt]'s detected-stack +
-  /// directory-listing context. Throws [StateError] if constructed
-  /// without an [AgentModelClient], or if the model run itself reports
-  /// an [AgentErrorEvent].
+  /// single non-tool-enabled call through the resolved [AgentProvider]'s
+  /// client (never a [ChatCubit.runChatTurn] — there's no chat ticket to
+  /// anchor a no-tool text turn to) fed [_shallowSummaryPrompt]'s
+  /// detected-stack + directory-listing context. Throws [StateError] if
+  /// constructed without a [ProviderRegistry], or if the model run itself
+  /// reports an [AgentErrorEvent].
   Future<List<({String title, String description})>> _runShallowSummarization(
     String rootPath,
   ) async {
-    final client = _agentClient;
-    if (client == null) {
+    final providerRegistry = _providerRegistry;
+    if (providerRegistry == null) {
       throw StateError('Shallow codebase analysis requires an agent client.');
     }
 
     final detected = ProjectStackDetector().detect(rootPath);
     final listing = await _shallowDirectoryListing(rootPath);
     final prompt = _shallowSummaryPrompt(detected, listing);
-    final model = await _resolveModel(ModelPhase.frontier);
+    final (model, provider) = await _resolveModelAndProvider(
+      ModelPhase.frontier,
+    );
 
     final buffer = StringBuffer();
-    final events = await client.run(
-      AgentRequest(prompt: prompt, model: model.id),
+    final events = await provider.client.run(
+      AgentRequest(prompt: prompt, model: model.modelId),
     );
     await for (final event in events) {
       switch (event) {
@@ -3279,18 +3332,18 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// read-only — never instructs the model to edit/commit/push). The
   /// worktree is always removed in a `finally`, exactly like
   /// [_runCodingExecution]'s own cleanup, even though nothing is ever
-  /// pushed from it. Throws [StateError] if constructed without an
-  /// [AgentModelClient]/[CommentRepository]/[GitRepositoryClient], if the
+  /// pushed from it. Throws [StateError] if constructed without a
+  /// [ProviderRegistry]/[CommentRepository]/[GitRepositoryClient], if the
   /// spawned chat can't be persisted, or if the model turn doesn't
   /// complete successfully.
   Future<List<({String title, String description})>> _runFullSummarization(
     String rootPath,
     Ticket runTicket,
   ) async {
-    final client = _agentClient;
+    final providerRegistry = _providerRegistry;
     final commentRepo = _commentRepository;
     final gitClient = _gitClient;
-    if (client == null || commentRepo == null || gitClient == null) {
+    if (providerRegistry == null || commentRepo == null || gitClient == null) {
       throw StateError(
         'Full codebase analysis requires an agent client, comment '
         'repository, and git client.',
@@ -3333,12 +3386,16 @@ class TicketsCubit extends Cubit<TicketsState> {
         ),
       );
 
+      final (model, provider) = await _resolveModelAndProvider(
+        ModelPhase.execution,
+      );
       final succeeded = await ChatCubit.runChatTurn(
-        client: client,
+        client: provider.client,
+        provider: provider,
         commentRepo: commentRepo,
         chatTicketId: persistedChat.id,
         prompt: prompt,
-        model: await _resolveModel(ModelPhase.execution),
+        model: model,
         toolsEnabled: true,
         workingDirectory: worktreePath,
         onChunk: (textSoFar) => _codebaseAnalysisController.add(

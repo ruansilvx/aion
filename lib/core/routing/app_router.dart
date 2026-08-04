@@ -9,9 +9,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:aion/core/automation/automation_settings_repository.dart';
 import 'package:aion/core/contracts/active_project_provider.dart';
-import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/core/contracts/embedding_provider.dart';
 import 'package:aion/core/contracts/page_ticket_provider.dart';
+import 'package:aion/core/contracts/provider_registry.dart';
 import 'package:aion/core/database/app_database.dart';
 import 'package:aion/core/build/project_stack_detector.dart';
 import 'package:aion/core/git/git_repository_client.dart';
@@ -161,7 +161,7 @@ final appRouter = GoRouter(
               context.read<TicketRepository>(),
               context.read<CommentRepository>(),
               context.read<TicketLinkRepository>(),
-              context.read<AgentModelClient>(),
+              context.read<ProviderRegistry>(),
               context.read<ModelRoutingRepository>(),
               gitClient: _activeProject(context).rootPath != null
                   ? context.read<GitRepositoryClient>()
@@ -188,7 +188,7 @@ final appRouter = GoRouter(
                 BlocProvider<ChatCubit>(
                   create: (context) => ChatCubit(
                     context.read<CommentRepository>(),
-                    context.read<AgentModelClient>(),
+                    context.read<ProviderRegistry>(),
                     context.read<TicketRepository>(),
                     context.read<ModelRoutingRepository>(),
                   ),
@@ -222,7 +222,7 @@ final appRouter = GoRouter(
             providers: [
               BlocProvider<ProviderSettingsCubit>(
                 create: (context) => ProviderSettingsCubit(
-                  context.read<AgentModelClient>(),
+                  context.read<ProviderRegistry>(),
                   context.read<ModelRoutingRepository>(),
                 )..load(),
               ),
@@ -234,6 +234,7 @@ final appRouter = GoRouter(
               BlocProvider<ModelRoutingCubit>(
                 create: (context) => ModelRoutingCubit(
                   context.read<ModelRoutingRepository>(),
+                  context.read<ProviderRegistry>(),
                 )..load(),
               ),
               BlocProvider<ExecutionContextCapCubit>(
@@ -519,7 +520,7 @@ class _WorkspaceShellState extends State<WorkspaceShell>
                   : null,
               projectRootPath: rootPath,
               linkRepository: context.read<TicketLinkRepository>(),
-              agentClient: context.read<AgentModelClient>(),
+              providerRegistry: context.read<ProviderRegistry>(),
               commentRepository: context.read<CommentRepository>(),
               automationSettingsRepository: context
                   .read<AutomationSettingsRepository>(),

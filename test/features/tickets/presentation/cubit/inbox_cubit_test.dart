@@ -5,8 +5,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
 import 'package:aion/core/contracts/agent_model_client.dart';
+import 'package:aion/core/contracts/agent_model_descriptor.dart';
+import 'package:aion/core/contracts/agent_provider.dart';
+import 'package:aion/core/contracts/consumption_signal.dart';
+import 'package:aion/core/contracts/provider_id.dart';
+import 'package:aion/core/contracts/provider_registry.dart';
 import 'package:aion/core/git/git_repository_client.dart';
-import 'package:aion/features/providers/domain/enums/agent_model.dart';
 import 'package:aion/features/providers/domain/enums/model_phase.dart';
 import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
 import 'package:aion/features/tickets/tickets.dart';
@@ -19,10 +23,21 @@ class MockTicketLinkRepository extends Mock implements TicketLinkRepository {}
 
 class MockAgentModelClient extends Mock implements AgentModelClient {}
 
+class MockAgentProvider extends Mock implements AgentProvider {}
+
+class MockProviderRegistry extends Mock implements ProviderRegistry {}
+
 class MockModelRoutingRepository extends Mock
     implements ModelRoutingRepository {}
 
 class MockGitRepositoryClient extends Mock implements GitRepositoryClient {}
+
+const _sonnet = AgentModelDescriptor(
+  providerId: ProviderId.claudeAgentSdk,
+  modelId: 'claude-sonnet-5',
+  label: 'Sonnet 5',
+  contextWindowTokens: 200000,
+);
 
 /// Makes [repository]'s `createTicket`/`getTicketById` behave like a real
 /// (in-memory) store, keyed on each [Ticket]'s own `id` — needed since
@@ -63,6 +78,7 @@ void main() {
   late MockCommentRepository commentRepository;
   late MockTicketLinkRepository linkRepository;
   late MockAgentModelClient agentClient;
+  late MockProviderRegistry registry;
   late MockModelRoutingRepository modelRoutingRepository;
   late MockGitRepositoryClient gitClient;
 
@@ -97,6 +113,20 @@ void main() {
     commentRepository = MockCommentRepository();
     linkRepository = MockTicketLinkRepository();
     agentClient = MockAgentModelClient();
+    final provider = MockAgentProvider();
+    registry = MockProviderRegistry();
+    when(() => provider.client).thenReturn(agentClient);
+    when(
+      () => provider.normalizeErrorMessage(any()),
+    ).thenAnswer((invocation) => invocation.positionalArguments[0] as String);
+    when(() => provider.describeOverage(any())).thenAnswer(
+      (invocation) =>
+          UsageWindowConsumption(invocation.positionalArguments[0] as String),
+    );
+    when(() => registry.availableProviders).thenReturn([provider]);
+    when(
+      () => registry.providerById(ProviderId.claudeAgentSdk),
+    ).thenReturn(provider);
     modelRoutingRepository = MockModelRoutingRepository();
     gitClient = MockGitRepositoryClient();
 
@@ -111,7 +141,7 @@ void main() {
     ).thenAnswer((_) async {});
     when(
       () => modelRoutingRepository.getModelForPhase(any()),
-    ).thenAnswer((_) async => AgentModel.sonnet);
+    ).thenAnswer((_) async => _sonnet);
     when(
       () => gitClient.createWorktree(any(), any(), any()),
     ).thenAnswer((_) async {});
@@ -124,7 +154,7 @@ void main() {
     repository,
     commentRepository,
     linkRepository,
-    agentClient,
+    registry,
     modelRoutingRepository,
     gitClient: gitClient,
     projectRootPath: '/fake/project/root',
@@ -535,7 +565,7 @@ void main() {
         repository,
         commentRepository,
         linkRepository,
-        agentClient,
+        registry,
         modelRoutingRepository,
       ),
       act: (cubit) => cubit.startQa('A question'),

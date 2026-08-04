@@ -12,7 +12,6 @@ import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/projects/presentation/cubit/baseline_upgrade_cubit.dart';
 import 'package:aion/features/projects/presentation/cubit/baseline_upgrade_state.dart';
-import 'package:aion/features/providers/domain/enums/agent_model.dart';
 import 'package:aion/features/providers/domain/enums/model_phase.dart';
 import 'package:aion/features/providers/domain/enums/provider_connection_status.dart';
 import 'package:aion/features/providers/presentation/cubit/automation_settings_cubit.dart';
@@ -404,15 +403,20 @@ class _AutomationMenuRow extends StatelessWidget {
 }
 
 /// One "MODELS" section row — a labeled description followed by an
-/// `AppDropdown<AgentModel>` picking which model handles [phase]'s model
-/// calls, backed by [ModelRoutingCubit]. Rendered three times on
-/// [SettingsScreen] — once per [ModelPhase] — under one shared "MODELS"
-/// eyebrow, mirroring how [_AutomationSection] is rendered twice under
-/// "AUTOMATION". Reuses the plain `AppDropdown<AgentModel>` the old
-/// single-model picker already used — no mode-dot treatment, unlike
+/// `AppDropdown<AgentModelDescriptor>` picking which model handles
+/// [phase]'s model calls, backed by [ModelRoutingCubit]. Rendered three
+/// times on [SettingsScreen] — once per [ModelPhase] — under one shared
+/// "MODELS" eyebrow, mirroring how [_AutomationSection] is rendered
+/// twice under "AUTOMATION". Reuses the plain
+/// `AppDropdown<AgentModelDescriptor>` the old single-model picker
+/// already used — no mode-dot treatment, unlike
 /// [_AutomationTrigger]/[_AutomationMenuRow], since a model has no mode
-/// color. Added for
-/// `aion-arch/changes/per-phase-tier-based-model-routing`.
+/// color. The dropdown's item source is
+/// `ModelRoutingReady.availableModels[phase]` (provider-aware, filtered
+/// by `ModelPhaseToolAccess.requiredToolAccessTier`) instead of a fixed
+/// enum — see
+/// `aion-arch/changes/pluggable-provider-abstraction/design.md` §3.
+/// Added for `aion-arch/changes/per-phase-tier-based-model-routing`.
 class _ModelPhaseSection extends StatelessWidget {
   const _ModelPhaseSection({
     required this.phase,
@@ -438,7 +442,13 @@ class _ModelPhaseSection extends StatelessWidget {
         if (state is! ModelRoutingReady) {
           return const SizedBox.shrink();
         }
-        final model = state.modelByPhase[phase] ?? AgentModel.sonnet;
+        final availableModels = state.availableModels[phase] ?? const [];
+        final model =
+            state.modelByPhase[phase] ??
+            (availableModels.isEmpty ? null : availableModels.first);
+        if (model == null) {
+          return const SizedBox.shrink();
+        }
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -452,9 +462,9 @@ class _ModelPhaseSection extends StatelessWidget {
               style: AionText.bodySm.copyWith(color: c.textMuted),
             ),
             const SizedBox(height: AionSpacing.sp8),
-            AppDropdown<AgentModel>(
+            AppDropdown<AgentModelDescriptor>(
               value: model,
-              items: AgentModel.values,
+              items: availableModels,
               itemLabel: (m) => m.label,
               semanticsLabel: label,
               onChanged: (m) => context
@@ -621,7 +631,8 @@ class _ExecutionContextCapHelperRow extends StatelessWidget {
   /// practice).
   final int? parsed;
 
-  /// The execution-phase model's real `AgentModel.contextWindowTokens`.
+  /// The execution-phase model's real
+  /// `AgentModelDescriptor.contextWindowTokens`.
   final int limit;
 
   /// Whether [parsed] is at or above [limit] — the live entry would be

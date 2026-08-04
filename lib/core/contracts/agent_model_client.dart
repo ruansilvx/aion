@@ -29,10 +29,11 @@ class AgentRequest extends Equatable {
   /// The user- or system-authored prompt text.
   final String prompt;
 
-  /// The model identifier to run against — one of `AgentModel`'s `id`
-  /// values (`features/providers/domain/enums/agent_model.dart`). Not
-  /// validated here; an unrecognized id is a provider-level error
-  /// surfaced as [AgentErrorEvent].
+  /// The model identifier to run against — one of an
+  /// `AgentModelDescriptor`'s `modelId` values
+  /// (`core/contracts/agent_model_descriptor.dart`). Not validated here;
+  /// an unrecognized id is a provider-level error surfaced as
+  /// [AgentErrorEvent].
   final String model;
 
   /// When `true`, the run may edit files, run git/bash, and use MCP —

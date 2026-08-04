@@ -5,7 +5,9 @@ import 'dart:io';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 
-import 'package:aion/core/contracts/agent_model_client.dart';
+import 'package:aion/core/contracts/agent_model_descriptor.dart';
+import 'package:aion/core/contracts/agent_provider.dart';
+import 'package:aion/core/contracts/provider_registry.dart';
 import 'package:aion/core/git/git_repository_client.dart';
 import 'package:aion/features/providers/domain/enums/model_phase.dart';
 import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
@@ -31,7 +33,7 @@ import 'package:aion/features/tickets/presentation/cubit/inbox_state.dart';
 /// mirroring `DocumentationCubit`'s own per-route provisioning.
 ///
 /// Constructed with [_ticketRepository]/[_commentRepository]/
-/// [_linkRepository]/[_agentClient]/[_modelRoutingRepository] per
+/// [_linkRepository]/[_providerRegistry]/[_modelRoutingRepository] per
 /// design.md §5's stated dependency list — all five required, since
 /// every one of the Inbox's four purposes *is* an agent call; unlike
 /// `TicketsCubit`, there's no reduced ticket-CRUD-only "core" mode to
@@ -52,7 +54,7 @@ class InboxCubit extends Cubit<InboxState> {
     this._ticketRepository,
     this._commentRepository,
     this._linkRepository,
-    this._agentClient,
+    this._providerRegistry,
     this._modelRoutingRepository, {
     GitRepositoryClient? gitClient,
     String? projectRootPath,
@@ -64,7 +66,7 @@ class InboxCubit extends Cubit<InboxState> {
   final TicketRepository _ticketRepository;
   final CommentRepository _commentRepository;
   final TicketLinkRepository _linkRepository;
-  final AgentModelClient _agentClient;
+  final ProviderRegistry _providerRegistry;
   final ModelRoutingRepository _modelRoutingRepository;
   late final GitRepositoryClient? _gitClient;
   late final String? _projectRootPath;
@@ -74,6 +76,19 @@ class InboxCubit extends Cubit<InboxState> {
   /// Every Inbox-spawned chat is a parentless `chat` ticket — the only
   /// type [load] queries for.
   static const _chatTypes = [TicketType.chat];
+
+  /// Resolves [phase] to its currently configured [AgentModelDescriptor]
+  /// (via [_modelRoutingRepository]) and that model's [AgentProvider]
+  /// (via [_providerRegistry]). Shared helper so every one of the four
+  /// launch methods resolves the pair identically — see
+  /// `aion-arch/changes/pluggable-provider-abstraction/design.md` §7.
+  Future<(AgentModelDescriptor, AgentProvider)> _resolveModelAndProvider(
+    ModelPhase phase,
+  ) async {
+    final model = await _modelRoutingRepository.getModelForPhase(phase);
+    final provider = _providerRegistry.providerById(model.providerId);
+    return (model, provider);
+  }
 
   /// Fetches every Inbox-spawned chat (`getTicketsByParent(null, types:
   /// [TicketType.chat])`, filtered defensively to `inboxPurpose != null`
@@ -113,11 +128,12 @@ class InboxCubit extends Cubit<InboxState> {
       );
       final prompt = _brainDumpPrompt(rawText);
       await _postSystemPrompt(chat.id, prompt);
-      final model = await _modelRoutingRepository.getModelForPhase(
+      final (model, provider) = await _resolveModelAndProvider(
         ModelPhase.frontier,
       );
       final succeeded = await ChatCubit.runChatTurn(
-        client: _agentClient,
+        client: provider.client,
+        provider: provider,
         commentRepo: _commentRepository,
         chatTicketId: chat.id,
         prompt: prompt,
@@ -153,11 +169,12 @@ class InboxCubit extends Cubit<InboxState> {
       );
       final prompt = await _assembleWhatNextContext();
       await _postSystemPrompt(chat.id, prompt);
-      final model = await _modelRoutingRepository.getModelForPhase(
+      final (model, provider) = await _resolveModelAndProvider(
         ModelPhase.frontier,
       );
       await ChatCubit.runChatTurn(
-        client: _agentClient,
+        client: provider.client,
+        provider: provider,
         commentRepo: _commentRepository,
         chatTicketId: chat.id,
         prompt: prompt,
@@ -189,11 +206,12 @@ class InboxCubit extends Cubit<InboxState> {
       );
       final prompt = await _assembleReleasePlanningContext();
       await _postSystemPrompt(chat.id, prompt);
-      final model = await _modelRoutingRepository.getModelForPhase(
+      final (model, provider) = await _resolveModelAndProvider(
         ModelPhase.frontier,
       );
       final succeeded = await ChatCubit.runChatTurn(
-        client: _agentClient,
+        client: provider.client,
+        provider: provider,
         commentRepo: _commentRepository,
         chatTicketId: chat.id,
         prompt: prompt,
@@ -295,13 +313,14 @@ class InboxCubit extends Cubit<InboxState> {
       );
       final prompt = _qaPrompt(initialQuestion);
       await _postSystemPrompt(chat.id, prompt);
-      final model = await _modelRoutingRepository.getModelForPhase(
+      final (model, provider) = await _resolveModelAndProvider(
         ModelPhase.capable,
       );
       try {
         await gitClient.createWorktree(rootPath, worktreePath, branchName);
         await ChatCubit.runChatTurn(
-          client: _agentClient,
+          client: provider.client,
+          provider: provider,
           commentRepo: _commentRepository,
           chatTicketId: chat.id,
           prompt: prompt,

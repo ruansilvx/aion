@@ -3,7 +3,6 @@
 // widgets. The data layer (SharedPrefsModelRoutingRepository) is
 // intentionally not exported — see flutter-conventions.md "Barrel files".
 
-export 'domain/enums/agent_model.dart';
 export 'domain/enums/model_phase.dart';
 export 'domain/enums/provider_connection_status.dart';
 export 'domain/repositories/execution_context_cap_repository.dart';

@@ -9,12 +9,16 @@ import 'package:aion/core/automation/automation_confidence.dart';
 import 'package:aion/core/automation/automation_context.dart';
 import 'package:aion/core/automation/automation_settings_repository.dart';
 import 'package:aion/core/contracts/agent_model_client.dart';
+import 'package:aion/core/contracts/agent_model_descriptor.dart';
+import 'package:aion/core/contracts/agent_provider.dart';
+import 'package:aion/core/contracts/consumption_signal.dart';
 import 'package:aion/core/contracts/embedding_provider.dart';
+import 'package:aion/core/contracts/provider_id.dart';
+import 'package:aion/core/contracts/provider_registry.dart';
 import 'package:aion/core/database/app_database.dart';
 import 'package:aion/core/git/git_repository_client.dart';
 import 'package:aion/core/git/github_cli_client.dart';
 import 'package:aion/features/projects/projects.dart';
-import 'package:aion/features/providers/domain/enums/agent_model.dart';
 import 'package:aion/features/providers/domain/enums/model_phase.dart';
 import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
 import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
@@ -29,6 +33,10 @@ class MockTicketGitProjector extends Mock implements TicketGitProjector {}
 class MockTicketLinkRepository extends Mock implements TicketLinkRepository {}
 
 class MockAgentModelClient extends Mock implements AgentModelClient {}
+
+class MockAgentProvider extends Mock implements AgentProvider {}
+
+class MockProviderRegistry extends Mock implements ProviderRegistry {}
 
 class MockCommentRepository extends Mock implements CommentRepository {}
 
@@ -110,6 +118,54 @@ void stubStatefulComments(
     final comment = invocation.positionalArguments[0] as TicketComment;
     if (comment.ticketId == chatId) comments.add(comment);
   });
+}
+
+const _sonnet = AgentModelDescriptor(
+  providerId: ProviderId.claudeAgentSdk,
+  modelId: 'claude-sonnet-5',
+  label: 'Sonnet 5',
+  contextWindowTokens: 200000,
+);
+const _opus = AgentModelDescriptor(
+  providerId: ProviderId.claudeAgentSdk,
+  modelId: 'claude-opus-4-8',
+  label: 'Opus 4.8',
+  contextWindowTokens: 200000,
+);
+const _haiku = AgentModelDescriptor(
+  providerId: ProviderId.claudeAgentSdk,
+  modelId: 'claude-haiku-4-5',
+  label: 'Haiku 4.5',
+  contextWindowTokens: 200000,
+);
+
+/// Wires a [MockAgentProvider]/[MockProviderRegistry] pair around
+/// [client] — [provider.client] returns [client], `normalizeErrorMessage`/
+/// `describeOverage` are identity-ish pass-throughs, and
+/// `availableModels` lists [_sonnet] first (so `_resolveModel`'s
+/// no-[ModelRoutingRepository] fallback — `registry.availableProviders
+/// .first.availableModels.first` — resolves to `_sonnet`, preserving
+/// every existing test's prior `AgentModel.sonnet`-fallback assumption).
+({MockAgentProvider provider, MockProviderRegistry registry})
+buildProviderStack(MockAgentModelClient client) {
+  final provider = MockAgentProvider();
+  final registry = MockProviderRegistry();
+  when(() => provider.client).thenReturn(client);
+  when(
+    () => provider.availableModels,
+  ).thenReturn(const [_sonnet, _opus, _haiku]);
+  when(
+    () => provider.normalizeErrorMessage(any()),
+  ).thenAnswer((invocation) => invocation.positionalArguments[0] as String);
+  when(() => provider.describeOverage(any())).thenAnswer(
+    (invocation) =>
+        UsageWindowConsumption(invocation.positionalArguments[0] as String),
+  );
+  when(() => registry.availableProviders).thenReturn([provider]);
+  when(
+    () => registry.providerById(ProviderId.claudeAgentSdk),
+  ).thenReturn(provider);
+  return (provider: provider, registry: registry);
 }
 
 void main() {
@@ -1777,16 +1833,18 @@ void main() {
 
   group('advanceSddStage', () {
     late MockAgentModelClient agentClient;
+    late MockProviderRegistry registry;
     late MockCommentRepository commentRepository;
 
     setUp(() {
       agentClient = MockAgentModelClient();
+      registry = buildProviderStack(agentClient).registry;
       commentRepository = MockCommentRepository();
     });
 
     TicketsCubit buildCubit() => TicketsCubit(
       repository,
-      agentClient: agentClient,
+      providerRegistry: registry,
       commentRepository: commentRepository,
     );
 
@@ -1840,7 +1898,8 @@ void main() {
 
     blocTest<TicketsCubit, TicketsState>(
       'persists the next stage and spawns a chat ticket once the '
-      'precondition is met, falling back to AgentModel.sonnet when no '
+      'precondition is met, falling back to the first registered '
+      'provider\'s first model when no '
       'ModelRoutingRepository was supplied',
       setUp: () {
         final advancedEpic = Ticket(
@@ -1883,7 +1942,7 @@ void main() {
           () => agentClient.run(
             any(
               that: predicate<AgentRequest>(
-                (request) => request.model == AgentModel.sonnet.id,
+                (request) => request.model == _sonnet.modelId,
               ),
             ),
           ),
@@ -1894,11 +1953,13 @@ void main() {
 
   group('advanceSddStage — design gate (designBrief/designSync)', () {
     late MockAgentModelClient agentClient;
+    late MockProviderRegistry registry;
     late MockCommentRepository commentRepository;
     late MockTicketLinkRepository linkRepository;
 
     setUp(() {
       agentClient = MockAgentModelClient();
+      registry = buildProviderStack(agentClient).registry;
       commentRepository = MockCommentRepository();
       linkRepository = MockTicketLinkRepository();
       when(
@@ -1918,7 +1979,7 @@ void main() {
     TicketsCubit buildCubit() => TicketsCubit(
       repository,
       linkRepository: linkRepository,
-      agentClient: agentClient,
+      providerRegistry: registry,
       commentRepository: commentRepository,
     );
 
@@ -2102,10 +2163,10 @@ void main() {
           ),
         );
       },
-      // No linkRepository this time — only agentClient/commentRepository.
+      // No linkRepository this time — only providerRegistry/commentRepository.
       build: () => TicketsCubit(
         repository,
-        agentClient: agentClient,
+        providerRegistry: registry,
         commentRepository: commentRepository,
       ),
       act: (cubit) => cubit.advanceSddStage(storyProposed),
@@ -2340,16 +2401,18 @@ void main() {
 
   group('advanceSddStage — backgrounded stage-chat turn', () {
     late MockAgentModelClient agentClient;
+    late MockProviderRegistry registry;
     late MockCommentRepository commentRepository;
 
     setUp(() {
       agentClient = MockAgentModelClient();
+      registry = buildProviderStack(agentClient).registry;
       commentRepository = MockCommentRepository();
     });
 
     TicketsCubit buildCubit() => TicketsCubit(
       repository,
-      agentClient: agentClient,
+      providerRegistry: registry,
       commentRepository: commentRepository,
     );
 
@@ -2534,16 +2597,18 @@ void main() {
 
   group('retryDesignSync', () {
     late MockAgentModelClient agentClient;
+    late MockProviderRegistry registry;
     late MockCommentRepository commentRepository;
 
     setUp(() {
       agentClient = MockAgentModelClient();
+      registry = buildProviderStack(agentClient).registry;
       commentRepository = MockCommentRepository();
     });
 
     TicketsCubit buildCubit() => TicketsCubit(
       repository,
-      agentClient: agentClient,
+      providerRegistry: registry,
       commentRepository: commentRepository,
     );
 
@@ -2613,6 +2678,7 @@ void main() {
 
   group('coding-execution trigger', () {
     late MockAgentModelClient agentClient;
+    late MockProviderRegistry registry;
     late MockCommentRepository commentRepository;
     late MockAutomationSettingsRepository automationSettingsRepository;
     late MockGitRepositoryClient gitClient;
@@ -2621,6 +2687,7 @@ void main() {
 
     setUp(() {
       agentClient = MockAgentModelClient();
+      registry = buildProviderStack(agentClient).registry;
       commentRepository = MockCommentRepository();
       automationSettingsRepository = MockAutomationSettingsRepository();
       gitClient = MockGitRepositoryClient();
@@ -2632,7 +2699,7 @@ void main() {
 
     TicketsCubit buildFullCubit() => TicketsCubit(
       repository,
-      agentClient: agentClient,
+      providerRegistry: registry,
       commentRepository: commentRepository,
       automationSettingsRepository: automationSettingsRepository,
       projectRootPath: '/fake/project/root',
@@ -2906,7 +2973,7 @@ void main() {
       'in flight',
       build: () => TicketsCubit(
         repository,
-        agentClient: agentClient,
+        providerRegistry: registry,
         commentRepository: commentRepository,
         projectRootPath: '/fake/project/root',
         gitClient: gitClient,
@@ -3248,7 +3315,7 @@ void main() {
       'dequeues and runs the next Task once the in-flight run completes',
       build: () => TicketsCubit(
         repository,
-        agentClient: agentClient,
+        providerRegistry: registry,
         commentRepository: commentRepository,
         projectRootPath: '/fake/project/root',
         gitClient: gitClient,
@@ -3316,6 +3383,7 @@ void main() {
     '_refreshInFlightBoardState (board-execution-indicators-and-notifications)',
     () {
       late MockAgentModelClient agentClient;
+      late MockProviderRegistry registry;
       late MockCommentRepository commentRepository;
       late MockAutomationSettingsRepository automationSettingsRepository;
       late MockGitRepositoryClient gitClient;
@@ -3324,6 +3392,7 @@ void main() {
 
       setUp(() {
         agentClient = MockAgentModelClient();
+        registry = buildProviderStack(agentClient).registry;
         commentRepository = MockCommentRepository();
         automationSettingsRepository = MockAutomationSettingsRepository();
         gitClient = MockGitRepositoryClient();
@@ -3335,7 +3404,7 @@ void main() {
 
       TicketsCubit buildFullCubit() => TicketsCubit(
         repository,
-        agentClient: agentClient,
+        providerRegistry: registry,
         commentRepository: commentRepository,
         automationSettingsRepository: automationSettingsRepository,
         projectRootPath: '/fake/project/root',
@@ -3502,7 +3571,7 @@ void main() {
         // observe changeTicketStatus's own single emission, not a full run.
         build: () => TicketsCubit(
           repository,
-          agentClient: agentClient,
+          providerRegistry: registry,
           commentRepository: commentRepository,
         ),
         setUp: () {
@@ -3794,6 +3863,7 @@ void main() {
     'coding-execution reliability (worktree isolation, verify gate, retry)',
     () {
       late MockAgentModelClient agentClient;
+      late MockProviderRegistry registry;
       late MockCommentRepository commentRepository;
       late MockAutomationSettingsRepository automationSettingsRepository;
       late MockGitRepositoryClient gitClient;
@@ -3803,6 +3873,7 @@ void main() {
 
       setUp(() {
         agentClient = MockAgentModelClient();
+        registry = buildProviderStack(agentClient).registry;
         commentRepository = MockCommentRepository();
         automationSettingsRepository = MockAutomationSettingsRepository();
         gitClient = MockGitRepositoryClient();
@@ -3867,7 +3938,7 @@ void main() {
 
       TicketsCubit buildCubit() => TicketsCubit(
         repository,
-        agentClient: agentClient,
+        providerRegistry: registry,
         commentRepository: commentRepository,
         automationSettingsRepository: automationSettingsRepository,
         projectRootPath: '/fake/project/root',
@@ -4239,9 +4310,9 @@ void main() {
         build: buildCubit,
         setUp: () {
           // No ModelRoutingRepository is supplied to this group's
-          // buildCubit, so the execution model resolves to
-          // AgentModel.sonnet's real 200,000-token contextWindowTokens
-          // (see TicketsCubit._resolveModel), and with no
+          // buildCubit, so the execution model resolves to the fallback
+          // provider's first model's real 200,000-token
+          // contextWindowTokens (see TicketsCubit._resolveModel), and with no
           // ExecutionContextCapRepository either, the effective cap is
           // that same 200,000 with no override available. 190,000 >=
           // 90% of that, so the existing chat is already over the
@@ -4647,6 +4718,7 @@ void main() {
 
   group('per-phase model routing (per-phase-tier-based-model-routing)', () {
     late MockAgentModelClient agentClient;
+    late MockProviderRegistry registry;
     late MockCommentRepository commentRepository;
     late MockTicketLinkRepository linkRepository;
     late MockAutomationSettingsRepository automationSettingsRepository;
@@ -4657,6 +4729,7 @@ void main() {
 
     setUp(() {
       agentClient = MockAgentModelClient();
+      registry = buildProviderStack(agentClient).registry;
       commentRepository = MockCommentRepository();
       linkRepository = MockTicketLinkRepository();
       automationSettingsRepository = MockAutomationSettingsRepository();
@@ -4687,19 +4760,19 @@ void main() {
       ).thenAnswer((_) async => []);
       when(
         () => modelRoutingRepository.getModelForPhase(ModelPhase.frontier),
-      ).thenAnswer((_) async => AgentModel.opus);
+      ).thenAnswer((_) async => _opus);
       when(
         () => modelRoutingRepository.getModelForPhase(ModelPhase.capable),
-      ).thenAnswer((_) async => AgentModel.haiku);
+      ).thenAnswer((_) async => _haiku);
       when(
         () => modelRoutingRepository.getModelForPhase(ModelPhase.execution),
-      ).thenAnswer((_) async => AgentModel.sonnet);
+      ).thenAnswer((_) async => _sonnet);
     });
 
     TicketsCubit buildCubit() => TicketsCubit(
       repository,
       linkRepository: linkRepository,
-      agentClient: agentClient,
+      providerRegistry: registry,
       commentRepository: commentRepository,
       automationSettingsRepository: automationSettingsRepository,
       modelRoutingRepository: modelRoutingRepository,
@@ -4746,7 +4819,7 @@ void main() {
           () => agentClient.run(
             any(
               that: predicate<AgentRequest>(
-                (request) => request.model == AgentModel.opus.id,
+                (request) => request.model == _opus.modelId,
               ),
             ),
           ),
@@ -4797,7 +4870,7 @@ void main() {
           () => agentClient.run(
             any(
               that: predicate<AgentRequest>(
-                (request) => request.model == AgentModel.haiku.id,
+                (request) => request.model == _haiku.modelId,
               ),
             ),
           ),
@@ -4823,7 +4896,7 @@ void main() {
           () => agentClient.run(
             any(
               that: predicate<AgentRequest>(
-                (request) => request.model == AgentModel.haiku.id,
+                (request) => request.model == _haiku.modelId,
               ),
             ),
           ),
@@ -4914,7 +4987,7 @@ void main() {
             any(
               that: predicate<AgentRequest>(
                 (request) =>
-                    request.model == AgentModel.sonnet.id &&
+                    request.model == _sonnet.modelId &&
                     request.toolsEnabled == true,
               ),
             ),
@@ -5151,6 +5224,7 @@ void main() {
 
   group('decomposition materialization (board-task-ordering-indication)', () {
     late MockAgentModelClient agentClient;
+    late MockProviderRegistry registry;
     late MockCommentRepository commentRepository;
     late MockTicketLinkRepository linkRepository;
 
@@ -5187,13 +5261,14 @@ void main() {
 
     setUp(() {
       agentClient = MockAgentModelClient();
+      registry = buildProviderStack(agentClient).registry;
       commentRepository = MockCommentRepository();
       linkRepository = MockTicketLinkRepository();
     });
 
     TicketsCubit buildCubit() => TicketsCubit(
       repository,
-      agentClient: agentClient,
+      providerRegistry: registry,
       commentRepository: commentRepository,
       linkRepository: linkRepository,
     );

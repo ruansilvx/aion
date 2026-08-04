@@ -3,7 +3,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
 import 'package:aion/core/contracts/agent_model_client.dart';
-import 'package:aion/features/providers/domain/enums/agent_model.dart';
+import 'package:aion/core/contracts/agent_model_descriptor.dart';
+import 'package:aion/core/contracts/agent_provider.dart';
+import 'package:aion/core/contracts/consumption_signal.dart';
+import 'package:aion/core/contracts/provider_id.dart';
+import 'package:aion/core/contracts/provider_registry.dart';
 import 'package:aion/features/providers/domain/enums/model_phase.dart';
 import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
 import 'package:aion/features/tickets/tickets.dart';
@@ -12,14 +16,39 @@ class MockCommentRepository extends Mock implements CommentRepository {}
 
 class MockAgentModelClient extends Mock implements AgentModelClient {}
 
+class MockAgentProvider extends Mock implements AgentProvider {}
+
+class MockProviderRegistry extends Mock implements ProviderRegistry {}
+
 class MockTicketRepository extends Mock implements TicketRepository {}
 
 class MockModelRoutingRepository extends Mock
     implements ModelRoutingRepository {}
 
+const _sonnet = AgentModelDescriptor(
+  providerId: ProviderId.claudeAgentSdk,
+  modelId: 'claude-sonnet-5',
+  label: 'Sonnet 5',
+  contextWindowTokens: 200000,
+);
+const _opus = AgentModelDescriptor(
+  providerId: ProviderId.claudeAgentSdk,
+  modelId: 'claude-opus-4-8',
+  label: 'Opus 4.8',
+  contextWindowTokens: 200000,
+);
+const _haiku = AgentModelDescriptor(
+  providerId: ProviderId.claudeAgentSdk,
+  modelId: 'claude-haiku-4-5',
+  label: 'Haiku 4.5',
+  contextWindowTokens: 200000,
+);
+
 void main() {
   late MockCommentRepository repository;
   late MockAgentModelClient client;
+  late MockAgentProvider provider;
+  late MockProviderRegistry registry;
   late MockTicketRepository ticketRepository;
   late MockModelRoutingRepository modelRoutingRepository;
 
@@ -61,12 +90,26 @@ void main() {
   setUp(() {
     repository = MockCommentRepository();
     client = MockAgentModelClient();
+    provider = MockAgentProvider();
+    registry = MockProviderRegistry();
     ticketRepository = MockTicketRepository();
     modelRoutingRepository = MockModelRoutingRepository();
+
+    when(() => provider.client).thenReturn(client);
+    when(
+      () => provider.normalizeErrorMessage(any()),
+    ).thenAnswer((invocation) => invocation.positionalArguments[0] as String);
+    when(() => provider.describeOverage(any())).thenAnswer(
+      (invocation) =>
+          UsageWindowConsumption(invocation.positionalArguments[0] as String),
+    );
+    when(
+      () => registry.providerById(ProviderId.claudeAgentSdk),
+    ).thenReturn(provider);
   });
 
   ChatCubit buildCubit() =>
-      ChatCubit(repository, client, ticketRepository, modelRoutingRepository);
+      ChatCubit(repository, registry, ticketRepository, modelRoutingRepository);
 
   group('loadMessages', () {
     blocTest<ChatCubit, ChatState>(
@@ -106,7 +149,7 @@ void main() {
         ).thenAnswer((_) async => chatTicket);
         when(
           () => modelRoutingRepository.getModelForPhase(ModelPhase.capable),
-        ).thenAnswer((_) async => AgentModel.sonnet);
+        ).thenAnswer((_) async => _sonnet);
 
         var commentsAfterHuman = <TicketComment>[];
         var addCallCount = 0;
@@ -131,7 +174,7 @@ void main() {
                     ticketId: 'chat-1',
                     content: 'Hi there',
                     authorType: CommentAuthorType.ai,
-                    aiModel: AgentModel.sonnet.id,
+                    aiModel: _sonnet.modelId,
                     createdAt: DateTime(2026),
                   ),
                 ]
@@ -175,7 +218,7 @@ void main() {
         ).thenAnswer((_) async => chatTicket);
         when(
           () => modelRoutingRepository.getModelForPhase(ModelPhase.capable),
-        ).thenAnswer((_) async => AgentModel.sonnet);
+        ).thenAnswer((_) async => _sonnet);
         when(() => repository.addComment(any())).thenAnswer((_) async {});
         when(
           () => repository.getCommentsForTicket('chat-1'),
@@ -230,7 +273,7 @@ void main() {
         ).thenAnswer((_) async => storyParent);
         when(
           () => modelRoutingRepository.getModelForPhase(ModelPhase.frontier),
-        ).thenAnswer((_) async => AgentModel.opus);
+        ).thenAnswer((_) async => _opus);
         when(() => repository.addComment(any())).thenAnswer((_) async {});
         when(
           () => repository.getCommentsForTicket('chat-story'),
@@ -250,7 +293,7 @@ void main() {
           () => client.run(
             any(
               that: predicate<AgentRequest>(
-                (request) => request.model == AgentModel.opus.id,
+                (request) => request.model == _opus.modelId,
               ),
             ),
           ),
@@ -288,7 +331,7 @@ void main() {
         ).thenAnswer((_) async => taskParent);
         when(
           () => modelRoutingRepository.getModelForPhase(ModelPhase.execution),
-        ).thenAnswer((_) async => AgentModel.haiku);
+        ).thenAnswer((_) async => _haiku);
         when(() => repository.addComment(any())).thenAnswer((_) async {});
         when(
           () => repository.getCommentsForTicket('chat-task'),
@@ -308,7 +351,7 @@ void main() {
           () => client.run(
             any(
               that: predicate<AgentRequest>(
-                (request) => request.model == AgentModel.haiku.id,
+                (request) => request.model == _haiku.modelId,
               ),
             ),
           ),
@@ -346,7 +389,7 @@ void main() {
         ).thenAnswer((_) async => bugParent);
         when(
           () => modelRoutingRepository.getModelForPhase(ModelPhase.execution),
-        ).thenAnswer((_) async => AgentModel.haiku);
+        ).thenAnswer((_) async => _haiku);
         when(() => repository.addComment(any())).thenAnswer((_) async {});
         when(
           () => repository.getCommentsForTicket('chat-bug'),
@@ -366,7 +409,7 @@ void main() {
           () => client.run(
             any(
               that: predicate<AgentRequest>(
-                (request) => request.model == AgentModel.haiku.id,
+                (request) => request.model == _haiku.modelId,
               ),
             ),
           ),
@@ -397,7 +440,7 @@ void main() {
         ).thenAnswer((_) async => null);
         when(
           () => modelRoutingRepository.getModelForPhase(ModelPhase.capable),
-        ).thenAnswer((_) async => AgentModel.sonnet);
+        ).thenAnswer((_) async => _sonnet);
         when(() => repository.addComment(any())).thenAnswer((_) async {});
         when(
           () => repository.getCommentsForTicket('chat-orphan'),
@@ -418,8 +461,12 @@ void main() {
   });
 
   group('_phaseForChat — Inbox purpose (new-project-onboarding-inbox)', () {
-    ChatCubit buildCubitForPurpose() =>
-        ChatCubit(repository, client, ticketRepository, modelRoutingRepository);
+    ChatCubit buildCubitForPurpose() => ChatCubit(
+      repository,
+      registry,
+      ticketRepository,
+      modelRoutingRepository,
+    );
 
     Ticket inboxChat({
       required String id,
@@ -440,7 +487,7 @@ void main() {
     void stubTurn(String chatId, ModelPhase phase) {
       when(
         () => modelRoutingRepository.getModelForPhase(phase),
-      ).thenAnswer((_) async => AgentModel.sonnet);
+      ).thenAnswer((_) async => _sonnet);
       when(() => repository.addComment(any())).thenAnswer((_) async {});
       when(
         () => repository.getCommentsForTicket(chatId),
@@ -540,10 +587,11 @@ void main() {
 
       final succeeded = await ChatCubit.runChatTurn(
         client: client,
+        provider: provider,
         commentRepo: repository,
         chatTicketId: 'chat-1',
         prompt: 'Hello',
-        model: AgentModel.sonnet,
+        model: _sonnet,
       );
 
       expect(succeeded, isTrue);
@@ -569,15 +617,44 @@ void main() {
 
         final succeeded = await ChatCubit.runChatTurn(
           client: client,
+          provider: provider,
           commentRepo: repository,
           chatTicketId: 'chat-1',
           prompt: 'Hello',
-          model: AgentModel.sonnet,
+          model: _sonnet,
         );
 
         expect(succeeded, isFalse);
         expect(persisted?.inputTokens, isNull);
         expect(persisted?.outputTokens, isNull);
+      },
+    );
+
+    test(
+      'an AgentOverageDetectedEvent reaches onConsumptionSignal as a '
+      'UsageWindowConsumption, via provider.describeOverage',
+      () async {
+        when(() => repository.addComment(any())).thenAnswer((_) async {});
+        when(() => client.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentOverageDetectedEvent("Over your plan's usage limit."),
+            AgentDoneEvent(),
+          ]),
+        );
+
+        ConsumptionSignal? received;
+        await ChatCubit.runChatTurn(
+          client: client,
+          provider: provider,
+          commentRepo: repository,
+          chatTicketId: 'chat-1',
+          prompt: 'Hello',
+          model: _sonnet,
+          onConsumptionSignal: (signal) => received = signal,
+        );
+
+        expect(received, isA<UsageWindowConsumption>());
+        expect(received!.message, "Over your plan's usage limit.");
       },
     );
   });

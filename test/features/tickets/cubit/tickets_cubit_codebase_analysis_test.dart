@@ -4,12 +4,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
 import 'package:aion/core/contracts/agent_model_client.dart';
+import 'package:aion/core/contracts/agent_model_descriptor.dart';
+import 'package:aion/core/contracts/agent_provider.dart';
+import 'package:aion/core/contracts/consumption_signal.dart';
+import 'package:aion/core/contracts/provider_id.dart';
+import 'package:aion/core/contracts/provider_registry.dart';
 import 'package:aion/core/git/git_repository_client.dart';
 import 'package:aion/features/tickets/tickets.dart';
 
 class MockTicketRepository extends Mock implements TicketRepository {}
 
 class MockAgentModelClient extends Mock implements AgentModelClient {}
+
+class MockAgentProvider extends Mock implements AgentProvider {}
+
+class MockProviderRegistry extends Mock implements ProviderRegistry {}
 
 class MockCommentRepository extends Mock implements CommentRepository {}
 
@@ -53,9 +62,42 @@ void stubStatefulComments(MockCommentRepository commentRepository) {
   });
 }
 
+/// Wires a [MockAgentProvider]/[MockProviderRegistry] pair around
+/// [client] — mirrors `tickets_cubit_test.dart`'s helper of the same
+/// shape. No [ModelRoutingRepository] is supplied anywhere in this file,
+/// so every model resolution goes through `TicketsCubit._resolveModel`'s
+/// fallback (`registry.availableProviders.first.availableModels.first`).
+({MockAgentProvider provider, MockProviderRegistry registry})
+buildProviderStack(MockAgentModelClient client) {
+  final provider = MockAgentProvider();
+  final registry = MockProviderRegistry();
+  when(() => provider.client).thenReturn(client);
+  when(() => provider.availableModels).thenReturn(const [
+    AgentModelDescriptor(
+      providerId: ProviderId.claudeAgentSdk,
+      modelId: 'claude-sonnet-5',
+      label: 'Sonnet 5',
+      contextWindowTokens: 200000,
+    ),
+  ]);
+  when(
+    () => provider.normalizeErrorMessage(any()),
+  ).thenAnswer((invocation) => invocation.positionalArguments[0] as String);
+  when(() => provider.describeOverage(any())).thenAnswer(
+    (invocation) =>
+        UsageWindowConsumption(invocation.positionalArguments[0] as String),
+  );
+  when(() => registry.availableProviders).thenReturn([provider]);
+  when(
+    () => registry.providerById(ProviderId.claudeAgentSdk),
+  ).thenReturn(provider);
+  return (provider: provider, registry: registry);
+}
+
 void main() {
   late MockTicketRepository repository;
   late MockAgentModelClient agentClient;
+  late MockProviderRegistry registry;
   late MockCommentRepository commentRepository;
   late MockGitRepositoryClient gitClient;
   late MockTicketLinkRepository linkRepository;
@@ -88,6 +130,7 @@ void main() {
   setUp(() {
     repository = MockTicketRepository();
     agentClient = MockAgentModelClient();
+    registry = buildProviderStack(agentClient).registry;
     commentRepository = MockCommentRepository();
     gitClient = MockGitRepositoryClient();
     linkRepository = MockTicketLinkRepository();
@@ -105,7 +148,7 @@ void main() {
   group('runCodebaseSummarization — shallow', () {
     TicketsCubit buildCubit() => TicketsCubit(
       repository,
-      agentClient: agentClient,
+      providerRegistry: registry,
       linkRepository: linkRepository,
       projectRootPath: '/fake/project/root',
       projectName: 'Fake Project',
@@ -206,7 +249,7 @@ void main() {
       'emits CodebaseAnalysisFailed immediately, creating no tickets, when '
       'constructed without a project root path',
       () async {
-        final cubit = TicketsCubit(repository, agentClient: agentClient);
+        final cubit = TicketsCubit(repository, providerRegistry: registry);
         final statuses = <CodebaseAnalysisStatus>[];
         final sub = cubit.codebaseAnalysisStatus.listen(statuses.add);
 
@@ -224,7 +267,7 @@ void main() {
   group('runCodebaseSummarization — full', () {
     TicketsCubit buildCubit() => TicketsCubit(
       repository,
-      agentClient: agentClient,
+      providerRegistry: registry,
       commentRepository: commentRepository,
       gitClient: gitClient,
       linkRepository: linkRepository,

@@ -3,7 +3,10 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:aion/core/contracts/agent_model_client.dart';
-import 'package:aion/features/providers/domain/enums/agent_model.dart';
+import 'package:aion/core/contracts/agent_model_descriptor.dart';
+import 'package:aion/core/contracts/agent_provider.dart';
+import 'package:aion/core/contracts/consumption_signal.dart';
+import 'package:aion/core/contracts/provider_registry.dart';
 import 'package:aion/features/providers/domain/enums/model_phase.dart';
 import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
@@ -20,25 +23,25 @@ import 'package:aion/features/tickets/presentation/cubit/chat_state.dart';
 /// for every other ticket type — a chat ticket's comment thread already
 /// is its transcript, see
 /// `aion-arch/changes/sdd-ticket-execution/proposal.md`'s re-scoping)
-/// plus [AgentModelClient] for generating the AI reply. Screen-scoped —
-/// provided instead of `CommentsCubit` only when `ticket.type ==
-/// TicketType.chat`. [_ticketRepository]/[_modelRoutingRepository] are
-/// used to infer which [ModelPhase] a chat belongs to (see
-/// [_phaseForChat]) so [sendMessage] can resolve the phase-appropriate
-/// model itself, added for
+/// plus [ProviderRegistry] to resolve the [AgentProvider] that generates
+/// the AI reply. Screen-scoped — provided instead of `CommentsCubit` only
+/// when `ticket.type == TicketType.chat`.
+/// [_ticketRepository]/[_modelRoutingRepository] are used to infer which
+/// [ModelPhase] a chat belongs to (see [_phaseForChat]) so [sendMessage]
+/// can resolve the phase-appropriate model/provider itself, added for
 /// `aion-arch/changes/per-phase-tier-based-model-routing`.
 class ChatCubit extends Cubit<ChatState> {
-  /// Creates a [ChatCubit] backed by [_repository], [_client],
+  /// Creates a [ChatCubit] backed by [_repository], [_providerRegistry],
   /// [_ticketRepository], and [_modelRoutingRepository].
   ChatCubit(
     this._repository,
-    this._client,
+    this._providerRegistry,
     this._ticketRepository,
     this._modelRoutingRepository,
   ) : super(const ChatInitial());
 
   final CommentRepository _repository;
-  final AgentModelClient _client;
+  final ProviderRegistry _providerRegistry;
   final TicketRepository _ticketRepository;
   final ModelRoutingRepository _modelRoutingRepository;
 
@@ -55,8 +58,8 @@ class ChatCubit extends Cubit<ChatState> {
   }
 
   /// Posts a human comment with [content] on [chatTicketId], resolves the
-  /// model via [_phaseForChat]/[_modelRoutingRepository], then calls it
-  /// via [AgentModelClient.run], emitting [ChatLoaded] with
+  /// model/provider via [_phaseForChat]/[_resolveModelAndProvider], then
+  /// calls it via [AgentModelClient.run], emitting [ChatLoaded] with
   /// `streamingText` updated on every `AgentTextEvent` chunk, and
   /// `currentToolUse` updated on every `AgentToolUseEvent`, for live
   /// rendering. On completion, the accumulated reply is persisted as one
@@ -81,7 +84,7 @@ class ChatCubit extends Cubit<ChatState> {
       emit(ChatLoaded(afterHuman));
 
       final phase = await _phaseForChat(chatTicketId);
-      final model = await _modelRoutingRepository.getModelForPhase(phase);
+      final (model, provider) = await _resolveModelAndProvider(phase);
 
       // Tracks the most recent onChunk text so onToolUse can carry it
       // forward instead of blanking it — a tool call fired mid-turn
@@ -89,7 +92,8 @@ class ChatCubit extends Cubit<ChatState> {
       // ChatLoaded.streamingText to null via its constructor default.
       String? latestStreamingText;
       final succeeded = await runChatTurn(
-        client: _client,
+        client: provider.client,
+        provider: provider,
         commentRepo: _repository,
         chatTicketId: chatTicketId,
         prompt: content,
@@ -119,6 +123,19 @@ class ChatCubit extends Cubit<ChatState> {
     } catch (e) {
       emit(ChatError(e.toString()));
     }
+  }
+
+  /// Resolves [phase] to its currently configured [AgentModelDescriptor]
+  /// (via [_modelRoutingRepository]) and that model's [AgentProvider]
+  /// (via [_providerRegistry]). Shared helper so every model call site
+  /// resolves the pair identically — see
+  /// `aion-arch/changes/pluggable-provider-abstraction/design.md` §7.
+  Future<(AgentModelDescriptor, AgentProvider)> _resolveModelAndProvider(
+    ModelPhase phase,
+  ) async {
+    final model = await _modelRoutingRepository.getModelForPhase(phase);
+    final provider = _providerRegistry.providerById(model.providerId);
+    return (model, provider);
   }
 
   /// Infers which [ModelPhase] governs [chatTicketId]'s model calls, via
@@ -172,8 +189,8 @@ class ChatCubit extends Cubit<ChatState> {
   /// Calls [client]'s `run` with [prompt]/[model], accumulating every
   /// `AgentTextEvent` chunk (reported to [onChunk], if given) and, on a
   /// successful `AgentDoneEvent` completion, persisting the accumulated
-  /// text as one [CommentAuthorType.ai] comment (`aiModel: model.id`) via
-  /// [commentRepo]. On failure (an `AgentErrorEvent` or a thrown
+  /// text as one [CommentAuthorType.ai] comment (`aiModel: model.modelId`)
+  /// via [commentRepo]. On failure (an `AgentErrorEvent` or a thrown
   /// exception), persists a `'Execution failed: ...'`
   /// [CommentAuthorType.ai] comment instead — previously a failed run
   /// left no trace for anyone not watching the chat live. Returns `true`
@@ -181,10 +198,15 @@ class ChatCubit extends Cubit<ChatState> {
   /// and [workingDirectory] opt a run into real tool access (file edits,
   /// git, bash) scoped to that directory — only `TicketsCubit`'s
   /// coding-execution path sets these; every other caller leaves them at
-  /// their text-only defaults. [onOverageDetected], if given, is called
-  /// once per `AgentOverageDetectedEvent`. [onToolUse], if given, is
-  /// called once per `AgentToolUseEvent` with the tool's name and short
-  /// summary — added for
+  /// their text-only defaults. [provider] maps a raw
+  /// `AgentOverageDetectedEvent.message` into a [ConsumptionSignal] (via
+  /// `AgentProvider.describeOverage`, reported to [onConsumptionSignal] if
+  /// given, once per event) and a raw `AgentErrorEvent.message` into a
+  /// vendor-neutral one (via `AgentProvider.normalizeErrorMessage`) before
+  /// it's persisted/returned as `failureMessage` — see
+  /// `aion-arch/changes/pluggable-provider-abstraction/design.md` §4.
+  /// [onToolUse], if given, is called once per `AgentToolUseEvent` with
+  /// the tool's name and short summary — added for
   /// `aion-arch/changes/coding-execution-reliability-and-safety` so a
   /// long-running turn has live progress visibility. Shared by
   /// [sendMessage] and `TicketsCubit._spawnStageChat`/coding-execution
@@ -197,14 +219,15 @@ class ChatCubit extends Cubit<ChatState> {
   /// `aion-arch/changes/dont-spawn-new-chat-ticket-per-execution-trigger`.
   static Future<bool> runChatTurn({
     required AgentModelClient client,
+    required AgentProvider provider,
     required CommentRepository commentRepo,
     required String chatTicketId,
     required String prompt,
-    required AgentModel model,
+    required AgentModelDescriptor model,
     void Function(String textSoFar)? onChunk,
     bool toolsEnabled = false,
     String? workingDirectory,
-    void Function()? onOverageDetected,
+    void Function(ConsumptionSignal signal)? onConsumptionSignal,
     void Function(String toolName, String? summary)? onToolUse,
   }) async {
     final buffer = StringBuffer();
@@ -215,7 +238,7 @@ class ChatCubit extends Cubit<ChatState> {
       final events = await client.run(
         AgentRequest(
           prompt: prompt,
-          model: model.id,
+          model: model.modelId,
           toolsEnabled: toolsEnabled,
           workingDirectory: workingDirectory,
         ),
@@ -232,11 +255,11 @@ class ChatCubit extends Cubit<ChatState> {
               inputTokens: inputTokens,
               outputTokens: outputTokens,
             );
-          case AgentOverageDetectedEvent():
-            onOverageDetected?.call();
+          case AgentOverageDetectedEvent(:final message):
+            onConsumptionSignal?.call(provider.describeOverage(message));
           case AgentErrorEvent(:final message):
             succeeded = false;
-            failureMessage = message;
+            failureMessage = provider.normalizeErrorMessage(message);
         }
       }
     } catch (e) {
@@ -251,7 +274,7 @@ class ChatCubit extends Cubit<ChatState> {
           ticketId: chatTicketId,
           content: buffer.toString(),
           authorType: CommentAuthorType.ai,
-          aiModel: model.id,
+          aiModel: model.modelId,
           inputTokens: doneEvent?.inputTokens,
           outputTokens: doneEvent?.outputTokens,
           createdAt: DateTime.now(),
@@ -264,7 +287,7 @@ class ChatCubit extends Cubit<ChatState> {
           ticketId: chatTicketId,
           content: 'Execution failed: ${failureMessage ?? 'unknown error'}',
           authorType: CommentAuthorType.ai,
-          aiModel: model.id,
+          aiModel: model.modelId,
           inputTokens: doneEvent?.inputTokens,
           outputTokens: doneEvent?.outputTokens,
           createdAt: DateTime.now(),
