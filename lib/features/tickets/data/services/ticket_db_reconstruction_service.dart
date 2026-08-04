@@ -69,6 +69,15 @@ class TicketDbReconstructionService {
   /// Unparseable files are skipped and reported, not fatal to the run.
   /// After import, triggers [_embeddingProvider] in bulk for every
   /// imported ticket lacking a local embedding.
+  ///
+  /// If two different files parse to the same `ticketId` within a single
+  /// call, only the first is a true import (via
+  /// [TicketRepository.importTicket]) — every subsequent file sharing
+  /// that `ticketId` is treated as an update to the same row (via
+  /// [TicketRepository.updateTicket]) rather than a second import, since
+  /// a same-`ticketId` import would violate the row's uniqueness
+  /// constraint. This mirrors how a `ticketId` that already had a DB row
+  /// before the call was handled.
   Future<TicketReconstructionReport> reconstruct(String rootPath) async {
     final ticketsDir = Directory('$rootPath/tickets');
     if (!await ticketsDir.exists()) {
@@ -100,6 +109,7 @@ class TicketDbReconstructionService {
       } else {
         await _repository.importTicket(ticket);
       }
+      existingByTicketId[ticket.ticketId] = ticket;
       imported.add(ticket);
       importedCount++;
     }

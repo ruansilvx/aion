@@ -107,6 +107,27 @@ void main() {
     verifyNever(() => repository.createTicket(any()));
   });
 
+  test(
+    'two files sharing a ticketId: the first imports, the second updates '
+    'the same row instead of a second import',
+    () async {
+      when(() => repository.getAllTickets()).thenAnswer((_) async => []);
+      await File('${tempDir.path}/tickets/AIO-1.md').writeAsString(
+        serializer.serialize(ticket(ticketId: 'AIO-1', title: 'First file')),
+      );
+      await File('${tempDir.path}/tickets/AIO-1-dup.md').writeAsString(
+        serializer.serialize(ticket(ticketId: 'AIO-1', title: 'Second file')),
+      );
+
+      final report = await service.reconstruct(tempDir.path);
+
+      expect(report.importedCount, 2);
+      expect(report.skippedPaths, isEmpty);
+      verify(() => repository.importTicket(any())).called(1);
+      verify(() => repository.updateTicket(any())).called(1);
+    },
+  );
+
   test('skips and reports unparseable files without failing the run', () async {
     when(() => repository.getAllTickets()).thenAnswer((_) async => []);
     await File('${tempDir.path}/tickets/AIO-1.md')
