@@ -30,7 +30,8 @@ class ExecutionContextCapReady extends ExecutionContextCapState {
   /// The persisted override, or `null` if none is set.
   final int? overrideTokens;
 
-  /// The execution-phase model's real `AgentModel.contextWindowTokens`.
+  /// The execution-phase model's real
+  /// `AgentModelDescriptor.contextWindowTokens`.
   final int modelDefaultTokens;
 
   @override

@@ -4,7 +4,7 @@
 /// context-window handoff cap (see
 /// `TicketsCubit._effectiveExecutionContextCap`). `null` means "no
 /// override — use the execution-phase model's real
-/// `AgentModel.contextWindowTokens`." Plain reads/writes only, no
+/// `AgentModelDescriptor.contextWindowTokens`." Plain reads/writes only, no
 /// validation — `TicketsCubit`/`ExecutionContextCapCubit` are responsible
 /// for never persisting a value at or above the model's real limit.
 abstract interface class ExecutionContextCapRepository {
