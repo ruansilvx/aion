@@ -2,6 +2,7 @@
 
 import 'package:flutter/widgets.dart';
 
+import 'package:aion/design_system/molecules/overlay_menu_item.dart';
 import 'package:aion/design_system/tokens/aion_colors.dart';
 import 'package:aion/design_system/tokens/aion_radius.dart';
 import 'package:aion/design_system/tokens/aion_shadows.dart';
@@ -20,6 +21,10 @@ import 'package:aion/design_system/tokens/theme_scope.dart';
 /// priority/type editors don't need a third bespoke copy of the same
 /// pattern. `MoveToStatusMenu` itself is untouched — it predates this
 /// widget and isn't refactored to use it in this change.
+///
+/// Each rendered item row is itself keyboard-focusable and
+/// `Enter`/`Space`-activatable, via [OverlayMenuItem] — not just
+/// [trigger]. The first row autofocuses as soon as the overlay opens.
 class SelectionMenu<T> extends StatefulWidget {
   /// Creates a [SelectionMenu].
   const SelectionMenu({
@@ -149,13 +154,19 @@ class _SelectionMenuState<T> extends State<SelectionMenu<T>> {
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
-                  children: selectable.map((item) {
+                  children: selectable.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final item = entry.value;
                     final builder = widget.itemBuilder;
-                    return GestureDetector(
+                    return OverlayMenuItem(
                       onTap: () {
                         widget.onSelected(item);
                         _removeOverlay();
                       },
+                      semanticsLabel: widget.itemLabel(item),
+                      // First row in the list — claims keyboard focus on
+                      // open.
+                      autofocus: index == 0,
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
                           vertical: 9,
