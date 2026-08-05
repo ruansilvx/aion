@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:bloc_test/bloc_test.dart';
+import 'package:flutter/widgets.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
@@ -23,6 +25,7 @@ import 'package:aion/features/providers/domain/enums/model_phase.dart';
 import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
 import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
 import 'package:aion/features/tickets/tickets.dart';
+import 'package:aion/l10n/generated/app_localizations.dart';
 
 class MockTicketRepository extends Mock implements TicketRepository {}
 
@@ -3934,6 +3937,13 @@ void main() {
             linkType: TicketLinkType.relatesTo,
           ),
         ).thenAnswer((_) async {});
+        // Unrelated to this group's own coverage — stubbed so
+        // `_interceptBlockedDependencyTrigger`'s `_isTicketBlocked` check
+        // (added for `aion-arch/changes/blocked-ticket-transition-gate`)
+        // resolves to "not blocked" rather than an unstubbed-call error.
+        when(
+          () => linkRepository.getLinksForTicket(any()),
+        ).thenAnswer((_) async => []);
       });
 
       TicketsCubit buildCubit() => TicketsCubit(
@@ -5219,6 +5229,348 @@ void main() {
           isEmpty,
         ),
       ],
+    );
+  });
+
+  group('blockedByOpenDependency status-transition gate '
+      '(blocked-ticket-transition-gate)', () {
+    late MockTicketLinkRepository linkRepository;
+
+    // An Epic — deliberately not a Task or Story — proving the gate
+    // applies uniformly across every ticket type, not just the two the
+    // source known gap named.
+    final blockedEpic = Ticket(
+      id: 'gate-epic-1',
+      ticketId: 'AIO-50',
+      type: TicketType.epic,
+      title: 'Blocked epic',
+      status: TicketStatus.todo,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final gateBlocker = Ticket(
+      id: 'gate-blocker-1',
+      ticketId: 'AIO-51',
+      type: TicketType.task,
+      title: 'Gate blocker',
+      status: TicketStatus.todo,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    setUp(() {
+      linkRepository = MockTicketLinkRepository();
+    });
+
+    TicketsCubit buildCubit() =>
+        TicketsCubit(repository, linkRepository: linkRepository);
+
+    void stubEmptySearch() {
+      when(
+        () => repository.searchTickets(
+          query: any(named: 'query'),
+          status: any(named: 'status'),
+          type: any(named: 'type'),
+          priority: any(named: 'priority'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer((_) async => const TicketSearchPage(tickets: [], hasMore: false));
+    }
+
+    blocTest<TicketsCubit, TicketsState>(
+      'updateTicketStatus rejects a blocked Epic moving to inProgress, '
+      'without calling the repository',
+      setUp: () {
+        when(
+          () => repository.getTicketById(blockedEpic.id),
+        ).thenAnswer((_) async => blockedEpic);
+        when(
+          () => linkRepository.getLinksForTicket(blockedEpic.id),
+        ).thenAnswer(
+          (_) async => [
+            TicketLinkData(
+              id: 'gate-link-1',
+              sourceTicketId: blockedEpic.id,
+              targetTicketId: gateBlocker.id,
+              linkType: TicketLinkType.blockedBy.name,
+            ),
+          ],
+        );
+        when(
+          () => repository.getTicketById(gateBlocker.id),
+        ).thenAnswer((_) async => gateBlocker);
+      },
+      build: buildCubit,
+      act: (cubit) =>
+          cubit.updateTicketStatus(blockedEpic.id, TicketStatus.inProgress),
+      verify: (_) {
+        verifyNever(() => repository.updateTicketStatus(any(), any()));
+      },
+      expect: () => [
+        const TicketsError(
+          '',
+          reason: TicketsErrorReason.blockedByOpenDependency,
+        ),
+        TicketDetailLoaded(blockedEpic),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'updateTicketStatus proceeds when the blocking ticket is done',
+      setUp: () {
+        stubEmptySearch();
+        when(
+          () => repository.getTicketById(blockedEpic.id),
+        ).thenAnswer((_) async => blockedEpic);
+        when(
+          () => linkRepository.getLinksForTicket(blockedEpic.id),
+        ).thenAnswer(
+          (_) async => [
+            TicketLinkData(
+              id: 'gate-link-2',
+              sourceTicketId: blockedEpic.id,
+              targetTicketId: gateBlocker.id,
+              linkType: TicketLinkType.blockedBy.name,
+            ),
+          ],
+        );
+        when(() => repository.getTicketById(gateBlocker.id)).thenAnswer(
+          (_) async => gateBlocker.copyWith(status: TicketStatus.done),
+        );
+        when(
+          () => repository.updateTicketStatus(
+            blockedEpic.id,
+            TicketStatus.inProgress,
+          ),
+        ).thenAnswer((_) async {});
+      },
+      build: buildCubit,
+      act: (cubit) =>
+          cubit.updateTicketStatus(blockedEpic.id, TicketStatus.inProgress),
+      verify: (_) {
+        verify(
+          () => repository.updateTicketStatus(
+            blockedEpic.id,
+            TicketStatus.inProgress,
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'updateTicketStatus proceeds when the ticket has no blocks/blockedBy '
+      'links at all',
+      setUp: () {
+        stubEmptySearch();
+        when(
+          () => repository.getTicketById(blockedEpic.id),
+        ).thenAnswer((_) async => blockedEpic);
+        when(
+          () => linkRepository.getLinksForTicket(blockedEpic.id),
+        ).thenAnswer((_) async => []);
+        when(
+          () => repository.updateTicketStatus(
+            blockedEpic.id,
+            TicketStatus.inProgress,
+          ),
+        ).thenAnswer((_) async {});
+      },
+      build: buildCubit,
+      act: (cubit) =>
+          cubit.updateTicketStatus(blockedEpic.id, TicketStatus.inProgress),
+      verify: (_) {
+        verify(
+          () => repository.updateTicketStatus(
+            blockedEpic.id,
+            TicketStatus.inProgress,
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'updateTicketStatus never queries link data for a non-inProgress '
+      'target status',
+      setUp: () {
+        stubEmptySearch();
+        when(
+          () =>
+              repository.updateTicketStatus(blockedEpic.id, TicketStatus.todo),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(blockedEpic.id),
+        ).thenAnswer((_) async => blockedEpic);
+      },
+      build: buildCubit,
+      act: (cubit) =>
+          cubit.updateTicketStatus(blockedEpic.id, TicketStatus.todo),
+      verify: (_) {
+        verifyNever(() => linkRepository.getLinksForTicket(any()));
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'changeTicketStatus rejects a blocked Epic moving to inProgress, '
+      'without calling the repository',
+      setUp: () {
+        when(
+          () => linkRepository.getLinksForTicket(blockedEpic.id),
+        ).thenAnswer(
+          (_) async => [
+            TicketLinkData(
+              id: 'gate-link-3',
+              sourceTicketId: blockedEpic.id,
+              targetTicketId: gateBlocker.id,
+              linkType: TicketLinkType.blockedBy.name,
+            ),
+          ],
+        );
+        when(
+          () => repository.getTicketById(gateBlocker.id),
+        ).thenAnswer((_) async => gateBlocker);
+      },
+      build: buildCubit,
+      act: (cubit) =>
+          cubit.changeTicketStatus(blockedEpic, TicketStatus.inProgress),
+      verify: (_) {
+        verifyNever(() => repository.updateTicketStatus(any(), any()));
+      },
+      expect: () => [
+        const TicketsError(
+          '',
+          reason: TicketsErrorReason.blockedByOpenDependency,
+        ),
+        TicketDetailLoaded(blockedEpic),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'changeTicketStatus proceeds when the blocking ticket is done',
+      setUp: () {
+        when(
+          () => linkRepository.getLinksForTicket(blockedEpic.id),
+        ).thenAnswer(
+          (_) async => [
+            TicketLinkData(
+              id: 'gate-link-4',
+              sourceTicketId: blockedEpic.id,
+              targetTicketId: gateBlocker.id,
+              linkType: TicketLinkType.blockedBy.name,
+            ),
+          ],
+        );
+        when(() => repository.getTicketById(gateBlocker.id)).thenAnswer(
+          (_) async => gateBlocker.copyWith(status: TicketStatus.done),
+        );
+        when(
+          () => repository.updateTicketStatus(
+            blockedEpic.id,
+            TicketStatus.inProgress,
+          ),
+        ).thenAnswer((_) async {});
+        when(() => repository.getTicketById(blockedEpic.id)).thenAnswer(
+          (_) async => blockedEpic.copyWith(status: TicketStatus.inProgress),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) =>
+          cubit.changeTicketStatus(blockedEpic, TicketStatus.inProgress),
+      verify: (_) {
+        verify(
+          () => repository.updateTicketStatus(
+            blockedEpic.id,
+            TicketStatus.inProgress,
+          ),
+        ).called(1);
+      },
+      expect: () => [
+        TicketDetailLoaded(
+          blockedEpic.copyWith(status: TicketStatus.inProgress),
+        ),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'changeTicketStatus proceeds when the ticket has no blocks/blockedBy '
+      'links at all',
+      setUp: () {
+        when(
+          () => linkRepository.getLinksForTicket(blockedEpic.id),
+        ).thenAnswer((_) async => []);
+        when(
+          () => repository.updateTicketStatus(
+            blockedEpic.id,
+            TicketStatus.inProgress,
+          ),
+        ).thenAnswer((_) async {});
+        when(() => repository.getTicketById(blockedEpic.id)).thenAnswer(
+          (_) async => blockedEpic.copyWith(status: TicketStatus.inProgress),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) =>
+          cubit.changeTicketStatus(blockedEpic, TicketStatus.inProgress),
+      verify: (_) {
+        verify(
+          () => repository.updateTicketStatus(
+            blockedEpic.id,
+            TicketStatus.inProgress,
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'changeTicketStatus never queries link data for a non-inProgress '
+      'target status',
+      setUp: () {
+        when(
+          () =>
+              repository.updateTicketStatus(blockedEpic.id, TicketStatus.todo),
+        ).thenAnswer((_) async {});
+        when(() => repository.getTicketById(blockedEpic.id)).thenAnswer(
+          (_) async => blockedEpic.copyWith(status: TicketStatus.todo),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.changeTicketStatus(blockedEpic, TicketStatus.todo),
+      verify: (_) {
+        verifyNever(() => linkRepository.getLinksForTicket(any()));
+      },
+    );
+
+    testWidgets(
+      'ticketsErrorMessage resolves blockedByOpenDependency to the new '
+      'localization string',
+      (tester) async {
+        late BuildContext capturedContext;
+        await tester.pumpWidget(
+          WidgetsApp(
+            color: const Color(0xFF000000),
+            localizationsDelegates: const [
+              AppLocalizations.delegate,
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+            ],
+            supportedLocales: AppLocalizations.supportedLocales,
+            builder: (context, _) {
+              capturedContext = context;
+              return const SizedBox();
+            },
+          ),
+        );
+        await tester.pump();
+
+        expect(
+          ticketsErrorMessage(
+            capturedContext,
+            TicketsErrorReason.blockedByOpenDependency,
+          ),
+          AppLocalizations.of(
+            capturedContext,
+          ).ticketBlockedByOpenDependencyError,
+        );
+      },
     );
   });
 

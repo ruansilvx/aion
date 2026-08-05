@@ -486,27 +486,33 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// refresh re-applies the filters [searchTickets] was last called with
   /// and requests at least as many tickets as were already loaded, so a
   /// background status update (e.g. a board drag) never collapses an
-  /// infinite-scrolled list back down to one page. When [id] is a Task or
-  /// Bug (see `TicketTypeHierarchy.isExecutable`) moving to
-  /// [TicketStatus.inProgress], first runs
-  /// [_interceptTaskExecutionTrigger] — a rejected trigger skips the
-  /// write entirely (emitting the classified error + a re-emitted
-  /// detail state instead of the usual list-shaped states); an allowed
-  /// one proceeds as normal, then [_triggerOrQueueCodingExecution] starts
-  /// (or queues) the coding-execution run once the write succeeds. Also
-  /// calls [_refreshBlockedBoardState] on success, since [id] may be
-  /// another ticket's blocker.
+  /// infinite-scrolled list back down to one page. Moving [id] to
+  /// [TicketStatus.inProgress] first runs
+  /// [_interceptBlockedDependencyTrigger] — every ticket type is
+  /// rejected if it has an unresolved `blocks`/`blockedBy` dependency —
+  /// then, if [id] is a Task or Bug (see
+  /// `TicketTypeHierarchy.isExecutable`), [_interceptTaskExecutionTrigger].
+  /// A rejection from either skips the write entirely (emitting the
+  /// classified error + a re-emitted detail state instead of the usual
+  /// list-shaped states); an allowed transition proceeds as normal, then
+  /// [_triggerOrQueueCodingExecution] starts (or queues) the
+  /// coding-execution run once the write succeeds. Also calls
+  /// [_refreshBlockedBoardState] on success, since [id] may be another
+  /// ticket's blocker.
   Future<void> updateTicketStatus(String id, TicketStatus status) async {
-    // Only fetch the ticket up front when the status is the one
-    // _interceptTaskExecutionTrigger can actually reject (inProgress) —
-    // every other transition returns true immediately, so skip the extra
-    // round trip other status changes (e.g. a plain board drag) don't
-    // need.
+    // Only fetch the ticket up front when the status is the one the
+    // interceptors can actually reject (inProgress) — every other
+    // transition returns true immediately, so skip the extra round trip
+    // other status changes (e.g. a plain board drag) don't need.
     if (status == TicketStatus.inProgress) {
       final target = await _repository.getTicketById(id);
-      if (target != null &&
-          !(await _interceptTaskExecutionTrigger(target, status))) {
-        return;
+      if (target != null) {
+        if (!(await _interceptBlockedDependencyTrigger(target, status))) {
+          return;
+        }
+        if (!(await _interceptTaskExecutionTrigger(target, status))) {
+          return;
+        }
       }
     }
 
@@ -599,14 +605,17 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [TicketDetailLoaded] with the refreshed ticket — unlike
   /// [updateTicketStatus], which emits list-shaped optimistic states built
   /// for the board and would fall through `TicketDetailScreen`'s state
-  /// switch. Emits [TicketsError] on failure. When [ticket] is a Task or
-  /// Bug (see `TicketTypeHierarchy.isExecutable`) moving to
-  /// [TicketStatus.inProgress], first runs
-  /// [_interceptTaskExecutionTrigger] — a rejected trigger skips the
-  /// write entirely; an allowed one proceeds as normal, then
-  /// [_triggerOrQueueCodingExecution] starts (or queues) the
-  /// coding-execution run once the write succeeds.
+  /// switch. Emits [TicketsError] on failure. Moving [ticket] to
+  /// [TicketStatus.inProgress] first runs
+  /// [_interceptBlockedDependencyTrigger] — every ticket type is
+  /// rejected if it has an unresolved `blocks`/`blockedBy` dependency —
+  /// then, if [ticket] is a Task or Bug (see
+  /// `TicketTypeHierarchy.isExecutable`), [_interceptTaskExecutionTrigger].
+  /// A rejection from either skips the write entirely; an allowed
+  /// transition proceeds as normal, then [_triggerOrQueueCodingExecution]
+  /// starts (or queues) the coding-execution run once the write succeeds.
   Future<void> changeTicketStatus(Ticket ticket, TicketStatus status) async {
+    if (!(await _interceptBlockedDependencyTrigger(ticket, status))) return;
     if (!(await _interceptTaskExecutionTrigger(ticket, status))) return;
     try {
       await _repository.updateTicketStatus(ticket.id, status);
@@ -1236,6 +1245,34 @@ class TicketsCubit extends Cubit<TicketsState> {
     return true;
   }
 
+  /// Gate on a ticket's move to [TicketStatus.inProgress]: rejects the
+  /// transition if [ticket] currently has an unresolved `blocks`/
+  /// `blockedBy` dependency ([_isTicketBlocked]). Unlike
+  /// [_interceptTaskExecutionTrigger], applies to every ticket type —
+  /// the Board's `_BlockedBadge` this enforces is itself type-agnostic.
+  /// `true` means the transition may proceed (not blocked, or [status]
+  /// isn't `inProgress` — not a gated transition). On rejection, emits
+  /// [TicketsErrorReason.blockedByOpenDependency] then a re-emitted
+  /// unchanged [TicketDetailLoaded], mirroring
+  /// [_interceptTaskExecutionTrigger]'s exact reject shape, and returns
+  /// `false` so the caller skips the write entirely. Added for
+  /// `aion-arch/changes/blocked-ticket-transition-gate`.
+  Future<bool> _interceptBlockedDependencyTrigger(
+    Ticket ticket,
+    TicketStatus status,
+  ) async {
+    if (status != TicketStatus.inProgress) return true;
+    if (!(await _isTicketBlocked(ticket))) return true;
+    emit(
+      const TicketsError(
+        '',
+        reason: TicketsErrorReason.blockedByOpenDependency,
+      ),
+    );
+    emit(TicketDetailLoaded(ticket));
+    return false;
+  }
+
   /// Starts [task]'s coding-execution run immediately if no other run is
   /// in flight, or appends it to [_executionQueue] (FIFO) otherwise.
   /// Called by [changeTicketStatus]/[updateTicketStatus] after a Task's
@@ -1324,6 +1361,38 @@ class TicketsCubit extends Cubit<TicketsState> {
       }
     }
     return blocked;
+  }
+
+  /// Whether [ticket] currently has an unresolved `blocks`/`blockedBy`
+  /// dependency — i.e. a live link naming [ticket] as the blockee whose
+  /// blocker either doesn't exist or isn't [TicketStatus.done]. Mirrors
+  /// [_computeBlockedTicketIds]'s row-resolution logic (a `blockedBy`
+  /// row's blockee is its source; a `blocks` row's blockee is its
+  /// target) but scoped to a single ticket via
+  /// [TicketLinkRepository.getLinksForTicket] rather than the board-wide
+  /// bulk query, since this runs once per `inProgress` transition
+  /// attempt rather than once per board load. Returns `false` if
+  /// constructed without a [TicketLinkRepository] (mirrors
+  /// [_computeBlockedTicketIds]'s same fallback). Added for
+  /// `aion-arch/changes/blocked-ticket-transition-gate`.
+  Future<bool> _isTicketBlocked(Ticket ticket) async {
+    final linkRepo = _linkRepository;
+    if (linkRepo == null) return false;
+
+    final rows = await linkRepo.getLinksForTicket(ticket.id);
+    for (final row in rows) {
+      final (blockeeId, blockerId) = switch (row.linkType) {
+        'blockedBy' => (row.sourceTicketId, row.targetTicketId),
+        'blocks' => (row.targetTicketId, row.sourceTicketId),
+        _ => (null, null),
+      };
+      if (blockeeId != ticket.id || blockerId == null) continue;
+      final blocker = await _repository.getTicketById(blockerId);
+      if (blocker == null || blocker.status != TicketStatus.done) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /// Re-emits the current list-shaped state (`TicketsLoaded` only — a
