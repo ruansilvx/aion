@@ -511,4 +511,16 @@ extension AionColorsHubTokens on AionColors {
   /// it.
   Color accentTint(Color accent, bool isDark) =>
       accent.withValues(alpha: isDark ? 0.09 : 0.06);
+
+  // accent family — pressed-state wash for OverlayMenuItem's accented rows
+  // (destructive "Delete ticket", suggested Promote-to-Epic/Bug). 1.6× the
+  // existing fillAlphaArctic/fillAlphaObsidian hover wash — the deepest
+  // stop in the same accent hue, matching the pressed-wash multiplier the
+  // shipped Ticket Deletion Spec §2.2 established. Added for
+  // overlay-menu-keyboard-focus; see that change's design.md §1.3.
+  /// The pressed-state wash of [accent] used by `OverlayMenuItem`'s
+  /// accented rows — 1.6× [fillAlphaArctic]/[fillAlphaObsidian], the
+  /// deepest wash stop in [accent]'s own hue.
+  Color pressedAccentTint(Color accent, bool isDark) =>
+      accent.withValues(alpha: isDark ? 0.256 : 0.176);
 }

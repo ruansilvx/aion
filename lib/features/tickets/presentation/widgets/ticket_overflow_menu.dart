@@ -26,9 +26,12 @@ import 'package:aion/features/tickets/presentation/widgets/ticket_link_picker.da
 /// [TicketsCubit.previewTrashCount], opens [showAppConfirmDialog] with a
 /// cascade-aware message, and on confirmation calls
 /// [TicketsCubit.trashTicket] — a reversible move to trash, not a
-/// permanent delete. Renders distinct default/hover/keyboard-focused/
-/// pressed/open fills and a focus ring, per the design spec's
-/// interaction-state table.
+/// permanent delete. The trigger itself renders distinct default/hover/
+/// keyboard-focused/pressed/open fills and a focus ring, per the design
+/// spec's interaction-state table. The action-list rows opened by the
+/// trigger ("Delete ticket", "Promote to Epic/Bug", "Create new
+/// epic/bug") are themselves keyboard-focusable and `Enter`/`Space`-
+/// activatable too, via [OverlayMenuItem].
 class TicketOverflowMenu extends StatefulWidget {
   /// Creates a [TicketOverflowMenu] for [ticket]. Set [compact] to `true`
   /// for the smaller 26×26/16px footprint used inline on list rows and
@@ -325,6 +328,8 @@ class _RootMenu extends StatelessWidget {
               accent: c.typeEpic,
               suggested: suggestedType == TicketType.epic,
               onTap: () => onPromoteTap(TicketType.epic),
+              // First row in the list — claims keyboard focus on open.
+              autofocus: true,
             ),
             _PromoteRootRow(
               icon: PhosphorIcons.bugLight,
@@ -341,6 +346,10 @@ class _RootMenu extends StatelessWidget {
             labelColor: c.danger,
             label: context.l10n.ticketDeleteMenuItem,
             onTap: onDeleteTap,
+            // Only the promote rows above it can precede it, and those
+            // render only for signal tickets — so this is row 0 whenever
+            // they're absent.
+            autofocus: ticketType != TicketType.signal,
           ),
         ],
       ),
@@ -359,6 +368,7 @@ class _PromoteRootRow extends StatelessWidget {
     required this.accent,
     required this.suggested,
     required this.onTap,
+    this.autofocus = false,
   });
 
   final IconData icon;
@@ -372,41 +382,39 @@ class _PromoteRootRow extends StatelessWidget {
   final bool suggested;
   final VoidCallback onTap;
 
+  /// Whether this row claims keyboard focus as soon as the menu opens —
+  /// set on the list's first row only.
+  final bool autofocus;
+
   @override
   Widget build(BuildContext context) {
-    final t = ThemeScope.of(context);
-    final c = t.colors;
-    return Semantics(
-      button: true,
-      label: label,
-      child: GestureDetector(
-        onTap: onTap,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: suggested ? c.accentTint(accent, t.isDark) : null,
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
-            child: Row(
-              children: [
-                PhosphorIcon(icon, size: 16, color: c.textSecondary),
-                const SizedBox(width: AionSpacing.sp8),
-                Expanded(
-                  child: Text(
-                    label,
-                    style: AionText.bodySm.copyWith(
-                      color: c.textPrimary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+    final c = ThemeScope.of(context).colors;
+    return OverlayMenuItem(
+      onTap: onTap,
+      semanticsLabel: label,
+      accent: accent,
+      restingTinted: suggested,
+      autofocus: autofocus,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+        child: Row(
+          children: [
+            PhosphorIcon(icon, size: 16, color: c.textSecondary),
+            const SizedBox(width: AionSpacing.sp8),
+            Expanded(
+              child: Text(
+                label,
+                style: AionText.bodySm.copyWith(
+                  color: c.textPrimary,
+                  fontWeight: FontWeight.w600,
                 ),
-                if (suggested) ...[
-                  const SizedBox(width: 8),
-                  _SuggestedPill(accent: accent),
-                ],
-              ],
+              ),
             ),
-          ),
+            if (suggested) ...[
+              const SizedBox(width: 8),
+              _SuggestedPill(accent: accent),
+            ],
+          ],
         ),
       ),
     );
@@ -450,6 +458,7 @@ class _MenuActionRow extends StatelessWidget {
     required this.label,
     required this.labelColor,
     required this.onTap,
+    this.autofocus = false,
   });
 
   final IconData icon;
@@ -458,32 +467,38 @@ class _MenuActionRow extends StatelessWidget {
   final Color labelColor;
   final VoidCallback onTap;
 
+  /// Whether this row claims keyboard focus as soon as the menu opens —
+  /// set on the list's first row only.
+  final bool autofocus;
+
   @override
   Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: label,
-      child: GestureDetector(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
-          child: Row(
-            children: [
-              PhosphorIcon(icon, size: 16, color: iconColor),
-              const SizedBox(width: AionSpacing.sp8),
-              Expanded(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AionText.bodySm.copyWith(
-                    color: labelColor,
-                    fontWeight: FontWeight.w600,
-                  ),
+    return OverlayMenuItem(
+      onTap: onTap,
+      semanticsLabel: label,
+      // This row's only current caller is the destructive "Delete
+      // ticket" action, so its own icon/label color (always `c.danger`)
+      // doubles as the row's fill accent.
+      accent: iconColor,
+      autofocus: autofocus,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+        child: Row(
+          children: [
+            PhosphorIcon(icon, size: 16, color: iconColor),
+            const SizedBox(width: AionSpacing.sp8),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AionText.bodySm.copyWith(
+                  color: labelColor,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -577,32 +592,29 @@ class _PromoteChooser extends StatelessWidget {
           ),
         ),
         Container(color: c.border, height: 1),
-        Semantics(
-          button: true,
-          label: createNewLabel,
-          child: GestureDetector(
-            onTap: onCreateNewTap,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
-              child: Row(
-                children: [
-                  PhosphorIcon(
-                    PhosphorIcons.plusLight,
-                    size: 16,
-                    color: c.primary,
-                  ),
-                  const SizedBox(width: 11),
-                  Expanded(
-                    child: Text(
-                      createNewLabel,
-                      style: AionText.bodySm.copyWith(
-                        color: c.primary,
-                        fontWeight: FontWeight.w600,
-                      ),
+        OverlayMenuItem(
+          onTap: onCreateNewTap,
+          semanticsLabel: createNewLabel,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+            child: Row(
+              children: [
+                PhosphorIcon(
+                  PhosphorIcons.plusLight,
+                  size: 16,
+                  color: c.primary,
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Text(
+                    createNewLabel,
+                    style: AionText.bodySm.copyWith(
+                      color: c.primary,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),

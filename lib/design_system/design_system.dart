@@ -25,6 +25,7 @@ export 'molecules/delete_action_button.dart';
 export 'molecules/linked_tickets_section.dart';
 export 'molecules/markdown_editor.dart';
 export 'molecules/markdown_view.dart';
+export 'molecules/overlay_menu_item.dart';
 export 'molecules/page_sub_pages_section.dart';
 export 'molecules/severity_badge.dart';
 export 'molecules/sync_status_badge.dart';

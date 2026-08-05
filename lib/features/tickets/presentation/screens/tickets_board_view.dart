@@ -692,7 +692,9 @@ class _BlockedBadge extends StatelessWidget {
 /// path calls, so board status changes are never drag-only. Uses a
 /// status-swap glyph (not `dots-three`) so it reads distinctly from the
 /// adjacent [TicketOverflowMenu] trigger, which also renders on
-/// [TicketBoardCard].
+/// [TicketBoardCard]. Each status row in the opened overlay is itself
+/// keyboard-focusable and `Enter`/`Space`-activatable, via
+/// `OverlayMenuItem` — not just the trigger.
 class MoveToStatusMenu extends StatefulWidget {
   /// Creates a [MoveToStatusMenu] that can move [ticket] to a different
   /// status.
@@ -752,8 +754,10 @@ class _MoveToStatusMenuState extends State<MoveToStatusMenu> {
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
-                  children: otherStatuses.map((status) {
-                    return GestureDetector(
+                  children: otherStatuses.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final status = entry.value;
+                    return OverlayMenuItem(
                       onTap: () {
                         context.read<TicketsCubit>().updateTicketStatus(
                           widget.ticket.id,
@@ -761,6 +765,10 @@ class _MoveToStatusMenuState extends State<MoveToStatusMenu> {
                         );
                         _removeOverlay();
                       },
+                      semanticsLabel: ticketStatusLabel(context, status),
+                      // First row in the list — claims keyboard focus on
+                      // open.
+                      autofocus: index == 0,
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
                           vertical: 10,
