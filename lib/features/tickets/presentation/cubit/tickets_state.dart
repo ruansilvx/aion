@@ -173,6 +173,14 @@ enum TicketsErrorReason {
   /// (`TicketDetailLoaded.sddStageFailureReason`). Added for
   /// `aion-arch/changes/board-execution-indicators-and-notifications`.
   sddStageAdvanceFailed,
+
+  /// A ticket was rejected from moving to `TicketStatus.inProgress`
+  /// because it has an unresolved `blocks`/`blockedBy` dependency — see
+  /// `TicketsCubit._isTicketBlocked`. Applies to every ticket type,
+  /// unlike [codingExecutionBlocked]. The widget layer reads this via
+  /// `ticketsErrorMessage` / `AppToast`. Added for
+  /// `aion-arch/changes/blocked-ticket-transition-gate`.
+  blockedByOpenDependency,
 }
 
 /// Why a Task ticket's coding-execution run was blocked from starting —

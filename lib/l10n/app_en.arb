@@ -330,6 +330,7 @@
   "ticketInvalidParentError": "Can't set that ticket as its own parent or a descendant.",
   "ticketSddStagePreconditionNotMetError": "This ticket can't advance to the next SDD stage yet.",
   "ticketCodingExecutionBlockedError": "This Task can't start coding execution until its Story's design work is approved.",
+  "ticketBlockedByOpenDependencyError": "This ticket is blocked by an unresolved dependency and can't move to In Progress yet.",
   "executionBudgetOverageDetectedToast": "Usage limit reached — coding execution now requires confirmation for the rest of this session.",
 
   "executionVerificationFailedToast": "Coding run failed verification — see the Task for details.",

@@ -64,6 +64,8 @@ String ticketsErrorMessage(BuildContext context, TicketsErrorReason reason) {
     TicketsErrorReason.executionVerificationFailed =>
       l10n.executionVerificationFailedToast,
     TicketsErrorReason.sddStageAdvanceFailed => l10n.sddStageAdvanceFailedToast,
+    TicketsErrorReason.blockedByOpenDependency =>
+      l10n.ticketBlockedByOpenDependencyError,
   };
 }
 
