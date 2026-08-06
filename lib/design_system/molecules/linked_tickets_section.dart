@@ -219,6 +219,7 @@ class _LinkRowState extends State<_LinkRow> {
     _removeOverlayEntry = OverlayEntry(
       builder: (overlayContext) => _RemoveConfirmationOverlay(
         layerLink: _removeButtonLink,
+        targetTicketKey: widget.link.ticket.ticketId,
         onCancel: _closeRemoveConfirmation,
         onConfirm: () {
           _closeRemoveConfirmation();
@@ -760,11 +761,17 @@ class _LinkTypeEditorState extends State<_LinkTypeEditor> {
 class _RemoveConfirmationOverlay extends StatelessWidget {
   const _RemoveConfirmationOverlay({
     required this.layerLink,
+    required this.targetTicketKey,
     required this.onCancel,
     required this.onConfirm,
   });
 
   final LayerLink layerLink;
+
+  /// The other-side ticket's mono key (e.g. `AIO-9`), named in the
+  /// confirmation body per Component Spec §5.2 — `{key}` in
+  /// `linkedTicketsRemoveConfirmBody`.
+  final String targetTicketKey;
   final VoidCallback onCancel;
   final VoidCallback onConfirm;
 
@@ -807,7 +814,9 @@ class _RemoveConfirmationOverlay extends StatelessWidget {
                     ),
                     const SizedBox(height: AionSpacing.sp12),
                     Text(
-                      context.l10n.linkedTicketsRemoveConfirmBody,
+                      context.l10n.linkedTicketsRemoveConfirmBody(
+                        targetTicketKey,
+                      ),
                       style: AionText.bodySm.copyWith(
                         color: c.textSecondary,
                         height: 1.45,

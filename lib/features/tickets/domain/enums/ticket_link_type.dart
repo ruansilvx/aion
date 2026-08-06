@@ -67,7 +67,7 @@ extension TicketLinkTypeDisplay on TicketLinkType {
     TicketLinkType.blocks => PhosphorIcons.arrowRightLight,
     TicketLinkType.blockedBy => PhosphorIcons.arrowLeftLight,
     TicketLinkType.relatesTo => PhosphorIcons.arrowsLeftRightLight,
-    TicketLinkType.duplicates => PhosphorIcons.copySimpleLight,
+    TicketLinkType.duplicates => PhosphorIcons.copyLight,
     TicketLinkType.duplicatedBy => PhosphorIcons.copySimpleLight,
   };
 
