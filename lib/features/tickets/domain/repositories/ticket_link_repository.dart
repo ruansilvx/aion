@@ -24,4 +24,15 @@ abstract interface class TicketLinkRepository {
   /// blocked-set computation to resolve every `blocks`/`blockedBy`
   /// relationship in one bulk query rather than per-ticket lookups.
   Future<List<TicketLinkData>> getLinksByTypes(List<TicketLinkType> types);
+
+  /// Returns the single row with id [linkId], or `null` if it no longer
+  /// exists (e.g. already deleted by a concurrent action).
+  Future<TicketLinkData?> getLinkById(String linkId);
+
+  /// Deletes the single row with id [linkId]. No-ops if it doesn't exist.
+  Future<void> deleteLink(String linkId);
+
+  /// Updates the single row with id [linkId]'s stored type to [newType].
+  /// No-ops if the row doesn't exist.
+  Future<void> updateLinkType(String linkId, TicketLinkType newType);
 }

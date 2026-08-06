@@ -21,7 +21,6 @@ import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sync_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
-import 'package:aion/features/tickets/domain/repositories/ticket_link_repository.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_repair_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
@@ -42,7 +41,14 @@ import 'package:aion/features/tickets/presentation/widgets/ticket_parent_picker.
 /// `aion-arch/changes/board-task-ordering-indication`; `resource` keeps
 /// a single-tap `relatesTo`-only `TicketLinkPicker`, every other gated
 /// type offers the full `blocks`/`blockedBy`/`relatesTo`/`duplicates`
-/// set). Extracted from
+/// set). Each `LinkedTicketsSection` row also supports removing its link
+/// or changing its type inline — `TicketLinkPicker.onSelected` (create),
+/// the row's remove action (delete), and its `_LinkTypeEditor` (update)
+/// all go through `TicketsCubit.createTicketLink`/`.deleteTicketLink`/
+/// `.updateTicketLinkType` rather than any of them calling
+/// `TicketLinkRepository` directly, per
+/// `aion-arch/changes/ticket-link-management-ui/design.md` §4. Extracted
+/// from
 /// `TicketDetailScreen`'s single-scroll body — verbatim content, no
 /// behavior change — so it can render both in `TicketDetailScreen`'s
 /// non-chat layout and inside `ChatTranscriptPane`'s collapsing header
@@ -666,8 +672,15 @@ class TicketMetadataSection extends StatelessWidget {
             return Column(
               children: [
                 LinkedTicketsSection(
-                  tickets: state.linkedTickets,
+                  links: state.linkedTickets,
+                  linkTypeOptions: linkTypeOptions,
                   onTap: (id) => context.go('/workspace/tickets/$id'),
+                  onRemove: (linkId) => context
+                      .read<TicketsCubit>()
+                      .deleteTicketLink(ticket.id, linkId),
+                  onChangeType: (linkId, newRelativeType) => context
+                      .read<TicketsCubit>()
+                      .updateTicketLinkType(ticket.id, linkId, newRelativeType),
                   trailing: TicketLinkPicker(
                     linkTypeOptions: linkTypeOptions,
                     candidatesLoader: () async {
@@ -675,8 +688,8 @@ class TicketMetadataSection extends StatelessWidget {
                           .read<TicketsCubit>()
                           .getAllTickets();
                       final linkedIds = {
-                        for (final t in state.linkedTickets) t.id,
-                        for (final t in state.backlinks) t.id,
+                        for (final r in state.linkedTickets) r.ticket.id,
+                        for (final r in state.backlinks) r.ticket.id,
                       };
                       return all
                           .where(
@@ -688,28 +701,13 @@ class TicketMetadataSection extends StatelessWidget {
                           )
                           .toList();
                     },
-                    onSelected: (selected, linkType) async {
-                      await context.read<TicketLinkRepository>().createLink(
-                        sourceTicketId: ticket.id,
-                        targetTicketId: selected.id,
-                        linkType: linkType,
-                      );
-                      if (!context.mounted) return;
-                      await context.read<TicketsCubit>().loadDocumentRelations(
-                        ticket.id,
-                      );
-                      if (linkType == TicketLinkType.blocks ||
-                          linkType == TicketLinkType.blockedBy) {
-                        if (!context.mounted) return;
-                        await context
-                            .read<TicketsCubit>()
-                            .refreshBlockedBoardState();
-                      }
-                    },
+                    onSelected: (selected, linkType) => context
+                        .read<TicketsCubit>()
+                        .createTicketLink(ticket.id, selected.id, linkType),
                   ),
                 ),
                 BacklinksSection(
-                  tickets: state.backlinks,
+                  tickets: state.backlinks.map((r) => r.ticket).toList(),
                   onTap: (id) => context.go('/workspace/tickets/$id'),
                 ),
               ],

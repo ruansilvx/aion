@@ -2,6 +2,7 @@
 
 import 'package:equatable/equatable.dart';
 
+import 'package:aion/features/tickets/domain/entities/linked_ticket_ref.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 
 /// The state emitted by [TicketsCubit].
@@ -346,14 +347,17 @@ class TicketDetailLoaded extends TicketsState {
 
   /// Board tickets (epic/story/task/chat) linked to [ticket] via
   /// `TicketLink`, populated only when [ticket] is `page`/`resource`.
-  /// Empty until [TicketsCubit.loadDocumentRelations] resolves.
-  final List<Ticket> linkedTickets;
+  /// Each entry pairs the other-side [Ticket] with the link's type *as it
+  /// reads from [ticket]'s own side* and the underlying link row's id —
+  /// see [LinkedTicketRef]. Empty until
+  /// [TicketsCubit.loadDocumentRelations] resolves.
+  final List<LinkedTicketRef> linkedTickets;
 
   /// Other `page`/`resource` tickets linked to [ticket] via `TicketLink`
   /// (see [TicketsCubit.loadDocumentRelations]'s dartdoc for the scoping
-  /// rationale). Empty until [TicketsCubit.loadDocumentRelations]
-  /// resolves.
-  final List<Ticket> backlinks;
+  /// rationale). Same [LinkedTicketRef] shape as [linkedTickets]. Empty
+  /// until [TicketsCubit.loadDocumentRelations] resolves.
+  final List<LinkedTicketRef> backlinks;
 
   /// Whether [ticket] (an `epic`/`story`) currently satisfies the
   /// precondition for `TicketsCubit.advanceSddStage` to succeed.

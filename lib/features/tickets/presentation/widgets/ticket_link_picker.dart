@@ -273,31 +273,6 @@ class _TicketLinkPickerState extends State<TicketLinkPicker> {
   }
 }
 
-/// The directional glyph for [type] in [_LinkTypeSelectorRow]'s trigger
-/// and menu rows — monochrome, per Component Spec §1.4 ("this is a
-/// relationship picker, not a type picker"). [TicketLinkType.duplicatedBy]
-/// is never offered by [_LinkTypeSelectorRow] (see
-/// [TicketLinkPicker.linkTypeOptions]'s dartdoc) but is handled here for
-/// switch exhaustiveness.
-IconData _linkTypeGlyph(TicketLinkType type) => switch (type) {
-  TicketLinkType.blocks => PhosphorIcons.arrowRightLight,
-  TicketLinkType.blockedBy => PhosphorIcons.arrowLeftLight,
-  TicketLinkType.relatesTo => PhosphorIcons.arrowsLeftRightLight,
-  TicketLinkType.duplicates => PhosphorIcons.copySimpleLight,
-  TicketLinkType.duplicatedBy => PhosphorIcons.copySimpleLight,
-};
-
-/// The localized label for [type], shared by [_LinkTypeSelectorRow]'s
-/// trigger and menu rows.
-String _linkTypeLabel(BuildContext context, TicketLinkType type) =>
-    switch (type) {
-      TicketLinkType.blocks => context.l10n.ticketLinkTypeBlocks,
-      TicketLinkType.blockedBy => context.l10n.ticketLinkTypeBlockedBy,
-      TicketLinkType.relatesTo => context.l10n.ticketLinkTypeRelatesTo,
-      TicketLinkType.duplicates => context.l10n.ticketLinkTypeDuplicates,
-      TicketLinkType.duplicatedBy => '',
-    };
-
 /// [TicketLinkPicker]'s overlay-header link-type picker — a
 /// [SelectionMenu]<[TicketLinkType]> restricted to [options], with a
 /// trigger showing [value]'s directional glyph + label (Component Spec
@@ -374,14 +349,14 @@ class _LinkTypeSelectorRowState extends State<_LinkTypeSelectorRow> {
               SizedBox(
                 width: 16,
                 child: PhosphorIcon(
-                  _linkTypeGlyph(widget.value),
+                  widget.value.glyph,
                   size: 15,
                   color: c.textSecondary,
                 ),
               ),
               const SizedBox(width: 8),
               Text(
-                _linkTypeLabel(context, widget.value),
+                widget.value.label(context),
                 style: AionText.bodySm.copyWith(
                   color: c.textPrimary,
                   fontWeight: FontWeight.w500,
@@ -409,14 +384,14 @@ class _LinkTypeSelectorRowState extends State<_LinkTypeSelectorRow> {
       onOpenChanged: (open) => setState(() => _isOpen = open),
       onFocusChange: (focused) => setState(() => _isFocused = focused),
       semanticsLabel: context.l10n.ticketLinkPickerChangeLinkType,
-      itemLabel: (type) => _linkTypeLabel(context, type),
+      itemLabel: (type) => type.label(context),
       itemBuilder: (context, c, item) => Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           SizedBox(
             width: 16,
             child: PhosphorIcon(
-              _linkTypeGlyph(item),
+              item.glyph,
               size: 15,
               color: c.textSecondary,
             ),
@@ -424,7 +399,7 @@ class _LinkTypeSelectorRowState extends State<_LinkTypeSelectorRow> {
           const SizedBox(width: 11),
           Expanded(
             child: Text(
-              _linkTypeLabel(context, item),
+              item.label(context),
               style: AionText.bodySm.copyWith(
                 color: c.textPrimary,
                 fontWeight: FontWeight.w600,

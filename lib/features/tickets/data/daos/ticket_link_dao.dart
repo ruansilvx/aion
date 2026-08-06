@@ -112,4 +112,27 @@ class TicketLinkDao extends DatabaseAccessor<AppDatabase>
 
     return rows.map((row) => row.readTable(ticketLinksTable)).toList();
   }
+
+  /// Returns the single row with id [linkId], or `null` if it doesn't
+  /// exist. Unlike [getLinksForTicket]/[getLinksByTypes], this doesn't
+  /// filter out rows whose other side is trashed — callers need the raw
+  /// row (e.g. to check its [TicketLinkData.linkType] before a delete/
+  /// update) regardless of the other ticket's current trash state.
+  Future<TicketLinkData?> getLinkById(String linkId) {
+    return (select(
+      ticketLinksTable,
+    )..where((t) => t.id.equals(linkId))).getSingleOrNull();
+  }
+
+  /// Deletes the single row with id [linkId]. No-ops if it doesn't exist.
+  Future<void> deleteLink(String linkId) {
+    return (delete(ticketLinksTable)..where((t) => t.id.equals(linkId))).go();
+  }
+
+  /// Updates the single row with id [linkId]'s [TicketLinkData.linkType]
+  /// to [newType].name. No-ops if the row doesn't exist.
+  Future<void> updateLinkType(String linkId, TicketLinkType newType) {
+    return (update(ticketLinksTable)..where((t) => t.id.equals(linkId)))
+        .write(TicketLinksTableCompanion(linkType: Value(newType.name)));
+  }
 }

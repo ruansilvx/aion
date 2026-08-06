@@ -39,4 +39,19 @@ class DriftTicketLinkRepository implements TicketLinkRepository {
   Future<List<TicketLinkData>> getLinksByTypes(List<TicketLinkType> types) {
     return _db.ticketLinkDao.getLinksByTypes(types);
   }
+
+  @override
+  Future<TicketLinkData?> getLinkById(String linkId) {
+    return _db.ticketLinkDao.getLinkById(linkId);
+  }
+
+  @override
+  Future<void> deleteLink(String linkId) {
+    return _db.ticketLinkDao.deleteLink(linkId);
+  }
+
+  @override
+  Future<void> updateLinkType(String linkId, TicketLinkType newType) {
+    return _db.ticketLinkDao.updateLinkType(linkId, newType);
+  }
 }

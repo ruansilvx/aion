@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:aion/core/contracts/page_ticket_provider.dart';
 import 'package:aion/features/pages/presentation/cubit/pages_state.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
 
 /// UI-orchestration Cubit for the `pages` feature. Mirrors the shape of
 /// `TicketsCubit`'s detail/create flows, but scoped to `page` tickets only
@@ -76,6 +77,50 @@ class PagesCubit extends Cubit<PagesState> {
     try {
       await _provider.trashPage(id);
       emit(const PageTrashed());
+    } catch (e) {
+      emit(PagesError(e.toString()));
+    }
+  }
+
+  /// Deletes the `TicketLink` row with id [linkId] from the page with id
+  /// [pageId], then reloads its relations. Emits [PageDetailLoaded] with
+  /// the refreshed relations (carrying over the unchanged page ticket
+  /// from the current state) on success, or [PagesError] if the provider
+  /// call throws. No-ops (does not emit) if the current state isn't a
+  /// [PageDetailLoaded] for [pageId] — mirrors
+  /// `TicketsCubit.loadDocumentRelations`'s same stale-response guard.
+  Future<void> deleteLink(String pageId, String linkId) async {
+    try {
+      await _provider.deleteLink(pageId, linkId);
+      final relations = await _provider.loadPageRelations(pageId);
+      final current = state;
+      if (current is PageDetailLoaded && current.page.id == pageId) {
+        emit(PageDetailLoaded(current.page, relations));
+      }
+    } catch (e) {
+      emit(PagesError(e.toString()));
+    }
+  }
+
+  /// Updates the `TicketLink` row with id [linkId]'s stored type to
+  /// [newRelativeType] — the type as picked in `LinkedTicketsSection`'s
+  /// `_LinkTypeEditor`, i.e. as it reads from [pageId]'s own side, not
+  /// the row's canonical source-to-target reading (see
+  /// [PageTicketProvider.updateLinkType]'s dartdoc for where that
+  /// translation actually happens) — then reloads [pageId]'s relations.
+  /// Same emit/no-op shape as [deleteLink].
+  Future<void> updateLinkType(
+    String pageId,
+    String linkId,
+    TicketLinkType newRelativeType,
+  ) async {
+    try {
+      await _provider.updateLinkType(pageId, linkId, newRelativeType);
+      final relations = await _provider.loadPageRelations(pageId);
+      final current = state;
+      if (current is PageDetailLoaded && current.page.id == pageId) {
+        emit(PageDetailLoaded(current.page, relations));
+      }
     } catch (e) {
       emit(PagesError(e.toString()));
     }

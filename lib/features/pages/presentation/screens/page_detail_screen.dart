@@ -153,15 +153,29 @@ class _PageDetailContent extends StatelessWidget {
               ),
             ),
             LinkedTicketsSection(
-              tickets: relations.linkedTickets,
+              links: relations.linkedTickets,
+              // No creatable link types for a page's own Linked Tickets
+              // section — pages never render `TicketLinkPicker` as this
+              // section's `trailing` (see below), so no row here is ever
+              // editable regardless of this list's contents; only the
+              // remove action applies.
+              linkTypeOptions: const [],
               onTap: (id) => context.go('/workspace/tickets/$id'),
+              onRemove: (linkId) =>
+                  context.read<PagesCubit>().deleteLink(page.id, linkId),
+              onChangeType: (linkId, newRelativeType) => context
+                  .read<PagesCubit>()
+                  .updateLinkType(page.id, linkId, newRelativeType),
             ),
             BacklinksSection(
-              tickets: relations.backlinks,
+              tickets: relations.backlinks.map((r) => r.ticket).toList(),
               onTap: (id) {
-                final ticket = relations.backlinks.firstWhere(
+                final backlinkTickets = relations.backlinks
+                    .map((r) => r.ticket)
+                    .toList();
+                final ticket = backlinkTickets.firstWhere(
                   (t) => t.id == id,
-                  orElse: () => relations.backlinks.first,
+                  orElse: () => backlinkTickets.first,
                 );
                 context.go(ticketDetailRoute(ticket));
               },

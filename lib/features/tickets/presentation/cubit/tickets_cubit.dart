@@ -28,6 +28,7 @@ import 'package:aion/features/providers/domain/enums/model_phase.dart';
 import 'package:aion/features/providers/domain/repositories/execution_context_cap_repository.dart';
 import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
 import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
+import 'package:aion/features/tickets/domain/entities/linked_ticket_ref.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
 import 'package:aion/features/tickets/domain/enums/comment_author_type.dart';
@@ -42,6 +43,7 @@ import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/repositories/comment_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_link_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
+import 'package:aion/features/tickets/domain/utils/ticket_link_direction.dart';
 import 'package:aion/features/tickets/presentation/cubit/chat_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/codebase_analysis_status.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
@@ -1326,9 +1328,9 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// exists, is live, and is not [TicketStatus.done]. Queries
   /// [TicketLinkRepository.getLinksByTypes] once for every live
   /// `blocks`/`blockedBy` row app-wide, resolves each row's blockee/blocker
-  /// pair — a `blockedBy` row's blockee is its `source` (blocked by its
-  /// `target`); a `blocks` row's blockee is its `target` (blocked by its
-  /// `source`) — then looks up each blocker's current status from
+  /// pair via [relativeLinkType] — the ticket whose relative reading of
+  /// the row is [TicketLinkType.blockedBy] is the blockee, the other side
+  /// is the blocker — then looks up each blocker's current status from
   /// [allTickets] (already loaded for the Board, no extra per-ticket
   /// fetch). A blocker missing from [allTickets] (trashed, or simply not
   /// loaded on this page) is treated as *not* blocking, consistent with
@@ -1350,12 +1352,15 @@ class TicketsCubit extends Cubit<TicketsState> {
     final byId = {for (final t in allTickets) t.id: t};
     final blocked = <String>{};
     for (final row in rows) {
-      final (blockeeId, blockerId) = switch (row.linkType) {
-        'blockedBy' => (row.sourceTicketId, row.targetTicketId),
-        'blocks' => (row.targetTicketId, row.sourceTicketId),
-        _ => (null, null),
-      };
-      if (blockeeId == null || blockerId == null) continue;
+      final targetIsBlockee =
+          relativeLinkType(row, row.targetTicketId) ==
+          TicketLinkType.blockedBy;
+      final blockeeId = targetIsBlockee
+          ? row.targetTicketId
+          : row.sourceTicketId;
+      final blockerId = targetIsBlockee
+          ? row.sourceTicketId
+          : row.targetTicketId;
       if (byId[blockerId]?.status != TicketStatus.done) {
         blocked.add(blockeeId);
       }
@@ -1364,11 +1369,11 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Whether [ticket] currently has an unresolved `blocks`/`blockedBy`
-  /// dependency — i.e. a live link naming [ticket] as the blockee whose
-  /// blocker either doesn't exist or isn't [TicketStatus.done]. Mirrors
-  /// [_computeBlockedTicketIds]'s row-resolution logic (a `blockedBy`
-  /// row's blockee is its source; a `blocks` row's blockee is its
-  /// target) but scoped to a single ticket via
+  /// dependency — i.e. a live link whose [relativeLinkType] from
+  /// [ticket]'s own side is [TicketLinkType.blockedBy], and whose other
+  /// side either doesn't exist or isn't [TicketStatus.done]. Mirrors
+  /// [_computeBlockedTicketIds]'s row-resolution (via the same
+  /// [relativeLinkType] helper) but scoped to a single ticket via
   /// [TicketLinkRepository.getLinksForTicket] rather than the board-wide
   /// bulk query, since this runs once per `inProgress` transition
   /// attempt rather than once per board load. Returns `false` if
@@ -1381,12 +1386,12 @@ class TicketsCubit extends Cubit<TicketsState> {
 
     final rows = await linkRepo.getLinksForTicket(ticket.id);
     for (final row in rows) {
-      final (blockeeId, blockerId) = switch (row.linkType) {
-        'blockedBy' => (row.sourceTicketId, row.targetTicketId),
-        'blocks' => (row.targetTicketId, row.sourceTicketId),
-        _ => (null, null),
-      };
-      if (blockeeId != ticket.id || blockerId == null) continue;
+      if (relativeLinkType(row, ticket.id) != TicketLinkType.blockedBy) {
+        continue;
+      }
+      final blockerId = row.sourceTicketId == ticket.id
+          ? row.targetTicketId
+          : row.sourceTicketId;
       final blocker = await _repository.getTicketById(blockerId);
       if (blocker == null || blocker.status != TicketStatus.done) {
         return true;
@@ -3193,7 +3198,11 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// navigation). Only actually populates [linkedTickets]/[backlinks]
   /// when constructed with a [TicketLinkRepository] — every other call
   /// site is unaffected by this optional dependency, same rationale as
-  /// [_embeddingProvider]/[_gitProjector]/[_projectRootPath].
+  /// [_embeddingProvider]/[_gitProjector]/[_projectRootPath]. Each
+  /// populated [LinkedTicketRef.relativeType] is resolved via
+  /// [relativeLinkType] against [ticketId] itself, so it always reads
+  /// correctly from this ticket's own point of view regardless of which
+  /// side of the underlying row it is.
   Future<void> loadDocumentRelations(String ticketId) async {
     final ticket = await _repository.getTicketById(ticketId);
     if (ticket == null) return;
@@ -3213,8 +3222,8 @@ class TicketsCubit extends Cubit<TicketsState> {
           )
         : const <Ticket>[];
 
-    final linkedTickets = <Ticket>[];
-    final backlinks = <Ticket>[];
+    final linkedTickets = <LinkedTicketRef>[];
+    final backlinks = <LinkedTicketRef>[];
     final linkRepo = _linkRepository;
     if (linkRepo != null) {
       final links = await linkRepo.getLinksForTicket(ticket.id);
@@ -3224,11 +3233,16 @@ class TicketsCubit extends Cubit<TicketsState> {
             : link.sourceTicketId;
         final other = await _repository.getTicketById(otherId);
         if (other == null) continue;
+        final ref = (
+          ticket: other,
+          relativeType: relativeLinkType(link, ticket.id),
+          linkId: link.id,
+        );
         if (other.type == TicketType.page ||
             other.type == TicketType.resource) {
-          backlinks.add(other);
+          backlinks.add(ref);
         } else {
-          linkedTickets.add(other);
+          linkedTickets.add(ref);
         }
       }
     }
@@ -3245,6 +3259,104 @@ class TicketsCubit extends Cubit<TicketsState> {
         backlinks: backlinks,
       ),
     );
+  }
+
+  /// Creates a [linkType] relationship from [ticketId] to
+  /// [targetTicketId], then refreshes [ticketId]'s document relations and
+  /// (for a `blocks`/`blockedBy` link) the Board's blocked-badge state.
+  /// No-ops if constructed without a [TicketLinkRepository]. Also the new
+  /// home for link *creation* itself — previously
+  /// `ticket_metadata_section.dart`'s `TicketLinkPicker.onSelected`
+  /// called [TicketLinkRepository.createLink] directly from the widget
+  /// layer and separately triggered the same refreshes this method now
+  /// does in one place, alongside [deleteTicketLink]/
+  /// [updateTicketLinkType] — all three mutations go through this cubit
+  /// consistently.
+  Future<void> createTicketLink(
+    String ticketId,
+    String targetTicketId,
+    TicketLinkType linkType,
+  ) async {
+    final linkRepo = _linkRepository;
+    if (linkRepo == null) return;
+    await linkRepo.createLink(
+      sourceTicketId: ticketId,
+      targetTicketId: targetTicketId,
+      linkType: linkType,
+    );
+    await loadDocumentRelations(ticketId);
+    if (linkType == TicketLinkType.blocks ||
+        linkType == TicketLinkType.blockedBy) {
+      await _refreshBlockedBoardState();
+    }
+  }
+
+  /// Deletes the [linkId] row, then refreshes [ticketId]'s document
+  /// relations and (if the deleted link was a `blocks`/`blockedBy` pair)
+  /// the Board's blocked-badge state. No-ops if constructed without a
+  /// [TicketLinkRepository].
+  Future<void> deleteTicketLink(String ticketId, String linkId) async {
+    final linkRepo = _linkRepository;
+    if (linkRepo == null) return;
+    final wasBlocking = await _linkInvolvesBlocking(linkId);
+    await linkRepo.deleteLink(linkId);
+    await loadDocumentRelations(ticketId);
+    if (wasBlocking) await _refreshBlockedBoardState();
+  }
+
+  /// Updates the [linkId] row's stored type to [newRelativeType] — the
+  /// type as picked in `LinkedTicketsSection`'s `_LinkTypeEditor`, i.e.
+  /// *as it reads from [ticketId]'s own side*, not the row's raw
+  /// source-to-target reading. Translated to the canonical value via
+  /// [toCanonical] here (rather than by the caller) because that
+  /// translation needs the row's actual [TicketLinkData.sourceTicketId]/
+  /// `.targetTicketId` — data [LinkedTicketRef] deliberately doesn't
+  /// carry, since nothing else needs it once a row's [LinkedTicketRef
+  /// .relativeType] has already been resolved for display. Fetches the
+  /// row once (via [TicketLinkRepository.getLinkById]) for both this
+  /// translation and the same blocking-state check [deleteTicketLink]
+  /// does, then persists and refreshes the same state [deleteTicketLink]
+  /// does. A single repository call rather than a delete-then-recreate
+  /// pair, so a retype is one write and one refresh with no partial-
+  /// failure window. No-ops if constructed without a
+  /// [TicketLinkRepository], or if [linkId] no longer exists.
+  Future<void> updateTicketLinkType(
+    String ticketId,
+    String linkId,
+    TicketLinkType newRelativeType,
+  ) async {
+    final linkRepo = _linkRepository;
+    if (linkRepo == null) return;
+    final row = await linkRepo.getLinkById(linkId);
+    if (row == null) return;
+    final wasBlocking =
+        row.linkType == TicketLinkType.blocks.name ||
+        row.linkType == TicketLinkType.blockedBy.name;
+    final newCanonicalType = toCanonical(newRelativeType, row, ticketId);
+    await linkRepo.updateLinkType(linkId, newCanonicalType);
+    await loadDocumentRelations(ticketId);
+    if (wasBlocking ||
+        newCanonicalType == TicketLinkType.blocks ||
+        newCanonicalType == TicketLinkType.blockedBy) {
+      await _refreshBlockedBoardState();
+    }
+  }
+
+  /// Whether the link row with id [linkId] is currently a `blocks`/
+  /// `blockedBy` relationship — used by [deleteTicketLink]/
+  /// [updateTicketLinkType] to skip [_refreshBlockedBoardState]'s extra
+  /// query unless the mutation could actually change the Board's
+  /// blocked-badge state, mirroring [createTicketLink]'s own
+  /// `linkType == blocks || blockedBy` guard. Returns `false` if
+  /// constructed without a [TicketLinkRepository], or if [linkId] no
+  /// longer exists.
+  Future<bool> _linkInvolvesBlocking(String linkId) async {
+    final linkRepo = _linkRepository;
+    if (linkRepo == null) return false;
+    final row = await linkRepo.getLinkById(linkId);
+    if (row == null) return false;
+    return row.linkType == TicketLinkType.blocks.name ||
+        row.linkType == TicketLinkType.blockedBy.name;
   }
 
   /// Runs an opt-in codebase-summarization scan at [depth] and drafts one

@@ -131,8 +131,14 @@ void main() {
         final relations = await provider.loadPageRelations(page.id);
 
         expect(relations.childDocs, [childDoc]);
-        expect(relations.linkedTickets, [linkedTask]);
-        expect(relations.backlinks, [backlinkPage]);
+        expect(relations.linkedTickets.map((r) => r.ticket), [linkedTask]);
+        expect(relations.linkedTickets.single.relativeType,
+            TicketLinkType.relatesTo);
+        expect(relations.linkedTickets.single.linkId, 'link-1');
+        expect(relations.backlinks.map((r) => r.ticket), [backlinkPage]);
+        expect(relations.backlinks.single.relativeType,
+            TicketLinkType.relatesTo);
+        expect(relations.backlinks.single.linkId, 'link-2');
       },
     );
 
@@ -226,5 +232,38 @@ void main() {
 
       verify(() => ticketsCubit.trashTicket('p1')).called(1);
     });
+
+    test('deleteLink delegates to TicketsCubit.deleteTicketLink', () async {
+      when(
+        () => ticketsCubit.deleteTicketLink('p1', 'link-1'),
+      ).thenAnswer((_) async {});
+
+      await provider.deleteLink('p1', 'link-1');
+
+      verify(() => ticketsCubit.deleteTicketLink('p1', 'link-1')).called(1);
+    });
+
+    test(
+      'updateLinkType delegates to TicketsCubit.updateTicketLinkType',
+      () async {
+        when(
+          () => ticketsCubit.updateTicketLinkType(
+            'p1',
+            'link-1',
+            TicketLinkType.blocks,
+          ),
+        ).thenAnswer((_) async {});
+
+        await provider.updateLinkType('p1', 'link-1', TicketLinkType.blocks);
+
+        verify(
+          () => ticketsCubit.updateTicketLinkType(
+            'p1',
+            'link-1',
+            TicketLinkType.blocks,
+          ),
+        ).called(1);
+      },
+    );
   });
 }

@@ -8,6 +8,7 @@ import 'package:aion/core/contracts/page_ticket_provider.dart';
 import 'package:aion/features/pages/presentation/cubit/pages_cubit.dart';
 import 'package:aion/features/pages/presentation/cubit/pages_state.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
@@ -30,6 +31,31 @@ void main() {
     childDocs: [],
     linkedTickets: [],
     backlinks: [],
+  );
+  final linkedTicket = Ticket(
+    id: 'linked-1',
+    ticketId: 'AIO-2',
+    type: TicketType.task,
+    title: 'A linked task',
+    status: TicketStatus.backlog,
+    createdAt: now,
+    updatedAt: now,
+  );
+  // Deliberately distinct from `relations` (rather than reusing it) for
+  // `deleteLink`/`updateLinkType`'s tests: emitting an Equatable-equal
+  // `PageDetailLoaded` back-to-back is silently skipped by Cubit.emit,
+  // so those tests need a genuinely different post-refresh value to
+  // observe the emission at all.
+  final refreshedRelations = PageRelations(
+    childDocs: const [],
+    linkedTickets: [
+      (
+        ticket: linkedTicket,
+        relativeType: TicketLinkType.relatesTo,
+        linkId: 'link-2',
+      ),
+    ],
+    backlinks: const [],
   );
 
   setUp(() {
@@ -155,6 +181,78 @@ void main() {
       },
       build: () => PagesCubit(provider),
       act: (cubit) => cubit.trashPage('p1'),
+      expect: () => [isA<PagesError>()],
+    );
+  });
+
+  group('PagesCubit.deleteLink', () {
+    blocTest<PagesCubit, PagesState>(
+      'emits [PageDetailLoaded] with refreshed relations, page unchanged',
+      setUp: () {
+        when(
+          () => provider.deleteLink('p1', 'link-1'),
+        ).thenAnswer((_) async {});
+        when(
+          () => provider.loadPageRelations('p1'),
+        ).thenAnswer((_) async => refreshedRelations);
+      },
+      build: () => PagesCubit(provider),
+      seed: () => PageDetailLoaded(page, relations),
+      act: (cubit) => cubit.deleteLink('p1', 'link-1'),
+      expect: () => [PageDetailLoaded(page, refreshedRelations)],
+      verify: (_) {
+        verify(() => provider.deleteLink('p1', 'link-1')).called(1);
+      },
+    );
+
+    blocTest<PagesCubit, PagesState>(
+      'emits [PagesError] when the provider throws',
+      setUp: () {
+        when(
+          () => provider.deleteLink('p1', 'link-1'),
+        ).thenThrow(Exception('boom'));
+      },
+      build: () => PagesCubit(provider),
+      seed: () => PageDetailLoaded(page, relations),
+      act: (cubit) => cubit.deleteLink('p1', 'link-1'),
+      expect: () => [isA<PagesError>()],
+    );
+  });
+
+  group('PagesCubit.updateLinkType', () {
+    blocTest<PagesCubit, PagesState>(
+      'emits [PageDetailLoaded] with refreshed relations, page unchanged',
+      setUp: () {
+        when(
+          () => provider.updateLinkType('p1', 'link-1', TicketLinkType.blocks),
+        ).thenAnswer((_) async {});
+        when(
+          () => provider.loadPageRelations('p1'),
+        ).thenAnswer((_) async => refreshedRelations);
+      },
+      build: () => PagesCubit(provider),
+      seed: () => PageDetailLoaded(page, relations),
+      act: (cubit) =>
+          cubit.updateLinkType('p1', 'link-1', TicketLinkType.blocks),
+      expect: () => [PageDetailLoaded(page, refreshedRelations)],
+      verify: (_) {
+        verify(
+          () => provider.updateLinkType('p1', 'link-1', TicketLinkType.blocks),
+        ).called(1);
+      },
+    );
+
+    blocTest<PagesCubit, PagesState>(
+      'emits [PagesError] when the provider throws',
+      setUp: () {
+        when(
+          () => provider.updateLinkType('p1', 'link-1', TicketLinkType.blocks),
+        ).thenThrow(Exception('boom'));
+      },
+      build: () => PagesCubit(provider),
+      seed: () => PageDetailLoaded(page, relations),
+      act: (cubit) =>
+          cubit.updateLinkType('p1', 'link-1', TicketLinkType.blocks),
       expect: () => [isA<PagesError>()],
     );
   });

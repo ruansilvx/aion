@@ -4,6 +4,7 @@
 // models, Drift*Repository implementations) is intentionally not
 // exported — see flutter-conventions.md "Barrel files".
 
+export 'domain/entities/linked_ticket_ref.dart';
 export 'domain/entities/ticket.dart';
 export 'domain/entities/ticket_comment.dart';
 export 'domain/entities/ticket_search_page.dart';
@@ -21,6 +22,7 @@ export 'domain/enums/ticket_type.dart';
 export 'domain/repositories/comment_repository.dart';
 export 'domain/repositories/ticket_link_repository.dart';
 export 'domain/repositories/ticket_repository.dart';
+export 'domain/utils/ticket_link_direction.dart';
 export 'presentation/cubit/chat_cubit.dart';
 export 'presentation/cubit/chat_state.dart';
 export 'presentation/cubit/codebase_analysis_status.dart';

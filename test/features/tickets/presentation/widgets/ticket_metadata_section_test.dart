@@ -19,16 +19,19 @@ class MockTicketLinkRepository extends Mock implements TicketLinkRepository {}
 
 /// Wraps [ticket] in a [TicketMetadataSection], backed by a
 /// [MockTicketsCubit] fixed to a [TicketDetailLoaded] state for [ticket]
-/// (plus [linkedTickets]), and a [MockTicketLinkRepository] for the
-/// Linked Tickets picker's `createLink` call. Mirrors
-/// `tickets_board_view_test.dart`'s `_wrap` shape — a `WidgetsApp` with
-/// `home` (not `builder`), so the Overlay `TicketLinkPicker`/
-/// `SelectionMenu` need is present.
+/// (plus [linkedTickets]). `TicketLinkRepository` is no longer read
+/// directly by this section (T14: creation/removal/retype all go through
+/// `TicketsCubit` now — see `ticket_metadata_section.dart`'s class doc),
+/// so it's provided here only because `TicketLinkPicker`'s ancestor
+/// widget tree doesn't otherwise need it — kept as an unused stub
+/// provider for parity with any sibling widget that still expects one.
+/// Mirrors `tickets_board_view_test.dart`'s `_wrap` shape — a
+/// `WidgetsApp` with `home` (not `builder`), so the Overlay
+/// `TicketLinkPicker`/`SelectionMenu` need is present.
 Widget _wrap({
   required Ticket ticket,
   required MockTicketsCubit ticketsCubit,
-  required MockTicketLinkRepository linkRepository,
-  List<Ticket> linkedTickets = const [],
+  List<LinkedTicketRef> linkedTickets = const [],
 }) {
   whenListen(
     ticketsCubit,
@@ -59,17 +62,14 @@ Widget _wrap({
           alignment: Alignment.topLeft,
           child: SizedBox(
             width: 700,
-            child: RepositoryProvider<TicketLinkRepository>.value(
-              value: linkRepository,
-              child: BlocProvider<TicketsCubit>.value(
-                value: ticketsCubit,
-                child: SingleChildScrollView(
-                  child: TicketMetadataSection(
-                    ticket: ticket,
-                    automationConfidence: null,
-                    onAdvanceSddStage: (_) {},
-                    onMaybeAutoAdvance: (_, _) {},
-                  ),
+            child: BlocProvider<TicketsCubit>.value(
+              value: ticketsCubit,
+              child: SingleChildScrollView(
+                child: TicketMetadataSection(
+                  ticket: ticket,
+                  automationConfidence: null,
+                  onAdvanceSddStage: (_) {},
+                  onMaybeAutoAdvance: (_, _) {},
                 ),
               ),
             ),
@@ -82,7 +82,6 @@ Widget _wrap({
 
 void main() {
   late MockTicketsCubit ticketsCubit;
-  late MockTicketLinkRepository linkRepository;
 
   final candidateEpic = Ticket(
     id: 'candidate-epic',
@@ -107,7 +106,6 @@ void main() {
     registerFallbackValue(TicketLinkType.relatesTo);
     registerFallbackValue(candidateEpic);
     ticketsCubit = MockTicketsCubit();
-    linkRepository = MockTicketLinkRepository();
 
     when(
       () => ticketsCubit.getAllTickets(),
@@ -118,17 +116,13 @@ void main() {
       () => ticketsCubit.getValidParentCandidates(any()),
     ).thenAnswer((_) async => []);
     when(
-      () => ticketsCubit.loadDocumentRelations(any()),
+      () => ticketsCubit.createTicketLink(any(), any(), any()),
     ).thenAnswer((_) async {});
     when(
-      () => ticketsCubit.refreshBlockedBoardState(),
+      () => ticketsCubit.deleteTicketLink(any(), any()),
     ).thenAnswer((_) async {});
     when(
-      () => linkRepository.createLink(
-        sourceTicketId: any(named: 'sourceTicketId'),
-        targetTicketId: any(named: 'targetTicketId'),
-        linkType: any(named: 'linkType'),
-      ),
+      () => ticketsCubit.updateTicketLinkType(any(), any(), any()),
     ).thenAnswer((_) async {});
   });
 
@@ -144,13 +138,7 @@ void main() {
       updatedAt: DateTime(2026),
     );
 
-    await tester.pumpWidget(
-      _wrap(
-        ticket: epic,
-        ticketsCubit: ticketsCubit,
-        linkRepository: linkRepository,
-      ),
-    );
+    await tester.pumpWidget(_wrap(ticket: epic, ticketsCubit: ticketsCubit));
     await tester.pumpAndSettle();
 
     expect(find.text('LINKED TICKETS'), findsOneWidget);
@@ -168,13 +156,7 @@ void main() {
       updatedAt: DateTime(2026),
     );
 
-    await tester.pumpWidget(
-      _wrap(
-        ticket: story,
-        ticketsCubit: ticketsCubit,
-        linkRepository: linkRepository,
-      ),
-    );
+    await tester.pumpWidget(_wrap(ticket: story, ticketsCubit: ticketsCubit));
     await tester.pumpAndSettle();
 
     expect(find.text('LINKED TICKETS'), findsOneWidget);
@@ -182,8 +164,8 @@ void main() {
 
   testWidgets(
     'a task ticket now renders the Linked Tickets section, and selecting '
-    'Blocks from the picker calls createLink with that exact type, not '
-    'relatesTo (board-task-ordering-indication)',
+    'Blocks from the picker calls TicketsCubit.createTicketLink with that '
+    'exact type, not relatesTo (board-task-ordering-indication)',
     (tester) async {
       final task = Ticket(
         id: 'task-1',
@@ -195,13 +177,7 @@ void main() {
         updatedAt: DateTime(2026),
       );
 
-      await tester.pumpWidget(
-        _wrap(
-          ticket: task,
-          ticketsCubit: ticketsCubit,
-          linkRepository: linkRepository,
-        ),
-      );
+      await tester.pumpWidget(_wrap(ticket: task, ticketsCubit: ticketsCubit));
       await tester.pumpAndSettle();
 
       expect(find.text('LINKED TICKETS'), findsOneWidget);
@@ -226,15 +202,12 @@ void main() {
       await tester.pumpAndSettle();
 
       verify(
-        () => linkRepository.createLink(
-          sourceTicketId: task.id,
-          targetTicketId: candidateEpic.id,
-          linkType: TicketLinkType.blocks,
+        () => ticketsCubit.createTicketLink(
+          task.id,
+          candidateEpic.id,
+          TicketLinkType.blocks,
         ),
       ).called(1);
-      // A blocks/blockedBy link refreshes the Board's blocked-badge
-      // state too (ticket_metadata_section.dart's onSelected).
-      verify(() => ticketsCubit.refreshBlockedBoardState()).called(1);
     },
   );
 
@@ -253,11 +226,7 @@ void main() {
       );
 
       await tester.pumpWidget(
-        _wrap(
-          ticket: resource,
-          ticketsCubit: ticketsCubit,
-          linkRepository: linkRepository,
-        ),
+        _wrap(ticket: resource, ticketsCubit: ticketsCubit),
       );
       await tester.pumpAndSettle();
 
@@ -276,14 +245,91 @@ void main() {
       await tester.pumpAndSettle();
 
       verify(
-        () => linkRepository.createLink(
-          sourceTicketId: resource.id,
-          targetTicketId: candidateEpic.id,
-          linkType: TicketLinkType.relatesTo,
+        () => ticketsCubit.createTicketLink(
+          resource.id,
+          candidateEpic.id,
+          TicketLinkType.relatesTo,
         ),
       ).called(1);
-      // relatesTo never touches the blocked-badge refresh path.
-      verifyNever(() => ticketsCubit.refreshBlockedBoardState());
     },
   );
+
+  group('row remove/retype actions (ticket-link-management-ui)', () {
+    late Ticket task;
+    late LinkedTicketRef linkedRef;
+
+    setUp(() {
+      task = Ticket(
+        id: 'task-1',
+        ticketId: 'AIO-3',
+        type: TicketType.task,
+        title: 'A Task',
+        status: TicketStatus.todo,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+      linkedRef = (
+        ticket: candidateEpic,
+        relativeType: TicketLinkType.blockedBy,
+        linkId: 'link-1',
+      );
+    });
+
+    testWidgets(
+      "a row's TicketsCubit.updateTicketLinkType call carries the row's "
+      'link id and the newly picked relative type',
+      (tester) async {
+        await tester.pumpWidget(
+          _wrap(
+            ticket: task,
+            ticketsCubit: ticketsCubit,
+            linkedTickets: [linkedRef],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // The row's action buttons are only revealed on hover — simulated
+        // here by directly invoking the callback `LinkedTicketsSection`
+        // wires, exercised more directly in
+        // `linked_tickets_section_test.dart`. This test only asserts the
+        // call site's own wiring: `ticket_metadata_section.dart` must
+        // pass the callback through to `TicketsCubit` unmodified.
+        final section = tester.widget<LinkedTicketsSection>(
+          find.byType(LinkedTicketsSection),
+        );
+        section.onChangeType('link-1', TicketLinkType.blocks);
+
+        verify(
+          () => ticketsCubit.updateTicketLinkType(
+            task.id,
+            'link-1',
+            TicketLinkType.blocks,
+          ),
+        ).called(1);
+      },
+    );
+
+    testWidgets(
+      "a row's TicketsCubit.deleteTicketLink call carries the row's link id",
+      (tester) async {
+        await tester.pumpWidget(
+          _wrap(
+            ticket: task,
+            ticketsCubit: ticketsCubit,
+            linkedTickets: [linkedRef],
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final section = tester.widget<LinkedTicketsSection>(
+          find.byType(LinkedTicketsSection),
+        );
+        section.onRemove('link-1');
+
+        verify(
+          () => ticketsCubit.deleteTicketLink(task.id, 'link-1'),
+        ).called(1);
+      },
+    );
+  });
 }
