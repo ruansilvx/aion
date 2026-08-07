@@ -11,6 +11,7 @@ import 'package:aion/features/pages/presentation/cubit/pages_cubit.dart';
 import 'package:aion/features/pages/presentation/cubit/pages_state.dart';
 import 'package:aion/features/pages/presentation/screens/page_create_screen.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
 /// The `/workspace/pages/:id` route: a `page` ticket's title, Markdown
@@ -153,15 +154,37 @@ class _PageDetailContent extends StatelessWidget {
               ),
             ),
             LinkedTicketsSection(
-              tickets: relations.linkedTickets,
+              links: relations.linkedTickets,
+              // No creatable link types for a page's own Linked Tickets
+              // section — pages never render `TicketLinkPicker` as this
+              // section's `trailing` (see below), so link *creation*
+              // stays out of scope here, per proposal.md's Non-goals.
+              // In-place *editing* of an existing row's type still
+              // applies, though, with the same widened non-`resource`
+              // option set `ticket_metadata_section.dart` offers for
+              // every board-ticket type a page can link to.
+              linkTypeOptions: const [
+                TicketLinkType.blocks,
+                TicketLinkType.blockedBy,
+                TicketLinkType.relatesTo,
+                TicketLinkType.duplicates,
+              ],
               onTap: (id) => context.go('/workspace/tickets/$id'),
+              onRemove: (linkId) =>
+                  context.read<PagesCubit>().deleteLink(page.id, linkId),
+              onChangeType: (linkId, newRelativeType) => context
+                  .read<PagesCubit>()
+                  .updateLinkType(page.id, linkId, newRelativeType),
             ),
             BacklinksSection(
-              tickets: relations.backlinks,
+              tickets: relations.backlinks.map((r) => r.ticket).toList(),
               onTap: (id) {
-                final ticket = relations.backlinks.firstWhere(
+                final backlinkTickets = relations.backlinks
+                    .map((r) => r.ticket)
+                    .toList();
+                final ticket = backlinkTickets.firstWhere(
                   (t) => t.id == id,
-                  orElse: () => relations.backlinks.first,
+                  orElse: () => backlinkTickets.first,
                 );
                 context.go(ticketDetailRoute(ticket));
               },

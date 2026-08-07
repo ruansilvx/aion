@@ -527,6 +527,17 @@
   "ticketLinkTypeBlockedBy": "Blocked by",
   "ticketLinkTypeRelatesTo": "Relates to",
   "ticketLinkTypeDuplicates": "Duplicates",
+  "ticketLinkTypeDuplicatedBy": "Duplicated by",
+  "linkedTicketsRemoveAction": "Remove link",
+  "linkedTicketsChangeTypeAction": "Change type",
+  "linkedTicketsRemoveConfirmTitle": "Remove this link?",
+  "linkedTicketsRemoveConfirmBody": "This unlinks {key} from this ticket. Neither ticket is deleted.",
+  "@linkedTicketsRemoveConfirmBody": {
+    "placeholders": {
+      "key": { "type": "String" }
+    }
+  },
+  "linkedTicketsRemoveConfirmAction": "Remove",
 
   "pageDetailContentPlaceholder": "Write the page content in Markdown…",
   "pageDetailEditContent": "Edit page content",

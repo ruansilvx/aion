@@ -1689,12 +1689,29 @@ void main() {
       seed: () => TicketDetailLoaded(page),
       act: (cubit) => cubit.loadDocumentRelations(page.id),
       expect: () => [
-        TicketDetailLoaded(
-          page,
-          childDocs: [childPage],
-          linkedTickets: [linkedTask],
-          backlinks: [backlinkPage],
-        ),
+        isA<TicketDetailLoaded>()
+            .having((s) => s.ticket, 'ticket', page)
+            .having((s) => s.childDocs, 'childDocs', [childPage])
+            .having(
+              (s) => s.linkedTickets.map((r) => r.ticket),
+              'linkedTickets tickets',
+              [linkedTask],
+            )
+            .having(
+              (s) => s.linkedTickets.single.relativeType,
+              'linkedTickets relativeType',
+              TicketLinkType.relatesTo,
+            )
+            .having(
+              (s) => s.backlinks.map((r) => r.ticket),
+              'backlinks tickets',
+              [backlinkPage],
+            )
+            .having(
+              (s) => s.backlinks.single.relativeType,
+              'backlinks relativeType',
+              TicketLinkType.relatesTo,
+            ),
       ],
     );
 
@@ -1796,7 +1813,7 @@ void main() {
       act: (cubit) => cubit.loadDocumentRelations('bug-1'),
       expect: () => [
         isA<TicketDetailLoaded>().having(
-          (s) => s.linkedTickets.map((t) => t.id),
+          (s) => s.linkedTickets.map((r) => r.ticket.id),
           'linkedTickets ids',
           ['release-1'],
         ),
@@ -1832,6 +1849,494 @@ void main() {
         ).called(1);
       },
     );
+  });
+
+  group('createTicketLink / deleteTicketLink / updateTicketLinkType', () {
+    late MockTicketLinkRepository linkRepository;
+
+    final sourceTicket = Ticket(
+      id: 'src-1',
+      ticketId: 'AIO-20',
+      type: TicketType.task,
+      title: 'Source ticket',
+      status: TicketStatus.backlog,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final targetTicket = Ticket(
+      id: 'target-1',
+      ticketId: 'AIO-21',
+      type: TicketType.task,
+      title: 'Target ticket',
+      status: TicketStatus.backlog,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    setUp(() {
+      linkRepository = MockTicketLinkRepository();
+    });
+
+    TicketsCubit buildCubit() =>
+        TicketsCubit(repository, linkRepository: linkRepository);
+
+    /// Stubs [loadDocumentRelations]'s own repository reads for
+    /// [ticket] so the create/delete/update methods' internal refresh
+    /// call doesn't throw — doesn't stub anything about the mutation
+    /// itself.
+    void stubDocumentRelationsRefresh(Ticket ticket) {
+      when(
+        () => repository.getTicketById(ticket.id),
+      ).thenAnswer((_) async => ticket);
+      when(
+        () => linkRepository.getLinksForTicket(ticket.id),
+      ).thenAnswer((_) async => []);
+    }
+
+    group('createTicketLink', () {
+      blocTest<TicketsCubit, TicketsState>(
+        'creates the link, then refreshes document relations',
+        setUp: () {
+          when(
+            () => linkRepository.createLink(
+              sourceTicketId: sourceTicket.id,
+              targetTicketId: targetTicket.id,
+              linkType: TicketLinkType.relatesTo,
+            ),
+          ).thenAnswer((_) async {});
+          stubDocumentRelationsRefresh(sourceTicket);
+        },
+        build: buildCubit,
+        seed: () => TicketDetailLoaded(sourceTicket),
+        act: (cubit) => cubit.createTicketLink(
+          sourceTicket.id,
+          targetTicket.id,
+          TicketLinkType.relatesTo,
+        ),
+        expect: () => [],
+        verify: (_) {
+          verify(
+            () => linkRepository.createLink(
+              sourceTicketId: sourceTicket.id,
+              targetTicketId: targetTicket.id,
+              linkType: TicketLinkType.relatesTo,
+            ),
+          ).called(1);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'refreshes the Board blocked-badge state for a blocks link',
+        setUp: () {
+          when(
+            () => linkRepository.createLink(
+              sourceTicketId: sourceTicket.id,
+              targetTicketId: targetTicket.id,
+              linkType: TicketLinkType.blocks,
+            ),
+          ).thenAnswer((_) async {});
+          stubDocumentRelationsRefresh(sourceTicket);
+          when(
+            () => linkRepository.getLinksByTypes([
+              TicketLinkType.blocks,
+              TicketLinkType.blockedBy,
+            ]),
+          ).thenAnswer((_) async => []);
+        },
+        build: buildCubit,
+        seed: () => TicketsLoaded([sourceTicket], hasMore: false),
+        act: (cubit) => cubit.createTicketLink(
+          sourceTicket.id,
+          targetTicket.id,
+          TicketLinkType.blocks,
+        ),
+        expect: () => [],
+        verify: (_) {
+          verify(
+            () => linkRepository.getLinksByTypes([
+              TicketLinkType.blocks,
+              TicketLinkType.blockedBy,
+            ]),
+          ).called(1);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'does not refresh blocked-badge state for a relatesTo link',
+        setUp: () {
+          when(
+            () => linkRepository.createLink(
+              sourceTicketId: sourceTicket.id,
+              targetTicketId: targetTicket.id,
+              linkType: TicketLinkType.relatesTo,
+            ),
+          ).thenAnswer((_) async {});
+          stubDocumentRelationsRefresh(sourceTicket);
+        },
+        build: buildCubit,
+        seed: () => TicketsLoaded([sourceTicket], hasMore: false),
+        act: (cubit) => cubit.createTicketLink(
+          sourceTicket.id,
+          targetTicket.id,
+          TicketLinkType.relatesTo,
+        ),
+        expect: () => [],
+        verify: (_) {
+          verifyNever(() => linkRepository.getLinksByTypes(any()));
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'no-ops when constructed without a TicketLinkRepository',
+        build: () => TicketsCubit(repository),
+        act: (cubit) => cubit.createTicketLink(
+          sourceTicket.id,
+          targetTicket.id,
+          TicketLinkType.relatesTo,
+        ),
+        expect: () => [],
+        verify: (_) {
+          verifyNever(() => repository.getTicketById(any()));
+        },
+      );
+    });
+
+    group('deleteTicketLink', () {
+      blocTest<TicketsCubit, TicketsState>(
+        'deletes the row, then refreshes document relations',
+        setUp: () {
+          when(() => linkRepository.getLinkById('link-1')).thenAnswer(
+            (_) async => TicketLinkData(
+              id: 'link-1',
+              sourceTicketId: sourceTicket.id,
+              targetTicketId: targetTicket.id,
+              linkType: TicketLinkType.relatesTo.name,
+            ),
+          );
+          when(
+            () => linkRepository.deleteLink('link-1'),
+          ).thenAnswer((_) async {});
+          stubDocumentRelationsRefresh(sourceTicket);
+        },
+        build: buildCubit,
+        seed: () => TicketDetailLoaded(sourceTicket),
+        act: (cubit) => cubit.deleteTicketLink(sourceTicket.id, 'link-1'),
+        expect: () => [],
+        verify: (_) {
+          verify(() => linkRepository.deleteLink('link-1')).called(1);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'refreshes blocked-badge state when the deleted link was blocks/'
+        'blockedBy',
+        setUp: () {
+          when(() => linkRepository.getLinkById('link-1')).thenAnswer(
+            (_) async => TicketLinkData(
+              id: 'link-1',
+              sourceTicketId: sourceTicket.id,
+              targetTicketId: targetTicket.id,
+              linkType: TicketLinkType.blocks.name,
+            ),
+          );
+          when(
+            () => linkRepository.deleteLink('link-1'),
+          ).thenAnswer((_) async {});
+          stubDocumentRelationsRefresh(sourceTicket);
+          when(
+            () => linkRepository.getLinksByTypes([
+              TicketLinkType.blocks,
+              TicketLinkType.blockedBy,
+            ]),
+          ).thenAnswer((_) async => []);
+        },
+        build: buildCubit,
+        seed: () => TicketsLoaded([sourceTicket], hasMore: false),
+        act: (cubit) => cubit.deleteTicketLink(sourceTicket.id, 'link-1'),
+        expect: () => [],
+        verify: (_) {
+          verify(
+            () => linkRepository.getLinksByTypes([
+              TicketLinkType.blocks,
+              TicketLinkType.blockedBy,
+            ]),
+          ).called(1);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'does not refresh blocked-badge state for a relatesTo/duplicates '
+        'link',
+        setUp: () {
+          when(() => linkRepository.getLinkById('link-1')).thenAnswer(
+            (_) async => TicketLinkData(
+              id: 'link-1',
+              sourceTicketId: sourceTicket.id,
+              targetTicketId: targetTicket.id,
+              linkType: TicketLinkType.duplicates.name,
+            ),
+          );
+          when(
+            () => linkRepository.deleteLink('link-1'),
+          ).thenAnswer((_) async {});
+          stubDocumentRelationsRefresh(sourceTicket);
+        },
+        build: buildCubit,
+        seed: () => TicketDetailLoaded(sourceTicket),
+        act: (cubit) => cubit.deleteTicketLink(sourceTicket.id, 'link-1'),
+        expect: () => [],
+        verify: (_) {
+          verifyNever(() => linkRepository.getLinksByTypes(any()));
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'no-ops when constructed without a TicketLinkRepository',
+        build: () => TicketsCubit(repository),
+        act: (cubit) => cubit.deleteTicketLink(sourceTicket.id, 'link-1'),
+        expect: () => [],
+        verify: (_) {
+          verifyNever(() => repository.getTicketById(any()));
+        },
+      );
+    });
+
+    group('updateTicketLinkType', () {
+      blocTest<TicketsCubit, TicketsState>(
+        "translates the relative selection to canonical (viewing ticket "
+        "is the row's target)",
+        setUp: () {
+          // sourceTicket is the row's TARGET here, so a "blocks" relative
+          // selection (as picked from sourceTicket's own side) must be
+          // persisted as its inverse, "blockedBy".
+          when(() => linkRepository.getLinkById('link-1')).thenAnswer(
+            (_) async => TicketLinkData(
+              id: 'link-1',
+              sourceTicketId: targetTicket.id,
+              targetTicketId: sourceTicket.id,
+              linkType: TicketLinkType.relatesTo.name,
+            ),
+          );
+          when(
+            () => linkRepository.updateLinkType(
+              'link-1',
+              TicketLinkType.blockedBy,
+            ),
+          ).thenAnswer((_) async {});
+          stubDocumentRelationsRefresh(sourceTicket);
+          when(
+            () => linkRepository.getLinksByTypes([
+              TicketLinkType.blocks,
+              TicketLinkType.blockedBy,
+            ]),
+          ).thenAnswer((_) async => []);
+        },
+        build: buildCubit,
+        seed: () => TicketsLoaded([sourceTicket], hasMore: false),
+        act: (cubit) => cubit.updateTicketLinkType(
+          sourceTicket.id,
+          'link-1',
+          TicketLinkType.blocks,
+        ),
+        expect: () => [],
+        verify: (_) {
+          verify(
+            () => linkRepository.updateLinkType(
+              'link-1',
+              TicketLinkType.blockedBy,
+            ),
+          ).called(1);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'persists the relative selection unchanged when the viewing '
+        "ticket is the row's source",
+        setUp: () {
+          when(() => linkRepository.getLinkById('link-1')).thenAnswer(
+            (_) async => TicketLinkData(
+              id: 'link-1',
+              sourceTicketId: sourceTicket.id,
+              targetTicketId: targetTicket.id,
+              linkType: TicketLinkType.relatesTo.name,
+            ),
+          );
+          when(
+            () => linkRepository.updateLinkType(
+              'link-1',
+              TicketLinkType.duplicates,
+            ),
+          ).thenAnswer((_) async {});
+          stubDocumentRelationsRefresh(sourceTicket);
+        },
+        build: buildCubit,
+        seed: () => TicketDetailLoaded(sourceTicket),
+        act: (cubit) => cubit.updateTicketLinkType(
+          sourceTicket.id,
+          'link-1',
+          TicketLinkType.duplicates,
+        ),
+        expect: () => [],
+        verify: (_) {
+          verify(
+            () => linkRepository.updateLinkType(
+              'link-1',
+              TicketLinkType.duplicates,
+            ),
+          ).called(1);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'refreshes blocked-badge state when the OLD type was blocking',
+        setUp: () {
+          when(() => linkRepository.getLinkById('link-1')).thenAnswer(
+            (_) async => TicketLinkData(
+              id: 'link-1',
+              sourceTicketId: sourceTicket.id,
+              targetTicketId: targetTicket.id,
+              linkType: TicketLinkType.blocks.name,
+            ),
+          );
+          when(
+            () => linkRepository.updateLinkType(
+              'link-1',
+              TicketLinkType.relatesTo,
+            ),
+          ).thenAnswer((_) async {});
+          stubDocumentRelationsRefresh(sourceTicket);
+          when(
+            () => linkRepository.getLinksByTypes([
+              TicketLinkType.blocks,
+              TicketLinkType.blockedBy,
+            ]),
+          ).thenAnswer((_) async => []);
+        },
+        build: buildCubit,
+        seed: () => TicketsLoaded([sourceTicket], hasMore: false),
+        act: (cubit) => cubit.updateTicketLinkType(
+          sourceTicket.id,
+          'link-1',
+          TicketLinkType.relatesTo,
+        ),
+        expect: () => [],
+        verify: (_) {
+          verify(
+            () => linkRepository.getLinksByTypes([
+              TicketLinkType.blocks,
+              TicketLinkType.blockedBy,
+            ]),
+          ).called(1);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'refreshes blocked-badge state when the NEW type is blocking',
+        setUp: () {
+          when(() => linkRepository.getLinkById('link-1')).thenAnswer(
+            (_) async => TicketLinkData(
+              id: 'link-1',
+              sourceTicketId: sourceTicket.id,
+              targetTicketId: targetTicket.id,
+              linkType: TicketLinkType.relatesTo.name,
+            ),
+          );
+          when(
+            () =>
+                linkRepository.updateLinkType('link-1', TicketLinkType.blocks),
+          ).thenAnswer((_) async {});
+          stubDocumentRelationsRefresh(sourceTicket);
+          when(
+            () => linkRepository.getLinksByTypes([
+              TicketLinkType.blocks,
+              TicketLinkType.blockedBy,
+            ]),
+          ).thenAnswer((_) async => []);
+        },
+        build: buildCubit,
+        seed: () => TicketsLoaded([sourceTicket], hasMore: false),
+        act: (cubit) => cubit.updateTicketLinkType(
+          sourceTicket.id,
+          'link-1',
+          TicketLinkType.blocks,
+        ),
+        expect: () => [],
+        verify: (_) {
+          verify(
+            () => linkRepository.getLinksByTypes([
+              TicketLinkType.blocks,
+              TicketLinkType.blockedBy,
+            ]),
+          ).called(1);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'does not refresh blocked-badge state when neither old nor new '
+        'type is blocking',
+        setUp: () {
+          when(() => linkRepository.getLinkById('link-1')).thenAnswer(
+            (_) async => TicketLinkData(
+              id: 'link-1',
+              sourceTicketId: sourceTicket.id,
+              targetTicketId: targetTicket.id,
+              linkType: TicketLinkType.relatesTo.name,
+            ),
+          );
+          when(
+            () => linkRepository.updateLinkType(
+              'link-1',
+              TicketLinkType.duplicates,
+            ),
+          ).thenAnswer((_) async {});
+          stubDocumentRelationsRefresh(sourceTicket);
+        },
+        build: buildCubit,
+        seed: () => TicketDetailLoaded(sourceTicket),
+        act: (cubit) => cubit.updateTicketLinkType(
+          sourceTicket.id,
+          'link-1',
+          TicketLinkType.duplicates,
+        ),
+        expect: () => [],
+        verify: (_) {
+          verifyNever(() => linkRepository.getLinksByTypes(any()));
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'no-ops when constructed without a TicketLinkRepository',
+        build: () => TicketsCubit(repository),
+        act: (cubit) => cubit.updateTicketLinkType(
+          sourceTicket.id,
+          'link-1',
+          TicketLinkType.blocks,
+        ),
+        expect: () => [],
+        verify: (_) {
+          verifyNever(() => repository.getTicketById(any()));
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'no-ops when the link id no longer exists',
+        setUp: () {
+          when(
+            () => linkRepository.getLinkById('missing'),
+          ).thenAnswer((_) async => null);
+        },
+        build: buildCubit,
+        act: (cubit) => cubit.updateTicketLinkType(
+          sourceTicket.id,
+          'missing',
+          TicketLinkType.blocks,
+        ),
+        expect: () => [],
+        verify: (_) {
+          verifyNever(() => linkRepository.updateLinkType(any(), any()));
+        },
+      );
+    });
   });
 
   group('advanceSddStage', () {

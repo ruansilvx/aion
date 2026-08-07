@@ -1,18 +1,23 @@
 // features/tickets/data/page_ticket_provider_impl.dart — PageTicketProviderImpl (data layer).
 
 import 'package:aion/core/contracts/page_ticket_provider.dart';
+import 'package:aion/features/tickets/domain/entities/linked_ticket_ref.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_link_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
+import 'package:aion/features/tickets/domain/utils/ticket_link_direction.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 
 /// Drift/[TicketsCubit]-backed implementation of [PageTicketProvider].
 /// Reads go straight to [TicketRepository]/[TicketLinkRepository] (no
 /// business logic there per project.md's Cubit-vs-repository split);
-/// writes delegate to [TicketsCubit] so page creation/edit/trash reuse
-/// exactly the same validation/invariant logic every other ticket type's
-/// screens already trigger — no duplicated write path. See
+/// writes delegate to [TicketsCubit] so page creation/edit/trash (and,
+/// per `aion-arch/changes/ticket-link-management-ui/design.md`, link
+/// [deleteLink]/[updateLinkType]) reuse exactly the same validation/
+/// invariant logic every other ticket type's screens already trigger —
+/// no duplicated write path. See
 /// `aion-arch/changes/page-content-markdown-editor/design.md`.
 class PageTicketProviderImpl implements PageTicketProvider {
   /// Creates a [PageTicketProviderImpl] backed by [_ticketsCubit] (writes)
@@ -41,8 +46,8 @@ class PageTicketProviderImpl implements PageTicketProvider {
       types: const [TicketType.page, TicketType.resource],
     );
 
-    final linkedTickets = <Ticket>[];
-    final backlinks = <Ticket>[];
+    final linkedTickets = <LinkedTicketRef>[];
+    final backlinks = <LinkedTicketRef>[];
     final links = await _ticketLinkRepository.getLinksForTicket(pageId);
     for (final link in links) {
       final otherId = link.sourceTicketId == pageId
@@ -50,10 +55,15 @@ class PageTicketProviderImpl implements PageTicketProvider {
           : link.sourceTicketId;
       final other = await _ticketRepository.getTicketById(otherId);
       if (other == null) continue;
+      final ref = (
+        ticket: other,
+        relativeType: relativeLinkType(link, pageId),
+        linkId: link.id,
+      );
       if (other.type == TicketType.page || other.type == TicketType.resource) {
-        backlinks.add(other);
+        backlinks.add(ref);
       } else {
-        linkedTickets.add(other);
+        linkedTickets.add(ref);
       }
     }
 
@@ -101,6 +111,17 @@ class PageTicketProviderImpl implements PageTicketProvider {
         )
         .toList();
   }
+
+  @override
+  Future<void> deleteLink(String pageId, String linkId) =>
+      _ticketsCubit.deleteTicketLink(pageId, linkId);
+
+  @override
+  Future<void> updateLinkType(
+    String pageId,
+    String linkId,
+    TicketLinkType newRelativeType,
+  ) => _ticketsCubit.updateTicketLinkType(pageId, linkId, newRelativeType);
 
   /// Builds the full descendant-id set of [rootId] by walking `parentId`
   /// forward through [all] — same cycle definition as

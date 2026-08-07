@@ -2,7 +2,9 @@
 
 import 'package:equatable/equatable.dart';
 
+import 'package:aion/features/tickets/domain/entities/linked_ticket_ref.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
 
 /// Cross-feature contract exposing the `page`-ticket data and mutations
 /// `features/pages/` needs. Implemented by `PageTicketProviderImpl`
@@ -42,6 +44,26 @@ abstract interface class PageTicketProvider {
   /// candidates already excluded), for `PageCreateScreen`'s/
   /// `PageDetailScreen`'s parent picker.
   Future<List<Ticket>> getValidParentCandidatesForPage({String? excludeId});
+
+  /// Deletes the `TicketLink` row with id [linkId], then refreshes
+  /// [pageId]'s relations. Implemented by delegating to
+  /// `TicketsCubit.deleteTicketLink` for the same write/refresh logic
+  /// every other link mutation uses.
+  Future<void> deleteLink(String pageId, String linkId);
+
+  /// Updates the `TicketLink` row with id [linkId]'s stored type to
+  /// [newRelativeType] — the type as picked in `LinkedTicketsSection`'s
+  /// `_LinkTypeEditor`, i.e. as it reads from [pageId]'s own side, not
+  /// the row's raw source-to-target reading. The relative-to-canonical
+  /// translation (`ticket_link_direction.dart`'s `toCanonical`) happens
+  /// inside `TicketsCubit.updateTicketLinkType` itself, which this
+  /// method delegates to — that translation needs the row's actual
+  /// source/target ids, data this call site doesn't otherwise carry.
+  Future<void> updateLinkType(
+    String pageId,
+    String linkId,
+    TicketLinkType newRelativeType,
+  );
 }
 
 /// A page's sub-pages, linked tickets, and backlinks — the same three
@@ -60,11 +82,14 @@ class PageRelations extends Equatable {
   final List<Ticket> childDocs;
 
   /// Board tickets (epic/story/task/chat) linked to this page via
-  /// `TicketLink`.
-  final List<Ticket> linkedTickets;
+  /// `TicketLink`. Each entry pairs the other-side [Ticket] with the
+  /// link's type as it reads from this page's own side and the
+  /// underlying link row's id — see [LinkedTicketRef].
+  final List<LinkedTicketRef> linkedTickets;
 
   /// Other `page`/`resource` tickets linked to this page via `TicketLink`.
-  final List<Ticket> backlinks;
+  /// Same [LinkedTicketRef] shape as [linkedTickets].
+  final List<LinkedTicketRef> backlinks;
 
   @override
   List<Object?> get props => [childDocs, linkedTickets, backlinks];
