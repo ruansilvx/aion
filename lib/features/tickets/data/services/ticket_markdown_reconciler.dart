@@ -31,6 +31,17 @@ import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart
 /// would bypass that check entirely. Left out rather than risk a
 /// corrupted parent graph; revisit if hand-edited reparenting becomes a
 /// real need.
+///
+/// **Known limitation**: does not apply a `deletedAt` change from a
+/// hand-edited file either, for the same reason as `parentId` above —
+/// `TicketRepository.trashTicket`/`.restoreTicket` carry cascade logic
+/// (trashing cascades to descendants; restoring revives trashed
+/// ancestors/descendants too) that a bare field write from this
+/// background service would bypass, risking a corrupted trash state.
+/// `deletedAt` round-trips through [TicketMarkdownSerializer] (needed by
+/// `TicketDbReconstructionService`, which builds a fresh [Ticket] with
+/// no existing row to protect), but [_apply] below has no case for it
+/// and none is planned.
 class TicketMarkdownReconciler {
   /// Creates a [TicketMarkdownReconciler] wired to [_repository] (reads
   /// the current ticket, writes back reconciled fields),
