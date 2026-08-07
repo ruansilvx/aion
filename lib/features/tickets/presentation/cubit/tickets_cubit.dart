@@ -2912,11 +2912,10 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// provided (see the constructor's dartdoc) — desktop-only in
   /// practice, since `WorkspaceShell` only supplies these on desktop.
   ///
-  /// **Known gap**: the "restored from trash" trigger event from
-  /// design.md is not wired anywhere — that action lives in
-  /// `TrashCubit`, which has no access to a projector/root path today,
-  /// and wiring it wasn't in this task's scope (`tasks.md` T25 only
-  /// names `tickets_cubit.dart`). Flagged rather than silently expanded.
+  /// The `'restored'` trigger event lives on `TrashCubit` instead — see
+  /// its own `_triggerGitProjection` (added by
+  /// `aion-arch/changes/trash-restore-git-projection`, which closed the
+  /// gap this dartdoc used to flag here).
   Future<void> _triggerGitProjection(Ticket ticket, String eventLabel) async {
     final projector = _gitProjector;
     final rootPath = _projectRootPath;

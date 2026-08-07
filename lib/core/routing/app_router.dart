@@ -129,8 +129,13 @@ final appRouter = GoRouter(
         GoRoute(
           path: '/workspace/tickets/trash',
           builder: (context, state) => BlocProvider<TrashCubit>(
-            create: (context) =>
-                TrashCubit(context.read<TicketRepository>())..load(),
+            create: (context) => TrashCubit(
+              context.read<TicketRepository>(),
+              gitProjector: _activeProject(context).rootPath != null
+                  ? context.read<TicketGitProjector>()
+                  : null,
+              projectRootPath: _activeProject(context).rootPath,
+            )..load(),
             child: const TrashScreen(),
           ),
         ),
