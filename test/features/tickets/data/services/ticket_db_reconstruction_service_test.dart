@@ -55,7 +55,11 @@ void main() {
     await tempDir.delete(recursive: true);
   });
 
-  Ticket ticket({required String ticketId, required String title}) => Ticket(
+  Ticket ticket({
+    required String ticketId,
+    required String title,
+    DateTime? deletedAt,
+  }) => Ticket(
     id: 'internal-$ticketId',
     ticketId: ticketId,
     type: TicketType.resource,
@@ -64,6 +68,7 @@ void main() {
     status: TicketStatus.backlog,
     createdAt: DateTime.utc(2026, 7, 18),
     updatedAt: DateTime.utc(2026, 7, 18),
+    deletedAt: deletedAt,
   );
 
   test('reports zero when tickets/ does not exist', () async {
@@ -140,6 +145,50 @@ void main() {
     expect(report.skippedPaths.length, 1);
     expect(report.skippedPaths.single, contains('broken.md'));
   });
+
+  test('reconstructs a new ticket with its deletedAt from the file', () async {
+    when(() => repository.getAllTickets()).thenAnswer((_) async => []);
+    final trashedAt = DateTime.utc(2026, 8, 1);
+    await File('${tempDir.path}/tickets/AIO-1.md').writeAsString(
+      serializer.serialize(
+        ticket(ticketId: 'AIO-1', title: 'One', deletedAt: trashedAt),
+      ),
+    );
+
+    await service.reconstruct(tempDir.path);
+
+    final captured = verify(
+      () => repository.importTicket(captureAny()),
+    ).captured;
+    final imported = captured.single as Ticket;
+    expect(imported.deletedAt, trashedAt);
+  });
+
+  test(
+    'updating an existing row from a file with deletedAt overwrites the '
+    'row\'s previous value',
+    () async {
+      final existing = ticket(ticketId: 'AIO-1', title: 'Old title');
+      when(
+        () => repository.getAllTickets(),
+      ).thenAnswer((_) async => [existing]);
+      final trashedAt = DateTime.utc(2026, 8, 1);
+      await File('${tempDir.path}/tickets/AIO-1.md').writeAsString(
+        serializer.serialize(
+          ticket(ticketId: 'AIO-1', title: 'Old title', deletedAt: trashedAt),
+        ),
+      );
+
+      await service.reconstruct(tempDir.path);
+
+      final captured = verify(
+        () => repository.updateTicket(captureAny()),
+      ).captured;
+      final updated = captured.single as Ticket;
+      expect(updated.id, existing.id);
+      expect(updated.deletedAt, trashedAt);
+    },
+  );
 
   test('bulk-backfills embeddings only for imported tickets lacking one', () async {
     when(() => repository.getAllTickets()).thenAnswer((_) async => []);

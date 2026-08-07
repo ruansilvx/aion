@@ -50,6 +50,15 @@ class TicketReconstructionReport {
 /// update branch (a matching row already exists) reuses
 /// [TicketRepository.updateTicket], which never touches `ticketId` in
 /// the first place since it addresses the row by internal `id`.
+///
+/// `deletedAt` round-trips through reconstruction the same way
+/// `parentId`/`estimate`/`timeSpent` already do — a rebuilt DB correctly
+/// reflects which tickets were trashed as of the last commit touching
+/// each file. Before `deletedAt` was part of
+/// [TicketMarkdownSerializer]'s frontmatter (added by
+/// `aion-arch/changes/git-projection-commit-visibility`), every
+/// reconstructed ticket silently came back non-trashed regardless of its
+/// real state, since [_buildTicket] never set the field at all.
 class TicketDbReconstructionService {
   /// Creates a [TicketDbReconstructionService] using [_repository],
   /// [_serializer], and [_embeddingProvider] (for the post-import bulk
@@ -190,6 +199,9 @@ class TicketDbReconstructionService {
           : existing?.timeSpent,
       createdAt: createdAt,
       updatedAt: updatedAt,
+      deletedAt: fields.containsKey(TicketMarkdownTemplate.deletedAt)
+          ? fields[TicketMarkdownTemplate.deletedAt] as DateTime?
+          : existing?.deletedAt,
     );
   }
 }

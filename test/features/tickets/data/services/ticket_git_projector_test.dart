@@ -69,4 +69,95 @@ void main() {
     verify(() => git.add(any(), any())).called(1);
     verifyNever(() => git.commit(any(), any()));
   });
+
+  group('against a real git repository (the bug this fixes)', () {
+    // The tests above mock `GitRepositoryClient.hasChanges` directly, so
+    // they can't exercise the actual defect
+    // `git-projection-commit-visibility` fixes — it lived entirely in
+    // whether `deletedAt` was serialized at all, not in
+    // `TicketGitProjector`'s own logic. A real `GitRepositoryClient`
+    // against a real temp git repo is needed to prove a real `git diff`
+    // is produced.
+    late Directory realRepoDir;
+    late TicketGitProjector realProjector;
+
+    setUp(() async {
+      realRepoDir = await Directory.systemTemp.createTemp(
+        'ticket_git_projector_real_test',
+      );
+      await Process.run('git', ['init'], workingDirectory: realRepoDir.path);
+      realProjector = TicketGitProjector(
+        TicketMarkdownSerializer(),
+        GitRepositoryClient(),
+      );
+    });
+
+    tearDown(() async {
+      await realRepoDir.delete(recursive: true);
+    });
+
+    Future<int> commitCount() async {
+      final result = await Process.run(
+        'git',
+        ['log', '--oneline'],
+        workingDirectory: realRepoDir.path,
+      );
+      final output = result.stdout.toString().trim();
+      return output.isEmpty ? 0 : output.split('\n').length;
+    }
+
+    test(
+      'a real commit lands when only deletedAt changes between projections',
+      () async {
+        await realProjector.project(ticket, realRepoDir.path, 'created');
+        expect(await commitCount(), 1);
+
+        final trashed = Ticket(
+          id: ticket.id,
+          ticketId: ticket.ticketId,
+          type: ticket.type,
+          title: ticket.title,
+          description: ticket.description,
+          status: ticket.status,
+          createdAt: ticket.createdAt,
+          updatedAt: ticket.updatedAt,
+          deletedAt: DateTime.utc(2026, 8, 1),
+        );
+        await realProjector.project(trashed, realRepoDir.path, 'trashed');
+        expect(
+          await commitCount(),
+          2,
+          reason:
+              'trashing changed deletedAt, so a real diff exists and the '
+              'commit should not be skipped — this is the exact case that '
+              'silently no-op\'d before deletedAt was serialized',
+        );
+
+        final restored = Ticket(
+          id: ticket.id,
+          ticketId: ticket.ticketId,
+          type: ticket.type,
+          title: ticket.title,
+          description: ticket.description,
+          status: ticket.status,
+          createdAt: ticket.createdAt,
+          updatedAt: ticket.updatedAt,
+          deletedAt: null,
+        );
+        await realProjector.project(restored, realRepoDir.path, 'restored');
+        expect(
+          await commitCount(),
+          3,
+          reason:
+              'restoring changed deletedAt back to null, another real diff',
+        );
+
+        // Projecting the exact same (already-restored) ticket again with
+        // no field changes at all should still correctly no-op — the
+        // pre-existing "no empty commits" behavior must survive this fix.
+        await realProjector.project(restored, realRepoDir.path, 'restored');
+        expect(await commitCount(), 3);
+      },
+    );
+  });
 }
