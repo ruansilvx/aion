@@ -1,7 +1,10 @@
 // presentation/cubit/trash_cubit.dart — TrashCubit business logic (presentation layer).
 
+import 'dart:async';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
 import 'package:aion/features/tickets/presentation/cubit/trash_state.dart';
@@ -10,10 +13,25 @@ import 'package:aion/features/tickets/presentation/cubit/trash_state.dart';
 /// Screen-scoped — provided per visit to the Trash screen, not at the app
 /// root.
 class TrashCubit extends Cubit<TrashState> {
-  /// Creates a [TrashCubit] backed by [_repository].
-  TrashCubit(this._repository) : super(const TrashLoading());
+  /// Creates a [TrashCubit] backed by [_repository]. [gitProjector] and
+  /// [projectRootPath] are optional — when either is `null` (the default,
+  /// and every existing call site/test), [restore]'s git-projection side
+  /// effect simply no-ops, matching `TicketsCubit`'s identical
+  /// optional-dependency pattern for the same desktop-only feature. Real
+  /// usage (`app_router.dart`) supplies both whenever the active project
+  /// has a `rootPath`.
+  TrashCubit(
+    this._repository, {
+    TicketGitProjector? gitProjector,
+    String? projectRootPath,
+  }) : super(const TrashLoading()) {
+    _gitProjector = gitProjector;
+    _projectRootPath = projectRootPath;
+  }
 
   final TicketRepository _repository;
+  late final TicketGitProjector? _gitProjector;
+  late final String? _projectRootPath;
 
   /// How old a trashed ticket must be before "Purge old" will remove it.
   /// Fixed, not user-configurable (see proposal.md's Non-goals).
@@ -72,11 +90,21 @@ class TrashCubit extends Cubit<TrashState> {
   }
 
   /// Restores the ticket with internal id [id] via
-  /// [TicketRepository.restoreTicket], then reloads the trash list.
-  /// Emits [TrashError] if the repository call throws.
+  /// [TicketRepository.restoreTicket], fires a fire-and-forget
+  /// `'restored'` git-projection for it (see [_triggerGitProjection]),
+  /// then reloads the trash list. Note: [TicketRepository.restoreTicket]
+  /// also revives any currently-trashed ancestors/descendants of [id],
+  /// but only [id] itself is projected here — mirroring
+  /// `TicketsCubit.trashTickets`' existing scope simplification for the
+  /// symmetric trash-side case. Emits [TrashError] if the repository
+  /// call throws.
   Future<void> restore(String id) async {
     try {
       await _repository.restoreTicket(id);
+      final restored = await _repository.getTicketById(id);
+      if (restored != null) {
+        unawaited(_triggerGitProjection(restored, 'restored'));
+      }
       await load();
     } catch (e) {
       emit(TrashError(e.toString()));
@@ -118,5 +146,16 @@ class TrashCubit extends Cubit<TrashState> {
     } catch (e) {
       emit(TrashError(e.toString()));
     }
+  }
+
+  /// Projects [ticket] to its Markdown file and commits it, labelled
+  /// [eventLabel]. No-ops if no [_gitProjector]/[_projectRootPath] was
+  /// provided (see the constructor's dartdoc) — desktop-only in
+  /// practice, since `WorkspaceShell` only supplies these on desktop.
+  Future<void> _triggerGitProjection(Ticket ticket, String eventLabel) async {
+    final projector = _gitProjector;
+    final rootPath = _projectRootPath;
+    if (projector == null || rootPath == null) return;
+    await projector.project(ticket, rootPath, eventLabel);
   }
 }

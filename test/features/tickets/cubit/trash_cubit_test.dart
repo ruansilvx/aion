@@ -2,12 +2,16 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
+import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
 import 'package:aion/features/tickets/tickets.dart';
 
 class MockTicketRepository extends Mock implements TicketRepository {}
 
+class MockTicketGitProjector extends Mock implements TicketGitProjector {}
+
 void main() {
   late MockTicketRepository repository;
+  late MockTicketGitProjector gitProjector;
 
   Ticket buildTrashed({
     required String id,
@@ -28,8 +32,13 @@ void main() {
     );
   }
 
+  setUpAll(() {
+    registerFallbackValue(buildTrashed(id: 'fallback'));
+  });
+
   setUp(() {
     repository = MockTicketRepository();
+    gitProjector = MockTicketGitProjector();
   });
 
   group('TrashCubit', () {
@@ -147,6 +156,9 @@ void main() {
       'restore calls the repository then reloads',
       setUp: () {
         when(() => repository.restoreTicket('1')).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById('1'),
+        ).thenAnswer((_) async => buildTrashed(id: '1', deletedAt: null));
         when(() => repository.getTrashedTickets()).thenAnswer((_) async => []);
       },
       build: () => TrashCubit(repository),
@@ -171,6 +183,65 @@ void main() {
       act: (cubit) => cubit.restore('1'),
       expect: () => [isA<TrashError>()],
     );
+
+    group('restore git-projection trigger', () {
+      final restoredTicket = buildTrashed(id: '1', deletedAt: null);
+
+      blocTest<TrashCubit, TrashState>(
+        'restore projects the restored ticket labelled "restored" when '
+        'gitProjector/projectRootPath are supplied',
+        setUp: () {
+          when(() => repository.restoreTicket('1')).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById('1'),
+          ).thenAnswer((_) async => restoredTicket);
+          when(
+            () => repository.getTrashedTickets(),
+          ).thenAnswer((_) async => []);
+          when(
+            () => gitProjector.project(any(), any(), any()),
+          ).thenAnswer((_) async {});
+        },
+        build: () => TrashCubit(
+          repository,
+          gitProjector: gitProjector,
+          projectRootPath: '/root',
+        ),
+        act: (cubit) => cubit.restore('1'),
+        verify: (_) {
+          verify(
+            () => gitProjector.project(restoredTicket, '/root', 'restored'),
+          ).called(1);
+        },
+        expect: () => [
+          const TrashLoading(),
+          const TrashLoaded([], {}, 0),
+        ],
+      );
+
+      blocTest<TrashCubit, TrashState>(
+        'restore never calls the projector when gitProjector/projectRootPath '
+        'are omitted',
+        setUp: () {
+          when(() => repository.restoreTicket('1')).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById('1'),
+          ).thenAnswer((_) async => restoredTicket);
+          when(
+            () => repository.getTrashedTickets(),
+          ).thenAnswer((_) async => []);
+        },
+        build: () => TrashCubit(repository),
+        act: (cubit) => cubit.restore('1'),
+        verify: (_) {
+          verifyNever(() => gitProjector.project(any(), any(), any()));
+        },
+        expect: () => [
+          const TrashLoading(),
+          const TrashLoaded([], {}, 0),
+        ],
+      );
+    });
 
     blocTest<TrashCubit, TrashState>(
       'permanentlyDelete calls the repository then reloads',
