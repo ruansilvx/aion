@@ -55,6 +55,62 @@ void main() {
     });
   });
 
+  group('deletedAt', () {
+    test('a null deletedAt serializes to bare `null` and parses back to '
+        'null', () {
+      final content = serializer.serialize(ticket);
+      expect(content, contains('deletedAt: null'));
+      final result = serializer.parse(content) as ParsedOk;
+      expect(result.fields[TicketMarkdownTemplate.deletedAt], isNull);
+    });
+
+    test('a real deletedAt serializes to its ISO-8601 string and parses '
+        'back to the identical DateTime', () {
+      final trashedAt = DateTime.utc(2026, 8, 1, 9, 30);
+      // `Ticket.copyWith` has no `deletedAt` parameter (it always resets
+      // the field to null on every call — a separate, pre-existing gap,
+      // harmless today only because `DriftTicketRepository.updateTicket`
+      // never persists `deletedAt` regardless of what a `Ticket` carries;
+      // see this change's tasks.md), so a fresh `Ticket` is built
+      // directly here rather than via `copyWith`.
+      final trashed = Ticket(
+        id: ticket.id,
+        ticketId: ticket.ticketId,
+        type: ticket.type,
+        title: ticket.title,
+        description: ticket.description,
+        status: ticket.status,
+        priority: ticket.priority,
+        parentId: ticket.parentId,
+        estimate: ticket.estimate,
+        timeSpent: ticket.timeSpent,
+        createdAt: ticket.createdAt,
+        updatedAt: ticket.updatedAt,
+        deletedAt: trashedAt,
+      );
+      final content = serializer.serialize(trashed);
+      expect(content, contains('deletedAt: ${trashedAt.toIso8601String()}'));
+      final result = serializer.parse(content) as ParsedOk;
+      expect(result.fields[TicketMarkdownTemplate.deletedAt], trashedAt);
+    });
+
+    test('a frontmatter block written before this field existed (no '
+        'deletedAt key at all) still parses as ParsedOk with a null '
+        'value', () {
+      final content = serializer.serialize(ticket).replaceFirst(
+        '\ndeletedAt: null\n',
+        '\n',
+      );
+      expect(content, isNot(contains('deletedAt')));
+      final result = serializer.parse(content);
+      expect(result, isA<ParsedOk>());
+      expect(
+        (result as ParsedOk).fields[TicketMarkdownTemplate.deletedAt],
+        isNull,
+      );
+    });
+  });
+
   group('parse — ParsedPartial', () {
     test('degrades one invalid field, keeps the rest valid', () {
       final content = serializer.serialize(ticket).replaceFirst(

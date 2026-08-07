@@ -36,6 +36,7 @@ class TicketMarkdownSerializer {
       TicketMarkdownTemplate.timeSpent: ticket.timeSpent,
       TicketMarkdownTemplate.createdAt: ticket.createdAt.toIso8601String(),
       TicketMarkdownTemplate.updatedAt: ticket.updatedAt.toIso8601String(),
+      TicketMarkdownTemplate.deletedAt: ticket.deletedAt?.toIso8601String(),
     };
     for (final key in TicketMarkdownTemplate.fieldOrder) {
       buffer.writeln('$key: ${_yamlScalar(values[key])}');
@@ -139,6 +140,11 @@ class TicketMarkdownSerializer {
         return value is int ? (value,) : null;
       case TicketMarkdownTemplate.createdAt:
       case TicketMarkdownTemplate.updatedAt:
+        if (value is! String) return null;
+        final parsed = DateTime.tryParse(value);
+        return parsed == null ? null : (parsed,);
+      case TicketMarkdownTemplate.deletedAt:
+        if (value == null) return (null,);
         if (value is! String) return null;
         final parsed = DateTime.tryParse(value);
         return parsed == null ? null : (parsed,);

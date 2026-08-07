@@ -32,6 +32,9 @@ abstract final class TicketMarkdownTemplate {
   /// Frontmatter key for [Ticket.updatedAt] (ISO-8601).
   static const updatedAt = 'updatedAt';
 
+  /// Frontmatter key for [Ticket.deletedAt] (ISO-8601, nullable).
+  static const deletedAt = 'deletedAt';
+
   /// Deterministic key order used when serializing frontmatter, so diffs
   /// reflect real field changes rather than incidental key reordering.
   /// `title` and `description` are deliberately excluded from frontmatter
@@ -40,6 +43,15 @@ abstract final class TicketMarkdownTemplate {
   /// it as the body's leading `# Title` heading instead, matching the
   /// Obsidian-like hand-editable format this schema is meant to support.
   /// `description` is everything in the body after that heading.
+  ///
+  /// **A future field belongs at the end of this list, not inserted
+  /// alongside a semantically-related existing key.** This order is also
+  /// [TicketMarkdownSerializer.serialize]'s literal key-write order —
+  /// inserting a new key partway through reorders every key after it on
+  /// every existing ticket's next write, producing a whole-file diff (and
+  /// a commit) unrelated to any real content change. [deletedAt] was
+  /// appended here rather than placed next to [createdAt]/[updatedAt] for
+  /// exactly this reason.
   static const List<String> fieldOrder = [
     ticketId,
     type,
@@ -50,6 +62,7 @@ abstract final class TicketMarkdownTemplate {
     timeSpent,
     createdAt,
     updatedAt,
+    deletedAt,
   ];
 
   /// The frontmatter delimiter line, opening and closing the YAML block.
