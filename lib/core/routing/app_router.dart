@@ -225,6 +225,12 @@ final appRouter = GoRouter(
           path: '/workspace/settings',
           builder: (context, state) => MultiBlocProvider(
             providers: [
+              BlocProvider<AnthropicProviderConfigCubit>(
+                create: (context) => AnthropicProviderConfigCubit(
+                  context.read<AnthropicApiKeyRepository>(),
+                  context.read<ProviderRegistry>(),
+                )..load(),
+              ),
               BlocProvider<ProviderSettingsCubit>(
                 create: (context) => ProviderSettingsCubit(
                   context.read<ProviderRegistry>(),

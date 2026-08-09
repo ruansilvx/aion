@@ -22,12 +22,16 @@ import 'package:aion/features/providers/presentation/cubit/provider_settings_sta
 /// [_repository] on every [load]/[testConnection] call rather than
 /// cached, so it always reflects the latest Frontier-tier setting without
 /// this cubit needing to listen to `ModelRoutingCubit`. Its
-/// [AgentProvider] (resolved via [_registry]) supplies both the
-/// [AgentModelClient] to run the ping through and
+/// [AgentProvider] (resolved via [_registry]) supplies the
+/// [AgentModelClient] to run the ping through,
 /// [AgentProvider.normalizeErrorMessage] to clean a `disconnected`
-/// result's failure text. Model *selection* itself happens exclusively
-/// through `ModelRoutingCubit`'s three tier dropdowns — this cubit no
-/// longer owns a `selectModel` method.
+/// result's failure text, and [AgentProvider.displayName] — stashed on
+/// every emitted `ProviderSettingsReady.providerDisplayName` so
+/// `_ProviderStatusCard`'s title/subline can be provider-derived instead
+/// of a hardcoded string, now that a second `AgentProvider` exists. Model
+/// *selection* itself happens exclusively through `ModelRoutingCubit`'s
+/// three tier dropdowns — this cubit no longer owns a `selectModel`
+/// method.
 class ProviderSettingsCubit extends Cubit<ProviderSettingsState> {
   /// Creates a [ProviderSettingsCubit] backed by [_registry] (resolves
   /// the configured [AgentProvider]) and [_repository] (per-phase model
@@ -50,6 +54,7 @@ class ProviderSettingsCubit extends Cubit<ProviderSettingsState> {
       ProviderSettingsReady(
         selectedModel: model,
         status: ProviderConnectionStatus.unknown,
+        providerDisplayName: _registry.providerById(model.providerId).displayName,
       ),
     );
     await _runConnectionTest(model);
@@ -77,14 +82,15 @@ class ProviderSettingsCubit extends Cubit<ProviderSettingsState> {
   /// passed through `AgentProvider.normalizeErrorMessage` before being
   /// stored, so a leaked vendor-specific error never reaches the UI raw.
   Future<void> _runConnectionTest(AgentModelDescriptor model) async {
+    final provider = _registry.providerById(model.providerId);
     emit(
       ProviderSettingsReady(
         selectedModel: model,
         status: ProviderConnectionStatus.checking,
+        providerDisplayName: provider.displayName,
       ),
     );
 
-    final provider = _registry.providerById(model.providerId);
     String? overageMessage;
     String? errorMessage;
     try {
@@ -115,6 +121,7 @@ class ProviderSettingsCubit extends Cubit<ProviderSettingsState> {
             ? ProviderConnectionStatus.disconnected
             : ProviderConnectionStatus.connected,
         statusMessage: errorMessage ?? overageMessage,
+        providerDisplayName: provider.displayName,
       ),
     );
   }

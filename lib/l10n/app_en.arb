@@ -634,5 +634,15 @@
   "settingsProviderStatusUnknown": "NOT TESTED",
   "settingsProviderStatusChecking": "CHECKING",
   "settingsProviderStatusConnected": "CONNECTED",
-  "settingsProviderStatusDisconnected": "NOT CONNECTED"
+  "settingsProviderStatusDisconnected": "NOT CONNECTED",
+  "settingsProviderStatusNoKey": "NO KEY",
+  "settingsProviderSublineAnthropicApi": "Configured via API key",
+
+  "settingsProvidersEyebrow": "PROVIDERS",
+  "settingsAnthropicApiKeyTitle": "Anthropic API",
+  "settingsAnthropicApiKeyDescription": "Used for spec-phase, watcher, and comment calls billed per token to your own Anthropic account.",
+  "settingsAnthropicApiKeyFieldLabel": "API Key",
+  "settingsAnthropicApiKeyHint": "sk-ant-…",
+  "settingsAnthropicApiKeySaveButton": "Save",
+  "settingsAnthropicApiKeyFormatError": "That doesn't look like an Anthropic key — it should start with sk-ant-."
 }

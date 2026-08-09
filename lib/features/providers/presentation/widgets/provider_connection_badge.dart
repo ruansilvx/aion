@@ -21,12 +21,32 @@ import 'package:aion/features/providers/domain/enums/provider_connection_status.
 /// `SyncStatusBadge`'s own in-progress state already renders its spinner —
 /// rather than a bespoke two-tone `CustomPaint` spinner, per this change's
 /// design-sync notes on avoiding a numerically-duplicate implementation.
+///
+/// [labelOverride] is additive (default `null`) — added so
+/// `_AnthropicApiKeySection`'s no-key-saved presentation can show
+/// `"NO KEY"` on the `unknown` state's existing chrome instead of a new
+/// badge state. See
+/// `aion-arch/changes/anthropic-messages-api-provider/design.md`'s
+/// Component Spec §5.2.
 class ProviderConnectionBadge extends StatelessWidget {
-  /// Creates a [ProviderConnectionBadge] for [status].
-  const ProviderConnectionBadge({super.key, required this.status});
+  /// Creates a [ProviderConnectionBadge] for [status], optionally
+  /// overriding its label via [labelOverride].
+  const ProviderConnectionBadge({
+    super.key,
+    required this.status,
+    this.labelOverride,
+  });
 
   /// The connection status to render.
   final ProviderConnectionStatus status;
+
+  /// Replaces [status]'s default label text while keeping its chrome
+  /// (icon, fill, border, color) unchanged — used by
+  /// `_AnthropicApiKeySection` to render `"NO KEY"` on top of the
+  /// `unknown` state's existing hollow-circle presentation, rather than
+  /// inventing a new badge state for "no key saved yet". `null` renders
+  /// [status]'s own default label, unchanged from today.
+  final String? labelOverride;
 
   @override
   Widget build(BuildContext context) {
@@ -105,7 +125,10 @@ class ProviderConnectionBadge extends StatelessWidget {
             iconWidget ??
                 PhosphorIcon(icon, size: iconSize, color: foreground),
             SizedBox(width: gap),
-            Text(label, style: AionText.chip.copyWith(color: foreground)),
+            Text(
+              labelOverride ?? label,
+              style: AionText.chip.copyWith(color: foreground),
+            ),
           ],
         ),
       ),

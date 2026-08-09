@@ -7,6 +7,7 @@ import 'package:flutter/services.dart'
 import 'package:flutter/widgets.dart';
 
 import 'package:aion/core/core.dart';
+import 'package:aion/design_system/tokens/aion_colors.dart';
 import 'package:aion/design_system/tokens/aion_radius.dart';
 import 'package:aion/design_system/tokens/aion_shadows.dart';
 import 'package:aion/design_system/tokens/aion_text.dart';
@@ -17,7 +18,12 @@ import 'package:aion/design_system/tokens/theme_scope.dart';
 /// the widget layer, see design.md's Material Coupling Audit) with every
 /// `InputDecoration` value supplied explicitly from [AionColors]/[AionText]
 /// tokens, and a transparent [Material] ancestor since `TextField` requires
-/// one even outside `MaterialApp`.
+/// one even outside `MaterialApp`. [obscureText]/[suffixIcon]/[isError] are
+/// additive (default `false`/`null`/`false`) — added so a secret-entry
+/// field (e.g. an API key) can mask its value with a reveal toggle and
+/// show a validation-error border, without a bespoke widget; every
+/// existing call site is unaffected. See
+/// `aion-arch/changes/anthropic-messages-api-provider/design.md` §9.
 class AppTextField extends StatefulWidget {
   /// Creates an [AppTextField].
   const AppTextField({
@@ -34,6 +40,9 @@ class AppTextField extends StatefulWidget {
     this.prefixIcon,
     this.keyboardType,
     this.inputFormatters,
+    this.obscureText = false,
+    this.suffixIcon,
+    this.isError = false,
   });
 
   /// Controls and reads the field's text.
@@ -81,6 +90,28 @@ class AppTextField extends StatefulWidget {
   /// Input formatters applied to every keystroke (e.g.
   /// `FilteringTextInputFormatter.digitsOnly`). `null` applies none.
   final List<TextInputFormatter>? inputFormatters;
+
+  /// Masks the entered text (`•` per character) when `true` — used for
+  /// secret-entry fields like an API key. Passed straight through to the
+  /// wrapped `TextField.obscureText`; default `false` preserves every
+  /// existing call site's plaintext rendering.
+  final bool obscureText;
+
+  /// Optional trailing icon shown inside the field, after the text (e.g.
+  /// a reveal/hide toggle for an [obscureText] field). Styling and
+  /// interactivity are the caller's responsibility — this widget renders
+  /// whatever is passed as-is via `InputDecoration.suffixIcon`, mirroring
+  /// [prefixIcon]'s existing contract.
+  final Widget? suffixIcon;
+
+  /// Renders the field in its validation-error state — a `1.5px`
+  /// [AionColors.danger] border plus an [AionColorsHubTokens.errorRing]
+  /// focus-style ring, regardless of hover/focus. The caller owns the
+  /// validation logic and any error text shown alongside this field (this
+  /// widget renders no error copy itself, matching `NewProjectScreen`'s
+  /// existing hand-rolled error-field pattern). Default `false` preserves
+  /// every existing call site's rendering.
+  final bool isError;
 
   @override
   State<AppTextField> createState() => _AppTextFieldState();
@@ -147,15 +178,23 @@ class _AppTextFieldState extends State<AppTextField> {
         DecoratedBox(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.all(AionRadius.lg),
-            boxShadow: _isFocused ? AionShadows.focus(c, t.isDark) : const [],
+            boxShadow: widget.isError
+                ? [
+                    BoxShadow(
+                      color: c.errorRing(t.isDark),
+                      spreadRadius: 3,
+                    ),
+                  ]
+                : (_isFocused ? AionShadows.focus(c, t.isDark) : const []),
           ),
           child: Material(
             type: MaterialType.transparency,
             child: TextField(
               controller: widget.controller,
               focusNode: _focusNode,
-              maxLines: widget.maxLines,
+              maxLines: widget.obscureText ? 1 : widget.maxLines,
               minLines: isMultiline ? 5 : 1,
+              obscureText: widget.obscureText,
               keyboardType: widget.keyboardType,
               inputFormatters: widget.inputFormatters,
               textInputAction: widget.textInputAction,
@@ -173,6 +212,7 @@ class _AppTextFieldState extends State<AppTextField> {
                 isDense: true,
                 isCollapsed: false,
                 prefixIcon: widget.prefixIcon,
+                suffixIcon: widget.suffixIcon,
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 14,
                   vertical: 12,
@@ -182,15 +222,21 @@ class _AppTextFieldState extends State<AppTextField> {
                     .copyWith(color: c.textMuted),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.all(AionRadius.lg),
-                  borderSide: BorderSide(color: c.border, width: 1),
+                  borderSide: widget.isError
+                      ? BorderSide(color: c.danger, width: 1.5)
+                      : BorderSide(color: c.border, width: 1),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.all(AionRadius.lg),
-                  borderSide: BorderSide(color: c.border, width: 1),
+                  borderSide: widget.isError
+                      ? BorderSide(color: c.danger, width: 1.5)
+                      : BorderSide(color: c.border, width: 1),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.all(AionRadius.lg),
-                  borderSide: BorderSide(color: c.primary, width: 1.5),
+                  borderSide: widget.isError
+                      ? BorderSide(color: c.danger, width: 1.5)
+                      : BorderSide(color: c.primary, width: 1.5),
                 ),
               ),
             ),
