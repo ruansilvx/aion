@@ -34,10 +34,18 @@ const _haiku = AgentModelDescriptor(
   label: 'Haiku 4.5',
   contextWindowTokens: 200000,
 );
+const _anthropicApiSonnet = AgentModelDescriptor(
+  providerId: ProviderId.anthropicMessagesApi,
+  modelId: 'claude-sonnet-5',
+  label: 'Sonnet 5',
+  contextWindowTokens: 200000,
+);
 
 void main() {
   late MockAgentModelClient client;
   late MockAgentProvider provider;
+  late MockAgentModelClient anthropicApiClient;
+  late MockAgentProvider anthropicApiProvider;
   late MockProviderRegistry registry;
   late MockModelRoutingRepository repository;
 
@@ -51,16 +59,28 @@ void main() {
   setUp(() {
     client = MockAgentModelClient();
     provider = MockAgentProvider();
+    anthropicApiClient = MockAgentModelClient();
+    anthropicApiProvider = MockAgentProvider();
     registry = MockProviderRegistry();
     repository = MockModelRoutingRepository();
 
     when(() => provider.client).thenReturn(client);
+    when(() => provider.displayName).thenReturn('Claude Agent SDK');
     when(
       () => provider.normalizeErrorMessage(any()),
     ).thenAnswer((invocation) => invocation.positionalArguments[0] as String);
     when(
       () => registry.providerById(ProviderId.claudeAgentSdk),
     ).thenReturn(provider);
+
+    when(() => anthropicApiProvider.client).thenReturn(anthropicApiClient);
+    when(() => anthropicApiProvider.displayName).thenReturn('Anthropic API');
+    when(
+      () => anthropicApiProvider.normalizeErrorMessage(any()),
+    ).thenAnswer((invocation) => invocation.positionalArguments[0] as String);
+    when(
+      () => registry.providerById(ProviderId.anthropicMessagesApi),
+    ).thenReturn(anthropicApiProvider);
   });
 
   group('ProviderSettingsCubit', () {
@@ -81,14 +101,17 @@ void main() {
         const ProviderSettingsReady(
           selectedModel: _sonnet,
           status: ProviderConnectionStatus.unknown,
+          providerDisplayName: 'Claude Agent SDK',
         ),
         const ProviderSettingsReady(
           selectedModel: _sonnet,
           status: ProviderConnectionStatus.checking,
+          providerDisplayName: 'Claude Agent SDK',
         ),
         const ProviderSettingsReady(
           selectedModel: _sonnet,
           status: ProviderConnectionStatus.connected,
+          providerDisplayName: 'Claude Agent SDK',
         ),
       ],
     );
@@ -112,15 +135,18 @@ void main() {
         const ProviderSettingsReady(
           selectedModel: _sonnet,
           status: ProviderConnectionStatus.unknown,
+          providerDisplayName: 'Claude Agent SDK',
         ),
         const ProviderSettingsReady(
           selectedModel: _sonnet,
           status: ProviderConnectionStatus.checking,
+          providerDisplayName: 'Claude Agent SDK',
         ),
         const ProviderSettingsReady(
           selectedModel: _sonnet,
           status: ProviderConnectionStatus.disconnected,
           statusMessage: 'Node.js not found.',
+          providerDisplayName: 'Claude Agent SDK',
         ),
       ],
     );
@@ -149,15 +175,18 @@ void main() {
         const ProviderSettingsReady(
           selectedModel: _sonnet,
           status: ProviderConnectionStatus.unknown,
+          providerDisplayName: 'Claude Agent SDK',
         ),
         const ProviderSettingsReady(
           selectedModel: _sonnet,
           status: ProviderConnectionStatus.checking,
+          providerDisplayName: 'Claude Agent SDK',
         ),
         const ProviderSettingsReady(
           selectedModel: _sonnet,
           status: ProviderConnectionStatus.disconnected,
           statusMessage: 'Authentication failed.',
+          providerDisplayName: 'Claude Agent SDK',
         ),
       ],
     );
@@ -182,15 +211,18 @@ void main() {
         const ProviderSettingsReady(
           selectedModel: _sonnet,
           status: ProviderConnectionStatus.unknown,
+          providerDisplayName: 'Claude Agent SDK',
         ),
         const ProviderSettingsReady(
           selectedModel: _sonnet,
           status: ProviderConnectionStatus.checking,
+          providerDisplayName: 'Claude Agent SDK',
         ),
         const ProviderSettingsReady(
           selectedModel: _sonnet,
           status: ProviderConnectionStatus.connected,
           statusMessage: 'Over your plan\'s usage limit.',
+          providerDisplayName: 'Claude Agent SDK',
         ),
       ],
     );
@@ -209,6 +241,7 @@ void main() {
       seed: () => const ProviderSettingsReady(
         selectedModel: _sonnet,
         status: ProviderConnectionStatus.connected,
+        providerDisplayName: 'Claude Agent SDK',
       ),
       build: () => ProviderSettingsCubit(registry, repository),
       act: (cubit) => cubit.testConnection(),
@@ -216,10 +249,12 @@ void main() {
         const ProviderSettingsReady(
           selectedModel: _haiku,
           status: ProviderConnectionStatus.checking,
+          providerDisplayName: 'Claude Agent SDK',
         ),
         const ProviderSettingsReady(
           selectedModel: _haiku,
           status: ProviderConnectionStatus.connected,
+          providerDisplayName: 'Claude Agent SDK',
         ),
       ],
       verify: (_) {
@@ -232,6 +267,43 @@ void main() {
             ),
           ),
         ).called(1);
+      },
+    );
+
+    blocTest<ProviderSettingsCubit, ProviderSettingsState>(
+      'load resolves providerDisplayName from the Anthropic Messages API '
+      "provider when Frontier's configured model belongs to it, not the "
+      'Claude Agent SDK one',
+      setUp: () {
+        when(
+          () => repository.getModelForPhase(ModelPhase.frontier),
+        ).thenAnswer((_) async => _anthropicApiSonnet);
+        when(() => anthropicApiClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+        );
+      },
+      build: () => ProviderSettingsCubit(registry, repository),
+      act: (cubit) => cubit.load(),
+      expect: () => [
+        const ProviderSettingsReady(
+          selectedModel: _anthropicApiSonnet,
+          status: ProviderConnectionStatus.unknown,
+          providerDisplayName: 'Anthropic API',
+        ),
+        const ProviderSettingsReady(
+          selectedModel: _anthropicApiSonnet,
+          status: ProviderConnectionStatus.checking,
+          providerDisplayName: 'Anthropic API',
+        ),
+        const ProviderSettingsReady(
+          selectedModel: _anthropicApiSonnet,
+          status: ProviderConnectionStatus.connected,
+          providerDisplayName: 'Anthropic API',
+        ),
+      ],
+      verify: (_) {
+        verify(() => anthropicApiClient.run(any())).called(1);
+        verifyNever(() => client.run(any()));
       },
     );
 

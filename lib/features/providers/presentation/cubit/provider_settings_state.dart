@@ -26,6 +26,7 @@ class ProviderSettingsReady extends ProviderSettingsState {
   const ProviderSettingsReady({
     required this.selectedModel,
     required this.status,
+    required this.providerDisplayName,
     this.statusMessage,
   });
 
@@ -45,6 +46,17 @@ class ProviderSettingsReady extends ProviderSettingsState {
   /// `AgentOverageDetectedEvent`).
   final String? statusMessage;
 
+  /// [selectedModel]'s resolved `AgentProvider.displayName` — drives
+  /// `_ProviderStatusCard`'s title (its subline is instead a per-
+  /// `ProviderId` switch on [selectedModel] itself, since it isn't a
+  /// literal `AgentProvider` field).
+  final String providerDisplayName;
+
   @override
-  List<Object?> get props => [selectedModel, status, statusMessage];
+  List<Object?> get props => [
+    selectedModel,
+    status,
+    statusMessage,
+    providerDisplayName,
+  ];
 }

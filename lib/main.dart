@@ -2,10 +2,14 @@
 
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'package:aion/core/agent/anthropic_messages_api_client.dart';
+import 'package:aion/core/agent/anthropic_messages_api_provider.dart';
 import 'package:aion/core/build/project_stack_detector.dart';
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
@@ -14,6 +18,7 @@ import 'package:aion/features/projects/data/repositories/bundled_baseline_reposi
 import 'package:aion/features/projects/data/repositories/drift_project_repository.dart';
 import 'package:aion/features/projects/data/services/baseline_tailoring_service.dart';
 import 'package:aion/features/projects/projects.dart';
+import 'package:aion/features/providers/data/repositories/secure_storage_anthropic_api_key_repository.dart';
 import 'package:aion/features/providers/data/repositories/shared_prefs_execution_context_cap_repository.dart';
 import 'package:aion/features/providers/data/repositories/shared_prefs_model_routing_repository.dart';
 import 'package:aion/features/providers/providers.dart';
@@ -101,15 +106,32 @@ class _AionAppState extends State<AionApp> with WidgetsBindingObserver {
         // setting — see aion-arch/changes/provider-configuration/design.md
         // §5. Desktop-only (ClaudeAgentSdkClient spawns a Node subprocess);
         // still safe to construct on any platform, since construction
-        // itself does no I/O. ProviderRegistry is the one place a second
-        // provider gets registered later — see
-        // aion-arch/changes/pluggable-provider-abstraction/design.md §1, §8.
+        // itself does no I/O. ProviderRegistry is where a second provider
+        // gets registered — see
+        // aion-arch/changes/pluggable-provider-abstraction/design.md §1, §8
+        // and aion-arch/changes/anthropic-messages-api-provider/design.md §10.
         RepositoryProvider<AgentBridgeLocator>(
           create: (_) => AgentBridgeLocator(),
+        ),
+        // The Anthropic Messages API provider's own dependencies — a
+        // plain shared `Dio` instance, and the secure-storage-backed API
+        // key repository. See
+        // aion-arch/changes/anthropic-messages-api-provider/design.md §10.
+        RepositoryProvider<Dio>(create: (_) => Dio()),
+        RepositoryProvider<AnthropicApiKeyRepository>(
+          create: (_) => SecureStorageAnthropicApiKeyRepository(
+            const FlutterSecureStorage(),
+          ),
         ),
         RepositoryProvider<ProviderRegistry>(
           create: (context) => StaticProviderRegistry([
             ClaudeAgentSdkProvider(context.read<AgentBridgeLocator>()),
+            AnthropicMessagesApiProvider(
+              AnthropicMessagesApiClient(
+                context.read<Dio>(),
+                () => context.read<AnthropicApiKeyRepository>().getApiKey(),
+              ),
+            ),
           ]),
         ),
         RepositoryProvider<ModelRoutingRepository>(

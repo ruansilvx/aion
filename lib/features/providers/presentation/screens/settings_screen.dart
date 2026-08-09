@@ -14,6 +14,8 @@ import 'package:aion/features/projects/presentation/cubit/baseline_upgrade_cubit
 import 'package:aion/features/projects/presentation/cubit/baseline_upgrade_state.dart';
 import 'package:aion/features/providers/domain/enums/model_phase.dart';
 import 'package:aion/features/providers/domain/enums/provider_connection_status.dart';
+import 'package:aion/features/providers/presentation/cubit/anthropic_provider_config_cubit.dart';
+import 'package:aion/features/providers/presentation/cubit/anthropic_provider_config_state.dart';
 import 'package:aion/features/providers/presentation/cubit/automation_settings_cubit.dart';
 import 'package:aion/features/providers/presentation/cubit/automation_settings_state.dart';
 import 'package:aion/features/providers/presentation/cubit/execution_context_cap_cubit.dart';
@@ -82,6 +84,8 @@ class SettingsScreen extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             _ProviderStatusCard(state: state),
+                            const SizedBox(height: AionSpacing.sp24),
+                            const _AnthropicApiKeySection(),
                             const SizedBox(height: AionSpacing.sp24),
                             Text(
                               context.l10n.settingsModelsEyebrow,
@@ -181,6 +185,31 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 }
+
+/// [_ProviderStatusCard]'s subline for [providerId] — a small switch on
+/// the resolved provider's [ProviderId], mirroring [_confidenceLabel]'s
+/// existing per-enum switch pattern elsewhere in this same file. Reuses
+/// today's `settingsProviderSubline` copy for `claudeAgentSdk`, and adds
+/// `anthropicMessagesApi`'s own copy — both now conditional instead of a
+/// single hardcoded string, per
+/// `aion-arch/changes/anthropic-messages-api-provider/design.md` §7.
+String _providerSubline(BuildContext context, ProviderId providerId) =>
+    switch (providerId) {
+      ProviderId.claudeAgentSdk => context.l10n.settingsProviderSubline,
+      ProviderId.anthropicMessagesApi =>
+        context.l10n.settingsProviderSublineAnthropicApi,
+    };
+
+/// The muted provider-name prefix [_ModelDropdownRow] shows ahead of a
+/// model's own label, once a tier's option list spans more than one
+/// provider (see [_ModelPhaseSection]). A small literal switch rather than
+/// a registry lookup — [_ModelPhaseSection] already has the
+/// `AgentModelDescriptor`s in hand and doesn't otherwise need
+/// `ProviderRegistry` access just to render this label. Per design.md §7.
+String _providerPrefix(ProviderId providerId) => switch (providerId) {
+  ProviderId.claudeAgentSdk => 'Claude Agent SDK',
+  ProviderId.anthropicMessagesApi => 'Anthropic API',
+};
 
 /// Localized display label for [confidence]. Module-private since
 /// [_AutomationSection]/[_AutomationTrigger]/[_AutomationMenuRow] are its
@@ -449,6 +478,12 @@ class _ModelPhaseSection extends StatelessWidget {
         if (model == null) {
           return const SizedBox.shrink();
         }
+        // A prefix only ever appears once this phase's own option list
+        // spans more than one provider — the Execution tier (Claude-only,
+        // since this provider declares `noTools` only) never grows a
+        // prefix; Frontier/Capable do, now that a second provider is
+        // registered. Per design.md §7.
+        final providers = availableModels.map((m) => m.providerId).toSet();
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -470,10 +505,60 @@ class _ModelPhaseSection extends StatelessWidget {
               onChanged: (m) => context
                   .read<ModelRoutingCubit>()
                   .selectModel(phase, m),
+              itemRowBuilder: providers.length > 1
+                  ? (context, m, selected) =>
+                        _ModelDropdownRow(model: m, selected: selected)
+                  : null,
             ),
           ],
         );
       },
+    );
+  }
+}
+
+/// [AppDropdown]`<AgentModelDescriptor>`'s open-panel item-row content
+/// once a [_ModelPhaseSection]'s option list spans more than one
+/// provider — a muted [_providerPrefix] run ahead of [model]'s own label,
+/// both on one line via a single [Text.rich] so the whole label ellipsizes
+/// together. The prefix carries no state of its own (always `textMuted`);
+/// [model]'s own name follows the row's existing per-state style
+/// ([selected] → `primary`/w700, otherwise `textPrimary`/w600). Per
+/// design.md's Component Spec §7.3.
+class _ModelDropdownRow extends StatelessWidget {
+  /// Creates a [_ModelDropdownRow] for [model], styled per [selected].
+  const _ModelDropdownRow({required this.model, required this.selected});
+
+  /// The model this row represents.
+  final AgentModelDescriptor model;
+
+  /// Whether this row is the dropdown's currently selected value.
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    final mutedStyle = AionText.bodySm.copyWith(
+      fontSize: 14,
+      fontWeight: FontWeight.w500,
+      color: c.textMuted,
+    );
+    final nameStyle = AionText.bodySm.copyWith(
+      fontSize: 14,
+      fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+      color: selected ? c.primary : c.textPrimary,
+    );
+    return Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(text: _providerPrefix(model.providerId), style: mutedStyle),
+          const TextSpan(text: ' · '),
+          TextSpan(text: model.label, style: nameStyle),
+        ],
+        style: mutedStyle,
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
     );
   }
 }
@@ -798,7 +883,7 @@ class _ProviderStatusCard extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        context.l10n.settingsProviderCardTitle,
+                        state.providerDisplayName,
                         style: AionText.cardTitle.copyWith(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
@@ -814,7 +899,7 @@ class _ProviderStatusCard extends StatelessWidget {
                 ),
                 const SizedBox(height: AionSpacing.sp4),
                 Text(
-                  context.l10n.settingsProviderSubline,
+                  _providerSubline(context, state.selectedModel.providerId),
                   style: AionText.bodySm.copyWith(color: c.textSecondary),
                 ),
               ],
@@ -840,6 +925,225 @@ class _ProviderStatusCard extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// New "PROVIDERS" section on [SettingsScreen] — the credential-entry
+/// panel for `AnthropicMessagesApiProvider`'s API key: a masked field with
+/// a reveal toggle, a Save action, and a connection-test cluster mirroring
+/// [_ProviderStatusCard]'s. Same shape as [_ExecutionContextCapSection]
+/// (owns a `TextEditingController`/`FocusNode`, `BlocBuilder` over its own
+/// cubit) but takes its own bordered `surface` panel — byte-identical
+/// chrome to [_ProviderStatusCard] — rather than sitting as bare rows,
+/// since it groups an input, a submit, and a test cluster that read as
+/// one credential unit. The field never rehydrates a previously-saved
+/// key's plaintext — `AnthropicProviderConfigReady` only ever carries
+/// whether a key is stored ([AnthropicProviderConfigReady.hasApiKey]),
+/// never the key itself — so the field starts empty every time this
+/// screen is opened, even if a key was saved in an earlier session. Per
+/// design.md's Component Spec §2.
+class _AnthropicApiKeySection extends StatefulWidget {
+  /// Creates an [_AnthropicApiKeySection].
+  const _AnthropicApiKeySection();
+
+  @override
+  State<_AnthropicApiKeySection> createState() =>
+      _AnthropicApiKeySectionState();
+}
+
+class _AnthropicApiKeySectionState extends State<_AnthropicApiKeySection> {
+  final _controller = TextEditingController();
+  final _focusNode = FocusNode();
+  bool _revealed = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+
+    return BlocBuilder<
+      AnthropicProviderConfigCubit,
+      AnthropicProviderConfigState
+    >(
+      builder: (context, state) {
+        if (state is! AnthropicProviderConfigReady) {
+          return const SizedBox.shrink();
+        }
+        final isChecking = state.status == ProviderConnectionStatus.checking;
+
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            color: c.surface,
+            border: Border.all(color: c.border, width: 1),
+            borderRadius: BorderRadius.all(AionRadius.lg),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      context.l10n.settingsProvidersEyebrow,
+                      style: AionText.caption.copyWith(color: c.textMuted),
+                    ),
+                    const SizedBox(height: AionSpacing.sp4),
+                    Text(
+                      context.l10n.settingsAnthropicApiKeyTitle,
+                      style: AionText.cardTitle.copyWith(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: c.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: AionSpacing.sp4),
+                    Text(
+                      context.l10n.settingsAnthropicApiKeyDescription,
+                      style: AionText.bodySm.copyWith(
+                        color: c.textSecondary,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AionSpacing.sp16),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      context.l10n.settingsAnthropicApiKeyFieldLabel,
+                      style: AionText.label.copyWith(color: c.textSecondary),
+                    ),
+                    const SizedBox(height: AionSpacing.sp8),
+                    AppTextField(
+                      controller: _controller,
+                      focusNode: _focusNode,
+                      obscureText: !_revealed,
+                      hintText: context.l10n.settingsAnthropicApiKeyHint,
+                      suffixIcon: _RevealToggle(
+                        revealed: _revealed,
+                        onTap: () => setState(() => _revealed = !_revealed),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AionSpacing.sp16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    AppButton(
+                      label: context.l10n.settingsAnthropicApiKeySaveButton,
+                      onPressed: () => context
+                          .read<AnthropicProviderConfigCubit>()
+                          .saveApiKey(_controller.text),
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        ProviderConnectionBadge(
+                          status: state.status,
+                          labelOverride: state.hasApiKey
+                              ? null
+                              : context.l10n.settingsProviderStatusNoKey,
+                        ),
+                        const SizedBox(width: AionSpacing.sp12),
+                        AppButton(
+                          label:
+                              context.l10n.settingsTestConnectionButtonLabel,
+                          variant: AppButtonVariant.secondary,
+                          onPressed: (!state.hasApiKey || isChecking)
+                              ? null
+                              : () => context
+                                    .read<AnthropicProviderConfigCubit>()
+                                    .testConnection(),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// The reveal/hide toggle inside [_AnthropicApiKeySection]'s masked
+/// field — a 32×32 tap target around a Phosphor eye/eye-slash glyph that
+/// toggles the field's [AppTextField.obscureText]. Per design.md's
+/// Component Spec §3.4.
+class _RevealToggle extends StatefulWidget {
+  /// Creates a [_RevealToggle] reflecting [revealed], calling [onTap] when
+  /// activated.
+  const _RevealToggle({required this.revealed, required this.onTap});
+
+  /// Whether the field's value is currently shown in plaintext.
+  final bool revealed;
+
+  /// Called when the toggle is tapped.
+  final VoidCallback onTap;
+
+  @override
+  State<_RevealToggle> createState() => _RevealToggleState();
+}
+
+class _RevealToggleState extends State<_RevealToggle> {
+  bool _isHovered = false;
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    final color = widget.revealed
+        ? c.primary
+        : (_isHovered ? c.textSecondary : c.textMuted);
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        onTapDown: (_) => setState(() => _isPressed = true),
+        onTapUp: (_) => setState(() => _isPressed = false),
+        onTapCancel: () => setState(() => _isPressed = false),
+        child: AnimatedScale(
+          scale: _isPressed ? 0.94 : 1.0,
+          duration: const Duration(milliseconds: 80),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: _isHovered ? c.surfaceHover : null,
+              borderRadius: BorderRadius.all(AionRadius.iconBtnSm),
+            ),
+            child: SizedBox(
+              width: 32,
+              height: 32,
+              child: Center(
+                child: PhosphorIcon(
+                  widget.revealed
+                      ? PhosphorIcons.eyeSlashLight
+                      : PhosphorIcons.eyeLight,
+                  size: 20,
+                  color: color,
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );

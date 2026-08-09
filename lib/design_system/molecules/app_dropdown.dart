@@ -11,7 +11,10 @@ import 'package:aion/design_system/tokens/theme_scope.dart';
 
 /// Aion's dropdown/select primitive — replaces `DropdownButton` with a
 /// tap target that opens an [OverlayEntry] of selectable items. No Material
-/// widget or overlay involvement.
+/// widget or overlay involvement. [itemRowBuilder] is an additive,
+/// default-`null` param letting a caller render richer, multi-run item-row
+/// content (e.g. a provider-name prefix) in the open panel only — see
+/// `aion-arch/changes/anthropic-messages-api-provider/design.md` §8.
 class AppDropdown<T> extends StatefulWidget {
   /// Creates an [AppDropdown].
   const AppDropdown({
@@ -25,6 +28,7 @@ class AppDropdown<T> extends StatefulWidget {
     this.isRequired = false,
     this.focusNode,
     this.isActive = false,
+    this.itemRowBuilder,
   });
 
   /// The currently selected value. Must be one of [items].
@@ -66,6 +70,21 @@ class AppDropdown<T> extends StatefulWidget {
   /// this widget has no concept of which [items] value counts as
   /// "default."
   final bool isActive;
+
+  /// Optional widget-returning builder for the open item panel's label —
+  /// falls back to a plain `Text(itemLabel(item))` when `null`, preserving
+  /// today's render for every existing call site. Only the open panel's
+  /// row content is affected; the closed trigger always renders
+  /// `itemLabel(value)` regardless of this param. Widget-returning (not a
+  /// plain `String Function(T)`) so a caller can express multi-run,
+  /// multi-color label content (e.g. a muted provider-name prefix ahead of
+  /// the item's own label) — a single string mapper can't carry per-run
+  /// styling. [selected] mirrors the row's own selection state so the
+  /// builder can style consistently with it (e.g. matching text weight/
+  /// color on the selected row) without recomputing `item == value`
+  /// itself.
+  final Widget Function(BuildContext context, T item, bool selected)?
+  itemRowBuilder;
 
   @override
   State<AppDropdown<T>> createState() => _AppDropdownState<T>();
@@ -138,12 +157,18 @@ class _AppDropdownState<T> extends State<AppDropdown<T>> {
                           vertical: 12,
                           horizontal: 14,
                         ),
-                        child: Text(
-                          widget.itemLabel(item),
-                          style: AionText.bodySm.copyWith(
-                            color: selected ? c.primary : c.textPrimary,
-                          ),
-                        ),
+                        child:
+                            widget.itemRowBuilder?.call(
+                              context,
+                              item,
+                              selected,
+                            ) ??
+                            Text(
+                              widget.itemLabel(item),
+                              style: AionText.bodySm.copyWith(
+                                color: selected ? c.primary : c.textPrimary,
+                              ),
+                            ),
                       ),
                     );
                   }).toList(),

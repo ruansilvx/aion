@@ -17,7 +17,11 @@ import 'package:aion/design_system/tokens/theme_scope.dart';
 /// the widget layer, see design.md's Material Coupling Audit) with every
 /// `InputDecoration` value supplied explicitly from [AionColors]/[AionText]
 /// tokens, and a transparent [Material] ancestor since `TextField` requires
-/// one even outside `MaterialApp`.
+/// one even outside `MaterialApp`. [obscureText]/[suffixIcon] are additive
+/// (default `false`/`null`) — added so a secret-entry field (e.g. an API
+/// key) can mask its value with a reveal toggle without a bespoke widget;
+/// every existing call site is unaffected. See
+/// `aion-arch/changes/anthropic-messages-api-provider/design.md` §9.
 class AppTextField extends StatefulWidget {
   /// Creates an [AppTextField].
   const AppTextField({
@@ -34,6 +38,8 @@ class AppTextField extends StatefulWidget {
     this.prefixIcon,
     this.keyboardType,
     this.inputFormatters,
+    this.obscureText = false,
+    this.suffixIcon,
   });
 
   /// Controls and reads the field's text.
@@ -81,6 +87,19 @@ class AppTextField extends StatefulWidget {
   /// Input formatters applied to every keystroke (e.g.
   /// `FilteringTextInputFormatter.digitsOnly`). `null` applies none.
   final List<TextInputFormatter>? inputFormatters;
+
+  /// Masks the entered text (`•` per character) when `true` — used for
+  /// secret-entry fields like an API key. Passed straight through to the
+  /// wrapped `TextField.obscureText`; default `false` preserves every
+  /// existing call site's plaintext rendering.
+  final bool obscureText;
+
+  /// Optional trailing icon shown inside the field, after the text (e.g.
+  /// a reveal/hide toggle for an [obscureText] field). Styling and
+  /// interactivity are the caller's responsibility — this widget renders
+  /// whatever is passed as-is via `InputDecoration.suffixIcon`, mirroring
+  /// [prefixIcon]'s existing contract.
+  final Widget? suffixIcon;
 
   @override
   State<AppTextField> createState() => _AppTextFieldState();
@@ -154,8 +173,9 @@ class _AppTextFieldState extends State<AppTextField> {
             child: TextField(
               controller: widget.controller,
               focusNode: _focusNode,
-              maxLines: widget.maxLines,
+              maxLines: widget.obscureText ? 1 : widget.maxLines,
               minLines: isMultiline ? 5 : 1,
+              obscureText: widget.obscureText,
               keyboardType: widget.keyboardType,
               inputFormatters: widget.inputFormatters,
               textInputAction: widget.textInputAction,
@@ -173,6 +193,7 @@ class _AppTextFieldState extends State<AppTextField> {
                 isDense: true,
                 isCollapsed: false,
                 prefixIcon: widget.prefixIcon,
+                suffixIcon: widget.suffixIcon,
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 14,
                   vertical: 12,

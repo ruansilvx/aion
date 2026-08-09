@@ -71,6 +71,11 @@ dependencies:
   # only a transitive dependency)
   path: ^1.9.1
 
+  # HTTP client for AnthropicMessagesApiClient — calls the Anthropic
+  # Messages API directly over HTTP/SSE (see
+  # aion-arch/changes/anthropic-messages-api-provider/design.md §2).
+  dio: ^5.11.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
