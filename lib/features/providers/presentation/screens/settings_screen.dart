@@ -1006,10 +1006,6 @@ class _AnthropicApiKeySectionState extends State<_AnthropicApiKeySection> {
   Widget build(BuildContext context) {
     final c = ThemeScope.of(context).colors;
     final trimmedText = _controller.text.trim();
-    // Component Spec §4.2: disabled while empty (nothing to save) or
-    // unchanged since the last save from this widget instance (no dirty
-    // edit).
-    final canSave = trimmedText.isNotEmpty && trimmedText != _lastSavedValue;
     // Component Spec §3.5: only once the field has been touched, so a
     // key that's still being typed doesn't flash an error before it's
     // finished. Advisory only — `saveApiKey` never validates format, so
@@ -1026,6 +1022,23 @@ class _AnthropicApiKeySectionState extends State<_AnthropicApiKeySection> {
           return const SizedBox.shrink();
         }
         final isChecking = state.status == ProviderConnectionStatus.checking;
+        // Component Spec §4.2's "disabled while empty or unchanged since
+        // last save" is two different gates depending on which:
+        // - Typing a real value: standard dirty-edit check against
+        //   `_lastSavedValue` — an empty `_lastSavedValue` (nothing saved
+        //   yet this session) can never equal a non-empty `trimmedText`,
+        //   so this branch alone is enough.
+        // - Field is empty: `trimmedText != _lastSavedValue` would stay
+        //   permanently false here (`'' != ''`), which would make
+        //   `saveApiKey`'s documented empty-clears-the-key path (design.md
+        //   §6) unreachable from the UI even when a key is stored — so
+        //   this branch instead gates on [_touched] (an intentional
+        //   focus-then-blur on the empty field, not just an untouched
+        //   fresh page load) and `state.hasApiKey` (nothing to clear
+        //   otherwise).
+        final canSave = trimmedText.isNotEmpty
+            ? trimmedText != _lastSavedValue
+            : (_touched && state.hasApiKey);
 
         return DecoratedBox(
           decoration: BoxDecoration(
