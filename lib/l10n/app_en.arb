@@ -643,5 +643,6 @@
   "settingsAnthropicApiKeyDescription": "Used for spec-phase, watcher, and comment calls billed per token to your own Anthropic account.",
   "settingsAnthropicApiKeyFieldLabel": "API Key",
   "settingsAnthropicApiKeyHint": "sk-ant-…",
-  "settingsAnthropicApiKeySaveButton": "Save"
+  "settingsAnthropicApiKeySaveButton": "Save",
+  "settingsAnthropicApiKeyFormatError": "That doesn't look like an Anthropic key — it should start with sk-ant-."
 }

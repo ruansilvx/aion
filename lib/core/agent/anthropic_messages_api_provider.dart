@@ -40,10 +40,14 @@ class AnthropicMessagesApiProvider implements AgentProvider {
   };
 
   /// Three models mirroring `ClaudeAgentSdkProvider.availableModels`'s
-  /// Opus/Sonnet/Haiku labels, using the same Anthropic model-id strings
-  /// that provider already ships with — the Agent SDK's `--model` values
-  /// are themselves Messages API model identifiers, so reusing them here
-  /// is a real, non-invented id, not a guess.
+  /// Opus/Sonnet/Haiku labels. Model-id strings verified against
+  /// Anthropic's current model catalog (`anthropics/skills` repo's
+  /// `skills/claude-api/shared/models.md`, the same canonical source the
+  /// `claude-api` skill itself defers to) — `claude-opus-4-8` remains a
+  /// real, currently-active API id (superseded by `claude-opus-5` in
+  /// *recommended* ranking, but not retired), and `claude-sonnet-5`/
+  /// `claude-haiku-4-5` are each that catalog's exact current id for
+  /// their tier. Not invented or guessed.
   @override
   List<AgentModelDescriptor> get availableModels => const [
     AgentModelDescriptor(

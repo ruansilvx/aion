@@ -943,8 +943,15 @@ class _ProviderStatusCard extends StatelessWidget {
 /// key's plaintext — `AnthropicProviderConfigReady` only ever carries
 /// whether a key is stored ([AnthropicProviderConfigReady.hasApiKey]),
 /// never the key itself — so the field starts empty every time this
-/// screen is opened, even if a key was saved in an earlier session. Per
-/// design.md's Component Spec §2.
+/// screen is opened, even if a key was saved in an earlier session.
+/// [AppTextField.isError] format validation and the Save button's
+/// dirty-tracking `canSave` gate are both computed locally here (pure,
+/// UI-only derivations from the live-typed text — never routed through
+/// `AnthropicProviderConfigCubit`, per its own design.md §6/§5 contract
+/// of "plain reads/writes only, no validation"), mirroring how
+/// [_ExecutionContextCapSection]'s own helper row derives live feedback
+/// from `_controller.text` without a cubit round-trip. Per design.md's
+/// Component Spec §2, §3.5, §4.2.
 class _AnthropicApiKeySection extends StatefulWidget {
   /// Creates an [_AnthropicApiKeySection].
   const _AnthropicApiKeySection();
@@ -959,6 +966,29 @@ class _AnthropicApiKeySectionState extends State<_AnthropicApiKeySection> {
   final _focusNode = FocusNode();
   bool _revealed = false;
 
+  /// Whether the field has ever lost focus — the format-error hint (§3.5)
+  /// only appears after a blur, not on every keystroke while the user is
+  /// still mid-typing a valid key.
+  bool _touched = false;
+
+  /// The value most recently persisted via a `saveApiKey` call from this
+  /// widget instance (starts empty — this widget never learns the actual
+  /// stored secret, only whether one exists). Drives `canSave` ("dirty
+  /// edit" per Component Spec §4.2), not a validity check.
+  String _lastSavedValue = '';
+
+  @override
+  void initState() {
+    super.initState();
+    // Rebuilds on every keystroke so canSave/the format-error hint (both
+    // derived live from `_controller.text`) track what's being typed —
+    // same pattern `_ExecutionContextCapSectionState` already uses.
+    _controller.addListener(() => setState(() {}));
+    _focusNode.addListener(() {
+      if (!_focusNode.hasFocus) setState(() => _touched = true);
+    });
+  }
+
   @override
   void dispose() {
     _controller.dispose();
@@ -966,9 +996,26 @@ class _AnthropicApiKeySectionState extends State<_AnthropicApiKeySection> {
     super.dispose();
   }
 
+  void _handleSave(BuildContext context) {
+    final value = _controller.text.trim();
+    context.read<AnthropicProviderConfigCubit>().saveApiKey(value);
+    setState(() => _lastSavedValue = value);
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = ThemeScope.of(context).colors;
+    final trimmedText = _controller.text.trim();
+    // Component Spec §4.2: disabled while empty (nothing to save) or
+    // unchanged since the last save from this widget instance (no dirty
+    // edit).
+    final canSave = trimmedText.isNotEmpty && trimmedText != _lastSavedValue;
+    // Component Spec §3.5: only once the field has been touched, so a
+    // key that's still being typed doesn't flash an error before it's
+    // finished. Advisory only — `saveApiKey` never validates format, so
+    // this never blocks Save itself.
+    final hasFormatError =
+        _touched && trimmedText.isNotEmpty && !trimmedText.startsWith('sk-ant-');
 
     return BlocBuilder<
       AnthropicProviderConfigCubit,
@@ -1031,23 +1078,36 @@ class _AnthropicApiKeySectionState extends State<_AnthropicApiKeySection> {
                       focusNode: _focusNode,
                       obscureText: !_revealed,
                       hintText: context.l10n.settingsAnthropicApiKeyHint,
+                      isError: hasFormatError,
                       suffixIcon: _RevealToggle(
                         revealed: _revealed,
                         onTap: () => setState(() => _revealed = !_revealed),
                       ),
                     ),
+                    if (hasFormatError) ...[
+                      const SizedBox(height: AionSpacing.sp4),
+                      Text(
+                        context.l10n.settingsAnthropicApiKeyFormatError,
+                        style: AionText.bodySm.copyWith(
+                          fontSize: 12.5,
+                          color: c.danger,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: AionSpacing.sp16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: CrossAxisAlignment.center,
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: AionSpacing.sp12,
+                  runSpacing: AionSpacing.sp12,
                   children: [
                     AppButton(
                       label: context.l10n.settingsAnthropicApiKeySaveButton,
-                      onPressed: () => context
-                          .read<AnthropicProviderConfigCubit>()
-                          .saveApiKey(_controller.text),
+                      onPressed: canSave
+                          ? () => _handleSave(context)
+                          : null,
                     ),
                     Row(
                       mainAxisSize: MainAxisSize.min,
