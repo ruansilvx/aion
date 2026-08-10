@@ -924,6 +924,7 @@ class _TicketFilterSection extends StatefulWidget {
 
 class _TicketFilterSectionState extends State<_TicketFilterSection> {
   bool _isPopoverOpen = false;
+  bool _isTriggerFocused = false;
 
   @override
   Widget build(BuildContext context) {
@@ -946,6 +947,7 @@ class _TicketFilterSectionState extends State<_TicketFilterSection> {
             trigger: _FilterTriggerButton(
               activeCount: activeCount,
               isOpen: _isPopoverOpen,
+              isFocused: _isTriggerFocused,
             ),
             selectedStatuses: selectedStatuses,
             selectedTypes: selectedTypes,
@@ -957,6 +959,8 @@ class _TicketFilterSectionState extends State<_TicketFilterSection> {
                 .togglePriorityFilter,
             onOpenChanged: (isOpen) =>
                 setState(() => _isPopoverOpen = isOpen),
+            onFocusChanged: (isFocused) =>
+                setState(() => _isTriggerFocused = isFocused),
           ),
         ),
         if (hasChips) ...[
@@ -1010,13 +1014,17 @@ class _TicketFilterSectionState extends State<_TicketFilterSection> {
 /// replaces, plus a trailing count badge shown only in the active
 /// sub-state. Purely presentational — [TicketFilterPopover] (which wraps
 /// this as its `trigger`) owns the actual tap/keyboard-activation
-/// handling; [isOpen] is fed back in via
-/// [TicketFilterPopover.onOpenChanged] so this can render an "open" look
-/// the same way [isActive] renders an "active" one.
+/// handling; [isOpen] and [isFocused] are fed back in via
+/// [TicketFilterPopover.onOpenChanged]/[TicketFilterPopover.onFocusChanged]
+/// so this can render "open" and "focused" looks the same way [isActive]
+/// renders an "active" one. Per design.md §3.2, a keyboard-focused trigger
+/// and an open trigger share the same emphasized appearance (border +
+/// glow ring) — [isOpen] and [isFocused] are treated identically here.
 class _FilterTriggerButton extends StatefulWidget {
   const _FilterTriggerButton({
     required this.activeCount,
     required this.isOpen,
+    required this.isFocused,
   });
 
   /// Total number of selected values across all three filter fields.
@@ -1027,6 +1035,12 @@ class _FilterTriggerButton extends StatefulWidget {
   /// Whether [TicketFilterPopover]'s overlay is currently open — rendered
   /// as the same emphasized look as keyboard focus.
   final bool isOpen;
+
+  /// Whether this trigger currently holds keyboard focus — rendered as
+  /// the same emphasized look as [isOpen], independent of whether the
+  /// popover has actually been activated yet (design.md §3.2's
+  /// `Focused` sub-state).
+  final bool isFocused;
 
   @override
   State<_FilterTriggerButton> createState() => _FilterTriggerButtonState();
@@ -1040,18 +1054,17 @@ class _FilterTriggerButtonState extends State<_FilterTriggerButton> {
     final t = ThemeScope.of(context);
     final c = t.colors;
     final isActive = widget.activeCount > 0;
-    final emphasized = isActive || widget.isOpen;
+    final showRing = widget.isOpen || widget.isFocused;
+    final emphasized = isActive || showRing;
 
     final Color fill = isActive ? c.primarySubtle : c.surface;
     final Color border = isActive
         ? c.primary
-        : (widget.isOpen
-              ? c.primary
-              : (_isHovered ? c.borderStrong : c.border));
+        : (showRing ? c.primary : (_isHovered ? c.borderStrong : c.border));
     final Color foreground = isActive
         ? c.primary
-        : (widget.isOpen ? c.primary : c.textSecondary);
-    final Color labelColor = isActive || widget.isOpen
+        : (showRing ? c.primary : c.textSecondary);
+    final Color labelColor = isActive || showRing
         ? (isActive ? c.primary : c.textPrimary)
         : c.textPrimary;
 
@@ -1072,7 +1085,7 @@ class _FilterTriggerButtonState extends State<_FilterTriggerButton> {
             color: fill,
             borderRadius: BorderRadius.all(AionRadius.lg),
             border: Border.all(color: border, width: emphasized ? 1.5 : 1),
-            boxShadow: widget.isOpen
+            boxShadow: showRing
                 ? [
                     BoxShadow(
                       color: c.primary.withValues(

@@ -31,6 +31,7 @@ class TicketFilterPopover extends StatefulWidget {
     required this.onToggleType,
     required this.onTogglePriority,
     this.onOpenChanged,
+    this.onFocusChanged,
   });
 
   /// The always-visible tappable widget (the "Filters" trigger button).
@@ -42,6 +43,15 @@ class TicketFilterPopover extends StatefulWidget {
   /// Mirrors [SelectionMenu.onOpenChanged]. Optional; a [trigger] that
   /// doesn't need this may omit it.
   final ValueChanged<bool>? onOpenChanged;
+
+  /// Called with `true` when [trigger] gains keyboard focus and `false`
+  /// when it loses it — lets a stateful [trigger] render its own
+  /// `Focused` look (design.md §3.2) independent of whether the popover
+  /// is actually open, since a keyboard user tabbing onto the trigger
+  /// hasn't necessarily activated it yet. Fed by the wrapping
+  /// [FocusableActionDetector]'s own `onShowFocusHighlight`. Optional; a
+  /// [trigger] that doesn't need this may omit it.
+  final ValueChanged<bool>? onFocusChanged;
 
   /// Currently selected [TicketStatus] values, used to render each
   /// status row's checked state.
@@ -199,6 +209,7 @@ class _TicketFilterPopoverState extends State<TicketFilterPopover> {
                                         context,
                                         status,
                                       ),
+                                      accent: _StatusAccentDot(status: status),
                                     ),
                                   ),
                                 const _GroupDivider(),
@@ -218,6 +229,7 @@ class _TicketFilterPopoverState extends State<TicketFilterPopover> {
                                         type,
                                       ),
                                       label: ticketTypeLabel(context, type),
+                                      accent: _TypeAccentSquare(type: type),
                                     ),
                                   ),
                                 const _GroupDivider(),
@@ -238,6 +250,9 @@ class _TicketFilterPopoverState extends State<TicketFilterPopover> {
                                       label: ticketPriorityLabel(
                                         context,
                                         priority,
+                                      ),
+                                      accent: _PriorityAccentDot(
+                                        priority: priority,
                                       ),
                                     ),
                                   ),
@@ -274,6 +289,7 @@ class _TicketFilterPopoverState extends State<TicketFilterPopover> {
             },
           ),
         },
+        onShowFocusHighlight: widget.onFocusChanged,
         child: GestureDetector(onTap: _toggleOverlay, child: widget.trigger),
       ),
     );
@@ -301,12 +317,19 @@ class _GroupHeader extends StatelessWidget {
 }
 
 /// One checkbox row's content: an [AppCheckbox] (presentational — the
-/// enclosing [OverlayMenuItem] owns the tap target) plus [label].
+/// enclosing [OverlayMenuItem] owns the tap target) plus [label] and an
+/// [accent] swatch echoing the value's color elsewhere in the app
+/// (design.md §4.5's "Optional leading accent" —
+/// [_StatusAccentDot]/[_TypeAccentSquare]/[_PriorityAccentDot]).
 class _CheckRow extends StatelessWidget {
-  const _CheckRow({required this.checked, required this.label});
+  const _CheckRow({required this.checked, required this.label, this.accent});
 
   final bool checked;
   final String label;
+
+  /// The field-specific accent swatch shown between the checkbox and the
+  /// label, or `null` for no accent.
+  final Widget? accent;
 
   @override
   Widget build(BuildContext context) {
@@ -320,6 +343,7 @@ class _CheckRow extends StatelessWidget {
             child: AppCheckbox(value: checked, onChanged: (_) {}),
           ),
           const SizedBox(width: 10),
+          if (accent != null) ...[accent!, const SizedBox(width: 8)],
           Expanded(
             child: Text(
               label,
@@ -328,6 +352,88 @@ class _CheckRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// An 8×8 accent dot for a `_CheckRow`'s Status group, mirroring
+/// `StatusIndicator`'s own color mapping (`tickets_list_screen.dart`):
+/// [TicketStatus.backlog] → `c.textMuted`, [TicketStatus.inProgress] →
+/// `c.primary`, [TicketStatus.done] → `c.success`, every other status →
+/// `c.textMuted`.
+class _StatusAccentDot extends StatelessWidget {
+  const _StatusAccentDot({required this.status});
+
+  final TicketStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    final color = switch (status) {
+      TicketStatus.backlog => c.textMuted,
+      TicketStatus.inProgress => c.primary,
+      TicketStatus.done => c.success,
+      _ => c.textMuted,
+    };
+    return DecoratedBox(
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      child: const SizedBox(width: 8, height: 8),
+    );
+  }
+}
+
+/// A 10×10, `radius: 2` accent square for a `_CheckRow`'s Type group,
+/// mirroring `TypeChip`'s own color mapping (`tickets_list_screen.dart`).
+class _TypeAccentSquare extends StatelessWidget {
+  const _TypeAccentSquare({required this.type});
+
+  final TicketType type;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    final color = switch (type) {
+      TicketType.story => c.typeStory,
+      TicketType.epic => c.typeEpic,
+      TicketType.resource => c.typeResource,
+      TicketType.page => c.typePage,
+      TicketType.signal => c.typeSignal,
+      TicketType.release => c.typeRelease,
+      TicketType.chat => c.typeChat,
+      TicketType.bug => c.typeBug,
+      _ => c.typeTask,
+    };
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(2),
+      ),
+      child: const SizedBox(width: 10, height: 10),
+    );
+  }
+}
+
+/// An 8×8 accent dot for a `_CheckRow`'s Priority group, in the level's
+/// `fg` tone — mirroring `PriorityBadge`'s own color mapping
+/// (`tickets_list_screen.dart`).
+class _PriorityAccentDot extends StatelessWidget {
+  const _PriorityAccentDot({required this.priority});
+
+  final TicketPriority priority;
+
+  @override
+  Widget build(BuildContext context) {
+    final AionPriorityColors p = ThemeScope.of(context).colors.priority;
+    final color = switch (priority) {
+      TicketPriority.critical => p.criticalFg,
+      TicketPriority.high => p.highFg,
+      TicketPriority.medium => p.mediumFg,
+      TicketPriority.low => p.lowFg,
+      TicketPriority.none => p.lowFg,
+    };
+    return DecoratedBox(
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      child: const SizedBox(width: 8, height: 8),
     );
   }
 }
