@@ -15,8 +15,10 @@ part 'ticket_dao.g.dart';
 /// Drift accessor for [TicketsTable] and [TicketIdSequenceTable]. Owns the
 /// transactional human-readable ID generation logic, plus the trash/
 /// soft-delete subtree traversal ([getDescendantIds]/[getAncestorIds]) and
-/// bulk write helpers ([softDeleteByIds]/[restoreByIds]/[deleteTicketRows])
-/// used by [DriftTicketRepository]'s trash/restore/permanent-delete methods.
+/// bulk write helpers ([softDeleteByIds]/[restoreByIds]/[deleteTicketRows]/
+/// [updateStatusByIds]/[updatePriorityByIds]) used by
+/// [DriftTicketRepository]'s trash/restore/permanent-delete/bulk-status/
+/// bulk-priority methods.
 @DriftAccessor(tables: [TicketsTable, TicketIdSequenceTable])
 class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
   /// Creates a [TicketDao] bound to [db].
@@ -171,6 +173,40 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
   Future<void> restoreByIds(List<String> ids) {
     return (update(ticketsTable)..where((t) => t.id.isIn(ids))).write(
       const TicketsTableCompanion(deletedAt: Value(null)),
+    );
+  }
+
+  /// Sets `status` (as its `.name`) and bumps `updated_at` to [updatedAtMs]
+  /// for every id in [ids]. Bulk `UPDATE ... WHERE id IN (...)`, same
+  /// shape as [softDeleteByIds]/[restoreByIds] — used by bulk status
+  /// change.
+  Future<void> updateStatusByIds(
+    List<String> ids,
+    TicketStatus status,
+    int updatedAtMs,
+  ) {
+    return (update(ticketsTable)..where((t) => t.id.isIn(ids))).write(
+      TicketsTableCompanion(
+        status: Value(status.name),
+        updatedAt: Value(updatedAtMs),
+      ),
+    );
+  }
+
+  /// Sets `priority` (as its `.name`) and bumps `updated_at` to
+  /// [updatedAtMs] for every id in [ids]. Bulk `UPDATE ... WHERE id IN
+  /// (...)`, same shape as [updateStatusByIds] — used by bulk priority
+  /// edit.
+  Future<void> updatePriorityByIds(
+    List<String> ids,
+    TicketPriority priority,
+    int updatedAtMs,
+  ) {
+    return (update(ticketsTable)..where((t) => t.id.isIn(ids))).write(
+      TicketsTableCompanion(
+        priority: Value(priority.name),
+        updatedAt: Value(updatedAtMs),
+      ),
     );
   }
 

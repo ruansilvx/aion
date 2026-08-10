@@ -627,4 +627,68 @@ void main() {
       },
     );
   });
+
+  group('updateStatusByIds', () {
+    test(
+      'writes the given status to every id in the list and bumps updated_at',
+      () async {
+        await insertTicket(id: 'a', title: 'A', createdAtMs: 0);
+        await insertTicket(id: 'b', title: 'B', createdAtMs: 0);
+
+        await dao.updateStatusByIds(['a', 'b'], TicketStatus.inProgress, 999);
+
+        final a = await dao.getTicketById('a');
+        final b = await dao.getTicketById('b');
+        expect(a?.status, TicketStatus.inProgress.name);
+        expect(a?.updatedAt, 999);
+        expect(b?.status, TicketStatus.inProgress.name);
+        expect(b?.updatedAt, 999);
+      },
+    );
+
+    test('leaves tickets not in the id list untouched', () async {
+      await insertTicket(id: 'a', title: 'A', createdAtMs: 0);
+      await insertTicket(id: 'other', title: 'Other', createdAtMs: 0);
+
+      await dao.updateStatusByIds(['a'], TicketStatus.done, 500);
+
+      final other = await dao.getTicketById('other');
+      expect(other?.status, TicketStatus.backlog.name);
+      expect(other?.updatedAt, 0);
+    });
+  });
+
+  group('updatePriorityByIds', () {
+    test(
+      'writes the given priority to every id in the list and bumps updated_at',
+      () async {
+        await insertTicket(id: 'a', title: 'A', createdAtMs: 0);
+        await insertTicket(id: 'b', title: 'B', createdAtMs: 0);
+
+        await dao.updatePriorityByIds(
+          ['a', 'b'],
+          TicketPriority.critical,
+          777,
+        );
+
+        final a = await dao.getTicketById('a');
+        final b = await dao.getTicketById('b');
+        expect(a?.priority, TicketPriority.critical.name);
+        expect(a?.updatedAt, 777);
+        expect(b?.priority, TicketPriority.critical.name);
+        expect(b?.updatedAt, 777);
+      },
+    );
+
+    test('leaves tickets not in the id list untouched', () async {
+      await insertTicket(id: 'a', title: 'A', createdAtMs: 0);
+      await insertTicket(id: 'other', title: 'Other', createdAtMs: 0);
+
+      await dao.updatePriorityByIds(['a'], TicketPriority.high, 500);
+
+      final other = await dao.getTicketById('other');
+      expect(other?.priority, TicketPriority.none.name);
+      expect(other?.updatedAt, 0);
+    });
+  });
 }

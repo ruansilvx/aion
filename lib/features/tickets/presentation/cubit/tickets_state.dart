@@ -531,3 +531,79 @@ class TicketsBatchTrashed extends TicketsState {
   @override
   List<Object?> get props => [tickets, trashedCount, hasMore];
 }
+
+/// A [TicketsCubit.updateStatusForTickets] batch call is in flight (bulk,
+/// triggered from `TicketSelectionBar`'s Status action).
+class TicketsBatchStatusUpdating extends TicketsState {
+  /// Creates a [TicketsBatchStatusUpdating] state.
+  const TicketsBatchStatusUpdating();
+}
+
+/// A batch status-change call completed. Carries the refreshed page, how
+/// many tickets were actually written ([updatedCount]), and how many were
+/// silently skipped ([skippedCount]) because moving to
+/// [TicketStatus.inProgress] would have been rejected by the
+/// Blocked-dependency gate or the coding-execution gate (see
+/// [TicketsCubit._isTicketBlocked]/[TicketsCubit._codingExecutionGateCheck]).
+/// [skippedCount] is always 0 for any target status other than
+/// [TicketStatus.inProgress], since neither gate applies. The widget layer
+/// surfaces both counts via a summary toast.
+class TicketsBatchStatusUpdated extends TicketsState {
+  /// Creates a [TicketsBatchStatusUpdated] state carrying the refreshed
+  /// [tickets], [updatedCount], [skippedCount], and [hasMore].
+  const TicketsBatchStatusUpdated(
+    this.tickets,
+    this.updatedCount,
+    this.skippedCount, {
+    required this.hasMore,
+  });
+
+  /// The tickets, re-fetched after the batch status change completed.
+  final List<Ticket> tickets;
+
+  /// How many tickets were actually written.
+  final int updatedCount;
+
+  /// How many tickets were silently skipped by a gate rejection.
+  final int skippedCount;
+
+  /// Whether at least one more page exists beyond [tickets].
+  final bool hasMore;
+
+  @override
+  List<Object?> get props => [tickets, updatedCount, skippedCount, hasMore];
+}
+
+/// A [TicketsCubit.updatePriorityForTickets] batch call is in flight (bulk,
+/// triggered from `TicketSelectionBar`'s Priority action).
+class TicketsBatchPriorityUpdating extends TicketsState {
+  /// Creates a [TicketsBatchPriorityUpdating] state.
+  const TicketsBatchPriorityUpdating();
+}
+
+/// A batch priority-change call completed. Carries the refreshed page and
+/// how many tickets were updated ([updatedCount]) — always equal to the
+/// original selection size, since priority has no rejection path (unlike
+/// [TicketsBatchStatusUpdated.skippedCount]).
+class TicketsBatchPriorityUpdated extends TicketsState {
+  /// Creates a [TicketsBatchPriorityUpdated] state carrying the refreshed
+  /// [tickets], [updatedCount], and [hasMore].
+  const TicketsBatchPriorityUpdated(
+    this.tickets,
+    this.updatedCount, {
+    required this.hasMore,
+  });
+
+  /// The tickets, re-fetched after the batch priority edit completed.
+  final List<Ticket> tickets;
+
+  /// How many tickets were updated — always equal to the original
+  /// selection size.
+  final int updatedCount;
+
+  /// Whether at least one more page exists beyond [tickets].
+  final bool hasMore;
+
+  @override
+  List<Object?> get props => [tickets, updatedCount, hasMore];
+}

@@ -526,6 +526,7 @@ void main() {
   setUpAll(() {
     registerFallbackValue(ticket);
     registerFallbackValue(TicketStatus.backlog);
+    registerFallbackValue(TicketPriority.none);
     registerFallbackValue(const TicketListFilters());
     registerFallbackValue(Uint8List(0));
     registerFallbackValue(const AgentRequest(prompt: '', model: ''));
@@ -909,6 +910,321 @@ void main() {
       build: () => TicketsCubit(repository),
       act: (cubit) => cubit.trashTickets([ticket.id]),
       expect: () => [const TicketsBatchTrashing(), isA<TicketsError>()],
+    );
+
+    group(
+      'updateStatusForTickets / updatePriorityForTickets '
+      '(bulk-status-and-priority-edit-for-ticket-selection)',
+      () {
+        late MockTicketLinkRepository linkRepository;
+        late MockCommentRepository commentRepository;
+        late MockTicketGitProjector gitProjector;
+        const rootPath = '/root';
+
+        // Rejected by the Blocked-dependency gate (_isTicketBlocked) — has
+        // an unresolved blockedBy link.
+        final bulkBlockedTask = Ticket(
+          id: 'bulk-blocked-1',
+          ticketId: 'AIO-90',
+          type: TicketType.task,
+          title: 'Blocked bulk task',
+          status: TicketStatus.todo,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final bulkBlockerTask = Ticket(
+          id: 'bulk-blocker-1',
+          ticketId: 'AIO-91',
+          type: TicketType.task,
+          title: 'Blocker task',
+          status: TicketStatus.todo,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        // Not blocked, but rejected by the coding-execution gate — reuses
+        // the existing task-to-coding-execution-trigger fixtures (a Task
+        // under a Story whose design review is still PENDING).
+        final bulkCodingGatedTask = taskUnderStory;
+        // Passes both gates — no governing Story, no blockedBy link.
+        final bulkCleanTask = Ticket(
+          id: 'bulk-clean-1',
+          ticketId: 'AIO-92',
+          type: TicketType.task,
+          title: 'Clean bulk task',
+          status: TicketStatus.inProgress,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+
+        setUp(() {
+          linkRepository = MockTicketLinkRepository();
+          commentRepository = MockCommentRepository();
+          gitProjector = MockTicketGitProjector();
+        });
+
+        TicketsCubit buildCubit() => TicketsCubit(
+          repository,
+          linkRepository: linkRepository,
+          commentRepository: commentRepository,
+          gitProjector: gitProjector,
+          projectRootPath: rootPath,
+        );
+
+        void stubEmptySearch() {
+          when(
+            () => repository.searchTickets(
+              query: any(named: 'query'),
+              statuses: any(named: 'statuses'),
+              types: any(named: 'types'),
+              priorities: any(named: 'priorities'),
+              limit: any(named: 'limit'),
+            ),
+          ).thenAnswer(
+            (_) async => const TicketSearchPage(tickets: [], hasMore: false),
+          );
+        }
+
+        /// Stubs the three-way mixed selection (blocked / coding-execution
+        /// -gated / clean) so only [bulkCleanTask] is writable.
+        void stubMixedSelection() {
+          when(
+            () => repository.getTicketById(bulkBlockedTask.id),
+          ).thenAnswer((_) async => bulkBlockedTask);
+          when(
+            () => linkRepository.getLinksForTicket(bulkBlockedTask.id),
+          ).thenAnswer(
+            (_) async => [
+              TicketLinkData(
+                id: 'bulk-gate-link-1',
+                sourceTicketId: bulkBlockedTask.id,
+                targetTicketId: bulkBlockerTask.id,
+                linkType: TicketLinkType.blockedBy.name,
+              ),
+            ],
+          );
+          when(
+            () => repository.getTicketById(bulkBlockerTask.id),
+          ).thenAnswer((_) async => bulkBlockerTask);
+
+          when(
+            () => repository.getTicketById(bulkCodingGatedTask.id),
+          ).thenAnswer((_) async => bulkCodingGatedTask);
+          when(
+            () => linkRepository.getLinksForTicket(bulkCodingGatedTask.id),
+          ).thenAnswer((_) async => []);
+          when(
+            () => repository.getTicketById(storyForExecution.id),
+          ).thenAnswer((_) async => storyForExecution);
+          when(
+            () => repository.getTicketsByParent(
+              storyForExecution.id,
+              types: TicketTypeHierarchy.executableTypes,
+            ),
+          ).thenAnswer((_) async => [bulkCodingGatedTask]);
+          when(
+            () => repository.getTicketsByParent(
+              storyForExecution.id,
+              types: const [TicketType.chat],
+            ),
+          ).thenAnswer((_) async => [designSyncChatForExecution]);
+          when(
+            () => commentRepository.getCommentsForTicket(
+              designSyncChatForExecution.id,
+            ),
+          ).thenAnswer(
+            (_) async => [
+              TicketComment(
+                id: 'bulk-comment-1',
+                ticketId: designSyncChatForExecution.id,
+                content: 'Found one issue.\n\nDESIGN GATE: PENDING',
+                authorType: CommentAuthorType.ai,
+                createdAt: DateTime(2026),
+              ),
+            ],
+          );
+
+          when(
+            () => repository.getTicketById(bulkCleanTask.id),
+          ).thenAnswer((_) async => bulkCleanTask);
+          when(
+            () => linkRepository.getLinksForTicket(bulkCleanTask.id),
+          ).thenAnswer((_) async => []);
+          when(
+            () => repository.updateStatusForIds([
+              bulkCleanTask.id,
+            ], TicketStatus.inProgress),
+          ).thenAnswer((_) async {});
+          when(
+            () => gitProjector.project(any(), any(), any()),
+          ).thenAnswer((_) async {});
+          stubEmptySearch();
+        }
+
+        blocTest<TicketsCubit, TicketsState>(
+          'target inProgress with a mixed selection emits '
+          '[TicketsBatchStatusUpdating, TicketsBatchStatusUpdated] with the '
+          'correct updated/skipped split, and only the writable id reaches '
+          'updateStatusForIds',
+          setUp: stubMixedSelection,
+          build: buildCubit,
+          act: (cubit) => cubit.updateStatusForTickets([
+            bulkBlockedTask.id,
+            bulkCodingGatedTask.id,
+            bulkCleanTask.id,
+          ], TicketStatus.inProgress),
+          verify: (_) {
+            verify(
+              () => repository.updateStatusForIds([
+                bulkCleanTask.id,
+              ], TicketStatus.inProgress),
+            ).called(1);
+          },
+          expect: () => [
+            const TicketsBatchStatusUpdating(),
+            const TicketsBatchStatusUpdated([], 1, 2, hasMore: false),
+          ],
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          'git-projection fires only for the successfully-written ticket, '
+          'never for the blocked or coding-execution-gated ones',
+          setUp: stubMixedSelection,
+          build: buildCubit,
+          act: (cubit) => cubit.updateStatusForTickets([
+            bulkBlockedTask.id,
+            bulkCodingGatedTask.id,
+            bulkCleanTask.id,
+          ], TicketStatus.inProgress),
+          verify: (_) {
+            verify(
+              () => gitProjector.project(
+                bulkCleanTask,
+                rootPath,
+                'status-changed',
+              ),
+            ).called(1);
+            verifyNever(
+              () => gitProjector.project(bulkBlockedTask, any(), any()),
+            );
+            verifyNever(
+              () => gitProjector.project(bulkCodingGatedTask, any(), any()),
+            );
+          },
+          expect: () => [
+            const TicketsBatchStatusUpdating(),
+            const TicketsBatchStatusUpdated([], 1, 2, hasMore: false),
+          ],
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          'a target status other than inProgress skips gating entirely — '
+          'skippedCount is always 0 and no link data is queried',
+          setUp: () {
+            when(
+              () => repository.getTicketById(bulkBlockedTask.id),
+            ).thenAnswer(
+              (_) async => bulkBlockedTask.copyWith(status: TicketStatus.done),
+            );
+            when(
+              () => repository.updateStatusForIds([
+                bulkBlockedTask.id,
+              ], TicketStatus.done),
+            ).thenAnswer((_) async {});
+            when(
+              () => gitProjector.project(any(), any(), any()),
+            ).thenAnswer((_) async {});
+            stubEmptySearch();
+          },
+          build: buildCubit,
+          act: (cubit) => cubit.updateStatusForTickets([
+            bulkBlockedTask.id,
+          ], TicketStatus.done),
+          verify: (_) {
+            verifyNever(() => linkRepository.getLinksForTicket(any()));
+            verify(
+              () => repository.updateStatusForIds([
+                bulkBlockedTask.id,
+              ], TicketStatus.done),
+            ).called(1);
+          },
+          expect: () => [
+            const TicketsBatchStatusUpdating(),
+            const TicketsBatchStatusUpdated([], 1, 0, hasMore: false),
+          ],
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          'updateStatusForTickets emits [TicketsBatchStatusUpdating, '
+          'TicketsError] when the repository throws',
+          setUp: () {
+            when(
+              () => repository.updateStatusForIds(any(), any()),
+            ).thenThrow(Exception('boom'));
+          },
+          build: () => TicketsCubit(repository),
+          act: (cubit) => cubit.updateStatusForTickets([
+            ticket.id,
+          ], TicketStatus.done),
+          expect: () => [
+            const TicketsBatchStatusUpdating(),
+            isA<TicketsError>(),
+          ],
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          'updatePriorityForTickets always writes unconditionally — '
+          'updatedCount equals ids.length and no git projection is '
+          'triggered',
+          setUp: () {
+            when(
+              () => repository.updatePriorityForIds([
+                ticket.id,
+                unrelated.id,
+              ], TicketPriority.critical),
+            ).thenAnswer((_) async {});
+            when(
+              () => gitProjector.project(any(), any(), any()),
+            ).thenAnswer((_) async {});
+            stubEmptySearch();
+          },
+          build: buildCubit,
+          act: (cubit) => cubit.updatePriorityForTickets([
+            ticket.id,
+            unrelated.id,
+          ], TicketPriority.critical),
+          verify: (_) {
+            verify(
+              () => repository.updatePriorityForIds([
+                ticket.id,
+                unrelated.id,
+              ], TicketPriority.critical),
+            ).called(1);
+            verifyNever(() => gitProjector.project(any(), any(), any()));
+          },
+          expect: () => [
+            const TicketsBatchPriorityUpdating(),
+            const TicketsBatchPriorityUpdated([], 2, hasMore: false),
+          ],
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          'updatePriorityForTickets emits [TicketsBatchPriorityUpdating, '
+          'TicketsError] when the repository throws',
+          setUp: () {
+            when(
+              () => repository.updatePriorityForIds(any(), any()),
+            ).thenThrow(Exception('boom'));
+          },
+          build: () => TicketsCubit(repository),
+          act: (cubit) => cubit.updatePriorityForTickets([
+            ticket.id,
+          ], TicketPriority.low),
+          expect: () => [
+            const TicketsBatchPriorityUpdating(),
+            isA<TicketsError>(),
+          ],
+        );
+      },
     );
 
     group('loadMoreTickets', () {

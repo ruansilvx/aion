@@ -39,6 +39,23 @@ abstract interface class TicketRepository {
   /// [id]. Does not touch any other field. Throws if [id] does not exist.
   Future<void> updateTicketStatus(String id, TicketStatus status);
 
+  /// Writes [status] (and a fresh `updatedAt`) to every ticket in [ids] in
+  /// one bulk operation. Unconditional — performs no validation and no
+  /// gating (e.g. the Blocked-dependency or coding-execution checks that
+  /// guard a single-ticket move to [TicketStatus.inProgress]); that's a
+  /// `TicketsCubit`-layer concern (see
+  /// `TicketsCubit.updateStatusForTickets`), which is responsible for
+  /// filtering [ids] down to the writable subset before calling this. Ids
+  /// that don't exist are silently skipped.
+  Future<void> updateStatusForIds(List<String> ids, TicketStatus status);
+
+  /// Writes [priority] (and a fresh `updatedAt`) to every ticket in [ids]
+  /// in one bulk operation. Unconditional — priority is a plain enum
+  /// field with no structural gating, so unlike [updateStatusForIds] there
+  /// is no writable-subset filtering for a caller to perform first. Ids
+  /// that don't exist are silently skipped.
+  Future<void> updatePriorityForIds(List<String> ids, TicketPriority priority);
+
   /// Updates only the [parentId] (and `updatedAt`) of the ticket with id
   /// [id]. Does not touch any other field, and performs no validation —
   /// callers (see `TicketsCubit.updateTicketParent`) are responsible for

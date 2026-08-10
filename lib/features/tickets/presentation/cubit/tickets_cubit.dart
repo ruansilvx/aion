@@ -3225,6 +3225,8 @@ class TicketsCubit extends Cubit<TicketsState> {
       TicketCreated(:final tickets) => tickets,
       TicketStatusUpdated(:final tickets) => tickets,
       TicketsBatchTrashed(:final tickets) => tickets,
+      TicketsBatchStatusUpdated(:final tickets) => tickets,
+      TicketsBatchPriorityUpdated(:final tickets) => tickets,
       TicketsLoadingMore(:final tickets) => tickets,
       TicketsLoadMoreFailed(:final tickets) => tickets,
       _ => <Ticket>[],
@@ -3269,6 +3271,8 @@ class TicketsCubit extends Cubit<TicketsState> {
       TicketCreated(:final tickets) => tickets,
       TicketStatusUpdated(:final tickets) => tickets,
       TicketsBatchTrashed(:final tickets) => tickets,
+      TicketsBatchStatusUpdated(:final tickets) => tickets,
+      TicketsBatchPriorityUpdated(:final tickets) => tickets,
       TicketsLoadingMore(:final tickets) => tickets,
       TicketsLoadMoreFailed(:final tickets) => tickets,
       _ => <Ticket>[],
@@ -3295,6 +3299,147 @@ class TicketsCubit extends Cubit<TicketsState> {
       );
       emit(
         TicketsBatchTrashed(page.tickets, trashedCount, hasMore: page.hasMore),
+      );
+    } catch (e) {
+      emit(TicketsError(e.toString()));
+    }
+  }
+
+  /// Sets [status] on every ticket in [ids], via
+  /// [TicketRepository.updateStatusForIds] — but only for the subset that
+  /// passes the same two per-ticket gates [updateTicketStatus] already
+  /// enforces for a single ticket moving to [TicketStatus.inProgress]: the
+  /// Blocked-dependency gate ([_isTicketBlocked]) and, for Task/Bug
+  /// tickets ([TicketTypeHierarchy.isExecutable]), the coding-execution
+  /// gate ([_codingExecutionGateCheck]). Both gates only apply when
+  /// [status] is [TicketStatus.inProgress] — every other target status
+  /// skips gating entirely and writes the full [ids] list, mirroring
+  /// [updateTicketStatus]'s own short-circuit. Rejected ids are silently
+  /// excluded from the write (not reported per-id) — the widget layer
+  /// surfaces the aggregate via [TicketsBatchStatusUpdated.skippedCount].
+  ///
+  /// Emits [TicketsBatchStatusUpdating] immediately, then
+  /// [TicketsBatchStatusUpdated] (refreshed page + how many were written +
+  /// how many were skipped) on success, or [TicketsError] on an unexpected
+  /// failure. For every successfully-written ticket: triggers git
+  /// projection (`'status-changed'`, same event [updateTicketStatus]
+  /// triggers), and — for a Task/Bug moving to [TicketStatus.inProgress] —
+  /// starts or queues its coding-execution run via
+  /// [_triggerOrQueueCodingExecution], identical to [updateTicketStatus]'s
+  /// own post-write side effects. Also calls [_refreshBlockedBoardState]
+  /// on completion, since a written ticket may be another ticket's
+  /// blocker.
+  Future<void> updateStatusForTickets(
+    List<String> ids,
+    TicketStatus status,
+  ) async {
+    _searchGeneration++;
+    final currentTickets = switch (state) {
+      TicketsLoaded(:final tickets) => tickets,
+      TicketCreated(:final tickets) => tickets,
+      TicketStatusUpdated(:final tickets) => tickets,
+      TicketsBatchTrashed(:final tickets) => tickets,
+      TicketsBatchStatusUpdated(:final tickets) => tickets,
+      TicketsBatchPriorityUpdated(:final tickets) => tickets,
+      TicketsLoadingMore(:final tickets) => tickets,
+      TicketsLoadMoreFailed(:final tickets) => tickets,
+      _ => <Ticket>[],
+    };
+    emit(const TicketsBatchStatusUpdating());
+    try {
+      final writableIds = <String>[];
+      if (status == TicketStatus.inProgress) {
+        for (final id in ids) {
+          final ticket = await _repository.getTicketById(id);
+          if (ticket == null) continue;
+          if (await _isTicketBlocked(ticket)) continue;
+          if (ticket.type.isExecutable) {
+            final check = await _codingExecutionGateCheck(ticket);
+            if (!check.canStart) continue;
+          }
+          writableIds.add(id);
+        }
+      } else {
+        writableIds.addAll(ids);
+      }
+
+      if (writableIds.isNotEmpty) {
+        await _repository.updateStatusForIds(writableIds, status);
+        for (final id in writableIds) {
+          final updated = await _repository.getTicketById(id);
+          if (updated != null) {
+            unawaited(_triggerGitProjection(updated, 'status-changed'));
+            if (updated.type.isExecutable &&
+                status == TicketStatus.inProgress) {
+              unawaited(_triggerOrQueueCodingExecution(updated));
+            }
+          }
+        }
+      }
+
+      final page = await _repository.searchTickets(
+        query: _lastQuery,
+        statuses: _lastStatuses,
+        types: _lastTypes,
+        priorities: _lastPriorities,
+        limit: max(_pageSize, currentTickets.length),
+      );
+      emit(
+        TicketsBatchStatusUpdated(
+          page.tickets,
+          writableIds.length,
+          ids.length - writableIds.length,
+          hasMore: page.hasMore,
+        ),
+      );
+      unawaited(_refreshBlockedBoardState());
+    } catch (e) {
+      emit(TicketsError(e.toString()));
+    }
+  }
+
+  /// Sets [priority] on every ticket in [ids] via
+  /// [TicketRepository.updatePriorityForIds] — unconditional, no gating
+  /// (priority has no structural constraint, unlike status). Emits
+  /// [TicketsBatchPriorityUpdating] immediately, then
+  /// [TicketsBatchPriorityUpdated] (refreshed page + updated count) on
+  /// success, or [TicketsError] on an unexpected failure. Does not trigger
+  /// git projection (a plain field edit is not one of `project.md`'s
+  /// event-triggered projection events — see [updateTicket], which doesn't
+  /// trigger it either) and does not trigger embedding regeneration (only
+  /// a title/description change does, per [updateTicket]).
+  Future<void> updatePriorityForTickets(
+    List<String> ids,
+    TicketPriority priority,
+  ) async {
+    _searchGeneration++;
+    final currentTickets = switch (state) {
+      TicketsLoaded(:final tickets) => tickets,
+      TicketCreated(:final tickets) => tickets,
+      TicketStatusUpdated(:final tickets) => tickets,
+      TicketsBatchTrashed(:final tickets) => tickets,
+      TicketsBatchStatusUpdated(:final tickets) => tickets,
+      TicketsBatchPriorityUpdated(:final tickets) => tickets,
+      TicketsLoadingMore(:final tickets) => tickets,
+      TicketsLoadMoreFailed(:final tickets) => tickets,
+      _ => <Ticket>[],
+    };
+    emit(const TicketsBatchPriorityUpdating());
+    try {
+      await _repository.updatePriorityForIds(ids, priority);
+      final page = await _repository.searchTickets(
+        query: _lastQuery,
+        statuses: _lastStatuses,
+        types: _lastTypes,
+        priorities: _lastPriorities,
+        limit: max(_pageSize, currentTickets.length),
+      );
+      emit(
+        TicketsBatchPriorityUpdated(
+          page.tickets,
+          ids.length,
+          hasMore: page.hasMore,
+        ),
       );
     } catch (e) {
       emit(TicketsError(e.toString()));

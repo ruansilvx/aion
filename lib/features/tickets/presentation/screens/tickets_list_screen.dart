@@ -248,6 +248,8 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
       TicketStatusUpdating(:final tickets) => tickets,
       TicketStatusUpdated(:final tickets) => tickets,
       TicketsBatchTrashed(:final tickets) => tickets,
+      TicketsBatchStatusUpdated(:final tickets) => tickets,
+      TicketsBatchPriorityUpdated(:final tickets) => tickets,
       TicketsLoadingMore(:final tickets) => tickets,
       TicketsLoadMoreFailed(:final tickets) => tickets,
       _ => const <Ticket>[],
@@ -269,6 +271,8 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
     TicketCreated(:final hasMore) => hasMore,
     TicketStatusUpdated(:final hasMore) => hasMore,
     TicketsBatchTrashed(:final hasMore) => hasMore,
+    TicketsBatchStatusUpdated(:final hasMore) => hasMore,
+    TicketsBatchPriorityUpdated(:final hasMore) => hasMore,
     TicketsLoadMoreFailed(:final hasMore) => hasMore,
     _ => false,
   };
@@ -311,6 +315,35 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
     }
   }
 
+  /// Sets [status] on every ticket in [ids] via
+  /// [TicketsCubit.updateStatusForTickets]. Unlike
+  /// [_confirmAndTrashSelection], no confirmation dialog — a bulk status
+  /// write is a plain field edit with no cascade, matching how a
+  /// single-ticket status edit today also has no confirmation step.
+  /// Shared `onChangeStatus` handler for [TicketSelectionBar].
+  void _bulkChangeStatus(
+    BuildContext context,
+    Set<String> ids,
+    TicketStatus status,
+  ) {
+    context.read<TicketsCubit>().updateStatusForTickets(ids.toList(), status);
+  }
+
+  /// Sets [priority] on every ticket in [ids] via
+  /// [TicketsCubit.updatePriorityForTickets]. No confirmation dialog, same
+  /// rationale as [_bulkChangeStatus]. Shared `onChangePriority` handler
+  /// for [TicketSelectionBar].
+  void _bulkChangePriority(
+    BuildContext context,
+    Set<String> ids,
+    TicketPriority priority,
+  ) {
+    context.read<TicketsCubit>().updatePriorityForTickets(
+      ids.toList(),
+      priority,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = ThemeScope.of(context);
@@ -322,6 +355,25 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
           AppToast.show(
             context,
             context.l10n.ticketBulkTrashSummaryToast(state.trashedCount),
+          );
+          context.read<TicketSelectionCubit>().clear();
+        } else if (state is TicketsBatchStatusUpdated) {
+          AppToast.show(
+            context,
+            state.skippedCount > 0
+                ? context.l10n.ticketBulkStatusSummaryWithSkippedToast(
+                    state.updatedCount,
+                    state.skippedCount,
+                  )
+                : context.l10n.ticketBulkStatusSummaryToast(
+                    state.updatedCount,
+                  ),
+          );
+          context.read<TicketSelectionCubit>().clear();
+        } else if (state is TicketsBatchPriorityUpdated) {
+          AppToast.show(
+            context,
+            context.l10n.ticketBulkPrioritySummaryToast(state.updatedCount),
           );
           context.read<TicketSelectionCubit>().clear();
         }
@@ -450,6 +502,12 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                             TicketsBatchTrashing() => const Center(
                               child: AppSpinner(),
                             ),
+                            TicketsBatchStatusUpdating() => const Center(
+                              child: AppSpinner(),
+                            ),
+                            TicketsBatchPriorityUpdating() => const Center(
+                              child: AppSpinner(),
+                            ),
                             TicketsError(:final message, :final reason) =>
                               Center(
                                 child: Column(
@@ -477,6 +535,8 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                             TicketStatusUpdating() ||
                             TicketStatusUpdated() ||
                             TicketsBatchTrashed() ||
+                            TicketsBatchStatusUpdated() ||
+                            TicketsBatchPriorityUpdated() ||
                             TicketsLoadingMore() ||
                             TicketsLoadMoreFailed() => AnimatedSwitcher(
                               duration: const Duration(milliseconds: 120),
@@ -527,6 +587,16 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                       onSelectAll: () => context
                           .read<TicketSelectionCubit>()
                           .selectAll(visibleTickets.map((t) => t.id).toList()),
+                      onChangeStatus: (status) => _bulkChangeStatus(
+                        context,
+                        selection.selectedIds,
+                        status,
+                      ),
+                      onChangePriority: (priority) => _bulkChangePriority(
+                        context,
+                        selection.selectedIds,
+                        priority,
+                      ),
                       onDelete: () => _confirmAndTrashSelection(
                         context,
                         selection.selectedIds,
