@@ -55,6 +55,9 @@ class MockGitHubCliClient extends Mock implements GitHubCliClient {}
 
 class MockBaselineRepository extends Mock implements BaselineRepository {}
 
+class MockTicketListFilterRepository extends Mock
+    implements TicketListFilterRepository {}
+
 /// Stubs [gitClient]/[gitHubClient] for a coding-execution run that
 /// isolates cleanly, pushes, and opens a PR — the happy path most
 /// `_runCodingExecution` tests exercise. Whether the run actually
@@ -523,6 +526,7 @@ void main() {
   setUpAll(() {
     registerFallbackValue(ticket);
     registerFallbackValue(TicketStatus.backlog);
+    registerFallbackValue(const TicketListFilters());
     registerFallbackValue(Uint8List(0));
     registerFallbackValue(const AgentRequest(prompt: '', model: ''));
     registerFallbackValue(SddStage.exploring);
@@ -549,9 +553,9 @@ void main() {
         when(
           () => repository.searchTickets(
             query: any(named: 'query'),
-            status: any(named: 'status'),
-            type: any(named: 'type'),
-            priority: any(named: 'priority'),
+            statuses: any(named: 'statuses'),
+            types: any(named: 'types'),
+            priorities: any(named: 'priorities'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
           ),
@@ -573,9 +577,9 @@ void main() {
         when(
           () => repository.searchTickets(
             query: any(named: 'query'),
-            status: any(named: 'status'),
-            type: any(named: 'type'),
-            priority: any(named: 'priority'),
+            statuses: any(named: 'statuses'),
+            types: any(named: 'types'),
+            priorities: any(named: 'priorities'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
           ),
@@ -593,9 +597,9 @@ void main() {
         when(
           () => repository.searchTickets(
             query: any(named: 'query'),
-            status: any(named: 'status'),
-            type: any(named: 'type'),
-            priority: any(named: 'priority'),
+            statuses: any(named: 'statuses'),
+            types: any(named: 'types'),
+            priorities: any(named: 'priorities'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
           ),
@@ -621,9 +625,9 @@ void main() {
         when(
           () => repository.searchTickets(
             query: any(named: 'query'),
-            status: any(named: 'status'),
-            type: any(named: 'type'),
-            priority: any(named: 'priority'),
+            statuses: any(named: 'statuses'),
+            types: any(named: 'types'),
+            priorities: any(named: 'priorities'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
           ),
@@ -671,9 +675,9 @@ void main() {
         when(
           () => repository.searchTickets(
             query: any(named: 'query'),
-            status: any(named: 'status'),
-            type: any(named: 'type'),
-            priority: any(named: 'priority'),
+            statuses: any(named: 'statuses'),
+            types: any(named: 'types'),
+            priorities: any(named: 'priorities'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
           ),
@@ -846,9 +850,9 @@ void main() {
         when(
           () => repository.searchTickets(
             query: any(named: 'query'),
-            status: any(named: 'status'),
-            type: any(named: 'type'),
-            priority: any(named: 'priority'),
+            statuses: any(named: 'statuses'),
+            types: any(named: 'types'),
+            priorities: any(named: 'priorities'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
           ),
@@ -878,9 +882,9 @@ void main() {
         when(
           () => repository.searchTickets(
             query: any(named: 'query'),
-            status: any(named: 'status'),
-            type: any(named: 'type'),
-            priority: any(named: 'priority'),
+            statuses: any(named: 'statuses'),
+            types: any(named: 'types'),
+            priorities: any(named: 'priorities'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
           ),
@@ -914,9 +918,9 @@ void main() {
           when(
             () => repository.searchTickets(
               query: any(named: 'query'),
-              status: any(named: 'status'),
-              type: any(named: 'type'),
-              priority: any(named: 'priority'),
+              statuses: any(named: 'statuses'),
+              types: any(named: 'types'),
+              priorities: any(named: 'priorities'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
             ),
@@ -931,9 +935,9 @@ void main() {
           verify(
             () => repository.searchTickets(
               query: null,
-              status: null,
-              type: null,
-              priority: null,
+              statuses: const {},
+              types: const {},
+              priorities: const {},
               limit: 50,
               offset: 1,
             ),
@@ -954,9 +958,9 @@ void main() {
           verifyNever(
             () => repository.searchTickets(
               query: any(named: 'query'),
-              status: any(named: 'status'),
-              type: any(named: 'type'),
-              priority: any(named: 'priority'),
+              statuses: any(named: 'statuses'),
+              types: any(named: 'types'),
+              priorities: any(named: 'priorities'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
             ),
@@ -974,9 +978,9 @@ void main() {
           verifyNever(
             () => repository.searchTickets(
               query: any(named: 'query'),
-              status: any(named: 'status'),
-              type: any(named: 'type'),
-              priority: any(named: 'priority'),
+              statuses: any(named: 'statuses'),
+              types: any(named: 'types'),
+              priorities: any(named: 'priorities'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
             ),
@@ -992,9 +996,9 @@ void main() {
           when(
             () => repository.searchTickets(
               query: any(named: 'query'),
-              status: any(named: 'status'),
-              type: any(named: 'type'),
-              priority: any(named: 'priority'),
+              statuses: any(named: 'statuses'),
+              types: any(named: 'types'),
+              priorities: any(named: 'priorities'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
             ),
@@ -1016,9 +1020,9 @@ void main() {
           when(
             () => repository.searchTickets(
               query: any(named: 'query'),
-              status: any(named: 'status'),
-              type: any(named: 'type'),
-              priority: any(named: 'priority'),
+              statuses: any(named: 'statuses'),
+              types: any(named: 'types'),
+              priorities: any(named: 'priorities'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
             ),
@@ -1034,9 +1038,9 @@ void main() {
           when(
             () => repository.searchTickets(
               query: any(named: 'query'),
-              status: any(named: 'status'),
-              type: any(named: 'type'),
-              priority: any(named: 'priority'),
+              statuses: any(named: 'statuses'),
+              types: any(named: 'types'),
+              priorities: any(named: 'priorities'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
             ),
@@ -1048,9 +1052,9 @@ void main() {
           when(
             () => repository.searchTickets(
               query: any(named: 'query'),
-              status: any(named: 'status'),
-              type: any(named: 'type'),
-              priority: any(named: 'priority'),
+              statuses: any(named: 'statuses'),
+              types: any(named: 'types'),
+              priorities: any(named: 'priorities'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
             ),
@@ -1071,6 +1075,208 @@ void main() {
         },
       );
     });
+
+    group(
+      'toggleStatusFilter/toggleTypeFilter/togglePriorityFilter/'
+      'loadPersistedFilters',
+      () {
+        late MockTicketListFilterRepository filterRepository;
+
+        setUp(() {
+          filterRepository = MockTicketListFilterRepository();
+        });
+
+        void stubEmptySearch() {
+          when(
+            () => repository.searchTickets(
+              query: any(named: 'query'),
+              statuses: any(named: 'statuses'),
+              types: any(named: 'types'),
+              priorities: any(named: 'priorities'),
+              limit: any(named: 'limit'),
+            ),
+          ).thenAnswer(
+            (_) async => const TicketSearchPage(tickets: [], hasMore: false),
+          );
+        }
+
+        test(
+          'toggleStatusFilter adds the value when absent, removes it when '
+          'present',
+          () async {
+            stubEmptySearch();
+            final cubit = TicketsCubit(repository);
+
+            await cubit.toggleStatusFilter(TicketStatus.todo);
+            expect(cubit.selectedStatuses, {TicketStatus.todo});
+
+            await cubit.toggleStatusFilter(TicketStatus.todo);
+            expect(cubit.selectedStatuses, isEmpty);
+          },
+        );
+
+        test(
+          'toggleTypeFilter adds the value when absent, removes it when '
+          'present',
+          () async {
+            stubEmptySearch();
+            final cubit = TicketsCubit(repository);
+
+            await cubit.toggleTypeFilter(TicketType.bug);
+            expect(cubit.selectedTypes, {TicketType.bug});
+
+            await cubit.toggleTypeFilter(TicketType.bug);
+            expect(cubit.selectedTypes, isEmpty);
+          },
+        );
+
+        test(
+          'togglePriorityFilter adds the value when absent, removes it '
+          'when present',
+          () async {
+            stubEmptySearch();
+            final cubit = TicketsCubit(repository);
+
+            await cubit.togglePriorityFilter(TicketPriority.high);
+            expect(cubit.selectedPriorities, {TicketPriority.high});
+
+            await cubit.togglePriorityFilter(TicketPriority.high);
+            expect(cubit.selectedPriorities, isEmpty);
+          },
+        );
+
+        test(
+          'a toggle re-runs searchTickets with the updated set and the '
+          'other two dimensions unchanged',
+          () async {
+            stubEmptySearch();
+            final cubit = TicketsCubit(repository);
+            await cubit.toggleTypeFilter(TicketType.bug);
+
+            await cubit.toggleStatusFilter(TicketStatus.todo);
+
+            verify(
+              () => repository.searchTickets(
+                query: any(named: 'query'),
+                statuses: {TicketStatus.todo},
+                types: {TicketType.bug},
+                priorities: const {},
+                limit: any(named: 'limit'),
+              ),
+            ).called(1);
+          },
+        );
+
+        test(
+          'a toggle persists the updated selection when filterRepository '
+          'and projectId are both supplied',
+          () async {
+            stubEmptySearch();
+            when(
+              () => filterRepository.setFilters(any(), any()),
+            ).thenAnswer((_) async {});
+            final cubit = TicketsCubit(
+              repository,
+              filterRepository: filterRepository,
+              projectId: 'proj-1',
+            );
+
+            await cubit.toggleStatusFilter(TicketStatus.todo);
+
+            verify(
+              () => filterRepository.setFilters(
+                'proj-1',
+                const TicketListFilters(statuses: {TicketStatus.todo}),
+              ),
+            ).called(1);
+          },
+        );
+
+        test(
+          'a toggle does not persist when filterRepository is null',
+          () async {
+            stubEmptySearch();
+            final cubit = TicketsCubit(repository, projectId: 'proj-1');
+
+            // No filterRepository supplied — nothing to verify a call
+            // against; this only needs to complete without throwing.
+            await cubit.toggleStatusFilter(TicketStatus.todo);
+
+            expect(cubit.selectedStatuses, {TicketStatus.todo});
+          },
+        );
+
+        test(
+          'a toggle does not persist when projectId is null',
+          () async {
+            stubEmptySearch();
+            final cubit = TicketsCubit(
+              repository,
+              filterRepository: filterRepository,
+            );
+
+            await cubit.toggleStatusFilter(TicketStatus.todo);
+
+            verifyNever(() => filterRepository.setFilters(any(), any()));
+          },
+        );
+
+        test(
+          'loadPersistedFilters populates the remembered-filter fields '
+          'from the repository without emitting a state',
+          () async {
+            when(() => filterRepository.getFilters('proj-1')).thenAnswer(
+              (_) async => const TicketListFilters(
+                statuses: {TicketStatus.todo},
+                types: {TicketType.bug},
+                priorities: {TicketPriority.high},
+              ),
+            );
+            final cubit = TicketsCubit(
+              repository,
+              filterRepository: filterRepository,
+              projectId: 'proj-1',
+            );
+            final states = <TicketsState>[];
+            final subscription = cubit.stream.listen(states.add);
+
+            await cubit.loadPersistedFilters();
+
+            expect(cubit.selectedStatuses, {TicketStatus.todo});
+            expect(cubit.selectedTypes, {TicketType.bug});
+            expect(cubit.selectedPriorities, {TicketPriority.high});
+            expect(states, isEmpty);
+            await subscription.cancel();
+          },
+        );
+
+        test(
+          'loadPersistedFilters no-ops when filterRepository is null',
+          () async {
+            final cubit = TicketsCubit(repository, projectId: 'proj-1');
+
+            await cubit.loadPersistedFilters();
+
+            expect(cubit.selectedStatuses, isEmpty);
+          },
+        );
+
+        test(
+          'loadPersistedFilters no-ops when projectId is null',
+          () async {
+            final cubit = TicketsCubit(
+              repository,
+              filterRepository: filterRepository,
+            );
+
+            await cubit.loadPersistedFilters();
+
+            verifyNever(() => filterRepository.getFilters(any()));
+            expect(cubit.selectedStatuses, isEmpty);
+          },
+        );
+      },
+    );
 
     group('getValidParentCandidates', () {
       test('excludes self and the full multi-level descendant chain', () async {
@@ -1448,9 +1654,9 @@ void main() {
           when(
             () => repository.searchTickets(
               query: any(named: 'query'),
-              status: any(named: 'status'),
-              type: any(named: 'type'),
-              priority: any(named: 'priority'),
+              statuses: any(named: 'statuses'),
+              types: any(named: 'types'),
+              priorities: any(named: 'priorities'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
             ),
@@ -1503,9 +1709,9 @@ void main() {
           when(
             () => repository.searchTickets(
               query: any(named: 'query'),
-              status: any(named: 'status'),
-              type: any(named: 'type'),
-              priority: any(named: 'priority'),
+              statuses: any(named: 'statuses'),
+              types: any(named: 'types'),
+              priorities: any(named: 'priorities'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
             ),
@@ -1568,9 +1774,9 @@ void main() {
           when(
             () => repository.searchTickets(
               query: any(named: 'query'),
-              status: any(named: 'status'),
-              type: any(named: 'type'),
-              priority: any(named: 'priority'),
+              statuses: any(named: 'statuses'),
+              types: any(named: 'types'),
+              priorities: any(named: 'priorities'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
             ),
@@ -4014,9 +4220,9 @@ void main() {
         when(
           () => repository.searchTickets(
             query: any(named: 'query'),
-            status: any(named: 'status'),
-            type: any(named: 'type'),
-            priority: any(named: 'priority'),
+            statuses: any(named: 'statuses'),
+            types: any(named: 'types'),
+            priorities: any(named: 'priorities'),
             limit: any(named: 'limit'),
           ),
         ).thenAnswer(
@@ -5545,9 +5751,9 @@ void main() {
       when(
         () => repository.searchTickets(
           query: any(named: 'query'),
-          status: any(named: 'status'),
-          type: any(named: 'type'),
-          priority: any(named: 'priority'),
+          statuses: any(named: 'statuses'),
+          types: any(named: 'types'),
+          priorities: any(named: 'priorities'),
           limit: any(named: 'limit'),
           offset: any(named: 'offset'),
         ),
@@ -5671,9 +5877,9 @@ void main() {
         when(
           () => repository.searchTickets(
             query: any(named: 'query'),
-            status: any(named: 'status'),
-            type: any(named: 'type'),
-            priority: any(named: 'priority'),
+            statuses: any(named: 'statuses'),
+            types: any(named: 'types'),
+            priorities: any(named: 'priorities'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
           ),
@@ -5774,9 +5980,9 @@ void main() {
       when(
         () => repository.searchTickets(
           query: any(named: 'query'),
-          status: any(named: 'status'),
-          type: any(named: 'type'),
-          priority: any(named: 'priority'),
+          statuses: any(named: 'statuses'),
+          types: any(named: 'types'),
+          priorities: any(named: 'priorities'),
           limit: any(named: 'limit'),
         ),
       ).thenAnswer((_) async => const TicketSearchPage(tickets: [], hasMore: false));

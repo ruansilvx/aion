@@ -189,21 +189,23 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
         .get();
   }
 
-  /// Returns one page of tickets matching every non-null filter (ANDed),
-  /// excluding trashed tickets. With [query] null/empty, returns a plain
-  /// filtered list ordered by `created_at desc` (identical shape to
-  /// [getAllTickets] when every filter is also null). With [query] set,
-  /// matches against the `tickets_fts` index (title + description) and
-  /// orders by relevance (`bm25`, ascending — SQLite's bm25 scores are
-  /// negative, more-negative meaning a better match). Both branches apply
-  /// [limit]/[offset] mechanically — this method makes no `hasMore`
-  /// decision of its own; that's the caller's responsibility (see
-  /// [DriftTicketRepository.searchTickets]).
+  /// Returns one page of tickets matching every filter, excluding trashed
+  /// tickets. Within a field, values in [statuses]/[types]/[priorities]
+  /// combine as OR; an empty set for a field means no constraint on it —
+  /// the three fields combine with each other, and with [query], as AND.
+  /// With [query] null/empty, returns a plain filtered list ordered by
+  /// `created_at desc` (identical shape to [getAllTickets] when every set
+  /// is also empty). With [query] set, matches against the `tickets_fts`
+  /// index (title + description) and orders by relevance (`bm25`,
+  /// ascending — SQLite's bm25 scores are negative, more-negative meaning
+  /// a better match). Both branches apply [limit]/[offset] mechanically —
+  /// this method makes no `hasMore` decision of its own; that's the
+  /// caller's responsibility (see [DriftTicketRepository.searchTickets]).
   Future<List<TicketData>> searchTickets({
     String? query,
-    TicketStatus? status,
-    TicketType? type,
-    TicketPriority? priority,
+    Set<TicketStatus> statuses = const {},
+    Set<TicketType> types = const {},
+    Set<TicketPriority> priorities = const {},
     required int limit,
     int offset = 0,
   }) {
@@ -213,9 +215,15 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
         ..where((t) => t.deletedAt.isNull())
         ..orderBy([(t) => OrderingTerm.desc(t.createdAt)])
         ..limit(limit, offset: offset);
-      if (status != null) q.where((t) => t.status.equals(status.name));
-      if (type != null) q.where((t) => t.type.equals(type.name));
-      if (priority != null) q.where((t) => t.priority.equals(priority.name));
+      if (statuses.isNotEmpty) {
+        q.where((t) => t.status.isIn(statuses.map((v) => v.name)));
+      }
+      if (types.isNotEmpty) {
+        q.where((t) => t.type.isIn(types.map((v) => v.name)));
+      }
+      if (priorities.isNotEmpty) {
+        q.where((t) => t.priority.isIn(priorities.map((v) => v.name)));
+      }
       return q.get();
     }
 
@@ -224,18 +232,18 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
       'tickets.deleted_at IS NULL',
     ];
     final variables = <Variable<Object>>[Variable(_buildFtsQuery(trimmed))];
-    if (status != null) {
-      conditions.add('tickets.status = ?');
-      variables.add(Variable(status.name));
+    void addInClause(String column, Set<String> names) {
+      if (names.isEmpty) return;
+      final placeholders = List.filled(names.length, '?').join(', ');
+      conditions.add('$column IN ($placeholders)');
+      for (final name in names) {
+        variables.add(Variable(name));
+      }
     }
-    if (type != null) {
-      conditions.add('tickets.type = ?');
-      variables.add(Variable(type.name));
-    }
-    if (priority != null) {
-      conditions.add('tickets.priority = ?');
-      variables.add(Variable(priority.name));
-    }
+
+    addInClause('tickets.status', statuses.map((v) => v.name).toSet());
+    addInClause('tickets.type', types.map((v) => v.name).toSet());
+    addInClause('tickets.priority', priorities.map((v) => v.name).toSet());
     variables.add(Variable(limit));
     variables.add(Variable(offset));
 

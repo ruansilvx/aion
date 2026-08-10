@@ -7,6 +7,7 @@
 export 'domain/entities/linked_ticket_ref.dart';
 export 'domain/entities/ticket.dart';
 export 'domain/entities/ticket_comment.dart';
+export 'domain/entities/ticket_list_filters.dart';
 export 'domain/entities/ticket_search_page.dart';
 export 'domain/enums/comment_author_type.dart';
 export 'domain/enums/inbox_purpose.dart';
@@ -21,6 +22,7 @@ export 'domain/enums/ticket_sync_status.dart';
 export 'domain/enums/ticket_type.dart';
 export 'domain/repositories/comment_repository.dart';
 export 'domain/repositories/ticket_link_repository.dart';
+export 'domain/repositories/ticket_list_filter_repository.dart';
 export 'domain/repositories/ticket_repository.dart';
 export 'domain/utils/ticket_link_direction.dart';
 export 'presentation/cubit/chat_cubit.dart';

@@ -133,19 +133,22 @@ abstract interface class TicketRepository {
   /// first.
   Future<List<Ticket>> getTrashedTickets();
 
-  /// Returns one page of tickets matching every non-null filter (ANDed):
-  /// [status], [type], [priority] restrict to an exact match on that field;
-  /// [query] full-text-matches against title/description. All filter
-  /// parameters omitted/null is equivalent to paginating [getAllTickets].
-  /// Ordered by relevance when [query] is set, otherwise by creation date
-  /// descending. Excludes trashed tickets, same as [getAllTickets]. Returns
-  /// at most [limit] tickets starting after the first [offset] matches,
-  /// plus whether further matches exist beyond this page.
+  /// Returns one page of tickets matching every filter. Within a field,
+  /// values in [statuses]/[types]/[priorities] combine as OR (e.g.
+  /// `{todo, backlog}` matches either); the three fields combine with
+  /// each other, and with [query], as AND. An empty set for a field means
+  /// no constraint on that field, not "match nothing" — all three sets
+  /// empty and [query] null is equivalent to paginating [getAllTickets].
+  /// [query] full-text-matches against title/description. Ordered by
+  /// relevance when [query] is set, otherwise by creation date descending.
+  /// Excludes trashed tickets, same as [getAllTickets]. Returns at most
+  /// [limit] tickets starting after the first [offset] matches, plus
+  /// whether further matches exist beyond this page.
   Future<TicketSearchPage> searchTickets({
     String? query,
-    TicketStatus? status,
-    TicketType? type,
-    TicketPriority? priority,
+    Set<TicketStatus> statuses = const {},
+    Set<TicketType> types = const {},
+    Set<TicketPriority> priorities = const {},
     required int limit,
     int offset = 0,
   });

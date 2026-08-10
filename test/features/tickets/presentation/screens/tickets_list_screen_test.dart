@@ -163,9 +163,9 @@ void main() {
     when(
       () => repository.searchTickets(
         query: any(named: 'query'),
-        status: any(named: 'status'),
-        type: any(named: 'type'),
-        priority: any(named: 'priority'),
+        statuses: any(named: 'statuses'),
+        types: any(named: 'types'),
+        priorities: any(named: 'priorities'),
         limit: any(named: 'limit'),
         offset: any(named: 'offset'),
       ),
@@ -429,9 +429,9 @@ void main() {
     when(
       () => repository.searchTickets(
         query: any(named: 'query'),
-        status: any(named: 'status'),
-        type: any(named: 'type'),
-        priority: any(named: 'priority'),
+        statuses: any(named: 'statuses'),
+        types: any(named: 'types'),
+        priorities: any(named: 'priorities'),
         limit: any(named: 'limit'),
         offset: any(named: 'offset'),
       ),

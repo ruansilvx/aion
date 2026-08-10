@@ -1038,9 +1038,9 @@ void main() {
       );
 
       final results = await repository.searchTickets(
-        type: TicketType.story,
-        status: TicketStatus.inProgress,
-        priority: TicketPriority.high,
+        types: {TicketType.story},
+        statuses: {TicketStatus.inProgress},
+        priorities: {TicketPriority.high},
         limit: 100,
       );
 
@@ -1072,7 +1072,7 @@ void main() {
 
       final results = await repository.searchTickets(
         query: 'login',
-        type: TicketType.task,
+        types: {TicketType.task},
         limit: 100,
       );
 

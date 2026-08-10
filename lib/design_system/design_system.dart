@@ -9,6 +9,7 @@ export 'tokens/aion_theme.dart';
 export 'tokens/theme_scope.dart';
 export 'atoms/app_button.dart';
 export 'atoms/app_checkbox.dart';
+export 'atoms/app_filter_chip.dart';
 export 'atoms/app_text_field.dart';
 export 'atoms/app_spinner.dart';
 export 'atoms/content_max_width.dart';
