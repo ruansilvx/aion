@@ -413,7 +413,28 @@
   },
   "ticketSelectionSelectAllAction": "Select all",
   "ticketSelectionDeselectAllAction": "Deselect all",
+  "ticketSelectionStatusAction": "Status",
+  "ticketSelectionPriorityAction": "Priority",
   "ticketSelectionDeleteAction": "Delete",
+  "ticketBulkStatusSummaryToast": "Updated status on {count, plural, one{1 ticket} other{{count} tickets}}.",
+  "@ticketBulkStatusSummaryToast": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "ticketBulkStatusSummaryWithSkippedToast": "Updated status on {updated, plural, one{1 ticket} other{{updated} tickets}}; {skipped, plural, one{1 was} other{{skipped} were}} skipped (blocked).",
+  "@ticketBulkStatusSummaryWithSkippedToast": {
+    "placeholders": {
+      "updated": { "type": "int" },
+      "skipped": { "type": "int" }
+    }
+  },
+  "ticketBulkPrioritySummaryToast": "Updated priority on {count, plural, one{1 ticket} other{{count} tickets}}.",
+  "@ticketBulkPrioritySummaryToast": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
 
   "projectHubEyebrow": "WORKSPACE",
   "projectHubTitle": "Projects",

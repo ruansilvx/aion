@@ -106,6 +106,31 @@ class DriftTicketRepository implements TicketRepository {
     );
   }
 
+  /// Thin passthrough to [TicketDao.updateStatusByIds] — see
+  /// [TicketRepository.updateStatusForIds] for the contract.
+  @override
+  Future<void> updateStatusForIds(List<String> ids, TicketStatus status) {
+    return _db.ticketDao.updateStatusByIds(
+      ids,
+      status,
+      DateTime.now().millisecondsSinceEpoch,
+    );
+  }
+
+  /// Thin passthrough to [TicketDao.updatePriorityByIds] — see
+  /// [TicketRepository.updatePriorityForIds] for the contract.
+  @override
+  Future<void> updatePriorityForIds(
+    List<String> ids,
+    TicketPriority priority,
+  ) {
+    return _db.ticketDao.updatePriorityByIds(
+      ids,
+      priority,
+      DateTime.now().millisecondsSinceEpoch,
+    );
+  }
+
   /// Writes only `parent_id` and `updated_at` — no validation performed.
   @override
   Future<void> updateTicketParent(String id, String? parentId) {
