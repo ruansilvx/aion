@@ -177,21 +177,24 @@ class DriftTicketRepository implements TicketRepository {
   /// Requests `[limit] + 1` rows from [TicketDao.searchTickets] to derive
   /// [TicketSearchPage.hasMore] without a separate `COUNT` query: if the
   /// DAO returns more than [limit] rows, another page exists — the extra
-  /// row is trimmed before mapping to entities.
+  /// row is trimmed before mapping to entities. [statuses]/[types]/
+  /// [priorities] are passed straight through to the DAO, which applies
+  /// the interface's OR-within-field/AND-across-field semantics (see
+  /// [TicketRepository.searchTickets]).
   @override
   Future<TicketSearchPage> searchTickets({
     String? query,
-    TicketStatus? status,
-    TicketType? type,
-    TicketPriority? priority,
+    Set<TicketStatus> statuses = const {},
+    Set<TicketType> types = const {},
+    Set<TicketPriority> priorities = const {},
     required int limit,
     int offset = 0,
   }) async {
     final rows = await _db.ticketDao.searchTickets(
       query: query,
-      status: status,
-      type: type,
-      priority: priority,
+      statuses: statuses,
+      types: types,
+      priorities: priorities,
       limit: limit + 1,
       offset: offset,
     );

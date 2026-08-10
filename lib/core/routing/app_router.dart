@@ -29,6 +29,7 @@ import 'package:aion/features/tickets/data/page_ticket_provider_impl.dart';
 import 'package:aion/features/tickets/data/repositories/drift_comment_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_link_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_repository.dart';
+import 'package:aion/features/tickets/data/repositories/shared_prefs_ticket_list_filter_repository.dart';
 import 'package:aion/features/tickets/data/services/active_ticket_view_registry.dart';
 import 'package:aion/features/tickets/data/services/document_parent_migration_service.dart';
 import 'package:aion/features/tickets/data/services/ticket_document_search_service.dart';
@@ -473,6 +474,15 @@ class _WorkspaceShellState extends State<WorkspaceShell>
         RepositoryProvider<TicketLinkRepository>(
           create: (_) => DriftTicketLinkRepository(_database),
         ),
+        // Per-project ticket-list filter persistence — see
+        // aion-arch/changes/multi-select-ticket-list-filters/design.md
+        // §1.4/§4. No dependencies of its own; scoped alongside the other
+        // ticket-feature repositories above rather than main.dart's
+        // global providers, since its `SharedPreferences` keys are
+        // themselves project-id-prefixed.
+        RepositoryProvider<TicketListFilterRepository>(
+          create: (_) => SharedPrefsTicketListFilterRepository(),
+        ),
         // Desktop-only project-scoped services below — git projection,
         // bidirectional resource/page reconcile, and repair. Absent
         // entirely on mobile/web (no rootPath to address git commands
@@ -544,6 +554,7 @@ class _WorkspaceShellState extends State<WorkspaceShell>
               projectName: widget.project.name,
               executionContextCapRepository: context
                   .read<ExecutionContextCapRepository>(),
+              filterRepository: context.read<TicketListFilterRepository>(),
             ),
             child: Builder(
               builder: (context) => RepositoryProvider<PageTicketProvider>(

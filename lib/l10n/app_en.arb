@@ -21,9 +21,19 @@
   "ticketsListFilterStatusLabel": "Status",
   "ticketsListFilterTypeLabel": "Type",
   "ticketsListFilterPriorityLabel": "Priority",
-  "ticketsListFilterAllStatuses": "All statuses",
-  "ticketsListFilterAllTypes": "All types",
-  "ticketsListFilterAllPriorities": "All priorities",
+  "ticketsListFilterTriggerLabel": "Filters",
+  "ticketsListFilterTriggerSemantics": "{count, plural, =0{Filters, none active} one{Filters, 1 active} other{Filters, {count} active}}",
+  "@ticketsListFilterTriggerSemantics": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "ticketsListFilterChipRemoveSemantics": "Remove {label} filter",
+  "@ticketsListFilterChipRemoveSemantics": {
+    "placeholders": {
+      "label": { "type": "String" }
+    }
+  },
   "ticketsListNoResultsState": "No tickets match your search",
   "ticketsListNoResultsHint": "Try a different term, or reset a filter to its \"All\" option.",
   "ticketsListLoadMoreRetry": "Couldn't load more — tap to retry",

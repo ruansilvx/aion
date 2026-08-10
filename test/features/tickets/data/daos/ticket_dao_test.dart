@@ -9,6 +9,8 @@ import 'package:drift/drift.dart' show Value;
 import 'package:aion/core/core.dart';
 import 'package:aion/features/projects/projects.dart';
 import 'package:aion/features/tickets/data/daos/ticket_dao.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
 /// Dummy project [AppDatabase] now requires per-project addressing —
@@ -213,6 +215,280 @@ void main() {
         expect(rows.length, 3);
       },
     );
+  });
+
+  group('searchTickets filtering (status/type/priority sets)', () {
+    Future<void> insertFiltered({
+      required String id,
+      required String title,
+      required TicketStatus status,
+      required TicketType type,
+      required TicketPriority priority,
+      int createdAtMs = 0,
+    }) async {
+      await dao.insertTicket(
+        TicketsTableCompanion.insert(
+          id: id,
+          ticketId: '',
+          type: type.name,
+          title: title,
+          status: status.name,
+          priority: Value(priority.name),
+          createdAt: createdAtMs,
+          updatedAt: createdAtMs,
+        ),
+        'AIO',
+      );
+    }
+
+    group('no-query (typed-select) path', () {
+      test(
+        'empty sets apply no constraint, same as the old null behavior',
+        () async {
+          await insertFiltered(
+            id: 'a',
+            title: 'A',
+            status: TicketStatus.backlog,
+            type: TicketType.task,
+            priority: TicketPriority.none,
+          );
+          await insertFiltered(
+            id: 'b',
+            title: 'B',
+            status: TicketStatus.todo,
+            type: TicketType.bug,
+            priority: TicketPriority.high,
+            createdAtMs: 1,
+          );
+
+          final rows = await dao.searchTickets(limit: 10);
+
+          expect(rows.map((t) => t.id).toSet(), {'a', 'b'});
+        },
+      );
+
+      test(
+        'a single-value set matches only that value, same as the old '
+        'single-value behavior',
+        () async {
+          await insertFiltered(
+            id: 'a',
+            title: 'A',
+            status: TicketStatus.backlog,
+            type: TicketType.task,
+            priority: TicketPriority.none,
+          );
+          await insertFiltered(
+            id: 'b',
+            title: 'B',
+            status: TicketStatus.todo,
+            type: TicketType.task,
+            priority: TicketPriority.none,
+            createdAtMs: 1,
+          );
+
+          final rows = await dao.searchTickets(
+            statuses: {TicketStatus.todo},
+            limit: 10,
+          );
+
+          expect(rows.map((t) => t.id), ['b']);
+        },
+      );
+
+      test('a multi-value set OR-matches within the field', () async {
+        await insertFiltered(
+          id: 'a',
+          title: 'A',
+          status: TicketStatus.backlog,
+          type: TicketType.task,
+          priority: TicketPriority.none,
+        );
+        await insertFiltered(
+          id: 'b',
+          title: 'B',
+          status: TicketStatus.todo,
+          type: TicketType.task,
+          priority: TicketPriority.none,
+          createdAtMs: 1,
+        );
+        await insertFiltered(
+          id: 'c',
+          title: 'C',
+          status: TicketStatus.done,
+          type: TicketType.task,
+          priority: TicketPriority.none,
+          createdAtMs: 2,
+        );
+
+        final rows = await dao.searchTickets(
+          statuses: {TicketStatus.backlog, TicketStatus.todo},
+          limit: 10,
+        );
+
+        expect(rows.map((t) => t.id).toSet(), {'a', 'b'});
+      });
+
+      test('sets across multiple fields AND together', () async {
+        await insertFiltered(
+          id: 'a',
+          title: 'A',
+          status: TicketStatus.todo,
+          type: TicketType.task,
+          priority: TicketPriority.high,
+        );
+        await insertFiltered(
+          id: 'b',
+          title: 'B',
+          status: TicketStatus.todo,
+          type: TicketType.bug,
+          priority: TicketPriority.high,
+          createdAtMs: 1,
+        );
+        await insertFiltered(
+          id: 'c',
+          title: 'C',
+          status: TicketStatus.done,
+          type: TicketType.task,
+          priority: TicketPriority.high,
+          createdAtMs: 2,
+        );
+
+        final rows = await dao.searchTickets(
+          statuses: {TicketStatus.todo},
+          types: {TicketType.task},
+          limit: 10,
+        );
+
+        expect(rows.map((t) => t.id), ['a']);
+      });
+    });
+
+    group('FTS (query set) path', () {
+      test(
+        'empty sets apply no constraint, same as the old null behavior',
+        () async {
+          await insertFiltered(
+            id: 'a',
+            title: 'Fix bug alpha',
+            status: TicketStatus.backlog,
+            type: TicketType.task,
+            priority: TicketPriority.none,
+          );
+          await insertFiltered(
+            id: 'b',
+            title: 'Fix bug beta',
+            status: TicketStatus.todo,
+            type: TicketType.bug,
+            priority: TicketPriority.high,
+            createdAtMs: 1,
+          );
+
+          final rows = await dao.searchTickets(query: 'fix', limit: 10);
+
+          expect(rows.map((t) => t.id).toSet(), {'a', 'b'});
+        },
+      );
+
+      test(
+        'a single-value set matches only that value, same as the old '
+        'single-value behavior',
+        () async {
+          await insertFiltered(
+            id: 'a',
+            title: 'Fix bug alpha',
+            status: TicketStatus.backlog,
+            type: TicketType.task,
+            priority: TicketPriority.none,
+          );
+          await insertFiltered(
+            id: 'b',
+            title: 'Fix bug beta',
+            status: TicketStatus.todo,
+            type: TicketType.task,
+            priority: TicketPriority.none,
+            createdAtMs: 1,
+          );
+
+          final rows = await dao.searchTickets(
+            query: 'fix',
+            statuses: {TicketStatus.todo},
+            limit: 10,
+          );
+
+          expect(rows.map((t) => t.id), ['b']);
+        },
+      );
+
+      test('a multi-value set OR-matches within the field', () async {
+        await insertFiltered(
+          id: 'a',
+          title: 'Fix bug alpha',
+          status: TicketStatus.backlog,
+          type: TicketType.task,
+          priority: TicketPriority.none,
+        );
+        await insertFiltered(
+          id: 'b',
+          title: 'Fix bug beta',
+          status: TicketStatus.todo,
+          type: TicketType.task,
+          priority: TicketPriority.none,
+          createdAtMs: 1,
+        );
+        await insertFiltered(
+          id: 'c',
+          title: 'Fix bug gamma',
+          status: TicketStatus.done,
+          type: TicketType.task,
+          priority: TicketPriority.none,
+          createdAtMs: 2,
+        );
+
+        final rows = await dao.searchTickets(
+          query: 'fix',
+          statuses: {TicketStatus.backlog, TicketStatus.todo},
+          limit: 10,
+        );
+
+        expect(rows.map((t) => t.id).toSet(), {'a', 'b'});
+      });
+
+      test('sets across multiple fields AND together', () async {
+        await insertFiltered(
+          id: 'a',
+          title: 'Fix bug alpha',
+          status: TicketStatus.todo,
+          type: TicketType.task,
+          priority: TicketPriority.high,
+        );
+        await insertFiltered(
+          id: 'b',
+          title: 'Fix bug beta',
+          status: TicketStatus.todo,
+          type: TicketType.bug,
+          priority: TicketPriority.high,
+          createdAtMs: 1,
+        );
+        await insertFiltered(
+          id: 'c',
+          title: 'Fix bug gamma',
+          status: TicketStatus.done,
+          type: TicketType.task,
+          priority: TicketPriority.high,
+          createdAtMs: 2,
+        );
+
+        final rows = await dao.searchTickets(
+          query: 'fix',
+          statuses: {TicketStatus.todo},
+          types: {TicketType.task},
+          limit: 10,
+        );
+
+        expect(rows.map((t) => t.id), ['a']);
+      });
+    });
   });
 
   group('getTicketsByParent', () {

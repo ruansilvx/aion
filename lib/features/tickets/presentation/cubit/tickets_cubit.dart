@@ -31,6 +31,7 @@ import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
 import 'package:aion/features/tickets/domain/entities/linked_ticket_ref.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
+import 'package:aion/features/tickets/domain/entities/ticket_list_filters.dart';
 import 'package:aion/features/tickets/domain/enums/comment_author_type.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 import 'package:aion/features/tickets/domain/enums/summarization_depth.dart';
@@ -42,6 +43,7 @@ import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/repositories/comment_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_link_repository.dart';
+import 'package:aion/features/tickets/domain/repositories/ticket_list_filter_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
 import 'package:aion/features/tickets/domain/utils/ticket_link_direction.dart';
 import 'package:aion/features/tickets/presentation/cubit/chat_cubit.dart';
@@ -99,12 +101,18 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// available — the handoff mechanism itself still works, only the
   /// user-configurable lowering of the threshold doesn't. Added for
   /// `aion-arch/changes/dont-spawn-new-chat-ticket-per-execution-trigger`.
+  /// [_filterRepository] follows the same optional-dependency pattern once
+  /// more — `null` makes [toggleStatusFilter]/[toggleTypeFilter]/
+  /// [togglePriorityFilter] skip persistence (the in-memory toggle and
+  /// re-search still work) and [loadPersistedFilters] a no-op; real usage
+  /// (`app_router.dart`) always supplies one. Added for
+  /// `aion-arch/changes/multi-select-ticket-list-filters`.
   // The public param names below (embeddingProvider/gitProjector/
   // projectRootPath/providerRegistry/commentRepository/
   // automationSettingsRepository/modelRoutingRepository/gitClient/
   // gitHubClient/baselineRepository/projectId/baselineVersion/
-  // projectName) intentionally differ from their private backing
-  // fields; a private identifier can't be used as an external
+  // projectName/filterRepository) intentionally differ from their private
+  // backing fields; a private identifier can't be used as an external
   // named-parameter label from another library, so `this._foo`
   // shorthand isn't usable here.
   TicketsCubit(
@@ -124,6 +132,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     String? baselineVersion,
     String? projectName,
     ExecutionContextCapRepository? executionContextCapRepository,
+    TicketListFilterRepository? filterRepository,
   }) : super(const TicketsInitial()) {
     _embeddingProvider = embeddingProvider;
     _gitProjector = gitProjector;
@@ -140,6 +149,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     _baselineVersion = baselineVersion;
     _projectName = projectName;
     _executionContextCapRepository = executionContextCapRepository;
+    _filterRepository = filterRepository;
   }
 
   final TicketRepository _repository;
@@ -158,6 +168,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   late final String? _baselineVersion;
   late final String? _projectName;
   late final ExecutionContextCapRepository? _executionContextCapRepository;
+  late final TicketListFilterRepository? _filterRepository;
   static const _uuid = Uuid();
 
   /// Broadcasts [CodebaseAnalysisStatus] updates as
@@ -235,9 +246,9 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// remembered so [loadMoreTickets] and the mutation-refresh methods
   /// below don't need the screen to pass them again.
   String? _lastQuery;
-  TicketStatus? _lastStatus;
-  TicketType? _lastType;
-  TicketPriority? _lastPriority;
+  Set<TicketStatus> _lastStatuses = const {};
+  Set<TicketType> _lastTypes = const {};
+  Set<TicketPriority> _lastPriorities = const {};
 
   /// Bumped on every call that replaces the list wholesale ([searchTickets],
   /// [createTicket], [updateTicketStatus], [trashTicket], [trashTickets]).
@@ -246,6 +257,119 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// load-more silently appending onto a list that's since been replaced
   /// by a filter change or another mutation.
   int _searchGeneration = 0;
+
+  /// The [TicketStatus] values currently selected in the ticket list's
+  /// Filters popover — mirrors [_lastStatuses], exposed read-only for the
+  /// screen/popover to render checked state and the chip row against.
+  Set<TicketStatus> get selectedStatuses => _lastStatuses;
+
+  /// The [TicketType] values currently selected in the ticket list's
+  /// Filters popover. See [selectedStatuses].
+  Set<TicketType> get selectedTypes => _lastTypes;
+
+  /// The [TicketPriority] values currently selected in the ticket list's
+  /// Filters popover. See [selectedStatuses].
+  Set<TicketPriority> get selectedPriorities => _lastPriorities;
+
+  /// Returns [current] with [value] toggled: removed if already present,
+  /// added if absent. Shared by [toggleStatusFilter]/[toggleTypeFilter]/
+  /// [togglePriorityFilter].
+  Set<T> _toggleFilter<T>(Set<T> current, T value) {
+    final updated = Set<T>.from(current);
+    if (!updated.remove(value)) {
+      updated.add(value);
+    }
+    return updated;
+  }
+
+  /// Persists [statuses]/[types]/[priorities] (each defaulting to the
+  /// current [selectedStatuses]/[selectedTypes]/[selectedPriorities] when
+  /// omitted) via [_filterRepository], scoped to [_projectId]. No-ops if
+  /// either is `null` — persistence is an optional dependency, same as
+  /// every other optional constructor param (see the constructor's
+  /// dartdoc).
+  Future<void> _persistFilters({
+    Set<TicketStatus>? statuses,
+    Set<TicketType>? types,
+    Set<TicketPriority>? priorities,
+  }) async {
+    final repo = _filterRepository;
+    final projectId = _projectId;
+    if (repo == null || projectId == null) return;
+    await repo.setFilters(
+      projectId,
+      TicketListFilters(
+        statuses: statuses ?? _lastStatuses,
+        types: types ?? _lastTypes,
+        priorities: priorities ?? _lastPriorities,
+      ),
+    );
+  }
+
+  /// Toggles [status] in the ticket list's status filter selection —
+  /// removes it if already selected, adds it if not. Persists the
+  /// updated selection (see [_persistFilters]), then re-runs
+  /// [searchTickets] with the updated statuses and [selectedTypes]/
+  /// [selectedPriorities] unchanged, reusing the last text query.
+  Future<void> toggleStatusFilter(TicketStatus status) async {
+    final updated = _toggleFilter(_lastStatuses, status);
+    await _persistFilters(statuses: updated);
+    await searchTickets(
+      query: _lastQuery,
+      statuses: updated,
+      types: _lastTypes,
+      priorities: _lastPriorities,
+    );
+  }
+
+  /// Toggles [type] in the ticket list's type filter selection — removes
+  /// it if already selected, adds it if not. Persists the updated
+  /// selection (see [_persistFilters]), then re-runs [searchTickets] with
+  /// the updated types and [selectedStatuses]/[selectedPriorities]
+  /// unchanged, reusing the last text query.
+  Future<void> toggleTypeFilter(TicketType type) async {
+    final updated = _toggleFilter(_lastTypes, type);
+    await _persistFilters(types: updated);
+    await searchTickets(
+      query: _lastQuery,
+      statuses: _lastStatuses,
+      types: updated,
+      priorities: _lastPriorities,
+    );
+  }
+
+  /// Toggles [priority] in the ticket list's priority filter selection —
+  /// removes it if already selected, adds it if not. Persists the
+  /// updated selection (see [_persistFilters]), then re-runs
+  /// [searchTickets] with the updated priorities and [selectedStatuses]/
+  /// [selectedTypes] unchanged, reusing the last text query.
+  Future<void> togglePriorityFilter(TicketPriority priority) async {
+    final updated = _toggleFilter(_lastPriorities, priority);
+    await _persistFilters(priorities: updated);
+    await searchTickets(
+      query: _lastQuery,
+      statuses: _lastStatuses,
+      types: _lastTypes,
+      priorities: updated,
+    );
+  }
+
+  /// Reads this project's persisted [TicketListFilters] (via
+  /// [_filterRepository]/[_projectId]) into [_lastStatuses]/[_lastTypes]/
+  /// [_lastPriorities], without emitting a state — meant to be awaited
+  /// once, before the screen's own first [searchTickets] call, so that
+  /// first call already carries the restored selection instead of
+  /// flashing an unfiltered list first. No-ops if [_filterRepository] or
+  /// [_projectId] is `null`.
+  Future<void> loadPersistedFilters() async {
+    final repo = _filterRepository;
+    final projectId = _projectId;
+    if (repo == null || projectId == null) return;
+    final filters = await repo.getFilters(projectId);
+    _lastStatuses = filters.statuses;
+    _lastTypes = filters.types;
+    _lastPriorities = filters.priorities;
+  }
 
   /// Pulls the current tickets and [TicketsState]-carried `hasMore` out of
   /// [s], for every state [loadMoreTickets] can sensibly extend. Returns
@@ -277,33 +401,34 @@ class TicketsCubit extends Cubit<TicketsState> {
         _ => null,
       };
 
-  /// Fetches the first page of tickets matching every non-null filter
-  /// (ANDed) — see [TicketRepository.searchTickets]. Called with no
-  /// arguments, this is equivalent to fetching every ticket (most recent
-  /// first). Remembers [query]/[status]/[type]/[priority] internally for
-  /// [loadMoreTickets] and the mutation-refresh methods below, and bumps
-  /// the internal generation counter so a [loadMoreTickets] call already
-  /// in flight from a previous filter state is discarded (not appended
-  /// onto the new list) when it resolves. Emits [TicketsLoading] first
-  /// only when nothing is on screen yet ([TicketsInitial]/
-  /// [TicketsError]/[TicketTrashed]) — once a ticket list is already
-  /// showing, the previous list stays visible until the new results
-  /// arrive, so re-searching/re-filtering doesn't flash a spinner over
-  /// the existing list on every keystroke. Emits [TicketsLoaded] on
-  /// success (with [TicketsLoaded.blockedTicketIds] freshly computed via
+  /// Fetches the first page of tickets matching every filter — see
+  /// [TicketRepository.searchTickets] for the OR-within-field/AND-across-
+  /// field semantics. Called with no arguments, this is equivalent to
+  /// fetching every ticket (most recent first). Remembers [query]/
+  /// [statuses]/[types]/[priorities] internally for [loadMoreTickets] and
+  /// the mutation-refresh methods below, and bumps the internal
+  /// generation counter so a [loadMoreTickets] call already in flight
+  /// from a previous filter state is discarded (not appended onto the
+  /// new list) when it resolves. Emits [TicketsLoading] first only when
+  /// nothing is on screen yet ([TicketsInitial]/[TicketsError]/
+  /// [TicketTrashed]) — once a ticket list is already showing, the
+  /// previous list stays visible until the new results arrive, so
+  /// re-searching/re-filtering doesn't flash a spinner over the existing
+  /// list on every keystroke. Emits [TicketsLoaded] on success (with
+  /// [TicketsLoaded.blockedTicketIds] freshly computed via
   /// [_computeBlockedTicketIds]), [TicketsError] if the repository call
   /// throws.
   Future<void> searchTickets({
     String? query,
-    TicketStatus? status,
-    TicketType? type,
-    TicketPriority? priority,
+    Set<TicketStatus> statuses = const {},
+    Set<TicketType> types = const {},
+    Set<TicketPriority> priorities = const {},
   }) async {
     final generation = ++_searchGeneration;
     _lastQuery = query;
-    _lastStatus = status;
-    _lastType = type;
-    _lastPriority = priority;
+    _lastStatuses = statuses;
+    _lastTypes = types;
+    _lastPriorities = priorities;
 
     final hasVisibleList = switch (state) {
       TicketsLoaded() ||
@@ -321,9 +446,9 @@ class TicketsCubit extends Cubit<TicketsState> {
     try {
       final page = await _repository.searchTickets(
         query: query,
-        status: status,
-        type: type,
-        priority: priority,
+        statuses: statuses,
+        types: types,
+        priorities: priorities,
         limit: _pageSize,
       );
       if (generation != _searchGeneration) return;
@@ -367,9 +492,9 @@ class TicketsCubit extends Cubit<TicketsState> {
     try {
       final page = await _repository.searchTickets(
         query: _lastQuery,
-        status: _lastStatus,
-        type: _lastType,
-        priority: _lastPriority,
+        statuses: _lastStatuses,
+        types: _lastTypes,
+        priorities: _lastPriorities,
         limit: _pageSize,
         offset: currentTickets.length,
       );
@@ -468,9 +593,9 @@ class TicketsCubit extends Cubit<TicketsState> {
       }
       final page = await _repository.searchTickets(
         query: _lastQuery,
-        status: _lastStatus,
-        type: _lastType,
-        priority: _lastPriority,
+        statuses: _lastStatuses,
+        types: _lastTypes,
+        priorities: _lastPriorities,
         limit: max(_pageSize, currentTickets.length),
       );
       emit(TicketCreated(page.tickets, hasMore: page.hasMore));
@@ -546,9 +671,9 @@ class TicketsCubit extends Cubit<TicketsState> {
       }
       final page = await _repository.searchTickets(
         query: _lastQuery,
-        status: _lastStatus,
-        type: _lastType,
-        priority: _lastPriority,
+        statuses: _lastStatuses,
+        types: _lastTypes,
+        priorities: _lastPriorities,
         limit: max(_pageSize, currentTickets.length),
       );
       emit(TicketStatusUpdated(page.tickets, hasMore: page.hasMore));
@@ -3116,9 +3241,9 @@ class TicketsCubit extends Cubit<TicketsState> {
       } else {
         final page = await _repository.searchTickets(
           query: _lastQuery,
-          status: _lastStatus,
-          type: _lastType,
-          priority: _lastPriority,
+          statuses: _lastStatuses,
+          types: _lastTypes,
+          priorities: _lastPriorities,
           limit: max(_pageSize, currentTickets.length),
         );
         emit(TicketsLoaded(page.tickets, hasMore: page.hasMore));
@@ -3163,9 +3288,9 @@ class TicketsCubit extends Cubit<TicketsState> {
       }
       final page = await _repository.searchTickets(
         query: _lastQuery,
-        status: _lastStatus,
-        type: _lastType,
-        priority: _lastPriority,
+        statuses: _lastStatuses,
+        types: _lastTypes,
+        priorities: _lastPriorities,
         limit: max(_pageSize, currentTickets.length),
       );
       emit(

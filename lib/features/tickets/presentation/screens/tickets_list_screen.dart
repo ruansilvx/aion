@@ -21,6 +21,7 @@ import 'package:aion/features/projects/domain/repositories/baseline_repository.d
 import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart';
 import 'package:aion/features/tickets/presentation/widgets/baseline_upgrade_banner.dart';
 import 'package:aion/features/tickets/presentation/widgets/codebase_analysis_banner.dart';
+import 'package:aion/features/tickets/presentation/widgets/ticket_filter_popover.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_overflow_menu.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_selection_bar.dart';
 
@@ -92,17 +93,9 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
   /// icon's color per design.md §2's per-state treatment.
   final FocusNode _searchFocusNode = FocusNode();
 
-  /// Currently selected status filter. `null` = "All statuses".
-  TicketStatus? _statusFilter;
-
-  /// Currently selected type filter. `null` = "All types".
-  TicketType? _typeFilter;
-
-  /// Currently selected priority filter. `null` = "All priorities".
-  TicketPriority? _priorityFilter;
-
-  /// Pending debounce timer for search-text-driven re-searches. Dropdown
-  /// filter changes re-search immediately and don't go through this.
+  /// Pending debounce timer for search-text-driven re-searches. Filter
+  /// changes re-search immediately (via `TicketsCubit`'s toggle methods)
+  /// and don't go through this.
   Timer? _searchDebounce;
 
   /// Drives the flat list's `ListView.separated`. Its listener
@@ -113,11 +106,15 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
   /// Whether a search query or a non-default filter is currently active —
   /// used to pick between the "No tickets yet" and "No tickets match your
   /// search" empty states, and to drive the search icon's "active" color.
-  bool get _hasActiveFilter =>
-      _searchController.text.trim().isNotEmpty ||
-      _statusFilter != null ||
-      _typeFilter != null ||
-      _priorityFilter != null;
+  /// Reads `TicketsCubit`'s selection getters instead of local fields —
+  /// selection state now lives entirely in the cubit.
+  bool get _hasActiveFilter {
+    final cubit = context.read<TicketsCubit>();
+    return _searchController.text.trim().isNotEmpty ||
+        cubit.selectedStatuses.isNotEmpty ||
+        cubit.selectedTypes.isNotEmpty ||
+        cubit.selectedPriorities.isNotEmpty;
+  }
 
   @override
   void initState() {
@@ -134,6 +131,19 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
     }
     _searchController.addListener(_handleSearchTextChanged);
     _scrollController.addListener(_handleScroll);
+    unawaited(_initializeAndSearch());
+  }
+
+  /// Awaits [TicketsCubit.loadPersistedFilters] (restoring this project's
+  /// saved filter selection, if any, into the cubit's remembered-filter
+  /// fields), then runs [_runSearch] — so the very first search after
+  /// opening the ticket list already reflects the persisted selection
+  /// instead of flashing an unfiltered list first. Called via
+  /// `unawaited(...)` from [initState], same fire-and-forget precedent
+  /// this file already uses for [_loadBaselineUpgradeTargetVersion].
+  Future<void> _initializeAndSearch() async {
+    await context.read<TicketsCubit>().loadPersistedFilters();
+    if (!mounted) return;
     _runSearch();
   }
 
@@ -204,17 +214,22 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
     });
   }
 
-  /// Re-runs the ticket search/filter query against [TicketsCubit] using
-  /// every currently active local filter value. Called on init, after the
-  /// search-text debounce fires, immediately on any filter-dropdown
-  /// change, and by the error state's Retry button — so retrying re-applies
-  /// whatever search/filters were active rather than resetting them.
+  /// Re-runs the ticket search query against [TicketsCubit], combining
+  /// the search text with the cubit's own remembered filter selection
+  /// (`selectedStatuses`/`selectedTypes`/`selectedPriorities`). Called on
+  /// init (via [_initializeAndSearch]), after the search-text debounce
+  /// fires, and by the error state's Retry button — so retrying
+  /// re-applies whatever search/filters were active rather than
+  /// resetting them. Not called by the Filters popover's toggle
+  /// handlers — `TicketsCubit.toggleStatusFilter`/etc. already re-search
+  /// internally on every toggle.
   void _runSearch() {
-    context.read<TicketsCubit>().searchTickets(
+    final cubit = context.read<TicketsCubit>();
+    cubit.searchTickets(
       query: _searchController.text,
-      status: _statusFilter,
-      type: _typeFilter,
-      priority: _priorityFilter,
+      statuses: cubit.selectedStatuses,
+      types: cubit.selectedTypes,
+      priorities: cubit.selectedPriorities,
     );
   }
 
@@ -411,76 +426,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                             },
                           ),
                           const SizedBox(height: 10),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: AppDropdown<TicketStatus?>(
-                                  value: _statusFilter,
-                                  items: const [null, ...TicketStatus.values],
-                                  isActive: _statusFilter != null,
-                                  semanticsLabel:
-                                      context.l10n.ticketsListFilterStatusLabel,
-                                  itemLabel: (s) => s == null
-                                      ? context
-                                            .l10n
-                                            .ticketsListFilterAllStatuses
-                                      : ticketStatusLabel(context, s),
-                                  onChanged: (value) {
-                                    setState(() => _statusFilter = value);
-                                    _runSearch();
-                                  },
-                                ),
-                              ),
-                              const SizedBox(width: AionSpacing.sp8),
-                              Expanded(
-                                child: AppDropdown<TicketType?>(
-                                  value: _typeFilter,
-                                  // page/resource moved to the
-                                  // Documentation section and no longer
-                                  // appear in this list — excluded from
-                                  // the filter accordingly.
-                                  items: const [
-                                    null,
-                                    TicketType.epic,
-                                    TicketType.story,
-                                    TicketType.task,
-                                    TicketType.bug,
-                                    TicketType.chat,
-                                  ],
-                                  isActive: _typeFilter != null,
-                                  semanticsLabel:
-                                      context.l10n.ticketsListFilterTypeLabel,
-                                  itemLabel: (t) => t == null
-                                      ? context.l10n.ticketsListFilterAllTypes
-                                      : ticketTypeLabel(context, t),
-                                  onChanged: (value) {
-                                    setState(() => _typeFilter = value);
-                                    _runSearch();
-                                  },
-                                ),
-                              ),
-                              const SizedBox(width: AionSpacing.sp8),
-                              Expanded(
-                                child: AppDropdown<TicketPriority?>(
-                                  value: _priorityFilter,
-                                  items: const [null, ...TicketPriority.values],
-                                  isActive: _priorityFilter != null,
-                                  semanticsLabel: context
-                                      .l10n
-                                      .ticketsListFilterPriorityLabel,
-                                  itemLabel: (p) => p == null
-                                      ? context
-                                            .l10n
-                                            .ticketsListFilterAllPriorities
-                                      : ticketPriorityLabel(context, p),
-                                  onChanged: (value) {
-                                    setState(() => _priorityFilter = value);
-                                    _runSearch();
-                                  },
-                                ),
-                              ),
-                            ],
-                          ),
+                          const _TicketFilterSection(),
                         ],
                       ),
                     ),
@@ -951,6 +897,252 @@ class _SelectModeToggleState extends State<_SelectModeToggle> {
                 ),
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Composes the "Filters" trigger row (§1.2) and the conditional chip row
+/// (§5) below it: reads `TicketsCubit`'s selection getters
+/// ([TicketsCubit.selectedStatuses]/[TicketsCubit.selectedTypes]/
+/// [TicketsCubit.selectedPriorities]) for both the popover's checked
+/// state and the chip row's content, and wires each toggle handler
+/// directly to the matching `TicketsCubit.toggleXFilter` method — no
+/// local `setState` for selection itself, only for
+/// [TicketFilterPopover]'s own open/closed visual state (fed back via
+/// [TicketFilterPopover.onOpenChanged]). The chip row renders zero
+/// height (no reserved space, no gap above it) when every selection set
+/// is empty.
+class _TicketFilterSection extends StatefulWidget {
+  const _TicketFilterSection();
+
+  @override
+  State<_TicketFilterSection> createState() => _TicketFilterSectionState();
+}
+
+class _TicketFilterSectionState extends State<_TicketFilterSection> {
+  bool _isPopoverOpen = false;
+  bool _isTriggerFocused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final cubit = context.watch<TicketsCubit>();
+    final selectedStatuses = cubit.selectedStatuses;
+    final selectedTypes = cubit.selectedTypes;
+    final selectedPriorities = cubit.selectedPriorities;
+    final activeCount =
+        selectedStatuses.length +
+        selectedTypes.length +
+        selectedPriorities.length;
+    final hasChips = activeCount > 0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TicketFilterPopover(
+            trigger: _FilterTriggerButton(
+              activeCount: activeCount,
+              isOpen: _isPopoverOpen,
+              isFocused: _isTriggerFocused,
+            ),
+            selectedStatuses: selectedStatuses,
+            selectedTypes: selectedTypes,
+            selectedPriorities: selectedPriorities,
+            onToggleStatus: context.read<TicketsCubit>().toggleStatusFilter,
+            onToggleType: context.read<TicketsCubit>().toggleTypeFilter,
+            onTogglePriority: context
+                .read<TicketsCubit>()
+                .togglePriorityFilter,
+            onOpenChanged: (isOpen) =>
+                setState(() => _isPopoverOpen = isOpen),
+            onFocusChanged: (isFocused) =>
+                setState(() => _isTriggerFocused = isFocused),
+          ),
+        ),
+        if (hasChips) ...[
+          const SizedBox(height: AionSpacing.sp8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final s in selectedStatuses)
+                AppFilterChip(
+                  label: ticketStatusLabel(context, s),
+                  onRemove: () =>
+                      context.read<TicketsCubit>().toggleStatusFilter(s),
+                  removeSemanticsLabel: context.l10n
+                      .ticketsListFilterChipRemoveSemantics(
+                        ticketStatusLabel(context, s),
+                      ),
+                ),
+              for (final t in selectedTypes)
+                AppFilterChip(
+                  label: ticketTypeLabel(context, t),
+                  onRemove: () =>
+                      context.read<TicketsCubit>().toggleTypeFilter(t),
+                  removeSemanticsLabel: context.l10n
+                      .ticketsListFilterChipRemoveSemantics(
+                        ticketTypeLabel(context, t),
+                      ),
+                ),
+              for (final p in selectedPriorities)
+                AppFilterChip(
+                  label: ticketPriorityLabel(context, p),
+                  onRemove: () =>
+                      context.read<TicketsCubit>().togglePriorityFilter(p),
+                  removeSemanticsLabel: context.l10n
+                      .ticketsListFilterChipRemoveSemantics(
+                        ticketPriorityLabel(context, p),
+                      ),
+                ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// The "Filters" trigger button that opens [TicketFilterPopover]. Two
+/// visual sub-states — idle (no filters active) and active
+/// ([activeCount] ≥ 1) — mapped onto `AppDropdown`'s inactive/`isActive`
+/// color language for visual continuity with the three-dropdown row this
+/// replaces, plus a trailing count badge shown only in the active
+/// sub-state. Purely presentational — [TicketFilterPopover] (which wraps
+/// this as its `trigger`) owns the actual tap/keyboard-activation
+/// handling; [isOpen] and [isFocused] are fed back in via
+/// [TicketFilterPopover.onOpenChanged]/[TicketFilterPopover.onFocusChanged]
+/// so this can render "open" and "focused" looks the same way [isActive]
+/// renders an "active" one. Per design.md §3.2, a keyboard-focused trigger
+/// and an open trigger share the same emphasized appearance (border +
+/// glow ring) — [isOpen] and [isFocused] are treated identically here.
+class _FilterTriggerButton extends StatefulWidget {
+  const _FilterTriggerButton({
+    required this.activeCount,
+    required this.isOpen,
+    required this.isFocused,
+  });
+
+  /// Total number of selected values across all three filter fields.
+  /// Zero means the idle sub-state; any other value means active, with
+  /// the count shown in a trailing badge.
+  final int activeCount;
+
+  /// Whether [TicketFilterPopover]'s overlay is currently open — rendered
+  /// as the same emphasized look as keyboard focus.
+  final bool isOpen;
+
+  /// Whether this trigger currently holds keyboard focus — rendered as
+  /// the same emphasized look as [isOpen], independent of whether the
+  /// popover has actually been activated yet (design.md §3.2's
+  /// `Focused` sub-state).
+  final bool isFocused;
+
+  @override
+  State<_FilterTriggerButton> createState() => _FilterTriggerButtonState();
+}
+
+class _FilterTriggerButtonState extends State<_FilterTriggerButton> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    final isActive = widget.activeCount > 0;
+    final showRing = widget.isOpen || widget.isFocused;
+    final emphasized = isActive || showRing;
+
+    final Color fill = isActive ? c.primarySubtle : c.surface;
+    final Color border = isActive
+        ? c.primary
+        : (showRing ? c.primary : (_isHovered ? c.borderStrong : c.border));
+    final Color foreground = isActive
+        ? c.primary
+        : (showRing ? c.primary : c.textSecondary);
+    final Color labelColor = isActive || showRing
+        ? (isActive ? c.primary : c.textPrimary)
+        : c.textPrimary;
+
+    return Semantics(
+      button: true,
+      label: context.l10n.ticketsListFilterTriggerSemantics(
+        widget.activeCount,
+      ),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: fill,
+            borderRadius: BorderRadius.all(AionRadius.lg),
+            border: Border.all(color: border, width: emphasized ? 1.5 : 1),
+            boxShadow: showRing
+                ? [
+                    BoxShadow(
+                      color: c.primary.withValues(
+                        alpha: t.isDark ? 0.30 : 0.16,
+                      ),
+                      spreadRadius: 3,
+                    ),
+                  ]
+                : const <BoxShadow>[],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              PhosphorIcon(
+                PhosphorIcons.funnelLight,
+                size: 16,
+                color: foreground,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                context.l10n.ticketsListFilterTriggerLabel,
+                style: AionText.button.copyWith(color: labelColor),
+              ),
+              if (isActive) ...[
+                const SizedBox(width: 8),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: c.primary,
+                    borderRadius: BorderRadius.all(AionRadius.pill),
+                  ),
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: widget.activeCount >= 10 ? 5 : 0,
+                      vertical: 1,
+                    ),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        minWidth: 18,
+                        minHeight: 18,
+                      ),
+                      child: Center(
+                        child: Text(
+                          '${widget.activeCount}',
+                          style: const TextStyle(
+                            fontFamily: 'Manrope',
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            height: 1.0,
+                            color: Color(0xFFFFFFFF),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
       ),
