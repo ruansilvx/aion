@@ -1,4 +1,4 @@
-// presentation/widgets/ticket_selection_bar.dart — Bulk-delete contextual bar (presentation layer).
+// presentation/widgets/ticket_selection_bar.dart — Bulk selection-action contextual bar (presentation layer).
 
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter/widgets.dart';
