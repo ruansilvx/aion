@@ -6,7 +6,12 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
+import 'package:aion/features/tickets/domain/entities/ticket_list_sort.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_sort_direction.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_sort_field.dart';
+import 'package:aion/features/tickets/domain/repositories/ticket_list_sort_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
+import 'package:aion/features/tickets/domain/utils/ticket_sort_comparator.dart';
 import 'package:aion/features/tickets/presentation/cubit/trash_state.dart';
 
 /// Loads and mutates the trash (`/tickets/trash`) via [TicketRepository].
@@ -19,19 +24,31 @@ class TrashCubit extends Cubit<TrashState> {
   /// effect simply no-ops, matching `TicketsCubit`'s identical
   /// optional-dependency pattern for the same desktop-only feature. Real
   /// usage (`app_router.dart`) supplies both whenever the active project
-  /// has a `rootPath`.
+  /// has a `rootPath`. [sortRepository]/[projectId] follow the same
+  /// optional-dependency pattern once more — `null` for either makes
+  /// [_resolveSort] fall back to `createdAt` descending with no
+  /// persisted sort applied; real usage (`app_router.dart`) always
+  /// supplies both, mirroring `TicketsCubit`'s own
+  /// `sortRepository`/`projectId`. Added for
+  /// `aion-arch/changes/ticket-sort-control-and-board-as-default-view`.
   TrashCubit(
     this._repository, {
     TicketGitProjector? gitProjector,
     String? projectRootPath,
+    TicketListSortRepository? sortRepository,
+    String? projectId,
   }) : super(const TrashLoading()) {
     _gitProjector = gitProjector;
     _projectRootPath = projectRootPath;
+    _sortRepository = sortRepository;
+    _projectId = projectId;
   }
 
   final TicketRepository _repository;
   late final TicketGitProjector? _gitProjector;
   late final String? _projectRootPath;
+  late final TicketListSortRepository? _sortRepository;
+  late final String? _projectId;
 
   /// How old a trashed ticket must be before "Purge old" will remove it.
   /// Fixed, not user-configurable (see proposal.md's Non-goals).
@@ -40,8 +57,12 @@ class TrashCubit extends Cubit<TrashState> {
   /// Fetches every currently trashed ticket, then reduces the flat list
   /// to roots + per-root descendant counts (see [TrashLoaded]'s dartdoc)
   /// and counts how many are old enough for [purgeOldTrash] to remove,
-  /// before emitting. Emits [TrashLoading] then [TrashLoaded] on success,
-  /// or [TrashError] if the repository call throws.
+  /// before emitting. Sorts `roots` per this project's persisted sort
+  /// (see [_resolveSort]) so Trash's ticket order matches the ticket
+  /// list's — see
+  /// `aion-arch/changes/ticket-sort-control-and-board-as-default-view/design.md`
+  /// §4. Emits [TrashLoading] then [TrashLoaded] on success, or
+  /// [TrashError] if the repository call throws.
   Future<void> load() async {
     emit(const TrashLoading());
     try {
@@ -56,10 +77,10 @@ class TrashCubit extends Cubit<TrashState> {
       }
 
       final roots = all
-          .where(
-            (t) => t.parentId == null || !trashedIds.contains(t.parentId),
-          )
+          .where((t) => t.parentId == null || !trashedIds.contains(t.parentId))
           .toList();
+      final sort = await _resolveSort();
+      roots.sort(ticketSortComparator(sort));
       final descendantCounts = {
         for (final root in roots)
           root.id: _countDescendants(root.id, childrenByParent),
@@ -75,13 +96,32 @@ class TrashCubit extends Cubit<TrashState> {
     }
   }
 
+  /// This project's persisted [TicketListSort] (via [_sortRepository]/
+  /// [_projectId]), falling back to `createdAt` descending — Trash has no
+  /// search query to score [TicketSortField.relevance] against, so a
+  /// persisted `relevance` selection (made from the ticket list, where
+  /// it's meaningful) resolves the same way `TicketsCubit`'s own implicit
+  /// default does when no query is active. `null`/no-dependency (see the
+  /// constructor's dartdoc) falls back the same way.
+  Future<TicketListSort> _resolveSort() async {
+    final repo = _sortRepository;
+    final projectId = _projectId;
+    const fallback = TicketListSort(
+      field: TicketSortField.createdAt,
+      direction: TicketSortDirection.descending,
+    );
+    if (repo == null || projectId == null) return fallback;
+    final persisted = await repo.getSort(projectId);
+    if (persisted == null || persisted.field == TicketSortField.relevance) {
+      return fallback;
+    }
+    return persisted;
+  }
+
   /// Counts every ticket reachable from [id] by walking [childrenByParent]
   /// (an adjacency map built once per [load] call from the full trashed
   /// set), recursively.
-  int _countDescendants(
-    String id,
-    Map<String, List<Ticket>> childrenByParent,
-  ) {
+  int _countDescendants(String id, Map<String, List<Ticket>> childrenByParent) {
     var count = 0;
     for (final child in childrenByParent[id] ?? const []) {
       count += 1 + _countDescendants(child.id, childrenByParent);

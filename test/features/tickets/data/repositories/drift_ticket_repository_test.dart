@@ -9,7 +9,30 @@ import 'package:aion/features/projects/projects.dart';
 import 'package:aion/features/tickets/data/repositories/drift_comment_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_link_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_repository.dart';
+import 'package:aion/features/tickets/domain/entities/ticket_list_sort.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_sort_direction.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_sort_field.dart';
 import 'package:aion/features/tickets/tickets.dart';
+
+/// The pre-existing default ordering (`createdAt` descending) — passed
+/// explicitly to every `searchTickets` call in this file that isn't
+/// itself testing the new sort-control behavior (see
+/// `aion-arch/changes/ticket-sort-control-and-board-as-default-view`),
+/// so those calls keep exercising exactly the ordering they did before
+/// `sort` became a required parameter.
+const _defaultSort = TicketListSort(
+  field: TicketSortField.createdAt,
+  direction: TicketSortDirection.descending,
+);
+
+/// The pre-existing implicit relevance ordering used whenever a search
+/// query was active, before `sort` became a required parameter — passed
+/// explicitly to this file's query-driven `searchTickets` calls that
+/// assert on match-ranked order.
+const _relevanceSort = TicketListSort(
+  field: TicketSortField.relevance,
+  direction: TicketSortDirection.descending,
+);
 
 /// Dummy project [AppDatabase] now requires per-project addressing —
 /// unused here since every test passes an explicit in-memory executor.
@@ -92,28 +115,25 @@ void main() {
     expect(tickets.first.title, 'Test ticket');
   });
 
-  test(
-    'importTicket persists the caller-supplied ticketId verbatim',
-    () async {
-      final now = DateTime(2026, 1, 1);
-      await repository.importTicket(
-        Ticket(
-          id: 'imported-1',
-          ticketId: 'AIO-99',
-          type: TicketType.task,
-          title: 'Imported ticket',
-          status: TicketStatus.backlog,
-          createdAt: now,
-          updatedAt: now,
-        ),
-      );
+  test('importTicket persists the caller-supplied ticketId verbatim', () async {
+    final now = DateTime(2026, 1, 1);
+    await repository.importTicket(
+      Ticket(
+        id: 'imported-1',
+        ticketId: 'AIO-99',
+        type: TicketType.task,
+        title: 'Imported ticket',
+        status: TicketStatus.backlog,
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
 
-      final tickets = await repository.getAllTickets();
+    final tickets = await repository.getAllTickets();
 
-      expect(tickets, hasLength(1));
-      expect(tickets.first.ticketId, 'AIO-99');
-    },
-  );
+    expect(tickets, hasLength(1));
+    expect(tickets.first.ticketId, 'AIO-99');
+  });
 
   test('getTicketById returns correct ticket when found', () async {
     await repository.createTicket(buildTicket(id: 'abc'));
@@ -296,32 +316,35 @@ void main() {
     expect(chat.suggestedType, isNull);
   });
 
-  test('updateTicket persists changes to suggestedType and inboxPurpose', () async {
-    final now = DateTime(2026, 1, 1);
-    await repository.createTicket(
-      Ticket(
-        id: 'signal-2',
-        ticketId: '',
-        type: TicketType.signal,
-        title: 'Signal to update',
-        status: TicketStatus.backlog,
-        createdAt: now,
-        updatedAt: now,
-      ),
-    );
-    final persisted = await repository.getTicketById('signal-2');
+  test(
+    'updateTicket persists changes to suggestedType and inboxPurpose',
+    () async {
+      final now = DateTime(2026, 1, 1);
+      await repository.createTicket(
+        Ticket(
+          id: 'signal-2',
+          ticketId: '',
+          type: TicketType.signal,
+          title: 'Signal to update',
+          status: TicketStatus.backlog,
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+      final persisted = await repository.getTicketById('signal-2');
 
-    await repository.updateTicket(
-      persisted!.copyWith(
-        suggestedType: () => TicketType.bug,
-        inboxPurpose: () => InboxPurpose.brainDump,
-      ),
-    );
-    final updated = await repository.getTicketById('signal-2');
+      await repository.updateTicket(
+        persisted!.copyWith(
+          suggestedType: () => TicketType.bug,
+          inboxPurpose: () => InboxPurpose.brainDump,
+        ),
+      );
+      final updated = await repository.getTicketById('signal-2');
 
-    expect(updated!.suggestedType, TicketType.bug);
-    expect(updated.inboxPurpose, InboxPurpose.brainDump);
-  });
+      expect(updated!.suggestedType, TicketType.bug);
+      expect(updated.inboxPurpose, InboxPurpose.brainDump);
+    },
+  );
 
   test('first ticket generated ticketId is "AIO-1" (default prefix)', () async {
     await repository.createTicket(buildTicket());
@@ -1010,6 +1033,7 @@ void main() {
 
         final results = await repository.searchTickets(
           query: 'authentication',
+          sort: _relevanceSort,
           limit: 100,
         );
 
@@ -1041,6 +1065,7 @@ void main() {
         types: {TicketType.story},
         statuses: {TicketStatus.inProgress},
         priorities: {TicketPriority.high},
+        sort: _defaultSort,
         limit: 100,
       );
 
@@ -1073,6 +1098,7 @@ void main() {
       final results = await repository.searchTickets(
         query: 'login',
         types: {TicketType.task},
+        sort: _relevanceSort,
         limit: 100,
       );
 
@@ -1086,7 +1112,10 @@ void main() {
         await repository.createTicket(buildSearchable(id: '2', title: 'B'));
 
         final all = await repository.getAllTickets();
-        final searched = await repository.searchTickets(limit: 100);
+        final searched = await repository.searchTickets(
+          sort: _defaultSort,
+          limit: 100,
+        );
 
         expect(
           searched.tickets.map((t) => t.id).toSet(),
@@ -1101,8 +1130,11 @@ void main() {
       );
 
       await expectLater(
-        () =>
-            repository.searchTickets(query: '-drift-web "quoted"', limit: 100),
+        () => repository.searchTickets(
+          query: '-drift-web "quoted"',
+          sort: _relevanceSort,
+          limit: 100,
+        ),
         returnsNormally,
       );
     });
@@ -1119,12 +1151,16 @@ void main() {
         await repository.trashTicket('trashed');
 
         expect(
-          (await repository.searchTickets(limit: 100)).tickets.map((t) => t.id),
+          (await repository.searchTickets(
+            sort: _defaultSort,
+            limit: 100,
+          )).tickets.map((t) => t.id),
           ['live'],
         );
         expect(
           (await repository.searchTickets(
             query: 'authentication',
+            sort: _relevanceSort,
             limit: 100,
           )).tickets.map((t) => t.id),
           ['live'],
@@ -1142,7 +1178,10 @@ void main() {
             );
           }
 
-          final page = await repository.searchTickets(limit: 3);
+          final page = await repository.searchTickets(
+            sort: _defaultSort,
+            limit: 3,
+          );
 
           expect(page.tickets.length, 3);
           expect(page.hasMore, isTrue);
@@ -1156,7 +1195,10 @@ void main() {
           );
         }
 
-        final page = await repository.searchTickets(limit: 3);
+        final page = await repository.searchTickets(
+          sort: _defaultSort,
+          limit: 3,
+        );
 
         expect(page.tickets.length, 3);
         expect(page.hasMore, isFalse);
@@ -1169,8 +1211,12 @@ void main() {
           );
         }
 
-        final firstPage = await repository.searchTickets(limit: 3);
+        final firstPage = await repository.searchTickets(
+          sort: _defaultSort,
+          limit: 3,
+        );
         final secondPage = await repository.searchTickets(
+          sort: _defaultSort,
           limit: 3,
           offset: firstPage.tickets.length,
         );
@@ -1284,6 +1330,7 @@ void main() {
 
         final results = await upgradedRepo.searchTickets(
           query: 'authentication',
+          sort: _relevanceSort,
           limit: 100,
         );
 
@@ -1295,49 +1342,46 @@ void main() {
       },
     );
 
-    test(
-      'onUpgrade from v7 adds suggested_type/inbox_purpose, defaulting to '
-      'null on existing rows',
-      () async {
-        final tempDir = Directory.systemTemp.createTempSync(
-          'aion_migration_v8_test',
-        );
-        final dbFile = File('${tempDir.path}/test.sqlite');
-        addTearDown(() => tempDir.deleteSync(recursive: true));
+    test('onUpgrade from v7 adds suggested_type/inbox_purpose, defaulting to '
+        'null on existing rows', () async {
+      final tempDir = Directory.systemTemp.createTempSync(
+        'aion_migration_v8_test',
+      );
+      final dbFile = File('${tempDir.path}/test.sqlite');
+      addTearDown(() => tempDir.deleteSync(recursive: true));
 
-        final v7Db = AppDatabase(_testProject, NativeDatabase(dbFile));
-        final preMigrationRepo = DriftTicketRepository(v7Db);
-        await preMigrationRepo.createTicket(
-          buildSearchable(id: 'pre-existing', title: 'Pre-v8 ticket'),
-        );
-        // suggested_type/inbox_purpose can't be dropped until after the
-        // insert above, since createTicket's companion sets them
-        // explicitly — same reasoning as the v1 simulation above.
-        await v7Db.customStatement(
-          'ALTER TABLE tickets DROP COLUMN suggested_type;',
-        );
-        await v7Db.customStatement(
-          'ALTER TABLE tickets DROP COLUMN inbox_purpose;',
-        );
-        await v7Db.customStatement('PRAGMA user_version = 7;');
-        await v7Db.close();
+      final v7Db = AppDatabase(_testProject, NativeDatabase(dbFile));
+      final preMigrationRepo = DriftTicketRepository(v7Db);
+      await preMigrationRepo.createTicket(
+        buildSearchable(id: 'pre-existing', title: 'Pre-v8 ticket'),
+      );
+      // suggested_type/inbox_purpose can't be dropped until after the
+      // insert above, since createTicket's companion sets them
+      // explicitly — same reasoning as the v1 simulation above.
+      await v7Db.customStatement(
+        'ALTER TABLE tickets DROP COLUMN suggested_type;',
+      );
+      await v7Db.customStatement(
+        'ALTER TABLE tickets DROP COLUMN inbox_purpose;',
+      );
+      await v7Db.customStatement('PRAGMA user_version = 7;');
+      await v7Db.close();
 
-        final v8Db = AppDatabase(_testProject, NativeDatabase(dbFile));
-        final upgradedRepo = DriftTicketRepository(v8Db);
+      final v8Db = AppDatabase(_testProject, NativeDatabase(dbFile));
+      final upgradedRepo = DriftTicketRepository(v8Db);
 
-        final found = await upgradedRepo.getTicketById('pre-existing');
-        expect(found, isNotNull);
-        expect(found!.suggestedType, isNull);
-        expect(found.inboxPurpose, isNull);
+      final found = await upgradedRepo.getTicketById('pre-existing');
+      expect(found, isNotNull);
+      expect(found!.suggestedType, isNull);
+      expect(found.inboxPurpose, isNull);
 
-        await upgradedRepo.updateTicket(
-          found.copyWith(suggestedType: () => TicketType.epic),
-        );
-        final updated = await upgradedRepo.getTicketById('pre-existing');
-        expect(updated!.suggestedType, TicketType.epic);
+      await upgradedRepo.updateTicket(
+        found.copyWith(suggestedType: () => TicketType.epic),
+      );
+      final updated = await upgradedRepo.getTicketById('pre-existing');
+      expect(updated!.suggestedType, TicketType.epic);
 
-        await v8Db.close();
-      },
-    );
+      await v8Db.close();
+    });
   });
 }

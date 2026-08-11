@@ -21,9 +21,13 @@ import 'package:aion/features/projects/domain/repositories/baseline_repository.d
 import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart';
 import 'package:aion/features/tickets/presentation/widgets/baseline_upgrade_banner.dart';
 import 'package:aion/features/tickets/presentation/widgets/codebase_analysis_banner.dart';
+import 'package:aion/features/tickets/domain/entities/ticket_list_sort.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_sort_direction.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_sort_field.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_filter_popover.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_overflow_menu.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_selection_bar.dart';
+import 'package:aion/features/tickets/presentation/widgets/ticket_sort_popover.dart';
 
 /// The `/tickets` route: eyebrow + title header, a functioning search
 /// field + status/type/priority filter row, the ticket list body driven
@@ -56,7 +60,10 @@ class TicketsListScreen extends StatefulWidget {
 
 /// Which rendering [_TicketsListScreenState] uses for the loaded ticket
 /// list. Local, non-persisted UI state — the screen always opens in
-/// [list].
+/// [board] (see
+/// `aion-arch/changes/ticket-sort-control-and-board-as-default-view`); a
+/// fixed default, not user-configurable, exactly as [list] was the fixed
+/// default before.
 enum _TicketViewMode {
   /// The flat, chronologically-sorted [ListView] of every ticket.
   list,
@@ -67,7 +74,7 @@ enum _TicketViewMode {
 }
 
 class _TicketsListScreenState extends State<TicketsListScreen> {
-  _TicketViewMode _viewMode = _TicketViewMode.list;
+  _TicketViewMode _viewMode = _TicketViewMode.board;
 
   /// Whether to show [CodebaseAnalysisBanner] — set once in [initState]
   /// from `ActiveProjectProvider.offerCodebaseAnalysis`, then owned
@@ -134,15 +141,19 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
     unawaited(_initializeAndSearch());
   }
 
-  /// Awaits [TicketsCubit.loadPersistedFilters] (restoring this project's
-  /// saved filter selection, if any, into the cubit's remembered-filter
+  /// Awaits [TicketsCubit.loadPersistedFilters]/
+  /// [TicketsCubit.loadPersistedSort] (restoring this project's saved
+  /// filter and sort selections, if any, into the cubit's remembered
   /// fields), then runs [_runSearch] — so the very first search after
-  /// opening the ticket list already reflects the persisted selection
-  /// instead of flashing an unfiltered list first. Called via
-  /// `unawaited(...)` from [initState], same fire-and-forget precedent
-  /// this file already uses for [_loadBaselineUpgradeTargetVersion].
+  /// opening the ticket list already reflects both persisted selections
+  /// instead of flashing an unfiltered, implicitly-sorted list first.
+  /// Called via `unawaited(...)` from [initState], same fire-and-forget
+  /// precedent this file already uses for
+  /// [_loadBaselineUpgradeTargetVersion].
   Future<void> _initializeAndSearch() async {
-    await context.read<TicketsCubit>().loadPersistedFilters();
+    final cubit = context.read<TicketsCubit>();
+    await cubit.loadPersistedFilters();
+    await cubit.loadPersistedSort();
     if (!mounted) return;
     _runSearch();
   }
@@ -284,9 +295,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
   List<Ticket> _visibleTickets(List<Ticket> tickets) {
     if (_viewMode == _TicketViewMode.board) {
       return tickets
-          .where(
-            (t) => t.type == TicketType.story || t.type.isExecutable,
-          )
+          .where((t) => t.type == TicketType.story || t.type.isExecutable)
           .toList();
     }
     return tickets;
@@ -365,9 +374,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                     state.updatedCount,
                     state.skippedCount,
                   )
-                : context.l10n.ticketBulkStatusSummaryToast(
-                    state.updatedCount,
-                  ),
+                : context.l10n.ticketBulkStatusSummaryToast(state.updatedCount),
           );
           context.read<TicketSelectionCubit>().clear();
         } else if (state is TicketsBatchPriorityUpdated) {
@@ -445,8 +452,9 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                       Padding(
                         padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
                         child: CodebaseAnalysisBanner(
-                          onDismiss: () =>
-                              setState(() => _showCodebaseAnalysisOffer = false),
+                          onDismiss: () => setState(
+                            () => _showCodebaseAnalysisOffer = false,
+                          ),
                         ),
                       ),
                     Padding(
@@ -478,7 +486,11 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                             },
                           ),
                           const SizedBox(height: 10),
-                          const _TicketFilterSection(),
+                          _TicketFilterAndSortSection(
+                            hasActiveQuery: _searchController.text
+                                .trim()
+                                .isNotEmpty,
+                          ),
                         ],
                       ),
                     ),
@@ -974,27 +986,51 @@ class _SelectModeToggleState extends State<_SelectModeToggle> {
   }
 }
 
-/// Composes the "Filters" trigger row (§1.2) and the conditional chip row
-/// (§5) below it: reads `TicketsCubit`'s selection getters
+/// Composes the "Filters"/"Sort" trigger row (§1.2) and the conditional
+/// chip row (§5) below it: reads `TicketsCubit`'s selection getters
 /// ([TicketsCubit.selectedStatuses]/[TicketsCubit.selectedTypes]/
-/// [TicketsCubit.selectedPriorities]) for both the popover's checked
-/// state and the chip row's content, and wires each toggle handler
-/// directly to the matching `TicketsCubit.toggleXFilter` method — no
-/// local `setState` for selection itself, only for
-/// [TicketFilterPopover]'s own open/closed visual state (fed back via
-/// [TicketFilterPopover.onOpenChanged]). The chip row renders zero
-/// height (no reserved space, no gap above it) when every selection set
-/// is empty.
-class _TicketFilterSection extends StatefulWidget {
-  const _TicketFilterSection();
+/// [TicketsCubit.selectedPriorities]/[TicketsCubit.currentSort]) for the
+/// popovers' checked/selected state and the chip row's content, and
+/// wires each toggle/select handler directly to the matching
+/// `TicketsCubit.toggleXFilter`/[TicketsCubit.setSort] method — no local
+/// `setState` for selection/sort itself, only for
+/// [TicketFilterPopover]/[TicketSortPopover]'s own open/closed and
+/// focused visual state (fed back via their respective
+/// `onOpenChanged`/`onFocusChanged` callbacks). The chip row renders zero
+/// height (no reserved space, no gap above it) when every filter
+/// selection set is empty — the Sort trigger has no equivalent chip row,
+/// since a single active key has nothing more to summarize than its own
+/// label. Renamed from `_TicketFilterSection` when the Sort trigger was
+/// added; see
+/// `aion-arch/changes/ticket-sort-control-and-board-as-default-view`.
+class _TicketFilterAndSortSection extends StatefulWidget {
+  const _TicketFilterAndSortSection({required this.hasActiveQuery});
+
+  /// Whether the search field currently holds non-whitespace text —
+  /// passed down from `_TicketsListScreenState` (which owns the search
+  /// controller) rather than read here directly, so this widget doesn't
+  /// need to reach up the tree for it. Gates whether
+  /// [TicketSortPopover]'s `Relevance` row is enabled — see
+  /// [TicketSortPopover.hasActiveQuery].
+  final bool hasActiveQuery;
 
   @override
-  State<_TicketFilterSection> createState() => _TicketFilterSectionState();
+  State<_TicketFilterAndSortSection> createState() =>
+      _TicketFilterAndSortSectionState();
 }
 
-class _TicketFilterSectionState extends State<_TicketFilterSection> {
+class _TicketFilterAndSortSectionState
+    extends State<_TicketFilterAndSortSection> {
   bool _isPopoverOpen = false;
   bool _isTriggerFocused = false;
+
+  /// Whether [TicketSortPopover]'s overlay is currently open — mirrors
+  /// [_isPopoverOpen] for the Sort trigger.
+  bool _isSortPopoverOpen = false;
+
+  /// Whether the Sort trigger currently holds keyboard focus — mirrors
+  /// [_isTriggerFocused] for the Sort trigger.
+  bool _isSortTriggerFocused = false;
 
   @override
   Widget build(BuildContext context) {
@@ -1007,31 +1043,49 @@ class _TicketFilterSectionState extends State<_TicketFilterSection> {
         selectedTypes.length +
         selectedPriorities.length;
     final hasChips = activeCount > 0;
+    final currentSort = cubit.currentSort;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TicketFilterPopover(
-            trigger: _FilterTriggerButton(
-              activeCount: activeCount,
-              isOpen: _isPopoverOpen,
-              isFocused: _isTriggerFocused,
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TicketFilterPopover(
+              trigger: _FilterTriggerButton(
+                activeCount: activeCount,
+                isOpen: _isPopoverOpen,
+                isFocused: _isTriggerFocused,
+              ),
+              selectedStatuses: selectedStatuses,
+              selectedTypes: selectedTypes,
+              selectedPriorities: selectedPriorities,
+              onToggleStatus: context.read<TicketsCubit>().toggleStatusFilter,
+              onToggleType: context.read<TicketsCubit>().toggleTypeFilter,
+              onTogglePriority: context
+                  .read<TicketsCubit>()
+                  .togglePriorityFilter,
+              onOpenChanged: (isOpen) =>
+                  setState(() => _isPopoverOpen = isOpen),
+              onFocusChanged: (isFocused) =>
+                  setState(() => _isTriggerFocused = isFocused),
             ),
-            selectedStatuses: selectedStatuses,
-            selectedTypes: selectedTypes,
-            selectedPriorities: selectedPriorities,
-            onToggleStatus: context.read<TicketsCubit>().toggleStatusFilter,
-            onToggleType: context.read<TicketsCubit>().toggleTypeFilter,
-            onTogglePriority: context
-                .read<TicketsCubit>()
-                .togglePriorityFilter,
-            onOpenChanged: (isOpen) =>
-                setState(() => _isPopoverOpen = isOpen),
-            onFocusChanged: (isFocused) =>
-                setState(() => _isTriggerFocused = isFocused),
-          ),
+            const SizedBox(width: AionSpacing.sp8),
+            TicketSortPopover(
+              trigger: _SortTriggerButton(
+                currentSort: currentSort,
+                isOpen: _isSortPopoverOpen,
+                isFocused: _isSortTriggerFocused,
+              ),
+              currentSort: currentSort,
+              hasActiveQuery: widget.hasActiveQuery,
+              onSortSelected: _handleSortSelected,
+              onOpenChanged: (isOpen) =>
+                  setState(() => _isSortPopoverOpen = isOpen),
+              onFocusChanged: (isFocused) =>
+                  setState(() => _isSortTriggerFocused = isFocused),
+            ),
+          ],
         ),
         if (hasChips) ...[
           const SizedBox(height: AionSpacing.sp8),
@@ -1074,6 +1128,24 @@ class _TicketFilterSectionState extends State<_TicketFilterSection> {
         ],
       ],
     );
+  }
+
+  /// Calls [TicketsCubit.setSort] with [sort], then forces a local rebuild
+  /// so the Sort trigger/popover reflect the new selection immediately.
+  /// [TicketsCubit.setSort] re-runs [TicketsCubit.searchTickets]
+  /// internally, but that only *emits* a new [TicketsState] — and
+  /// `Cubit.emit` silently skips notifying `context.watch` listeners when
+  /// the new state is `Equatable`-equal to the current one (same
+  /// pre-existing precedent `_handleSearchTextChanged` documents). Since
+  /// [TicketsCubit.currentSort] lives outside [TicketsState] entirely, a
+  /// sort change that happens not to reorder the currently-visible
+  /// tickets (e.g. every loaded ticket shares the same priority) would
+  /// otherwise leave the trigger/popover silently stuck showing the old
+  /// selection even though the resolved sort — and every future search —
+  /// really did change.
+  Future<void> _handleSortSelected(TicketListSort sort) async {
+    await context.read<TicketsCubit>().setSort(sort);
+    if (mounted) setState(() {});
   }
 }
 
@@ -1140,9 +1212,7 @@ class _FilterTriggerButtonState extends State<_FilterTriggerButton> {
 
     return Semantics(
       button: true,
-      label: context.l10n.ticketsListFilterTriggerSemantics(
-        widget.activeCount,
-      ),
+      label: context.l10n.ticketsListFilterTriggerSemantics(widget.activeCount),
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         onEnter: (_) => setState(() => _isHovered = true),
@@ -1218,6 +1288,162 @@ class _FilterTriggerButtonState extends State<_FilterTriggerButton> {
       ),
     );
   }
+}
+
+/// The "Sort" trigger button that opens [TicketSortPopover]. A visual
+/// sibling of [_FilterTriggerButton] — same idle/active/open/focused
+/// state language (`AppDropdown`'s inactive/`isActive` color mapping) —
+/// differing only in icon (a sort-arrows glyph, not a funnel), label
+/// text, the trailing direction glyph, and the absence of a count badge
+/// (a single active key has no count to show). The idle sub-state
+/// ([_SortTriggerButtonState._idleDefault]) is shown only while [currentSort] is still the
+/// untouched `createdAt` descending default; every other value —
+/// including the implicit `relevance` default while a search query is
+/// active — renders the active sub-state, with the label reading
+/// "Sort: {field}" plus a trailing direction glyph. Purely presentational —
+/// [TicketSortPopover] (which wraps this as its `trigger`) owns the
+/// actual tap/keyboard-activation handling; [isOpen] and [isFocused] are
+/// fed back in via [TicketSortPopover.onOpenChanged]/
+/// [TicketSortPopover.onFocusChanged] so this can render "open" and
+/// "focused" looks the same way [_isIdleDefault]'s negation renders an
+/// "active" one. See
+/// `aion-arch/changes/ticket-sort-control-and-board-as-default-view`.
+class _SortTriggerButton extends StatefulWidget {
+  const _SortTriggerButton({
+    required this.currentSort,
+    required this.isOpen,
+    required this.isFocused,
+  });
+
+  /// The currently active sort — drives the idle/active sub-state and
+  /// the active label/direction glyph.
+  final TicketListSort currentSort;
+
+  /// Whether [TicketSortPopover]'s overlay is currently open — rendered
+  /// as the same emphasized look as keyboard focus.
+  final bool isOpen;
+
+  /// Whether this trigger currently holds keyboard focus — rendered as
+  /// the same emphasized look as [isOpen], independent of whether the
+  /// popover has actually been activated yet.
+  final bool isFocused;
+
+  @override
+  State<_SortTriggerButton> createState() => _SortTriggerButtonState();
+}
+
+class _SortTriggerButtonState extends State<_SortTriggerButton> {
+  bool _isHovered = false;
+
+  /// The untouched implicit default with no search query active — see
+  /// `TicketsCubit._implicitSort`. A [TicketListSort] equal to this is
+  /// treated as this trigger's idle sub-state; anything else — including
+  /// the implicit `relevance` default while a query *is* active — is the
+  /// active sub-state.
+  static const _idleDefault = TicketListSort(
+    field: TicketSortField.createdAt,
+    direction: TicketSortDirection.descending,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    final isActive = widget.currentSort != _idleDefault;
+    final showRing = widget.isOpen || widget.isFocused;
+    final emphasized = isActive || showRing;
+
+    final Color fill = isActive ? c.primarySubtle : c.surface;
+    final Color border = isActive
+        ? c.primary
+        : (showRing ? c.primary : (_isHovered ? c.borderStrong : c.border));
+    final Color foreground = isActive
+        ? c.primary
+        : (showRing ? c.primary : c.textSecondary);
+    final Color labelColor = isActive || showRing
+        ? (isActive ? c.primary : c.textPrimary)
+        : c.textPrimary;
+
+    final fieldLabel = ticketSortFieldLabel(context, widget.currentSort.field);
+    final triggerFieldLabel = _triggerFieldLabel(
+      context,
+      widget.currentSort.field,
+    );
+
+    return Semantics(
+      button: true,
+      label: context.l10n.ticketsListSortTriggerSemantics(fieldLabel),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: fill,
+            borderRadius: BorderRadius.all(AionRadius.lg),
+            border: Border.all(color: border, width: emphasized ? 1.5 : 1),
+            boxShadow: showRing
+                ? [
+                    BoxShadow(
+                      color: c.primary.withValues(
+                        alpha: t.isDark ? 0.30 : 0.16,
+                      ),
+                      spreadRadius: 3,
+                    ),
+                  ]
+                : const <BoxShadow>[],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              PhosphorIcon(
+                PhosphorIcons.arrowsDownUpLight,
+                size: 16,
+                color: foreground,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                isActive
+                    ? context.l10n.ticketsListSortTriggerActiveLabel(
+                        triggerFieldLabel,
+                      )
+                    : context.l10n.ticketsListSortTriggerLabel,
+                style: AionText.button.copyWith(color: labelColor),
+              ),
+              if (isActive) ...[
+                const SizedBox(width: 8),
+                PhosphorIcon(
+                  widget.currentSort.direction == TicketSortDirection.ascending
+                      ? PhosphorIcons.arrowUpLight
+                      : PhosphorIcons.arrowDownLight,
+                  size: 12,
+                  color: labelColor,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// [field]'s display label for [_SortTriggerButton]'s own visible text —
+/// identical to [ticketSortFieldLabel] for every field except
+/// [TicketSortField.updatedAt], which abbreviates "Last updated" to
+/// "Updated" here (and only here) to keep the trigger's width in check,
+/// per design.md §3.1. [TicketSortPopover]'s row and this trigger's own
+/// accessibility [Semantics] label (see
+/// `context.l10n.ticketsListSortTriggerSemantics`) both keep the
+/// unabbreviated [ticketSortFieldLabel] instead.
+String _triggerFieldLabel(BuildContext context, TicketSortField field) {
+  if (field == TicketSortField.updatedAt) {
+    return context.l10n.ticketsListSortFieldUpdatedAtAbbreviated;
+  }
+  return ticketSortFieldLabel(context, field);
 }
 
 /// The last item appended to [TicketsListScreen]'s flat `ListView` while
