@@ -3200,6 +3200,40 @@ class TicketsCubit extends Cubit<TicketsState> {
     return _rollupRecomputer.recompute(startIds, eventLabel);
   }
 
+  /// Runs [trashed]'s single-ticket `'trashed'` projection (no-op if
+  /// [trashed] is `null`) followed by [parentId]'s ancestor chain's rollup
+  /// recompute, in that order — see [trashTicket]'s dartdoc for why these
+  /// must be sequenced rather than fired concurrently as two independent
+  /// unawaited calls.
+  Future<void> _trashGitSideEffects(Ticket? trashed, String? parentId) async {
+    if (trashed != null) {
+      await _triggerGitProjection(trashed, 'trashed');
+    }
+    await _recomputeRollupChain({?parentId}, 'rollup updated');
+  }
+
+  /// Runs each id in [ids]' single-ticket `'trashed'` projection (in
+  /// order, re-fetching each from [_repository] since [trashTickets]
+  /// itself never holds the post-trash rows) followed by one batched
+  /// rollup recompute seeded from [parentIdOf]'s values — see
+  /// [trashTickets]'s dartdoc for why these must be sequenced rather than
+  /// fired concurrently.
+  Future<void> _trashBatchGitSideEffects(
+    List<String> ids,
+    Map<String, String?> parentIdOf,
+  ) async {
+    for (final id in ids) {
+      final trashed = await _repository.getTicketById(id);
+      if (trashed != null) {
+        await _triggerGitProjection(trashed, 'trashed');
+      }
+    }
+    await _recomputeRollupChain({
+      for (final id in ids)
+        if (parentIdOf[id] != null) parentIdOf[id]!,
+    }, 'rollup updated');
+  }
+
   /// Returns the on-demand [TicketRollupCounts] for [ticket] — the number
   /// of live tickets (self + descendants) contributing a non-null
   /// `estimate`/`timeSpent` value. Query-only: performs no writes and
@@ -3400,11 +3434,21 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// loaded) and emits [TicketsLoaded] instead, so
   /// `TicketsListScreen`/`TicketBoardView` never fall into a blank state.
   /// Trash never fails except on a genuine unexpected repository error,
-  /// which emits [TicketsError]. Also fires a fire-and-forget rollup
-  /// recompute (see [_recomputeRollupChain]) seeded from [id]'s pre-trash
-  /// `parentId` — read before the trash write so it's captured before
-  /// `deletedAt` excludes [id] from [_recomputeRollupChain]'s
-  /// `getAllTickets()` read.
+  /// which emits [TicketsError].
+  ///
+  /// The `'trashed'` git-projection for [id] (see [_triggerGitProjection])
+  /// and the rollup recompute for its pre-trash `parentId`'s ancestor
+  /// chain (see [_recomputeRollupChain] — [id]'s `parentId` is read before
+  /// the trash write so it's captured before `deletedAt` excludes [id]
+  /// from [_recomputeRollupChain]'s `getAllTickets()` read) both touch the
+  /// same git repository's add/commit sequence, so they're sequenced into
+  /// one chain — the single-ticket projection commits first, then the
+  /// ancestor batch — and fired as a single fire-and-forget unit. Running
+  /// them as two independent unawaited calls (as this used to) races the
+  /// underlying git client's add/commit steps: the ancestor batch's staged
+  /// files can get silently swept into the single-ticket commit instead of
+  /// producing their own correctly-labelled `"N ancestors rollup updated"`
+  /// commit.
   Future<void> trashTicket(String id) async {
     _searchGeneration++;
     final previousState = state;
@@ -3424,15 +3468,8 @@ class TicketsCubit extends Cubit<TicketsState> {
       final preTrash = await _repository.getTicketById(id);
       await _repository.trashTicket(id);
       final trashed = await _repository.getTicketById(id);
-      if (trashed != null) {
-        unawaited(_triggerGitProjection(trashed, 'trashed'));
-      }
       final parentId = preTrash?.parentId;
-      unawaited(
-        _recomputeRollupChain({
-          ?parentId,
-        }, 'rollup updated'),
-      );
+      unawaited(_trashGitSideEffects(trashed, parentId));
       if (previousState is TicketDetailLoaded) {
         emit(const TicketTrashed());
       } else {
@@ -3459,11 +3496,21 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// actual trashed count) on success, or [TicketsError] on an
   /// unexpected failure. The refresh re-applies the filters
   /// [searchTickets] was last called with and requests at least as many
-  /// tickets as were already loaded. Also fires a single fire-and-forget
-  /// rollup recompute (see [_recomputeRollupChain]) seeded from the union
-  /// of every explicitly-trashed id's pre-trash `parentId` — read before
-  /// the trash write, mirroring [trashTicket]'s own timing — in one call
-  /// rather than one per id.
+  /// tickets as were already loaded.
+  ///
+  /// Every git-touching step — each explicitly-trashed id's own
+  /// `'trashed'` projection (projects only the explicitly-requested ids,
+  /// not their cascaded descendants, also trashed by
+  /// [TicketRepository.trashTickets] but not individually enumerable from
+  /// its return value — a documented scope simplification, not an
+  /// oversight), then the single batched rollup recompute (see
+  /// [_recomputeRollupChain]) seeded from the union of every
+  /// explicitly-trashed id's pre-trash `parentId` (read before the trash
+  /// write, mirroring [trashTicket]'s own timing) — is sequenced into one
+  /// chain and fired as a single fire-and-forget unit, same reasoning as
+  /// [trashTicket]: concurrent unawaited git operations race the
+  /// underlying git client's add/commit steps and can silently coalesce
+  /// separate logical commits into one mislabeled commit.
   Future<void> trashTickets(List<String> ids) async {
     _searchGeneration++;
     final currentTickets = switch (state) {
@@ -3483,22 +3530,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         for (final id in ids) id: (await _repository.getTicketById(id))?.parentId,
       };
       final trashedCount = await _repository.trashTickets(ids);
-      // Projects only the explicitly-requested ids, not their cascaded
-      // descendants (also trashed by trashTickets, but not individually
-      // enumerable from its return value) — a documented scope
-      // simplification, not an oversight.
-      for (final id in ids) {
-        final trashed = await _repository.getTicketById(id);
-        if (trashed != null) {
-          unawaited(_triggerGitProjection(trashed, 'trashed'));
-        }
-      }
-      unawaited(
-        _recomputeRollupChain({
-          for (final id in ids)
-            if (parentIdOf[id] != null) parentIdOf[id]!,
-        }, 'rollup updated'),
-      );
+      unawaited(_trashBatchGitSideEffects(ids, parentIdOf));
       final page = await _repository.searchTickets(
         query: _lastQuery,
         statuses: _lastStatuses,

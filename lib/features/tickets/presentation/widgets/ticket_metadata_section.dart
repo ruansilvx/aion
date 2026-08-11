@@ -370,7 +370,10 @@ class TicketMetadataSection extends StatelessWidget {
                                     ],
                                   ],
                                 ),
-                                const SizedBox(width: AionSpacing.sp24),
+                                // 34px per design.md §1.1/§1.2's dimensions
+                                // table ("Inter-field gap") — not an
+                                // AionSpacing token value.
+                                const SizedBox(width: 34),
                                 Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   mainAxisSize: MainAxisSize.min,

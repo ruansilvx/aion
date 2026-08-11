@@ -140,32 +140,45 @@ class TrashCubit extends Cubit<TrashState> {
   }
 
   /// Restores the ticket with internal id [id] via
-  /// [TicketRepository.restoreTicket], fires a fire-and-forget
-  /// `'restored'` git-projection for it (see [_triggerGitProjection]),
-  /// then reloads the trash list. Note: [TicketRepository.restoreTicket]
-  /// also revives any currently-trashed ancestors/descendants of [id],
-  /// but only [id] itself is projected here — mirroring
-  /// `TicketsCubit.trashTickets`' existing scope simplification for the
-  /// symmetric trash-side case. Also fires a fire-and-forget rollup
-  /// recompute (see [TicketRollupRecomputer.recompute]) seeded from the
-  /// restored ticket's `parentId`, re-including its subtree's
-  /// contribution in that ancestor chain's rollup. Emits [TrashError] if
-  /// the repository call throws.
+  /// [TicketRepository.restoreTicket], then reloads the trash list. Note:
+  /// [TicketRepository.restoreTicket] also revives any currently-trashed
+  /// ancestors/descendants of [id], but only [id] itself is projected
+  /// here — mirroring `TicketsCubit.trashTickets`' existing scope
+  /// simplification for the symmetric trash-side case.
+  ///
+  /// The `'restored'` git-projection for [id] (see [_triggerGitProjection])
+  /// and the rollup recompute for its ancestor chain (see
+  /// [TicketRollupRecomputer.recompute], seeded from the restored ticket's
+  /// `parentId`) both touch the same git repository's add/commit sequence,
+  /// so they're sequenced into one chain — the single-ticket projection
+  /// commits first, then the ancestor batch — and fired as a single
+  /// fire-and-forget unit. Running them as two independent unawaited calls
+  /// (as this used to) races the underlying git client's add/commit steps: the
+  /// ancestor batch's staged files can get silently swept into the
+  /// single-ticket commit instead of producing their own correctly-labelled
+  /// `"N ancestors rollup updated"` commit. Emits [TrashError] if the
+  /// repository call throws.
   Future<void> restore(String id) async {
     try {
       await _repository.restoreTicket(id);
       final restored = await _repository.getTicketById(id);
       if (restored != null) {
-        unawaited(_triggerGitProjection(restored, 'restored'));
         final parentId = restored.parentId;
-        unawaited(
-          _rollupRecomputer.recompute({?parentId}, 'rollup updated'),
-        );
+        unawaited(_restoreGitSideEffects(restored, parentId));
       }
       await load();
     } catch (e) {
       emit(TrashError(e.toString()));
     }
+  }
+
+  /// Runs [restored]'s single-ticket `'restored'` projection followed by
+  /// its ancestor chain's rollup recompute (seeded from [parentId]), in
+  /// that order — see [restore]'s dartdoc for why these must be sequenced
+  /// rather than fired concurrently.
+  Future<void> _restoreGitSideEffects(Ticket restored, String? parentId) async {
+    await _triggerGitProjection(restored, 'restored');
+    await _rollupRecomputer.recompute({?parentId}, 'rollup updated');
   }
 
   /// Permanently deletes the ticket with internal id [id] via

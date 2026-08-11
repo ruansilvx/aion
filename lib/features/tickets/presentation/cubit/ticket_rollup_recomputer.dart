@@ -23,12 +23,21 @@ class TicketRollupRecomputer {
     this._repository, {
     TicketGitProjector? gitProjector,
     String? projectRootPath,
-  }) : _gitProjector = gitProjector,
-       _projectRootPath = projectRootPath;
+  }) {
+    _gitProjector = gitProjector;
+    _projectRootPath = projectRootPath;
+  }
 
   final TicketRepository _repository;
-  final TicketGitProjector? _gitProjector;
-  final String? _projectRootPath;
+  // Assigned in the constructor body rather than via `this._gitProjector`/
+  // `this._projectRootPath` initializing formals — the public parameter
+  // names (`gitProjector`/`projectRootPath`) intentionally omit the
+  // leading underscore their private field counterparts carry, which an
+  // initializing formal can't do (its parameter name must match the field
+  // name verbatim). Same pattern `TrashCubit`'s own constructor already
+  // uses for its identical `gitProjector`/`projectRootPath` fields.
+  late final TicketGitProjector? _gitProjector;
+  late final String? _projectRootPath;
 
   /// Recomputes and persists the rollup for every ticket on the path from
   /// each id in [startIds] up to its structural root (inclusive of each

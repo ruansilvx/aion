@@ -57,10 +57,14 @@ class Ticket extends Equatable {
   /// hand-edit.
   final TicketSyncStatus syncStatus;
 
-  /// Estimated effort in minutes. No UI reads or writes this yet.
+  /// Estimated effort in minutes. Editable via `TicketMetadataSection`'s
+  /// Estimate field; also the base value [estimateRollup] sums up its
+  /// live descendant subtree from.
   final int? estimate;
 
-  /// Time spent in minutes. No UI reads or writes this yet.
+  /// Time spent in minutes. Editable via `TicketMetadataSection`'s Time
+  /// Spent field; also the base value [timeSpentRollup] sums up its live
+  /// descendant subtree from.
   final int? timeSpent;
 
   /// When the ticket was created.
