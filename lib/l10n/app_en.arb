@@ -47,6 +47,7 @@
   "ticketsListSortFieldType": "Type",
   "ticketsListSortFieldCreatedAt": "Created",
   "ticketsListSortFieldUpdatedAt": "Last updated",
+  "ticketsListSortFieldUpdatedAtAbbreviated": "Updated",
   "ticketsListSortTriggerSemantics": "Sort menu, currently sorted by {field}",
   "@ticketsListSortTriggerSemantics": {
     "placeholders": {

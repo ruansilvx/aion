@@ -1365,6 +1365,10 @@ class _SortTriggerButtonState extends State<_SortTriggerButton> {
         : c.textPrimary;
 
     final fieldLabel = ticketSortFieldLabel(context, widget.currentSort.field);
+    final triggerFieldLabel = _triggerFieldLabel(
+      context,
+      widget.currentSort.field,
+    );
 
     return Semantics(
       button: true,
@@ -1403,7 +1407,9 @@ class _SortTriggerButtonState extends State<_SortTriggerButton> {
               const SizedBox(width: 8),
               Text(
                 isActive
-                    ? context.l10n.ticketsListSortTriggerActiveLabel(fieldLabel)
+                    ? context.l10n.ticketsListSortTriggerActiveLabel(
+                        triggerFieldLabel,
+                      )
                     : context.l10n.ticketsListSortTriggerLabel,
                 style: AionText.button.copyWith(color: labelColor),
               ),
@@ -1423,6 +1429,21 @@ class _SortTriggerButtonState extends State<_SortTriggerButton> {
       ),
     );
   }
+}
+
+/// [field]'s display label for [_SortTriggerButton]'s own visible text —
+/// identical to [ticketSortFieldLabel] for every field except
+/// [TicketSortField.updatedAt], which abbreviates "Last updated" to
+/// "Updated" here (and only here) to keep the trigger's width in check,
+/// per design.md §3.1. [TicketSortPopover]'s row and this trigger's own
+/// accessibility [Semantics] label (see
+/// `context.l10n.ticketsListSortTriggerSemantics`) both keep the
+/// unabbreviated [ticketSortFieldLabel] instead.
+String _triggerFieldLabel(BuildContext context, TicketSortField field) {
+  if (field == TicketSortField.updatedAt) {
+    return context.l10n.ticketsListSortFieldUpdatedAtAbbreviated;
+  }
+  return ticketSortFieldLabel(context, field);
 }
 
 /// The last item appended to [TicketsListScreen]'s flat `ListView` while
