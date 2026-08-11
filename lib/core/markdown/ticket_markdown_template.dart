@@ -35,6 +35,12 @@ abstract final class TicketMarkdownTemplate {
   /// Frontmatter key for [Ticket.deletedAt] (ISO-8601, nullable).
   static const deletedAt = 'deletedAt';
 
+  /// Frontmatter key for [Ticket.estimateRollup].
+  static const estimateRollup = 'estimateRollup';
+
+  /// Frontmatter key for [Ticket.timeSpentRollup].
+  static const timeSpentRollup = 'timeSpentRollup';
+
   /// Deterministic key order used when serializing frontmatter, so diffs
   /// reflect real field changes rather than incidental key reordering.
   /// `title` and `description` are deliberately excluded from frontmatter
@@ -63,6 +69,8 @@ abstract final class TicketMarkdownTemplate {
     createdAt,
     updatedAt,
     deletedAt,
+    estimateRollup,
+    timeSpentRollup,
   ];
 
   /// The frontmatter delimiter line, opening and closing the YAML block.

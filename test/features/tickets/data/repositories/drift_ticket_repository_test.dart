@@ -542,6 +542,61 @@ void main() {
     },
   );
 
+  group('updateRollup', () {
+    test(
+      'writes only estimateRollup/timeSpentRollup, leaving every other '
+      'field unchanged',
+      () async {
+        await repository.createTicket(
+          buildTicket(
+            id: '1',
+            title: 'Unchanged title',
+            priority: TicketPriority.high,
+          ),
+        );
+
+        await repository.updateRollup(
+          '1',
+          estimateRollup: 45,
+          timeSpentRollup: 20,
+        );
+
+        final found = await repository.getTicketById('1');
+        expect(found!.estimateRollup, 45);
+        expect(found.timeSpentRollup, 20);
+        expect(found.title, 'Unchanged title');
+        expect(found.priority, TicketPriority.high);
+        expect(found.status, TicketStatus.backlog);
+        expect(found.type, TicketType.task);
+      },
+    );
+
+    test('can clear both fields back to null', () async {
+      await repository.createTicket(buildTicket(id: '1'));
+      await repository.updateRollup('1', estimateRollup: 10, timeSpentRollup: 5);
+
+      await repository.updateRollup(
+        '1',
+        estimateRollup: null,
+        timeSpentRollup: null,
+      );
+
+      final found = await repository.getTicketById('1');
+      expect(found!.estimateRollup, isNull);
+      expect(found.timeSpentRollup, isNull);
+    });
+
+    test('leaves updatedAt untouched, unlike updateTicket/updateTicketParent', () async {
+      await repository.createTicket(buildTicket(id: '1'));
+      final before = (await repository.getTicketById('1'))!.updatedAt;
+
+      await repository.updateRollup('1', estimateRollup: 10, timeSpentRollup: null);
+      final after = (await repository.getTicketById('1'))!.updatedAt;
+
+      expect(after, before);
+    });
+  });
+
   group('trashTicket / trashTickets', () {
     test(
       'moves a childless ticket into trash (deletedAt set, row intact)',
@@ -1308,6 +1363,17 @@ void main() {
         await v1Db.customStatement(
           'ALTER TABLE tickets DROP COLUMN inbox_purpose;',
         );
+        // estimate_rollup/time_spent_rollup (v9) — same reasoning: never
+        // touched by createTicket's companion, so no insert-ordering
+        // constraint, but createAll() already created them and onUpgrade's
+        // `from < 9` addColumn step would otherwise fail with "duplicate
+        // column name" against a column that already exists.
+        await v1Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN estimate_rollup;',
+        );
+        await v1Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN time_spent_rollup;',
+        );
         // ticket_comments' input_tokens/output_tokens (v7) — dropped even
         // though this test's assertions never touch that table, since
         // onUpgrade's `from < 7` addColumn step still runs unconditionally
@@ -1363,6 +1429,15 @@ void main() {
       );
       await v7Db.customStatement(
         'ALTER TABLE tickets DROP COLUMN inbox_purpose;',
+      );
+      // estimate_rollup/time_spent_rollup (v9) — same reasoning as the v1
+      // simulation above: createAll() already created them, so onUpgrade's
+      // `from < 9` addColumn step needs them absent first.
+      await v7Db.customStatement(
+        'ALTER TABLE tickets DROP COLUMN estimate_rollup;',
+      );
+      await v7Db.customStatement(
+        'ALTER TABLE tickets DROP COLUMN time_spent_rollup;',
       );
       await v7Db.customStatement('PRAGMA user_version = 7;');
       await v7Db.close();

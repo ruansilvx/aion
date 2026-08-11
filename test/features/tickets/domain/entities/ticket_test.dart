@@ -139,6 +139,44 @@ void main() {
       expect(result.suggestedType, isNull);
       expect(result.inboxPurpose, isNull);
     });
+
+    // `copyWith` has no `estimateRollup`/`timeSpentRollup` parameters at
+    // all — a compile-time guarantee (calling
+    // `baseTicket.copyWith(estimateRollup: 1)` is a build error, not a
+    // runtime one), so there is no "explicitly clears" or "replaces via a
+    // setter" case to test here, unlike every other nullable field above.
+    // What *is* runtime-testable is that both fields pass through
+    // unaffected by every other `copyWith` call — see below.
+    test(
+      'estimateRollup/timeSpentRollup pass through unchanged on every '
+      'copyWith call, since neither is a settable parameter',
+      () {
+        final withRollup = Ticket(
+          id: baseTicket.id,
+          ticketId: baseTicket.ticketId,
+          type: baseTicket.type,
+          title: baseTicket.title,
+          description: baseTicket.description,
+          status: baseTicket.status,
+          priority: baseTicket.priority,
+          estimate: baseTicket.estimate,
+          timeSpent: baseTicket.timeSpent,
+          createdAt: baseTicket.createdAt,
+          updatedAt: baseTicket.updatedAt,
+          estimateRollup: 45,
+          timeSpentRollup: 20,
+        );
+
+        final result = withRollup.copyWith(
+          title: 'Changed',
+          priority: TicketPriority.high,
+          estimate: () => 999,
+        );
+
+        expect(result.estimateRollup, 45);
+        expect(result.timeSpentRollup, 20);
+      },
+    );
   });
 
   group('Ticket equality (props)', () {
@@ -157,5 +195,33 @@ void main() {
       );
       expect(a, isNot(equals(b)));
     });
+
+    test(
+      'two otherwise-identical tickets differing only by estimateRollup/'
+      'timeSpentRollup are not equal',
+      () {
+        final a = Ticket(
+          id: baseTicket.id,
+          ticketId: baseTicket.ticketId,
+          type: baseTicket.type,
+          title: baseTicket.title,
+          status: baseTicket.status,
+          createdAt: baseTicket.createdAt,
+          updatedAt: baseTicket.updatedAt,
+          estimateRollup: 45,
+        );
+        final b = Ticket(
+          id: baseTicket.id,
+          ticketId: baseTicket.ticketId,
+          type: baseTicket.type,
+          title: baseTicket.title,
+          status: baseTicket.status,
+          createdAt: baseTicket.createdAt,
+          updatedAt: baseTicket.updatedAt,
+          estimateRollup: 90,
+        );
+        expect(a, isNot(equals(b)));
+      },
+    );
   });
 }

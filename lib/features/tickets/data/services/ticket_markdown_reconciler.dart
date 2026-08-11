@@ -42,6 +42,21 @@ import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart
 /// `TicketDbReconstructionService`, which builds a fresh [Ticket] with
 /// no existing row to protect), but [_apply] below has no case for it
 /// and none is planned.
+///
+/// **Known limitation**: does not apply `estimateRollup`/
+/// `timeSpentRollup` from a hand-edited file either — but unlike the two
+/// limitations above, this one can never actually be exercised. Both
+/// fields round-trip through [TicketMarkdownSerializer] for parse
+/// completeness, and [Ticket.copyWith] has no parameters for them for
+/// [_apply] to pass even if it tried, so they're structurally inert
+/// here. More fundamentally: this reconciler only ever runs for
+/// `resource`/`page` tickets, and `estimateRollup`/`timeSpentRollup` are
+/// only ever meaningful on `epic`/`story`/`task`/`bug`/`chat` tickets —
+/// per the Structural type-compatibility table in
+/// `aion-arch/specs/tickets.md`, `resource`/`page` can never structurally
+/// parent, or be parented by, a ranked type, so a rollup-relevant value
+/// could never reach a hand-editable file's frontmatter in the first
+/// place.
 class TicketMarkdownReconciler {
   /// Creates a [TicketMarkdownReconciler] wired to [_repository] (reads
   /// the current ticket, writes back reconciled fields),

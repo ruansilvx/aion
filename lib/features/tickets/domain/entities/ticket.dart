@@ -116,6 +116,22 @@ class Ticket extends Equatable {
   /// [InboxPurpose].
   final InboxPurpose? inboxPurpose;
 
+  /// Derived, recursive rollup of this ticket's own [estimate] plus every
+  /// live descendant's effective value (a child's own rollup if it has
+  /// children, its own [estimate] otherwise). `null` when this ticket has
+  /// no live children — the UI falls back to [estimate] directly in that
+  /// case, so a leaf never shows a redundant "rollup of itself." Computed
+  /// and persisted only by `TicketsCubit`/`TrashCubit`'s rollup-recompute
+  /// walk (see `computeRollups` in
+  /// `domain/utils/ticket_rollup_calculator.dart`); never part of
+  /// [copyWith] — same treatment as [sddStage], written only through a
+  /// dedicated repository method (`TicketRepository.updateRollup`) so a
+  /// plain content edit can't accidentally clobber it.
+  final int? estimateRollup;
+
+  /// Same as [estimateRollup], for [timeSpent].
+  final int? timeSpentRollup;
+
   /// Creates a [Ticket]. [priority] defaults to [TicketPriority.none].
   const Ticket({
     required this.id,
@@ -141,6 +157,8 @@ class Ticket extends Equatable {
     this.actualBehavior,
     this.suggestedType,
     this.inboxPurpose,
+    this.estimateRollup,
+    this.timeSpentRollup,
   });
 
   @override
@@ -168,6 +186,8 @@ class Ticket extends Equatable {
     actualBehavior,
     suggestedType,
     inboxPurpose,
+    estimateRollup,
+    timeSpentRollup,
   ];
 
   /// Returns a copy of this ticket with the given fields replaced.
@@ -179,10 +199,12 @@ class Ticket extends Equatable {
   /// it unchanged. A plain `?? this.x` fallback can't tell "not passed"
   /// apart from "explicitly set to null," since both look like `null` at
   /// the call site. `id`, `ticketId`, `parentId`, `embedding`,
-  /// `syncStatus`, `createdAt`, and `sddStage` are never mutated by this
-  /// method — `sddStage` is written only via
-  /// `TicketsCubit.advanceSddStage`, so its precondition can't be bypassed
-  /// by a plain edit.
+  /// `syncStatus`, `createdAt`, `sddStage`, `estimateRollup`, and
+  /// `timeSpentRollup` are never mutated by this method — `sddStage` is
+  /// written only via `TicketsCubit.advanceSddStage`, and
+  /// `estimateRollup`/`timeSpentRollup` are written only via
+  /// `TicketRepository.updateRollup`, so neither's precondition can be
+  /// bypassed by a plain edit.
   Ticket copyWith({
     String? title,
     TicketFieldSetter<String?>? description,
@@ -231,6 +253,8 @@ class Ticket extends Equatable {
           ? suggestedType()
           : this.suggestedType,
       inboxPurpose: inboxPurpose != null ? inboxPurpose() : this.inboxPurpose,
+      estimateRollup: estimateRollup,
+      timeSpentRollup: timeSpentRollup,
     );
   }
 }

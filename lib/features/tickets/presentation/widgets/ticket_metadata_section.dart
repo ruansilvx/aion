@@ -22,6 +22,7 @@ import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sync_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_repair_cubit.dart';
+import 'package:aion/features/tickets/presentation/cubit/ticket_rollup_counts.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart';
@@ -356,6 +357,17 @@ class TicketMetadataSection extends StatelessWidget {
                                             ticket.copyWith(estimate: () => v),
                                           ),
                                     ),
+                                    if (ticket.estimateRollup != null) ...[
+                                      const SizedBox(height: AionSpacing.sp8),
+                                      _RollupIndicator(
+                                        key: ValueKey(
+                                          'estimate-rollup-${ticket.id}',
+                                        ),
+                                        ticket: ticket,
+                                        rollupMinutes: ticket.estimateRollup!,
+                                        metric: _RollupMetric.estimate,
+                                      ),
+                                    ],
                                   ],
                                 ),
                                 const SizedBox(width: AionSpacing.sp24),
@@ -406,6 +418,17 @@ class TicketMetadataSection extends StatelessWidget {
                                             ticket.copyWith(timeSpent: () => v),
                                           ),
                                     ),
+                                    if (ticket.timeSpentRollup != null) ...[
+                                      const SizedBox(height: AionSpacing.sp8),
+                                      _RollupIndicator(
+                                        key: ValueKey(
+                                          'timeSpent-rollup-${ticket.id}',
+                                        ),
+                                        ticket: ticket,
+                                        rollupMinutes: ticket.timeSpentRollup!,
+                                        metric: _RollupMetric.timeSpent,
+                                      ),
+                                    ],
                                   ],
                                 ),
                               ],
@@ -851,6 +874,119 @@ class _LinkedDesignPageChip extends StatelessWidget {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Which metric a [_RollupIndicator] renders — selects which of
+/// [TicketRollupCounts.estimateCount]/[TicketRollupCounts.timeSpentCount]
+/// backs its count caption.
+enum _RollupMetric { estimate, timeSpent }
+
+/// The `RollupIndicator` subline shown beneath the Estimate/Time Spent
+/// editable fields (design.md §1) — a quiet, read-only, non-interactive
+/// chip carrying the rolled-up subtree total (already available
+/// synchronously off [ticket]) plus a "· N tickets" contributing-count
+/// caption, fetched on demand via [TicketsCubit.getRollupCounts] since
+/// counts are query-only, never persisted (see
+/// `ticket_rollup_calculator.dart`). The chip itself (marker + total)
+/// renders immediately — only the count caption waits on the async
+/// fetch, appearing once it resolves rather than delaying the rest of
+/// [TicketMetadataSection]'s render.
+class _RollupIndicator extends StatefulWidget {
+  const _RollupIndicator({
+    super.key,
+    required this.ticket,
+    required this.rollupMinutes,
+    required this.metric,
+  });
+
+  /// The ticket whose rollup this indicator renders. Also the argument
+  /// to [TicketsCubit.getRollupCounts].
+  final Ticket ticket;
+
+  /// The already-persisted rollup total for [metric] — always non-null
+  /// at the call site (gated on `ticket.estimateRollup`/
+  /// `.timeSpentRollup != null` before this widget is built).
+  final int rollupMinutes;
+
+  /// Which of [ticket]'s two rollup metrics this instance renders.
+  final _RollupMetric metric;
+
+  @override
+  State<_RollupIndicator> createState() => _RollupIndicatorState();
+}
+
+class _RollupIndicatorState extends State<_RollupIndicator> {
+  TicketRollupCounts? _counts;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadCounts());
+  }
+
+  @override
+  void didUpdateWidget(covariant _RollupIndicator oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.ticket.id != widget.ticket.id ||
+        oldWidget.rollupMinutes != widget.rollupMinutes) {
+      _counts = null;
+      unawaited(_loadCounts());
+    }
+  }
+
+  Future<void> _loadCounts() async {
+    final counts = await context.read<TicketsCubit>().getRollupCounts(
+      widget.ticket,
+    );
+    if (mounted) setState(() => _counts = counts);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    final count = switch (widget.metric) {
+      _RollupMetric.estimate => _counts?.estimateCount,
+      _RollupMetric.timeSpent => _counts?.timeSpentCount,
+    };
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.neutralTint(t.isDark),
+        borderRadius: BorderRadius.all(AionRadius.sm),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(7, 3, 9, 3),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            PhosphorIcon(
+              PhosphorIcons.stackLight,
+              size: 11.5,
+              color: c.textSecondary,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              formatRollupMinutes(widget.rollupMinutes),
+              style: AionText.key.copyWith(color: c.textSecondary),
+            ),
+            if (count != null) ...[
+              const SizedBox(width: 6),
+              Text(
+                context.l10n.ticketDetailRollupCount(count),
+                style: AionText.key.copyWith(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w400,
+                  color: c.textMuted,
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );

@@ -21,6 +21,11 @@ void main() {
     timeSpent: null,
     createdAt: DateTime.utc(2026, 7, 18, 10),
     updatedAt: DateTime.utc(2026, 7, 18, 11),
+    // Set/null asymmetric, same as estimate/timeSpent above, so the
+    // round-trip test below exercises both cases for the rollup fields
+    // too.
+    estimateRollup: 90,
+    timeSpentRollup: null,
   );
 
   group('serialize', () {
@@ -47,11 +52,24 @@ void main() {
       expect(ok.fields[TicketMarkdownTemplate.parentId], ticket.parentId);
       expect(ok.fields[TicketMarkdownTemplate.estimate], ticket.estimate);
       expect(ok.fields[TicketMarkdownTemplate.timeSpent], isNull);
+      expect(
+        ok.fields[TicketMarkdownTemplate.estimateRollup],
+        ticket.estimateRollup,
+      );
+      expect(ok.fields[TicketMarkdownTemplate.timeSpentRollup], isNull);
     });
 
     test('renders a null field as bare `null`', () {
       final content = serializer.serialize(ticket);
       expect(content, contains('timeSpent: null'));
+      expect(content, contains('timeSpentRollup: null'));
+    });
+
+    test('renders a set estimateRollup value and parses it back', () {
+      final content = serializer.serialize(ticket);
+      expect(content, contains('estimateRollup: 90'));
+      final result = serializer.parse(content) as ParsedOk;
+      expect(result.fields[TicketMarkdownTemplate.estimateRollup], 90);
     });
   });
 

@@ -335,6 +335,75 @@ void main() {
       );
     });
 
+    group(
+      'restore rollup recompute '
+      '(estimate-timespent-rollup-for-ticket-hierarchy)',
+      () {
+        final rollupParent = Ticket(
+          id: 'rollup-restore-parent',
+          ticketId: 'AIO-300',
+          type: TicketType.story,
+          title: 'Rollup restore parent',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+          // Stale — needs to reflect the restored child's contribution
+          // again, per the test below.
+        );
+        final restoredWithParent = Ticket(
+          id: 'rollup-restored-child',
+          ticketId: 'AIO-301',
+          type: TicketType.task,
+          title: 'Restored child',
+          status: TicketStatus.backlog,
+          parentId: rollupParent.id,
+          estimate: 45,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+
+        blocTest<TrashCubit, TrashState>(
+          "restore triggers a rollup recompute of the restored ticket's "
+          "parent chain, re-including the restored subtree's contribution",
+          setUp: () {
+            when(
+              () => repository.restoreTicket(restoredWithParent.id),
+            ).thenAnswer((_) async {});
+            when(
+              () => repository.getTicketById(restoredWithParent.id),
+            ).thenAnswer((_) async => restoredWithParent);
+            when(
+              () => repository.getTrashedTickets(),
+            ).thenAnswer((_) async => []);
+            // Post-restore state: the child is live again, so it
+            // contributes to rollupParent's rollup once more.
+            when(() => repository.getAllTickets()).thenAnswer(
+              (_) async => [rollupParent, restoredWithParent],
+            );
+            when(
+              () => repository.updateRollup(
+                any(),
+                estimateRollup: any(named: 'estimateRollup'),
+                timeSpentRollup: any(named: 'timeSpentRollup'),
+              ),
+            ).thenAnswer((_) async {});
+          },
+          build: () => TrashCubit(repository),
+          act: (cubit) => cubit.restore(restoredWithParent.id),
+          verify: (_) {
+            verify(
+              () => repository.updateRollup(
+                rollupParent.id,
+                estimateRollup: 45,
+                timeSpentRollup: null,
+              ),
+            ).called(1);
+          },
+          expect: () => [const TrashLoading(), const TrashLoaded([], {}, 0)],
+        );
+      },
+    );
+
     blocTest<TrashCubit, TrashState>(
       'permanentlyDelete calls the repository then reloads',
       setUp: () {

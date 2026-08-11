@@ -2327,6 +2327,13 @@ void main() {
           when(
             () => repository.getTicketById(ticket.id),
           ).thenAnswer((_) async => cleared);
+          // Stubbed for the rollup-recompute walk this now also triggers
+          // (estimate-timespent-rollup-for-ticket-hierarchy) — empty means
+          // neither ticket.id nor the old parentId is found, so no
+          // updateRollup/projectBatch call follows.
+          when(
+            () => repository.getAllTickets(),
+          ).thenAnswer((_) async => []);
         },
         build: () => TicketsCubit(repository),
         act: (cubit) => cubit.updateTicketParent(ticket, null),
@@ -2517,6 +2524,547 @@ void main() {
         ],
       );
     });
+
+    group(
+      'rollup recompute triggers '
+      '(estimate-timespent-rollup-for-ticket-hierarchy)',
+      () {
+        late MockTicketGitProjector gitProjector;
+        const rootPath = '/root';
+
+        final rollupEpic = Ticket(
+          id: 'rollup-epic',
+          ticketId: 'AIO-200',
+          type: TicketType.epic,
+          title: 'Rollup epic',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final rollupStory = Ticket(
+          id: 'rollup-story',
+          ticketId: 'AIO-201',
+          type: TicketType.story,
+          title: 'Rollup story',
+          status: TicketStatus.backlog,
+          parentId: rollupEpic.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final rollupTask = Ticket(
+          id: 'rollup-task',
+          ticketId: 'AIO-202',
+          type: TicketType.task,
+          title: 'Rollup task',
+          status: TicketStatus.backlog,
+          parentId: rollupStory.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        // updateTicket's rollup trigger checks estimate/timeSpent on the
+        // *edited* ticket it's given, so this is the value `act` passes
+        // in and `setUp`'s "refreshed" stub returns.
+        final rollupTaskEdited = rollupTask.copyWith(estimate: () => 60);
+
+        setUp(() {
+          gitProjector = MockTicketGitProjector();
+          // Single-ticket projection — used by trashTicket/trashTickets'
+          // own existing per-ticket git-projection trigger, unrelated to
+          // the rollup recompute's own batched projection below, but
+          // still exercised whenever gitProjector/projectRootPath are
+          // supplied.
+          when(
+            () => gitProjector.project(any(), any(), any()),
+          ).thenAnswer((_) async {});
+          when(
+            () => gitProjector.projectBatch(any(), any(), any()),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.updateRollup(
+              any(),
+              estimateRollup: any(named: 'estimateRollup'),
+              timeSpentRollup: any(named: 'timeSpentRollup'),
+            ),
+          ).thenAnswer((_) async {});
+        });
+
+        TicketsCubit buildCubit() => TicketsCubit(
+          repository,
+          gitProjector: gitProjector,
+          projectRootPath: rootPath,
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          'updateTicket changing estimate/timeSpent recomputes every '
+          'ancestor up to the root',
+          setUp: () {
+            var getTicketByIdCallCount = 0;
+            when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+            when(() => repository.getTicketById(rollupTask.id)).thenAnswer((
+              _,
+            ) async {
+              getTicketByIdCallCount++;
+              // First call is updateTicket's "previous" fetch (before the
+              // write); second is its "refreshed" fetch (after).
+              return getTicketByIdCallCount == 1 ? rollupTask : rollupTaskEdited;
+            });
+            when(() => repository.getAllTickets()).thenAnswer(
+              (_) async => [rollupEpic, rollupStory, rollupTaskEdited],
+            );
+          },
+          build: buildCubit,
+          act: (cubit) => cubit.updateTicket(rollupTaskEdited),
+          verify: (_) {
+            verify(
+              () => repository.updateRollup(
+                rollupStory.id,
+                estimateRollup: 60,
+                timeSpentRollup: null,
+              ),
+            ).called(1);
+            verify(
+              () => repository.updateRollup(
+                rollupEpic.id,
+                estimateRollup: 60,
+                timeSpentRollup: null,
+              ),
+            ).called(1);
+            // The edited leaf itself has no children, so it never gets a
+            // rollup of its own.
+            verifyNever(
+              () => repository.updateRollup(
+                rollupTask.id,
+                estimateRollup: any(named: 'estimateRollup'),
+                timeSpentRollup: any(named: 'timeSpentRollup'),
+              ),
+            );
+          },
+          expect: () => [TicketDetailLoaded(rollupTaskEdited)],
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          'updateTicket changing an unrelated field (priority only) does '
+          'not trigger a recompute',
+          setUp: () {
+            when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+            when(
+              () => repository.getTicketById(rollupTask.id),
+            ).thenAnswer((_) async => rollupTask);
+          },
+          build: buildCubit,
+          act: (cubit) => cubit.updateTicket(
+            rollupTask.copyWith(priority: TicketPriority.high),
+          ),
+          verify: (_) {
+            verifyNever(() => repository.getAllTickets());
+            verifyNever(
+              () => repository.updateRollup(
+                any(),
+                estimateRollup: any(named: 'estimateRollup'),
+                timeSpentRollup: any(named: 'timeSpentRollup'),
+              ),
+            );
+          },
+          expect: () => [TicketDetailLoaded(rollupTask)],
+        );
+
+        final reparentOldParent = Ticket(
+          id: 'rollup-old-parent',
+          ticketId: 'AIO-210',
+          type: TicketType.story,
+          title: 'Old parent',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+          // Stale — reflects the moved task's contribution, which needs
+          // to be removed now that it's leaving.
+          estimateRollup: 100,
+        );
+        final reparentNewParent = Ticket(
+          id: 'rollup-new-parent',
+          ticketId: 'AIO-211',
+          type: TicketType.story,
+          title: 'New parent',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final reparentSibling = Ticket(
+          id: 'rollup-sibling-task',
+          ticketId: 'AIO-212',
+          type: TicketType.task,
+          title: 'Sibling task',
+          status: TicketStatus.backlog,
+          parentId: reparentOldParent.id,
+          estimate: 55,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final reparentMovedTaskBefore = Ticket(
+          id: 'rollup-moved-task',
+          ticketId: 'AIO-213',
+          type: TicketType.task,
+          title: 'Moved task',
+          status: TicketStatus.backlog,
+          parentId: reparentOldParent.id,
+          estimate: 45,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final reparentMovedTaskAfter = Ticket(
+          id: reparentMovedTaskBefore.id,
+          ticketId: reparentMovedTaskBefore.ticketId,
+          type: reparentMovedTaskBefore.type,
+          title: reparentMovedTaskBefore.title,
+          status: reparentMovedTaskBefore.status,
+          parentId: reparentNewParent.id,
+          estimate: 45,
+          createdAt: reparentMovedTaskBefore.createdAt,
+          updatedAt: reparentMovedTaskBefore.updatedAt,
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          'updateTicketParent recomputes both the old and new parent '
+          'chains in one operation',
+          setUp: () {
+            when(
+              () => repository.getTicketById(reparentNewParent.id),
+            ).thenAnswer((_) async => reparentNewParent);
+            when(
+              () => repository.updateTicketParent(any(), any()),
+            ).thenAnswer((_) async {});
+            when(
+              () => repository.getTicketById(reparentMovedTaskBefore.id),
+            ).thenAnswer((_) async => reparentMovedTaskAfter);
+            when(() => repository.getAllTickets()).thenAnswer(
+              (_) async => [
+                reparentOldParent,
+                reparentNewParent,
+                reparentSibling,
+                reparentMovedTaskAfter,
+              ],
+            );
+          },
+          build: buildCubit,
+          act: (cubit) => cubit.updateTicketParent(
+            reparentMovedTaskBefore,
+            reparentNewParent.id,
+          ),
+          verify: (_) {
+            verify(
+              () => repository.updateRollup(
+                reparentOldParent.id,
+                estimateRollup: 55,
+                timeSpentRollup: null,
+              ),
+            ).called(1);
+            verify(
+              () => repository.updateRollup(
+                reparentNewParent.id,
+                estimateRollup: 45,
+                timeSpentRollup: null,
+              ),
+            ).called(1);
+          },
+          expect: () => [TicketDetailLoaded(reparentMovedTaskAfter)],
+        );
+
+        final trashParent = Ticket(
+          id: 'rollup-trash-parent',
+          ticketId: 'AIO-220',
+          type: TicketType.story,
+          title: 'Trash parent',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+          estimateRollup: 45,
+        );
+        final trashedChild = Ticket(
+          id: 'rollup-trash-child',
+          ticketId: 'AIO-221',
+          type: TicketType.task,
+          title: 'Trashed child',
+          status: TicketStatus.backlog,
+          parentId: trashParent.id,
+          estimate: 45,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          'trashTicket recomputes the former parent, excluding the trashed '
+          'subtree from the new total',
+          setUp: () {
+            when(
+              () => repository.trashTicket(trashedChild.id),
+            ).thenAnswer((_) async {});
+            when(
+              () => repository.getTicketById(trashedChild.id),
+            ).thenAnswer((_) async => trashedChild);
+            // Excludes trashedChild — mirrors getAllTickets()'s real
+            // deleted_at IS NULL filter once the trash write has landed.
+            when(
+              () => repository.getAllTickets(),
+            ).thenAnswer((_) async => [trashParent]);
+          },
+          build: buildCubit,
+          seed: () => TicketDetailLoaded(trashedChild),
+          act: (cubit) => cubit.trashTicket(trashedChild.id),
+          verify: (_) {
+            verify(
+              () => repository.updateRollup(
+                trashParent.id,
+                estimateRollup: null,
+                timeSpentRollup: null,
+              ),
+            ).called(1);
+          },
+          expect: () => [const TicketTrashing(), const TicketTrashed()],
+        );
+
+        final bulkTrashParent = Ticket(
+          id: 'rollup-bulk-trash-parent',
+          ticketId: 'AIO-230',
+          type: TicketType.story,
+          title: 'Bulk trash parent',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+          estimateRollup: 45,
+        );
+        final bulkTrashedChild = Ticket(
+          id: 'rollup-bulk-trash-child',
+          ticketId: 'AIO-231',
+          type: TicketType.task,
+          title: 'Bulk trashed child',
+          status: TicketStatus.backlog,
+          parentId: bulkTrashParent.id,
+          estimate: 45,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          'trashTickets recomputes the (now-former) parent for every '
+          'explicitly-trashed id, in one recompute operation',
+          setUp: () {
+            when(
+              () => repository.trashTickets([bulkTrashedChild.id]),
+            ).thenAnswer((_) async => 1);
+            when(
+              () => repository.getTicketById(bulkTrashedChild.id),
+            ).thenAnswer((_) async => bulkTrashedChild);
+            when(
+              () => repository.getAllTickets(),
+            ).thenAnswer((_) async => [bulkTrashParent]);
+            when(
+              () => repository.searchTickets(
+                query: any(named: 'query'),
+                statuses: any(named: 'statuses'),
+                types: any(named: 'types'),
+                priorities: any(named: 'priorities'),
+                sort: any(named: 'sort'),
+                limit: any(named: 'limit'),
+              ),
+            ).thenAnswer(
+              (_) async => const TicketSearchPage(tickets: [], hasMore: false),
+            );
+          },
+          build: buildCubit,
+          act: (cubit) => cubit.trashTickets([bulkTrashedChild.id]),
+          verify: (_) {
+            verify(
+              () => repository.updateRollup(
+                bulkTrashParent.id,
+                estimateRollup: null,
+                timeSpentRollup: null,
+              ),
+            ).called(1);
+          },
+          expect: () => [
+            const TicketsBatchTrashing(),
+            isA<TicketsBatchTrashed>(),
+          ],
+        );
+
+        final noChangeGrandparent = Ticket(
+          id: 'rollup-nochange-grandparent',
+          ticketId: 'AIO-240',
+          type: TicketType.epic,
+          title: 'No-change grandparent',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+          // Already the value a fresh computeRollups walk will produce —
+          // its own rollup is not actually stale here, even though it's
+          // on [noChangeParent]'s ancestor chain.
+          estimateRollup: 10,
+        );
+        final noChangeParent = Ticket(
+          id: 'rollup-nochange-parent',
+          ticketId: 'AIO-241',
+          type: TicketType.story,
+          title: 'No-change parent',
+          status: TicketStatus.backlog,
+          parentId: noChangeGrandparent.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+          // Stale — really does need updating to 10.
+        );
+        final noChangeEditedChild = Ticket(
+          id: 'rollup-nochange-child',
+          ticketId: 'AIO-242',
+          type: TicketType.task,
+          title: 'Edited child',
+          status: TicketStatus.backlog,
+          parentId: noChangeParent.id,
+          estimate: 10,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          "an ancestor whose computed rollup didn't actually change is not "
+          're-written or re-projected, even though it is on the walked path',
+          setUp: () {
+            when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+            var getTicketByIdCallCount = 0;
+            when(
+              () => repository.getTicketById(noChangeEditedChild.id),
+            ).thenAnswer((_) async {
+              getTicketByIdCallCount++;
+              return getTicketByIdCallCount == 1
+                  ? noChangeEditedChild.copyWith(estimate: () => null)
+                  : noChangeEditedChild;
+            });
+            when(() => repository.getAllTickets()).thenAnswer(
+              (_) async => [
+                noChangeGrandparent,
+                noChangeParent,
+                noChangeEditedChild,
+              ],
+            );
+          },
+          build: buildCubit,
+          act: (cubit) => cubit.updateTicket(noChangeEditedChild),
+          verify: (_) {
+            verify(
+              () => repository.updateRollup(
+                noChangeParent.id,
+                estimateRollup: 10,
+                timeSpentRollup: null,
+              ),
+            ).called(1);
+            verifyNever(
+              () => repository.updateRollup(
+                noChangeGrandparent.id,
+                estimateRollup: any(named: 'estimateRollup'),
+                timeSpentRollup: any(named: 'timeSpentRollup'),
+              ),
+            );
+            final projected = verify(
+              () => gitProjector.projectBatch(
+                captureAny(),
+                rootPath,
+                'rollup updated',
+              ),
+            ).captured;
+            expect(projected, hasLength(1));
+            expect(
+              (projected.first as List<Ticket>).map((t) => t.id),
+              [noChangeParent.id],
+            );
+          },
+          expect: () => [TicketDetailLoaded(noChangeEditedChild)],
+        );
+      },
+    );
+
+    group(
+      'getRollupCounts (estimate-timespent-rollup-for-ticket-hierarchy)',
+      () {
+        test(
+          'returns the correct estimateCount/timeSpentCount for a '
+          'multi-level subtree, performing no repository writes',
+          () async {
+            final grandparent = Ticket(
+              id: 'counts-grandparent',
+              ticketId: 'AIO-250',
+              type: TicketType.epic,
+              title: 'Counts grandparent',
+              status: TicketStatus.backlog,
+              createdAt: DateTime(2026),
+              updatedAt: DateTime(2026),
+            );
+            final parent = Ticket(
+              id: 'counts-parent',
+              ticketId: 'AIO-251',
+              type: TicketType.story,
+              title: 'Counts parent',
+              status: TicketStatus.backlog,
+              parentId: grandparent.id,
+              estimate: 30,
+              createdAt: DateTime(2026),
+              updatedAt: DateTime(2026),
+            );
+            final child1 = Ticket(
+              id: 'counts-child-1',
+              ticketId: 'AIO-252',
+              type: TicketType.task,
+              title: 'Counts child 1',
+              status: TicketStatus.backlog,
+              parentId: parent.id,
+              estimate: 15,
+              timeSpent: 5,
+              createdAt: DateTime(2026),
+              updatedAt: DateTime(2026),
+            );
+            final child2 = Ticket(
+              id: 'counts-child-2',
+              ticketId: 'AIO-253',
+              type: TicketType.task,
+              title: 'Counts child 2',
+              status: TicketStatus.backlog,
+              parentId: parent.id,
+              createdAt: DateTime(2026),
+              updatedAt: DateTime(2026),
+            );
+
+            when(() => repository.getAllTickets()).thenAnswer(
+              (_) async => [grandparent, parent, child1, child2],
+            );
+
+            final counts = await TicketsCubit(
+              repository,
+            ).getRollupCounts(grandparent);
+
+            // grandparent itself contributes nothing; parent (30) and
+            // child1 (15) contribute an estimate; only child1 contributes
+            // a timeSpent.
+            expect(counts.estimateCount, 2);
+            expect(counts.timeSpentCount, 1);
+            verifyNever(
+              () => repository.updateRollup(
+                any(),
+                estimateRollup: any(named: 'estimateRollup'),
+                timeSpentRollup: any(named: 'timeSpentRollup'),
+              ),
+            );
+          },
+        );
+
+        test('returns 0/0 for a childless ticket', () async {
+          when(
+            () => repository.getAllTickets(),
+          ).thenAnswer((_) async => [ticket]);
+
+          final counts = await TicketsCubit(repository).getRollupCounts(ticket);
+
+          expect(counts.estimateCount, 0);
+          expect(counts.timeSpentCount, 0);
+        });
+      },
+    );
   });
 
   group('loadDocumentRelations', () {

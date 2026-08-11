@@ -194,6 +194,24 @@ class DriftTicketRepository implements TicketRepository {
     );
   }
 
+  /// Writes only `estimate_rollup`/`time_spent_rollup` — no `updated_at`
+  /// bump, same rationale as [updateEmbedding]: a recomputed derived
+  /// value is not a user edit.
+  @override
+  Future<void> updateRollup(
+    String id, {
+    required int? estimateRollup,
+    required int? timeSpentRollup,
+  }) {
+    return _db.ticketDao.updateFields(
+      id,
+      TicketsTableCompanion(
+        estimateRollup: Value(estimateRollup),
+        timeSpentRollup: Value(timeSpentRollup),
+      ),
+    );
+  }
+
   /// Requests `[limit] + 1` rows from [TicketDao.searchTickets] to derive
   /// [TicketSearchPage.hasMore] without a separate `COUNT` query: if the
   /// DAO returns more than [limit] rows, another page exists — the extra
@@ -404,6 +422,8 @@ class DriftTicketRepository implements TicketRepository {
       actualBehavior: row.actualBehavior,
       suggestedType: _parseNullableEnum(TicketType.values, row.suggestedType),
       inboxPurpose: _parseNullableEnum(InboxPurpose.values, row.inboxPurpose),
+      estimateRollup: row.estimateRollup,
+      timeSpentRollup: row.timeSpentRollup,
     );
   }
 

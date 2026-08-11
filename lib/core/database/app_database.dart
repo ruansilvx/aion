@@ -13,6 +13,7 @@ import 'package:aion/features/tickets/data/daos/ticket_link_dao.dart';
 import 'package:aion/features/tickets/data/models/ticket_comment_model.dart';
 import 'package:aion/features/tickets/data/models/ticket_link_model.dart';
 import 'package:aion/features/tickets/data/models/ticket_model.dart';
+import 'package:aion/features/tickets/domain/utils/ticket_rollup_calculator.dart';
 
 part 'app_database.g.dart';
 
@@ -83,6 +84,10 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
 /// `TicketsCubit._executionChatOverCap`. Version 8 adds
 /// `TicketsTable.suggestedType`/`inboxPurpose` — see
 /// `aion-arch/changes/new-project-onboarding-inbox/design.md` §1.4.
+/// Version 9 adds `TicketsTable.estimateRollup`/`timeSpentRollup` and
+/// backfills them once for every existing row (see [_backfillRollups]) —
+/// see `aion-arch/changes/estimate-timespent-rollup-for-ticket-hierarchy/design.md`
+/// §1.4.
 @DriftDatabase(
   tables: [
     TicketsTable,
@@ -102,7 +107,7 @@ class AppDatabase extends _$AppDatabase {
     : super(executor ?? _openConnection(project));
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 9;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -146,6 +151,11 @@ class AppDatabase extends _$AppDatabase {
       if (from < 8) {
         await m.addColumn(ticketsTable, ticketsTable.suggestedType);
         await m.addColumn(ticketsTable, ticketsTable.inboxPurpose);
+      }
+      if (from < 9) {
+        await m.addColumn(ticketsTable, ticketsTable.estimateRollup);
+        await m.addColumn(ticketsTable, ticketsTable.timeSpentRollup);
+        await _backfillRollups(m);
       }
     },
   );
@@ -205,5 +215,42 @@ class AppDatabase extends _$AppDatabase {
         VALUES (new.rowid, new.title, new.description);
       END;
     ''');
+  }
+
+  /// One-time backfill of `estimate_rollup`/`time_spent_rollup` for every
+  /// existing row. Runs only on upgrade from a pre-9 schema — a fresh
+  /// [onCreate] install has no pre-existing rows to backfill, so this is
+  /// never called there. Selects every row's `(id, parent_id, estimate,
+  /// time_spent)` filtered to `deleted_at IS NULL` — the same filter
+  /// `TicketRepository.getAllTickets` applies at runtime, so a
+  /// pre-existing trashed subtree can't silently poison an ancestor's
+  /// backfilled total — maps each row to a [RollupNode], calls
+  /// [computeRollups], then writes each non-empty result straight back
+  /// with a raw `UPDATE`. Runs inside the same migration transaction
+  /// Drift already wraps [onUpgrade] in.
+  Future<void> _backfillRollups(Migrator m) async {
+    final rows = await m.database
+        .customSelect(
+          'SELECT * FROM tickets WHERE deleted_at IS NULL',
+          readsFrom: {ticketsTable},
+        )
+        .map((row) => ticketsTable.map(row.data))
+        .get();
+    final nodes = [
+      for (final row in rows)
+        (
+          id: row.id,
+          parentId: row.parentId,
+          estimate: row.estimate,
+          timeSpent: row.timeSpent,
+        ),
+    ];
+    final results = computeRollups(nodes);
+    for (final entry in results.entries) {
+      await m.database.customStatement(
+        'UPDATE tickets SET estimate_rollup = ?, time_spent_rollup = ? WHERE id = ?',
+        [entry.value.estimateRollup, entry.value.timeSpentRollup, entry.key],
+      );
+    }
   }
 }
