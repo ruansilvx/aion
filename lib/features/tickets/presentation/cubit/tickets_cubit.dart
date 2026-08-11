@@ -32,6 +32,7 @@ import 'package:aion/features/tickets/domain/entities/linked_ticket_ref.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_list_filters.dart';
+import 'package:aion/features/tickets/domain/entities/ticket_list_sort.dart';
 import 'package:aion/features/tickets/domain/enums/comment_author_type.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 import 'package:aion/features/tickets/domain/enums/summarization_depth.dart';
@@ -39,11 +40,14 @@ import 'package:aion/features/tickets/domain/enums/ticket_complexity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_severity.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_sort_direction.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_sort_field.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/repositories/comment_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_link_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_list_filter_repository.dart';
+import 'package:aion/features/tickets/domain/repositories/ticket_list_sort_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
 import 'package:aion/features/tickets/domain/utils/ticket_link_direction.dart';
 import 'package:aion/features/tickets/presentation/cubit/chat_cubit.dart';
@@ -51,7 +55,12 @@ import 'package:aion/features/tickets/presentation/cubit/codebase_analysis_statu
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 
 /// Loads, lists, and creates tickets via [TicketRepository]. Root-scoped —
-/// provided once at the app root, not per-screen.
+/// provided once at the app root, not per-screen. Every list-shaped
+/// repository query also resolves and passes a [TicketListSort] (see
+/// [currentSort]/[setSort]/[_lastSort]) — an explicit user choice if one
+/// has been made, otherwise an implicit query-aware default — so the
+/// list, board, and Trash all render in the same order. See
+/// `aion-arch/changes/ticket-sort-control-and-board-as-default-view`.
 class TicketsCubit extends Cubit<TicketsState> {
   /// Creates a [TicketsCubit] backed by [_repository]. [_embeddingProvider],
   /// [_gitProjector], [_projectRootPath], [_providerRegistry], and
@@ -107,14 +116,20 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// re-search still work) and [loadPersistedFilters] a no-op; real usage
   /// (`app_router.dart`) always supplies one. Added for
   /// `aion-arch/changes/multi-select-ticket-list-filters`.
+  /// [_sortRepository] follows the same optional-dependency pattern once
+  /// more — `null` makes [setSort] skip persistence (the in-memory
+  /// override still works) and [loadPersistedSort] a no-op; real usage
+  /// (`app_router.dart`) always supplies one, alongside the existing
+  /// [_filterRepository]/[_projectId]. Added for
+  /// `aion-arch/changes/ticket-sort-control-and-board-as-default-view`.
   // The public param names below (embeddingProvider/gitProjector/
   // projectRootPath/providerRegistry/commentRepository/
   // automationSettingsRepository/modelRoutingRepository/gitClient/
   // gitHubClient/baselineRepository/projectId/baselineVersion/
-  // projectName/filterRepository) intentionally differ from their private
-  // backing fields; a private identifier can't be used as an external
-  // named-parameter label from another library, so `this._foo`
-  // shorthand isn't usable here.
+  // projectName/filterRepository/sortRepository) intentionally differ
+  // from their private backing fields; a private identifier can't be
+  // used as an external named-parameter label from another library, so
+  // `this._foo` shorthand isn't usable here.
   TicketsCubit(
     this._repository, {
     EmbeddingProvider? embeddingProvider,
@@ -133,6 +148,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     String? projectName,
     ExecutionContextCapRepository? executionContextCapRepository,
     TicketListFilterRepository? filterRepository,
+    TicketListSortRepository? sortRepository,
   }) : super(const TicketsInitial()) {
     _embeddingProvider = embeddingProvider;
     _gitProjector = gitProjector;
@@ -150,6 +166,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     _projectName = projectName;
     _executionContextCapRepository = executionContextCapRepository;
     _filterRepository = filterRepository;
+    _sortRepository = sortRepository;
   }
 
   final TicketRepository _repository;
@@ -169,6 +186,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   late final String? _projectName;
   late final ExecutionContextCapRepository? _executionContextCapRepository;
   late final TicketListFilterRepository? _filterRepository;
+  late final TicketListSortRepository? _sortRepository;
   static const _uuid = Uuid();
 
   /// Broadcasts [CodebaseAnalysisStatus] updates as
@@ -249,6 +267,44 @@ class TicketsCubit extends Cubit<TicketsState> {
   Set<TicketStatus> _lastStatuses = const {};
   Set<TicketType> _lastTypes = const {};
   Set<TicketPriority> _lastPriorities = const {};
+
+  /// The user's explicit sort choice for this project, once made — `null`
+  /// means no explicit choice yet, so every search resolves the sort
+  /// implicitly from [_implicitSort] instead. Loaded once via
+  /// [loadPersistedSort], updated by [setSort]. See
+  /// `aion-arch/changes/ticket-sort-control-and-board-as-default-view`.
+  TicketListSort? _explicitSort;
+
+  /// The [TicketListSort] actually used by the most recent [searchTickets]
+  /// call — remembered (like [_lastQuery]/[_lastStatuses]) so
+  /// [loadMoreTickets] and the mutation-refresh methods below reuse the
+  /// same resolved sort rather than each re-deriving it, keeping a page's
+  /// `ORDER BY` stable across a `loadMoreTickets` call.
+  TicketListSort _lastSort = _implicitSort(null);
+
+  /// The currently active sort — what the Sort control should render as
+  /// selected. Resolves the same way [searchTickets] does: [_explicitSort]
+  /// if one exists, otherwise the implicit query-aware default for the
+  /// last-searched query.
+  TicketListSort get currentSort => _explicitSort ?? _implicitSort(_lastQuery);
+
+  /// [TicketSortField.relevance] (only meaningful with a query) while
+  /// [query] is non-empty, otherwise `createdAt` descending — today's
+  /// exact pre-existing default ordering, now expressed as a concrete
+  /// [TicketListSort] value instead of being implicit in the repository.
+  static TicketListSort _implicitSort(String? query) {
+    final hasQuery = query?.trim().isNotEmpty ?? false;
+    return hasQuery
+        ? const TicketListSort(
+            field: TicketSortField.relevance,
+            // Ignored for relevance — see TicketSortField.relevance.
+            direction: TicketSortDirection.descending,
+          )
+        : const TicketListSort(
+            field: TicketSortField.createdAt,
+            direction: TicketSortDirection.descending,
+          );
+  }
 
   /// Bumped on every call that replaces the list wholesale ([searchTickets],
   /// [createTicket], [updateTicketStatus], [trashTicket], [trashTickets]).
@@ -371,6 +427,39 @@ class TicketsCubit extends Cubit<TicketsState> {
     _lastPriorities = filters.priorities;
   }
 
+  /// Sets [sort] as this project's explicit sort override, persists it
+  /// (see [_sortRepository]/[_projectId] — no-ops the persistence half if
+  /// either is `null`, same optional-dependency pattern as
+  /// [_persistFilters]), then re-runs [searchTickets] with the current
+  /// query/filters unchanged so the reordered list reflects immediately.
+  Future<void> setSort(TicketListSort sort) async {
+    _explicitSort = sort;
+    final repo = _sortRepository;
+    final projectId = _projectId;
+    if (repo != null && projectId != null) {
+      await repo.setSort(projectId, sort);
+    }
+    await searchTickets(
+      query: _lastQuery,
+      statuses: _lastStatuses,
+      types: _lastTypes,
+      priorities: _lastPriorities,
+    );
+  }
+
+  /// Reads this project's persisted [TicketListSort] (if any) into
+  /// [_explicitSort], without emitting a state — same
+  /// load-before-first-search precedent as [loadPersistedFilters], called
+  /// alongside it from `TicketsListScreen._initializeAndSearch`. No-ops if
+  /// [_sortRepository] or [_projectId] is `null`, or nothing was
+  /// persisted yet (leaves [_explicitSort] `null`, i.e. implicit default).
+  Future<void> loadPersistedSort() async {
+    final repo = _sortRepository;
+    final projectId = _projectId;
+    if (repo == null || projectId == null) return;
+    _explicitSort = await repo.getSort(projectId);
+  }
+
   /// Pulls the current tickets and [TicketsState]-carried `hasMore` out of
   /// [s], for every state [loadMoreTickets] can sensibly extend. Returns
   /// `null` for [TicketsLoadingMore] (a load-more is already in flight —
@@ -409,7 +498,10 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// the mutation-refresh methods below, and bumps the internal
   /// generation counter so a [loadMoreTickets] call already in flight
   /// from a previous filter state is discarded (not appended onto the
-  /// new list) when it resolves. Emits [TicketsLoading] first only when
+  /// new list) when it resolves. Also resolves [_lastSort] — [_explicitSort]
+  /// if the user has made a choice, otherwise [_implicitSort] applied to
+  /// [query] — and passes it to the repository call, so the effective
+  /// sort always matches [currentSort]. Emits [TicketsLoading] first only when
   /// nothing is on screen yet ([TicketsInitial]/[TicketsError]/
   /// [TicketTrashed]) — once a ticket list is already showing, the
   /// previous list stays visible until the new results arrive, so
@@ -429,6 +521,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     _lastStatuses = statuses;
     _lastTypes = types;
     _lastPriorities = priorities;
+    _lastSort = _explicitSort ?? _implicitSort(query);
 
     final hasVisibleList = switch (state) {
       TicketsLoaded() ||
@@ -449,6 +542,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         statuses: statuses,
         types: types,
         priorities: priorities,
+        sort: _lastSort,
         limit: _pageSize,
       );
       if (generation != _searchGeneration) return;
@@ -467,8 +561,10 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
   }
 
-  /// Fetches the next page for whatever query/filters [searchTickets] was
-  /// last called with, appending to the currently loaded list. No-ops if
+  /// Fetches the next page for whatever query/filters/[_lastSort]
+  /// [searchTickets] was last called with, appending to the currently
+  /// loaded list — reusing [_lastSort] rather than re-resolving it keeps
+  /// a page's `ORDER BY` stable across the scroll. No-ops if
   /// the cubit isn't in a settled list-shaped state with more results
   /// available (covers: nothing loaded yet, a load-more already in
   /// flight, or the last page already reached the end) — this doubles as
@@ -495,6 +591,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         statuses: _lastStatuses,
         types: _lastTypes,
         priorities: _lastPriorities,
+        sort: _lastSort,
         limit: _pageSize,
         offset: currentTickets.length,
       );
@@ -596,6 +693,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         statuses: _lastStatuses,
         types: _lastTypes,
         priorities: _lastPriorities,
+        sort: _lastSort,
         limit: max(_pageSize, currentTickets.length),
       );
       emit(TicketCreated(page.tickets, hasMore: page.hasMore));
@@ -674,6 +772,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         statuses: _lastStatuses,
         types: _lastTypes,
         priorities: _lastPriorities,
+        sort: _lastSort,
         limit: max(_pageSize, currentTickets.length),
       );
       emit(TicketStatusUpdated(page.tickets, hasMore: page.hasMore));
@@ -1478,8 +1577,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     final blocked = <String>{};
     for (final row in rows) {
       final targetIsBlockee =
-          relativeLinkType(row, row.targetTicketId) ==
-          TicketLinkType.blockedBy;
+          relativeLinkType(row, row.targetTicketId) == TicketLinkType.blockedBy;
       final blockeeId = targetIsBlockee
           ? row.targetTicketId
           : row.sourceTicketId;
@@ -3246,6 +3344,7 @@ class TicketsCubit extends Cubit<TicketsState> {
           statuses: _lastStatuses,
           types: _lastTypes,
           priorities: _lastPriorities,
+          sort: _lastSort,
           limit: max(_pageSize, currentTickets.length),
         );
         emit(TicketsLoaded(page.tickets, hasMore: page.hasMore));
@@ -3295,6 +3394,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         statuses: _lastStatuses,
         types: _lastTypes,
         priorities: _lastPriorities,
+        sort: _lastSort,
         limit: max(_pageSize, currentTickets.length),
       );
       emit(
@@ -3382,6 +3482,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         statuses: _lastStatuses,
         types: _lastTypes,
         priorities: _lastPriorities,
+        sort: _lastSort,
         limit: max(_pageSize, currentTickets.length),
       );
       emit(
@@ -3432,6 +3533,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         statuses: _lastStatuses,
         types: _lastTypes,
         priorities: _lastPriorities,
+        sort: _lastSort,
         limit: max(_pageSize, currentTickets.length),
       );
       emit(

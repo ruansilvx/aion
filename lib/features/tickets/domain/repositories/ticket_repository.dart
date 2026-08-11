@@ -3,6 +3,7 @@
 import 'dart:typed_data';
 
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
+import 'package:aion/features/tickets/domain/entities/ticket_list_sort.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_search_page.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
@@ -156,16 +157,27 @@ abstract interface class TicketRepository {
   /// each other, and with [query], as AND. An empty set for a field means
   /// no constraint on that field, not "match nothing" — all three sets
   /// empty and [query] null is equivalent to paginating [getAllTickets].
-  /// [query] full-text-matches against title/description. Ordered by
-  /// relevance when [query] is set, otherwise by creation date descending.
-  /// Excludes trashed tickets, same as [getAllTickets]. Returns at most
-  /// [limit] tickets starting after the first [offset] matches, plus
-  /// whether further matches exist beyond this page.
+  /// [query] full-text-matches against title/description. Excludes
+  /// trashed tickets, same as [getAllTickets]. Returns at most [limit]
+  /// tickets starting after the first [offset] matches, plus whether
+  /// further matches exist beyond this page.
+  ///
+  /// Ordered per `sort.field`/`sort.direction` — [sort] is `required`
+  /// (not defaulted), since the caller (`TicketsCubit`) always has a
+  /// concrete resolved value to pass, leaving no ambiguous "no sort" case
+  /// at this layer to default around. `sort.field ==
+  /// TicketSortField.relevance` orders by BM25 match score and requires
+  /// [query] to be non-empty — passing it with an empty/null [query]
+  /// falls back to `createdAt` descending, since there is no relevance
+  /// score to order by; every other field orders independent of whether
+  /// [query] is set. See
+  /// `aion-arch/changes/ticket-sort-control-and-board-as-default-view`.
   Future<TicketSearchPage> searchTickets({
     String? query,
     Set<TicketStatus> statuses = const {},
     Set<TicketType> types = const {},
     Set<TicketPriority> priorities = const {},
+    required TicketListSort sort,
     required int limit,
     int offset = 0,
   });

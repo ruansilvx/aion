@@ -24,6 +24,10 @@ import 'package:aion/features/projects/projects.dart';
 import 'package:aion/features/providers/domain/enums/model_phase.dart';
 import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
 import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
+import 'package:aion/features/tickets/domain/entities/ticket_list_sort.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_sort_direction.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_sort_field.dart';
+import 'package:aion/features/tickets/domain/repositories/ticket_list_sort_repository.dart';
 import 'package:aion/features/tickets/tickets.dart';
 import 'package:aion/l10n/generated/app_localizations.dart';
 
@@ -57,6 +61,9 @@ class MockBaselineRepository extends Mock implements BaselineRepository {}
 
 class MockTicketListFilterRepository extends Mock
     implements TicketListFilterRepository {}
+
+class MockTicketListSortRepository extends Mock
+    implements TicketListSortRepository {}
 
 /// Stubs [gitClient]/[gitHubClient] for a coding-execution run that
 /// isolates cleanly, pushes, and opens a PR — the happy path most
@@ -528,6 +535,12 @@ void main() {
     registerFallbackValue(TicketStatus.backlog);
     registerFallbackValue(TicketPriority.none);
     registerFallbackValue(const TicketListFilters());
+    registerFallbackValue(
+      const TicketListSort(
+        field: TicketSortField.createdAt,
+        direction: TicketSortDirection.descending,
+      ),
+    );
     registerFallbackValue(Uint8List(0));
     registerFallbackValue(const AgentRequest(prompt: '', model: ''));
     registerFallbackValue(SddStage.exploring);
@@ -557,6 +570,7 @@ void main() {
             statuses: any(named: 'statuses'),
             types: any(named: 'types'),
             priorities: any(named: 'priorities'),
+            sort: any(named: 'sort'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
           ),
@@ -581,6 +595,7 @@ void main() {
             statuses: any(named: 'statuses'),
             types: any(named: 'types'),
             priorities: any(named: 'priorities'),
+            sort: any(named: 'sort'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
           ),
@@ -601,6 +616,7 @@ void main() {
             statuses: any(named: 'statuses'),
             types: any(named: 'types'),
             priorities: any(named: 'priorities'),
+            sort: any(named: 'sort'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
           ),
@@ -629,6 +645,7 @@ void main() {
             statuses: any(named: 'statuses'),
             types: any(named: 'types'),
             priorities: any(named: 'priorities'),
+            sort: any(named: 'sort'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
           ),
@@ -679,6 +696,7 @@ void main() {
             statuses: any(named: 'statuses'),
             types: any(named: 'types'),
             priorities: any(named: 'priorities'),
+            sort: any(named: 'sort'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
           ),
@@ -854,6 +872,7 @@ void main() {
             statuses: any(named: 'statuses'),
             types: any(named: 'types'),
             priorities: any(named: 'priorities'),
+            sort: any(named: 'sort'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
           ),
@@ -886,6 +905,7 @@ void main() {
             statuses: any(named: 'statuses'),
             types: any(named: 'types'),
             priorities: any(named: 'priorities'),
+            sort: any(named: 'sort'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
           ),
@@ -912,320 +932,308 @@ void main() {
       expect: () => [const TicketsBatchTrashing(), isA<TicketsError>()],
     );
 
-    group(
-      'updateStatusForTickets / updatePriorityForTickets '
-      '(bulk-status-and-priority-edit-for-ticket-selection)',
-      () {
-        late MockTicketLinkRepository linkRepository;
-        late MockCommentRepository commentRepository;
-        late MockTicketGitProjector gitProjector;
-        const rootPath = '/root';
+    group('updateStatusForTickets / updatePriorityForTickets '
+        '(bulk-status-and-priority-edit-for-ticket-selection)', () {
+      late MockTicketLinkRepository linkRepository;
+      late MockCommentRepository commentRepository;
+      late MockTicketGitProjector gitProjector;
+      const rootPath = '/root';
 
-        // Rejected by the Blocked-dependency gate (_isTicketBlocked) — has
-        // an unresolved blockedBy link.
-        final bulkBlockedTask = Ticket(
-          id: 'bulk-blocked-1',
-          ticketId: 'AIO-90',
-          type: TicketType.task,
-          title: 'Blocked bulk task',
-          status: TicketStatus.todo,
-          createdAt: DateTime(2026),
-          updatedAt: DateTime(2026),
+      // Rejected by the Blocked-dependency gate (_isTicketBlocked) — has
+      // an unresolved blockedBy link.
+      final bulkBlockedTask = Ticket(
+        id: 'bulk-blocked-1',
+        ticketId: 'AIO-90',
+        type: TicketType.task,
+        title: 'Blocked bulk task',
+        status: TicketStatus.todo,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+      final bulkBlockerTask = Ticket(
+        id: 'bulk-blocker-1',
+        ticketId: 'AIO-91',
+        type: TicketType.task,
+        title: 'Blocker task',
+        status: TicketStatus.todo,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+      // Not blocked, but rejected by the coding-execution gate — reuses
+      // the existing task-to-coding-execution-trigger fixtures (a Task
+      // under a Story whose design review is still PENDING).
+      final bulkCodingGatedTask = taskUnderStory;
+      // Passes both gates — no governing Story, no blockedBy link.
+      final bulkCleanTask = Ticket(
+        id: 'bulk-clean-1',
+        ticketId: 'AIO-92',
+        type: TicketType.task,
+        title: 'Clean bulk task',
+        status: TicketStatus.inProgress,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+
+      setUp(() {
+        linkRepository = MockTicketLinkRepository();
+        commentRepository = MockCommentRepository();
+        gitProjector = MockTicketGitProjector();
+      });
+
+      TicketsCubit buildCubit() => TicketsCubit(
+        repository,
+        linkRepository: linkRepository,
+        commentRepository: commentRepository,
+        gitProjector: gitProjector,
+        projectRootPath: rootPath,
+      );
+
+      void stubEmptySearch() {
+        when(
+          () => repository.searchTickets(
+            query: any(named: 'query'),
+            statuses: any(named: 'statuses'),
+            types: any(named: 'types'),
+            priorities: any(named: 'priorities'),
+            sort: any(named: 'sort'),
+            limit: any(named: 'limit'),
+          ),
+        ).thenAnswer(
+          (_) async => const TicketSearchPage(tickets: [], hasMore: false),
         );
-        final bulkBlockerTask = Ticket(
-          id: 'bulk-blocker-1',
-          ticketId: 'AIO-91',
-          type: TicketType.task,
-          title: 'Blocker task',
-          status: TicketStatus.todo,
-          createdAt: DateTime(2026),
-          updatedAt: DateTime(2026),
+      }
+
+      /// Stubs the three-way mixed selection (blocked / coding-execution
+      /// -gated / clean) so only [bulkCleanTask] is writable.
+      void stubMixedSelection() {
+        when(
+          () => repository.getTicketById(bulkBlockedTask.id),
+        ).thenAnswer((_) async => bulkBlockedTask);
+        when(
+          () => linkRepository.getLinksForTicket(bulkBlockedTask.id),
+        ).thenAnswer(
+          (_) async => [
+            TicketLinkData(
+              id: 'bulk-gate-link-1',
+              sourceTicketId: bulkBlockedTask.id,
+              targetTicketId: bulkBlockerTask.id,
+              linkType: TicketLinkType.blockedBy.name,
+            ),
+          ],
         );
-        // Not blocked, but rejected by the coding-execution gate — reuses
-        // the existing task-to-coding-execution-trigger fixtures (a Task
-        // under a Story whose design review is still PENDING).
-        final bulkCodingGatedTask = taskUnderStory;
-        // Passes both gates — no governing Story, no blockedBy link.
-        final bulkCleanTask = Ticket(
-          id: 'bulk-clean-1',
-          ticketId: 'AIO-92',
-          type: TicketType.task,
-          title: 'Clean bulk task',
-          status: TicketStatus.inProgress,
-          createdAt: DateTime(2026),
-          updatedAt: DateTime(2026),
+        when(
+          () => repository.getTicketById(bulkBlockerTask.id),
+        ).thenAnswer((_) async => bulkBlockerTask);
+
+        when(
+          () => repository.getTicketById(bulkCodingGatedTask.id),
+        ).thenAnswer((_) async => bulkCodingGatedTask);
+        when(
+          () => linkRepository.getLinksForTicket(bulkCodingGatedTask.id),
+        ).thenAnswer((_) async => []);
+        when(
+          () => repository.getTicketById(storyForExecution.id),
+        ).thenAnswer((_) async => storyForExecution);
+        when(
+          () => repository.getTicketsByParent(
+            storyForExecution.id,
+            types: TicketTypeHierarchy.executableTypes,
+          ),
+        ).thenAnswer((_) async => [bulkCodingGatedTask]);
+        when(
+          () => repository.getTicketsByParent(
+            storyForExecution.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [designSyncChatForExecution]);
+        when(
+          () => commentRepository.getCommentsForTicket(
+            designSyncChatForExecution.id,
+          ),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'bulk-comment-1',
+              ticketId: designSyncChatForExecution.id,
+              content: 'Found one issue.\n\nDESIGN GATE: PENDING',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
         );
 
-        setUp(() {
-          linkRepository = MockTicketLinkRepository();
-          commentRepository = MockCommentRepository();
-          gitProjector = MockTicketGitProjector();
-        });
+        when(
+          () => repository.getTicketById(bulkCleanTask.id),
+        ).thenAnswer((_) async => bulkCleanTask);
+        when(
+          () => linkRepository.getLinksForTicket(bulkCleanTask.id),
+        ).thenAnswer((_) async => []);
+        when(
+          () => repository.updateStatusForIds([
+            bulkCleanTask.id,
+          ], TicketStatus.inProgress),
+        ).thenAnswer((_) async {});
+        when(
+          () => gitProjector.project(any(), any(), any()),
+        ).thenAnswer((_) async {});
+        stubEmptySearch();
+      }
 
-        TicketsCubit buildCubit() => TicketsCubit(
-          repository,
-          linkRepository: linkRepository,
-          commentRepository: commentRepository,
-          gitProjector: gitProjector,
-          projectRootPath: rootPath,
-        );
-
-        void stubEmptySearch() {
-          when(
-            () => repository.searchTickets(
-              query: any(named: 'query'),
-              statuses: any(named: 'statuses'),
-              types: any(named: 'types'),
-              priorities: any(named: 'priorities'),
-              limit: any(named: 'limit'),
-            ),
-          ).thenAnswer(
-            (_) async => const TicketSearchPage(tickets: [], hasMore: false),
-          );
-        }
-
-        /// Stubs the three-way mixed selection (blocked / coding-execution
-        /// -gated / clean) so only [bulkCleanTask] is writable.
-        void stubMixedSelection() {
-          when(
-            () => repository.getTicketById(bulkBlockedTask.id),
-          ).thenAnswer((_) async => bulkBlockedTask);
-          when(
-            () => linkRepository.getLinksForTicket(bulkBlockedTask.id),
-          ).thenAnswer(
-            (_) async => [
-              TicketLinkData(
-                id: 'bulk-gate-link-1',
-                sourceTicketId: bulkBlockedTask.id,
-                targetTicketId: bulkBlockerTask.id,
-                linkType: TicketLinkType.blockedBy.name,
-              ),
-            ],
-          );
-          when(
-            () => repository.getTicketById(bulkBlockerTask.id),
-          ).thenAnswer((_) async => bulkBlockerTask);
-
-          when(
-            () => repository.getTicketById(bulkCodingGatedTask.id),
-          ).thenAnswer((_) async => bulkCodingGatedTask);
-          when(
-            () => linkRepository.getLinksForTicket(bulkCodingGatedTask.id),
-          ).thenAnswer((_) async => []);
-          when(
-            () => repository.getTicketById(storyForExecution.id),
-          ).thenAnswer((_) async => storyForExecution);
-          when(
-            () => repository.getTicketsByParent(
-              storyForExecution.id,
-              types: TicketTypeHierarchy.executableTypes,
-            ),
-          ).thenAnswer((_) async => [bulkCodingGatedTask]);
-          when(
-            () => repository.getTicketsByParent(
-              storyForExecution.id,
-              types: const [TicketType.chat],
-            ),
-          ).thenAnswer((_) async => [designSyncChatForExecution]);
-          when(
-            () => commentRepository.getCommentsForTicket(
-              designSyncChatForExecution.id,
-            ),
-          ).thenAnswer(
-            (_) async => [
-              TicketComment(
-                id: 'bulk-comment-1',
-                ticketId: designSyncChatForExecution.id,
-                content: 'Found one issue.\n\nDESIGN GATE: PENDING',
-                authorType: CommentAuthorType.ai,
-                createdAt: DateTime(2026),
-              ),
-            ],
-          );
-
-          when(
-            () => repository.getTicketById(bulkCleanTask.id),
-          ).thenAnswer((_) async => bulkCleanTask);
-          when(
-            () => linkRepository.getLinksForTicket(bulkCleanTask.id),
-          ).thenAnswer((_) async => []);
-          when(
+      blocTest<TicketsCubit, TicketsState>(
+        'target inProgress with a mixed selection emits '
+        '[TicketsBatchStatusUpdating, TicketsBatchStatusUpdated] with the '
+        'correct updated/skipped split, and only the writable id reaches '
+        'updateStatusForIds',
+        setUp: stubMixedSelection,
+        build: buildCubit,
+        act: (cubit) => cubit.updateStatusForTickets([
+          bulkBlockedTask.id,
+          bulkCodingGatedTask.id,
+          bulkCleanTask.id,
+        ], TicketStatus.inProgress),
+        verify: (_) {
+          verify(
             () => repository.updateStatusForIds([
               bulkCleanTask.id,
             ], TicketStatus.inProgress),
+          ).called(1);
+        },
+        expect: () => [
+          const TicketsBatchStatusUpdating(),
+          const TicketsBatchStatusUpdated([], 1, 2, hasMore: false),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'git-projection fires only for the successfully-written ticket, '
+        'never for the blocked or coding-execution-gated ones',
+        setUp: stubMixedSelection,
+        build: buildCubit,
+        act: (cubit) => cubit.updateStatusForTickets([
+          bulkBlockedTask.id,
+          bulkCodingGatedTask.id,
+          bulkCleanTask.id,
+        ], TicketStatus.inProgress),
+        verify: (_) {
+          verify(
+            () =>
+                gitProjector.project(bulkCleanTask, rootPath, 'status-changed'),
+          ).called(1);
+          verifyNever(
+            () => gitProjector.project(bulkBlockedTask, any(), any()),
+          );
+          verifyNever(
+            () => gitProjector.project(bulkCodingGatedTask, any(), any()),
+          );
+        },
+        expect: () => [
+          const TicketsBatchStatusUpdating(),
+          const TicketsBatchStatusUpdated([], 1, 2, hasMore: false),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'a target status other than inProgress skips gating entirely — '
+        'skippedCount is always 0 and no link data is queried',
+        setUp: () {
+          when(() => repository.getTicketById(bulkBlockedTask.id)).thenAnswer(
+            (_) async => bulkBlockedTask.copyWith(status: TicketStatus.done),
+          );
+          when(
+            () => repository.updateStatusForIds([
+              bulkBlockedTask.id,
+            ], TicketStatus.done),
           ).thenAnswer((_) async {});
           when(
             () => gitProjector.project(any(), any(), any()),
           ).thenAnswer((_) async {});
           stubEmptySearch();
-        }
+        },
+        build: buildCubit,
+        act: (cubit) => cubit.updateStatusForTickets([
+          bulkBlockedTask.id,
+        ], TicketStatus.done),
+        verify: (_) {
+          verifyNever(() => linkRepository.getLinksForTicket(any()));
+          verify(
+            () => repository.updateStatusForIds([
+              bulkBlockedTask.id,
+            ], TicketStatus.done),
+          ).called(1);
+        },
+        expect: () => [
+          const TicketsBatchStatusUpdating(),
+          const TicketsBatchStatusUpdated([], 1, 0, hasMore: false),
+        ],
+      );
 
-        blocTest<TicketsCubit, TicketsState>(
-          'target inProgress with a mixed selection emits '
-          '[TicketsBatchStatusUpdating, TicketsBatchStatusUpdated] with the '
-          'correct updated/skipped split, and only the writable id reaches '
-          'updateStatusForIds',
-          setUp: stubMixedSelection,
-          build: buildCubit,
-          act: (cubit) => cubit.updateStatusForTickets([
-            bulkBlockedTask.id,
-            bulkCodingGatedTask.id,
-            bulkCleanTask.id,
-          ], TicketStatus.inProgress),
-          verify: (_) {
-            verify(
-              () => repository.updateStatusForIds([
-                bulkCleanTask.id,
-              ], TicketStatus.inProgress),
-            ).called(1);
-          },
-          expect: () => [
-            const TicketsBatchStatusUpdating(),
-            const TicketsBatchStatusUpdated([], 1, 2, hasMore: false),
-          ],
-        );
+      blocTest<TicketsCubit, TicketsState>(
+        'updateStatusForTickets emits [TicketsBatchStatusUpdating, '
+        'TicketsError] when the repository throws',
+        setUp: () {
+          when(
+            () => repository.updateStatusForIds(any(), any()),
+          ).thenThrow(Exception('boom'));
+        },
+        build: () => TicketsCubit(repository),
+        act: (cubit) =>
+            cubit.updateStatusForTickets([ticket.id], TicketStatus.done),
+        expect: () => [const TicketsBatchStatusUpdating(), isA<TicketsError>()],
+      );
 
-        blocTest<TicketsCubit, TicketsState>(
-          'git-projection fires only for the successfully-written ticket, '
-          'never for the blocked or coding-execution-gated ones',
-          setUp: stubMixedSelection,
-          build: buildCubit,
-          act: (cubit) => cubit.updateStatusForTickets([
-            bulkBlockedTask.id,
-            bulkCodingGatedTask.id,
-            bulkCleanTask.id,
-          ], TicketStatus.inProgress),
-          verify: (_) {
-            verify(
-              () => gitProjector.project(
-                bulkCleanTask,
-                rootPath,
-                'status-changed',
-              ),
-            ).called(1);
-            verifyNever(
-              () => gitProjector.project(bulkBlockedTask, any(), any()),
-            );
-            verifyNever(
-              () => gitProjector.project(bulkCodingGatedTask, any(), any()),
-            );
-          },
-          expect: () => [
-            const TicketsBatchStatusUpdating(),
-            const TicketsBatchStatusUpdated([], 1, 2, hasMore: false),
-          ],
-        );
+      blocTest<TicketsCubit, TicketsState>(
+        'updatePriorityForTickets always writes unconditionally — '
+        'updatedCount equals ids.length and no git projection is '
+        'triggered',
+        setUp: () {
+          when(
+            () => repository.updatePriorityForIds([
+              ticket.id,
+              unrelated.id,
+            ], TicketPriority.critical),
+          ).thenAnswer((_) async {});
+          when(
+            () => gitProjector.project(any(), any(), any()),
+          ).thenAnswer((_) async {});
+          stubEmptySearch();
+        },
+        build: buildCubit,
+        act: (cubit) => cubit.updatePriorityForTickets([
+          ticket.id,
+          unrelated.id,
+        ], TicketPriority.critical),
+        verify: (_) {
+          verify(
+            () => repository.updatePriorityForIds([
+              ticket.id,
+              unrelated.id,
+            ], TicketPriority.critical),
+          ).called(1);
+          verifyNever(() => gitProjector.project(any(), any(), any()));
+        },
+        expect: () => [
+          const TicketsBatchPriorityUpdating(),
+          const TicketsBatchPriorityUpdated([], 2, hasMore: false),
+        ],
+      );
 
-        blocTest<TicketsCubit, TicketsState>(
-          'a target status other than inProgress skips gating entirely — '
-          'skippedCount is always 0 and no link data is queried',
-          setUp: () {
-            when(
-              () => repository.getTicketById(bulkBlockedTask.id),
-            ).thenAnswer(
-              (_) async => bulkBlockedTask.copyWith(status: TicketStatus.done),
-            );
-            when(
-              () => repository.updateStatusForIds([
-                bulkBlockedTask.id,
-              ], TicketStatus.done),
-            ).thenAnswer((_) async {});
-            when(
-              () => gitProjector.project(any(), any(), any()),
-            ).thenAnswer((_) async {});
-            stubEmptySearch();
-          },
-          build: buildCubit,
-          act: (cubit) => cubit.updateStatusForTickets([
-            bulkBlockedTask.id,
-          ], TicketStatus.done),
-          verify: (_) {
-            verifyNever(() => linkRepository.getLinksForTicket(any()));
-            verify(
-              () => repository.updateStatusForIds([
-                bulkBlockedTask.id,
-              ], TicketStatus.done),
-            ).called(1);
-          },
-          expect: () => [
-            const TicketsBatchStatusUpdating(),
-            const TicketsBatchStatusUpdated([], 1, 0, hasMore: false),
-          ],
-        );
-
-        blocTest<TicketsCubit, TicketsState>(
-          'updateStatusForTickets emits [TicketsBatchStatusUpdating, '
-          'TicketsError] when the repository throws',
-          setUp: () {
-            when(
-              () => repository.updateStatusForIds(any(), any()),
-            ).thenThrow(Exception('boom'));
-          },
-          build: () => TicketsCubit(repository),
-          act: (cubit) => cubit.updateStatusForTickets([
-            ticket.id,
-          ], TicketStatus.done),
-          expect: () => [
-            const TicketsBatchStatusUpdating(),
-            isA<TicketsError>(),
-          ],
-        );
-
-        blocTest<TicketsCubit, TicketsState>(
-          'updatePriorityForTickets always writes unconditionally — '
-          'updatedCount equals ids.length and no git projection is '
-          'triggered',
-          setUp: () {
-            when(
-              () => repository.updatePriorityForIds([
-                ticket.id,
-                unrelated.id,
-              ], TicketPriority.critical),
-            ).thenAnswer((_) async {});
-            when(
-              () => gitProjector.project(any(), any(), any()),
-            ).thenAnswer((_) async {});
-            stubEmptySearch();
-          },
-          build: buildCubit,
-          act: (cubit) => cubit.updatePriorityForTickets([
-            ticket.id,
-            unrelated.id,
-          ], TicketPriority.critical),
-          verify: (_) {
-            verify(
-              () => repository.updatePriorityForIds([
-                ticket.id,
-                unrelated.id,
-              ], TicketPriority.critical),
-            ).called(1);
-            verifyNever(() => gitProjector.project(any(), any(), any()));
-          },
-          expect: () => [
-            const TicketsBatchPriorityUpdating(),
-            const TicketsBatchPriorityUpdated([], 2, hasMore: false),
-          ],
-        );
-
-        blocTest<TicketsCubit, TicketsState>(
-          'updatePriorityForTickets emits [TicketsBatchPriorityUpdating, '
-          'TicketsError] when the repository throws',
-          setUp: () {
-            when(
-              () => repository.updatePriorityForIds(any(), any()),
-            ).thenThrow(Exception('boom'));
-          },
-          build: () => TicketsCubit(repository),
-          act: (cubit) => cubit.updatePriorityForTickets([
-            ticket.id,
-          ], TicketPriority.low),
-          expect: () => [
-            const TicketsBatchPriorityUpdating(),
-            isA<TicketsError>(),
-          ],
-        );
-      },
-    );
+      blocTest<TicketsCubit, TicketsState>(
+        'updatePriorityForTickets emits [TicketsBatchPriorityUpdating, '
+        'TicketsError] when the repository throws',
+        setUp: () {
+          when(
+            () => repository.updatePriorityForIds(any(), any()),
+          ).thenThrow(Exception('boom'));
+        },
+        build: () => TicketsCubit(repository),
+        act: (cubit) =>
+            cubit.updatePriorityForTickets([ticket.id], TicketPriority.low),
+        expect: () => [
+          const TicketsBatchPriorityUpdating(),
+          isA<TicketsError>(),
+        ],
+      );
+    });
 
     group('loadMoreTickets', () {
       blocTest<TicketsCubit, TicketsState>(
@@ -1237,6 +1245,7 @@ void main() {
               statuses: any(named: 'statuses'),
               types: any(named: 'types'),
               priorities: any(named: 'priorities'),
+              sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
             ),
@@ -1254,6 +1263,10 @@ void main() {
               statuses: const {},
               types: const {},
               priorities: const {},
+              sort: const TicketListSort(
+                field: TicketSortField.createdAt,
+                direction: TicketSortDirection.descending,
+              ),
               limit: 50,
               offset: 1,
             ),
@@ -1277,6 +1290,7 @@ void main() {
               statuses: any(named: 'statuses'),
               types: any(named: 'types'),
               priorities: any(named: 'priorities'),
+              sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
             ),
@@ -1297,6 +1311,7 @@ void main() {
               statuses: any(named: 'statuses'),
               types: any(named: 'types'),
               priorities: any(named: 'priorities'),
+              sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
             ),
@@ -1315,6 +1330,7 @@ void main() {
               statuses: any(named: 'statuses'),
               types: any(named: 'types'),
               priorities: any(named: 'priorities'),
+              sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
             ),
@@ -1339,6 +1355,7 @@ void main() {
               statuses: any(named: 'statuses'),
               types: any(named: 'types'),
               priorities: any(named: 'priorities'),
+              sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
             ),
@@ -1357,6 +1374,7 @@ void main() {
               statuses: any(named: 'statuses'),
               types: any(named: 'types'),
               priorities: any(named: 'priorities'),
+              sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
             ),
@@ -1371,6 +1389,7 @@ void main() {
               statuses: any(named: 'statuses'),
               types: any(named: 'types'),
               priorities: any(named: 'priorities'),
+              sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
             ),
@@ -1392,207 +1411,591 @@ void main() {
       );
     });
 
-    group(
-      'toggleStatusFilter/toggleTypeFilter/togglePriorityFilter/'
-      'loadPersistedFilters',
-      () {
-        late MockTicketListFilterRepository filterRepository;
+    group('toggleStatusFilter/toggleTypeFilter/togglePriorityFilter/'
+        'loadPersistedFilters', () {
+      late MockTicketListFilterRepository filterRepository;
 
-        setUp(() {
-          filterRepository = MockTicketListFilterRepository();
-        });
+      setUp(() {
+        filterRepository = MockTicketListFilterRepository();
+      });
 
-        void stubEmptySearch() {
+      void stubEmptySearch() {
+        when(
+          () => repository.searchTickets(
+            query: any(named: 'query'),
+            statuses: any(named: 'statuses'),
+            types: any(named: 'types'),
+            priorities: any(named: 'priorities'),
+            sort: any(named: 'sort'),
+            limit: any(named: 'limit'),
+          ),
+        ).thenAnswer(
+          (_) async => const TicketSearchPage(tickets: [], hasMore: false),
+        );
+      }
+
+      test('toggleStatusFilter adds the value when absent, removes it when '
+          'present', () async {
+        stubEmptySearch();
+        final cubit = TicketsCubit(repository);
+
+        await cubit.toggleStatusFilter(TicketStatus.todo);
+        expect(cubit.selectedStatuses, {TicketStatus.todo});
+
+        await cubit.toggleStatusFilter(TicketStatus.todo);
+        expect(cubit.selectedStatuses, isEmpty);
+      });
+
+      test('toggleTypeFilter adds the value when absent, removes it when '
+          'present', () async {
+        stubEmptySearch();
+        final cubit = TicketsCubit(repository);
+
+        await cubit.toggleTypeFilter(TicketType.bug);
+        expect(cubit.selectedTypes, {TicketType.bug});
+
+        await cubit.toggleTypeFilter(TicketType.bug);
+        expect(cubit.selectedTypes, isEmpty);
+      });
+
+      test('togglePriorityFilter adds the value when absent, removes it '
+          'when present', () async {
+        stubEmptySearch();
+        final cubit = TicketsCubit(repository);
+
+        await cubit.togglePriorityFilter(TicketPriority.high);
+        expect(cubit.selectedPriorities, {TicketPriority.high});
+
+        await cubit.togglePriorityFilter(TicketPriority.high);
+        expect(cubit.selectedPriorities, isEmpty);
+      });
+
+      test('a toggle re-runs searchTickets with the updated set and the '
+          'other two dimensions unchanged', () async {
+        stubEmptySearch();
+        final cubit = TicketsCubit(repository);
+        await cubit.toggleTypeFilter(TicketType.bug);
+
+        await cubit.toggleStatusFilter(TicketStatus.todo);
+
+        verify(
+          () => repository.searchTickets(
+            query: any(named: 'query'),
+            statuses: {TicketStatus.todo},
+            types: {TicketType.bug},
+            priorities: const {},
+            sort: const TicketListSort(
+              field: TicketSortField.createdAt,
+              direction: TicketSortDirection.descending,
+            ),
+            limit: any(named: 'limit'),
+          ),
+        ).called(1);
+      });
+
+      test('a toggle persists the updated selection when filterRepository '
+          'and projectId are both supplied', () async {
+        stubEmptySearch();
+        when(
+          () => filterRepository.setFilters(any(), any()),
+        ).thenAnswer((_) async {});
+        final cubit = TicketsCubit(
+          repository,
+          filterRepository: filterRepository,
+          projectId: 'proj-1',
+        );
+
+        await cubit.toggleStatusFilter(TicketStatus.todo);
+
+        verify(
+          () => filterRepository.setFilters(
+            'proj-1',
+            const TicketListFilters(statuses: {TicketStatus.todo}),
+          ),
+        ).called(1);
+      });
+
+      test('a toggle does not persist when filterRepository is null', () async {
+        stubEmptySearch();
+        final cubit = TicketsCubit(repository, projectId: 'proj-1');
+
+        // No filterRepository supplied — nothing to verify a call
+        // against; this only needs to complete without throwing.
+        await cubit.toggleStatusFilter(TicketStatus.todo);
+
+        expect(cubit.selectedStatuses, {TicketStatus.todo});
+      });
+
+      test('a toggle does not persist when projectId is null', () async {
+        stubEmptySearch();
+        final cubit = TicketsCubit(
+          repository,
+          filterRepository: filterRepository,
+        );
+
+        await cubit.toggleStatusFilter(TicketStatus.todo);
+
+        verifyNever(() => filterRepository.setFilters(any(), any()));
+      });
+
+      test('loadPersistedFilters populates the remembered-filter fields '
+          'from the repository without emitting a state', () async {
+        when(() => filterRepository.getFilters('proj-1')).thenAnswer(
+          (_) async => const TicketListFilters(
+            statuses: {TicketStatus.todo},
+            types: {TicketType.bug},
+            priorities: {TicketPriority.high},
+          ),
+        );
+        final cubit = TicketsCubit(
+          repository,
+          filterRepository: filterRepository,
+          projectId: 'proj-1',
+        );
+        final states = <TicketsState>[];
+        final subscription = cubit.stream.listen(states.add);
+
+        await cubit.loadPersistedFilters();
+
+        expect(cubit.selectedStatuses, {TicketStatus.todo});
+        expect(cubit.selectedTypes, {TicketType.bug});
+        expect(cubit.selectedPriorities, {TicketPriority.high});
+        expect(states, isEmpty);
+        await subscription.cancel();
+      });
+
+      test(
+        'loadPersistedFilters no-ops when filterRepository is null',
+        () async {
+          final cubit = TicketsCubit(repository, projectId: 'proj-1');
+
+          await cubit.loadPersistedFilters();
+
+          expect(cubit.selectedStatuses, isEmpty);
+        },
+      );
+
+      test('loadPersistedFilters no-ops when projectId is null', () async {
+        final cubit = TicketsCubit(
+          repository,
+          filterRepository: filterRepository,
+        );
+
+        await cubit.loadPersistedFilters();
+
+        verifyNever(() => filterRepository.getFilters(any()));
+        expect(cubit.selectedStatuses, isEmpty);
+      });
+    });
+
+    group('setSort/loadPersistedSort/sort resolution '
+        '(ticket-sort-control-and-board-as-default-view)', () {
+      late MockTicketListSortRepository sortRepository;
+
+      const createdAtDesc = TicketListSort(
+        field: TicketSortField.createdAt,
+        direction: TicketSortDirection.descending,
+      );
+      const relevanceDesc = TicketListSort(
+        field: TicketSortField.relevance,
+        direction: TicketSortDirection.descending,
+      );
+      const priorityAsc = TicketListSort(
+        field: TicketSortField.priority,
+        direction: TicketSortDirection.ascending,
+      );
+
+      setUp(() {
+        sortRepository = MockTicketListSortRepository();
+      });
+
+      void stubEmptySearch({bool hasMore = false}) {
+        when(
+          () => repository.searchTickets(
+            query: any(named: 'query'),
+            statuses: any(named: 'statuses'),
+            types: any(named: 'types'),
+            priorities: any(named: 'priorities'),
+            sort: any(named: 'sort'),
+            limit: any(named: 'limit'),
+            offset: any(named: 'offset'),
+          ),
+        ).thenAnswer(
+          (_) async => TicketSearchPage(tickets: const [], hasMore: hasMore),
+        );
+      }
+
+      test('searchTickets with no query passes the implicit createdAt '
+          'descending sort', () async {
+        stubEmptySearch();
+        final cubit = TicketsCubit(repository);
+
+        await cubit.searchTickets();
+
+        verify(
+          () => repository.searchTickets(
+            query: any(named: 'query'),
+            statuses: any(named: 'statuses'),
+            types: any(named: 'types'),
+            priorities: any(named: 'priorities'),
+            sort: createdAtDesc,
+            limit: any(named: 'limit'),
+            offset: any(named: 'offset'),
+          ),
+        ).called(1);
+        expect(cubit.currentSort, createdAtDesc);
+      });
+
+      test('searchTickets with a non-empty query passes the implicit '
+          'relevance sort', () async {
+        stubEmptySearch();
+        final cubit = TicketsCubit(repository);
+
+        await cubit.searchTickets(query: 'bug');
+
+        verify(
+          () => repository.searchTickets(
+            query: any(named: 'query'),
+            statuses: any(named: 'statuses'),
+            types: any(named: 'types'),
+            priorities: any(named: 'priorities'),
+            sort: relevanceDesc,
+            limit: any(named: 'limit'),
+            offset: any(named: 'offset'),
+          ),
+        ).called(1);
+        expect(cubit.currentSort, relevanceDesc);
+      });
+
+      test('setSort persists via sortRepository when projectId is supplied, '
+          'and re-searches with the new sort', () async {
+        stubEmptySearch();
+        when(
+          () => sortRepository.setSort(any(), any()),
+        ).thenAnswer((_) async {});
+        final cubit = TicketsCubit(
+          repository,
+          sortRepository: sortRepository,
+          projectId: 'proj-1',
+        );
+
+        await cubit.setSort(priorityAsc);
+
+        verify(() => sortRepository.setSort('proj-1', priorityAsc)).called(1);
+        expect(cubit.currentSort, priorityAsc);
+        verify(
+          () => repository.searchTickets(
+            query: any(named: 'query'),
+            statuses: any(named: 'statuses'),
+            types: any(named: 'types'),
+            priorities: any(named: 'priorities'),
+            sort: priorityAsc,
+            limit: any(named: 'limit'),
+            offset: any(named: 'offset'),
+          ),
+        ).called(1);
+      });
+
+      test('setSort does not persist when sortRepository is null', () async {
+        stubEmptySearch();
+        final cubit = TicketsCubit(repository, projectId: 'proj-1');
+
+        await cubit.setSort(priorityAsc);
+
+        expect(cubit.currentSort, priorityAsc);
+      });
+
+      test('setSort does not persist when projectId is null', () async {
+        stubEmptySearch();
+        final cubit = TicketsCubit(repository, sortRepository: sortRepository);
+
+        await cubit.setSort(priorityAsc);
+
+        verifyNever(() => sortRepository.setSort(any(), any()));
+        expect(cubit.currentSort, priorityAsc);
+      });
+
+      test(
+        'an explicit sort stays sticky even after the query is cleared',
+        () async {
+          stubEmptySearch();
+          final cubit = TicketsCubit(repository);
+          await cubit.setSort(priorityAsc);
+
+          await cubit.searchTickets(query: 'anything');
+          await cubit.searchTickets(query: '');
+
+          expect(cubit.currentSort, priorityAsc);
+        },
+      );
+
+      test('loadPersistedSort populates currentSort from a fake repository '
+          'without emitting a state', () async {
+        when(
+          () => sortRepository.getSort('proj-1'),
+        ).thenAnswer((_) async => priorityAsc);
+        final cubit = TicketsCubit(
+          repository,
+          sortRepository: sortRepository,
+          projectId: 'proj-1',
+        );
+        final states = <TicketsState>[];
+        final subscription = cubit.stream.listen(states.add);
+
+        await cubit.loadPersistedSort();
+
+        expect(cubit.currentSort, priorityAsc);
+        expect(states, isEmpty);
+        await subscription.cancel();
+      });
+
+      test('loadPersistedSort no-ops when sortRepository is null', () async {
+        final cubit = TicketsCubit(repository, projectId: 'proj-1');
+
+        await cubit.loadPersistedSort();
+
+        expect(cubit.currentSort, createdAtDesc);
+      });
+
+      test('loadPersistedSort no-ops when projectId is null', () async {
+        final cubit = TicketsCubit(repository, sortRepository: sortRepository);
+
+        await cubit.loadPersistedSort();
+
+        verifyNever(() => sortRepository.getSort(any()));
+        expect(cubit.currentSort, createdAtDesc);
+      });
+
+      test('loadMoreTickets reuses the last resolved sort', () async {
+        stubEmptySearch(hasMore: true);
+        final cubit = TicketsCubit(repository);
+        await cubit.setSort(priorityAsc);
+        await cubit.searchTickets();
+
+        await cubit.loadMoreTickets();
+
+        // setSort's own re-search, the explicit searchTickets() call,
+        // and loadMoreTickets' reuse of _lastSort all resolved
+        // sort: priorityAsc — 3 calls total.
+        verify(
+          () => repository.searchTickets(
+            query: any(named: 'query'),
+            statuses: any(named: 'statuses'),
+            types: any(named: 'types'),
+            priorities: any(named: 'priorities'),
+            sort: priorityAsc,
+            limit: any(named: 'limit'),
+            offset: any(named: 'offset'),
+          ),
+        ).called(3);
+      });
+
+      test(
+        'createTicket refresh search passes the current resolved sort',
+        () async {
+          stubEmptySearch();
+          when(() => repository.createTicket(any())).thenAnswer((_) async {});
           when(
+            () => repository.getTicketById(any()),
+          ).thenAnswer((_) async => ticket);
+          final cubit = TicketsCubit(repository);
+          await cubit.setSort(priorityAsc);
+          clearInteractions(repository);
+          stubEmptySearch();
+          when(() => repository.createTicket(any())).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(any()),
+          ).thenAnswer((_) async => ticket);
+
+          await cubit.createTicket(type: TicketType.task, title: 'New');
+
+          verify(
             () => repository.searchTickets(
               query: any(named: 'query'),
               statuses: any(named: 'statuses'),
               types: any(named: 'types'),
               priorities: any(named: 'priorities'),
+              sort: priorityAsc,
               limit: any(named: 'limit'),
+              offset: any(named: 'offset'),
             ),
-          ).thenAnswer(
-            (_) async => const TicketSearchPage(tickets: [], hasMore: false),
-          );
-        }
+          ).called(1);
+        },
+      );
 
-        test(
-          'toggleStatusFilter adds the value when absent, removes it when '
-          'present',
-          () async {
-            stubEmptySearch();
-            final cubit = TicketsCubit(repository);
+      test('updateTicketStatus refresh search passes the current resolved '
+          'sort', () async {
+        stubEmptySearch();
+        when(
+          () => repository.updateTicketStatus(any(), any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => ticket);
+        final cubit = TicketsCubit(repository);
+        await cubit.setSort(priorityAsc);
+        clearInteractions(repository);
+        stubEmptySearch();
+        when(
+          () => repository.updateTicketStatus(any(), any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => ticket);
 
-            await cubit.toggleStatusFilter(TicketStatus.todo);
-            expect(cubit.selectedStatuses, {TicketStatus.todo});
+        await cubit.updateTicketStatus(ticket.id, TicketStatus.done);
 
-            await cubit.toggleStatusFilter(TicketStatus.todo);
-            expect(cubit.selectedStatuses, isEmpty);
-          },
-        );
+        verify(
+          () => repository.searchTickets(
+            query: any(named: 'query'),
+            statuses: any(named: 'statuses'),
+            types: any(named: 'types'),
+            priorities: any(named: 'priorities'),
+            sort: priorityAsc,
+            limit: any(named: 'limit'),
+            offset: any(named: 'offset'),
+          ),
+        ).called(1);
+      });
 
-        test(
-          'toggleTypeFilter adds the value when absent, removes it when '
-          'present',
-          () async {
-            stubEmptySearch();
-            final cubit = TicketsCubit(repository);
+      test(
+        'trashTicket refresh search passes the current resolved sort',
+        () async {
+          stubEmptySearch();
+          when(
+            () => repository.trashTicket(ticket.id),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(any()),
+          ).thenAnswer((_) async => ticket);
+          final cubit = TicketsCubit(repository);
+          await cubit.setSort(priorityAsc);
+          clearInteractions(repository);
+          stubEmptySearch();
+          when(
+            () => repository.trashTicket(ticket.id),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(any()),
+          ).thenAnswer((_) async => ticket);
 
-            await cubit.toggleTypeFilter(TicketType.bug);
-            expect(cubit.selectedTypes, {TicketType.bug});
+          await cubit.trashTicket(ticket.id);
 
-            await cubit.toggleTypeFilter(TicketType.bug);
-            expect(cubit.selectedTypes, isEmpty);
-          },
-        );
+          verify(
+            () => repository.searchTickets(
+              query: any(named: 'query'),
+              statuses: any(named: 'statuses'),
+              types: any(named: 'types'),
+              priorities: any(named: 'priorities'),
+              sort: priorityAsc,
+              limit: any(named: 'limit'),
+              offset: any(named: 'offset'),
+            ),
+          ).called(1);
+        },
+      );
 
-        test(
-          'togglePriorityFilter adds the value when absent, removes it '
-          'when present',
-          () async {
-            stubEmptySearch();
-            final cubit = TicketsCubit(repository);
+      test(
+        'trashTickets refresh search passes the current resolved sort',
+        () async {
+          stubEmptySearch();
+          when(
+            () => repository.trashTickets([ticket.id]),
+          ).thenAnswer((_) async => 1);
+          when(
+            () => repository.getTicketById(any()),
+          ).thenAnswer((_) async => ticket);
+          final cubit = TicketsCubit(repository);
+          await cubit.setSort(priorityAsc);
+          clearInteractions(repository);
+          stubEmptySearch();
+          when(
+            () => repository.trashTickets([ticket.id]),
+          ).thenAnswer((_) async => 1);
+          when(
+            () => repository.getTicketById(any()),
+          ).thenAnswer((_) async => ticket);
 
-            await cubit.togglePriorityFilter(TicketPriority.high);
-            expect(cubit.selectedPriorities, {TicketPriority.high});
+          await cubit.trashTickets([ticket.id]);
 
-            await cubit.togglePriorityFilter(TicketPriority.high);
-            expect(cubit.selectedPriorities, isEmpty);
-          },
-        );
+          verify(
+            () => repository.searchTickets(
+              query: any(named: 'query'),
+              statuses: any(named: 'statuses'),
+              types: any(named: 'types'),
+              priorities: any(named: 'priorities'),
+              sort: priorityAsc,
+              limit: any(named: 'limit'),
+              offset: any(named: 'offset'),
+            ),
+          ).called(1);
+        },
+      );
 
-        test(
-          'a toggle re-runs searchTickets with the updated set and the '
-          'other two dimensions unchanged',
-          () async {
-            stubEmptySearch();
-            final cubit = TicketsCubit(repository);
-            await cubit.toggleTypeFilter(TicketType.bug);
+      test('updateStatusForTickets refresh search passes the current '
+          'resolved sort', () async {
+        stubEmptySearch();
+        when(
+          () => repository.updateStatusForIds(any(), any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => ticket);
+        final cubit = TicketsCubit(repository);
+        await cubit.setSort(priorityAsc);
+        clearInteractions(repository);
+        stubEmptySearch();
+        when(
+          () => repository.updateStatusForIds(any(), any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => ticket);
 
-            await cubit.toggleStatusFilter(TicketStatus.todo);
+        await cubit.updateStatusForTickets([ticket.id], TicketStatus.done);
 
-            verify(
-              () => repository.searchTickets(
-                query: any(named: 'query'),
-                statuses: {TicketStatus.todo},
-                types: {TicketType.bug},
-                priorities: const {},
-                limit: any(named: 'limit'),
-              ),
-            ).called(1);
-          },
-        );
+        verify(
+          () => repository.searchTickets(
+            query: any(named: 'query'),
+            statuses: any(named: 'statuses'),
+            types: any(named: 'types'),
+            priorities: any(named: 'priorities'),
+            sort: priorityAsc,
+            limit: any(named: 'limit'),
+            offset: any(named: 'offset'),
+          ),
+        ).called(1);
+      });
 
-        test(
-          'a toggle persists the updated selection when filterRepository '
-          'and projectId are both supplied',
-          () async {
-            stubEmptySearch();
-            when(
-              () => filterRepository.setFilters(any(), any()),
-            ).thenAnswer((_) async {});
-            final cubit = TicketsCubit(
-              repository,
-              filterRepository: filterRepository,
-              projectId: 'proj-1',
-            );
+      test('updatePriorityForTickets refresh search passes the current '
+          'resolved sort', () async {
+        stubEmptySearch();
+        when(
+          () => repository.updatePriorityForIds(any(), any()),
+        ).thenAnswer((_) async {});
+        final cubit = TicketsCubit(repository);
+        await cubit.setSort(priorityAsc);
+        clearInteractions(repository);
+        stubEmptySearch();
+        when(
+          () => repository.updatePriorityForIds(any(), any()),
+        ).thenAnswer((_) async {});
 
-            await cubit.toggleStatusFilter(TicketStatus.todo);
+        await cubit.updatePriorityForTickets([ticket.id], TicketPriority.high);
 
-            verify(
-              () => filterRepository.setFilters(
-                'proj-1',
-                const TicketListFilters(statuses: {TicketStatus.todo}),
-              ),
-            ).called(1);
-          },
-        );
-
-        test(
-          'a toggle does not persist when filterRepository is null',
-          () async {
-            stubEmptySearch();
-            final cubit = TicketsCubit(repository, projectId: 'proj-1');
-
-            // No filterRepository supplied — nothing to verify a call
-            // against; this only needs to complete without throwing.
-            await cubit.toggleStatusFilter(TicketStatus.todo);
-
-            expect(cubit.selectedStatuses, {TicketStatus.todo});
-          },
-        );
-
-        test(
-          'a toggle does not persist when projectId is null',
-          () async {
-            stubEmptySearch();
-            final cubit = TicketsCubit(
-              repository,
-              filterRepository: filterRepository,
-            );
-
-            await cubit.toggleStatusFilter(TicketStatus.todo);
-
-            verifyNever(() => filterRepository.setFilters(any(), any()));
-          },
-        );
-
-        test(
-          'loadPersistedFilters populates the remembered-filter fields '
-          'from the repository without emitting a state',
-          () async {
-            when(() => filterRepository.getFilters('proj-1')).thenAnswer(
-              (_) async => const TicketListFilters(
-                statuses: {TicketStatus.todo},
-                types: {TicketType.bug},
-                priorities: {TicketPriority.high},
-              ),
-            );
-            final cubit = TicketsCubit(
-              repository,
-              filterRepository: filterRepository,
-              projectId: 'proj-1',
-            );
-            final states = <TicketsState>[];
-            final subscription = cubit.stream.listen(states.add);
-
-            await cubit.loadPersistedFilters();
-
-            expect(cubit.selectedStatuses, {TicketStatus.todo});
-            expect(cubit.selectedTypes, {TicketType.bug});
-            expect(cubit.selectedPriorities, {TicketPriority.high});
-            expect(states, isEmpty);
-            await subscription.cancel();
-          },
-        );
-
-        test(
-          'loadPersistedFilters no-ops when filterRepository is null',
-          () async {
-            final cubit = TicketsCubit(repository, projectId: 'proj-1');
-
-            await cubit.loadPersistedFilters();
-
-            expect(cubit.selectedStatuses, isEmpty);
-          },
-        );
-
-        test(
-          'loadPersistedFilters no-ops when projectId is null',
-          () async {
-            final cubit = TicketsCubit(
-              repository,
-              filterRepository: filterRepository,
-            );
-
-            await cubit.loadPersistedFilters();
-
-            verifyNever(() => filterRepository.getFilters(any()));
-            expect(cubit.selectedStatuses, isEmpty);
-          },
-        );
-      },
-    );
+        verify(
+          () => repository.searchTickets(
+            query: any(named: 'query'),
+            statuses: any(named: 'statuses'),
+            types: any(named: 'types'),
+            priorities: any(named: 'priorities'),
+            sort: priorityAsc,
+            limit: any(named: 'limit'),
+            offset: any(named: 'offset'),
+          ),
+        ).called(1);
+      });
+    });
 
     group('getValidParentCandidates', () {
       test('excludes self and the full multi-level descendant chain', () async {
@@ -1786,7 +2189,9 @@ void main() {
         },
         expect: () => [
           const TicketsError('', reason: TicketsErrorReason.invalidParent),
-          TicketDetailLoaded(chatTicket.copyWith(inboxPurpose: () => InboxPurpose.qa)),
+          TicketDetailLoaded(
+            chatTicket.copyWith(inboxPurpose: () => InboxPurpose.qa),
+          ),
         ],
       );
 
@@ -1973,6 +2378,7 @@ void main() {
               statuses: any(named: 'statuses'),
               types: any(named: 'types'),
               priorities: any(named: 'priorities'),
+              sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
             ),
@@ -2028,6 +2434,7 @@ void main() {
               statuses: any(named: 'statuses'),
               types: any(named: 'types'),
               priorities: any(named: 'priorities'),
+              sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
             ),
@@ -2093,6 +2500,7 @@ void main() {
               statuses: any(named: 'statuses'),
               types: any(named: 'types'),
               priorities: any(named: 'priorities'),
+              sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
             ),
@@ -4539,6 +4947,7 @@ void main() {
             statuses: any(named: 'statuses'),
             types: any(named: 'types'),
             priorities: any(named: 'priorities'),
+            sort: any(named: 'sort'),
             limit: any(named: 'limit'),
           ),
         ).thenAnswer(
@@ -5563,8 +5972,9 @@ void main() {
       act: (cubit) =>
           cubit.promoteSignal(signalTicket, targetType: TicketType.epic),
       verify: (_) {
-        final created =
-            verify(() => repository.createTicket(captureAny())).captured;
+        final created = verify(
+          () => repository.createTicket(captureAny()),
+        ).captured;
         expect(created, hasLength(1));
         expect((created.first as Ticket).type, TicketType.epic);
         verify(
@@ -5598,8 +6008,9 @@ void main() {
       act: (cubit) =>
           cubit.promoteSignal(signalTicket, targetType: TicketType.bug),
       verify: (_) {
-        final created =
-            verify(() => repository.createTicket(captureAny())).captured;
+        final created = verify(
+          () => repository.createTicket(captureAny()),
+        ).captured;
         expect(created, hasLength(1));
         expect((created.first as Ticket).type, TicketType.bug);
         verify(
@@ -6070,6 +6481,7 @@ void main() {
           statuses: any(named: 'statuses'),
           types: any(named: 'types'),
           priorities: any(named: 'priorities'),
+          sort: any(named: 'sort'),
           limit: any(named: 'limit'),
           offset: any(named: 'offset'),
         ),
@@ -6196,6 +6608,7 @@ void main() {
             statuses: any(named: 'statuses'),
             types: any(named: 'types'),
             priorities: any(named: 'priorities'),
+            sort: any(named: 'sort'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
           ),
@@ -6299,9 +6712,12 @@ void main() {
           statuses: any(named: 'statuses'),
           types: any(named: 'types'),
           priorities: any(named: 'priorities'),
+          sort: any(named: 'sort'),
           limit: any(named: 'limit'),
         ),
-      ).thenAnswer((_) async => const TicketSearchPage(tickets: [], hasMore: false));
+      ).thenAnswer(
+        (_) async => const TicketSearchPage(tickets: [], hasMore: false),
+      );
     }
 
     blocTest<TicketsCubit, TicketsState>(
@@ -6311,9 +6727,7 @@ void main() {
         when(
           () => repository.getTicketById(blockedEpic.id),
         ).thenAnswer((_) async => blockedEpic);
-        when(
-          () => linkRepository.getLinksForTicket(blockedEpic.id),
-        ).thenAnswer(
+        when(() => linkRepository.getLinksForTicket(blockedEpic.id)).thenAnswer(
           (_) async => [
             TicketLinkData(
               id: 'gate-link-1',
@@ -6349,9 +6763,7 @@ void main() {
         when(
           () => repository.getTicketById(blockedEpic.id),
         ).thenAnswer((_) async => blockedEpic);
-        when(
-          () => linkRepository.getLinksForTicket(blockedEpic.id),
-        ).thenAnswer(
+        when(() => linkRepository.getLinksForTicket(blockedEpic.id)).thenAnswer(
           (_) async => [
             TicketLinkData(
               id: 'gate-link-2',
@@ -6440,9 +6852,7 @@ void main() {
       'changeTicketStatus rejects a blocked Epic moving to inProgress, '
       'without calling the repository',
       setUp: () {
-        when(
-          () => linkRepository.getLinksForTicket(blockedEpic.id),
-        ).thenAnswer(
+        when(() => linkRepository.getLinksForTicket(blockedEpic.id)).thenAnswer(
           (_) async => [
             TicketLinkData(
               id: 'gate-link-3',
@@ -6474,9 +6884,7 @@ void main() {
     blocTest<TicketsCubit, TicketsState>(
       'changeTicketStatus proceeds when the blocking ticket is done',
       setUp: () {
-        when(
-          () => linkRepository.getLinksForTicket(blockedEpic.id),
-        ).thenAnswer(
+        when(() => linkRepository.getLinksForTicket(blockedEpic.id)).thenAnswer(
           (_) async => [
             TicketLinkData(
               id: 'gate-link-4',

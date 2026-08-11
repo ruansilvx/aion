@@ -30,6 +30,7 @@ import 'package:aion/features/tickets/data/repositories/drift_comment_repository
 import 'package:aion/features/tickets/data/repositories/drift_ticket_link_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_repository.dart';
 import 'package:aion/features/tickets/data/repositories/shared_prefs_ticket_list_filter_repository.dart';
+import 'package:aion/features/tickets/data/repositories/shared_prefs_ticket_list_sort_repository.dart';
 import 'package:aion/features/tickets/data/services/active_ticket_view_registry.dart';
 import 'package:aion/features/tickets/data/services/document_parent_migration_service.dart';
 import 'package:aion/features/tickets/data/services/ticket_document_search_service.dart';
@@ -37,6 +38,7 @@ import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
 import 'package:aion/features/tickets/data/services/ticket_markdown_reconciler.dart';
 import 'package:aion/features/tickets/data/services/ticket_markdown_watcher_service.dart';
 import 'package:aion/features/tickets/data/services/ticket_repair_service.dart';
+import 'package:aion/features/tickets/domain/repositories/ticket_list_sort_repository.dart';
 import 'package:aion/features/tickets/tickets.dart';
 
 /// The app's route table: `/hub`, `/hub/new` (project switcher, no
@@ -136,6 +138,8 @@ final appRouter = GoRouter(
                   ? context.read<TicketGitProjector>()
                   : null,
               projectRootPath: _activeProject(context).rootPath,
+              sortRepository: context.read<TicketListSortRepository>(),
+              projectId: _activeProject(context).id,
             )..load(),
             child: const TrashScreen(),
           ),
@@ -483,6 +487,13 @@ class _WorkspaceShellState extends State<WorkspaceShell>
         RepositoryProvider<TicketListFilterRepository>(
           create: (_) => SharedPrefsTicketListFilterRepository(),
         ),
+        // Per-project ticket-list sort persistence — same scoping
+        // rationale as TicketListFilterRepository above (project-id-
+        // prefixed SharedPreferences keys, no dependencies of its own).
+        // See aion-arch/changes/ticket-sort-control-and-board-as-default-view.
+        RepositoryProvider<TicketListSortRepository>(
+          create: (_) => SharedPrefsTicketListSortRepository(),
+        ),
         // Desktop-only project-scoped services below — git projection,
         // bidirectional resource/page reconcile, and repair. Absent
         // entirely on mobile/web (no rootPath to address git commands
@@ -555,6 +566,7 @@ class _WorkspaceShellState extends State<WorkspaceShell>
               executionContextCapRepository: context
                   .read<ExecutionContextCapRepository>(),
               filterRepository: context.read<TicketListFilterRepository>(),
+              sortRepository: context.read<TicketListSortRepository>(),
             ),
             child: Builder(
               builder: (context) => RepositoryProvider<PageTicketProvider>(

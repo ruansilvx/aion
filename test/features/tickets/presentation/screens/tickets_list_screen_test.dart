@@ -17,6 +17,9 @@ import 'package:aion/core/contracts/provider_registry.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/projects/domain/entities/project.dart';
 import 'package:aion/features/projects/domain/repositories/baseline_repository.dart';
+import 'package:aion/features/tickets/domain/entities/ticket_list_sort.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_sort_direction.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_sort_field.dart';
 import 'package:aion/features/tickets/tickets.dart';
 import 'package:aion/l10n/generated/app_localizations.dart';
 
@@ -121,6 +124,12 @@ void main() {
       ),
     );
     registerFallbackValue(TicketLinkType.relatesTo);
+    registerFallbackValue(
+      const TicketListSort(
+        field: TicketSortField.createdAt,
+        direction: TicketSortDirection.descending,
+      ),
+    );
   });
 
   setUp(() {
@@ -166,6 +175,7 @@ void main() {
         statuses: any(named: 'statuses'),
         types: any(named: 'types'),
         priorities: any(named: 'priorities'),
+        sort: any(named: 'sort'),
         limit: any(named: 'limit'),
         offset: any(named: 'offset'),
       ),
@@ -432,6 +442,7 @@ void main() {
         statuses: any(named: 'statuses'),
         types: any(named: 'types'),
         priorities: any(named: 'priorities'),
+        sort: any(named: 'sort'),
         limit: any(named: 'limit'),
         offset: any(named: 'offset'),
       ),

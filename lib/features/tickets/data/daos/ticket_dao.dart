@@ -6,9 +6,14 @@ import 'package:drift/drift.dart';
 
 import 'package:aion/core/core.dart';
 import 'package:aion/features/tickets/data/models/ticket_model.dart';
+import 'package:aion/features/tickets/domain/entities/ticket_list_sort.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_sort_direction.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_sort_field.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
+import 'package:aion/features/tickets/domain/utils/ticket_sort_comparator.dart'
+    show ticketFieldEnumValues;
 
 part 'ticket_dao.g.dart';
 
@@ -229,27 +234,58 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
   /// tickets. Within a field, values in [statuses]/[types]/[priorities]
   /// combine as OR; an empty set for a field means no constraint on it —
   /// the three fields combine with each other, and with [query], as AND.
-  /// With [query] null/empty, returns a plain filtered list ordered by
-  /// `created_at desc` (identical shape to [getAllTickets] when every set
-  /// is also empty). With [query] set, matches against the `tickets_fts`
-  /// index (title + description) and orders by relevance (`bm25`,
-  /// ascending — SQLite's bm25 scores are negative, more-negative meaning
-  /// a better match). Both branches apply [limit]/[offset] mechanically —
-  /// this method makes no `hasMore` decision of its own; that's the
-  /// caller's responsibility (see [DriftTicketRepository.searchTickets]).
+  ///
+  /// Ordered per [sort] (see [_sortSql]/[_orderingModeFor]). With [query]
+  /// null/empty, builds a query-builder `OrderingTerm` for [sort.field]
+  /// (identical row shape to [getAllTickets] when every filter set is
+  /// also empty and [sort] is `createdAt` descending), plus an always-on
+  /// `created_at DESC` tiebreaker so same-value rows (e.g. two `critical`
+  /// tickets) stay stably ordered newest-first — omitted when [sort.field]
+  /// is itself `createdAt` (would be redundant).
+  /// [TicketSortField.relevance] in this branch — only reachable when an
+  /// earlier explicit `relevance` selection survives a query being
+  /// cleared, since `relevance` has no score to order by with no query
+  /// active — falls back to the same `created_at` descending ordering
+  /// this method used before sort existed. With [query] set, matches
+  /// against the `tickets_fts` index (title + description); the `ORDER
+  /// BY` is `bm25(tickets_fts) ASC` (SQLite's bm25 scores are negative,
+  /// more-negative meaning a better match) only when [sort.field] is
+  /// [TicketSortField.relevance] — every other field instead orders by
+  /// [sort] (case-or-column SQL + `created_at DESC` tiebreaker, same rule
+  /// as the no-query branch), so e.g. "search for `bug` sorted by
+  /// priority" returns matching rows in priority order, not relevance
+  /// order. Both branches apply [limit]/[offset] mechanically — this
+  /// method makes no `hasMore` decision of its own; that's the caller's
+  /// responsibility (see [DriftTicketRepository.searchTickets]).
   Future<List<TicketData>> searchTickets({
     String? query,
     Set<TicketStatus> statuses = const {},
     Set<TicketType> types = const {},
     Set<TicketPriority> priorities = const {},
+    required TicketListSort sort,
     required int limit,
     int offset = 0,
   }) {
     final trimmed = query?.trim() ?? '';
     if (trimmed.isEmpty) {
+      // `relevance` has no score to order by with no query active — see
+      // this method's dartdoc.
+      final effectiveSort = sort.field == TicketSortField.relevance
+          ? const TicketListSort(
+              field: TicketSortField.createdAt,
+              direction: TicketSortDirection.descending,
+            )
+          : sort;
       final q = select(ticketsTable)
         ..where((t) => t.deletedAt.isNull())
-        ..orderBy([(t) => OrderingTerm.desc(t.createdAt)])
+        ..orderBy([
+          (t) => OrderingTerm(
+            expression: CustomExpression<int>(_sortSql(effectiveSort.field)),
+            mode: _orderingModeFor(effectiveSort.direction),
+          ),
+          if (effectiveSort.field != TicketSortField.createdAt)
+            (t) => OrderingTerm.desc(t.createdAt),
+        ])
         ..limit(limit, offset: offset);
       if (statuses.isNotEmpty) {
         q.where((t) => t.status.isIn(statuses.map((v) => v.name)));
@@ -283,16 +319,80 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
     variables.add(Variable(limit));
     variables.add(Variable(offset));
 
+    final orderBySql = sort.field == TicketSortField.relevance
+        ? 'bm25(tickets_fts) ASC'
+        : '${_sortSql(sort.field)} '
+              '${sort.direction == TicketSortDirection.ascending ? 'ASC' : 'DESC'}'
+              '${sort.field == TicketSortField.createdAt ? '' : ', tickets.created_at DESC'}';
+
     return customSelect(
       'SELECT tickets.* FROM tickets_fts '
       'JOIN tickets ON tickets.rowid = tickets_fts.rowid '
       'WHERE ${conditions.join(' AND ')} '
-      'ORDER BY bm25(tickets_fts) ASC '
+      'ORDER BY $orderBySql '
       'LIMIT ? OFFSET ?',
       variables: variables,
       readsFrom: {ticketsTable},
     ).map((row) => ticketsTable.map(row.data)).get();
   }
+
+  /// Maps [field]'s declared enum values to their ordinal position, as a
+  /// SQL `CASE` expression over that field's column (SQLite has no
+  /// notion of Dart enum declaration order, so this expresses it
+  /// explicitly) — for [TicketSortField.priority]/[TicketSortField.status]/
+  /// [TicketSortField.type] only. Indexes into the shared
+  /// [ticketFieldEnumValues] lookup (`ticket_sort_comparator.dart`) so
+  /// this SQL-string builder and the in-memory `ticketSortComparator`
+  /// can't silently disagree on ordinal position. Returns `null` for
+  /// every other field — see [_directColumnSql].
+  String? _enumOrdinalCaseSql(TicketSortField field) {
+    final values = ticketFieldEnumValues[field];
+    if (values == null) return null;
+    final column = switch (field) {
+      TicketSortField.priority => 'tickets.priority',
+      TicketSortField.status => 'tickets.status',
+      TicketSortField.type => 'tickets.type',
+      TicketSortField.createdAt ||
+      TicketSortField.updatedAt ||
+      TicketSortField.relevance => throw StateError(
+        'unreachable — ticketFieldEnumValues has no entry for $field',
+      ),
+    };
+    final whens = [
+      for (var i = 0; i < values.length; i++)
+        'WHEN \'${values[i].name}\' THEN $i',
+    ].join(' ');
+    return 'CASE $column $whens ELSE ${values.length} END';
+  }
+
+  /// The literal column [field] sorts by directly —
+  /// [TicketSortField.createdAt]/[TicketSortField.updatedAt] only. `null`
+  /// for priority/status/type (see [_enumOrdinalCaseSql]) and relevance
+  /// (handled via `bm25()` directly in [searchTickets], never via this
+  /// column-SQL path).
+  String? _directColumnSql(TicketSortField field) => switch (field) {
+    TicketSortField.createdAt => 'tickets.created_at',
+    TicketSortField.updatedAt => 'tickets.updated_at',
+    _ => null,
+  };
+
+  /// The case-or-column SQL fragment [field] sorts by — [_enumOrdinalCaseSql]
+  /// for priority/status/type, [_directColumnSql] for createdAt/updatedAt.
+  /// Never called with [TicketSortField.relevance] — both of
+  /// [searchTickets]'s branches resolve that case themselves before
+  /// reaching this helper (the no-query branch substitutes an
+  /// `effectiveSort` of `createdAt` descending; the FTS branch keeps its
+  /// own `bm25()` clause instead of calling this at all).
+  String _sortSql(TicketSortField field) =>
+      _enumOrdinalCaseSql(field) ??
+      _directColumnSql(field) ??
+      (throw StateError('_sortSql must not be called with relevance'));
+
+  /// Converts [direction] to Drift's [OrderingMode].
+  OrderingMode _orderingModeFor(TicketSortDirection direction) =>
+      direction == TicketSortDirection.ascending
+      ? OrderingMode.asc
+      : OrderingMode.desc;
 
   /// Returns every live (non-trashed) ticket row whose `parent_id` equals
   /// [parentId] (or, when [parentId] is `null`, every live row with a

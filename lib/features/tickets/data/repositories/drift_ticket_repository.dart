@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:aion/core/core.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
+import 'package:aion/features/tickets/domain/entities/ticket_list_sort.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_search_page.dart';
 import 'package:aion/features/tickets/domain/enums/inbox_purpose.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
@@ -54,10 +55,7 @@ class DriftTicketRepository implements TicketRepository {
 
   @override
   Future<void> importTicket(Ticket ticket) async {
-    final companion = _buildInsertCompanion(
-      ticket,
-      ticketId: ticket.ticketId,
-    );
+    final companion = _buildInsertCompanion(ticket, ticketId: ticket.ticketId);
     await _db.ticketDao.insertTicketPreservingId(companion);
   }
 
@@ -120,10 +118,7 @@ class DriftTicketRepository implements TicketRepository {
   /// Thin passthrough to [TicketDao.updatePriorityByIds] — see
   /// [TicketRepository.updatePriorityForIds] for the contract.
   @override
-  Future<void> updatePriorityForIds(
-    List<String> ids,
-    TicketPriority priority,
-  ) {
+  Future<void> updatePriorityForIds(List<String> ids, TicketPriority priority) {
     return _db.ticketDao.updatePriorityByIds(
       ids,
       priority,
@@ -203,15 +198,16 @@ class DriftTicketRepository implements TicketRepository {
   /// [TicketSearchPage.hasMore] without a separate `COUNT` query: if the
   /// DAO returns more than [limit] rows, another page exists — the extra
   /// row is trimmed before mapping to entities. [statuses]/[types]/
-  /// [priorities] are passed straight through to the DAO, which applies
-  /// the interface's OR-within-field/AND-across-field semantics (see
-  /// [TicketRepository.searchTickets]).
+  /// [priorities]/[sort] are passed straight through to the DAO, which
+  /// applies the interface's OR-within-field/AND-across-field/ordering
+  /// semantics (see [TicketRepository.searchTickets]).
   @override
   Future<TicketSearchPage> searchTickets({
     String? query,
     Set<TicketStatus> statuses = const {},
     Set<TicketType> types = const {},
     Set<TicketPriority> priorities = const {},
+    required TicketListSort sort,
     required int limit,
     int offset = 0,
   }) async {
@@ -220,6 +216,7 @@ class DriftTicketRepository implements TicketRepository {
       statuses: statuses,
       types: types,
       priorities: priorities,
+      sort: sort,
       limit: limit + 1,
       offset: offset,
     );
@@ -356,10 +353,7 @@ class DriftTicketRepository implements TicketRepository {
     String? parentId, {
     required List<TicketType> types,
   }) async {
-    final rows = await _db.ticketDao.getTicketsByParent(
-      parentId,
-      types: types,
-    );
+    final rows = await _db.ticketDao.getTicketsByParent(parentId, types: types);
     return rows.map(_toEntity).toList();
   }
 

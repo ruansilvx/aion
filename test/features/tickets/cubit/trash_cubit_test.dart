@@ -3,20 +3,30 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
 import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
+import 'package:aion/features/tickets/domain/entities/ticket_list_sort.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_sort_direction.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_sort_field.dart';
+import 'package:aion/features/tickets/domain/repositories/ticket_list_sort_repository.dart';
 import 'package:aion/features/tickets/tickets.dart';
 
 class MockTicketRepository extends Mock implements TicketRepository {}
 
 class MockTicketGitProjector extends Mock implements TicketGitProjector {}
 
+class MockTicketListSortRepository extends Mock
+    implements TicketListSortRepository {}
+
 void main() {
   late MockTicketRepository repository;
   late MockTicketGitProjector gitProjector;
+  late MockTicketListSortRepository sortRepository;
 
   Ticket buildTrashed({
     required String id,
     String? parentId,
     DateTime? deletedAt,
+    DateTime? createdAt,
+    TicketPriority priority = TicketPriority.none,
   }) {
     final now = DateTime(2026, 1, 1);
     return Ticket(
@@ -25,9 +35,10 @@ void main() {
       type: TicketType.task,
       title: 'Trashed $id',
       status: TicketStatus.backlog,
+      priority: priority,
       parentId: parentId,
-      createdAt: now,
-      updatedAt: now,
+      createdAt: createdAt ?? now,
+      updatedAt: createdAt ?? now,
       deletedAt: deletedAt ?? now,
     );
   }
@@ -39,6 +50,7 @@ void main() {
   setUp(() {
     repository = MockTicketRepository();
     gitProjector = MockTicketGitProjector();
+    sortRepository = MockTicketListSortRepository();
   });
 
   group('TrashCubit', () {
@@ -60,16 +72,8 @@ void main() {
         const TrashLoading(),
         isA<TrashLoaded>()
             .having((s) => s.tickets.map((t) => t.id), 'root ids', ['1'])
-            .having(
-              (s) => s.descendantCounts['1'],
-              'descendant count for 1',
-              0,
-            )
-            .having(
-              (s) => s.purgeEligibleCount,
-              'purge eligible count',
-              1,
-            ),
+            .having((s) => s.descendantCounts['1'], 'descendant count for 1', 0)
+            .having((s) => s.purgeEligibleCount, 'purge eligible count', 1),
       ],
     );
 
@@ -77,9 +81,7 @@ void main() {
       'load folds a cascaded descendant into its root, not its own tile, '
       'and counts it',
       setUp: () {
-        final oldDeletedAt = DateTime.now().subtract(
-          const Duration(days: 100),
-        );
+        final oldDeletedAt = DateTime.now().subtract(const Duration(days: 100));
         final root = buildTrashed(id: 'root', deletedAt: oldDeletedAt);
         final child = buildTrashed(
           id: 'child',
@@ -106,11 +108,7 @@ void main() {
               'descendant count for root',
               2,
             )
-            .having(
-              (s) => s.purgeEligibleCount,
-              'purge eligible count',
-              3,
-            ),
+            .having((s) => s.purgeEligibleCount, 'purge eligible count', 3),
       ],
     );
 
@@ -152,6 +150,111 @@ void main() {
       expect: () => [const TrashLoading(), isA<TrashError>()],
     );
 
+    group(
+      'load — persisted sort (ticket-sort-control-and-board-as-default-view)',
+      () {
+        blocTest<TrashCubit, TrashState>(
+          'load applies the persisted sort to roots',
+          setUp: () {
+            final low = buildTrashed(id: 'low', priority: TicketPriority.low);
+            final critical = buildTrashed(
+              id: 'critical',
+              priority: TicketPriority.critical,
+            );
+            when(
+              () => repository.getTrashedTickets(),
+            ).thenAnswer((_) async => [low, critical]);
+            when(() => sortRepository.getSort('proj-1')).thenAnswer(
+              (_) async => const TicketListSort(
+                field: TicketSortField.priority,
+                direction: TicketSortDirection.ascending,
+              ),
+            );
+          },
+          build: () => TrashCubit(
+            repository,
+            sortRepository: sortRepository,
+            projectId: 'proj-1',
+          ),
+          act: (cubit) => cubit.load(),
+          expect: () => [
+            const TrashLoading(),
+            isA<TrashLoaded>().having(
+              (s) => s.tickets.map((t) => t.id),
+              'root ids',
+              ['critical', 'low'],
+            ),
+          ],
+        );
+
+        blocTest<TrashCubit, TrashState>(
+          'a persisted relevance sort falls back to createdAt descending — '
+          'Trash has no query to score against',
+          setUp: () {
+            final older = buildTrashed(
+              id: 'older',
+              createdAt: DateTime(2026, 1, 1),
+            );
+            final newer = buildTrashed(
+              id: 'newer',
+              createdAt: DateTime(2026, 1, 2),
+            );
+            when(
+              () => repository.getTrashedTickets(),
+            ).thenAnswer((_) async => [older, newer]);
+            when(() => sortRepository.getSort('proj-1')).thenAnswer(
+              (_) async => const TicketListSort(
+                field: TicketSortField.relevance,
+                direction: TicketSortDirection.descending,
+              ),
+            );
+          },
+          build: () => TrashCubit(
+            repository,
+            sortRepository: sortRepository,
+            projectId: 'proj-1',
+          ),
+          act: (cubit) => cubit.load(),
+          expect: () => [
+            const TrashLoading(),
+            isA<TrashLoaded>().having(
+              (s) => s.tickets.map((t) => t.id),
+              'root ids',
+              ['newer', 'older'],
+            ),
+          ],
+        );
+
+        blocTest<TrashCubit, TrashState>(
+          'falls back to createdAt descending when sortRepository/projectId '
+          'are not supplied',
+          setUp: () {
+            final older = buildTrashed(
+              id: 'older',
+              createdAt: DateTime(2026, 1, 1),
+            );
+            final newer = buildTrashed(
+              id: 'newer',
+              createdAt: DateTime(2026, 1, 2),
+            );
+            when(
+              () => repository.getTrashedTickets(),
+            ).thenAnswer((_) async => [older, newer]);
+          },
+          build: () => TrashCubit(repository),
+          act: (cubit) => cubit.load(),
+          expect: () => [
+            const TrashLoading(),
+            isA<TrashLoaded>().having(
+              (s) => s.tickets.map((t) => t.id),
+              'root ids',
+              ['newer', 'older'],
+            ),
+          ],
+        );
+      },
+    );
+
     blocTest<TrashCubit, TrashState>(
       'restore calls the repository then reloads',
       setUp: () {
@@ -166,18 +269,13 @@ void main() {
       verify: (_) {
         verify(() => repository.restoreTicket('1')).called(1);
       },
-      expect: () => [
-        const TrashLoading(),
-        const TrashLoaded([], {}, 0),
-      ],
+      expect: () => [const TrashLoading(), const TrashLoaded([], {}, 0)],
     );
 
     blocTest<TrashCubit, TrashState>(
       'restore emits TrashError when the repository throws',
       setUp: () {
-        when(
-          () => repository.restoreTicket('1'),
-        ).thenThrow(Exception('boom'));
+        when(() => repository.restoreTicket('1')).thenThrow(Exception('boom'));
       },
       build: () => TrashCubit(repository),
       act: (cubit) => cubit.restore('1'),
@@ -213,10 +311,7 @@ void main() {
             () => gitProjector.project(restoredTicket, '/root', 'restored'),
           ).called(1);
         },
-        expect: () => [
-          const TrashLoading(),
-          const TrashLoaded([], {}, 0),
-        ],
+        expect: () => [const TrashLoading(), const TrashLoaded([], {}, 0)],
       );
 
       blocTest<TrashCubit, TrashState>(
@@ -236,10 +331,7 @@ void main() {
         verify: (_) {
           verifyNever(() => gitProjector.project(any(), any(), any()));
         },
-        expect: () => [
-          const TrashLoading(),
-          const TrashLoaded([], {}, 0),
-        ],
+        expect: () => [const TrashLoading(), const TrashLoaded([], {}, 0)],
       );
     });
 
@@ -256,10 +348,7 @@ void main() {
       verify: (_) {
         verify(() => repository.permanentlyDeleteTicket('1')).called(1);
       },
-      expect: () => [
-        const TrashLoading(),
-        const TrashLoaded([], {}, 0),
-      ],
+      expect: () => [const TrashLoading(), const TrashLoaded([], {}, 0)],
     );
 
     blocTest<TrashCubit, TrashState>(
@@ -285,10 +374,7 @@ void main() {
       verify: (_) {
         verify(() => repository.emptyTrash()).called(1);
       },
-      expect: () => [
-        const TrashLoading(),
-        const TrashLoaded([], {}, 0),
-      ],
+      expect: () => [const TrashLoading(), const TrashLoaded([], {}, 0)],
     );
 
     blocTest<TrashCubit, TrashState>(
@@ -316,10 +402,7 @@ void main() {
           () => repository.purgeTrashOlderThan(TrashCubit.purgeAgeThreshold),
         ).called(1);
       },
-      expect: () => [
-        const TrashLoading(),
-        const TrashLoaded([], {}, 0),
-      ],
+      expect: () => [const TrashLoading(), const TrashLoaded([], {}, 0)],
     );
 
     blocTest<TrashCubit, TrashState>(

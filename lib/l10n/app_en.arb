@@ -34,6 +34,27 @@
       "label": { "type": "String" }
     }
   },
+  "ticketsListSortTriggerLabel": "Sort",
+  "ticketsListSortTriggerActiveLabel": "Sort: {field}",
+  "@ticketsListSortTriggerActiveLabel": {
+    "placeholders": {
+      "field": { "type": "String" }
+    }
+  },
+  "ticketsListSortFieldRelevance": "Relevance",
+  "ticketsListSortFieldPriority": "Priority",
+  "ticketsListSortFieldStatus": "Status",
+  "ticketsListSortFieldType": "Type",
+  "ticketsListSortFieldCreatedAt": "Created",
+  "ticketsListSortFieldUpdatedAt": "Last updated",
+  "ticketsListSortTriggerSemantics": "Sort menu, currently sorted by {field}",
+  "@ticketsListSortTriggerSemantics": {
+    "placeholders": {
+      "field": { "type": "String" }
+    }
+  },
+  "ticketsListSortDirectionAscendingSemantics": ", ascending",
+  "ticketsListSortDirectionDescendingSemantics": ", descending",
   "ticketsListNoResultsState": "No tickets match your search",
   "ticketsListNoResultsHint": "Try a different term, or reset a filter to its \"All\" option.",
   "ticketsListLoadMoreRetry": "Couldn't load more — tap to retry",
