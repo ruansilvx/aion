@@ -42,4 +42,32 @@ class TicketGitProjector {
     if (!await _git.hasChanges(rootPath)) return;
     await _git.commit(rootPath, 'ticket: ${ticket.ticketId} $eventLabel');
   }
+
+  /// Writes every ticket in [ancestors] to its own Markdown file (same
+  /// serialization [project] uses) and stages each one, then makes
+  /// **one** commit covering the whole batch — skipped if nothing
+  /// actually changed (same `hasChanges` guard [project] uses). Used for
+  /// a rollup recompute's cascading ancestor rewrites, where committing
+  /// per-file would turn one estimate edit into a wall of near-identical
+  /// commits. No-ops (writes nothing, commits nothing) if [ancestors] is
+  /// empty.
+  Future<void> projectBatch(
+    List<Ticket> ancestors,
+    String rootPath,
+    String eventLabel,
+  ) async {
+    if (ancestors.isEmpty) return;
+    for (final ticket in ancestors) {
+      final relativePath = 'tickets/${ticket.ticketId}.md';
+      final file = File('$rootPath/$relativePath');
+      await file.parent.create(recursive: true);
+      await file.writeAsString(_serializer.serialize(ticket));
+      await _git.add(rootPath, relativePath);
+    }
+    if (!await _git.hasChanges(rootPath)) return;
+    final label = ancestors.length == 1
+        ? '${ancestors.single.ticketId} $eventLabel'
+        : '${ancestors.length} ancestors $eventLabel';
+    await _git.commit(rootPath, 'ticket: $label');
+  }
 }

@@ -96,6 +96,18 @@ class TicketsTable extends Table {
   TextColumn get inboxPurpose =>
       text().named('inbox_purpose').nullable()();
 
+  /// Derived rollup of `estimate` across this ticket's live structural
+  /// subtree. `null` if this ticket has no live children. Written only by
+  /// `TicketRepository.updateRollup`, never by a plain ticket edit.
+  IntColumn get estimateRollup =>
+      integer().named('estimate_rollup').nullable()();
+
+  /// Derived rollup of `timeSpent` across this ticket's live structural
+  /// subtree. `null` if this ticket has no live children. Written only by
+  /// `TicketRepository.updateRollup`, never by a plain ticket edit.
+  IntColumn get timeSpentRollup =>
+      integer().named('time_spent_rollup').nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
 }

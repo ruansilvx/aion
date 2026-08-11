@@ -358,7 +358,11 @@ bool _cardIsBlocked(TicketsState s, Ticket t) =>
 /// [_BlockedBadge] reflecting [_cardIsBlocked] — both via a
 /// `context.select` scoped to [ticket]'s own id so a card only rebuilds
 /// when *its own* status/blocked state changes, not on every board-wide
-/// emission. Added for
+/// emission. Also renders a [RollupBadge] (right-aligned, before
+/// [_BoardCardStatusBadge]) when [ticket] has a live-children rollup —
+/// see
+/// `aion-arch/changes/estimate-timespent-rollup-for-ticket-hierarchy/design.md`
+/// §2.5. Added for
 /// `aion-arch/changes/board-execution-indicators-and-notifications` and
 /// `aion-arch/changes/board-task-ordering-indication`.
 class _CardVisual extends StatelessWidget {
@@ -403,6 +407,11 @@ class _CardVisual extends StatelessWidget {
     final isBlocked = context.select(
       (TicketsCubit cubit) => _cardIsBlocked(cubit.state, ticket),
     );
+    // design.md §2.5: cards have no selection background variant, so
+    // `RollupBadge` always uses its default fill here — no
+    // `onSelectedRow` passed.
+    final hasRollup =
+        ticket.estimateRollup != null || ticket.timeSpentRollup != null;
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -477,8 +486,11 @@ class _CardVisual extends StatelessWidget {
                   const SizedBox(width: AionSpacing.sp8),
                   const _BlockedBadge(),
                 ],
-                if (execState != _CardExecutionState.none) ...[
+                if (hasRollup || execState != _CardExecutionState.none)
                   const Spacer(),
+                if (hasRollup) RollupBadge(ticket: ticket),
+                if (execState != _CardExecutionState.none) ...[
+                  if (hasRollup) const SizedBox(width: AionSpacing.sp8),
                   _BoardCardStatusBadge(
                     status: execState,
                     queuePosition: queuePosition,

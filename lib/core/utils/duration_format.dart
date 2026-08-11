@@ -13,6 +13,18 @@ String formatDurationMinutes(int? minutes, {required String placeholder}) {
   return '${h}h ${m}m';
 }
 
+/// Compact human-readable duration for a rollup total. Input: whole
+/// minutes, `>= 0`. Unlike [formatDurationMinutes], `0` renders as
+/// `'0m'` rather than falling back to a placeholder — a rollup with live
+/// children but no set values is still a real (zero) total, not an
+/// absent one; the "nothing to roll up" case is handled by gating the
+/// rollup UI on `Ticket.estimateRollup`/`.timeSpentRollup` being
+/// non-null before this is ever called, not by this formatter. Thin
+/// wrapper over [formatDurationMinutes] with `'0m'` as the placeholder,
+/// so both share one h/m formatting rule.
+String formatRollupMinutes(int minutes) =>
+    formatDurationMinutes(minutes, placeholder: '0m');
+
 /// Parses a free-form duration string (e.g. `'2h30m'`, `'2h 30m'`,
 /// `'90m'`, `'2h'`, or a bare number of minutes like `'90'`) into total
 /// minutes. Blank input returns `null` (no estimate/time). Throws

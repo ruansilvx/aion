@@ -542,6 +542,61 @@ void main() {
     },
   );
 
+  group('updateRollup', () {
+    test(
+      'writes only estimateRollup/timeSpentRollup, leaving every other '
+      'field unchanged',
+      () async {
+        await repository.createTicket(
+          buildTicket(
+            id: '1',
+            title: 'Unchanged title',
+            priority: TicketPriority.high,
+          ),
+        );
+
+        await repository.updateRollup(
+          '1',
+          estimateRollup: 45,
+          timeSpentRollup: 20,
+        );
+
+        final found = await repository.getTicketById('1');
+        expect(found!.estimateRollup, 45);
+        expect(found.timeSpentRollup, 20);
+        expect(found.title, 'Unchanged title');
+        expect(found.priority, TicketPriority.high);
+        expect(found.status, TicketStatus.backlog);
+        expect(found.type, TicketType.task);
+      },
+    );
+
+    test('can clear both fields back to null', () async {
+      await repository.createTicket(buildTicket(id: '1'));
+      await repository.updateRollup('1', estimateRollup: 10, timeSpentRollup: 5);
+
+      await repository.updateRollup(
+        '1',
+        estimateRollup: null,
+        timeSpentRollup: null,
+      );
+
+      final found = await repository.getTicketById('1');
+      expect(found!.estimateRollup, isNull);
+      expect(found.timeSpentRollup, isNull);
+    });
+
+    test('leaves updatedAt untouched, unlike updateTicket/updateTicketParent', () async {
+      await repository.createTicket(buildTicket(id: '1'));
+      final before = (await repository.getTicketById('1'))!.updatedAt;
+
+      await repository.updateRollup('1', estimateRollup: 10, timeSpentRollup: null);
+      final after = (await repository.getTicketById('1'))!.updatedAt;
+
+      expect(after, before);
+    });
+  });
+
   group('trashTicket / trashTickets', () {
     test(
       'moves a childless ticket into trash (deletedAt set, row intact)',
@@ -1308,6 +1363,17 @@ void main() {
         await v1Db.customStatement(
           'ALTER TABLE tickets DROP COLUMN inbox_purpose;',
         );
+        // estimate_rollup/time_spent_rollup (v9) — same reasoning: never
+        // touched by createTicket's companion, so no insert-ordering
+        // constraint, but createAll() already created them and onUpgrade's
+        // `from < 9` addColumn step would otherwise fail with "duplicate
+        // column name" against a column that already exists.
+        await v1Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN estimate_rollup;',
+        );
+        await v1Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN time_spent_rollup;',
+        );
         // ticket_comments' input_tokens/output_tokens (v7) — dropped even
         // though this test's assertions never touch that table, since
         // onUpgrade's `from < 7` addColumn step still runs unconditionally
@@ -1364,6 +1430,15 @@ void main() {
       await v7Db.customStatement(
         'ALTER TABLE tickets DROP COLUMN inbox_purpose;',
       );
+      // estimate_rollup/time_spent_rollup (v9) — same reasoning as the v1
+      // simulation above: createAll() already created them, so onUpgrade's
+      // `from < 9` addColumn step needs them absent first.
+      await v7Db.customStatement(
+        'ALTER TABLE tickets DROP COLUMN estimate_rollup;',
+      );
+      await v7Db.customStatement(
+        'ALTER TABLE tickets DROP COLUMN time_spent_rollup;',
+      );
       await v7Db.customStatement('PRAGMA user_version = 7;');
       await v7Db.close();
 
@@ -1383,5 +1458,82 @@ void main() {
 
       await v8Db.close();
     });
+
+    test(
+      'onUpgrade from v8 backfills estimateRollup/timeSpentRollup for '
+      'pre-existing hierarchical data',
+      () async {
+        final tempDir = Directory.systemTemp.createTempSync(
+          'aion_migration_v9_test',
+        );
+        final dbFile = File('${tempDir.path}/test.sqlite');
+        addTearDown(() => tempDir.deleteSync(recursive: true));
+
+        final v8Db = AppDatabase(_testProject, NativeDatabase(dbFile));
+        final preMigrationRepo = DriftTicketRepository(v8Db);
+        // Epic -> Story -> Task, mirroring the live hierarchy this
+        // migration exists to backfill correctly on first open of a
+        // pre-existing project — see
+        // `aion-arch/changes/estimate-timespent-rollup-for-ticket-hierarchy/design.md`
+        // §1.4.
+        await preMigrationRepo.createTicket(
+          buildTicket(id: 'epic-1', title: 'Pre-v9 Epic'),
+        );
+        await preMigrationRepo.createTicket(
+          buildTicket(
+            id: 'story-1',
+            title: 'Pre-v9 Story',
+            parentId: 'epic-1',
+          ),
+        );
+        await preMigrationRepo.createTicket(
+          buildTicket(
+            id: 'task-1',
+            title: 'Pre-v9 Task',
+            parentId: 'story-1',
+            estimate: 90,
+            timeSpent: 30,
+          ),
+        );
+        // estimate_rollup/time_spent_rollup can't be dropped until after
+        // the inserts above — createTicket's companion never sets them
+        // (see `DriftTicketRepository._buildInsertCompanion`), so there's
+        // no insert-ordering constraint, but createAll() already created
+        // them and onUpgrade's `from < 9` addColumn step would otherwise
+        // fail with "duplicate column name" against a column that
+        // already exists.
+        await v8Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN estimate_rollup;',
+        );
+        await v8Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN time_spent_rollup;',
+        );
+        await v8Db.customStatement('PRAGMA user_version = 8;');
+        await v8Db.close();
+
+        // Reopen against the same file at the current schemaVersion (9).
+        // Drift reads user_version=8, sees schemaVersion=9, and runs the
+        // `from < 9` onUpgrade step — add the two columns, then
+        // `_backfillRollups`.
+        final v9Db = AppDatabase(_testProject, NativeDatabase(dbFile));
+        final upgradedRepo = DriftTicketRepository(v9Db);
+
+        final epic = await upgradedRepo.getTicketById('epic-1');
+        final story = await upgradedRepo.getTicketById('story-1');
+        final task = await upgradedRepo.getTicketById('task-1');
+
+        expect(epic!.estimateRollup, 90);
+        expect(epic.timeSpentRollup, 30);
+        expect(story!.estimateRollup, 90);
+        expect(story.timeSpentRollup, 30);
+        // The leaf task itself has no live children — its own rollup
+        // stays null, backfill only ever fills internal nodes (see
+        // `ticket_rollup_calculator.dart`'s `computeRollups`).
+        expect(task!.estimateRollup, isNull);
+        expect(task.timeSpentRollup, isNull);
+
+        await v9Db.close();
+      },
+    );
   });
 }

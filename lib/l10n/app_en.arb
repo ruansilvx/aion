@@ -159,6 +159,12 @@
   "ticketDetailTimeSpentCaption": "TIME SPENT",
   "ticketDetailTimeSpentPlaceholder": "Add time spent…",
   "ticketDetailEditTimeSpent": "Edit time spent",
+  "ticketDetailRollupCount": "· {count, plural, one{1 ticket} other{{count} tickets}}",
+  "@ticketDetailRollupCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
   "ticketDetailDescriptionCaption": "DESCRIPTION",
   "ticketDetailDescriptionPlaceholder": "Add a description…",
   "ticketDetailEditDescription": "Edit description",

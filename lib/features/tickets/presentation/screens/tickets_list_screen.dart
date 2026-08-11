@@ -1720,12 +1720,15 @@ class _BoardLoadMoreButtonState extends State<_BoardLoadMoreButton> {
 }
 
 /// A single row in [TicketsListScreen]'s list: ID badge, title, priority
-/// badge, [TicketOverflowMenu] trigger, type chip, and status indicator —
-/// or, while [TicketSelectionCubit]'s selection mode is active, a leading
-/// [AppCheckbox] in place of the overflow trigger, with tapping the row
-/// toggling selection instead of navigating. Navigates to the ticket's
-/// detail screen when tapped or activated via keyboard, when selection
-/// mode is inactive.
+/// badge, [TicketOverflowMenu] trigger, type chip, status indicator, and
+/// (right-aligned, trailing) a [RollupBadge] when [ticket] has a live-
+/// children rollup — see
+/// `aion-arch/changes/estimate-timespent-rollup-for-ticket-hierarchy/design.md`
+/// §2.4 — or, while [TicketSelectionCubit]'s selection mode is active, a
+/// leading [AppCheckbox] in place of the overflow trigger, with tapping
+/// the row toggling selection instead of navigating. Navigates to the
+/// ticket's detail screen when tapped or activated via keyboard, when
+/// selection mode is inactive.
 class TicketListTile extends StatelessWidget {
   /// Creates a [TicketListTile] rendering [ticket].
   const TicketListTile({super.key, required this.ticket});
@@ -1839,6 +1842,11 @@ class TicketListTile extends StatelessWidget {
                       const SizedBox(width: AionSpacing.sp12),
                       StatusIndicator(status: ticket.status),
                       LinkCountLabel(ticketId: ticket.id),
+                      if (ticket.estimateRollup != null ||
+                          ticket.timeSpentRollup != null) ...[
+                        const Spacer(),
+                        RollupBadge(ticket: ticket, onSelectedRow: isSelected),
+                      ],
                     ],
                   ),
                 ],
@@ -1987,6 +1995,85 @@ class LinkCountLabel extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// The compact, read-only rollup indicator shown on [TicketListTile]'s
+/// and [TicketBoardCard]'s meta row when [ticket] has at least one live
+/// child — design.md §2 (`RollupBadge`). Reads
+/// [Ticket.estimateRollup]/[Ticket.timeSpentRollup] directly off the
+/// already-loaded [ticket] — no query, no count caption (see design.md
+/// §0.3): unlike `RollupIndicator` (the detail-screen variant, see
+/// `TicketMetadataSection`), this must be cheap enough to render on
+/// every row of a list/board with no per-row query. Single-badge rule
+/// (design.md §2.1): shows the estimate rollup if set; otherwise the
+/// time-spent rollup, disambiguated by a leading hourglass marker
+/// instead of the stack marker; renders nothing if neither is set. Non-
+/// interactive — no hover/focus/press/disabled state of its own; its
+/// only variation is the background it lands on, driven by
+/// [onSelectedRow].
+class RollupBadge extends StatelessWidget {
+  /// Creates a [RollupBadge] for [ticket]. [onSelectedRow] switches the
+  /// fill/border treatment for [TicketListTile]'s selected-row state
+  /// (design.md §2.3) — always `false` (the default) for
+  /// [TicketBoardCard], which has no selection background variant.
+  const RollupBadge({super.key, required this.ticket, this.onSelectedRow = false});
+
+  /// The ticket to render a rollup badge for.
+  final Ticket ticket;
+
+  /// Whether the row/card this badge sits on is currently selected — see
+  /// design.md §2.3's fill/border swap table.
+  final bool onSelectedRow;
+
+  @override
+  Widget build(BuildContext context) {
+    final estimateRollup = ticket.estimateRollup;
+    final timeSpentRollup = ticket.timeSpentRollup;
+    final int minutes;
+    final IconData marker;
+    final double markerSize;
+    if (estimateRollup != null) {
+      minutes = estimateRollup;
+      marker = PhosphorIcons.stackLight;
+      markerSize = 10;
+    } else if (timeSpentRollup != null) {
+      minutes = timeSpentRollup;
+      marker = PhosphorIcons.hourglassLight;
+      markerSize = 11;
+    } else {
+      return const SizedBox.shrink();
+    }
+
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: onSelectedRow ? c.surface : c.neutralTint(t.isDark),
+        borderRadius: BorderRadius.all(AionRadius.sm),
+        border: onSelectedRow
+            ? Border.all(color: c.neutralBorderTint(t.isDark), width: 1)
+            : null,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(6, 2, 7, 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            PhosphorIcon(marker, size: markerSize, color: c.textSecondary),
+            const SizedBox(width: 5),
+            Text(
+              formatRollupMinutes(minutes),
+              style: AionText.key.copyWith(
+                fontSize: 10.5,
+                color: c.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -70,6 +70,78 @@ void main() {
     verifyNever(() => git.commit(any(), any()));
   });
 
+  group('projectBatch', () {
+    final secondTicket = Ticket(
+      id: 'internal-2',
+      ticketId: 'AIO-43',
+      type: TicketType.story,
+      title: 'A story',
+      status: TicketStatus.backlog,
+      createdAt: DateTime.utc(2026, 7, 18),
+      updatedAt: DateTime.utc(2026, 7, 18),
+    );
+
+    test('writes N files and makes exactly one commit', () async {
+      when(() => git.hasChanges(any())).thenAnswer((_) async => true);
+
+      await projector.projectBatch(
+        [ticket, secondTicket],
+        tempDir.path,
+        'rollup updated',
+      );
+
+      final firstFile = File('${tempDir.path}/tickets/AIO-42.md');
+      final secondFile = File('${tempDir.path}/tickets/AIO-43.md');
+      expect(await firstFile.exists(), isTrue);
+      expect(await secondFile.exists(), isTrue);
+      final secondContent = await secondFile.readAsString();
+      expect(secondContent, contains('ticketId: AIO-43'));
+      expect(secondContent, contains('# A story'));
+
+      verify(() => git.add(tempDir.path, 'tickets/AIO-42.md')).called(1);
+      verify(() => git.add(tempDir.path, 'tickets/AIO-43.md')).called(1);
+      verify(
+        () => git.commit(tempDir.path, 'ticket: 2 ancestors rollup updated'),
+      ).called(1);
+    });
+
+    test('no-ops (writes nothing, commits nothing) on an empty list', () async {
+      await projector.projectBatch([], tempDir.path, 'rollup updated');
+
+      verifyNever(() => git.add(any(), any()));
+      verifyNever(() => git.commit(any(), any()));
+      verifyNever(() => git.hasChanges(any()));
+    });
+
+    test(
+      'skips the commit (but still writes files) when hasChanges is false',
+      () async {
+        when(() => git.hasChanges(any())).thenAnswer((_) async => false);
+
+        await projector.projectBatch(
+          [ticket, secondTicket],
+          tempDir.path,
+          'rollup updated',
+        );
+
+        expect(await File('${tempDir.path}/tickets/AIO-42.md').exists(), isTrue);
+        expect(await File('${tempDir.path}/tickets/AIO-43.md').exists(), isTrue);
+        verify(() => git.add(any(), any())).called(2);
+        verifyNever(() => git.commit(any(), any()));
+      },
+    );
+
+    test('a single-ticket batch uses the ticketId singular label', () async {
+      when(() => git.hasChanges(any())).thenAnswer((_) async => true);
+
+      await projector.projectBatch([ticket], tempDir.path, 'rollup updated');
+
+      verify(
+        () => git.commit(tempDir.path, 'ticket: AIO-42 rollup updated'),
+      ).called(1);
+    });
+  });
+
   group('against a real git repository (the bug this fixes)', () {
     // The tests above mock `GitRepositoryClient.hasChanges` directly, so
     // they can't exercise the actual defect

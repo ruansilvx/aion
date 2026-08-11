@@ -37,6 +37,8 @@ class TicketMarkdownSerializer {
       TicketMarkdownTemplate.createdAt: ticket.createdAt.toIso8601String(),
       TicketMarkdownTemplate.updatedAt: ticket.updatedAt.toIso8601String(),
       TicketMarkdownTemplate.deletedAt: ticket.deletedAt?.toIso8601String(),
+      TicketMarkdownTemplate.estimateRollup: ticket.estimateRollup,
+      TicketMarkdownTemplate.timeSpentRollup: ticket.timeSpentRollup,
     };
     for (final key in TicketMarkdownTemplate.fieldOrder) {
       buffer.writeln('$key: ${_yamlScalar(values[key])}');
@@ -136,6 +138,8 @@ class TicketMarkdownSerializer {
         return value is String && value.isNotEmpty ? (value,) : null;
       case TicketMarkdownTemplate.estimate:
       case TicketMarkdownTemplate.timeSpent:
+      case TicketMarkdownTemplate.estimateRollup:
+      case TicketMarkdownTemplate.timeSpentRollup:
         if (value == null) return (null,);
         return value is int ? (value,) : null;
       case TicketMarkdownTemplate.createdAt:

@@ -91,6 +91,19 @@ abstract interface class TicketRepository {
   /// the way a content edit does. Throws if [id] does not exist.
   Future<void> updateSyncStatus(String id, TicketSyncStatus status);
 
+  /// Updates only [estimateRollup]/[timeSpentRollup] for the ticket with
+  /// id [id]. Independent of [updateTicket] — same rationale as
+  /// [updateEmbedding]/[updateSyncStatus]: a recomputed derived value is
+  /// not a user edit and must not perturb `updatedAt`. Both parameters
+  /// are required (even to pass `null`) since a rollup recompute always
+  /// resolves both fields together from the same children set — there is
+  /// no meaningful "update just one." Throws if [id] does not exist.
+  Future<void> updateRollup(
+    String id, {
+    required int? estimateRollup,
+    required int? timeSpentRollup,
+  });
+
   /// Moves [id] and every ticket in its structural subtree into trash
   /// (sets `deletedAt`, deletes nothing). Never blocked by children —
   /// they're cascaded into trash alongside [id] instead. Throws

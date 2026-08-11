@@ -523,4 +523,20 @@ extension AionColorsHubTokens on AionColors {
   /// deepest wash stop in [accent]'s own hue.
   Color pressedAccentTint(Color accent, bool isDark) =>
       accent.withValues(alpha: isDark ? 0.256 : 0.176);
+
+  // neutral/informational family — quiet numeric/data chrome that must not
+  // read as an accent (not error/warning/success/active). Backs the
+  // estimate/timeSpent rollup indicators. Added for
+  // estimate-timespent-rollup-for-ticket-hierarchy; see that change's
+  // design.md §0.1.
+  /// `RollupIndicator`/`RollupBadge` fill — a quiet, informational tint
+  /// derived from [textSecondary] so it tracks the theme automatically.
+  /// No new hue is introduced.
+  Color neutralTint(bool isDark) =>
+      textSecondary.withValues(alpha: isDark ? 0.14 : 0.09);
+
+  /// Hairline for the same neutral family, used when [neutralTint] must
+  /// sit on a tinted background (e.g. `RollupBadge` on a selected row).
+  Color neutralBorderTint(bool isDark) =>
+      textSecondary.withValues(alpha: isDark ? 0.26 : 0.18);
 }
