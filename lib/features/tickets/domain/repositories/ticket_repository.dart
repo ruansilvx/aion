@@ -6,6 +6,7 @@ import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_list_sort.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_search_page.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_complexity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sync_status.dart';
@@ -69,7 +70,31 @@ abstract interface class TicketRepository {
   /// Does not touch `status` (use [updateTicketStatus]), `sddStage` (use
   /// [updateTicketSddStage]), `parentId`, `embedding`, `id`, or
   /// `ticketId`. Throws if `ticket.id` does not exist.
+  ///
+  /// Since this is definitionally the plain-user-edit path (the detail
+  /// screen's `SelectionMenu`/`InlineEditableField` `onCommit` handlers are
+  /// its only callers), this also stamps `complexitySource`/
+  /// `estimateSource`: `TicketEstimationSource.manual` whenever the
+  /// corresponding field is non-null, `null` whenever it's null. See
+  /// [applyEstimationSuggestion] for the AI-suggestion write path this is
+  /// deliberately distinct from.
   Future<void> updateTicket(Ticket ticket);
+
+  /// Writes an AI-generated complexity/estimate suggestion for the ticket
+  /// with id [id]. Each parameter, when non-null, overwrites that field's
+  /// value and sets its companion source to
+  /// `TicketEstimationSource.aiSuggestedLowConfidence` (if `lowConfidence`)
+  /// or `TicketEstimationSource.aiSuggested` otherwise; a `null` parameter
+  /// leaves that field (and its source) completely untouched — this is how
+  /// a caller writes just one field when the other is locked or the model
+  /// produced no value for it. Never touches `updatedAt` — an AI
+  /// suggestion is a background side effect, not a user edit, mirroring
+  /// [updateEmbedding]/[updateRollup]. Throws if [id] does not exist.
+  Future<void> applyEstimationSuggestion(
+    String id, {
+    ({TicketComplexity value, bool lowConfidence})? complexity,
+    ({int value, bool lowConfidence})? estimate,
+  });
 
   /// Updates only the [stage] (and `updatedAt`) of the ticket with id
   /// [id]. Does not touch any other field, and performs no precondition

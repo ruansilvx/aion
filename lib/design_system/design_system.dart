@@ -13,6 +13,7 @@ export 'atoms/app_filter_chip.dart';
 export 'atoms/app_text_field.dart';
 export 'atoms/app_spinner.dart';
 export 'atoms/content_max_width.dart';
+export 'molecules/ai_suggestion_badge.dart';
 export 'molecules/app_confirm_dialog.dart';
 export 'molecules/app_dropdown.dart';
 export 'molecules/app_header.dart';

@@ -53,6 +53,7 @@ import 'package:aion/features/tickets/domain/utils/ticket_link_direction.dart';
 import 'package:aion/features/tickets/domain/utils/ticket_rollup_calculator.dart';
 import 'package:aion/features/tickets/presentation/cubit/chat_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/codebase_analysis_status.dart';
+import 'package:aion/features/tickets/presentation/cubit/ticket_estimation_suggester.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_rollup_counts.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_rollup_recomputer.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
@@ -175,6 +176,12 @@ class TicketsCubit extends Cubit<TicketsState> {
       gitProjector: gitProjector,
       projectRootPath: projectRootPath,
     );
+    _estimationSuggester = TicketEstimationSuggester(
+      _repository,
+      embeddingProvider: embeddingProvider,
+      providerRegistry: providerRegistry,
+      modelRoutingRepository: modelRoutingRepository,
+    );
   }
 
   final TicketRepository _repository;
@@ -185,6 +192,11 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [TicketRollupRecomputer]. Wired to the same [_repository]/
   /// [_gitProjector]/[_projectRootPath] this cubit already holds.
   late final TicketRollupRecomputer _rollupRecomputer;
+  /// AI-assisted complexity/estimate suggestion orchestrator — see
+  /// [TicketEstimationSuggester]. Wired to the same [_repository]/
+  /// [_embeddingProvider]/[_providerRegistry]/[_modelRoutingRepository]
+  /// this cubit already holds.
+  late final TicketEstimationSuggester _estimationSuggester;
   late final TicketLinkRepository? _linkRepository;
   late final ProviderRegistry? _providerRegistry;
   late final CommentRepository? _commentRepository;
@@ -648,6 +660,11 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// original exception after emitting [TicketsError] on failure, so a
   /// caller that does await this (e.g. `PageTicketProviderImpl`) sees the
   /// failure rather than a value of the wrong type.
+  ///
+  /// Also fires a fire-and-forget [_estimationSuggester] call alongside
+  /// [_triggerEmbeddingRegen] — always, on every create, same condition as
+  /// embedding regen — so a freshly created ticket's unset `complexity`/
+  /// `estimate` get an AI first guess without blocking this save.
   Future<Ticket> createTicket({
     required TicketType type,
     required String title,
@@ -698,6 +715,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         // Always regenerate on create (no prior title/description to
         // compare against), fire-and-forget.
         unawaited(_triggerEmbeddingRegen(persisted));
+        unawaited(_estimationSuggester.suggest(persisted));
         unawaited(_triggerGitProjection(persisted, 'created'));
       }
       final page = await _repository.searchTickets(
@@ -817,6 +835,11 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// actually changed — starting at [refreshed]'s own id, since an edited
   /// ticket with its own children needs its own rollup recomputed too
   /// before the walk continues upward to its ancestors.
+  ///
+  /// Also fires a fire-and-forget [_estimationSuggester] call alongside
+  /// [_triggerEmbeddingRegen], under the same title/description-changed
+  /// condition, so a content edit gets a fresh AI complexity/estimate
+  /// suggestion for whichever field isn't `manual`-locked.
   Future<Ticket> updateTicket(Ticket ticket) async {
     try {
       final previous = await _repository.getTicketById(ticket.id);
@@ -834,6 +857,7 @@ class TicketsCubit extends Cubit<TicketsState> {
             previous.title != refreshed.title ||
             previous.description != refreshed.description) {
           unawaited(_triggerEmbeddingRegen(refreshed));
+          unawaited(_estimationSuggester.suggest(refreshed));
         }
         if (previous != null &&
             (previous.estimate != refreshed.estimate ||
@@ -845,6 +869,45 @@ class TicketsCubit extends Cubit<TicketsState> {
     } catch (e) {
       emit(TicketsError(e.toString()));
       rethrow;
+    }
+  }
+
+  /// Explicitly re-suggests [ticket]'s complexity via
+  /// [TicketEstimationSuggester.regenerate], bypassing the lock even if
+  /// `ticket.complexitySource == TicketEstimationSource.manual`. Awaited —
+  /// unlike the passive background trigger in [createTicket]/[updateTicket],
+  /// this is a direct response to the detail screen's Regenerate button, so
+  /// it re-fetches and emits [TicketDetailLoaded] with the refreshed value
+  /// once the suggestion lands, rather than leaving the UI to catch up on
+  /// next reopen. No-ops (does nothing, emits nothing) if
+  /// `ticket.complexity == null` — nothing to regenerate against an unset
+  /// field; the picker's own "+ COMPLEXITY" flow is how a first value gets
+  /// set. Emits [TicketsError] only if the repository re-fetch itself
+  /// throws — a failed/empty model suggestion (see
+  /// [TicketEstimationSuggester]'s swallow-on-failure behavior) silently
+  /// leaves the ticket's current value in place and still re-emits
+  /// [TicketDetailLoaded] unchanged, rather than erroring the whole screen
+  /// over a background-nicety failure.
+  Future<void> regenerateComplexitySuggestion(Ticket ticket) async {
+    if (ticket.complexity == null) return;
+    try {
+      await _estimationSuggester.regenerate(ticket, forceComplexity: true);
+      final refreshed = await _repository.getTicketById(ticket.id);
+      if (refreshed != null) emit(TicketDetailLoaded(refreshed));
+    } catch (e) {
+      emit(TicketsError(e.toString()));
+    }
+  }
+
+  /// Same as [regenerateComplexitySuggestion], for `estimate`.
+  Future<void> regenerateEstimateSuggestion(Ticket ticket) async {
+    if (ticket.estimate == null) return;
+    try {
+      await _estimationSuggester.regenerate(ticket, forceEstimate: true);
+      final refreshed = await _repository.getTicketById(ticket.id);
+      if (refreshed != null) emit(TicketDetailLoaded(refreshed));
+    } catch (e) {
+      emit(TicketsError(e.toString()));
     }
   }
 

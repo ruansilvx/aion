@@ -2526,6 +2526,228 @@ void main() {
     });
 
     group(
+      'estimation-suggestion triggers '
+      '(ai-assisted-complexity-and-estimate-suggestions)',
+      () {
+        late MockEmbeddingProvider embeddingProvider;
+        late MockProviderRegistry providerRegistry;
+        late MockAgentProvider agentProvider;
+        late MockAgentModelClient client;
+        late MockModelRoutingRepository modelRoutingRepository;
+
+        setUp(() {
+          embeddingProvider = MockEmbeddingProvider();
+          providerRegistry = MockProviderRegistry();
+          agentProvider = MockAgentProvider();
+          client = MockAgentModelClient();
+          modelRoutingRepository = MockModelRoutingRepository();
+
+          when(
+            () => embeddingProvider.embed(any()),
+          ).thenAnswer((_) async => Uint8List.fromList([1, 2, 3]));
+          when(() => agentProvider.client).thenReturn(client);
+          when(
+            () => providerRegistry.providerById(ProviderId.claudeAgentSdk),
+          ).thenReturn(agentProvider);
+          when(
+            () => modelRoutingRepository.getModelForPhase(ModelPhase.capable),
+          ).thenAnswer((_) async => _sonnet);
+          when(() => client.run(any())).thenAnswer(
+            (_) async => Stream.fromIterable(const [
+              AgentTextEvent('COMPLEXITY: medium\nESTIMATE_MINUTES: 60'),
+              AgentDoneEvent(),
+            ]),
+          );
+          when(() => repository.getAllTickets()).thenAnswer((_) async => []);
+          when(
+            () => repository.applyEstimationSuggestion(
+              any(),
+              complexity: any(named: 'complexity'),
+              estimate: any(named: 'estimate'),
+            ),
+          ).thenAnswer((_) async {});
+          // Also fires alongside the estimation suggester (both are
+          // unawaited background calls off create/update) — stubbed so it
+          // doesn't throw an unstubbed-call error.
+          when(
+            () => repository.updateEmbedding(any(), any()),
+          ).thenAnswer((_) async {});
+        });
+
+        TicketsCubit buildCubit() => TicketsCubit(
+          repository,
+          embeddingProvider: embeddingProvider,
+          providerRegistry: providerRegistry,
+          modelRoutingRepository: modelRoutingRepository,
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          'createTicket always fires the estimation suggester in the '
+          'background',
+          setUp: () {
+            when(
+              () => repository.createTicket(any()),
+            ).thenAnswer((_) async {});
+            when(
+              () => repository.getTicketById(any()),
+            ).thenAnswer((_) async => ticket);
+            when(
+              () => repository.searchTickets(
+                query: any(named: 'query'),
+                statuses: any(named: 'statuses'),
+                types: any(named: 'types'),
+                priorities: any(named: 'priorities'),
+                sort: any(named: 'sort'),
+                limit: any(named: 'limit'),
+                offset: any(named: 'offset'),
+              ),
+            ).thenAnswer(
+              (_) async => TicketSearchPage(tickets: [ticket], hasMore: false),
+            );
+          },
+          build: buildCubit,
+          act: (cubit) =>
+              cubit.createTicket(type: TicketType.task, title: 'New ticket'),
+          wait: const Duration(milliseconds: 10),
+          verify: (_) {
+            verify(
+              () => repository.applyEstimationSuggestion(
+                ticket.id,
+                complexity: any(named: 'complexity'),
+                estimate: any(named: 'estimate'),
+              ),
+            ).called(1);
+          },
+          expect: () => [
+            const TicketCreating([]),
+            TicketCreated([ticket], hasMore: false),
+          ],
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          'updateTicket does not fire the estimation suggester when title/'
+          'description are unchanged',
+          setUp: () {
+            when(
+              () => repository.updateTicket(any()),
+            ).thenAnswer((_) async {});
+            when(() => repository.getTicketById(ticket.id)).thenAnswer(
+              (_) async => ticket, // "previous" and "refreshed" both unchanged
+            );
+          },
+          build: buildCubit,
+          act: (cubit) => cubit.updateTicket(
+            ticket.copyWith(priority: TicketPriority.high),
+          ),
+          wait: const Duration(milliseconds: 10),
+          verify: (_) {
+            verifyNever(
+              () => repository.applyEstimationSuggestion(
+                any(),
+                complexity: any(named: 'complexity'),
+                estimate: any(named: 'estimate'),
+              ),
+            );
+          },
+          expect: () => [TicketDetailLoaded(ticket)],
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          'updateTicket fires the estimation suggester when the title '
+          'changed',
+          setUp: () {
+            when(
+              () => repository.updateTicket(any()),
+            ).thenAnswer((_) async {});
+            var callCount = 0;
+            when(() => repository.getTicketById(ticket.id)).thenAnswer((
+              _,
+            ) async {
+              callCount++;
+              // First call ("previous") returns the original ticket;
+              // second call ("refreshed") returns the title-changed one.
+              return callCount == 1 ? ticket : ticket.copyWith(title: 'New');
+            });
+          },
+          build: buildCubit,
+          act: (cubit) => cubit.updateTicket(ticket.copyWith(title: 'New')),
+          wait: const Duration(milliseconds: 10),
+          verify: (_) {
+            verify(
+              () => repository.applyEstimationSuggestion(
+                ticket.id,
+                complexity: any(named: 'complexity'),
+                estimate: any(named: 'estimate'),
+              ),
+            ).called(1);
+          },
+          expect: () => [TicketDetailLoaded(ticket.copyWith(title: 'New'))],
+        );
+      },
+    );
+
+    group(
+      'regenerateComplexitySuggestion / regenerateEstimateSuggestion '
+      '(ai-assisted-complexity-and-estimate-suggestions)',
+      () {
+        final sizedTicket = ticket.copyWith(
+          complexity: () => TicketComplexity.medium,
+          estimate: () => 60,
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          'regenerateComplexitySuggestion no-ops on a ticket with no '
+          'complexity set',
+          build: () => TicketsCubit(repository),
+          act: (cubit) => cubit.regenerateComplexitySuggestion(ticket),
+          expect: () => [],
+          verify: (_) {
+            verifyNever(() => repository.getTicketById(any()));
+          },
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          'regenerateEstimateSuggestion no-ops on a ticket with no estimate '
+          'set',
+          build: () => TicketsCubit(repository),
+          act: (cubit) => cubit.regenerateEstimateSuggestion(ticket),
+          expect: () => [],
+          verify: (_) {
+            verifyNever(() => repository.getTicketById(any()));
+          },
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          'regenerateComplexitySuggestion re-fetches and emits '
+          'TicketDetailLoaded once the suggester call resolves (including '
+          'a silent suggester failure — no embeddingProvider/'
+          'providerRegistry supplied here)',
+          setUp: () {
+            when(
+              () => repository.getTicketById(sizedTicket.id),
+            ).thenAnswer((_) async => sizedTicket);
+          },
+          build: () => TicketsCubit(repository),
+          act: (cubit) => cubit.regenerateComplexitySuggestion(sizedTicket),
+          expect: () => [TicketDetailLoaded(sizedTicket)],
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          'regenerateEstimateSuggestion emits TicketsError only if the '
+          'repository re-fetch itself throws',
+          setUp: () {
+            when(
+              () => repository.getTicketById(sizedTicket.id),
+            ).thenThrow(Exception('db unavailable'));
+          },
+          build: () => TicketsCubit(repository),
+          act: (cubit) => cubit.regenerateEstimateSuggestion(sizedTicket),
+          expect: () => [isA<TicketsError>()],
+        );
+      },
+    );
+
+    group(
       'rollup recompute triggers '
       '(estimate-timespent-rollup-for-ticket-hierarchy)',
       () {

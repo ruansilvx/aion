@@ -182,4 +182,16 @@ abstract final class AionText {
     letterSpacing: -0.1,
     height: 1.15,
   );
+
+  /// `AiSuggestionBadge`'s inline label — calm sentence-case text, not an
+  /// uppercase tag like [chip]. The low-confidence caveat reuses this style
+  /// via `.copyWith(fontSize: 10.5, fontWeight: FontWeight.w400)`. Added
+  /// for `aion-arch/changes/ai-assisted-complexity-and-estimate-suggestions`;
+  /// see that change's design.md §0.2.
+  static const badgeLabel = TextStyle(
+    fontFamily: _ui,
+    fontSize: 11,
+    fontWeight: FontWeight.w600,
+    height: 1.0,
+  );
 }

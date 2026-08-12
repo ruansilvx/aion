@@ -332,4 +332,122 @@ void main() {
       },
     );
   });
+
+  group(
+    'AI suggestion badge / regenerate button '
+    '(ai-assisted-complexity-and-estimate-suggestions)',
+    () {
+      Ticket sizedTask({
+        TicketEstimationSource? complexitySource,
+        TicketEstimationSource? estimateSource,
+      }) => Ticket(
+        id: 'task-ai',
+        ticketId: 'AIO-9',
+        type: TicketType.task,
+        title: 'AI-sized task',
+        status: TicketStatus.todo,
+        complexity: TicketComplexity.medium,
+        estimate: 60,
+        complexitySource: complexitySource,
+        estimateSource: estimateSource,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+
+      setUp(() {
+        when(
+          () => ticketsCubit.regenerateComplexitySuggestion(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => ticketsCubit.regenerateEstimateSuggestion(any()),
+        ).thenAnswer((_) async {});
+      });
+
+      testWidgets('renders the plain badge for an aiSuggested complexity, '
+          'no regenerate button', (tester) async {
+        final task = sizedTask(
+          complexitySource: TicketEstimationSource.aiSuggested,
+        );
+        await tester.pumpWidget(_wrap(ticket: task, ticketsCubit: ticketsCubit));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(AiSuggestionBadge), findsOneWidget);
+        expect(find.text('AI suggested'), findsOneWidget);
+        expect(
+          find.bySemanticsLabel('Regenerate complexity suggestion'),
+          findsNothing,
+        );
+      });
+
+      testWidgets('renders the low-confidence badge (with caveat) for an '
+          'aiSuggestedLowConfidence complexity', (tester) async {
+        final task = sizedTask(
+          complexitySource: TicketEstimationSource.aiSuggestedLowConfidence,
+        );
+        await tester.pumpWidget(_wrap(ticket: task, ticketsCubit: ticketsCubit));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(AiSuggestionBadge), findsOneWidget);
+        expect(find.textContaining('low confidence'), findsOneWidget);
+      });
+
+      testWidgets('renders the regenerate button (not a badge) for a '
+          'manual-locked complexity, and tapping it calls '
+          'regenerateComplexitySuggestion', (tester) async {
+        final task = sizedTask(
+          complexitySource: TicketEstimationSource.manual,
+        );
+        await tester.pumpWidget(_wrap(ticket: task, ticketsCubit: ticketsCubit));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(AiSuggestionBadge), findsNothing);
+        final button = find.bySemanticsLabel(
+          'Regenerate complexity suggestion',
+        );
+        expect(button, findsOneWidget);
+
+        await tester.tap(button);
+        await tester.pumpAndSettle();
+
+        verify(
+          () => ticketsCubit.regenerateComplexitySuggestion(task),
+        ).called(1);
+      });
+
+      testWidgets('renders the regenerate button (not a badge) for a '
+          'manual-locked estimate, and tapping it calls '
+          'regenerateEstimateSuggestion', (tester) async {
+        final task = sizedTask(estimateSource: TicketEstimationSource.manual);
+        await tester.pumpWidget(_wrap(ticket: task, ticketsCubit: ticketsCubit));
+        await tester.pumpAndSettle();
+
+        final button = find.bySemanticsLabel('Regenerate estimate suggestion');
+        expect(button, findsOneWidget);
+
+        await tester.tap(button);
+        await tester.pumpAndSettle();
+
+        verify(
+          () => ticketsCubit.regenerateEstimateSuggestion(task),
+        ).called(1);
+      });
+
+      testWidgets('renders no badge/button when the source is unset '
+          '(manual write path, not covered by this feature)', (tester) async {
+        final task = sizedTask();
+        await tester.pumpWidget(_wrap(ticket: task, ticketsCubit: ticketsCubit));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(AiSuggestionBadge), findsNothing);
+        expect(
+          find.bySemanticsLabel('Regenerate complexity suggestion'),
+          findsNothing,
+        );
+        expect(
+          find.bySemanticsLabel('Regenerate estimate suggestion'),
+          findsNothing,
+        );
+      });
+    },
+  );
 }

@@ -14,6 +14,7 @@ export 'domain/enums/inbox_purpose.dart';
 export 'domain/enums/sdd_stage.dart';
 export 'domain/enums/summarization_depth.dart';
 export 'domain/enums/ticket_complexity.dart';
+export 'domain/enums/ticket_estimation_source.dart';
 export 'domain/enums/ticket_link_type.dart';
 export 'domain/enums/ticket_priority.dart';
 export 'domain/enums/ticket_severity.dart';

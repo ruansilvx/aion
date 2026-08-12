@@ -7,6 +7,7 @@ import 'package:equatable/equatable.dart';
 import 'package:aion/features/tickets/domain/enums/inbox_purpose.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_complexity.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_estimation_source.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_severity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
@@ -59,7 +60,8 @@ class Ticket extends Equatable {
 
   /// Estimated effort in minutes. Editable via `TicketMetadataSection`'s
   /// Estimate field; also the base value [estimateRollup] sums up its
-  /// live descendant subtree from.
+  /// live descendant subtree from. See [estimateSource] for where the
+  /// current value came from.
   final int? estimate;
 
   /// Time spent in minutes. Editable via `TicketMetadataSection`'s Time
@@ -78,7 +80,8 @@ class Ticket extends Equatable {
   /// cleared by [TicketRepository.restoreTicket].
   final DateTime? deletedAt;
 
-  /// Rough size estimate, user-set. `null` until sized.
+  /// Rough size estimate. `null` until sized. See [complexitySource] for
+  /// where the current value came from.
   final TicketComplexity? complexity;
 
   /// This ticket's SDD-cycle progress. `null` until the cycle starts.
@@ -136,6 +139,16 @@ class Ticket extends Equatable {
   /// Same as [estimateRollup], for [timeSpent].
   final int? timeSpentRollup;
 
+  /// Where the current [complexity] value came from, or `null` if
+  /// [complexity] itself is unset. Written only by `TicketRepository`'s
+  /// dedicated methods — see [complexity]'s dartdoc and
+  /// `aion-arch/changes/ai-assisted-complexity-and-estimate-suggestions/design.md`
+  /// §1.2. Never part of [copyWith].
+  final TicketEstimationSource? complexitySource;
+
+  /// Same as [complexitySource], for [estimate].
+  final TicketEstimationSource? estimateSource;
+
   /// Creates a [Ticket]. [priority] defaults to [TicketPriority.none].
   const Ticket({
     required this.id,
@@ -163,6 +176,8 @@ class Ticket extends Equatable {
     this.inboxPurpose,
     this.estimateRollup,
     this.timeSpentRollup,
+    this.complexitySource,
+    this.estimateSource,
   });
 
   @override
@@ -192,6 +207,8 @@ class Ticket extends Equatable {
     inboxPurpose,
     estimateRollup,
     timeSpentRollup,
+    complexitySource,
+    estimateSource,
   ];
 
   /// Returns a copy of this ticket with the given fields replaced.

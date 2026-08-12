@@ -16,6 +16,7 @@ import 'package:aion/features/tickets/data/services/ticket_repair_service.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_complexity.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_estimation_source.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
@@ -42,7 +43,11 @@ import 'package:aion/features/tickets/presentation/widgets/ticket_parent_picker.
 /// `aion-arch/changes/board-task-ordering-indication`; `resource` keeps
 /// a single-tap `relatesTo`-only `TicketLinkPicker`, every other gated
 /// type offers the full `blocks`/`blockedBy`/`relatesTo`/`duplicates`
-/// set). Each `LinkedTicketsSection` row also supports removing its link
+/// set). The Complexity and Estimate rows also each carry an
+/// [AiSuggestionBadge] (when their value is still AI-suggested/
+/// low-confidence) or a `_RegenerateButton` (when `manual`-locked) — see
+/// `aion-arch/changes/ai-assisted-complexity-and-estimate-suggestions/design.md`
+/// §5.2. Each `LinkedTicketsSection` row also supports removing its link
 /// or changing its type inline — `TicketLinkPicker.onSelected` (create),
 /// the row's remove action (delete), and its `_LinkTypeEditor` (update)
 /// all go through `TicketsCubit.createTicketLink`/`.deleteTicketLink`/
@@ -196,45 +201,93 @@ class TicketMetadataSection extends StatelessWidget {
                                   context.l10n.ticketDetailChangePriority,
                             ),
                             const SizedBox(height: AionSpacing.sp8),
-                            SelectionMenu<TicketComplexity?>(
-                              trigger: ticket.complexity == null
-                                  ? Text(
-                                      context.l10n.ticketDetailAddComplexity,
-                                      style: AionText.label.copyWith(
-                                        color: c.textMuted,
-                                      ),
-                                    )
-                                  : Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        ComplexityMeter(
-                                          complexity: ticket.complexity,
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Text(
-                                          ticketComplexityLabel(
-                                            context,
-                                            ticket.complexity!,
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(
+                                minHeight: 26,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  SelectionMenu<TicketComplexity?>(
+                                    trigger: ticket.complexity == null
+                                        ? Text(
+                                            context
+                                                .l10n
+                                                .ticketDetailAddComplexity,
+                                            style: AionText.label.copyWith(
+                                              color: c.textMuted,
+                                            ),
+                                          )
+                                        : Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              ComplexityMeter(
+                                                complexity: ticket.complexity,
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Text(
+                                                ticketComplexityLabel(
+                                                  context,
+                                                  ticket.complexity!,
+                                                ),
+                                                style: AionText.label
+                                                    .copyWith(
+                                                      color: c.textSecondary,
+                                                    ),
+                                              ),
+                                            ],
                                           ),
-                                          style: AionText.label.copyWith(
-                                            color: c.textSecondary,
+                                    items: const [
+                                      null,
+                                      ...TicketComplexity.values,
+                                    ],
+                                    itemLabel: (v) => v == null
+                                        ? context.l10n.commonNotSet
+                                        : ticketComplexityLabel(context, v),
+                                    currentValue: ticket.complexity,
+                                    onSelected: (v) => context
+                                        .read<TicketsCubit>()
+                                        .updateTicket(
+                                          ticket.copyWith(
+                                            complexity: () => v,
                                           ),
                                         ),
-                                      ],
-                                    ),
-                              items: const [null, ...TicketComplexity.values],
-                              itemLabel: (v) => v == null
-                                  ? context.l10n.commonNotSet
-                                  : ticketComplexityLabel(context, v),
-                              currentValue: ticket.complexity,
-                              onSelected: (v) =>
-                                  context.read<TicketsCubit>().updateTicket(
-                                    ticket.copyWith(complexity: () => v),
+                                    itemBuilder: (context, c, item) =>
+                                        ComplexityMenuRow(item: item),
+                                    semanticsLabel: context
+                                        .l10n
+                                        .ticketDetailChangeComplexity,
                                   ),
-                              itemBuilder: (context, c, item) =>
-                                  ComplexityMenuRow(item: item),
-                              semanticsLabel:
-                                  context.l10n.ticketDetailChangeComplexity,
+                                  if (ticket.complexitySource ==
+                                          TicketEstimationSource
+                                              .aiSuggested ||
+                                      ticket.complexitySource ==
+                                          TicketEstimationSource
+                                              .aiSuggestedLowConfidence) ...[
+                                    const SizedBox(width: 9),
+                                    AiSuggestionBadge(
+                                      lowConfidence:
+                                          ticket.complexitySource ==
+                                          TicketEstimationSource
+                                              .aiSuggestedLowConfidence,
+                                    ),
+                                  ] else if (ticket.complexitySource ==
+                                      TicketEstimationSource.manual) ...[
+                                    const SizedBox(width: 8),
+                                    _RegenerateButton(
+                                      semanticsLabel: context
+                                          .l10n
+                                          .ticketDetailRegenerateComplexity,
+                                      onRegenerate: () => context
+                                          .read<TicketsCubit>()
+                                          .regenerateComplexitySuggestion(
+                                            ticket,
+                                          ),
+                                    ),
+                                  ],
+                                ],
+                              ),
                             ),
                             const SizedBox(height: AionSpacing.sp8),
                             InlineEditableField<String>(
@@ -322,40 +375,87 @@ class TicketMetadataSection extends StatelessWidget {
                                       ),
                                     ),
                                     const SizedBox(height: AionSpacing.sp4),
-                                    InlineEditableField<int?>(
-                                      displayText: formatDurationMinutes(
-                                        ticket.estimate,
-                                        placeholder: '',
+                                    ConstrainedBox(
+                                      constraints: const BoxConstraints(
+                                        minHeight: 26,
                                       ),
-                                      editText: formatDurationMinutes(
-                                        ticket.estimate,
-                                        placeholder: '',
-                                      ),
-                                      placeholder: context
-                                          .l10n
-                                          .ticketDetailEstimatePlaceholder,
-                                      textStyle: AionText.bodySm.copyWith(
-                                        color: c.textPrimary,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                      semanticsLabel:
-                                          context.l10n.ticketDetailEditEstimate,
-                                      parser: (raw) {
-                                        try {
-                                          return parseDurationMinutes(raw);
-                                        } on FormatException {
-                                          throw FormatException(
-                                            context.l10n.durationInvalidFormat(
-                                              raw,
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.center,
+                                        children: [
+                                          InlineEditableField<int?>(
+                                            displayText: formatDurationMinutes(
+                                              ticket.estimate,
+                                              placeholder: '',
                                             ),
-                                          );
-                                        }
-                                      },
-                                      onCommit: (v) => context
-                                          .read<TicketsCubit>()
-                                          .updateTicket(
-                                            ticket.copyWith(estimate: () => v),
+                                            editText: formatDurationMinutes(
+                                              ticket.estimate,
+                                              placeholder: '',
+                                            ),
+                                            placeholder: context
+                                                .l10n
+                                                .ticketDetailEstimatePlaceholder,
+                                            textStyle: AionText.bodySm
+                                                .copyWith(
+                                                  color: c.textPrimary,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                            semanticsLabel: context
+                                                .l10n
+                                                .ticketDetailEditEstimate,
+                                            parser: (raw) {
+                                              try {
+                                                return parseDurationMinutes(
+                                                  raw,
+                                                );
+                                              } on FormatException {
+                                                throw FormatException(
+                                                  context.l10n
+                                                      .durationInvalidFormat(
+                                                        raw,
+                                                      ),
+                                                );
+                                              }
+                                            },
+                                            onCommit: (v) => context
+                                                .read<TicketsCubit>()
+                                                .updateTicket(
+                                                  ticket.copyWith(
+                                                    estimate: () => v,
+                                                  ),
+                                                ),
                                           ),
+                                          if (ticket.estimateSource ==
+                                                  TicketEstimationSource
+                                                      .aiSuggested ||
+                                              ticket.estimateSource ==
+                                                  TicketEstimationSource
+                                                      .aiSuggestedLowConfidence) ...[
+                                            const SizedBox(width: 9),
+                                            AiSuggestionBadge(
+                                              lowConfidence:
+                                                  ticket.estimateSource ==
+                                                  TicketEstimationSource
+                                                      .aiSuggestedLowConfidence,
+                                            ),
+                                          ] else if (ticket.estimateSource ==
+                                              TicketEstimationSource
+                                                  .manual) ...[
+                                            const SizedBox(width: 8),
+                                            _RegenerateButton(
+                                              semanticsLabel: context
+                                                  .l10n
+                                                  .ticketDetailRegenerateEstimate,
+                                              onRegenerate: () => context
+                                                  .read<TicketsCubit>()
+                                                  .regenerateEstimateSuggestion(
+                                                    ticket,
+                                                  ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
                                     ),
                                     if (ticket.estimateRollup != null) ...[
                                       const SizedBox(height: AionSpacing.sp8),
@@ -990,6 +1090,162 @@ class _RollupIndicatorState extends State<_RollupIndicator> {
               ),
             ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A small, icon-only, keyboard-focusable button shown next to a
+/// `manual`-locked Complexity/Estimate value in [TicketMetadataSection],
+/// letting the user explicitly request a fresh AI suggestion for that one
+/// field, overriding the lock. Ghost by default, gaining fill/glyph
+/// weight on hover/press/focus, and switching to a spinning in-flight
+/// state (a fresh [AnimationController] created on entering it and
+/// disposed on leaving it — never left repeating in the background) while
+/// [onRegenerate] is in flight. No `IconButton`/`InkWell` — built from
+/// `Focus`/`GestureDetector`/`DecoratedBox`, per this app's no-Material
+/// constraint. See
+/// `aion-arch/changes/ai-assisted-complexity-and-estimate-suggestions/design.md`
+/// §2 for the full state spec.
+class _RegenerateButton extends StatefulWidget {
+  const _RegenerateButton({
+    required this.semanticsLabel,
+    required this.onRegenerate,
+  });
+
+  /// Accessibility label for the button.
+  final String semanticsLabel;
+
+  /// Called on activation (tap or Enter/Space while focused) — resolves
+  /// once the fresh suggestion has landed (or silently failed; see
+  /// `TicketEstimationSuggester`'s swallow-on-failure behavior).
+  final Future<void> Function() onRegenerate;
+
+  @override
+  State<_RegenerateButton> createState() => _RegenerateButtonState();
+}
+
+class _RegenerateButtonState extends State<_RegenerateButton>
+    with SingleTickerProviderStateMixin {
+  bool _isHovered = false;
+  bool _isPressed = false;
+  bool _isFocused = false;
+  AnimationController? _spinController;
+
+  bool get _isLoading => _spinController != null;
+
+  @override
+  void dispose() {
+    _spinController?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleActivate() async {
+    if (_isLoading) return;
+    final controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat();
+    setState(() => _spinController = controller);
+    try {
+      await widget.onRegenerate();
+    } finally {
+      controller.stop();
+      controller.dispose();
+      if (mounted) setState(() => _spinController = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    final isLoading = _isLoading;
+
+    final Color fill;
+    final Color glyphColor;
+    if (isLoading) {
+      fill = c.primaryWash(t.isDark);
+      glyphColor = c.primary;
+    } else if (_isPressed) {
+      fill = c.surfaceHover;
+      glyphColor = c.textPrimary;
+    } else if (_isHovered || _isFocused) {
+      fill = c.surfaceHover;
+      glyphColor = c.textSecondary;
+    } else {
+      fill = const Color(0x00000000);
+      glyphColor = c.textMuted;
+    }
+
+    Widget glyph = PhosphorIcon(
+      PhosphorIconsBold.arrowsClockwise,
+      size: 15,
+      color: glyphColor,
+    );
+    if (isLoading) {
+      glyph = RotationTransition(turns: _spinController!, child: glyph);
+    }
+
+    final button = AnimatedScale(
+      scale: _isPressed && !isLoading ? 0.96 : 1.0,
+      duration: const Duration(milliseconds: 80),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: fill,
+          borderRadius: const BorderRadius.all(AionRadius.iconBtnSm),
+          boxShadow: _isFocused && !isLoading
+              ? [
+                  BoxShadow(
+                    color: c.focusRing(t.isDark),
+                    blurRadius: 0,
+                    spreadRadius: 3,
+                  ),
+                ]
+              : null,
+        ),
+        child: SizedBox(width: 26, height: 26, child: Center(child: glyph)),
+      ),
+    );
+
+    return Semantics(
+      button: true,
+      label: widget.semanticsLabel,
+      child: MouseRegion(
+        cursor: isLoading
+            ? SystemMouseCursors.basic
+            : SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: FocusableActionDetector(
+          enabled: !isLoading,
+          actions: {
+            ActivateIntent: CallbackAction<ActivateIntent>(
+              onInvoke: (_) {
+                unawaited(_handleActivate());
+                return null;
+              },
+            ),
+          },
+          onShowFocusHighlight: (value) => setState(() => _isFocused = value),
+          child: GestureDetector(
+            onTap: isLoading ? null : () => unawaited(_handleActivate()),
+            onTapDown: isLoading
+                ? null
+                : (_) => setState(() => _isPressed = true),
+            onTapUp: isLoading
+                ? null
+                : (_) => setState(() => _isPressed = false),
+            onTapCancel: isLoading
+                ? null
+                : () => setState(() => _isPressed = false),
+            child: SizedBox(
+              width: 44,
+              height: 44,
+              child: Center(child: button),
+            ),
+          ),
         ),
       ),
     );
