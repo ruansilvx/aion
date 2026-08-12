@@ -148,8 +148,9 @@ class TicketContextEnricher {
   /// ancestor bullet's relationship label — matches how
   /// `TicketsCubit._assembleStageContext`'s existing `verifying`/
   /// `archived` branch already labels children by type name.
-  String _typeLabel(String typeName) =>
-      typeName.isEmpty ? typeName : typeName[0].toUpperCase() + typeName.substring(1);
+  String _typeLabel(String typeName) => typeName.isEmpty
+      ? typeName
+      : typeName[0].toUpperCase() + typeName.substring(1);
 
   /// [description] truncated to [_descriptionSnippetLength] characters
   /// (with a trailing `…` when longer), or the literal `(no description)`
