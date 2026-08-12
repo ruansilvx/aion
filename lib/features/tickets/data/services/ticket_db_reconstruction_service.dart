@@ -114,6 +114,12 @@ class TicketDbReconstructionService {
       }
 
       if (existingByTicketId.containsKey(ticket.ticketId)) {
+        // No `estimateEdited`/`complexityEdited` — see [_buildTicket]'s
+        // dartdoc for why `fields.containsKey(...)` can't be used as an
+        // edited signal here. Leaving both at their `false` default is
+        // strictly safer than this call unconditionally stamping `manual`
+        // on every reconstruction pass, which is what happened before
+        // `estimateSource` existed to get it wrong.
         await _repository.updateTicket(ticket);
       } else {
         await _repository.importTicket(ticket);
@@ -143,6 +149,17 @@ class TicketDbReconstructionService {
   /// covers the second-machine case where the local DB has no row yet).
   /// Returns `null` for [Unparseable] or any result missing a usable
   /// `ticketId`/`type`/`status` (the fields with no safe default).
+  ///
+  /// The built [Ticket] never carries a meaningful `complexitySource`/
+  /// `estimateSource` signal for [reconstruct]'s `updateTicket` call to key
+  /// off of: [TicketMarkdownSerializer.serialize] always writes an
+  /// `estimate:` frontmatter line (even `null`), so
+  /// `fields.containsKey(TicketMarkdownTemplate.estimate)` is `true` for
+  /// every successfully parsed file regardless of whether this specific
+  /// pass actually changed the value — not a usable "was this field
+  /// edited" signal. `complexity` has no Markdown template field at all,
+  /// so the built [Ticket] always has `complexity: null` here regardless
+  /// of [existingByTicketId].
   Ticket? _buildTicket(
     TicketMarkdownParseResult result,
     Map<String, Ticket> existingByTicketId,

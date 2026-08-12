@@ -840,10 +840,32 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [_triggerEmbeddingRegen], under the same title/description-changed
   /// condition, so a content edit gets a fresh AI complexity/estimate
   /// suggestion for whichever field isn't `manual`-locked.
-  Future<Ticket> updateTicket(Ticket ticket) async {
+  ///
+  /// [complexityEdited]/[estimateEdited] tell [TicketRepository.updateTicket]
+  /// whether *this specific call* is the Complexity picker's `onSelected`
+  /// or the Estimate field's `onCommit` (`true`) versus some other field's
+  /// edit that merely carries `ticket.complexity`/`ticket.estimate`
+  /// through unchanged (`false`, the default) — see that method's dartdoc
+  /// for why the distinction matters. Forwarded to the repository only
+  /// when at least one is `true`, so the overwhelmingly common "editing
+  /// some other field" call keeps the exact same
+  /// `_repository.updateTicket(ticket)` shape it always has.
+  Future<Ticket> updateTicket(
+    Ticket ticket, {
+    bool complexityEdited = false,
+    bool estimateEdited = false,
+  }) async {
     try {
       final previous = await _repository.getTicketById(ticket.id);
-      await _repository.updateTicket(ticket);
+      if (complexityEdited || estimateEdited) {
+        await _repository.updateTicket(
+          ticket,
+          complexityEdited: complexityEdited,
+          estimateEdited: estimateEdited,
+        );
+      } else {
+        await _repository.updateTicket(ticket);
+      }
       final refreshed = await _repository.getTicketById(ticket.id);
       if (refreshed != null) {
         emit(TicketDetailLoaded(refreshed));

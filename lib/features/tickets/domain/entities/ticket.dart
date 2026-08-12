@@ -220,12 +220,18 @@ class Ticket extends Equatable {
   /// it unchanged. A plain `?? this.x` fallback can't tell "not passed"
   /// apart from "explicitly set to null," since both look like `null` at
   /// the call site. `id`, `ticketId`, `parentId`, `embedding`,
-  /// `syncStatus`, `createdAt`, `sddStage`, `estimateRollup`, and
-  /// `timeSpentRollup` are never mutated by this method — `sddStage` is
-  /// written only via `TicketsCubit.advanceSddStage`, and
-  /// `estimateRollup`/`timeSpentRollup` are written only via
-  /// `TicketRepository.updateRollup`, so neither's precondition can be
-  /// bypassed by a plain edit.
+  /// `syncStatus`, `createdAt`, `sddStage`, `estimateRollup`,
+  /// `timeSpentRollup`, `complexitySource`, and `estimateSource` are never
+  /// mutated by this method — `sddStage` is written only via
+  /// `TicketsCubit.advanceSddStage`, `estimateRollup`/`timeSpentRollup`
+  /// are written only via `TicketRepository.updateRollup`, and
+  /// `complexitySource`/`estimateSource` are written only via
+  /// `TicketRepository.updateTicket`/`applyEstimationSuggestion`, so none
+  /// of their preconditions can be bypassed by a plain edit. Like
+  /// `estimateRollup`/`timeSpentRollup`, `complexitySource`/
+  /// `estimateSource` still pass through unchanged on every call (there's
+  /// no settable parameter for either) — only [complexity]/[estimate]
+  /// themselves are settable here.
   Ticket copyWith({
     String? title,
     TicketFieldSetter<String?>? description,
@@ -276,6 +282,8 @@ class Ticket extends Equatable {
       inboxPurpose: inboxPurpose != null ? inboxPurpose() : this.inboxPurpose,
       estimateRollup: estimateRollup,
       timeSpentRollup: timeSpentRollup,
+      complexitySource: complexitySource,
+      estimateSource: estimateSource,
     );
   }
 }

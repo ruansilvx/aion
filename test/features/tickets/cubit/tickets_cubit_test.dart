@@ -767,6 +767,84 @@ void main() {
       expect: () => [isA<TicketsError>()],
     );
 
+    group('updateTicket complexityEdited/estimateEdited threading', () {
+      test('a plain call (neither flag set) calls '
+          'repository.updateTicket(ticket) with no named args, preserving '
+          'the existing call shape', () async {
+        when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(ticket.id),
+        ).thenAnswer((_) async => ticket);
+        final cubit = TicketsCubit(repository);
+
+        await cubit.updateTicket(ticket.copyWith(title: 'New title'));
+
+        final captured = verify(
+          () => repository.updateTicket(captureAny()),
+        ).captured;
+        expect(captured, hasLength(1));
+        await cubit.close();
+      });
+
+      test('complexityEdited: true is forwarded to the repository call',
+          () async {
+        when(
+          () => repository.updateTicket(
+            any(),
+            complexityEdited: any(named: 'complexityEdited'),
+            estimateEdited: any(named: 'estimateEdited'),
+          ),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(ticket.id),
+        ).thenAnswer((_) async => ticket);
+        final cubit = TicketsCubit(repository);
+
+        await cubit.updateTicket(
+          ticket.copyWith(complexity: () => TicketComplexity.large),
+          complexityEdited: true,
+        );
+
+        verify(
+          () => repository.updateTicket(
+            any(),
+            complexityEdited: true,
+            estimateEdited: false,
+          ),
+        ).called(1);
+        await cubit.close();
+      });
+
+      test('estimateEdited: true is forwarded to the repository call',
+          () async {
+        when(
+          () => repository.updateTicket(
+            any(),
+            complexityEdited: any(named: 'complexityEdited'),
+            estimateEdited: any(named: 'estimateEdited'),
+          ),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(ticket.id),
+        ).thenAnswer((_) async => ticket);
+        final cubit = TicketsCubit(repository);
+
+        await cubit.updateTicket(
+          ticket.copyWith(estimate: () => 90),
+          estimateEdited: true,
+        );
+
+        verify(
+          () => repository.updateTicket(
+            any(),
+            complexityEdited: false,
+            estimateEdited: true,
+          ),
+        ).called(1);
+        await cubit.close();
+      });
+    });
+
     blocTest<TicketsCubit, TicketsState>(
       'changeTicketStatus emits [TicketDetailLoaded] with the refreshed ticket on success',
       setUp: () {

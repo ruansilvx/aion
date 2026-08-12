@@ -252,6 +252,7 @@ class TicketMetadataSection extends StatelessWidget {
                                           ticket.copyWith(
                                             complexity: () => v,
                                           ),
+                                          complexityEdited: true,
                                         ),
                                     itemBuilder: (context, c, item) =>
                                         ComplexityMenuRow(item: item),
@@ -424,6 +425,7 @@ class TicketMetadataSection extends StatelessWidget {
                                                   ticket.copyWith(
                                                     estimate: () => v,
                                                   ),
+                                                  estimateEdited: true,
                                                 ),
                                           ),
                                           if (ticket.estimateSource ==

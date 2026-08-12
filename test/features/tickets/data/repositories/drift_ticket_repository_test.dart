@@ -1637,8 +1637,30 @@ void main() {
   });
 
   group('updateTicket stamps complexitySource/estimateSource', () {
-    test('setting complexity/estimate on updateTicket stamps manual',
-        () async {
+    test('setting complexity/estimate on updateTicket with both *Edited '
+        'flags stamps manual', () async {
+      await repository.createTicket(buildTicket(id: '1'));
+      final persisted = await repository.getTicketById('1');
+
+      await repository.updateTicket(
+        persisted!.copyWith(
+          complexity: () => TicketComplexity.large,
+          estimate: () => 120,
+        ),
+        complexityEdited: true,
+        estimateEdited: true,
+      );
+      final updated = await repository.getTicketById('1');
+
+      expect(updated!.complexity, TicketComplexity.large);
+      expect(updated.complexitySource, TicketEstimationSource.manual);
+      expect(updated.estimate, 120);
+      expect(updated.estimateSource, TicketEstimationSource.manual);
+    });
+
+    test('setting complexity/estimate on updateTicket WITHOUT the *Edited '
+        'flags leaves the source columns untouched (null, since neither '
+        'was previously sized)', () async {
       await repository.createTicket(buildTicket(id: '1'));
       final persisted = await repository.getTicketById('1');
 
@@ -1650,10 +1672,68 @@ void main() {
       );
       final updated = await repository.getTicketById('1');
 
+      // The value is written either way (updateTicket always persists
+      // whatever complexity/estimate the passed Ticket carries) — only the
+      // *source* stamp is gated by complexityEdited/estimateEdited.
       expect(updated!.complexity, TicketComplexity.large);
-      expect(updated.complexitySource, TicketEstimationSource.manual);
       expect(updated.estimate, 120);
-      expect(updated.estimateSource, TicketEstimationSource.manual);
+      expect(updated.complexitySource, isNull);
+      expect(updated.estimateSource, isNull);
+    });
+
+    test('updateTicket with neither *Edited flag leaves an existing '
+        'aiSuggested source completely untouched when some other field '
+        'is edited — regression test for the "editing title relocks an '
+        'AI suggestion" bug', () async {
+      await repository.createTicket(buildTicket(id: '1'));
+      await repository.applyEstimationSuggestion(
+        '1',
+        complexity: (value: TicketComplexity.medium, lowConfidence: false),
+        estimate: (value: 45, lowConfidence: true),
+      );
+      final aiSuggested = await repository.getTicketById('1');
+      expect(aiSuggested!.complexitySource, TicketEstimationSource.aiSuggested);
+      expect(
+        aiSuggested.estimateSource,
+        TicketEstimationSource.aiSuggestedLowConfidence,
+      );
+
+      // Editing an unrelated field (title) — complexity/estimate merely
+      // carry through unchanged, neither *Edited flag is passed.
+      await repository.updateTicket(aiSuggested.copyWith(title: 'New title'));
+      final afterTitleEdit = await repository.getTicketById('1');
+
+      expect(afterTitleEdit!.title, 'New title');
+      expect(afterTitleEdit.complexity, TicketComplexity.medium);
+      expect(
+        afterTitleEdit.complexitySource,
+        TicketEstimationSource.aiSuggested,
+      );
+      expect(afterTitleEdit.estimate, 45);
+      expect(
+        afterTitleEdit.estimateSource,
+        TicketEstimationSource.aiSuggestedLowConfidence,
+      );
+    });
+
+    test('updateTicket with complexityEdited: true re-locks an aiSuggested '
+        'complexity to manual even when the selected value is unchanged '
+        '(the "confirm an AI suggestion" case)', () async {
+      await repository.createTicket(buildTicket(id: '1'));
+      await repository.applyEstimationSuggestion(
+        '1',
+        complexity: (value: TicketComplexity.medium, lowConfidence: false),
+      );
+      final aiSuggested = await repository.getTicketById('1');
+
+      await repository.updateTicket(
+        aiSuggested!.copyWith(complexity: () => TicketComplexity.medium),
+        complexityEdited: true,
+      );
+      final confirmed = await repository.getTicketById('1');
+
+      expect(confirmed!.complexity, TicketComplexity.medium);
+      expect(confirmed.complexitySource, TicketEstimationSource.manual);
     });
 
     test('clearing complexity/estimate on updateTicket clears the source '

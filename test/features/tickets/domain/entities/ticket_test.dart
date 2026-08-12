@@ -177,6 +177,45 @@ void main() {
         expect(result.timeSpentRollup, 20);
       },
     );
+
+    // Same shape as the estimateRollup/timeSpentRollup test above —
+    // complexitySource/estimateSource have no copyWith parameter either,
+    // so the only runtime-testable property is that they pass through
+    // unaffected by every other copyWith call.
+    test(
+      'complexitySource/estimateSource pass through unchanged on every '
+      'copyWith call, since neither is a settable parameter',
+      () {
+        final withSources = Ticket(
+          id: baseTicket.id,
+          ticketId: baseTicket.ticketId,
+          type: baseTicket.type,
+          title: baseTicket.title,
+          description: baseTicket.description,
+          status: baseTicket.status,
+          priority: baseTicket.priority,
+          estimate: baseTicket.estimate,
+          timeSpent: baseTicket.timeSpent,
+          createdAt: baseTicket.createdAt,
+          updatedAt: baseTicket.updatedAt,
+          complexity: TicketComplexity.medium,
+          complexitySource: TicketEstimationSource.aiSuggested,
+          estimateSource: TicketEstimationSource.aiSuggestedLowConfidence,
+        );
+
+        final result = withSources.copyWith(
+          title: 'Changed',
+          priority: TicketPriority.high,
+          estimate: () => 999,
+        );
+
+        expect(result.complexitySource, TicketEstimationSource.aiSuggested);
+        expect(
+          result.estimateSource,
+          TicketEstimationSource.aiSuggestedLowConfidence,
+        );
+      },
+    );
   });
 
   group('Ticket equality (props)', () {

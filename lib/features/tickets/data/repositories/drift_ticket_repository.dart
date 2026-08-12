@@ -145,12 +145,15 @@ class DriftTicketRepository implements TicketRepository {
     );
   }
 
-  /// Also stamps `complexity_source`/`estimate_source` to `'manual'`
-  /// whenever the corresponding field is non-null, or clears it to `null`
-  /// whenever the field is null — see [TicketRepository.updateTicket]'s
-  /// dartdoc.
+  /// Also stamps `complexity_source`/`estimate_source` — see
+  /// [TicketRepository.updateTicket]'s dartdoc for the exact
+  /// [complexityEdited]/[estimateEdited] semantics.
   @override
-  Future<void> updateTicket(Ticket ticket) {
+  Future<void> updateTicket(
+    Ticket ticket, {
+    bool complexityEdited = false,
+    bool estimateEdited = false,
+  }) {
     return _db.ticketDao.updateFields(
       ticket.id,
       TicketsTableCompanion(
@@ -168,14 +171,28 @@ class DriftTicketRepository implements TicketRepository {
         suggestedType: Value(ticket.suggestedType?.name),
         inboxPurpose: Value(ticket.inboxPurpose?.name),
         updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
-        complexitySource: Value(
-          ticket.complexity != null ? TicketEstimationSource.manual.name : null,
+        complexitySource: _sourceValue(
+          value: ticket.complexity != null,
+          edited: complexityEdited,
         ),
-        estimateSource: Value(
-          ticket.estimate != null ? TicketEstimationSource.manual.name : null,
+        estimateSource: _sourceValue(
+          value: ticket.estimate != null,
+          edited: estimateEdited,
         ),
       ),
     );
+  }
+
+  /// Resolves what [updateTicket] should write to a `*_source` column: a
+  /// value-present field with `edited: true` stamps `manual`; a `null`
+  /// field always clears to `null` regardless of [edited] (a source can't
+  /// outlive its value); anything else (non-null field, `edited: false`)
+  /// leaves the column untouched via [Value.absent] — see
+  /// [TicketRepository.updateTicket]'s dartdoc.
+  Value<String?> _sourceValue({required bool value, required bool edited}) {
+    if (!value) return const Value(null);
+    if (edited) return Value(TicketEstimationSource.manual.name);
+    return const Value.absent();
   }
 
   /// See [TicketRepository.applyEstimationSuggestion] for the contract.
