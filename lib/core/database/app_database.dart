@@ -87,7 +87,11 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
 /// Version 9 adds `TicketsTable.estimateRollup`/`timeSpentRollup` and
 /// backfills them once for every existing row (see [_backfillRollups]) —
 /// see `aion-arch/changes/estimate-timespent-rollup-for-ticket-hierarchy/design.md`
-/// §1.4.
+/// §1.4. Version 10 adds `TicketsTable.complexitySource`/`estimateSource`
+/// and backfills both to `'manual'` for every pre-existing row whose
+/// `complexity`/`estimate` is already set — see
+/// `aion-arch/changes/ai-assisted-complexity-and-estimate-suggestions/design.md`
+/// §3.4.
 @DriftDatabase(
   tables: [
     TicketsTable,
@@ -107,7 +111,7 @@ class AppDatabase extends _$AppDatabase {
     : super(executor ?? _openConnection(project));
 
   @override
-  int get schemaVersion => 9;
+  int get schemaVersion => 10;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -156,6 +160,22 @@ class AppDatabase extends _$AppDatabase {
         await m.addColumn(ticketsTable, ticketsTable.estimateRollup);
         await m.addColumn(ticketsTable, ticketsTable.timeSpentRollup);
         await _backfillRollups(m);
+      }
+      if (from < 10) {
+        await m.addColumn(ticketsTable, ticketsTable.complexitySource);
+        await m.addColumn(ticketsTable, ticketsTable.estimateSource);
+        // Every pre-existing sized ticket was sized by hand — there was no
+        // other way before this change — so backfill both sources to
+        // 'manual' wherever their field is already set. Mirrors
+        // `_backfillRollups`'s raw-SQL-inside-the-migration precedent.
+        await m.database.customStatement(
+          "UPDATE tickets SET complexity_source = 'manual' "
+          'WHERE complexity IS NOT NULL AND complexity_source IS NULL',
+        );
+        await m.database.customStatement(
+          "UPDATE tickets SET estimate_source = 'manual' "
+          'WHERE estimate IS NOT NULL AND estimate_source IS NULL',
+        );
       }
     },
   );

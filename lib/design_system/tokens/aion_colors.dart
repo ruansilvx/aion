@@ -539,4 +539,21 @@ extension AionColorsHubTokens on AionColors {
   /// sit on a tinted background (e.g. `RollupBadge` on a selected row).
   Color neutralBorderTint(bool isDark) =>
       textSecondary.withValues(alpha: isDark ? 0.26 : 0.18);
+
+  // primary family — faint fill under an actively-working control, and a
+  // standalone focus-ring color for widgets that build their own
+  // `BoxShadow` rather than going through `AionShadows.focus`. Added for
+  // ai-assisted-complexity-and-estimate-suggestions; see that change's
+  // design.md §0.1.
+  /// `RegenerateButton`'s in-flight-state fill (§2.6 of that change's
+  /// design.md).
+  Color primaryWash(bool isDark) =>
+      primary.withValues(alpha: isDark ? 0.16 : 0.10);
+
+  /// `RegenerateButton`'s focused-state ring color (§2.4 of that change's
+  /// design.md) — same alpha values as `AionShadows.focus`'s default ring,
+  /// exposed as a plain color for call sites that assemble their own
+  /// `BoxShadow` list.
+  Color focusRing(bool isDark) =>
+      primary.withValues(alpha: isDark ? 0.30 : 0.16);
 }

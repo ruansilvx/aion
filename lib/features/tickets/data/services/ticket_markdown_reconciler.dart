@@ -170,6 +170,17 @@ class TicketMarkdownReconciler {
           ? () => fields[TicketMarkdownTemplate.timeSpent] as int?
           : null,
     );
+    // No `estimateEdited: true` here — [TicketMarkdownSerializer.serialize]
+    // always writes an `estimate:` frontmatter line (even `null`), so
+    // `fields.containsKey(TicketMarkdownTemplate.estimate)` is `true` for
+    // every successfully parsed file regardless of whether this specific
+    // reconcile pass actually changed the value, and can't be used as an
+    // edited signal the way [TicketRepository.updateTicket] needs. Leaving
+    // both flags at their `false` default means a reconcile triggered by
+    // some other field (title, priority, ...) changing never relocks an
+    // `aiSuggested` estimate it didn't touch — strictly safer than this
+    // call unconditionally stamping `manual` on every reconcile, which is
+    // what happened before `estimateSource` existed to get it wrong.
     await _repository.updateTicket(updated);
 
     final status = fields[TicketMarkdownTemplate.status] as TicketStatus?;

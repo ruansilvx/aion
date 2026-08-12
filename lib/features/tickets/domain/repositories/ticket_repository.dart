@@ -6,6 +6,7 @@ import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_list_sort.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_search_page.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_complexity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sync_status.dart';
@@ -69,7 +70,53 @@ abstract interface class TicketRepository {
   /// Does not touch `status` (use [updateTicketStatus]), `sddStage` (use
   /// [updateTicketSddStage]), `parentId`, `embedding`, `id`, or
   /// `ticketId`. Throws if `ticket.id` does not exist.
-  Future<void> updateTicket(Ticket ticket);
+  ///
+  /// `complexitySource`/`estimateSource` are handled separately from every
+  /// other field, since `updateTicket` is called for *any* field edit
+  /// (title, priority, description, ...) and `ticket.complexity`/
+  /// `ticket.estimate` are usually just carried through unchanged on those
+  /// calls — stamping unconditionally off non-null-ness would silently
+  /// lock an AI-suggested value the caller never actually touched, which
+  /// would break the "editing complexity/estimate locks *that* field"
+  /// guarantee (see
+  /// `aion-arch/changes/ai-assisted-complexity-and-estimate-suggestions/proposal.md`'s
+  /// "Locking, independent per field" section). Instead:
+  /// - Whenever `ticket.complexity`/`ticket.estimate` is `null`, its
+  ///   companion source is unconditionally cleared to `null` too —
+  ///   regardless of [complexityEdited]/[estimateEdited] — since a source
+  ///   can never outlive its value.
+  /// - Otherwise, the companion source is stamped
+  ///   `TicketEstimationSource.manual` only when [complexityEdited]/
+  ///   [estimateEdited] is `true` (the caller is the Complexity picker's
+  ///   `onSelected` or the Estimate field's `onCommit` — a direct edit, or
+  ///   an explicit re-confirmation, of that specific field). When `false`
+  ///   (the default — every other field's edit path), the source column is
+  ///   left completely untouched, preserving whatever it already was
+  ///   (`aiSuggested`/`aiSuggestedLowConfidence`/`manual`).
+  ///
+  /// See [applyEstimationSuggestion] for the AI-suggestion write path this
+  /// is deliberately distinct from.
+  Future<void> updateTicket(
+    Ticket ticket, {
+    bool complexityEdited = false,
+    bool estimateEdited = false,
+  });
+
+  /// Writes an AI-generated complexity/estimate suggestion for the ticket
+  /// with id [id]. Each parameter, when non-null, overwrites that field's
+  /// value and sets its companion source to
+  /// `TicketEstimationSource.aiSuggestedLowConfidence` (if `lowConfidence`)
+  /// or `TicketEstimationSource.aiSuggested` otherwise; a `null` parameter
+  /// leaves that field (and its source) completely untouched — this is how
+  /// a caller writes just one field when the other is locked or the model
+  /// produced no value for it. Never touches `updatedAt` — an AI
+  /// suggestion is a background side effect, not a user edit, mirroring
+  /// [updateEmbedding]/[updateRollup]. Throws if [id] does not exist.
+  Future<void> applyEstimationSuggestion(
+    String id, {
+    ({TicketComplexity value, bool lowConfidence})? complexity,
+    ({int value, bool lowConfidence})? estimate,
+  });
 
   /// Updates only the [stage] (and `updatedAt`) of the ticket with id
   /// [id]. Does not touch any other field, and performs no precondition

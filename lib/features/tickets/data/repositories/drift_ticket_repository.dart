@@ -10,6 +10,7 @@ import 'package:aion/features/tickets/domain/entities/ticket_search_page.dart';
 import 'package:aion/features/tickets/domain/enums/inbox_purpose.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_complexity.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_estimation_source.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_severity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
@@ -90,6 +91,12 @@ class DriftTicketRepository implements TicketRepository {
       inboxPurpose: Value(ticket.inboxPurpose?.name),
       createdAt: ticket.createdAt.millisecondsSinceEpoch,
       updatedAt: ticket.updatedAt.millisecondsSinceEpoch,
+      complexitySource: Value(
+        ticket.complexity != null ? TicketEstimationSource.manual.name : null,
+      ),
+      estimateSource: Value(
+        ticket.estimate != null ? TicketEstimationSource.manual.name : null,
+      ),
     );
   }
 
@@ -138,8 +145,15 @@ class DriftTicketRepository implements TicketRepository {
     );
   }
 
+  /// Also stamps `complexity_source`/`estimate_source` — see
+  /// [TicketRepository.updateTicket]'s dartdoc for the exact
+  /// [complexityEdited]/[estimateEdited] semantics.
   @override
-  Future<void> updateTicket(Ticket ticket) {
+  Future<void> updateTicket(
+    Ticket ticket, {
+    bool complexityEdited = false,
+    bool estimateEdited = false,
+  }) {
     return _db.ticketDao.updateFields(
       ticket.id,
       TicketsTableCompanion(
@@ -157,6 +171,66 @@ class DriftTicketRepository implements TicketRepository {
         suggestedType: Value(ticket.suggestedType?.name),
         inboxPurpose: Value(ticket.inboxPurpose?.name),
         updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
+        complexitySource: _sourceValue(
+          value: ticket.complexity != null,
+          edited: complexityEdited,
+        ),
+        estimateSource: _sourceValue(
+          value: ticket.estimate != null,
+          edited: estimateEdited,
+        ),
+      ),
+    );
+  }
+
+  /// Resolves what [updateTicket] should write to a `*_source` column: a
+  /// value-present field with `edited: true` stamps `manual`; a `null`
+  /// field always clears to `null` regardless of [edited] (a source can't
+  /// outlive its value); anything else (non-null field, `edited: false`)
+  /// leaves the column untouched via [Value.absent] — see
+  /// [TicketRepository.updateTicket]'s dartdoc.
+  Value<String?> _sourceValue({required bool value, required bool edited}) {
+    if (!value) return const Value(null);
+    if (edited) return Value(TicketEstimationSource.manual.name);
+    return const Value.absent();
+  }
+
+  /// See [TicketRepository.applyEstimationSuggestion] for the contract.
+  /// Only the non-null side(s) are included in the companion, via
+  /// [TicketDao.updateFields] — the same generic method [updateTicket]/
+  /// [updateTicketStatus] already use. No `updatedAt` bump — an AI
+  /// suggestion is a background side effect, not a user edit.
+  @override
+  Future<void> applyEstimationSuggestion(
+    String id, {
+    ({TicketComplexity value, bool lowConfidence})? complexity,
+    ({int value, bool lowConfidence})? estimate,
+  }) {
+    return _db.ticketDao.updateFields(
+      id,
+      TicketsTableCompanion(
+        complexity: complexity != null
+            ? Value(complexity.value.name)
+            : const Value.absent(),
+        complexitySource: complexity != null
+            ? Value(
+                (complexity.lowConfidence
+                        ? TicketEstimationSource.aiSuggestedLowConfidence
+                        : TicketEstimationSource.aiSuggested)
+                    .name,
+              )
+            : const Value.absent(),
+        estimate: estimate != null
+            ? Value(estimate.value)
+            : const Value.absent(),
+        estimateSource: estimate != null
+            ? Value(
+                (estimate.lowConfidence
+                        ? TicketEstimationSource.aiSuggestedLowConfidence
+                        : TicketEstimationSource.aiSuggested)
+                    .name,
+              )
+            : const Value.absent(),
       ),
     );
   }
@@ -424,6 +498,14 @@ class DriftTicketRepository implements TicketRepository {
       inboxPurpose: _parseNullableEnum(InboxPurpose.values, row.inboxPurpose),
       estimateRollup: row.estimateRollup,
       timeSpentRollup: row.timeSpentRollup,
+      complexitySource: _parseNullableEnum(
+        TicketEstimationSource.values,
+        row.complexitySource,
+      ),
+      estimateSource: _parseNullableEnum(
+        TicketEstimationSource.values,
+        row.estimateSource,
+      ),
     );
   }
 

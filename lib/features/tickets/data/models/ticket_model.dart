@@ -108,6 +108,15 @@ class TicketsTable extends Table {
   IntColumn get timeSpentRollup =>
       integer().named('time_spent_rollup').nullable()();
 
+  /// `TicketEstimationSource.name`, nullable. `null` iff `complexity` is
+  /// also `null` — see `Ticket.complexitySource`.
+  TextColumn get complexitySource =>
+      text().named('complexity_source').nullable()();
+
+  /// Same as [complexitySource], for [estimate].
+  TextColumn get estimateSource =>
+      text().named('estimate_source').nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
 }

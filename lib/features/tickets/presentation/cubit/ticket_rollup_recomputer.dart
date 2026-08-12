@@ -134,6 +134,8 @@ class TicketRollupRecomputer {
       inboxPurpose: ticket.inboxPurpose,
       estimateRollup: estimateRollup,
       timeSpentRollup: timeSpentRollup,
+      complexitySource: ticket.complexitySource,
+      estimateSource: ticket.estimateSource,
     );
   }
 }

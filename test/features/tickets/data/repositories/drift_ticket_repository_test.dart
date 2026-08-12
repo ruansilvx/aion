@@ -1304,15 +1304,17 @@ void main() {
         addTearDown(() => tempDir.deleteSync(recursive: true));
 
         // A fresh AppDatabase always runs onCreate at the *current*
-        // schemaVersion (8), which already includes the search
+        // schemaVersion (10), which already includes the search
         // infrastructure, the `deleted_at` column, the `sync_status`
         // column, the `complexity`/`sdd_stage` columns, the
         // `severity`/`steps_to_reproduce`/`expected_behavior`/
         // `actual_behavior` columns, `ticket_comments`'
-        // `input_tokens`/`output_tokens` columns, and the
-        // `suggested_type`/`inbox_purpose` columns — so the v1 shape has to
-        // be built by hand: strip back down to just the bare tables,
-        // insert data, then stamp user_version back to 1.
+        // `input_tokens`/`output_tokens` columns, the
+        // `suggested_type`/`inbox_purpose` columns, `estimate_rollup`/
+        // `time_spent_rollup`, and `complexity_source`/`estimate_source`
+        // — so the v1 shape has to be built by hand: strip back down to
+        // just the bare tables, insert data, then stamp user_version back
+        // to 1.
         final v1Db = AppDatabase(_testProject, NativeDatabase(dbFile));
         await v1Db.customStatement('DROP TABLE IF EXISTS tickets_fts;');
         await v1Db.customStatement('DROP TRIGGER IF EXISTS tickets_fts_ai;');
@@ -1374,6 +1376,15 @@ void main() {
         await v1Db.customStatement(
           'ALTER TABLE tickets DROP COLUMN time_spent_rollup;',
         );
+        // complexity_source/estimate_source (v10) can't be dropped until
+        // after the insert above either — createTicket's companion sets
+        // them explicitly (mirroring complexity/severity/etc. above).
+        await v1Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN complexity_source;',
+        );
+        await v1Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN estimate_source;',
+        );
         // ticket_comments' input_tokens/output_tokens (v7) — dropped even
         // though this test's assertions never touch that table, since
         // onUpgrade's `from < 7` addColumn step still runs unconditionally
@@ -1388,9 +1399,9 @@ void main() {
         await v1Db.customStatement('PRAGMA user_version = 1;');
         await v1Db.close();
 
-        // Reopen against the same file at the current schemaVersion (8).
-        // Drift reads user_version=1, sees schemaVersion=8, and runs
-        // onUpgrade automatically (the v2 through v8 steps).
+        // Reopen against the same file at the current schemaVersion (10).
+        // Drift reads user_version=1, sees schemaVersion=10, and runs
+        // onUpgrade automatically (the v2 through v10 steps).
         final v2Db = AppDatabase(_testProject, NativeDatabase(dbFile));
         final upgradedRepo = DriftTicketRepository(v2Db);
 
@@ -1438,6 +1449,16 @@ void main() {
       );
       await v7Db.customStatement(
         'ALTER TABLE tickets DROP COLUMN time_spent_rollup;',
+      );
+      // complexity_source/estimate_source (v10) — createTicket's companion
+      // sets them explicitly, so they can't be dropped until after the
+      // insert above; createAll() already created them, so onUpgrade's
+      // `from < 10` addColumn step needs them absent first too.
+      await v7Db.customStatement(
+        'ALTER TABLE tickets DROP COLUMN complexity_source;',
+      );
+      await v7Db.customStatement(
+        'ALTER TABLE tickets DROP COLUMN estimate_source;',
       );
       await v7Db.customStatement('PRAGMA user_version = 7;');
       await v7Db.close();
@@ -1508,13 +1529,27 @@ void main() {
         await v8Db.customStatement(
           'ALTER TABLE tickets DROP COLUMN time_spent_rollup;',
         );
+        // complexity_source/estimate_source (v10) — createTicket's
+        // companion sets them explicitly, so they can't be dropped until
+        // after the inserts above; createAll() already created them, so
+        // onUpgrade's `from < 10` addColumn step needs them absent first
+        // too — same reasoning as `estimate_rollup`/`time_spent_rollup`.
+        await v8Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN complexity_source;',
+        );
+        await v8Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN estimate_source;',
+        );
         await v8Db.customStatement('PRAGMA user_version = 8;');
         await v8Db.close();
 
-        // Reopen against the same file at the current schemaVersion (9).
-        // Drift reads user_version=8, sees schemaVersion=9, and runs the
-        // `from < 9` onUpgrade step — add the two columns, then
-        // `_backfillRollups`.
+        // Reopen against the same file at the current schemaVersion (10).
+        // Drift reads user_version=8, sees schemaVersion=10, and runs both
+        // the `from < 9` onUpgrade step (add estimate_rollup/
+        // time_spent_rollup, then `_backfillRollups`) and the `from < 10`
+        // step (add complexity_source/estimate_source — no-op backfill
+        // here, since none of these pre-existing rows have
+        // complexity/estimate set).
         final v9Db = AppDatabase(_testProject, NativeDatabase(dbFile));
         final upgradedRepo = DriftTicketRepository(v9Db);
 
@@ -1535,5 +1570,293 @@ void main() {
         await v9Db.close();
       },
     );
+
+    test(
+      'onUpgrade from v9 backfills complexity_source/estimate_source to '
+      "'manual' for already-sized rows, leaving unsized rows null",
+      () async {
+        final tempDir = Directory.systemTemp.createTempSync(
+          'aion_migration_v10_test',
+        );
+        final dbFile = File('${tempDir.path}/test.sqlite');
+        addTearDown(() => tempDir.deleteSync(recursive: true));
+
+        final v9Db = AppDatabase(_testProject, NativeDatabase(dbFile));
+        final preMigrationRepo = DriftTicketRepository(v9Db);
+        final now = DateTime(2026, 1, 1);
+        // Sized by hand (the only way before this change) — expect a
+        // 'manual' backfill.
+        await preMigrationRepo.createTicket(
+          Ticket(
+            id: 'sized',
+            ticketId: '',
+            type: TicketType.task,
+            title: 'Pre-v10 sized ticket',
+            status: TicketStatus.backlog,
+            complexity: TicketComplexity.medium,
+            estimate: 60,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+        // Never sized — expect both source columns to stay null.
+        await preMigrationRepo.createTicket(
+          buildTicket(id: 'unsized', title: 'Pre-v10 unsized ticket'),
+        );
+        // complexity_source/estimate_source can't be dropped until after
+        // the inserts above — createTicket's companion sets them
+        // explicitly; createAll() already created them, so onUpgrade's
+        // `from < 10` addColumn step needs them absent first.
+        await v9Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN complexity_source;',
+        );
+        await v9Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN estimate_source;',
+        );
+        await v9Db.customStatement('PRAGMA user_version = 9;');
+        await v9Db.close();
+
+        // Reopen against the same file at the current schemaVersion (10).
+        // Drift reads user_version=9, sees schemaVersion=10, and runs the
+        // `from < 10` onUpgrade step — add the two columns, then backfill
+        // 'manual' wherever complexity/estimate is already set.
+        final v10Db = AppDatabase(_testProject, NativeDatabase(dbFile));
+        final upgradedRepo = DriftTicketRepository(v10Db);
+
+        final sized = await upgradedRepo.getTicketById('sized');
+        final unsized = await upgradedRepo.getTicketById('unsized');
+
+        expect(sized!.complexitySource, TicketEstimationSource.manual);
+        expect(sized.estimateSource, TicketEstimationSource.manual);
+        expect(unsized!.complexitySource, isNull);
+        expect(unsized.estimateSource, isNull);
+
+        await v10Db.close();
+      },
+    );
+  });
+
+  group('updateTicket stamps complexitySource/estimateSource', () {
+    test('setting complexity/estimate on updateTicket with both *Edited '
+        'flags stamps manual', () async {
+      await repository.createTicket(buildTicket(id: '1'));
+      final persisted = await repository.getTicketById('1');
+
+      await repository.updateTicket(
+        persisted!.copyWith(
+          complexity: () => TicketComplexity.large,
+          estimate: () => 120,
+        ),
+        complexityEdited: true,
+        estimateEdited: true,
+      );
+      final updated = await repository.getTicketById('1');
+
+      expect(updated!.complexity, TicketComplexity.large);
+      expect(updated.complexitySource, TicketEstimationSource.manual);
+      expect(updated.estimate, 120);
+      expect(updated.estimateSource, TicketEstimationSource.manual);
+    });
+
+    test('setting complexity/estimate on updateTicket WITHOUT the *Edited '
+        'flags leaves the source columns untouched (null, since neither '
+        'was previously sized)', () async {
+      await repository.createTicket(buildTicket(id: '1'));
+      final persisted = await repository.getTicketById('1');
+
+      await repository.updateTicket(
+        persisted!.copyWith(
+          complexity: () => TicketComplexity.large,
+          estimate: () => 120,
+        ),
+      );
+      final updated = await repository.getTicketById('1');
+
+      // The value is written either way (updateTicket always persists
+      // whatever complexity/estimate the passed Ticket carries) — only the
+      // *source* stamp is gated by complexityEdited/estimateEdited.
+      expect(updated!.complexity, TicketComplexity.large);
+      expect(updated.estimate, 120);
+      expect(updated.complexitySource, isNull);
+      expect(updated.estimateSource, isNull);
+    });
+
+    test('updateTicket with neither *Edited flag leaves an existing '
+        'aiSuggested source completely untouched when some other field '
+        'is edited — regression test for the "editing title relocks an '
+        'AI suggestion" bug', () async {
+      await repository.createTicket(buildTicket(id: '1'));
+      await repository.applyEstimationSuggestion(
+        '1',
+        complexity: (value: TicketComplexity.medium, lowConfidence: false),
+        estimate: (value: 45, lowConfidence: true),
+      );
+      final aiSuggested = await repository.getTicketById('1');
+      expect(aiSuggested!.complexitySource, TicketEstimationSource.aiSuggested);
+      expect(
+        aiSuggested.estimateSource,
+        TicketEstimationSource.aiSuggestedLowConfidence,
+      );
+
+      // Editing an unrelated field (title) — complexity/estimate merely
+      // carry through unchanged, neither *Edited flag is passed.
+      await repository.updateTicket(aiSuggested.copyWith(title: 'New title'));
+      final afterTitleEdit = await repository.getTicketById('1');
+
+      expect(afterTitleEdit!.title, 'New title');
+      expect(afterTitleEdit.complexity, TicketComplexity.medium);
+      expect(
+        afterTitleEdit.complexitySource,
+        TicketEstimationSource.aiSuggested,
+      );
+      expect(afterTitleEdit.estimate, 45);
+      expect(
+        afterTitleEdit.estimateSource,
+        TicketEstimationSource.aiSuggestedLowConfidence,
+      );
+    });
+
+    test('updateTicket with complexityEdited: true re-locks an aiSuggested '
+        'complexity to manual even when the selected value is unchanged '
+        '(the "confirm an AI suggestion" case)', () async {
+      await repository.createTicket(buildTicket(id: '1'));
+      await repository.applyEstimationSuggestion(
+        '1',
+        complexity: (value: TicketComplexity.medium, lowConfidence: false),
+      );
+      final aiSuggested = await repository.getTicketById('1');
+
+      await repository.updateTicket(
+        aiSuggested!.copyWith(complexity: () => TicketComplexity.medium),
+        complexityEdited: true,
+      );
+      final confirmed = await repository.getTicketById('1');
+
+      expect(confirmed!.complexity, TicketComplexity.medium);
+      expect(confirmed.complexitySource, TicketEstimationSource.manual);
+    });
+
+    test('clearing complexity/estimate on updateTicket clears the source '
+        'back to null', () async {
+      final now = DateTime(2026, 1, 1);
+      await repository.createTicket(
+        Ticket(
+          id: '1',
+          ticketId: '',
+          type: TicketType.task,
+          title: 'Sized ticket',
+          status: TicketStatus.backlog,
+          complexity: TicketComplexity.small,
+          estimate: 30,
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+      final persisted = await repository.getTicketById('1');
+      expect(persisted!.complexitySource, TicketEstimationSource.manual);
+      expect(persisted.estimateSource, TicketEstimationSource.manual);
+
+      await repository.updateTicket(
+        persisted.copyWith(
+          complexity: () => null,
+          estimate: () => null,
+        ),
+      );
+      final updated = await repository.getTicketById('1');
+
+      expect(updated!.complexity, isNull);
+      expect(updated.complexitySource, isNull);
+      expect(updated.estimate, isNull);
+      expect(updated.estimateSource, isNull);
+    });
+
+    test('createTicket with complexity/estimate already set stamps manual '
+        'from the moment of creation', () async {
+      final now = DateTime(2026, 1, 1);
+      await repository.createTicket(
+        Ticket(
+          id: '1',
+          ticketId: '',
+          type: TicketType.task,
+          title: 'Sized at creation',
+          status: TicketStatus.backlog,
+          complexity: TicketComplexity.large,
+          estimate: 200,
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+      final found = await repository.getTicketById('1');
+
+      expect(found!.complexitySource, TicketEstimationSource.manual);
+      expect(found.estimateSource, TicketEstimationSource.manual);
+    });
+
+    test('createTicket with complexity/estimate left unset leaves both '
+        'sources null', () async {
+      await repository.createTicket(buildTicket(id: '1'));
+      final found = await repository.getTicketById('1');
+
+      expect(found!.complexitySource, isNull);
+      expect(found.estimateSource, isNull);
+    });
+  });
+
+  group('applyEstimationSuggestion', () {
+    test('writes only the requested field(s), leaving the other and '
+        'updatedAt untouched', () async {
+      await repository.createTicket(buildTicket(id: '1'));
+      final before = (await repository.getTicketById('1'))!.updatedAt;
+
+      await repository.applyEstimationSuggestion(
+        '1',
+        complexity: (value: TicketComplexity.medium, lowConfidence: false),
+      );
+      final afterComplexityOnly = await repository.getTicketById('1');
+
+      expect(afterComplexityOnly!.complexity, TicketComplexity.medium);
+      expect(
+        afterComplexityOnly.complexitySource,
+        TicketEstimationSource.aiSuggested,
+      );
+      expect(afterComplexityOnly.estimate, isNull);
+      expect(afterComplexityOnly.estimateSource, isNull);
+      expect(afterComplexityOnly.updatedAt, before);
+
+      await repository.applyEstimationSuggestion(
+        '1',
+        estimate: (value: 45, lowConfidence: true),
+      );
+      final afterBoth = await repository.getTicketById('1');
+
+      expect(afterBoth!.estimate, 45);
+      expect(
+        afterBoth.estimateSource,
+        TicketEstimationSource.aiSuggestedLowConfidence,
+      );
+      // The earlier complexity write is untouched by this second call.
+      expect(afterBoth.complexity, TicketComplexity.medium);
+      expect(
+        afterBoth.complexitySource,
+        TicketEstimationSource.aiSuggested,
+      );
+      expect(afterBoth.updatedAt, before);
+    });
+
+    test('a lowConfidence complexity suggestion stamps '
+        'aiSuggestedLowConfidence', () async {
+      await repository.createTicket(buildTicket(id: '1'));
+
+      await repository.applyEstimationSuggestion(
+        '1',
+        complexity: (value: TicketComplexity.small, lowConfidence: true),
+      );
+      final found = await repository.getTicketById('1');
+
+      expect(
+        found!.complexitySource,
+        TicketEstimationSource.aiSuggestedLowConfidence,
+      );
+    });
   });
 }
