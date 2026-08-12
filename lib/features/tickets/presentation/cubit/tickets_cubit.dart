@@ -53,6 +53,7 @@ import 'package:aion/features/tickets/domain/utils/ticket_link_direction.dart';
 import 'package:aion/features/tickets/domain/utils/ticket_rollup_calculator.dart';
 import 'package:aion/features/tickets/presentation/cubit/chat_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/codebase_analysis_status.dart';
+import 'package:aion/features/tickets/presentation/cubit/ticket_context_enricher.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_estimation_suggester.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_rollup_counts.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_rollup_recomputer.dart';
@@ -182,6 +183,11 @@ class TicketsCubit extends Cubit<TicketsState> {
       providerRegistry: providerRegistry,
       modelRoutingRepository: modelRoutingRepository,
     );
+    _contextEnricher = TicketContextEnricher(
+      _repository,
+      linkRepository: linkRepository,
+      embeddingProvider: embeddingProvider,
+    );
   }
 
   final TicketRepository _repository;
@@ -197,6 +203,10 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [_embeddingProvider]/[_providerRegistry]/[_modelRoutingRepository]
   /// this cubit already holds.
   late final TicketEstimationSuggester _estimationSuggester;
+  /// Shared related-tickets context-assembly walk — see
+  /// [TicketContextEnricher]. Wired to the same [_repository]/
+  /// [_linkRepository]/[_embeddingProvider] this cubit already holds.
+  late final TicketContextEnricher _contextEnricher;
   late final TicketLinkRepository? _linkRepository;
   late final ProviderRegistry? _providerRegistry;
   late final CommentRepository? _commentRepository;
@@ -2476,12 +2486,15 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Assembles the plain-text context a spawned coding-execution chat
-  /// opens with: [task]'s title/description, the project's effective
-  /// `conventions/architecture-conventions` content (see
-  /// [_effectiveAssetContent]) if any, plus an instruction to implement
-  /// the task using the available file, git, and bash tools, commit the
-  /// result, and end the reply with exactly one line, `IMPLEMENTATION:
-  /// DONE`. This no longer instructs the model to push or open a PR
+  /// opens with: [task]'s title/description, a `## Related tickets`
+  /// section from [_contextEnricher] (see
+  /// [TicketContextEnricher.relatedTicketsSection] — omitted entirely
+  /// when it returns `''`), the project's effective `conventions/
+  /// architecture-conventions` content (see [_effectiveAssetContent]) if
+  /// any, plus an instruction to implement the task using the available
+  /// file, git, and bash tools, commit the result, and end the reply with
+  /// exactly one line, `IMPLEMENTATION: DONE`. This no longer instructs
+  /// the model to push or open a PR
   /// itself — that only happens after [_runCodingExecution]'s own
   /// agentic verify turn passes (see [_assembleVerificationContext]/
   /// [_assembleCorrectiveContext] for the retry-turn prompt used instead
@@ -2521,6 +2534,13 @@ class TicketsCubit extends Cubit<TicketsState> {
       buffer
         ..writeln()
         ..writeln(description);
+    }
+
+    final related = await _contextEnricher.relatedTicketsSection(task);
+    if (related.isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln(related);
     }
 
     final conventions = await _effectiveAssetContent(
@@ -3003,7 +3023,10 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Assembles the plain-text context a spawned stage chat opens with:
-  /// [parent]'s title/description, and — for [SddStage.verifying]/
+  /// [parent]'s title/description, a `## Related tickets` section from
+  /// [_contextEnricher] (see
+  /// [TicketContextEnricher.relatedTicketsSection] — omitted entirely
+  /// when it returns `''`), and — for [SddStage.verifying]/
   /// [SddStage.archived] — its direct children's titles and statuses, or
   /// — for [SddStage.designBrief]/[SddStage.designSync] — the existing
   /// design-token file contents (see [_readTokenFilesForContext]) and,
@@ -3011,8 +3034,10 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// pasted content (see [_linkedDesignPage]), or — for
   /// [SddStage.proposed] — instructions to end the reply with a fenced
   /// `## Decomposition` block (parsed by [_parseDecomposition] once the
-  /// turn completes, see [_materializeDecomposition]). No embeddings, no
-  /// repo-map-lite involvement (see proposal.md's Out of scope).
+  /// turn completes, see [_materializeDecomposition]). Shared by
+  /// [_createStageChat], [_runStageChatTurn], and [retryDesignSync] (which
+  /// calls this method directly, so the related-tickets walk automatically
+  /// re-runs on retry too).
   Future<String> _assembleStageContext(Ticket parent, SddStage stage) async {
     final buffer = StringBuffer()..writeln('# ${parent.title}');
     final description = parent.description;
@@ -3020,6 +3045,13 @@ class TicketsCubit extends Cubit<TicketsState> {
       buffer
         ..writeln()
         ..writeln(description);
+    }
+
+    final related = await _contextEnricher.relatedTicketsSection(parent);
+    if (related.isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln(related);
     }
 
     if (stage == SddStage.verifying || stage == SddStage.archived) {
