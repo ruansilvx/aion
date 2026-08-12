@@ -558,6 +558,13 @@ void main() {
 
   setUp(() {
     repository = MockTicketRepository();
+    // Default for TicketContextEnricher's bulk read (see
+    // _assembleExecutionContext/_assembleStageContext) — empty means no
+    // ancestor/link/similarity matches, so `## Related tickets` never
+    // appears unless a test overrides this with its own tickets. Keeps
+    // every pre-existing test's assertions about today's exact prompt
+    // output correct without each one having to know about the walk.
+    when(() => repository.getAllTickets()).thenAnswer((_) async => []);
   });
 
   group('TicketsCubit', () {
@@ -4121,17 +4128,23 @@ void main() {
     late MockAgentModelClient agentClient;
     late MockProviderRegistry registry;
     late MockCommentRepository commentRepository;
+    late MockTicketLinkRepository linkRepository;
 
     setUp(() {
       agentClient = MockAgentModelClient();
       registry = buildProviderStack(agentClient).registry;
       commentRepository = MockCommentRepository();
+      linkRepository = MockTicketLinkRepository();
+      when(
+        () => linkRepository.getLinksForTicket(any()),
+      ).thenAnswer((_) async => []);
     });
 
     TicketsCubit buildCubit() => TicketsCubit(
       repository,
       providerRegistry: registry,
       commentRepository: commentRepository,
+      linkRepository: linkRepository,
     );
 
     blocTest<TicketsCubit, TicketsState>(
@@ -4229,6 +4242,108 @@ void main() {
             any(
               that: predicate<AgentRequest>(
                 (request) => request.model == _sonnet.modelId,
+              ),
+            ),
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'includes a "## Related tickets" section in the spawned stage '
+      'chat\'s prompt when TicketContextEnricher has content to '
+      'contribute',
+      setUp: () {
+        final relatedStory = Ticket(
+          id: 'stage-related',
+          ticketId: 'AIO-98',
+          type: TicketType.story,
+          title: 'A related story',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        when(
+          () => repository.updateTicketSddStage(epic.id, SddStage.exploring),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(
+          () => repository.getTicketById(epic.id),
+        ).thenAnswer((_) async => epic);
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        when(
+          () => commentRepository.addComment(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getAllTickets(),
+        ).thenAnswer((_) async => [epic, relatedStory]);
+        when(() => linkRepository.getLinksForTicket(epic.id)).thenAnswer(
+          (_) async => [
+            TicketLinkData(
+              id: 'stage-link',
+              sourceTicketId: epic.id,
+              targetTicketId: relatedStory.id,
+              linkType: TicketLinkType.relatesTo.name,
+            ),
+          ],
+        );
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.advanceSddStage(epic),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verify(
+          () => agentClient.run(
+            any(
+              that: predicate<AgentRequest>(
+                (request) =>
+                    request.prompt.contains('## Related tickets') &&
+                    request.prompt.contains('A related story'),
+              ),
+            ),
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'omits the "## Related tickets" section entirely — preserving '
+      "today's exact prompt — when TicketContextEnricher has nothing to "
+      'contribute',
+      setUp: () {
+        when(
+          () => repository.updateTicketSddStage(epic.id, SddStage.exploring),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(
+          () => repository.getTicketById(epic.id),
+        ).thenAnswer((_) async => epic);
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        when(
+          () => commentRepository.addComment(any()),
+        ).thenAnswer((_) async {});
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.advanceSddStage(epic),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verify(
+          () => agentClient.run(
+            any(
+              that: predicate<AgentRequest>(
+                (request) =>
+                    !request.prompt.contains('## Related tickets') &&
+                    request.prompt.trim() == '# ${epic.title}',
               ),
             ),
           ),
@@ -5171,6 +5286,175 @@ void main() {
           () => repository.updateTicketStatus(
             taskUnderStory.id,
             TicketStatus.inReview,
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'includes a "## Related tickets" section in the coding-execution '
+      "implement turn's prompt when TicketContextEnricher has content to "
+      'contribute (the Task\'s governing Story, surfaced as an ancestor)',
+      build: buildFullCubit,
+      setUp: () {
+        when(
+          () => repository.getTicketsByParent(
+            storyForExecution.id,
+            types: TicketTypeHierarchy.executableTypes,
+          ),
+        ).thenAnswer((_) async => [taskUnderStory]);
+        when(
+          () => repository.getTicketsByParent(
+            storyForExecution.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [designSyncChatForExecution]);
+        when(
+          () => commentRepository.getCommentsForTicket(
+            designSyncChatForExecution.id,
+          ),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'c-related',
+              ticketId: designSyncChatForExecution.id,
+              content: 'No issues found.\n\nDESIGN GATE: APPROVED',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(
+          () => repository.getTicketsByParent(
+            taskUnderStory.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => []);
+        stubStatefulComments(commentRepository, dummyExecutionChatTicket.id);
+        when(() => repository.getTicketById(any())).thenAnswer((
+          invocation,
+        ) async {
+          final id = invocation.positionalArguments[0] as String;
+          if (id == storyForExecution.id) return storyForExecution;
+          if (id == taskUnderStory.id) {
+            return taskUnderStory.copyWith(status: TicketStatus.inProgress);
+          }
+          return dummyExecutionChatTicket;
+        });
+        when(
+          () => repository.updateTicketStatus(any(), any()),
+        ).thenAnswer((_) async {});
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        // Both the Task and its governing Story, so the ancestor walk
+        // surfaces the Story.
+        when(
+          () => repository.getAllTickets(),
+        ).thenAnswer((_) async => [storyForExecution, taskUnderStory]);
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+            AgentDoneEvent(),
+          ]),
+        );
+      },
+      act: (cubit) =>
+          cubit.changeTicketStatus(taskUnderStory, TicketStatus.inProgress),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verify(
+          () => agentClient.run(
+            any(
+              that: predicate<AgentRequest>(
+                (request) =>
+                    request.prompt.contains('IMPLEMENTATION: DONE') &&
+                    request.prompt.contains('## Related tickets') &&
+                    request.prompt.contains(storyForExecution.title),
+              ),
+            ),
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'omits the "## Related tickets" section entirely — preserving '
+      "today's exact prompt — when TicketContextEnricher has nothing to "
+      'contribute',
+      build: buildFullCubit,
+      setUp: () {
+        when(
+          () => repository.getTicketsByParent(
+            storyForExecution.id,
+            types: TicketTypeHierarchy.executableTypes,
+          ),
+        ).thenAnswer((_) async => [taskUnderStory]);
+        when(
+          () => repository.getTicketsByParent(
+            storyForExecution.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [designSyncChatForExecution]);
+        when(
+          () => commentRepository.getCommentsForTicket(
+            designSyncChatForExecution.id,
+          ),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'c-no-related',
+              ticketId: designSyncChatForExecution.id,
+              content: 'No issues found.\n\nDESIGN GATE: APPROVED',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(
+          () => repository.getTicketsByParent(
+            taskUnderStory.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => []);
+        stubStatefulComments(commentRepository, dummyExecutionChatTicket.id);
+        when(() => repository.getTicketById(any())).thenAnswer((
+          invocation,
+        ) async {
+          final id = invocation.positionalArguments[0] as String;
+          if (id == storyForExecution.id) return storyForExecution;
+          if (id == taskUnderStory.id) {
+            return taskUnderStory.copyWith(status: TicketStatus.inProgress);
+          }
+          return dummyExecutionChatTicket;
+        });
+        when(
+          () => repository.updateTicketStatus(any(), any()),
+        ).thenAnswer((_) async {});
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        // Deliberately left as the default empty getAllTickets() stub —
+        // no ancestor/link/similarity matches, so the section is omitted.
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+            AgentDoneEvent(),
+          ]),
+        );
+      },
+      act: (cubit) =>
+          cubit.changeTicketStatus(taskUnderStory, TicketStatus.inProgress),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        // Distinguished from the verify turn's own prompt (also absent
+        // "## Related tickets") by the implement turn's unique
+        // "IMPLEMENTATION: DONE" instruction.
+        verify(
+          () => agentClient.run(
+            any(
+              that: predicate<AgentRequest>(
+                (request) =>
+                    request.prompt.contains('IMPLEMENTATION: DONE') &&
+                    !request.prompt.contains('## Related tickets'),
+              ),
+            ),
           ),
         ).called(1);
       },
@@ -7899,6 +8183,12 @@ void main() {
       registry = buildProviderStack(agentClient).registry;
       commentRepository = MockCommentRepository();
       linkRepository = MockTicketLinkRepository();
+      // TicketContextEnricher's structured-links pass (see
+      // _assembleStageContext) queries this for every ticket it walks —
+      // stub a default of no links so it doesn't need per-test wiring.
+      when(
+        () => linkRepository.getLinksForTicket(any()),
+      ).thenAnswer((_) async => []);
     });
 
     TicketsCubit buildCubit() => TicketsCubit(
