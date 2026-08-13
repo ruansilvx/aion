@@ -27,11 +27,17 @@ class SharedPrefsAutomationSettingsRepository
   static const _codingExecutionRetryAutomationKey =
       'automation_settings.coding_execution_retry_automation';
 
+  /// [AutomationContext.chatBranching]'s key. Added for
+  /// `aion-arch/changes/mid-task-chat-branching`.
+  static const _chatBranchingAutomationKey =
+      'automation_settings.chat_branching_automation';
+
   String _keyFor(AutomationContext context) => switch (context) {
     AutomationContext.sddStage => _sddStageAutomationKey,
     AutomationContext.codingExecution => _codingExecutionAutomationKey,
     AutomationContext.codingExecutionRetry =>
       _codingExecutionRetryAutomationKey,
+    AutomationContext.chatBranching => _chatBranchingAutomationKey,
   };
 
   @override

@@ -6,17 +6,22 @@ void main() {
   group('TicketTypeHierarchy.canParent', () {
     // Full 9x9 matrix (including same-type pairs), per
     // aion-arch/changes/sdd-ticket-foundation/design.md (MODIFIED from
-    // documentation-section) and aion-arch/changes/bug-ticket-type/design.md
-    // (ADDED `bug`): epic(0) > story(1) > task/bug(2) in a strict rank
-    // chain, and still parent `chat` unconditionally, but can no longer
-    // parent `resource`/`page` — those relocated to the Documentation
+    // documentation-section), aion-arch/changes/bug-ticket-type/design.md
+    // (ADDED `bug`), and aion-arch/changes/mid-task-chat-branching/design.md
+    // (MODIFIED chat.canParent(chat)): epic(0) > story(1) > task/bug(2) in a
+    // strict rank chain, and still parent `chat` unconditionally, but can no
+    // longer parent `resource`/`page` — those relocated to the Documentation
     // section, where `page` alone can parent `page`/`resource`
-    // (Notion-style nesting). `resource`/`chat` remain full leaves that
-    // can never parent anything. `signal`/`release` are each a third
-    // kind of special case: parentless like `epic` (see `isAlwaysRoot`)
-    // and can parent `chat` only, never a work type or each other.
-    // `bug` shares `task`'s literal rank, so neither can parent the
-    // other — same-rank nesting is always rejected.
+    // (Notion-style nesting). `resource` remains a full leaf that can never
+    // parent anything, including itself. `chat` is a leaf for every other
+    // type but may now parent exactly one further `chat` — a mid-task/issue
+    // branch (the depth cap beyond that one level is an instance-level
+    // invariant enforced by `TicketsCubit._canBranch`, not by this
+    // type-level rule). `signal`/`release` are each a third kind of special
+    // case: parentless like `epic` (see `isAlwaysRoot`) and can parent
+    // `chat` only, never a work type or each other. `bug` shares `task`'s
+    // literal rank, so neither can parent the other — same-rank nesting is
+    // always rejected.
     const expected = <(TicketType, TicketType), bool>{
       (TicketType.epic, TicketType.epic): false,
       (TicketType.epic, TicketType.story): true,
@@ -73,7 +78,7 @@ void main() {
       (TicketType.chat, TicketType.task): false,
       (TicketType.chat, TicketType.resource): false,
       (TicketType.chat, TicketType.page): false,
-      (TicketType.chat, TicketType.chat): false,
+      (TicketType.chat, TicketType.chat): true,
       (TicketType.chat, TicketType.signal): false,
       (TicketType.chat, TicketType.release): false,
       (TicketType.chat, TicketType.bug): false,

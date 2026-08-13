@@ -5,6 +5,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/core/contracts/agent_model_descriptor.dart';
 import 'package:aion/core/contracts/agent_provider.dart';
+import 'package:aion/core/contracts/agent_tool_definition.dart';
 import 'package:aion/core/contracts/consumption_signal.dart';
 import 'package:aion/core/contracts/provider_id.dart';
 import 'package:aion/core/contracts/provider_registry.dart';
@@ -492,9 +493,9 @@ void main() {
       when(
         () => repository.getCommentsForTicket(chatId),
       ).thenAnswer((_) async => []);
-      when(() => client.run(any())).thenAnswer(
-        (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
-      );
+      when(
+        () => client.run(any()),
+      ).thenAnswer((_) async => Stream.fromIterable(const [AgentDoneEvent()]));
     }
 
     for (final purpose in [
@@ -555,6 +556,12 @@ void main() {
         when(
           () => ticketRepository.getTicketById(chat.id),
         ).thenAnswer((_) async => chat);
+        // _toolsFor (mid-task-chat-branching) does legitimately read this
+        // id — an unrelated purpose from _phaseForChat's own parent walk,
+        // which this test is really about (see below).
+        when(
+          () => ticketRepository.getTicketById('should-never-be-looked-up'),
+        ).thenAnswer((_) async => null);
         stubTurn(chat.id, ModelPhase.frontier);
       },
       build: buildCubitForPurpose,
@@ -563,10 +570,12 @@ void main() {
         content: 'Hello',
       ),
       verify: (_) {
+        // The actual claim under test: _phaseForChat resolves the Inbox
+        // purpose directly, without itself needing to walk to the parent
+        // to compute a ModelPhase.
         verify(
           () => modelRoutingRepository.getModelForPhase(ModelPhase.frontier),
         ).called(1);
-        verifyNever(() => ticketRepository.getTicketById('should-never-be-looked-up'));
       },
     );
   });
@@ -599,50 +608,89 @@ void main() {
       expect(persisted?.outputTokens, 456);
     });
 
+    test('persists null/null usage when the terminal event is an '
+        'AgentErrorEvent (no done event ever seen)', () async {
+      TicketComment? persisted;
+      when(() => repository.addComment(any())).thenAnswer((invocation) async {
+        persisted = invocation.positionalArguments.first as TicketComment;
+      });
+      when(() => client.run(any())).thenAnswer(
+        (_) async =>
+            Stream.fromIterable(const [AgentErrorEvent('model unavailable')]),
+      );
+
+      final succeeded = await ChatCubit.runChatTurn(
+        client: client,
+        provider: provider,
+        commentRepo: repository,
+        chatTicketId: 'chat-1',
+        prompt: 'Hello',
+        model: _sonnet,
+      );
+
+      expect(succeeded, isFalse);
+      expect(persisted?.inputTokens, isNull);
+      expect(persisted?.outputTokens, isNull);
+    });
+
+    test('an AgentOverageDetectedEvent reaches onConsumptionSignal as a '
+        'UsageWindowConsumption, via provider.describeOverage', () async {
+      when(() => repository.addComment(any())).thenAnswer((_) async {});
+      when(() => client.run(any())).thenAnswer(
+        (_) async => Stream.fromIterable(const [
+          AgentOverageDetectedEvent("Over your plan's usage limit."),
+          AgentDoneEvent(),
+        ]),
+      );
+
+      ConsumptionSignal? received;
+      await ChatCubit.runChatTurn(
+        client: client,
+        provider: provider,
+        commentRepo: repository,
+        chatTicketId: 'chat-1',
+        prompt: 'Hello',
+        model: _sonnet,
+        onConsumptionSignal: (signal) => received = signal,
+      );
+
+      expect(received, isA<UsageWindowConsumption>());
+      expect(received!.message, "Over your plan's usage limit.");
+    });
+
     test(
-      'persists null/null usage when the terminal event is an '
-      'AgentErrorEvent (no done event ever seen)',
-      () async {
-        TicketComment? persisted;
-        when(() => repository.addComment(any())).thenAnswer((
-          invocation,
-        ) async {
-          persisted = invocation.positionalArguments.first as TicketComment;
-        });
-        when(() => client.run(any())).thenAnswer(
-          (_) async => Stream.fromIterable(const [
-            AgentErrorEvent('model unavailable'),
-          ]),
-        );
-
-        final succeeded = await ChatCubit.runChatTurn(
-          client: client,
-          provider: provider,
-          commentRepo: repository,
-          chatTicketId: 'chat-1',
-          prompt: 'Hello',
-          model: _sonnet,
-        );
-
-        expect(succeeded, isFalse);
-        expect(persisted?.inputTokens, isNull);
-        expect(persisted?.outputTokens, isNull);
-      },
-    );
-
-    test(
-      'an AgentOverageDetectedEvent reaches onConsumptionSignal as a '
-      'UsageWindowConsumption, via provider.describeOverage',
+      'passes tools/onToolCall through to the AgentRequest unchanged, and '
+      'reports an AgentToolCallEvent via onToolUse (not by invoking '
+      'onToolCall itself — that is the client implementation\'s job)',
       () async {
         when(() => repository.addComment(any())).thenAnswer((_) async {});
-        when(() => client.run(any())).thenAnswer(
-          (_) async => Stream.fromIterable(const [
-            AgentOverageDetectedEvent("Over your plan's usage limit."),
-            AgentDoneEvent(),
-          ]),
-        );
 
-        ConsumptionSignal? received;
+        AgentRequest? capturedRequest;
+        when(() => client.run(any())).thenAnswer((invocation) async {
+          capturedRequest =
+              invocation.positionalArguments.first as AgentRequest;
+          return Stream.fromIterable(const [
+            AgentToolCallEvent('call-1', 'branch_ticket', {'title': 'X'}),
+            AgentDoneEvent(),
+          ]);
+        });
+
+        const tool = AgentToolDefinition(
+          name: 'branch_ticket',
+          description: 'test tool',
+          inputSchema: {'type': 'object', 'properties': {}},
+        );
+        var onToolCallInvoked = false;
+        Future<Map<String, dynamic>> onToolCall(
+          String toolCallId,
+          String toolName,
+          Map<String, dynamic> arguments,
+        ) async {
+          onToolCallInvoked = true;
+          return {'accepted': true};
+        }
+
+        final toolUseCalls = <(String, String?)>[];
         await ChatCubit.runChatTurn(
           client: client,
           provider: provider,
@@ -650,11 +698,16 @@ void main() {
           chatTicketId: 'chat-1',
           prompt: 'Hello',
           model: _sonnet,
-          onConsumptionSignal: (signal) => received = signal,
+          tools: const [tool],
+          onToolCall: onToolCall,
+          onToolUse: (toolName, summary) =>
+              toolUseCalls.add((toolName, summary)),
         );
 
-        expect(received, isA<UsageWindowConsumption>());
-        expect(received!.message, "Over your plan's usage limit.");
+        expect(capturedRequest?.tools, const [tool]);
+        expect(capturedRequest?.onToolCall, onToolCall);
+        expect(toolUseCalls, [('branch_ticket', null)]);
+        expect(onToolCallInvoked, isFalse);
       },
     );
   });

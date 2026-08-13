@@ -793,63 +793,67 @@ void main() {
         await cubit.close();
       });
 
-      test('complexityEdited: true is forwarded to the repository call',
-          () async {
-        when(
-          () => repository.updateTicket(
-            any(),
-            complexityEdited: any(named: 'complexityEdited'),
-            estimateEdited: any(named: 'estimateEdited'),
-          ),
-        ).thenAnswer((_) async {});
-        when(
-          () => repository.getTicketById(ticket.id),
-        ).thenAnswer((_) async => ticket);
-        final cubit = TicketsCubit(repository);
+      test(
+        'complexityEdited: true is forwarded to the repository call',
+        () async {
+          when(
+            () => repository.updateTicket(
+              any(),
+              complexityEdited: any(named: 'complexityEdited'),
+              estimateEdited: any(named: 'estimateEdited'),
+            ),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(ticket.id),
+          ).thenAnswer((_) async => ticket);
+          final cubit = TicketsCubit(repository);
 
-        await cubit.updateTicket(
-          ticket.copyWith(complexity: () => TicketComplexity.large),
-          complexityEdited: true,
-        );
-
-        verify(
-          () => repository.updateTicket(
-            any(),
+          await cubit.updateTicket(
+            ticket.copyWith(complexity: () => TicketComplexity.large),
             complexityEdited: true,
-            estimateEdited: false,
-          ),
-        ).called(1);
-        await cubit.close();
-      });
+          );
 
-      test('estimateEdited: true is forwarded to the repository call',
-          () async {
-        when(
-          () => repository.updateTicket(
-            any(),
-            complexityEdited: any(named: 'complexityEdited'),
-            estimateEdited: any(named: 'estimateEdited'),
-          ),
-        ).thenAnswer((_) async {});
-        when(
-          () => repository.getTicketById(ticket.id),
-        ).thenAnswer((_) async => ticket);
-        final cubit = TicketsCubit(repository);
+          verify(
+            () => repository.updateTicket(
+              any(),
+              complexityEdited: true,
+              estimateEdited: false,
+            ),
+          ).called(1);
+          await cubit.close();
+        },
+      );
 
-        await cubit.updateTicket(
-          ticket.copyWith(estimate: () => 90),
-          estimateEdited: true,
-        );
+      test(
+        'estimateEdited: true is forwarded to the repository call',
+        () async {
+          when(
+            () => repository.updateTicket(
+              any(),
+              complexityEdited: any(named: 'complexityEdited'),
+              estimateEdited: any(named: 'estimateEdited'),
+            ),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(ticket.id),
+          ).thenAnswer((_) async => ticket);
+          final cubit = TicketsCubit(repository);
 
-        verify(
-          () => repository.updateTicket(
-            any(),
-            complexityEdited: false,
+          await cubit.updateTicket(
+            ticket.copyWith(estimate: () => 90),
             estimateEdited: true,
-          ),
-        ).called(1);
-        await cubit.close();
-      });
+          );
+
+          verify(
+            () => repository.updateTicket(
+              any(),
+              complexityEdited: false,
+              estimateEdited: true,
+            ),
+          ).called(1);
+          await cubit.close();
+        },
+      );
     });
 
     blocTest<TicketsCubit, TicketsState>(
@@ -2416,9 +2420,7 @@ void main() {
           // (estimate-timespent-rollup-for-ticket-hierarchy) — empty means
           // neither ticket.id nor the old parentId is found, so no
           // updateRollup/projectBatch call follows.
-          when(
-            () => repository.getAllTickets(),
-          ).thenAnswer((_) async => []);
+          when(() => repository.getAllTickets()).thenAnswer((_) async => []);
         },
         build: () => TicketsCubit(repository),
         act: (cubit) => cubit.updateTicketParent(ticket, null),
@@ -2610,755 +2612,733 @@ void main() {
       );
     });
 
-    group(
-      'estimation-suggestion triggers '
-      '(ai-assisted-complexity-and-estimate-suggestions)',
-      () {
-        late MockEmbeddingProvider embeddingProvider;
-        late MockProviderRegistry providerRegistry;
-        late MockAgentProvider agentProvider;
-        late MockAgentModelClient client;
-        late MockModelRoutingRepository modelRoutingRepository;
+    group('estimation-suggestion triggers '
+        '(ai-assisted-complexity-and-estimate-suggestions)', () {
+      late MockEmbeddingProvider embeddingProvider;
+      late MockProviderRegistry providerRegistry;
+      late MockAgentProvider agentProvider;
+      late MockAgentModelClient client;
+      late MockModelRoutingRepository modelRoutingRepository;
 
-        setUp(() {
-          embeddingProvider = MockEmbeddingProvider();
-          providerRegistry = MockProviderRegistry();
-          agentProvider = MockAgentProvider();
-          client = MockAgentModelClient();
-          modelRoutingRepository = MockModelRoutingRepository();
+      setUp(() {
+        embeddingProvider = MockEmbeddingProvider();
+        providerRegistry = MockProviderRegistry();
+        agentProvider = MockAgentProvider();
+        client = MockAgentModelClient();
+        modelRoutingRepository = MockModelRoutingRepository();
 
+        when(
+          () => embeddingProvider.embed(any()),
+        ).thenAnswer((_) async => Uint8List.fromList([1, 2, 3]));
+        when(() => agentProvider.client).thenReturn(client);
+        when(
+          () => providerRegistry.providerById(ProviderId.claudeAgentSdk),
+        ).thenReturn(agentProvider);
+        when(
+          () => modelRoutingRepository.getModelForPhase(ModelPhase.capable),
+        ).thenAnswer((_) async => _sonnet);
+        when(() => client.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('COMPLEXITY: medium\nESTIMATE_MINUTES: 60'),
+            AgentDoneEvent(),
+          ]),
+        );
+        when(() => repository.getAllTickets()).thenAnswer((_) async => []);
+        when(
+          () => repository.applyEstimationSuggestion(
+            any(),
+            complexity: any(named: 'complexity'),
+            estimate: any(named: 'estimate'),
+          ),
+        ).thenAnswer((_) async {});
+        // Also fires alongside the estimation suggester (both are
+        // unawaited background calls off create/update) — stubbed so it
+        // doesn't throw an unstubbed-call error.
+        when(
+          () => repository.updateEmbedding(any(), any()),
+        ).thenAnswer((_) async {});
+      });
+
+      TicketsCubit buildCubit() => TicketsCubit(
+        repository,
+        embeddingProvider: embeddingProvider,
+        providerRegistry: providerRegistry,
+        modelRoutingRepository: modelRoutingRepository,
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'createTicket always fires the estimation suggester in the '
+        'background',
+        setUp: () {
+          when(() => repository.createTicket(any())).thenAnswer((_) async {});
           when(
-            () => embeddingProvider.embed(any()),
-          ).thenAnswer((_) async => Uint8List.fromList([1, 2, 3]));
-          when(() => agentProvider.client).thenReturn(client);
+            () => repository.getTicketById(any()),
+          ).thenAnswer((_) async => ticket);
           when(
-            () => providerRegistry.providerById(ProviderId.claudeAgentSdk),
-          ).thenReturn(agentProvider);
-          when(
-            () => modelRoutingRepository.getModelForPhase(ModelPhase.capable),
-          ).thenAnswer((_) async => _sonnet);
-          when(() => client.run(any())).thenAnswer(
-            (_) async => Stream.fromIterable(const [
-              AgentTextEvent('COMPLEXITY: medium\nESTIMATE_MINUTES: 60'),
-              AgentDoneEvent(),
-            ]),
+            () => repository.searchTickets(
+              query: any(named: 'query'),
+              statuses: any(named: 'statuses'),
+              types: any(named: 'types'),
+              priorities: any(named: 'priorities'),
+              sort: any(named: 'sort'),
+              limit: any(named: 'limit'),
+              offset: any(named: 'offset'),
+            ),
+          ).thenAnswer(
+            (_) async => TicketSearchPage(tickets: [ticket], hasMore: false),
           );
-          when(() => repository.getAllTickets()).thenAnswer((_) async => []);
-          when(
+        },
+        build: buildCubit,
+        act: (cubit) =>
+            cubit.createTicket(type: TicketType.task, title: 'New ticket'),
+        wait: const Duration(milliseconds: 10),
+        verify: (_) {
+          verify(
+            () => repository.applyEstimationSuggestion(
+              ticket.id,
+              complexity: any(named: 'complexity'),
+              estimate: any(named: 'estimate'),
+            ),
+          ).called(1);
+        },
+        expect: () => [
+          const TicketCreating([]),
+          TicketCreated([ticket], hasMore: false),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'updateTicket does not fire the estimation suggester when title/'
+        'description are unchanged',
+        setUp: () {
+          when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+          when(() => repository.getTicketById(ticket.id)).thenAnswer(
+            (_) async => ticket, // "previous" and "refreshed" both unchanged
+          );
+        },
+        build: buildCubit,
+        act: (cubit) =>
+            cubit.updateTicket(ticket.copyWith(priority: TicketPriority.high)),
+        wait: const Duration(milliseconds: 10),
+        verify: (_) {
+          verifyNever(
             () => repository.applyEstimationSuggestion(
               any(),
               complexity: any(named: 'complexity'),
               estimate: any(named: 'estimate'),
             ),
-          ).thenAnswer((_) async {});
-          // Also fires alongside the estimation suggester (both are
-          // unawaited background calls off create/update) — stubbed so it
-          // doesn't throw an unstubbed-call error.
+          );
+        },
+        expect: () => [TicketDetailLoaded(ticket)],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'updateTicket fires the estimation suggester when the title '
+        'changed',
+        setUp: () {
+          when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+          var callCount = 0;
+          when(() => repository.getTicketById(ticket.id)).thenAnswer((_) async {
+            callCount++;
+            // First call ("previous") returns the original ticket;
+            // second call ("refreshed") returns the title-changed one.
+            return callCount == 1 ? ticket : ticket.copyWith(title: 'New');
+          });
+        },
+        build: buildCubit,
+        act: (cubit) => cubit.updateTicket(ticket.copyWith(title: 'New')),
+        wait: const Duration(milliseconds: 10),
+        verify: (_) {
+          verify(
+            () => repository.applyEstimationSuggestion(
+              ticket.id,
+              complexity: any(named: 'complexity'),
+              estimate: any(named: 'estimate'),
+            ),
+          ).called(1);
+        },
+        expect: () => [TicketDetailLoaded(ticket.copyWith(title: 'New'))],
+      );
+    });
+
+    group('regenerateComplexitySuggestion / regenerateEstimateSuggestion '
+        '(ai-assisted-complexity-and-estimate-suggestions)', () {
+      final sizedTicket = ticket.copyWith(
+        complexity: () => TicketComplexity.medium,
+        estimate: () => 60,
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'regenerateComplexitySuggestion no-ops on a ticket with no '
+        'complexity set',
+        build: () => TicketsCubit(repository),
+        act: (cubit) => cubit.regenerateComplexitySuggestion(ticket),
+        expect: () => [],
+        verify: (_) {
+          verifyNever(() => repository.getTicketById(any()));
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'regenerateEstimateSuggestion no-ops on a ticket with no estimate '
+        'set',
+        build: () => TicketsCubit(repository),
+        act: (cubit) => cubit.regenerateEstimateSuggestion(ticket),
+        expect: () => [],
+        verify: (_) {
+          verifyNever(() => repository.getTicketById(any()));
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'regenerateComplexitySuggestion re-fetches and emits '
+        'TicketDetailLoaded once the suggester call resolves (including '
+        'a silent suggester failure — no embeddingProvider/'
+        'providerRegistry supplied here)',
+        setUp: () {
           when(
-            () => repository.updateEmbedding(any(), any()),
-          ).thenAnswer((_) async {});
-        });
+            () => repository.getTicketById(sizedTicket.id),
+          ).thenAnswer((_) async => sizedTicket);
+        },
+        build: () => TicketsCubit(repository),
+        act: (cubit) => cubit.regenerateComplexitySuggestion(sizedTicket),
+        expect: () => [TicketDetailLoaded(sizedTicket)],
+      );
 
-        TicketsCubit buildCubit() => TicketsCubit(
-          repository,
-          embeddingProvider: embeddingProvider,
-          providerRegistry: providerRegistry,
-          modelRoutingRepository: modelRoutingRepository,
-        );
+      blocTest<TicketsCubit, TicketsState>(
+        'regenerateEstimateSuggestion emits TicketsError only if the '
+        'repository re-fetch itself throws',
+        setUp: () {
+          when(
+            () => repository.getTicketById(sizedTicket.id),
+          ).thenThrow(Exception('db unavailable'));
+        },
+        build: () => TicketsCubit(repository),
+        act: (cubit) => cubit.regenerateEstimateSuggestion(sizedTicket),
+        expect: () => [isA<TicketsError>()],
+      );
+    });
 
-        blocTest<TicketsCubit, TicketsState>(
-          'createTicket always fires the estimation suggester in the '
-          'background',
-          setUp: () {
-            when(
-              () => repository.createTicket(any()),
-            ).thenAnswer((_) async {});
-            when(
-              () => repository.getTicketById(any()),
-            ).thenAnswer((_) async => ticket);
-            when(
-              () => repository.searchTickets(
-                query: any(named: 'query'),
-                statuses: any(named: 'statuses'),
-                types: any(named: 'types'),
-                priorities: any(named: 'priorities'),
-                sort: any(named: 'sort'),
-                limit: any(named: 'limit'),
-                offset: any(named: 'offset'),
-              ),
-            ).thenAnswer(
-              (_) async => TicketSearchPage(tickets: [ticket], hasMore: false),
-            );
-          },
-          build: buildCubit,
-          act: (cubit) =>
-              cubit.createTicket(type: TicketType.task, title: 'New ticket'),
-          wait: const Duration(milliseconds: 10),
-          verify: (_) {
-            verify(
-              () => repository.applyEstimationSuggestion(
-                ticket.id,
-                complexity: any(named: 'complexity'),
-                estimate: any(named: 'estimate'),
-              ),
-            ).called(1);
-          },
-          expect: () => [
-            const TicketCreating([]),
-            TicketCreated([ticket], hasMore: false),
-          ],
-        );
+    group('rollup recompute triggers '
+        '(estimate-timespent-rollup-for-ticket-hierarchy)', () {
+      late MockTicketGitProjector gitProjector;
+      const rootPath = '/root';
 
-        blocTest<TicketsCubit, TicketsState>(
-          'updateTicket does not fire the estimation suggester when title/'
-          'description are unchanged',
-          setUp: () {
-            when(
-              () => repository.updateTicket(any()),
-            ).thenAnswer((_) async {});
-            when(() => repository.getTicketById(ticket.id)).thenAnswer(
-              (_) async => ticket, // "previous" and "refreshed" both unchanged
-            );
-          },
-          build: buildCubit,
-          act: (cubit) => cubit.updateTicket(
-            ticket.copyWith(priority: TicketPriority.high),
+      final rollupEpic = Ticket(
+        id: 'rollup-epic',
+        ticketId: 'AIO-200',
+        type: TicketType.epic,
+        title: 'Rollup epic',
+        status: TicketStatus.backlog,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+      final rollupStory = Ticket(
+        id: 'rollup-story',
+        ticketId: 'AIO-201',
+        type: TicketType.story,
+        title: 'Rollup story',
+        status: TicketStatus.backlog,
+        parentId: rollupEpic.id,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+      final rollupTask = Ticket(
+        id: 'rollup-task',
+        ticketId: 'AIO-202',
+        type: TicketType.task,
+        title: 'Rollup task',
+        status: TicketStatus.backlog,
+        parentId: rollupStory.id,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+      // updateTicket's rollup trigger checks estimate/timeSpent on the
+      // *edited* ticket it's given, so this is the value `act` passes
+      // in and `setUp`'s "refreshed" stub returns.
+      final rollupTaskEdited = rollupTask.copyWith(estimate: () => 60);
+
+      setUp(() {
+        gitProjector = MockTicketGitProjector();
+        // Single-ticket projection — used by trashTicket/trashTickets'
+        // own existing per-ticket git-projection trigger, unrelated to
+        // the rollup recompute's own batched projection below, but
+        // still exercised whenever gitProjector/projectRootPath are
+        // supplied.
+        when(
+          () => gitProjector.project(any(), any(), any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => gitProjector.projectBatch(any(), any(), any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.updateRollup(
+            any(),
+            estimateRollup: any(named: 'estimateRollup'),
+            timeSpentRollup: any(named: 'timeSpentRollup'),
           ),
-          wait: const Duration(milliseconds: 10),
-          verify: (_) {
-            verifyNever(
-              () => repository.applyEstimationSuggestion(
-                any(),
-                complexity: any(named: 'complexity'),
-                estimate: any(named: 'estimate'),
-              ),
-            );
-          },
-          expect: () => [TicketDetailLoaded(ticket)],
-        );
+        ).thenAnswer((_) async {});
+      });
 
-        blocTest<TicketsCubit, TicketsState>(
-          'updateTicket fires the estimation suggester when the title '
-          'changed',
-          setUp: () {
-            when(
-              () => repository.updateTicket(any()),
-            ).thenAnswer((_) async {});
-            var callCount = 0;
-            when(() => repository.getTicketById(ticket.id)).thenAnswer((
-              _,
-            ) async {
-              callCount++;
-              // First call ("previous") returns the original ticket;
-              // second call ("refreshed") returns the title-changed one.
-              return callCount == 1 ? ticket : ticket.copyWith(title: 'New');
-            });
-          },
-          build: buildCubit,
-          act: (cubit) => cubit.updateTicket(ticket.copyWith(title: 'New')),
-          wait: const Duration(milliseconds: 10),
-          verify: (_) {
-            verify(
-              () => repository.applyEstimationSuggestion(
-                ticket.id,
-                complexity: any(named: 'complexity'),
-                estimate: any(named: 'estimate'),
-              ),
-            ).called(1);
-          },
-          expect: () => [TicketDetailLoaded(ticket.copyWith(title: 'New'))],
-        );
-      },
-    );
+      TicketsCubit buildCubit() => TicketsCubit(
+        repository,
+        gitProjector: gitProjector,
+        projectRootPath: rootPath,
+      );
 
-    group(
-      'regenerateComplexitySuggestion / regenerateEstimateSuggestion '
-      '(ai-assisted-complexity-and-estimate-suggestions)',
-      () {
-        final sizedTicket = ticket.copyWith(
-          complexity: () => TicketComplexity.medium,
-          estimate: () => 60,
-        );
+      blocTest<TicketsCubit, TicketsState>(
+        'updateTicket changing estimate/timeSpent recomputes every '
+        'ancestor up to the root',
+        setUp: () {
+          var getTicketByIdCallCount = 0;
+          when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+          when(() => repository.getTicketById(rollupTask.id)).thenAnswer((
+            _,
+          ) async {
+            getTicketByIdCallCount++;
+            // First call is updateTicket's "previous" fetch (before the
+            // write); second is its "refreshed" fetch (after).
+            return getTicketByIdCallCount == 1 ? rollupTask : rollupTaskEdited;
+          });
+          when(() => repository.getAllTickets()).thenAnswer(
+            (_) async => [rollupEpic, rollupStory, rollupTaskEdited],
+          );
+        },
+        build: buildCubit,
+        act: (cubit) => cubit.updateTicket(rollupTaskEdited),
+        verify: (_) {
+          verify(
+            () => repository.updateRollup(
+              rollupStory.id,
+              estimateRollup: 60,
+              timeSpentRollup: null,
+            ),
+          ).called(1);
+          verify(
+            () => repository.updateRollup(
+              rollupEpic.id,
+              estimateRollup: 60,
+              timeSpentRollup: null,
+            ),
+          ).called(1);
+          // The edited leaf itself has no children, so it never gets a
+          // rollup of its own.
+          verifyNever(
+            () => repository.updateRollup(
+              rollupTask.id,
+              estimateRollup: any(named: 'estimateRollup'),
+              timeSpentRollup: any(named: 'timeSpentRollup'),
+            ),
+          );
+        },
+        expect: () => [TicketDetailLoaded(rollupTaskEdited)],
+      );
 
-        blocTest<TicketsCubit, TicketsState>(
-          'regenerateComplexitySuggestion no-ops on a ticket with no '
-          'complexity set',
-          build: () => TicketsCubit(repository),
-          act: (cubit) => cubit.regenerateComplexitySuggestion(ticket),
-          expect: () => [],
-          verify: (_) {
-            verifyNever(() => repository.getTicketById(any()));
-          },
-        );
-
-        blocTest<TicketsCubit, TicketsState>(
-          'regenerateEstimateSuggestion no-ops on a ticket with no estimate '
-          'set',
-          build: () => TicketsCubit(repository),
-          act: (cubit) => cubit.regenerateEstimateSuggestion(ticket),
-          expect: () => [],
-          verify: (_) {
-            verifyNever(() => repository.getTicketById(any()));
-          },
-        );
-
-        blocTest<TicketsCubit, TicketsState>(
-          'regenerateComplexitySuggestion re-fetches and emits '
-          'TicketDetailLoaded once the suggester call resolves (including '
-          'a silent suggester failure — no embeddingProvider/'
-          'providerRegistry supplied here)',
-          setUp: () {
-            when(
-              () => repository.getTicketById(sizedTicket.id),
-            ).thenAnswer((_) async => sizedTicket);
-          },
-          build: () => TicketsCubit(repository),
-          act: (cubit) => cubit.regenerateComplexitySuggestion(sizedTicket),
-          expect: () => [TicketDetailLoaded(sizedTicket)],
-        );
-
-        blocTest<TicketsCubit, TicketsState>(
-          'regenerateEstimateSuggestion emits TicketsError only if the '
-          'repository re-fetch itself throws',
-          setUp: () {
-            when(
-              () => repository.getTicketById(sizedTicket.id),
-            ).thenThrow(Exception('db unavailable'));
-          },
-          build: () => TicketsCubit(repository),
-          act: (cubit) => cubit.regenerateEstimateSuggestion(sizedTicket),
-          expect: () => [isA<TicketsError>()],
-        );
-      },
-    );
-
-    group(
-      'rollup recompute triggers '
-      '(estimate-timespent-rollup-for-ticket-hierarchy)',
-      () {
-        late MockTicketGitProjector gitProjector;
-        const rootPath = '/root';
-
-        final rollupEpic = Ticket(
-          id: 'rollup-epic',
-          ticketId: 'AIO-200',
-          type: TicketType.epic,
-          title: 'Rollup epic',
-          status: TicketStatus.backlog,
-          createdAt: DateTime(2026),
-          updatedAt: DateTime(2026),
-        );
-        final rollupStory = Ticket(
-          id: 'rollup-story',
-          ticketId: 'AIO-201',
-          type: TicketType.story,
-          title: 'Rollup story',
-          status: TicketStatus.backlog,
-          parentId: rollupEpic.id,
-          createdAt: DateTime(2026),
-          updatedAt: DateTime(2026),
-        );
-        final rollupTask = Ticket(
-          id: 'rollup-task',
-          ticketId: 'AIO-202',
-          type: TicketType.task,
-          title: 'Rollup task',
-          status: TicketStatus.backlog,
-          parentId: rollupStory.id,
-          createdAt: DateTime(2026),
-          updatedAt: DateTime(2026),
-        );
-        // updateTicket's rollup trigger checks estimate/timeSpent on the
-        // *edited* ticket it's given, so this is the value `act` passes
-        // in and `setUp`'s "refreshed" stub returns.
-        final rollupTaskEdited = rollupTask.copyWith(estimate: () => 60);
-
-        setUp(() {
-          gitProjector = MockTicketGitProjector();
-          // Single-ticket projection — used by trashTicket/trashTickets'
-          // own existing per-ticket git-projection trigger, unrelated to
-          // the rollup recompute's own batched projection below, but
-          // still exercised whenever gitProjector/projectRootPath are
-          // supplied.
+      blocTest<TicketsCubit, TicketsState>(
+        'updateTicket changing an unrelated field (priority only) does '
+        'not trigger a recompute',
+        setUp: () {
+          when(() => repository.updateTicket(any())).thenAnswer((_) async {});
           when(
-            () => gitProjector.project(any(), any(), any()),
-          ).thenAnswer((_) async {});
-          when(
-            () => gitProjector.projectBatch(any(), any(), any()),
-          ).thenAnswer((_) async {});
-          when(
+            () => repository.getTicketById(rollupTask.id),
+          ).thenAnswer((_) async => rollupTask);
+        },
+        build: buildCubit,
+        act: (cubit) => cubit.updateTicket(
+          rollupTask.copyWith(priority: TicketPriority.high),
+        ),
+        verify: (_) {
+          verifyNever(() => repository.getAllTickets());
+          verifyNever(
             () => repository.updateRollup(
               any(),
               estimateRollup: any(named: 'estimateRollup'),
               timeSpentRollup: any(named: 'timeSpentRollup'),
             ),
+          );
+        },
+        expect: () => [TicketDetailLoaded(rollupTask)],
+      );
+
+      final reparentOldParent = Ticket(
+        id: 'rollup-old-parent',
+        ticketId: 'AIO-210',
+        type: TicketType.story,
+        title: 'Old parent',
+        status: TicketStatus.backlog,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+        // Stale — reflects the moved task's contribution, which needs
+        // to be removed now that it's leaving.
+        estimateRollup: 100,
+      );
+      final reparentNewParent = Ticket(
+        id: 'rollup-new-parent',
+        ticketId: 'AIO-211',
+        type: TicketType.story,
+        title: 'New parent',
+        status: TicketStatus.backlog,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+      final reparentSibling = Ticket(
+        id: 'rollup-sibling-task',
+        ticketId: 'AIO-212',
+        type: TicketType.task,
+        title: 'Sibling task',
+        status: TicketStatus.backlog,
+        parentId: reparentOldParent.id,
+        estimate: 55,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+      final reparentMovedTaskBefore = Ticket(
+        id: 'rollup-moved-task',
+        ticketId: 'AIO-213',
+        type: TicketType.task,
+        title: 'Moved task',
+        status: TicketStatus.backlog,
+        parentId: reparentOldParent.id,
+        estimate: 45,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+      final reparentMovedTaskAfter = Ticket(
+        id: reparentMovedTaskBefore.id,
+        ticketId: reparentMovedTaskBefore.ticketId,
+        type: reparentMovedTaskBefore.type,
+        title: reparentMovedTaskBefore.title,
+        status: reparentMovedTaskBefore.status,
+        parentId: reparentNewParent.id,
+        estimate: 45,
+        createdAt: reparentMovedTaskBefore.createdAt,
+        updatedAt: reparentMovedTaskBefore.updatedAt,
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'updateTicketParent recomputes both the old and new parent '
+        'chains in one operation',
+        setUp: () {
+          when(
+            () => repository.getTicketById(reparentNewParent.id),
+          ).thenAnswer((_) async => reparentNewParent);
+          when(
+            () => repository.updateTicketParent(any(), any()),
           ).thenAnswer((_) async {});
-        });
+          when(
+            () => repository.getTicketById(reparentMovedTaskBefore.id),
+          ).thenAnswer((_) async => reparentMovedTaskAfter);
+          when(() => repository.getAllTickets()).thenAnswer(
+            (_) async => [
+              reparentOldParent,
+              reparentNewParent,
+              reparentSibling,
+              reparentMovedTaskAfter,
+            ],
+          );
+        },
+        build: buildCubit,
+        act: (cubit) => cubit.updateTicketParent(
+          reparentMovedTaskBefore,
+          reparentNewParent.id,
+        ),
+        verify: (_) {
+          verify(
+            () => repository.updateRollup(
+              reparentOldParent.id,
+              estimateRollup: 55,
+              timeSpentRollup: null,
+            ),
+          ).called(1);
+          verify(
+            () => repository.updateRollup(
+              reparentNewParent.id,
+              estimateRollup: 45,
+              timeSpentRollup: null,
+            ),
+          ).called(1);
+        },
+        expect: () => [TicketDetailLoaded(reparentMovedTaskAfter)],
+      );
 
-        TicketsCubit buildCubit() => TicketsCubit(
-          repository,
-          gitProjector: gitProjector,
-          projectRootPath: rootPath,
-        );
+      final trashParent = Ticket(
+        id: 'rollup-trash-parent',
+        ticketId: 'AIO-220',
+        type: TicketType.story,
+        title: 'Trash parent',
+        status: TicketStatus.backlog,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+        estimateRollup: 45,
+      );
+      final trashedChild = Ticket(
+        id: 'rollup-trash-child',
+        ticketId: 'AIO-221',
+        type: TicketType.task,
+        title: 'Trashed child',
+        status: TicketStatus.backlog,
+        parentId: trashParent.id,
+        estimate: 45,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
 
-        blocTest<TicketsCubit, TicketsState>(
-          'updateTicket changing estimate/timeSpent recomputes every '
-          'ancestor up to the root',
-          setUp: () {
-            var getTicketByIdCallCount = 0;
-            when(() => repository.updateTicket(any())).thenAnswer((_) async {});
-            when(() => repository.getTicketById(rollupTask.id)).thenAnswer((
-              _,
-            ) async {
-              getTicketByIdCallCount++;
-              // First call is updateTicket's "previous" fetch (before the
-              // write); second is its "refreshed" fetch (after).
-              return getTicketByIdCallCount == 1 ? rollupTask : rollupTaskEdited;
-            });
-            when(() => repository.getAllTickets()).thenAnswer(
-              (_) async => [rollupEpic, rollupStory, rollupTaskEdited],
-            );
-          },
-          build: buildCubit,
-          act: (cubit) => cubit.updateTicket(rollupTaskEdited),
-          verify: (_) {
-            verify(
-              () => repository.updateRollup(
-                rollupStory.id,
-                estimateRollup: 60,
-                timeSpentRollup: null,
-              ),
-            ).called(1);
-            verify(
-              () => repository.updateRollup(
-                rollupEpic.id,
-                estimateRollup: 60,
-                timeSpentRollup: null,
-              ),
-            ).called(1);
-            // The edited leaf itself has no children, so it never gets a
-            // rollup of its own.
-            verifyNever(
-              () => repository.updateRollup(
-                rollupTask.id,
-                estimateRollup: any(named: 'estimateRollup'),
-                timeSpentRollup: any(named: 'timeSpentRollup'),
-              ),
-            );
-          },
-          expect: () => [TicketDetailLoaded(rollupTaskEdited)],
-        );
+      blocTest<TicketsCubit, TicketsState>(
+        'trashTicket recomputes the former parent, excluding the trashed '
+        'subtree from the new total',
+        setUp: () {
+          when(
+            () => repository.trashTicket(trashedChild.id),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(trashedChild.id),
+          ).thenAnswer((_) async => trashedChild);
+          // Excludes trashedChild — mirrors getAllTickets()'s real
+          // deleted_at IS NULL filter once the trash write has landed.
+          when(
+            () => repository.getAllTickets(),
+          ).thenAnswer((_) async => [trashParent]);
+        },
+        build: buildCubit,
+        seed: () => TicketDetailLoaded(trashedChild),
+        act: (cubit) => cubit.trashTicket(trashedChild.id),
+        verify: (_) {
+          verify(
+            () => repository.updateRollup(
+              trashParent.id,
+              estimateRollup: null,
+              timeSpentRollup: null,
+            ),
+          ).called(1);
+        },
+        expect: () => [const TicketTrashing(), const TicketTrashed()],
+      );
 
-        blocTest<TicketsCubit, TicketsState>(
-          'updateTicket changing an unrelated field (priority only) does '
-          'not trigger a recompute',
-          setUp: () {
-            when(() => repository.updateTicket(any())).thenAnswer((_) async {});
-            when(
-              () => repository.getTicketById(rollupTask.id),
-            ).thenAnswer((_) async => rollupTask);
-          },
-          build: buildCubit,
-          act: (cubit) => cubit.updateTicket(
-            rollupTask.copyWith(priority: TicketPriority.high),
-          ),
-          verify: (_) {
-            verifyNever(() => repository.getAllTickets());
-            verifyNever(
-              () => repository.updateRollup(
-                any(),
-                estimateRollup: any(named: 'estimateRollup'),
-                timeSpentRollup: any(named: 'timeSpentRollup'),
-              ),
-            );
-          },
-          expect: () => [TicketDetailLoaded(rollupTask)],
-        );
+      final bulkTrashParent = Ticket(
+        id: 'rollup-bulk-trash-parent',
+        ticketId: 'AIO-230',
+        type: TicketType.story,
+        title: 'Bulk trash parent',
+        status: TicketStatus.backlog,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+        estimateRollup: 45,
+      );
+      final bulkTrashedChild = Ticket(
+        id: 'rollup-bulk-trash-child',
+        ticketId: 'AIO-231',
+        type: TicketType.task,
+        title: 'Bulk trashed child',
+        status: TicketStatus.backlog,
+        parentId: bulkTrashParent.id,
+        estimate: 45,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
 
-        final reparentOldParent = Ticket(
-          id: 'rollup-old-parent',
-          ticketId: 'AIO-210',
-          type: TicketType.story,
-          title: 'Old parent',
-          status: TicketStatus.backlog,
-          createdAt: DateTime(2026),
-          updatedAt: DateTime(2026),
-          // Stale — reflects the moved task's contribution, which needs
-          // to be removed now that it's leaving.
-          estimateRollup: 100,
-        );
-        final reparentNewParent = Ticket(
-          id: 'rollup-new-parent',
-          ticketId: 'AIO-211',
-          type: TicketType.story,
-          title: 'New parent',
-          status: TicketStatus.backlog,
-          createdAt: DateTime(2026),
-          updatedAt: DateTime(2026),
-        );
-        final reparentSibling = Ticket(
-          id: 'rollup-sibling-task',
-          ticketId: 'AIO-212',
-          type: TicketType.task,
-          title: 'Sibling task',
-          status: TicketStatus.backlog,
-          parentId: reparentOldParent.id,
-          estimate: 55,
-          createdAt: DateTime(2026),
-          updatedAt: DateTime(2026),
-        );
-        final reparentMovedTaskBefore = Ticket(
-          id: 'rollup-moved-task',
-          ticketId: 'AIO-213',
-          type: TicketType.task,
-          title: 'Moved task',
-          status: TicketStatus.backlog,
-          parentId: reparentOldParent.id,
-          estimate: 45,
-          createdAt: DateTime(2026),
-          updatedAt: DateTime(2026),
-        );
-        final reparentMovedTaskAfter = Ticket(
-          id: reparentMovedTaskBefore.id,
-          ticketId: reparentMovedTaskBefore.ticketId,
-          type: reparentMovedTaskBefore.type,
-          title: reparentMovedTaskBefore.title,
-          status: reparentMovedTaskBefore.status,
-          parentId: reparentNewParent.id,
-          estimate: 45,
-          createdAt: reparentMovedTaskBefore.createdAt,
-          updatedAt: reparentMovedTaskBefore.updatedAt,
-        );
+      blocTest<TicketsCubit, TicketsState>(
+        'trashTickets recomputes the (now-former) parent for every '
+        'explicitly-trashed id, in one recompute operation',
+        setUp: () {
+          when(
+            () => repository.trashTickets([bulkTrashedChild.id]),
+          ).thenAnswer((_) async => 1);
+          when(
+            () => repository.getTicketById(bulkTrashedChild.id),
+          ).thenAnswer((_) async => bulkTrashedChild);
+          when(
+            () => repository.getAllTickets(),
+          ).thenAnswer((_) async => [bulkTrashParent]);
+          when(
+            () => repository.searchTickets(
+              query: any(named: 'query'),
+              statuses: any(named: 'statuses'),
+              types: any(named: 'types'),
+              priorities: any(named: 'priorities'),
+              sort: any(named: 'sort'),
+              limit: any(named: 'limit'),
+            ),
+          ).thenAnswer(
+            (_) async => const TicketSearchPage(tickets: [], hasMore: false),
+          );
+        },
+        build: buildCubit,
+        act: (cubit) => cubit.trashTickets([bulkTrashedChild.id]),
+        verify: (_) {
+          verify(
+            () => repository.updateRollup(
+              bulkTrashParent.id,
+              estimateRollup: null,
+              timeSpentRollup: null,
+            ),
+          ).called(1);
+        },
+        expect: () => [
+          const TicketsBatchTrashing(),
+          isA<TicketsBatchTrashed>(),
+        ],
+      );
 
-        blocTest<TicketsCubit, TicketsState>(
-          'updateTicketParent recomputes both the old and new parent '
-          'chains in one operation',
-          setUp: () {
-            when(
-              () => repository.getTicketById(reparentNewParent.id),
-            ).thenAnswer((_) async => reparentNewParent);
-            when(
-              () => repository.updateTicketParent(any(), any()),
-            ).thenAnswer((_) async {});
-            when(
-              () => repository.getTicketById(reparentMovedTaskBefore.id),
-            ).thenAnswer((_) async => reparentMovedTaskAfter);
-            when(() => repository.getAllTickets()).thenAnswer(
-              (_) async => [
-                reparentOldParent,
-                reparentNewParent,
-                reparentSibling,
-                reparentMovedTaskAfter,
-              ],
-            );
-          },
-          build: buildCubit,
-          act: (cubit) => cubit.updateTicketParent(
-            reparentMovedTaskBefore,
-            reparentNewParent.id,
-          ),
-          verify: (_) {
-            verify(
-              () => repository.updateRollup(
-                reparentOldParent.id,
-                estimateRollup: 55,
-                timeSpentRollup: null,
-              ),
-            ).called(1);
-            verify(
-              () => repository.updateRollup(
-                reparentNewParent.id,
-                estimateRollup: 45,
-                timeSpentRollup: null,
-              ),
-            ).called(1);
-          },
-          expect: () => [TicketDetailLoaded(reparentMovedTaskAfter)],
-        );
+      final noChangeGrandparent = Ticket(
+        id: 'rollup-nochange-grandparent',
+        ticketId: 'AIO-240',
+        type: TicketType.epic,
+        title: 'No-change grandparent',
+        status: TicketStatus.backlog,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+        // Already the value a fresh computeRollups walk will produce —
+        // its own rollup is not actually stale here, even though it's
+        // on [noChangeParent]'s ancestor chain.
+        estimateRollup: 10,
+      );
+      final noChangeParent = Ticket(
+        id: 'rollup-nochange-parent',
+        ticketId: 'AIO-241',
+        type: TicketType.story,
+        title: 'No-change parent',
+        status: TicketStatus.backlog,
+        parentId: noChangeGrandparent.id,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+        // Stale — really does need updating to 10.
+      );
+      final noChangeEditedChild = Ticket(
+        id: 'rollup-nochange-child',
+        ticketId: 'AIO-242',
+        type: TicketType.task,
+        title: 'Edited child',
+        status: TicketStatus.backlog,
+        parentId: noChangeParent.id,
+        estimate: 10,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
 
-        final trashParent = Ticket(
-          id: 'rollup-trash-parent',
-          ticketId: 'AIO-220',
-          type: TicketType.story,
-          title: 'Trash parent',
-          status: TicketStatus.backlog,
-          createdAt: DateTime(2026),
-          updatedAt: DateTime(2026),
-          estimateRollup: 45,
-        );
-        final trashedChild = Ticket(
-          id: 'rollup-trash-child',
-          ticketId: 'AIO-221',
-          type: TicketType.task,
-          title: 'Trashed child',
-          status: TicketStatus.backlog,
-          parentId: trashParent.id,
-          estimate: 45,
-          createdAt: DateTime(2026),
-          updatedAt: DateTime(2026),
-        );
-
-        blocTest<TicketsCubit, TicketsState>(
-          'trashTicket recomputes the former parent, excluding the trashed '
-          'subtree from the new total',
-          setUp: () {
-            when(
-              () => repository.trashTicket(trashedChild.id),
-            ).thenAnswer((_) async {});
-            when(
-              () => repository.getTicketById(trashedChild.id),
-            ).thenAnswer((_) async => trashedChild);
-            // Excludes trashedChild — mirrors getAllTickets()'s real
-            // deleted_at IS NULL filter once the trash write has landed.
-            when(
-              () => repository.getAllTickets(),
-            ).thenAnswer((_) async => [trashParent]);
-          },
-          build: buildCubit,
-          seed: () => TicketDetailLoaded(trashedChild),
-          act: (cubit) => cubit.trashTicket(trashedChild.id),
-          verify: (_) {
-            verify(
-              () => repository.updateRollup(
-                trashParent.id,
-                estimateRollup: null,
-                timeSpentRollup: null,
-              ),
-            ).called(1);
-          },
-          expect: () => [const TicketTrashing(), const TicketTrashed()],
-        );
-
-        final bulkTrashParent = Ticket(
-          id: 'rollup-bulk-trash-parent',
-          ticketId: 'AIO-230',
-          type: TicketType.story,
-          title: 'Bulk trash parent',
-          status: TicketStatus.backlog,
-          createdAt: DateTime(2026),
-          updatedAt: DateTime(2026),
-          estimateRollup: 45,
-        );
-        final bulkTrashedChild = Ticket(
-          id: 'rollup-bulk-trash-child',
-          ticketId: 'AIO-231',
-          type: TicketType.task,
-          title: 'Bulk trashed child',
-          status: TicketStatus.backlog,
-          parentId: bulkTrashParent.id,
-          estimate: 45,
-          createdAt: DateTime(2026),
-          updatedAt: DateTime(2026),
-        );
-
-        blocTest<TicketsCubit, TicketsState>(
-          'trashTickets recomputes the (now-former) parent for every '
-          'explicitly-trashed id, in one recompute operation',
-          setUp: () {
-            when(
-              () => repository.trashTickets([bulkTrashedChild.id]),
-            ).thenAnswer((_) async => 1);
-            when(
-              () => repository.getTicketById(bulkTrashedChild.id),
-            ).thenAnswer((_) async => bulkTrashedChild);
-            when(
-              () => repository.getAllTickets(),
-            ).thenAnswer((_) async => [bulkTrashParent]);
-            when(
-              () => repository.searchTickets(
-                query: any(named: 'query'),
-                statuses: any(named: 'statuses'),
-                types: any(named: 'types'),
-                priorities: any(named: 'priorities'),
-                sort: any(named: 'sort'),
-                limit: any(named: 'limit'),
-              ),
-            ).thenAnswer(
-              (_) async => const TicketSearchPage(tickets: [], hasMore: false),
-            );
-          },
-          build: buildCubit,
-          act: (cubit) => cubit.trashTickets([bulkTrashedChild.id]),
-          verify: (_) {
-            verify(
-              () => repository.updateRollup(
-                bulkTrashParent.id,
-                estimateRollup: null,
-                timeSpentRollup: null,
-              ),
-            ).called(1);
-          },
-          expect: () => [
-            const TicketsBatchTrashing(),
-            isA<TicketsBatchTrashed>(),
-          ],
-        );
-
-        final noChangeGrandparent = Ticket(
-          id: 'rollup-nochange-grandparent',
-          ticketId: 'AIO-240',
-          type: TicketType.epic,
-          title: 'No-change grandparent',
-          status: TicketStatus.backlog,
-          createdAt: DateTime(2026),
-          updatedAt: DateTime(2026),
-          // Already the value a fresh computeRollups walk will produce —
-          // its own rollup is not actually stale here, even though it's
-          // on [noChangeParent]'s ancestor chain.
-          estimateRollup: 10,
-        );
-        final noChangeParent = Ticket(
-          id: 'rollup-nochange-parent',
-          ticketId: 'AIO-241',
-          type: TicketType.story,
-          title: 'No-change parent',
-          status: TicketStatus.backlog,
-          parentId: noChangeGrandparent.id,
-          createdAt: DateTime(2026),
-          updatedAt: DateTime(2026),
-          // Stale — really does need updating to 10.
-        );
-        final noChangeEditedChild = Ticket(
-          id: 'rollup-nochange-child',
-          ticketId: 'AIO-242',
-          type: TicketType.task,
-          title: 'Edited child',
-          status: TicketStatus.backlog,
-          parentId: noChangeParent.id,
-          estimate: 10,
-          createdAt: DateTime(2026),
-          updatedAt: DateTime(2026),
-        );
-
-        blocTest<TicketsCubit, TicketsState>(
-          "an ancestor whose computed rollup didn't actually change is not "
-          're-written or re-projected, even though it is on the walked path',
-          setUp: () {
-            when(() => repository.updateTicket(any())).thenAnswer((_) async {});
-            var getTicketByIdCallCount = 0;
-            when(
-              () => repository.getTicketById(noChangeEditedChild.id),
-            ).thenAnswer((_) async {
-              getTicketByIdCallCount++;
-              return getTicketByIdCallCount == 1
-                  ? noChangeEditedChild.copyWith(estimate: () => null)
-                  : noChangeEditedChild;
-            });
-            when(() => repository.getAllTickets()).thenAnswer(
-              (_) async => [
-                noChangeGrandparent,
-                noChangeParent,
-                noChangeEditedChild,
-              ],
-            );
-          },
-          build: buildCubit,
-          act: (cubit) => cubit.updateTicket(noChangeEditedChild),
-          verify: (_) {
-            verify(
-              () => repository.updateRollup(
-                noChangeParent.id,
-                estimateRollup: 10,
-                timeSpentRollup: null,
-              ),
-            ).called(1);
-            verifyNever(
-              () => repository.updateRollup(
-                noChangeGrandparent.id,
-                estimateRollup: any(named: 'estimateRollup'),
-                timeSpentRollup: any(named: 'timeSpentRollup'),
-              ),
-            );
-            final projected = verify(
-              () => gitProjector.projectBatch(
-                captureAny(),
-                rootPath,
-                'rollup updated',
-              ),
-            ).captured;
-            expect(projected, hasLength(1));
-            expect(
-              (projected.first as List<Ticket>).map((t) => t.id),
-              [noChangeParent.id],
-            );
-          },
-          expect: () => [TicketDetailLoaded(noChangeEditedChild)],
-        );
-      },
-    );
+      blocTest<TicketsCubit, TicketsState>(
+        "an ancestor whose computed rollup didn't actually change is not "
+        're-written or re-projected, even though it is on the walked path',
+        setUp: () {
+          when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+          var getTicketByIdCallCount = 0;
+          when(
+            () => repository.getTicketById(noChangeEditedChild.id),
+          ).thenAnswer((_) async {
+            getTicketByIdCallCount++;
+            return getTicketByIdCallCount == 1
+                ? noChangeEditedChild.copyWith(estimate: () => null)
+                : noChangeEditedChild;
+          });
+          when(() => repository.getAllTickets()).thenAnswer(
+            (_) async => [
+              noChangeGrandparent,
+              noChangeParent,
+              noChangeEditedChild,
+            ],
+          );
+        },
+        build: buildCubit,
+        act: (cubit) => cubit.updateTicket(noChangeEditedChild),
+        verify: (_) {
+          verify(
+            () => repository.updateRollup(
+              noChangeParent.id,
+              estimateRollup: 10,
+              timeSpentRollup: null,
+            ),
+          ).called(1);
+          verifyNever(
+            () => repository.updateRollup(
+              noChangeGrandparent.id,
+              estimateRollup: any(named: 'estimateRollup'),
+              timeSpentRollup: any(named: 'timeSpentRollup'),
+            ),
+          );
+          final projected = verify(
+            () => gitProjector.projectBatch(
+              captureAny(),
+              rootPath,
+              'rollup updated',
+            ),
+          ).captured;
+          expect(projected, hasLength(1));
+          expect((projected.first as List<Ticket>).map((t) => t.id), [
+            noChangeParent.id,
+          ]);
+        },
+        expect: () => [TicketDetailLoaded(noChangeEditedChild)],
+      );
+    });
 
     group(
       'getRollupCounts (estimate-timespent-rollup-for-ticket-hierarchy)',
       () {
-        test(
-          'returns the correct estimateCount/timeSpentCount for a '
-          'multi-level subtree, performing no repository writes',
-          () async {
-            final grandparent = Ticket(
-              id: 'counts-grandparent',
-              ticketId: 'AIO-250',
-              type: TicketType.epic,
-              title: 'Counts grandparent',
-              status: TicketStatus.backlog,
-              createdAt: DateTime(2026),
-              updatedAt: DateTime(2026),
-            );
-            final parent = Ticket(
-              id: 'counts-parent',
-              ticketId: 'AIO-251',
-              type: TicketType.story,
-              title: 'Counts parent',
-              status: TicketStatus.backlog,
-              parentId: grandparent.id,
-              estimate: 30,
-              createdAt: DateTime(2026),
-              updatedAt: DateTime(2026),
-            );
-            final child1 = Ticket(
-              id: 'counts-child-1',
-              ticketId: 'AIO-252',
-              type: TicketType.task,
-              title: 'Counts child 1',
-              status: TicketStatus.backlog,
-              parentId: parent.id,
-              estimate: 15,
-              timeSpent: 5,
-              createdAt: DateTime(2026),
-              updatedAt: DateTime(2026),
-            );
-            final child2 = Ticket(
-              id: 'counts-child-2',
-              ticketId: 'AIO-253',
-              type: TicketType.task,
-              title: 'Counts child 2',
-              status: TicketStatus.backlog,
-              parentId: parent.id,
-              createdAt: DateTime(2026),
-              updatedAt: DateTime(2026),
-            );
+        test('returns the correct estimateCount/timeSpentCount for a '
+            'multi-level subtree, performing no repository writes', () async {
+          final grandparent = Ticket(
+            id: 'counts-grandparent',
+            ticketId: 'AIO-250',
+            type: TicketType.epic,
+            title: 'Counts grandparent',
+            status: TicketStatus.backlog,
+            createdAt: DateTime(2026),
+            updatedAt: DateTime(2026),
+          );
+          final parent = Ticket(
+            id: 'counts-parent',
+            ticketId: 'AIO-251',
+            type: TicketType.story,
+            title: 'Counts parent',
+            status: TicketStatus.backlog,
+            parentId: grandparent.id,
+            estimate: 30,
+            createdAt: DateTime(2026),
+            updatedAt: DateTime(2026),
+          );
+          final child1 = Ticket(
+            id: 'counts-child-1',
+            ticketId: 'AIO-252',
+            type: TicketType.task,
+            title: 'Counts child 1',
+            status: TicketStatus.backlog,
+            parentId: parent.id,
+            estimate: 15,
+            timeSpent: 5,
+            createdAt: DateTime(2026),
+            updatedAt: DateTime(2026),
+          );
+          final child2 = Ticket(
+            id: 'counts-child-2',
+            ticketId: 'AIO-253',
+            type: TicketType.task,
+            title: 'Counts child 2',
+            status: TicketStatus.backlog,
+            parentId: parent.id,
+            createdAt: DateTime(2026),
+            updatedAt: DateTime(2026),
+          );
 
-            when(() => repository.getAllTickets()).thenAnswer(
-              (_) async => [grandparent, parent, child1, child2],
-            );
+          when(
+            () => repository.getAllTickets(),
+          ).thenAnswer((_) async => [grandparent, parent, child1, child2]);
 
-            final counts = await TicketsCubit(
-              repository,
-            ).getRollupCounts(grandparent);
+          final counts = await TicketsCubit(
+            repository,
+          ).getRollupCounts(grandparent);
 
-            // grandparent itself contributes nothing; parent (30) and
-            // child1 (15) contribute an estimate; only child1 contributes
-            // a timeSpent.
-            expect(counts.estimateCount, 2);
-            expect(counts.timeSpentCount, 1);
-            verifyNever(
-              () => repository.updateRollup(
-                any(),
-                estimateRollup: any(named: 'estimateRollup'),
-                timeSpentRollup: any(named: 'timeSpentRollup'),
-              ),
-            );
-          },
-        );
+          // grandparent itself contributes nothing; parent (30) and
+          // child1 (15) contribute an estimate; only child1 contributes
+          // a timeSpent.
+          expect(counts.estimateCount, 2);
+          expect(counts.timeSpentCount, 1);
+          verifyNever(
+            () => repository.updateRollup(
+              any(),
+              estimateRollup: any(named: 'estimateRollup'),
+              timeSpentRollup: any(named: 'timeSpentRollup'),
+            ),
+          );
+        });
 
         test('returns 0/0 for a childless ticket', () async {
           when(
@@ -5058,6 +5038,11 @@ void main() {
         when(
           () => repository.getTicketById(storyDesignSync.id),
         ).thenAnswer((_) async => storyDesignSync);
+        // _toolsFor (mid-task-chat-branching) reads the chat itself first
+        // to resolve its own parent's type.
+        when(
+          () => repository.getTicketById(designSyncChat.id),
+        ).thenAnswer((_) async => designSyncChat);
         when(
           () => commentRepository.addComment(any()),
         ).thenAnswer((_) async {});
@@ -5075,6 +5060,496 @@ void main() {
       },
       expect: () => <TicketsState>[],
     );
+  });
+
+  group('chat branching (mid-task-chat-branching)', () {
+    late MockCommentRepository commentRepository;
+    late MockAutomationSettingsRepository automationSettingsRepository;
+    Map<String, dynamic>? result;
+
+    // rootChat: parented by `ticket` (a task) — not itself a branch, so
+    // it can be branched. branchChat: parented by rootChat (a chat) — a
+    // branch, so it can be closed but not branched further. parentlessChat:
+    // no parent (mirrors an Inbox-spawned chat) — can neither be branched
+    // nor closed.
+    final rootChat = Ticket(
+      id: 'branch-root-chat',
+      ticketId: 'AIO-30',
+      type: TicketType.chat,
+      title: 'Root chat',
+      status: TicketStatus.backlog,
+      parentId: ticket.id,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final branchChat = Ticket(
+      id: 'branch-child-chat',
+      ticketId: 'AIO-31',
+      type: TicketType.chat,
+      title: 'Branch chat',
+      status: TicketStatus.backlog,
+      parentId: rootChat.id,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final parentlessChat = Ticket(
+      id: 'branch-parentless-chat',
+      ticketId: 'AIO-32',
+      type: TicketType.chat,
+      title: 'Parentless chat',
+      status: TicketStatus.backlog,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    setUp(() {
+      commentRepository = MockCommentRepository();
+      automationSettingsRepository = MockAutomationSettingsRepository();
+      result = null;
+    });
+
+    TicketsCubit buildCubit() => TicketsCubit(
+      repository,
+      commentRepository: commentRepository,
+      automationSettingsRepository: automationSettingsRepository,
+    );
+
+    group('_canBranch depth cap (via branch_ticket)', () {
+      blocTest<TicketsCubit, TicketsState>(
+        'a root chat (parent is not a chat) can be branched',
+        setUp: () {
+          when(
+            () => repository.getTicketById(ticket.id),
+          ).thenAnswer((_) async => ticket);
+          when(
+            () => automationSettingsRepository.getConfidence(
+              AutomationContext.chatBranching,
+            ),
+          ).thenAnswer((_) async => AutomationConfidence.auto);
+          when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        },
+        build: buildCubit,
+        act: (cubit) async {
+          result = await cubit.handleChatToolCall(
+            rootChat,
+            'call-1',
+            'branch_ticket',
+            {'title': 'Sub-issue'},
+          );
+        },
+        verify: (_) {
+          expect(result?['accepted'], true);
+          verify(() => repository.createTicket(any())).called(1);
+        },
+        expect: () => <TicketsState>[],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'a branch chat (parent is itself a chat) cannot be branched '
+        'further, without ever checking automation confidence',
+        setUp: () {
+          when(
+            () => repository.getTicketById(rootChat.id),
+          ).thenAnswer((_) async => rootChat);
+        },
+        build: buildCubit,
+        act: (cubit) async {
+          result = await cubit.handleChatToolCall(
+            branchChat,
+            'call-1',
+            'branch_ticket',
+            {'title': 'Sub-issue'},
+          );
+        },
+        verify: (_) {
+          expect(result, {
+            'accepted': false,
+            'reason': 'Already at branch depth cap.',
+          });
+          verifyNever(() => repository.createTicket(any()));
+          verifyNever(
+            () => automationSettingsRepository.getConfidence(
+              AutomationContext.chatBranching,
+            ),
+          );
+        },
+        expect: () => <TicketsState>[],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'a parentless chat (e.g. Inbox-spawned) cannot be branched',
+        build: buildCubit,
+        act: (cubit) async {
+          result = await cubit.handleChatToolCall(
+            parentlessChat,
+            'call-1',
+            'branch_ticket',
+            {'title': 'Sub-issue'},
+          );
+        },
+        verify: (_) {
+          expect(result, {
+            'accepted': false,
+            'reason': 'Already at branch depth cap.',
+          });
+          verifyNever(() => repository.createTicket(any()));
+        },
+        expect: () => <TicketsState>[],
+      );
+    });
+
+    group(
+      'AutomationContext.chatBranching confidence branches — branch_ticket',
+      () {
+        setUp(() {
+          when(
+            () => repository.getTicketById(ticket.id),
+          ).thenAnswer((_) async => ticket);
+        });
+
+        blocTest<TicketsCubit, TicketsState>(
+          'manual declines outright',
+          setUp: () {
+            when(
+              () => automationSettingsRepository.getConfidence(
+                AutomationContext.chatBranching,
+              ),
+            ).thenAnswer((_) async => AutomationConfidence.manual);
+          },
+          build: buildCubit,
+          act: (cubit) async {
+            result = await cubit.handleChatToolCall(
+              rootChat,
+              'call-1',
+              'branch_ticket',
+              {'title': 'Sub-issue'},
+            );
+          },
+          verify: (_) {
+            expect(result, {
+              'accepted': false,
+              'reason': 'Automation set to manual.',
+            });
+            verifyNever(() => repository.createTicket(any()));
+          },
+          expect: () => <TicketsState>[],
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          'auto creates the branch chat immediately',
+          setUp: () {
+            when(
+              () => automationSettingsRepository.getConfidence(
+                AutomationContext.chatBranching,
+              ),
+            ).thenAnswer((_) async => AutomationConfidence.auto);
+            when(() => repository.createTicket(any())).thenAnswer((_) async {});
+          },
+          build: buildCubit,
+          act: (cubit) async {
+            result = await cubit.handleChatToolCall(
+              rootChat,
+              'call-1',
+              'branch_ticket',
+              {'title': 'Sub-issue', 'description': 'Why'},
+            );
+          },
+          verify: (_) {
+            expect(result?['accepted'], true);
+            expect(result?['childChatId'], isA<String>());
+            final created = verify(
+              () => repository.createTicket(captureAny()),
+            ).captured;
+            expect(created, hasLength(1));
+            final createdTicket = created.single as Ticket;
+            expect(createdTicket.type, TicketType.chat);
+            expect(createdTicket.parentId, rootChat.id);
+            expect(createdTicket.title, 'Sub-issue');
+            expect(createdTicket.description, 'Why');
+          },
+          expect: () => <TicketsState>[],
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          'gated surfaces a BranchProposal and pauses until confirmed/rejected',
+          setUp: () {
+            when(
+              () => automationSettingsRepository.getConfidence(
+                AutomationContext.chatBranching,
+              ),
+            ).thenAnswer((_) async => AutomationConfidence.gated);
+            when(() => repository.createTicket(any())).thenAnswer((_) async {});
+          },
+          build: buildCubit,
+          act: (cubit) async {
+            unawaited(
+              cubit
+                  .handleChatToolCall(rootChat, 'call-1', 'branch_ticket', {
+                    'title': 'Sub-issue',
+                  })
+                  .then((value) => result = value),
+            );
+            await Future<void>.delayed(Duration.zero);
+          },
+          verify: (_) {
+            verifyNever(() => repository.createTicket(any()));
+            expect(result, isNull); // still pending — no confirm/reject yet
+          },
+          expect: () => [
+            isA<TicketDetailLoaded>()
+                .having((s) => s.ticket.id, 'ticket.id', rootChat.id)
+                .having(
+                  (s) => s.pendingToolProposal,
+                  'pendingToolProposal',
+                  const BranchProposal(title: 'Sub-issue'),
+                ),
+          ],
+        );
+      },
+    );
+
+    group(
+      'AutomationContext.chatBranching confidence branches — close_branch',
+      () {
+        setUp(() {
+          when(
+            () => repository.getTicketById(rootChat.id),
+          ).thenAnswer((_) async => rootChat);
+        });
+
+        blocTest<TicketsCubit, TicketsState>(
+          'manual declines outright',
+          setUp: () {
+            when(
+              () => automationSettingsRepository.getConfidence(
+                AutomationContext.chatBranching,
+              ),
+            ).thenAnswer((_) async => AutomationConfidence.manual);
+          },
+          build: buildCubit,
+          act: (cubit) async {
+            result = await cubit.handleChatToolCall(
+              branchChat,
+              'call-1',
+              'close_branch',
+              {'summary': 'Fixed it'},
+            );
+          },
+          verify: (_) {
+            expect(result, {
+              'accepted': false,
+              'reason': 'Automation set to manual.',
+            });
+            verifyNever(() => repository.updateTicketStatus(any(), any()));
+            verifyNever(() => commentRepository.addComment(any()));
+          },
+          expect: () => <TicketsState>[],
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          'auto folds the resolution into the parent and closes the '
+          'branch immediately',
+          setUp: () {
+            when(
+              () => automationSettingsRepository.getConfidence(
+                AutomationContext.chatBranching,
+              ),
+            ).thenAnswer((_) async => AutomationConfidence.auto);
+            when(
+              () => repository.updateTicketStatus(
+                branchChat.id,
+                TicketStatus.done,
+              ),
+            ).thenAnswer((_) async {});
+            when(
+              () => commentRepository.addComment(any()),
+            ).thenAnswer((_) async {});
+          },
+          build: buildCubit,
+          act: (cubit) async {
+            result = await cubit.handleChatToolCall(
+              branchChat,
+              'call-1',
+              'close_branch',
+              {'summary': 'Fixed it'},
+            );
+          },
+          verify: (_) {
+            expect(result, {'accepted': true});
+            verify(
+              () => repository.updateTicketStatus(
+                branchChat.id,
+                TicketStatus.done,
+              ),
+            ).called(1);
+            final posted = verify(
+              () => commentRepository.addComment(captureAny()),
+            ).captured;
+            expect(posted, hasLength(1));
+            final postedComment = posted.single as TicketComment;
+            expect(postedComment.ticketId, rootChat.id);
+            expect(postedComment.content, 'Fixed it');
+            expect(postedComment.authorType, CommentAuthorType.system);
+          },
+          expect: () => <TicketsState>[],
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          'gated surfaces a CloseBranchProposal and pauses until '
+          'confirmed/rejected',
+          setUp: () {
+            when(
+              () => automationSettingsRepository.getConfidence(
+                AutomationContext.chatBranching,
+              ),
+            ).thenAnswer((_) async => AutomationConfidence.gated);
+            when(
+              () => repository.updateTicketStatus(
+                branchChat.id,
+                TicketStatus.done,
+              ),
+            ).thenAnswer((_) async {});
+            when(
+              () => commentRepository.addComment(any()),
+            ).thenAnswer((_) async {});
+          },
+          build: buildCubit,
+          act: (cubit) async {
+            unawaited(
+              cubit
+                  .handleChatToolCall(branchChat, 'call-1', 'close_branch', {
+                    'summary': 'Fixed it',
+                  })
+                  .then((value) => result = value),
+            );
+            await Future<void>.delayed(Duration.zero);
+          },
+          verify: (_) {
+            verifyNever(() => repository.updateTicketStatus(any(), any()));
+            expect(result, isNull); // still pending — no confirm/reject yet
+          },
+          expect: () => [
+            isA<TicketDetailLoaded>()
+                .having((s) => s.ticket.id, 'ticket.id', branchChat.id)
+                .having(
+                  (s) => s.pendingToolProposal,
+                  'pendingToolProposal',
+                  const CloseBranchProposal(summary: 'Fixed it'),
+                ),
+          ],
+        );
+      },
+    );
+
+    group('confirmPendingToolProposal / rejectPendingToolProposal', () {
+      setUp(() {
+        when(
+          () => repository.getTicketById(ticket.id),
+        ).thenAnswer((_) async => ticket);
+        // confirmPendingToolProposal/rejectPendingToolProposal both
+        // re-read the chat itself to re-emit TicketDetailLoaded once
+        // resolved.
+        when(
+          () => repository.getTicketById(rootChat.id),
+        ).thenAnswer((_) async => rootChat);
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.chatBranching,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.gated);
+      });
+
+      blocTest<TicketsCubit, TicketsState>(
+        'confirmPendingToolProposal runs onConfirm, resolves the paused '
+        'onToolCall future with its result, and re-emits without the '
+        'proposal',
+        setUp: () {
+          when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        },
+        build: buildCubit,
+        act: (cubit) async {
+          unawaited(
+            cubit
+                .handleChatToolCall(rootChat, 'call-1', 'branch_ticket', {
+                  'title': 'Sub-issue',
+                })
+                .then((value) => result = value),
+          );
+          await Future<void>.delayed(Duration.zero);
+          await cubit.confirmPendingToolProposal(rootChat.id);
+        },
+        verify: (_) {
+          verify(() => repository.createTicket(any())).called(1);
+          expect(result?['accepted'], true);
+          expect(result?['childChatId'], isA<String>());
+        },
+        expect: () => [
+          isA<TicketDetailLoaded>().having(
+            (s) => s.pendingToolProposal,
+            'pendingToolProposal',
+            isNotNull,
+          ),
+          isA<TicketDetailLoaded>()
+              .having((s) => s.ticket.id, 'ticket.id', rootChat.id)
+              .having(
+                (s) => s.pendingToolProposal,
+                'pendingToolProposal',
+                isNull,
+              ),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'rejectPendingToolProposal resolves the paused onToolCall future '
+        'with a decline, without ever running onConfirm',
+        build: buildCubit,
+        act: (cubit) async {
+          unawaited(
+            cubit
+                .handleChatToolCall(rootChat, 'call-1', 'branch_ticket', {
+                  'title': 'Sub-issue',
+                })
+                .then((value) => result = value),
+          );
+          await Future<void>.delayed(Duration.zero);
+          await cubit.rejectPendingToolProposal(rootChat.id);
+        },
+        verify: (_) {
+          verifyNever(() => repository.createTicket(any()));
+          expect(result, {'accepted': false, 'reason': 'Declined by user.'});
+        },
+        expect: () => [
+          isA<TicketDetailLoaded>().having(
+            (s) => s.pendingToolProposal,
+            'pendingToolProposal',
+            isNotNull,
+          ),
+          isA<TicketDetailLoaded>()
+              .having((s) => s.ticket.id, 'ticket.id', rootChat.id)
+              .having(
+                (s) => s.pendingToolProposal,
+                'pendingToolProposal',
+                isNull,
+              ),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'confirmPendingToolProposal no-ops for a chat id with no pending '
+        'proposal',
+        build: buildCubit,
+        act: (cubit) => cubit.confirmPendingToolProposal('no-such-chat'),
+        expect: () => <TicketsState>[],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'rejectPendingToolProposal no-ops for a chat id with no pending '
+        'proposal',
+        build: buildCubit,
+        act: (cubit) => cubit.rejectPendingToolProposal('no-such-chat'),
+        expect: () => <TicketsState>[],
+      );
+    });
   });
 
   group('coding-execution trigger', () {
@@ -7464,6 +7939,11 @@ void main() {
         when(
           () => repository.getTicketById(storyDesignSync.id),
         ).thenAnswer((_) async => storyDesignSync);
+        // _toolsFor (mid-task-chat-branching) reads the chat itself first
+        // to resolve its own parent's type.
+        when(
+          () => repository.getTicketById(designSyncChat.id),
+        ).thenAnswer((_) async => designSyncChat);
       },
       build: buildCubit,
       act: (cubit) => cubit.retryDesignSync(designSyncChat),

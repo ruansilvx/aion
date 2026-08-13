@@ -16,6 +16,7 @@ import 'package:aion/core/build/project_stack_detector.dart';
 import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/core/contracts/agent_model_descriptor.dart';
 import 'package:aion/core/contracts/agent_provider.dart';
+import 'package:aion/core/contracts/agent_tool_definition.dart';
 import 'package:aion/core/contracts/consumption_signal.dart';
 import 'package:aion/core/contracts/embedding_provider.dart';
 import 'package:aion/core/contracts/provider_id.dart';
@@ -51,8 +52,10 @@ import 'package:aion/features/tickets/domain/repositories/ticket_list_sort_repos
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
 import 'package:aion/features/tickets/domain/utils/ticket_link_direction.dart';
 import 'package:aion/features/tickets/domain/utils/ticket_rollup_calculator.dart';
+import 'package:aion/features/tickets/presentation/cubit/chat_branch_tool_definitions.dart';
 import 'package:aion/features/tickets/presentation/cubit/chat_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/codebase_analysis_status.dart';
+import 'package:aion/features/tickets/presentation/cubit/pending_tool_proposal.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_context_enricher.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_estimation_suggester.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_rollup_counts.dart';
@@ -194,15 +197,18 @@ class TicketsCubit extends Cubit<TicketsState> {
   late final EmbeddingProvider? _embeddingProvider;
   late final TicketGitProjector? _gitProjector;
   late final String? _projectRootPath;
+
   /// Shared estimate/timeSpent rollup-recompute walk — see
   /// [TicketRollupRecomputer]. Wired to the same [_repository]/
   /// [_gitProjector]/[_projectRootPath] this cubit already holds.
   late final TicketRollupRecomputer _rollupRecomputer;
+
   /// AI-assisted complexity/estimate suggestion orchestrator — see
   /// [TicketEstimationSuggester]. Wired to the same [_repository]/
   /// [_embeddingProvider]/[_providerRegistry]/[_modelRoutingRepository]
   /// this cubit already holds.
   late final TicketEstimationSuggester _estimationSuggester;
+
   /// Shared related-tickets context-assembly walk — see
   /// [TicketContextEnricher]. Wired to the same [_repository]/
   /// [_linkRepository]/[_embeddingProvider] this cubit already holds.
@@ -1078,10 +1084,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         emit(TicketDetailLoaded(refreshed));
       }
       unawaited(
-        _recomputeRollupChain({
-          ticket.id,
-          ?oldParentId,
-        }, 'rollup updated'),
+        _recomputeRollupChain({ticket.id, ?oldParentId}, 'rollup updated'),
       );
     } catch (e) {
       emit(TicketsError(e.toString()));
@@ -1303,6 +1306,8 @@ class TicketsCubit extends Cubit<TicketsState> {
       chatTicketId: designSyncChat.id,
       prompt: context,
       model: model,
+      tools: await _toolsFor(designSyncChat.id),
+      onToolCall: _onToolCallFor(designSyncChat),
     );
   }
 
@@ -2163,6 +2168,12 @@ class TicketsCubit extends Cubit<TicketsState> {
         }
       }
 
+      // Stable across every retry below — [chat]'s own parent never
+      // changes mid-run, so the offered tool/handler doesn't either.
+      final (executionTools, executionOnToolCall) = await _toolCallParamsFor(
+        chat.id,
+      );
+
       var attempt = 0;
       var verified = false;
       while (true) {
@@ -2180,6 +2191,8 @@ class TicketsCubit extends Cubit<TicketsState> {
           onChunk: onChunk,
           onToolUse: onToolUse,
           onConsumptionSignal: onConsumptionSignal,
+          tools: executionTools,
+          onToolCall: executionOnToolCall,
         );
         if (!implementSucceeded) {
           // A hard error (API failure, thrown exception) — `runChatTurn`
@@ -2205,6 +2218,8 @@ class TicketsCubit extends Cubit<TicketsState> {
           onChunk: onChunk,
           onToolUse: onToolUse,
           onConsumptionSignal: onConsumptionSignal,
+          tools: executionTools,
+          onToolCall: executionOnToolCall,
         );
         if (!verifySucceeded) {
           // A hard error during the verify turn itself — same shape as
@@ -2981,6 +2996,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       final (model, provider) = await _resolveModelAndProvider(
         stage.modelPhase,
       );
+      final (tools, onToolCall) = await _toolCallParamsFor(chatId);
       final succeeded = await ChatCubit.runChatTurn(
         client: provider.client,
         provider: provider,
@@ -2988,6 +3004,8 @@ class TicketsCubit extends Cubit<TicketsState> {
         chatTicketId: chatId,
         prompt: context,
         model: model,
+        tools: tools,
+        onToolCall: onToolCall,
       );
       if (succeeded && stage == SddStage.proposed) {
         final comments = await commentRepo.getCommentsForTicket(chatId);
@@ -3020,6 +3038,330 @@ class TicketsCubit extends Cubit<TicketsState> {
         ..remove(chatId);
       _refreshInFlightBoardState();
     }
+  }
+
+  // ---------------------------------------------------------------------
+  // Mid-task/issue chat branching — branch_ticket/close_branch tool
+  // handlers, gated by AutomationContext.chatBranching. See
+  // aion-arch/changes/mid-task-chat-branching/design.md §6.
+  // ---------------------------------------------------------------------
+
+  /// Pending `branch_ticket`/`close_branch` proposals awaiting user
+  /// confirmation (`AutomationConfidence.gated`), keyed by the chat
+  /// ticket id whose turn is paused. Each entry pairs the
+  /// [PendingToolProposal] shown by [TicketDetailLoaded.pendingToolProposal]
+  /// with the [Completer] [AgentRequest.onToolCall] is awaiting and the
+  /// action to run on confirm. Cleared by
+  /// [confirmPendingToolProposal]/[rejectPendingToolProposal]. Added for
+  /// `aion-arch/changes/mid-task-chat-branching`; see that change's
+  /// design.md §6.
+  final Map<
+    String,
+    ({
+      PendingToolProposal proposal,
+      Completer<Map<String, dynamic>> completer,
+      Future<Map<String, dynamic>> Function() onConfirm,
+    })
+  >
+  _pendingProposals = {};
+
+  /// Tools offered on [chatTicketId]'s next turn — this cubit's own copy of
+  /// [ChatCubit._toolsFor], mirroring its shape independently rather than
+  /// sharing an implementation across cubits (see that method's dartdoc
+  /// for the underlying "exactly one of the two" rule). Added for
+  /// `aion-arch/changes/mid-task-chat-branching`; see that change's
+  /// design.md §6.
+  Future<List<AgentToolDefinition>> _toolsFor(String chatTicketId) async {
+    final chat = await _repository.getTicketById(chatTicketId);
+    final parentId = chat?.parentId;
+    if (parentId == null) return [branchTicketToolDefinition];
+    final parent = await _repository.getTicketById(parentId);
+    return parent?.type == TicketType.chat
+        ? [closeBranchToolDefinition]
+        : [branchTicketToolDefinition];
+  }
+
+  /// Resolves [ChatCubit.runChatTurn]'s `tools`/`onToolCall` for
+  /// [chatTicketId] in one step, for the three call sites that build an
+  /// `AgentRequest` for a chat turn from inside this cubit
+  /// (`_runStageChatTurn`, `_runCodingExecution`'s execution-chat turns,
+  /// `retryDesignSync`) — `tools` empty and `onToolCall` `null` together
+  /// if [chatTicketId] can't be read back, keeping [AgentRequest]'s own
+  /// "non-empty tools needs onToolCall" invariant honest rather than
+  /// assumed (it should never actually be unreadable at these call
+  /// sites). Added for `aion-arch/changes/mid-task-chat-branching`.
+  Future<
+    (
+      List<AgentToolDefinition> tools,
+      Future<Map<String, dynamic>> Function(
+        String toolCallId,
+        String toolName,
+        Map<String, dynamic> arguments,
+      )?
+      onToolCall,
+    )
+  >
+  _toolCallParamsFor(String chatTicketId) async {
+    final chat = await _repository.getTicketById(chatTicketId);
+    if (chat == null) return (const <AgentToolDefinition>[], null);
+    return (await _toolsFor(chatTicketId), _onToolCallFor(chat));
+  }
+
+  /// Builds the `onToolCall` handler for [chat]'s next turn: dispatches a
+  /// `close_branch` call to [_handleCloseBranchToolCall] and everything
+  /// else (i.e. `branch_ticket`, the only other tool [_toolsFor] ever
+  /// offers) to [_handleBranchToolCall] — both bound to [chat], the same
+  /// ticket [_toolsFor] resolved tools for at this call site. Added for
+  /// `aion-arch/changes/mid-task-chat-branching`.
+  Future<Map<String, dynamic>> Function(
+    String toolCallId,
+    String toolName,
+    Map<String, dynamic> arguments,
+  )
+  _onToolCallFor(Ticket chat) {
+    return (toolCallId, toolName, arguments) =>
+        toolName == closeBranchToolDefinition.name
+        ? _handleCloseBranchToolCall(chat, arguments)
+        : _handleBranchToolCall(chat, arguments);
+  }
+
+  /// Public entry point for a `chat` ticket's `branch_ticket`/
+  /// `close_branch` tool calls, for callers outside this cubit that can't
+  /// reach the private [_handleBranchToolCall]/[_handleCloseBranchToolCall]
+  /// handlers directly — `TicketDetailScreen` wires this in as
+  /// [ChatCubit.sendMessage]'s `onToolCall` for a human-initiated follow-up
+  /// turn, since `ChatCubit` doesn't depend on this cubit (see
+  /// [ChatCubit.sendMessage]'s dartdoc). Dispatches via [_onToolCallFor].
+  /// Added for `aion-arch/changes/mid-task-chat-branching`.
+  Future<Map<String, dynamic>> handleChatToolCall(
+    Ticket chat,
+    String toolCallId,
+    String toolName,
+    Map<String, dynamic> arguments,
+  ) => _onToolCallFor(chat)(toolCallId, toolName, arguments);
+
+  /// Whether [chat] (a `chat` ticket) may currently be branched via
+  /// `branch_ticket` — instance-level depth-cap check, deliberately not on
+  /// [TicketTypeHierarchy] (see that extension's `canParent` dartdoc for
+  /// why): `false` if [chat] has no parent (an Inbox-spawned chat stays
+  /// parentless) or its parent is itself a `chat` (a branch is a true
+  /// leaf — no branch-of-a-branch). Added for
+  /// `aion-arch/changes/mid-task-chat-branching`; see that change's
+  /// design.md §6.
+  Future<bool> _canBranch(Ticket chat) async {
+    final parentId = chat.parentId;
+    if (parentId == null) return false;
+    final parent = await _repository.getTicketById(parentId);
+    return parent != null && parent.type != TicketType.chat;
+  }
+
+  /// Creates a child `chat` ticket titled [title] (with optional
+  /// [description]) under [chat] — mirrors [_createStageChat]'s direct-
+  /// repository-create shape rather than the list-oriented public
+  /// [createTicket]. Posts no comment on the new branch chat itself; its
+  /// next turn (triggered separately, once navigated to or otherwise
+  /// addressed) opens it like any other freshly created chat. Returns the
+  /// persisted child's id. Added for
+  /// `aion-arch/changes/mid-task-chat-branching`; see that change's
+  /// design.md §6.
+  Future<String> _createBranchChat(
+    Ticket chat,
+    String title,
+    String? description,
+  ) async {
+    final now = DateTime.now();
+    final branchChat = Ticket(
+      id: _uuid.v4(),
+      ticketId: '',
+      type: TicketType.chat,
+      title: title,
+      description: description,
+      status: TicketStatus.backlog,
+      parentId: chat.id,
+      createdAt: now,
+      updatedAt: now,
+    );
+    await _repository.createTicket(branchChat);
+    return branchChat.id;
+  }
+
+  /// Folds [branchChat]'s resolution back into its parent ([parentId]):
+  /// flips [branchChat]'s own status to [TicketStatus.done] and posts one
+  /// [CommentAuthorType.system] comment carrying [summary] onto
+  /// [parentId]'s transcript — the "fold into documentation" `project.md`
+  /// §2 describes, adapted to a chat ticket's comment-thread-as-content
+  /// shape. No-ops the comment (but still closes [branchChat]) if
+  /// constructed without a [CommentRepository] — real usage
+  /// (`app_router.dart`) always supplies one. Added for
+  /// `aion-arch/changes/mid-task-chat-branching`; see that change's
+  /// design.md §6.
+  Future<void> _closeBranch(
+    Ticket branchChat,
+    String parentId,
+    String summary,
+  ) async {
+    await _repository.updateTicketStatus(branchChat.id, TicketStatus.done);
+    final commentRepo = _commentRepository;
+    if (commentRepo == null) return;
+    await commentRepo.addComment(
+      TicketComment(
+        id: '',
+        ticketId: parentId,
+        content: summary,
+        authorType: CommentAuthorType.system,
+        createdAt: DateTime.now(),
+      ),
+    );
+  }
+
+  /// Registers [proposal] as [chat]'s pending tool-call confirmation,
+  /// emits [TicketDetailLoaded] carrying it (driving `_ToolProposalBanner`),
+  /// and returns a [Future] that resolves once
+  /// [confirmPendingToolProposal]/[rejectPendingToolProposal] is called for
+  /// [chat]'s id — the underlying model run stays paused on the awaited
+  /// [AgentRequest.onToolCall] until then, per that field's "no timeout"
+  /// contract (see proposal.md's Non-goals). [onConfirm] runs only if the
+  /// user confirms, and its result becomes the resolved map; a reject
+  /// resolves with a fixed decline map instead — see
+  /// [confirmPendingToolProposal]/[rejectPendingToolProposal]. Added for
+  /// `aion-arch/changes/mid-task-chat-branching`; see that change's
+  /// design.md §6.
+  Future<Map<String, dynamic>> _awaitProposalConfirmation(
+    Ticket chat,
+    PendingToolProposal proposal, {
+    required Future<Map<String, dynamic>> Function() onConfirm,
+  }) {
+    final completer = Completer<Map<String, dynamic>>();
+    _pendingProposals[chat.id] = (
+      proposal: proposal,
+      completer: completer,
+      onConfirm: onConfirm,
+    );
+    emit(TicketDetailLoaded(chat, pendingToolProposal: proposal));
+    return completer.future;
+  }
+
+  /// The `branch_ticket` tool's [AgentRequest.onToolCall] implementation:
+  /// resolves [AutomationContext.chatBranching]'s confidence and switches
+  /// on it — `manual` declines outright (never surfaces proactively, per
+  /// proposal.md's Non-goals), `auto` creates the branch immediately via
+  /// [_createBranchChat], `gated` surfaces a [BranchProposal] via
+  /// [_awaitProposalConfirmation] and waits. [chat] must satisfy
+  /// [_canBranch] or this declines with a depth-cap reason before ever
+  /// checking automation confidence. Added for
+  /// `aion-arch/changes/mid-task-chat-branching`; see that change's
+  /// design.md §6.
+  Future<Map<String, dynamic>> _handleBranchToolCall(
+    Ticket chat,
+    Map<String, dynamic> arguments,
+  ) async {
+    final title = arguments['title'] as String? ?? 'Untitled branch';
+    final description = arguments['description'] as String?;
+
+    if (!await _canBranch(chat)) {
+      return {'accepted': false, 'reason': 'Already at branch depth cap.'};
+    }
+
+    final automationRepo = _automationSettingsRepository;
+    final confidence = automationRepo == null
+        ? AutomationConfidence.gated
+        : await automationRepo.getConfidence(AutomationContext.chatBranching);
+
+    switch (confidence) {
+      case AutomationConfidence.manual:
+        return {'accepted': false, 'reason': 'Automation set to manual.'};
+      case AutomationConfidence.auto:
+        final childId = await _createBranchChat(chat, title, description);
+        return {'accepted': true, 'childChatId': childId};
+      case AutomationConfidence.gated:
+        return _awaitProposalConfirmation(
+          chat,
+          PendingToolProposal.branch(title: title, description: description),
+          onConfirm: () async {
+            final childId = await _createBranchChat(chat, title, description);
+            return {'accepted': true, 'childChatId': childId};
+          },
+        );
+    }
+  }
+
+  /// The `close_branch` tool's [AgentRequest.onToolCall] implementation —
+  /// symmetric to [_handleBranchToolCall]. Declines unless [chat]'s own
+  /// parent is itself a `chat` (i.e. [chat] actually is a branch);
+  /// resolves [AutomationContext.chatBranching]'s confidence the same way,
+  /// folding via [_closeBranch] on `auto`, or surfacing a
+  /// [CloseBranchProposal] via [_awaitProposalConfirmation] on `gated`.
+  /// Added for `aion-arch/changes/mid-task-chat-branching`; see that
+  /// change's design.md §6.
+  Future<Map<String, dynamic>> _handleCloseBranchToolCall(
+    Ticket chat,
+    Map<String, dynamic> arguments,
+  ) async {
+    final summary = arguments['summary'] as String? ?? 'Branch resolved.';
+    final parentId = chat.parentId;
+    final parent = parentId == null
+        ? null
+        : await _repository.getTicketById(parentId);
+    if (parentId == null || parent?.type != TicketType.chat) {
+      return {'accepted': false, 'reason': 'Not a branch chat.'};
+    }
+
+    final automationRepo = _automationSettingsRepository;
+    final confidence = automationRepo == null
+        ? AutomationConfidence.gated
+        : await automationRepo.getConfidence(AutomationContext.chatBranching);
+
+    switch (confidence) {
+      case AutomationConfidence.manual:
+        return {'accepted': false, 'reason': 'Automation set to manual.'};
+      case AutomationConfidence.auto:
+        await _closeBranch(chat, parentId, summary);
+        return {'accepted': true};
+      case AutomationConfidence.gated:
+        return _awaitProposalConfirmation(
+          chat,
+          PendingToolProposal.close(summary: summary),
+          onConfirm: () async {
+            await _closeBranch(chat, parentId, summary);
+            return {'accepted': true};
+          },
+        );
+    }
+  }
+
+  /// Confirms [chatId]'s pending proposal (if any): runs its `onConfirm`
+  /// action and resolves the held [AgentRequest.onToolCall] future with
+  /// the result, letting the paused model run continue. Re-emits
+  /// [TicketDetailLoaded] for [chatId] (with no `pendingToolProposal`)
+  /// once resolved. No-ops if [chatId] has no pending proposal. Added for
+  /// `aion-arch/changes/mid-task-chat-branching`; see that change's
+  /// design.md §6.
+  Future<void> confirmPendingToolProposal(String chatId) async {
+    final pending = _pendingProposals.remove(chatId);
+    if (pending == null) return;
+    final (:proposal, :completer, :onConfirm) = pending;
+    final result = await onConfirm();
+    completer.complete(result);
+    final chat = await _repository.getTicketById(chatId);
+    if (chat != null) emit(TicketDetailLoaded(chat));
+  }
+
+  /// Rejects [chatId]'s pending proposal: resolves the held
+  /// [AgentRequest.onToolCall] future with `{'accepted': false, 'reason':
+  /// 'Declined by user.'}` — the model continues its turn knowing the
+  /// branch/close didn't happen. Re-emits [TicketDetailLoaded] for
+  /// [chatId] (with no `pendingToolProposal`). No-ops if [chatId] has no
+  /// pending proposal. Added for `aion-arch/changes/mid-task-chat-branching`;
+  /// see that change's design.md §6.
+  Future<void> rejectPendingToolProposal(String chatId) async {
+    final pending = _pendingProposals.remove(chatId);
+    if (pending == null) return;
+    pending.completer.complete({
+      'accepted': false,
+      'reason': 'Declined by user.',
+    });
+    final chat = await _repository.getTicketById(chatId);
+    if (chat != null) emit(TicketDetailLoaded(chat));
   }
 
   /// Assembles the plain-text context a spawned stage chat opens with:
@@ -3310,10 +3652,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// here. No-ops if [startIds] is empty. Fire-and-forget from every call
   /// site — never awaited by the caller's own return path, same pattern
   /// as [_triggerEmbeddingRegen]/[_triggerGitProjection].
-  Future<void> _recomputeRollupChain(
-    Set<String> startIds,
-    String eventLabel,
-  ) {
+  Future<void> _recomputeRollupChain(Set<String> startIds, String eventLabel) {
     return _rollupRecomputer.recompute(startIds, eventLabel);
   }
 
@@ -3644,7 +3983,8 @@ class TicketsCubit extends Cubit<TicketsState> {
     emit(const TicketsBatchTrashing());
     try {
       final parentIdOf = <String, String?>{
-        for (final id in ids) id: (await _repository.getTicketById(id))?.parentId,
+        for (final id in ids)
+          id: (await _repository.getTicketById(id))?.parentId,
       };
       final trashedCount = await _repository.trashTickets(ids);
       unawaited(_trashBatchGitSideEffects(ids, parentIdOf));
@@ -4127,6 +4467,8 @@ class TicketsCubit extends Cubit<TicketsState> {
           break;
         case AgentToolUseEvent():
           break; // toolsEnabled is false — not expected, ignored defensively.
+        case AgentToolCallEvent():
+          break; // This call sends no tools — never emitted, ignored defensively.
         case AgentErrorEvent(:final message):
           throw StateError(message);
       }

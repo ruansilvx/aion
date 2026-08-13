@@ -2,6 +2,8 @@
 
 import 'package:equatable/equatable.dart';
 
+import 'agent_tool_definition.dart';
+
 /// Provider-agnostic entry point for every model call in Aion.
 ///
 /// Per `project.md`'s Pattern 1 (dependency inversion via `core`), any
@@ -9,6 +11,11 @@ import 'package:equatable/equatable.dart';
 /// concrete provider directly — see `aion-arch/changes/provider-configuration/design.md`
 /// §1. The sole implementation for this MVP is `ClaudeAgentSdkClient`
 /// (`core/agent/claude_agent_sdk_client.dart`).
+///
+/// A run may emit any number of [AgentToolCallEvent]s before its terminal
+/// event — each one non-terminal, reporting an [AgentRequest.tools] call
+/// the implementation is awaiting [AgentRequest.onToolCall] for. See
+/// `aion-arch/changes/mid-task-chat-branching/design.md` §2.
 abstract interface class AgentModelClient {
   /// Starts a model run for [request], returning a stream of incremental
   /// [AgentEvent]s. The returned stream is finished by exactly one
@@ -18,12 +25,20 @@ abstract interface class AgentModelClient {
 
 /// A single request to an [AgentModelClient].
 class AgentRequest extends Equatable {
-  /// Creates an [AgentRequest] for [prompt] against [model].
+  /// Creates an [AgentRequest] for [prompt] against [model]. A non-empty
+  /// [tools] should always come with an [onToolCall] to resolve its
+  /// calls — see [onToolCall]'s dartdoc. Not enforced by an `assert` here:
+  /// `List.length`/`isEmpty` aren't constant expressions, and many
+  /// existing call sites construct `const AgentRequest(...)`; each
+  /// [AgentModelClient] implementation is responsible for treating a
+  /// tool call with no [onToolCall] as its own error instead.
   const AgentRequest({
     required this.prompt,
     required this.model,
     this.toolsEnabled = false,
     this.workingDirectory,
+    this.tools = const [],
+    this.onToolCall,
   });
 
   /// The user- or system-authored prompt text.
@@ -48,8 +63,38 @@ class AgentRequest extends Equatable {
   /// process happens to be running from. `null` for every text-only call.
   final String? workingDirectory;
 
+  /// App-defined tools the model may call mid-run, independent of
+  /// [toolsEnabled] (which governs the provider's own file/git/bash tool
+  /// set, not app-defined tools). Empty for every call site that predates
+  /// this change. Added for `aion-arch/changes/mid-task-chat-branching`;
+  /// see that change's design.md §2.
+  final List<AgentToolDefinition> tools;
+
+  /// Invoked by the [AgentModelClient] implementation when the model calls
+  /// one of [tools] mid-run. Must resolve with the tool's result — a
+  /// JSON-serializable [Map] fed back to the model so it can keep
+  /// reasoning in the same logical turn. Left unresolved for as long as
+  /// the caller needs (e.g. an `AutomationConfidence.gated` proposal
+  /// awaiting user confirmation) — the underlying run simply stays open
+  /// until it resolves. `null` (the default) means [tools] must also be
+  /// empty; a non-empty [tools] list with no [onToolCall] is a programmer
+  /// error (see the constructor's dartdoc for why this isn't a compile-time
+  /// `assert`).
+  final Future<Map<String, dynamic>> Function(
+    String toolCallId,
+    String toolName,
+    Map<String, dynamic> arguments,
+  )?
+  onToolCall;
+
   @override
-  List<Object?> get props => [prompt, model, toolsEnabled, workingDirectory];
+  List<Object?> get props => [
+    prompt,
+    model,
+    toolsEnabled,
+    workingDirectory,
+    tools,
+  ];
 }
 
 /// One incremental event from an [AgentModelClient.run] stream.
@@ -140,4 +185,31 @@ class AgentToolUseEvent extends AgentEvent {
 
   @override
   List<Object?> get props => [toolName, summary];
+}
+
+/// An app-defined tool call the model made mid-run — distinct from
+/// [AgentToolUseEvent], which reports the *provider's own* file/git/bash
+/// tool use. Purely informational, like [AgentToolUseEvent]; the actual
+/// execution and result round-trip happens via [AgentRequest.onToolCall],
+/// awaited internally by the client implementation before it emits any
+/// further events. Never terminal. Added for
+/// `aion-arch/changes/mid-task-chat-branching`; see that change's
+/// design.md §2.
+class AgentToolCallEvent extends AgentEvent {
+  /// Creates an [AgentToolCallEvent] for a call to [toolName], identified
+  /// by [toolCallId], carrying [arguments].
+  const AgentToolCallEvent(this.toolCallId, this.toolName, this.arguments);
+
+  /// The provider-assigned identifier for this specific call, used to
+  /// match the eventual result back to it.
+  final String toolCallId;
+
+  /// The [AgentToolDefinition.name] of the tool being called.
+  final String toolName;
+
+  /// The arguments the model supplied, already parsed from JSON.
+  final Map<String, dynamic> arguments;
+
+  @override
+  List<Object?> get props => [toolCallId, toolName, arguments];
 }

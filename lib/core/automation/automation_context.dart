@@ -17,4 +17,12 @@ enum AutomationContext {
   /// `aion-arch/changes/coding-execution-reliability-and-safety`; see
   /// `TicketsCubit._runCodingExecution`.
   codingExecutionRetry,
+
+  /// Mid-task/issue chat branching — whether the model's `branch_ticket`/
+  /// `close_branch` tool calls run immediately, wait for user
+  /// confirmation, or are declined outright. Governs both tools
+  /// symmetrically (one setting, not two). Added for
+  /// `aion-arch/changes/mid-task-chat-branching`; see
+  /// `TicketsCubit._handleBranchToolCall`/`_handleCloseBranchToolCall`.
+  chatBranching,
 }

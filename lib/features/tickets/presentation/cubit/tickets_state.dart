@@ -4,6 +4,7 @@ import 'package:equatable/equatable.dart';
 
 import 'package:aion/features/tickets/domain/entities/linked_ticket_ref.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
+import 'package:aion/features/tickets/presentation/cubit/pending_tool_proposal.dart';
 
 /// The state emitted by [TicketsCubit].
 sealed class TicketsState extends Equatable {
@@ -335,6 +336,7 @@ class TicketDetailLoaded extends TicketsState {
     this.isAdvancingStage = false,
     this.sddStageFailureReason,
     this.sddStageCanRetry = false,
+    this.pendingToolProposal,
   });
 
   /// The loaded ticket.
@@ -460,6 +462,15 @@ class TicketDetailLoaded extends TicketsState {
   /// for `aion-arch/changes/board-execution-indicators-and-notifications`.
   final bool sddStageCanRetry;
 
+  /// A `branch_ticket`/`close_branch` tool call awaiting user confirmation
+  /// on [ticket] (a `chat`), while
+  /// `TicketsCubit._awaitProposalConfirmation` holds the underlying model
+  /// run paused (`AutomationConfidence.gated`). `null` whenever no such
+  /// call is pending. Drives `_ToolProposalBanner`. Added for
+  /// `aion-arch/changes/mid-task-chat-branching`; see that change's
+  /// design.md §8.
+  final PendingToolProposal? pendingToolProposal;
+
   @override
   List<Object?> get props => [
     ticket,
@@ -479,6 +490,7 @@ class TicketDetailLoaded extends TicketsState {
     isAdvancingStage,
     sddStageFailureReason,
     sddStageCanRetry,
+    pendingToolProposal,
   ];
 }
 

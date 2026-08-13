@@ -32,9 +32,11 @@ void main() {
           () => repository.getConfidence(AutomationContext.codingExecution),
         ).thenAnswer((_) async => AutomationConfidence.manual);
         when(
-          () => repository.getConfidence(
-            AutomationContext.codingExecutionRetry,
-          ),
+          () =>
+              repository.getConfidence(AutomationContext.codingExecutionRetry),
+        ).thenAnswer((_) async => AutomationConfidence.gated);
+        when(
+          () => repository.getConfidence(AutomationContext.chatBranching),
         ).thenAnswer((_) async => AutomationConfidence.gated);
       },
       build: () => AutomationSettingsCubit(repository),
@@ -44,6 +46,7 @@ void main() {
           AutomationContext.sddStage: AutomationConfidence.auto,
           AutomationContext.codingExecution: AutomationConfidence.manual,
           AutomationContext.codingExecutionRetry: AutomationConfidence.gated,
+          AutomationContext.chatBranching: AutomationConfidence.gated,
         }),
       ],
     );
@@ -76,10 +79,7 @@ void main() {
       ],
       verify: (_) {
         verifyNever(
-          () => repository.setConfidence(
-            AutomationContext.sddStage,
-            any(),
-          ),
+          () => repository.setConfidence(AutomationContext.sddStage, any()),
         );
       },
     );

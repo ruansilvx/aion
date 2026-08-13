@@ -25,7 +25,14 @@ enum TicketType {
   /// A Notion-style freeform document ticket.
   page,
 
-  /// An agent chat, optionally branching into subtickets.
+  /// An agent chat, optionally branching into subtickets. A [chat] may
+  /// now parent exactly one further [chat] — a mid-task/issue branch —
+  /// per [TicketTypeHierarchy.canParent]'s one-level exception; a branch
+  /// chat cannot itself be branched again, a depth cap
+  /// `TicketsCubit._canBranch` enforces at the instance level (this
+  /// type-level rule alone permits unbounded nesting, since it can't see
+  /// a specific ticket's own parent chain). See
+  /// `aion-arch/changes/mid-task-chat-branching/design.md` §5.
   chat,
 
   /// Something noticed but not yet resolved into work: a raw idea, a
@@ -99,13 +106,27 @@ extension TicketTypeHierarchy on TicketType {
   ///   longer parent [TicketType.resource] or [TicketType.page] — those
   ///   relocated under the Documentation section and link back to work
   ///   tickets via `TicketLink` instead of `parentId`.
-  /// - [TicketType.resource] and [TicketType.chat] remain full leaves and
-  ///   can never parent anything, including each other.
+  /// - [TicketType.resource] remains a full leaf and can never parent
+  ///   anything, including itself.
+  /// - [TicketType.chat] is a leaf for every other type but may now
+  ///   parent exactly one further [chat] — a mid-task/issue branch (see
+  ///   [TicketType.chat]'s own dartdoc). This type-level rule only says
+  ///   *a* chat may parent *a* chat; it doesn't cap nesting depth at one
+  ///   level — that instance-level invariant (a chat already parented by
+  ///   another chat cannot itself be branched) lives in
+  ///   `TicketsCubit._canBranch`, consistent with this project's "type-
+  ///   level rules live in the enum extension, instance-level invariants
+  ///   live in the Cubit" split. Added for
+  ///   `aion-arch/changes/mid-task-chat-branching`; see that change's
+  ///   design.md §5.
   bool canParent(TicketType child) {
     if (this == TicketType.page) {
       return child == TicketType.page || child == TicketType.resource;
     }
     if (this == TicketType.signal || this == TicketType.release) {
+      return child == TicketType.chat;
+    }
+    if (this == TicketType.chat) {
       return child == TicketType.chat;
     }
     final parentRank = _rank;
