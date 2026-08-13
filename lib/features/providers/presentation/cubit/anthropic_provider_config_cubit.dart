@@ -89,6 +89,7 @@ class AnthropicProviderConfigCubit extends Cubit<AnthropicProviderConfigState> {
         switch (event) {
           case AgentTextEvent():
           case AgentToolUseEvent():
+          case AgentToolCallEvent(): // never emitted — this call sends no tools
           case AgentDoneEvent():
             break;
           case AgentOverageDetectedEvent(:final message):

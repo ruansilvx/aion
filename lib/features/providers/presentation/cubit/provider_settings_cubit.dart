@@ -54,7 +54,9 @@ class ProviderSettingsCubit extends Cubit<ProviderSettingsState> {
       ProviderSettingsReady(
         selectedModel: model,
         status: ProviderConnectionStatus.unknown,
-        providerDisplayName: _registry.providerById(model.providerId).displayName,
+        providerDisplayName: _registry
+            .providerById(model.providerId)
+            .displayName,
       ),
     );
     await _runConnectionTest(model);
@@ -101,6 +103,7 @@ class ProviderSettingsCubit extends Cubit<ProviderSettingsState> {
         switch (event) {
           case AgentTextEvent():
           case AgentToolUseEvent():
+          case AgentToolCallEvent(): // never emitted — this call sends no tools
           case AgentDoneEvent():
             break;
           case AgentOverageDetectedEvent(:final message):

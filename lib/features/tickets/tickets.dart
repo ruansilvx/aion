@@ -35,6 +35,7 @@ export 'presentation/cubit/documentation_cubit.dart';
 export 'presentation/cubit/documentation_state.dart';
 export 'presentation/cubit/inbox_cubit.dart';
 export 'presentation/cubit/inbox_state.dart';
+export 'presentation/cubit/pending_tool_proposal.dart';
 export 'presentation/cubit/ticket_repair_cubit.dart';
 export 'presentation/cubit/ticket_repair_state.dart';
 export 'presentation/cubit/ticket_selection_cubit.dart';

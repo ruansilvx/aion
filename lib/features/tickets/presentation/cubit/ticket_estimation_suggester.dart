@@ -106,8 +106,7 @@ class TicketEstimationSuggester {
         forceComplexity ||
         ticket.complexitySource != TicketEstimationSource.manual;
     final wantEstimate =
-        forceEstimate ||
-        ticket.estimateSource != TicketEstimationSource.manual;
+        forceEstimate || ticket.estimateSource != TicketEstimationSource.manual;
     if (!wantComplexity && !wantEstimate) return;
 
     try {
@@ -149,6 +148,7 @@ class TicketEstimationSuggester {
           case AgentDoneEvent():
           case AgentOverageDetectedEvent():
           case AgentToolUseEvent():
+          case AgentToolCallEvent(): // never emitted — this call sends no tools
             break;
           case AgentErrorEvent():
             return; // background nicety — swallow, never surface TicketsError
@@ -253,7 +253,8 @@ class TicketEstimationSuggester {
     final complexity = complexityMatch == null
         ? null
         : TicketComplexity.values.firstWhere(
-            (c) => c.name.toLowerCase() == complexityMatch.group(1)!.toLowerCase(),
+            (c) =>
+                c.name.toLowerCase() == complexityMatch.group(1)!.toLowerCase(),
           );
 
     final estimateMatch = RegExp(

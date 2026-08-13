@@ -74,109 +74,105 @@ class SettingsScreen extends StatelessWidget {
               ),
               child: ContentMaxWidth(
                 variant: ContentWidthVariant.form,
-                child:
-                    BlocBuilder<ProviderSettingsCubit, ProviderSettingsState>(
-                      builder: (context, state) {
-                        if (state is! ProviderSettingsReady) {
-                          return const Center(child: AppSpinner());
-                        }
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            _ProviderStatusCard(state: state),
-                            const SizedBox(height: AionSpacing.sp24),
-                            const _AnthropicApiKeySection(),
-                            const SizedBox(height: AionSpacing.sp24),
-                            Text(
-                              context.l10n.settingsModelsEyebrow,
-                              style: AionText.caption.copyWith(
-                                color: c.textMuted,
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                            _ModelPhaseSection(
-                              phase: ModelPhase.frontier,
-                              label: context.l10n.settingsModelFrontierLabel,
-                              description: context
-                                  .l10n
-                                  .settingsModelFrontierDescription,
-                            ),
-                            const SizedBox(height: 20),
-                            _ModelPhaseSection(
-                              phase: ModelPhase.capable,
-                              label: context.l10n.settingsModelCapableLabel,
-                              description: context
-                                  .l10n
-                                  .settingsModelCapableDescription,
-                            ),
-                            const SizedBox(height: 20),
-                            _ModelPhaseSection(
-                              phase: ModelPhase.execution,
-                              label: context.l10n.settingsModelExecutionLabel,
-                              description: context
-                                  .l10n
-                                  .settingsModelExecutionDescription,
-                            ),
-                            const SizedBox(height: 20),
-                            const _ExecutionContextCapSection(),
-                            const SizedBox(height: 22),
-                            Text(
-                              context.l10n.settingsAutomationEyebrow,
-                              style: AionText.caption.copyWith(
-                                color: c.textMuted,
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                            _AutomationSection(
-                              automationContext: AutomationContext.sddStage,
-                              label: context.l10n.settingsAutomationLabel,
-                              description:
-                                  context.l10n.settingsAutomationDescription,
-                            ),
-                            const SizedBox(height: 20),
-                            _AutomationSection(
-                              automationContext:
-                                  AutomationContext.codingExecution,
-                              label: context
-                                  .l10n
-                                  .settingsAutomationCodingExecutionLabel,
-                              description: context
-                                  .l10n
-                                  .settingsAutomationCodingExecutionDescription,
-                            ),
-                            const SizedBox(height: 20),
-                            _AutomationSection(
-                              automationContext:
-                                  AutomationContext.codingExecutionRetry,
-                              label: context
-                                  .l10n
-                                  .settingsAutomationCodingExecutionRetryLabel,
-                              description: context
-                                  .l10n
-                                  .settingsAutomationCodingExecutionRetryDescription,
-                            ),
-                            const SizedBox(height: 22),
-                            Text(
-                              context.l10n.settingsOverridesEyebrow,
-                              style: AionText.caption.copyWith(
-                                color: c.textMuted,
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                            const _OverridesSummarySection(),
-                            const SizedBox(height: 22),
-                            Text(
-                              context.l10n.settingsBaselineEyebrow,
-                              style: AionText.caption.copyWith(
-                                color: c.textMuted,
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                            const _BaselineUpgradeSection(),
-                          ],
-                        );
-                      },
-                    ),
+                child: BlocBuilder<ProviderSettingsCubit, ProviderSettingsState>(
+                  builder: (context, state) {
+                    if (state is! ProviderSettingsReady) {
+                      return const Center(child: AppSpinner());
+                    }
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _ProviderStatusCard(state: state),
+                        const SizedBox(height: AionSpacing.sp24),
+                        const _AnthropicApiKeySection(),
+                        const SizedBox(height: AionSpacing.sp24),
+                        Text(
+                          context.l10n.settingsModelsEyebrow,
+                          style: AionText.caption.copyWith(color: c.textMuted),
+                        ),
+                        const SizedBox(height: 14),
+                        _ModelPhaseSection(
+                          phase: ModelPhase.frontier,
+                          label: context.l10n.settingsModelFrontierLabel,
+                          description:
+                              context.l10n.settingsModelFrontierDescription,
+                        ),
+                        const SizedBox(height: 20),
+                        _ModelPhaseSection(
+                          phase: ModelPhase.capable,
+                          label: context.l10n.settingsModelCapableLabel,
+                          description:
+                              context.l10n.settingsModelCapableDescription,
+                        ),
+                        const SizedBox(height: 20),
+                        _ModelPhaseSection(
+                          phase: ModelPhase.execution,
+                          label: context.l10n.settingsModelExecutionLabel,
+                          description:
+                              context.l10n.settingsModelExecutionDescription,
+                        ),
+                        const SizedBox(height: 20),
+                        const _ExecutionContextCapSection(),
+                        const SizedBox(height: 22),
+                        Text(
+                          context.l10n.settingsAutomationEyebrow,
+                          style: AionText.caption.copyWith(color: c.textMuted),
+                        ),
+                        const SizedBox(height: 14),
+                        _AutomationSection(
+                          automationContext: AutomationContext.sddStage,
+                          label: context.l10n.settingsAutomationLabel,
+                          description:
+                              context.l10n.settingsAutomationDescription,
+                        ),
+                        const SizedBox(height: 20),
+                        _AutomationSection(
+                          automationContext: AutomationContext.codingExecution,
+                          label: context
+                              .l10n
+                              .settingsAutomationCodingExecutionLabel,
+                          description: context
+                              .l10n
+                              .settingsAutomationCodingExecutionDescription,
+                        ),
+                        const SizedBox(height: 20),
+                        _AutomationSection(
+                          automationContext:
+                              AutomationContext.codingExecutionRetry,
+                          label: context
+                              .l10n
+                              .settingsAutomationCodingExecutionRetryLabel,
+                          description: context
+                              .l10n
+                              .settingsAutomationCodingExecutionRetryDescription,
+                        ),
+                        const SizedBox(height: 20),
+                        _AutomationSection(
+                          automationContext: AutomationContext.chatBranching,
+                          label:
+                              context.l10n.settingsAutomationChatBranchingLabel,
+                          description: context
+                              .l10n
+                              .settingsAutomationChatBranchingDescription,
+                        ),
+                        const SizedBox(height: 22),
+                        Text(
+                          context.l10n.settingsOverridesEyebrow,
+                          style: AionText.caption.copyWith(color: c.textMuted),
+                        ),
+                        const SizedBox(height: 14),
+                        const _OverridesSummarySection(),
+                        const SizedBox(height: 22),
+                        Text(
+                          context.l10n.settingsBaselineEyebrow,
+                          style: AionText.caption.copyWith(color: c.textMuted),
+                        ),
+                        const SizedBox(height: 14),
+                        const _BaselineUpgradeSection(),
+                      ],
+                    );
+                  },
+                ),
               ),
             ),
           ),
@@ -214,12 +210,14 @@ String _providerPrefix(ProviderId providerId) => switch (providerId) {
 /// Localized display label for [confidence]. Module-private since
 /// [_AutomationSection]/[_AutomationTrigger]/[_AutomationMenuRow] are its
 /// only consumers.
-String _confidenceLabel(BuildContext context, AutomationConfidence confidence) =>
-    switch (confidence) {
-      AutomationConfidence.auto => context.l10n.settingsAutomationAuto,
-      AutomationConfidence.gated => context.l10n.settingsAutomationGated,
-      AutomationConfidence.manual => context.l10n.settingsAutomationManual,
-    };
+String _confidenceLabel(
+  BuildContext context,
+  AutomationConfidence confidence,
+) => switch (confidence) {
+  AutomationConfidence.auto => context.l10n.settingsAutomationAuto,
+  AutomationConfidence.gated => context.l10n.settingsAutomationGated,
+  AutomationConfidence.manual => context.l10n.settingsAutomationManual,
+};
 
 /// One-line explanatory sub-label for [confidence] under [automationContext],
 /// shown in [_AutomationMenuRow]. Per design.md §4.4 — the two instances
@@ -232,8 +230,7 @@ String _confidenceSubLabel(
 ) => switch (automationContext) {
   AutomationContext.sddStage => switch (confidence) {
     AutomationConfidence.auto => context.l10n.settingsAutomationAutoSubLabel,
-    AutomationConfidence.gated =>
-      context.l10n.settingsAutomationGatedSubLabel,
+    AutomationConfidence.gated => context.l10n.settingsAutomationGatedSubLabel,
     AutomationConfidence.manual =>
       context.l10n.settingsAutomationManualSubLabel,
   },
@@ -252,6 +249,14 @@ String _confidenceSubLabel(
       context.l10n.settingsAutomationCodingExecutionRetryGatedSubLabel,
     AutomationConfidence.manual =>
       context.l10n.settingsAutomationCodingExecutionRetryManualSubLabel,
+  },
+  AutomationContext.chatBranching => switch (confidence) {
+    AutomationConfidence.auto =>
+      context.l10n.settingsAutomationChatBranchingAutoSubLabel,
+    AutomationConfidence.gated =>
+      context.l10n.settingsAutomationChatBranchingGatedSubLabel,
+    AutomationConfidence.manual =>
+      context.l10n.settingsAutomationChatBranchingManualSubLabel,
   },
 };
 
@@ -309,10 +314,7 @@ class _AutomationSection extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              label,
-              style: AionText.label.copyWith(color: c.textSecondary),
-            ),
+            Text(label, style: AionText.label.copyWith(color: c.textSecondary)),
             const SizedBox(height: AionSpacing.sp4),
             Text(
               description,
@@ -487,10 +489,7 @@ class _ModelPhaseSection extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              label,
-              style: AionText.label.copyWith(color: c.textSecondary),
-            ),
+            Text(label, style: AionText.label.copyWith(color: c.textSecondary)),
             const SizedBox(height: AionSpacing.sp4),
             Text(
               description,
@@ -502,9 +501,8 @@ class _ModelPhaseSection extends StatelessWidget {
               items: availableModels,
               itemLabel: (m) => m.label,
               semanticsLabel: label,
-              onChanged: (m) => context
-                  .read<ModelRoutingCubit>()
-                  .selectModel(phase, m),
+              onChanged: (m) =>
+                  context.read<ModelRoutingCubit>().selectModel(phase, m),
               itemRowBuilder: providers.length > 1
                   ? (context, m, selected) =>
                         _ModelDropdownRow(model: m, selected: selected)
@@ -617,9 +615,7 @@ class _ExecutionContextCapSectionState
   }
 
   void _commit(String value) {
-    context.read<ExecutionContextCapCubit>().setOverride(
-      int.tryParse(value),
-    );
+    context.read<ExecutionContextCapCubit>().setOverride(int.tryParse(value));
   }
 
   @override
@@ -659,10 +655,7 @@ class _ExecutionContextCapSectionState
             const SizedBox(height: 6),
             Text(
               context.l10n.settingsExecutionContextCapDescription,
-              style: AionText.bodySm.copyWith(
-                color: c.textMuted,
-                height: 1.5,
-              ),
+              style: AionText.bodySm.copyWith(color: c.textMuted, height: 1.5),
             ),
             const SizedBox(height: 10),
             AppTextField(
@@ -762,10 +755,7 @@ class _ExecutionContextCapHelperRow extends StatelessWidget {
               borderRadius: BorderRadius.all(AionRadius.pill),
             ),
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 7,
-                vertical: 2,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
               child: Text(
                 context.l10n.settingsExecutionContextCapOverrideTag,
                 style: AionText.caption.copyWith(
@@ -789,10 +779,7 @@ class _ExecutionContextCapHelperRow extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: c.needsRepairTint(t.isDark),
-        border: Border.all(
-          color: c.needsRepairBorderTint(t.isDark),
-          width: 1,
-        ),
+        border: Border.all(color: c.needsRepairBorderTint(t.isDark), width: 1),
         borderRadius: const BorderRadius.all(Radius.circular(8)),
       ),
       child: Padding(
@@ -1011,7 +998,9 @@ class _AnthropicApiKeySectionState extends State<_AnthropicApiKeySection> {
     // finished. Advisory only — `saveApiKey` never validates format, so
     // this never blocks Save itself.
     final hasFormatError =
-        _touched && trimmedText.isNotEmpty && !trimmedText.startsWith('sk-ant-');
+        _touched &&
+        trimmedText.isNotEmpty &&
+        !trimmedText.startsWith('sk-ant-');
 
     return BlocBuilder<
       AnthropicProviderConfigCubit,
@@ -1118,9 +1107,7 @@ class _AnthropicApiKeySectionState extends State<_AnthropicApiKeySection> {
                   children: [
                     AppButton(
                       label: context.l10n.settingsAnthropicApiKeySaveButton,
-                      onPressed: canSave
-                          ? () => _handleSave(context)
-                          : null,
+                      onPressed: canSave ? () => _handleSave(context) : null,
                     ),
                     Row(
                       mainAxisSize: MainAxisSize.min,
@@ -1134,8 +1121,7 @@ class _AnthropicApiKeySectionState extends State<_AnthropicApiKeySection> {
                         ),
                         const SizedBox(width: AionSpacing.sp12),
                         AppButton(
-                          label:
-                              context.l10n.settingsTestConnectionButtonLabel,
+                          label: context.l10n.settingsTestConnectionButtonLabel,
                           variant: AppButtonVariant.secondary,
                           onPressed: (!state.hasApiKey || isChecking)
                               ? null
@@ -1364,8 +1350,7 @@ class _BaselineUpgradeButton extends StatefulWidget {
   final VoidCallback onTap;
 
   @override
-  State<_BaselineUpgradeButton> createState() =>
-      _BaselineUpgradeButtonState();
+  State<_BaselineUpgradeButton> createState() => _BaselineUpgradeButtonState();
 }
 
 class _BaselineUpgradeButtonState extends State<_BaselineUpgradeButton> {
@@ -1488,11 +1473,7 @@ class _UpToDateMessage extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        PhosphorIcon(
-          PhosphorIcons.checkLight,
-          size: 16,
-          color: colors.success,
-        ),
+        PhosphorIcon(PhosphorIcons.checkLight, size: 16, color: colors.success),
         const SizedBox(width: AionSpacing.sp8),
         Text(
           context.l10n.settingsBaselineUpToDateMessage,

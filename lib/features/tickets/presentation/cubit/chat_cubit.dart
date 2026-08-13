@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/core/contracts/agent_model_descriptor.dart';
 import 'package:aion/core/contracts/agent_provider.dart';
+import 'package:aion/core/contracts/agent_tool_definition.dart';
 import 'package:aion/core/contracts/consumption_signal.dart';
 import 'package:aion/core/contracts/provider_registry.dart';
 import 'package:aion/features/providers/domain/enums/model_phase.dart';
@@ -16,6 +17,7 @@ import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/repositories/comment_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
+import 'package:aion/features/tickets/presentation/cubit/chat_branch_tool_definitions.dart';
 import 'package:aion/features/tickets/presentation/cubit/chat_state.dart';
 
 /// Loads and drives a single `chat`-type ticket's live conversation, via
@@ -29,7 +31,13 @@ import 'package:aion/features/tickets/presentation/cubit/chat_state.dart';
 /// [_ticketRepository]/[_modelRoutingRepository] are used to infer which
 /// [ModelPhase] a chat belongs to (see [_phaseForChat]) so [sendMessage]
 /// can resolve the phase-appropriate model/provider itself, added for
-/// `aion-arch/changes/per-phase-tier-based-model-routing`.
+/// `aion-arch/changes/per-phase-tier-based-model-routing`. [_ticketRepository]
+/// is also used by [_toolsFor] to decide which of
+/// [branchTicketToolDefinition]/[closeBranchToolDefinition] a chat's next
+/// turn offers — [sendMessage] resolves this itself rather than depending
+/// on `TicketsCubit`, but still needs its caller to supply an `onToolCall`
+/// handler (that logic lives on `TicketsCubit`, which owns ticket-mutation
+/// domain logic). Added for `aion-arch/changes/mid-task-chat-branching`.
 class ChatCubit extends Cubit<ChatState> {
   /// Creates a [ChatCubit] backed by [_repository], [_providerRegistry],
   /// [_ticketRepository], and [_modelRoutingRepository].
@@ -66,9 +74,21 @@ class ChatCubit extends Cubit<ChatState> {
   /// [CommentAuthorType.ai] comment (see [runChatTurn]) and the thread is
   /// reloaded. On failure, emits [ChatError] — the human message the user
   /// sent stays persisted; nothing broken is written for the reply.
+  /// [onToolCall], if given, is threaded through to [runChatTurn] as its
+  /// `onToolCall` — the tools offered are resolved internally via
+  /// [_toolsFor], but their actual execution logic lives on
+  /// `TicketsCubit` (ticket creation, automation-confidence gating), so
+  /// the caller (`TicketDetailScreen`) supplies it. Added for
+  /// `aion-arch/changes/mid-task-chat-branching`.
   Future<void> sendMessage({
     required String chatTicketId,
     required String content,
+    Future<Map<String, dynamic>> Function(
+      String toolCallId,
+      String toolName,
+      Map<String, dynamic> arguments,
+    )?
+    onToolCall,
   }) async {
     try {
       await _repository.addComment(
@@ -111,6 +131,8 @@ class ChatCubit extends Cubit<ChatState> {
                 : 'Running $toolName: $summary...',
           ),
         ),
+        tools: await _toolsFor(chatTicketId),
+        onToolCall: onToolCall,
       );
 
       if (!succeeded) {
@@ -173,6 +195,27 @@ class ChatCubit extends Cubit<ChatState> {
     return parent.sddStage?.modelPhase ?? ModelPhase.capable;
   }
 
+  /// Tools offered on [chatTicketId]'s next turn, mirroring
+  /// [_phaseForChat]'s shape rather than depending on `TicketsCubit`:
+  /// [branchTicketToolDefinition] whenever [chatTicketId] isn't itself
+  /// parented by a chat (so a branch can't be branched further — see
+  /// `TicketsCubit._canBranch`'s depth-cap check, which this mirrors at
+  /// registration time so the model is never even offered a tool it would
+  /// immediately have declined), [closeBranchToolDefinition] whenever it
+  /// *is* parented by a chat. A chat offers exactly one of the two —
+  /// never both, never neither (every chat is either a branch or isn't).
+  /// Added for `aion-arch/changes/mid-task-chat-branching`; see that
+  /// change's design.md §6.
+  Future<List<AgentToolDefinition>> _toolsFor(String chatTicketId) async {
+    final chat = await _ticketRepository.getTicketById(chatTicketId);
+    final parentId = chat?.parentId;
+    if (parentId == null) return [branchTicketToolDefinition];
+    final parent = await _ticketRepository.getTicketById(parentId);
+    return parent?.type == TicketType.chat
+        ? [closeBranchToolDefinition]
+        : [branchTicketToolDefinition];
+  }
+
   /// Maps an Inbox-spawned chat's [InboxPurpose] to the [ModelPhase] its
   /// human-follow-up replies resolve through, per
   /// `aion-arch/changes/new-project-onboarding-inbox/design.md` §2:
@@ -217,6 +260,14 @@ class ChatCubit extends Cubit<ChatState> {
   /// `null` if the stream never reaches a `done` event (e.g. an
   /// [AgentErrorEvent] hard failure). Added for
   /// `aion-arch/changes/dont-spawn-new-chat-ticket-per-execution-trigger`.
+  /// [tools]/[onToolCall] are passed straight through into the underlying
+  /// [AgentRequest] — empty/`null` by default, so every call site that
+  /// predates `aion-arch/changes/mid-task-chat-branching` keeps today's
+  /// behavior unchanged. An `AgentToolCallEvent` the run emits is reported
+  /// through [onToolUse] too (with a `null` summary), the same live-
+  /// progress channel `AgentToolUseEvent` already uses — the actual
+  /// execution/result round trip happens inside [client] via
+  /// [onToolCall], not here.
   static Future<bool> runChatTurn({
     required AgentModelClient client,
     required AgentProvider provider,
@@ -229,6 +280,13 @@ class ChatCubit extends Cubit<ChatState> {
     String? workingDirectory,
     void Function(ConsumptionSignal signal)? onConsumptionSignal,
     void Function(String toolName, String? summary)? onToolUse,
+    List<AgentToolDefinition> tools = const [],
+    Future<Map<String, dynamic>> Function(
+      String toolCallId,
+      String toolName,
+      Map<String, dynamic> arguments,
+    )?
+    onToolCall,
   }) async {
     final buffer = StringBuffer();
     var succeeded = true;
@@ -241,6 +299,8 @@ class ChatCubit extends Cubit<ChatState> {
           model: model.modelId,
           toolsEnabled: toolsEnabled,
           workingDirectory: workingDirectory,
+          tools: tools,
+          onToolCall: onToolCall,
         ),
       );
       await for (final event in events) {
@@ -250,6 +310,8 @@ class ChatCubit extends Cubit<ChatState> {
             onChunk?.call(buffer.toString());
           case AgentToolUseEvent(:final toolName, :final summary):
             onToolUse?.call(toolName, summary);
+          case AgentToolCallEvent(:final toolName):
+            onToolUse?.call(toolName, null);
           case AgentDoneEvent(:final inputTokens, :final outputTokens):
             doneEvent = AgentDoneEvent(
               inputTokens: inputTokens,

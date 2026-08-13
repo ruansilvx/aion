@@ -556,4 +556,19 @@ extension AionColorsHubTokens on AionColors {
   /// `BoxShadow` list.
   Color focusRing(bool isDark) =>
       primary.withValues(alpha: isDark ? 0.30 : 0.16);
+
+  // typeChat family — _ToolProposalBanner's identity accent (the banner is
+  // keyed to the CHAT type chip's own color, not primary/success/danger —
+  // see that spec's §0 "Identity decision"). Mirrors dangerTint/
+  // dangerBorderTint's shape exactly, keyed to typeChat instead of danger.
+  // Added for mid-task-chat-branching; see that change's design.md §4.
+  /// `_ToolProposalBanner`'s fill — identical alpha level to the CHAT type
+  /// chip's own tint.
+  Color chatTint(bool isDark) =>
+      typeChat.withValues(alpha: isDark ? 0.16 : 0.11);
+
+  /// `_ToolProposalBanner`'s border — identical alpha level to the
+  /// success/danger banner borders.
+  Color chatBorderTint(bool isDark) =>
+      typeChat.withValues(alpha: isDark ? 0.42 : 0.28);
 }

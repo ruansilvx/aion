@@ -94,5 +94,69 @@ void main() {
         );
       },
     );
+
+    test(
+      'AutomationContext.codingExecutionRetry is stored under its own key '
+      '(aion-arch/changes/coding-execution-reliability-and-safety) and '
+      'defaults to gated when unset',
+      () async {
+        final repository = SharedPrefsAutomationSettingsRepository();
+
+        expect(
+          await repository.getConfidence(
+            AutomationContext.codingExecutionRetry,
+          ),
+          AutomationConfidence.gated,
+        );
+
+        await repository.setConfidence(
+          AutomationContext.codingExecutionRetry,
+          AutomationConfidence.manual,
+        );
+
+        final prefs = await SharedPreferences.getInstance();
+        expect(
+          prefs.getString(
+            'automation_settings.coding_execution_retry_automation',
+          ),
+          'manual',
+        );
+        expect(
+          await repository.getConfidence(
+            AutomationContext.codingExecutionRetry,
+          ),
+          AutomationConfidence.manual,
+        );
+      },
+    );
+
+    test(
+      'AutomationContext.chatBranching is stored under its own key '
+      '(aion-arch/changes/mid-task-chat-branching) and defaults to gated '
+      'when unset',
+      () async {
+        final repository = SharedPrefsAutomationSettingsRepository();
+
+        expect(
+          await repository.getConfidence(AutomationContext.chatBranching),
+          AutomationConfidence.gated,
+        );
+
+        await repository.setConfidence(
+          AutomationContext.chatBranching,
+          AutomationConfidence.auto,
+        );
+
+        final prefs = await SharedPreferences.getInstance();
+        expect(
+          prefs.getString('automation_settings.chat_branching_automation'),
+          'auto',
+        );
+        expect(
+          await repository.getConfidence(AutomationContext.chatBranching),
+          AutomationConfidence.auto,
+        );
+      },
+    );
   });
 }
