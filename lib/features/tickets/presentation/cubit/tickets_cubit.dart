@@ -941,7 +941,9 @@ class TicketsCubit extends Cubit<TicketsState> {
         final indexer = _wikilinkIndexer;
         if (indexer != null &&
             previous != null &&
-            refreshed.type == TicketType.page) {
+            refreshed.type == TicketType.page &&
+            (previous.title != refreshed.title ||
+                previous.description != refreshed.description)) {
           unawaited(_reindexAndCascadeWikilinks(indexer, previous, refreshed));
         }
       }
@@ -3826,7 +3828,10 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Fires [PageWikilinkIndexer.reindexAndCascade] for a `page` edit from
-  /// [oldTicket] to [newTicket] — see [updateTicket]'s tail step. A
+  /// [oldTicket] to [newTicket] — see [updateTicket]'s tail step, gated
+  /// there exactly like the embedding-regen trigger (title/description
+  /// actually changed), so a field-only edit (e.g. `syncStatus`) never
+  /// re-parses content or rewrites `page_wikilinks` rows for nothing. A
   /// referrer whose content needs a title-anchored rewrite is applied by
   /// recursing through [updateTicket] itself (`applyRewrittenReferrer`
   /// below) — inheriting this method's own embedding-regen/rollup/

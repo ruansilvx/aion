@@ -921,10 +921,16 @@ void main() {
           final edited = pageA.copyWith(
             description: () => 'See [[Page B]] and [[AIO-102]].',
           );
+          var callCount = 0;
           when(() => repository.updateTicket(any())).thenAnswer((_) async {});
-          when(
-            () => repository.getTicketById(pageA.id),
-          ).thenAnswer((_) async => edited);
+          when(() => repository.getTicketById(pageA.id)).thenAnswer((_) async {
+            callCount++;
+            // previous (call 1) is the pre-edit ticket, with no description
+            // yet — refreshed (call 2) is the edited one — updateTicket's
+            // own before/after reads. The reindex is gated on
+            // description actually changing, so the two calls must differ.
+            return callCount == 1 ? pageA : edited;
+          });
           when(
             () => repository.getAllTicketsByType([
               TicketType.page,
@@ -967,6 +973,32 @@ void main() {
               TicketType.resource,
             ]),
           );
+          await cubit.close();
+        },
+      );
+
+      test(
+        'no-ops when neither title nor description changed — same content '
+        'gate the embedding-regen trigger uses, per design.md',
+        () async {
+          when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(pageA.id),
+          ).thenAnswer((_) async => pageA);
+          final cubit = buildCubit();
+
+          // Only a field the wikilink reindex has no business touching
+          // (title/description both unchanged from the stored ticket).
+          await cubit.updateTicket(pageA);
+          await Future<void>.delayed(Duration.zero);
+
+          verifyNever(
+            () => repository.getAllTicketsByType([
+              TicketType.page,
+              TicketType.resource,
+            ]),
+          );
+          verifyNever(() => wikilinkRepository.replaceOutgoingLinks(any(), any()));
           await cubit.close();
         },
       );
@@ -1179,10 +1211,16 @@ void main() {
         'update\'s emitted state',
         () async {
           final edited = pageA.copyWith(description: () => 'See [[Page B]].');
+          var callCount = 0;
           when(() => repository.updateTicket(any())).thenAnswer((_) async {});
-          when(
-            () => repository.getTicketById(pageA.id),
-          ).thenAnswer((_) async => edited);
+          when(() => repository.getTicketById(pageA.id)).thenAnswer((_) async {
+            callCount++;
+            // The reindex step only fires when description actually
+            // changed, so the pre-write (previous) read must differ from
+            // the post-write (refreshed) one for this test to genuinely
+            // exercise the swallowed-throw path.
+            return callCount == 1 ? pageA : edited;
+          });
           when(
             () => repository.getAllTicketsByType([
               TicketType.page,

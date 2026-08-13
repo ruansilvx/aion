@@ -790,6 +790,43 @@ void main() {
     });
 
     test(
+      'permanentlyDeleteTicket also clears page_wikilinks rows where the '
+      'deleted ticket is source or target — '
+      'aion-arch/changes/inline-wikilink-backlinks',
+      () async {
+        await repository.createTicket(
+          buildSearchable(
+            id: 'wiki-source',
+            title: 'Wiki Source',
+            type: TicketType.page,
+          ),
+        );
+        await repository.createTicket(
+          buildSearchable(
+            id: 'wiki-target',
+            title: 'Wiki Target',
+            type: TicketType.page,
+          ),
+        );
+        await database.pageWikilinkDao.replaceOutgoingLinks('wiki-source', {
+          'wiki-target',
+        });
+
+        await repository.trashTicket('wiki-source');
+        await repository.permanentlyDeleteTicket('wiki-source');
+
+        expect(
+          await database.pageWikilinkDao.getOutgoingLinks('wiki-source'),
+          isEmpty,
+        );
+        expect(
+          await database.pageWikilinkDao.getIncomingLinks('wiki-target'),
+          isEmpty,
+        );
+      },
+    );
+
+    test(
       'emptyTrash removes every trashed ticket and only trashed tickets',
       () async {
         await repository.createTicket(buildTicket(id: 'trashed-1'));

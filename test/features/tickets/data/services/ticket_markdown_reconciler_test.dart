@@ -7,12 +7,15 @@ import 'package:mocktail/mocktail.dart';
 import 'package:aion/core/contracts/embedding_provider.dart';
 import 'package:aion/core/markdown/ticket_markdown_serializer.dart';
 import 'package:aion/features/tickets/data/services/active_ticket_view_registry.dart';
+import 'package:aion/features/tickets/data/services/page_wikilink_indexer.dart';
 import 'package:aion/features/tickets/data/services/ticket_markdown_reconciler.dart';
 import 'package:aion/features/tickets/tickets.dart';
 
 class MockTicketRepository extends Mock implements TicketRepository {}
 
 class MockEmbeddingProvider extends Mock implements EmbeddingProvider {}
+
+class MockPageWikilinkRepository extends Mock implements PageWikilinkRepository {}
 
 void main() {
   late MockTicketRepository repository;
@@ -33,6 +36,17 @@ void main() {
   );
 
   final workItemTicket = resourceTicket.copyWith(type: TicketType.task);
+
+  final pageTicket = Ticket(
+    id: 'page-1',
+    ticketId: 'AIO-42',
+    type: TicketType.page,
+    title: 'Original title',
+    description: 'Original description.',
+    status: TicketStatus.backlog,
+    createdAt: DateTime.utc(2026, 7, 18),
+    updatedAt: DateTime.utc(2026, 7, 18),
+  );
 
   setUpAll(() {
     registerFallbackValue(TicketSyncStatus.synced);
@@ -216,5 +230,88 @@ void main() {
       final captured = verify(() => repository.updateTicket(captureAny())).captured;
       expect((captured.single as Ticket).title, 'Edited while viewing');
     });
+  });
+
+  group('wikilink reindex (inline-wikilink-backlinks)', () {
+    late MockPageWikilinkRepository wikilinkRepository;
+    late TicketMarkdownReconciler reconcilerWithIndexer;
+
+    setUp(() {
+      wikilinkRepository = MockPageWikilinkRepository();
+      reconcilerWithIndexer = TicketMarkdownReconciler(
+        repository,
+        TicketMarkdownSerializer(),
+        registry,
+        embeddingProvider,
+        PageWikilinkIndexer(repository, wikilinkRepository, registry),
+      );
+      when(
+        () => wikilinkRepository.replaceOutgoingLinks(any(), any()),
+      ).thenAnswer((_) async {});
+      when(
+        () => wikilinkRepository.getIncomingLinks(any()),
+      ).thenAnswer((_) async => []);
+    });
+
+    test(
+      'fires the shared PageWikilinkIndexer for a page reconcile whose '
+      'description actually changed',
+      () async {
+        when(
+          () => repository.getAllTickets(),
+        ).thenAnswer((_) async => [pageTicket]);
+        when(
+          () => repository.getAllTicketsByType([
+            TicketType.page,
+            TicketType.resource,
+          ]),
+        ).thenAnswer((_) async => [pageTicket]);
+        final serializer = TicketMarkdownSerializer();
+        await writeFile(
+          serializer.serialize(
+            pageTicket.copyWith(description: () => 'See [[Some Title]].'),
+          ),
+        );
+
+        await reconcilerWithIndexer.reconcile('AIO-42', tempDir.path);
+        await Future<void>.delayed(Duration.zero);
+
+        verify(
+          () => wikilinkRepository.replaceOutgoingLinks(pageTicket.id, any()),
+        ).called(1);
+      },
+    );
+
+    test(
+      'does not fire the indexer when neither title nor description '
+      'changed — same content gate the embedding-regen trigger uses',
+      () async {
+        when(
+          () => repository.getAllTickets(),
+        ).thenAnswer((_) async => [pageTicket]);
+        final serializer = TicketMarkdownSerializer();
+        // Same title/description as pageTicket, only priority differs —
+        // `_apply` still calls `repository.updateTicket`, but the
+        // wikilink reindex has nothing new to index.
+        await writeFile(
+          serializer.serialize(
+            pageTicket.copyWith(priority: TicketPriority.high),
+          ),
+        );
+
+        await reconcilerWithIndexer.reconcile('AIO-42', tempDir.path);
+        await Future<void>.delayed(Duration.zero);
+
+        verifyNever(
+          () => repository.getAllTicketsByType([
+            TicketType.page,
+            TicketType.resource,
+          ]),
+        );
+        verifyNever(
+          () => wikilinkRepository.replaceOutgoingLinks(any(), any()),
+        );
+      },
+    );
   });
 }

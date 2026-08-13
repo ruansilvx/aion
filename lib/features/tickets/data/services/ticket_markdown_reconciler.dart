@@ -67,9 +67,10 @@ class TicketMarkdownReconciler {
   /// two content-change surfaces stay unified). [_wikilinkIndexer] is
   /// optional (`null` in every construction site except
   /// `app_router.dart`, and in this class's own existing tests) — when
-  /// supplied, a successfully-reconciled `page` ticket also runs the same
-  /// inline-`[[wikilink]]` reindex/rename-cascade
-  /// `TicketsCubit.updateTicket` triggers for an in-app edit, through the
+  /// supplied, a successfully-reconciled `page` ticket whose title or
+  /// description actually changed also runs the same inline-`[[wikilink]]`
+  /// reindex/rename-cascade `TicketsCubit.updateTicket` triggers for an
+  /// in-app edit (same content-changed gate as that trigger), through the
   /// same shared [PageWikilinkIndexer] rather than a second, duplicated
   /// implementation — see `aion-arch/changes/inline-wikilink-backlinks
   /// /design.md`.
@@ -121,7 +122,11 @@ class TicketMarkdownReconciler {
     await _repository.updateSyncStatus(ticket.id, TicketSyncStatus.synced);
 
     final indexer = _wikilinkIndexer;
-    if (indexer != null && updated != null && ticket.type == TicketType.page) {
+    if (indexer != null &&
+        updated != null &&
+        ticket.type == TicketType.page &&
+        (ticket.title != updated.title ||
+            ticket.description != updated.description)) {
       unawaited(
         indexer.reindexAndCascade(
           oldTicket: ticket,

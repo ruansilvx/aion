@@ -395,6 +395,7 @@ class DriftTicketRepository implements TicketRepository {
     await _db.transaction(() async {
       await _db.commentDao.deleteCommentsForTickets(ids);
       await _db.ticketLinkDao.deleteLinksForTickets(ids);
+      await _db.pageWikilinkDao.deleteLinksForTickets(ids);
       await _db.ticketDao.deleteTicketRows(ids);
     });
   }
@@ -407,6 +408,7 @@ class DriftTicketRepository implements TicketRepository {
     await _db.transaction(() async {
       await _db.commentDao.deleteCommentsForTickets(ids);
       await _db.ticketLinkDao.deleteLinksForTickets(ids);
+      await _db.pageWikilinkDao.deleteLinksForTickets(ids);
       await _db.ticketDao.deleteTicketRows(ids);
     });
   }
@@ -429,6 +431,7 @@ class DriftTicketRepository implements TicketRepository {
     await _db.transaction(() async {
       await _db.commentDao.deleteCommentsForTickets(ids);
       await _db.ticketLinkDao.deleteLinksForTickets(ids);
+      await _db.pageWikilinkDao.deleteLinksForTickets(ids);
       await _db.ticketDao.deleteTicketRows(ids);
     });
     return ids.length;
