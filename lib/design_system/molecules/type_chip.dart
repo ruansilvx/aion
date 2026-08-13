@@ -19,7 +19,9 @@ String ticketTypeLabel(BuildContext context, TicketType type) {
     TicketType.resource => l10n.ticketTypeResource,
     TicketType.page => l10n.ticketTypePage,
     TicketType.chat => l10n.ticketTypeChat,
-    TicketType.signal => l10n.ticketTypeSignal,
+    TicketType.idea => l10n.ticketTypeIdea,
+    TicketType.knownGap => l10n.ticketTypeKnownGap,
+    TicketType.openQuestion => l10n.ticketTypeOpenQuestion,
     TicketType.release => l10n.ticketTypeRelease,
     TicketType.bug => l10n.ticketTypeBug,
   };
@@ -27,8 +29,8 @@ String ticketTypeLabel(BuildContext context, TicketType type) {
 
 /// A small square swatch + uppercase label showing a ticket's [type],
 /// colored by that type's `AionColors` accent (`typeTask`/`typeStory`/
-/// `typeEpic`/`typeResource`/`typePage`/`typeSignal`/`typeRelease`/
-/// `typeChat`/`typeBug`).
+/// `typeEpic`/`typeResource`/`typePage`/`typeIdea`/`typeKnownGap`/
+/// `typeOpenQuestion`/`typeRelease`/`typeChat`/`typeBug`).
 /// Promoted from `tickets_list_screen
 /// .dart` (per `project.md`'s Pattern 2) so `features/pages/` can render the
 /// same "PAGE" chip `TicketDetailScreen` renders for other types, without a
@@ -54,7 +56,9 @@ class TypeChip extends StatelessWidget {
       TicketType.epic => c.typeEpic,
       TicketType.resource => c.typeResource,
       TicketType.page => c.typePage,
-      TicketType.signal => c.typeSignal,
+      TicketType.idea => c.typeIdea,
+      TicketType.knownGap => c.typeKnownGap,
+      TicketType.openQuestion => c.typeOpenQuestion,
       TicketType.release => c.typeRelease,
       TicketType.chat => c.typeChat,
       TicketType.bug => c.typeBug,

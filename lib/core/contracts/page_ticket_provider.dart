@@ -2,9 +2,11 @@
 
 import 'package:equatable/equatable.dart';
 
+import 'package:aion/features/tickets/domain/entities/gap_or_question_ref.dart';
 import 'package:aion/features/tickets/domain/entities/linked_ticket_ref.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
 /// Cross-feature contract exposing the `page`-ticket data and mutations
 /// `features/pages/` needs. Implemented by `PageTicketProviderImpl`
@@ -64,6 +66,18 @@ abstract interface class PageTicketProvider {
     String linkId,
     TicketLinkType newRelativeType,
   );
+
+  /// Creates a [type] (`knownGap`/`openQuestion` only) ticket titled
+  /// [title] with optional [description], linked to [targetTicketId] —
+  /// delegates to `TicketsCubit.createGapOrQuestion` for the same hard-
+  /// rule validation/atomic-creation logic every other creation path
+  /// uses. Added for `aion-arch/changes/idea-gap-question-ticket-types`.
+  Future<void> createGapOrQuestion(
+    TicketType type, {
+    required String title,
+    String? description,
+    required String targetTicketId,
+  });
 }
 
 /// A page's sub-pages, linked tickets, and backlinks — the same three
@@ -71,11 +85,12 @@ abstract interface class PageTicketProvider {
 /// carried across the `core/contracts/` boundary as plain domain entities.
 class PageRelations extends Equatable {
   /// Creates a [PageRelations] carrying [childDocs]/[linkedTickets]/
-  /// [backlinks].
+  /// [backlinks]/[gapsAndOpenQuestions].
   const PageRelations({
     required this.childDocs,
     required this.linkedTickets,
     required this.backlinks,
+    this.gapsAndOpenQuestions = const [],
   });
 
   /// This page's direct `page`/`resource` children.
@@ -91,6 +106,19 @@ class PageRelations extends Equatable {
   /// Same [LinkedTicketRef] shape as [linkedTickets].
   final List<LinkedTicketRef> backlinks;
 
+  /// Every `knownGap`/`openQuestion` ticket `relatesTo`-linked to this
+  /// page itself or to any descendant of it, recursively rolled up —
+  /// see [GapOrQuestionRef]. Mirrors
+  /// `TicketsCubit.loadDocumentRelations`'s same aggregation for the
+  /// shared `TicketDetailScreen`. Added for
+  /// `aion-arch/changes/idea-gap-question-ticket-types`.
+  final List<GapOrQuestionRef> gapsAndOpenQuestions;
+
   @override
-  List<Object?> get props => [childDocs, linkedTickets, backlinks];
+  List<Object?> get props => [
+    childDocs,
+    linkedTickets,
+    backlinks,
+    gapsAndOpenQuestions,
+  ];
 }

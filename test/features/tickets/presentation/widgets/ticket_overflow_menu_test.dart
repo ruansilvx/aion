@@ -68,10 +68,10 @@ void main() {
     updatedAt: DateTime(2026),
   );
 
-  Ticket buildSignal({TicketType? suggestedType}) => Ticket(
-    id: 'signal-1',
+  Ticket buildIdea({TicketType? suggestedType}) => Ticket(
+    id: 'idea-1',
     ticketId: 'AIO-1',
-    type: TicketType.signal,
+    type: TicketType.idea,
     title: 'A raw idea',
     status: TicketStatus.backlog,
     suggestedType: suggestedType,
@@ -112,6 +112,13 @@ void main() {
       () => repository.getAllTickets(),
     ).thenAnswer((_) async => [epic, bug]);
     when(() => repository.createTicket(any())).thenAnswer((_) async {});
+    when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+    when(
+      () => repository.getTicketById(epic.id),
+    ).thenAnswer((_) async => epic);
+    when(
+      () => repository.getTicketById('idea-1'),
+    ).thenAnswer((_) async => buildIdea().copyWith(type: TicketType.knownGap));
     when(
       () => linkRepository.createLink(
         sourceTicketId: any(named: 'sourceTicketId'),
@@ -122,11 +129,11 @@ void main() {
   });
 
   testWidgets(
-    'tapping the trigger for a signal ticket shows both promote rows '
+    'tapping the trigger for an idea ticket shows both promote rows '
     'and the delete row',
     (tester) async {
       await tester.pumpWidget(
-        _wrap(TicketOverflowMenu(ticket: buildSignal()), cubit),
+        _wrap(TicketOverflowMenu(ticket: buildIdea()), cubit),
       );
       await tester.pump();
 
@@ -135,16 +142,56 @@ void main() {
 
       expect(find.text('Promote to Epic'), findsOneWidget);
       expect(find.text('Promote to Bug'), findsOneWidget);
+      expect(find.text('Change to Known Gap'), findsOneWidget);
+      expect(find.text('Change to Open Question'), findsOneWidget);
       expect(find.text('Delete ticket'), findsOneWidget);
     },
   );
 
   testWidgets(
-    'a signal with suggestedType epic shows exactly one "SUGGESTED" pill',
+    'tapping "Change to Known Gap" opens a target picker; picking an '
+    'existing ticket calls reclassifyIdea',
+    (tester) async {
+      await tester.pumpWidget(
+        _wrap(TicketOverflowMenu(ticket: buildIdea()), cubit),
+      );
+      await tester.pump();
+
+      await tester.tap(find.byType(TicketOverflowMenu));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Change to Known Gap'));
+      await tester.pumpAndSettle();
+
+      // No "create new" option in the reclassify target picker, unlike
+      // the promote chooser.
+      expect(find.text('Create new epic'), findsNothing);
+      expect(find.text('Create new bug'), findsNothing);
+
+      await tester.tap(find.text('Add'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Existing epic'));
+      await tester.pumpAndSettle();
+
+      final updated =
+          verify(() => repository.updateTicket(captureAny())).captured;
+      expect(updated, hasLength(1));
+      expect((updated.first as Ticket).type, TicketType.knownGap);
+      verify(
+        () => linkRepository.createLink(
+          sourceTicketId: 'idea-1',
+          targetTicketId: epic.id,
+          linkType: TicketLinkType.relatesTo,
+        ),
+      ).called(1);
+    },
+  );
+
+  testWidgets(
+    'an idea with suggestedType epic shows exactly one "SUGGESTED" pill',
     (tester) async {
       await tester.pumpWidget(
         _wrap(
-          TicketOverflowMenu(ticket: buildSignal(suggestedType: TicketType.epic)),
+          TicketOverflowMenu(ticket: buildIdea(suggestedType: TicketType.epic)),
           cubit,
         ),
       );
@@ -158,10 +205,10 @@ void main() {
   );
 
   testWidgets(
-    'a signal with no suggestedType shows no "SUGGESTED" pill',
+    'an idea with no suggestedType shows no "SUGGESTED" pill',
     (tester) async {
       await tester.pumpWidget(
-        _wrap(TicketOverflowMenu(ticket: buildSignal()), cubit),
+        _wrap(TicketOverflowMenu(ticket: buildIdea()), cubit),
       );
       await tester.pump();
 
@@ -177,7 +224,7 @@ void main() {
     'candidates',
     (tester) async {
       await tester.pumpWidget(
-        _wrap(TicketOverflowMenu(ticket: buildSignal()), cubit),
+        _wrap(TicketOverflowMenu(ticket: buildIdea()), cubit),
       );
       await tester.pump();
 
@@ -204,7 +251,7 @@ void main() {
     'tapping "Promote to Bug" opens a chooser offering only bug candidates',
     (tester) async {
       await tester.pumpWidget(
-        _wrap(TicketOverflowMenu(ticket: buildSignal()), cubit),
+        _wrap(TicketOverflowMenu(ticket: buildIdea()), cubit),
       );
       await tester.pump();
 
@@ -225,10 +272,10 @@ void main() {
   );
 
   testWidgets(
-    'tapping "Create new bug" calls promoteSignal with targetType bug',
+    'tapping "Create new bug" calls promoteIdea with targetType bug',
     (tester) async {
       await tester.pumpWidget(
-        _wrap(TicketOverflowMenu(ticket: buildSignal()), cubit),
+        _wrap(TicketOverflowMenu(ticket: buildIdea()), cubit),
       );
       await tester.pump();
 

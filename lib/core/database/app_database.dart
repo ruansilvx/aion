@@ -91,7 +91,13 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
 /// and backfills both to `'manual'` for every pre-existing row whose
 /// `complexity`/`estimate` is already set — see
 /// `aion-arch/changes/ai-assisted-complexity-and-estimate-suggestions/design.md`
-/// §3.4.
+/// §3.4. Version 11 adds no columns — `TicketType.signal` was split into
+/// `idea`/`knownGap`/`openQuestion`, so every pre-existing `type =
+/// 'signal'` row is blanket-reclassified to `'idea'` (the type that
+/// keeps `signal`'s exact prior behavior; not a heuristic guess at
+/// gap-vs-question-vs-idea) so the app never crashes deserializing
+/// pre-existing data — see
+/// `aion-arch/changes/idea-gap-question-ticket-types/design.md` §2.1.
 @DriftDatabase(
   tables: [
     TicketsTable,
@@ -111,7 +117,7 @@ class AppDatabase extends _$AppDatabase {
     : super(executor ?? _openConnection(project));
 
   @override
-  int get schemaVersion => 10;
+  int get schemaVersion => 11;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -175,6 +181,16 @@ class AppDatabase extends _$AppDatabase {
         await m.database.customStatement(
           "UPDATE tickets SET estimate_source = 'manual' "
           'WHERE estimate IS NOT NULL AND estimate_source IS NULL',
+        );
+      }
+      if (from < 11) {
+        // `TicketType.signal` was retired in favor of `idea`/`knownGap`/
+        // `openQuestion` — a blanket default landing spot, not a
+        // heuristic guess at which of the three each row "should" become.
+        // The user can move any of these to `knownGap`/`openQuestion` by
+        // hand afterward via `TicketsCubit.reclassifyIdea`.
+        await m.database.customStatement(
+          "UPDATE tickets SET type = 'idea' WHERE type = 'signal'",
         );
       }
     },

@@ -127,6 +127,18 @@ void main() {
         when(
           () => ticketRepository.getTicketById('p2'),
         ).thenAnswer((_) async => backlinkPage);
+        // The recursive gaps-and-open-questions rollup's own reads,
+        // added for `aion-arch/changes/idea-gap-question-ticket-types`
+        // — `loadPageRelations` now performs these unconditionally
+        // alongside the pre-existing `linkedTickets`/`backlinks` reads.
+        when(
+          () => ticketRepository.getAllTickets(),
+        ).thenAnswer((_) async => [page, childDoc, linkedTask, backlinkPage]);
+        when(
+          () => ticketLinkRepository.getLinksByTypes([
+            TicketLinkType.relatesTo,
+          ]),
+        ).thenAnswer((_) async => []);
 
         final relations = await provider.loadPageRelations(page.id);
 
@@ -139,6 +151,7 @@ void main() {
         expect(relations.backlinks.single.relativeType,
             TicketLinkType.relatesTo);
         expect(relations.backlinks.single.linkId, 'link-2');
+        expect(relations.gapsAndOpenQuestions, isEmpty);
       },
     );
 
@@ -261,6 +274,36 @@ void main() {
             'p1',
             'link-1',
             TicketLinkType.blocks,
+          ),
+        ).called(1);
+      },
+    );
+
+    test(
+      'createGapOrQuestion delegates to TicketsCubit.createGapOrQuestion',
+      () async {
+        when(
+          () => ticketsCubit.createGapOrQuestion(
+            TicketType.knownGap,
+            title: 'A gap',
+            description: 'A description',
+            targetTicketId: 'p1',
+          ),
+        ).thenAnswer((_) async {});
+
+        await provider.createGapOrQuestion(
+          TicketType.knownGap,
+          title: 'A gap',
+          description: 'A description',
+          targetTicketId: 'p1',
+        );
+
+        verify(
+          () => ticketsCubit.createGapOrQuestion(
+            TicketType.knownGap,
+            title: 'A gap',
+            description: 'A description',
+            targetTicketId: 'p1',
           ),
         ).called(1);
       },

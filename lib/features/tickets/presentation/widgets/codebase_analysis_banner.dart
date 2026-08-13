@@ -104,8 +104,8 @@ class _OfferBanner extends StatelessWidget {
     final isDark = t.isDark;
 
     return BannerShell(
-      fill: c.signalFill(isDark),
-      border: c.signalBorderTint(isDark),
+      fill: c.ideaFill(isDark),
+      border: c.ideaBorderTint(isDark),
       onDismiss: onDismiss,
       dismissSemanticLabel: context.l10n.codebaseAnalysisDismissLabel,
       child: Padding(
@@ -117,9 +117,9 @@ class _OfferBanner extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 BannerIconChip(
-                  fill: c.signalIconTint(isDark),
+                  fill: c.ideaIconTint(isDark),
                   icon: PhosphorIcons.magnifyingGlassPlusLight,
-                  iconColor: c.typeSignal,
+                  iconColor: c.typeIdea,
                 ),
                 const SizedBox(width: AionSpacing.sp12),
                 Expanded(
@@ -141,7 +141,7 @@ class _OfferBanner extends StatelessWidget {
                           const SizedBox(width: AionSpacing.sp8),
                           DecoratedBox(
                             decoration: BoxDecoration(
-                              color: c.signalChipTint(isDark),
+                              color: c.ideaChipTint(isDark),
                               borderRadius: const BorderRadius.all(
                                 AionRadius.sm,
                               ),
@@ -154,7 +154,7 @@ class _OfferBanner extends StatelessWidget {
                               child: Text(
                                 context.l10n.codebaseAnalysisOfferBadge,
                                 style: AionText.chip.copyWith(
-                                  color: c.typeSignal,
+                                  color: c.typeIdea,
                                 ),
                               ),
                             ),
@@ -185,10 +185,10 @@ class _OfferBanner extends StatelessWidget {
                                   context.l10n.codebaseAnalysisOfferBodyMiddle,
                             ),
                             TextSpan(
-                              text: context.l10n.codebaseAnalysisOfferBodySignal,
+                              text: context.l10n.codebaseAnalysisOfferBodyIdea,
                               style: const TextStyle(
                                 fontWeight: FontWeight.w600,
-                              ).copyWith(color: c.typeSignal),
+                              ).copyWith(color: c.typeIdea),
                             ),
                             TextSpan(
                               text: context.l10n.codebaseAnalysisOfferBodyAfter,

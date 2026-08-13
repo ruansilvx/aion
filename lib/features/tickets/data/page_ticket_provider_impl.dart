@@ -1,6 +1,7 @@
 // features/tickets/data/page_ticket_provider_impl.dart — PageTicketProviderImpl (data layer).
 
 import 'package:aion/core/contracts/page_ticket_provider.dart';
+import 'package:aion/features/tickets/domain/entities/gap_or_question_ref.dart';
 import 'package:aion/features/tickets/domain/entities/linked_ticket_ref.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
@@ -67,12 +68,52 @@ class PageTicketProviderImpl implements PageTicketProvider {
       }
     }
 
+    final gapsAndOpenQuestions = <GapOrQuestionRef>[];
+    final all = await _ticketRepository.getAllTickets();
+    final byId = {for (final t in all) t.id: t};
+    final subtreeIds = {pageId, ..._descendantIds(pageId, all)};
+    final relatesToLinks = await _ticketLinkRepository.getLinksByTypes([
+      TicketLinkType.relatesTo,
+    ]);
+    for (final link in relatesToLinks) {
+      final source = byId[link.sourceTicketId];
+      final target = byId[link.targetTicketId];
+      if (source == null || target == null) continue;
+      // The gap/question ticket is always the `relatesTo` link's
+      // *source* — createGapOrQuestion/reclassifyIdea always create it
+      // that way — so only that direction is checked. Mirrors
+      // `TicketsCubit.loadDocumentRelations`'s identical aggregation.
+      if ((source.type == TicketType.knownGap ||
+              source.type == TicketType.openQuestion) &&
+          subtreeIds.contains(target.id)) {
+        gapsAndOpenQuestions.add((
+          ticket: source,
+          raisedOn: target,
+          linkId: link.id,
+        ));
+      }
+    }
+
     return PageRelations(
       childDocs: childDocs,
       linkedTickets: linkedTickets,
       backlinks: backlinks,
+      gapsAndOpenQuestions: gapsAndOpenQuestions,
     );
   }
+
+  @override
+  Future<void> createGapOrQuestion(
+    TicketType type, {
+    required String title,
+    String? description,
+    required String targetTicketId,
+  }) => _ticketsCubit.createGapOrQuestion(
+    type,
+    title: title,
+    description: description,
+    targetTicketId: targetTicketId,
+  );
 
   @override
   Future<Ticket> createPage({

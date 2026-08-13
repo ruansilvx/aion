@@ -107,7 +107,7 @@ void main() {
       Ticket(
         id: 'fallback',
         ticketId: '',
-        type: TicketType.signal,
+        type: TicketType.idea,
         title: '',
         status: TicketStatus.backlog,
         createdAt: DateTime(2026),
@@ -155,7 +155,7 @@ void main() {
     );
 
     test(
-      'creates a run-record signal ticket and one signal ticket per '
+      'creates a run-record idea ticket and one idea ticket per '
       'finding, each prefixed with the shallow-scan flag and linked back '
       'to the run — no worktree/chat calls',
       () async {
@@ -192,7 +192,7 @@ void main() {
         // 1 run-record + 2 findings.
         expect(createdTickets.length, 3);
         expect(
-          createdTickets.every((t) => t.type == TicketType.signal),
+          createdTickets.every((t) => t.type == TicketType.idea),
           isTrue,
         );
         final runRecord = createdTickets.firstWhere(
@@ -321,7 +321,7 @@ void main() {
         final createdTickets = verify(
           () => repository.createTicket(captureAny()),
         ).captured.cast<Ticket>();
-        // 1 run-record signal + 1 chat child + 1 finding signal.
+        // 1 run-record idea + 1 chat child + 1 finding idea.
         expect(createdTickets.length, 3);
         final chat = createdTickets.singleWhere(
           (t) => t.type == TicketType.chat,
@@ -329,7 +329,7 @@ void main() {
         final runRecord = createdTickets.singleWhere(
           (t) =>
               t.title == 'Codebase Analysis — Fake Project' &&
-              t.type == TicketType.signal,
+              t.type == TicketType.idea,
         );
         expect(chat.parentId, runRecord.id);
 
@@ -368,7 +368,7 @@ void main() {
         // completed.
         expect(createdTickets.length, 2);
         expect(
-          createdTickets.where((t) => t.type == TicketType.signal).length,
+          createdTickets.where((t) => t.type == TicketType.idea).length,
           1,
         );
       },

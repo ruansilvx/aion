@@ -110,9 +110,9 @@ class Ticket extends Equatable {
 
   /// The Inbox brain-dump purpose's suggested promotion target (Epic or
   /// Bug), read by the widened promote-chooser to pre-select which target
-  /// type to promote to. Meaningful only for [TicketType.signal] tickets;
+  /// type to promote to. Meaningful only for [TicketType.idea] tickets;
   /// `null` for every ticket not created by the brain-dump purpose, and
-  /// `null` for a brain-dump signal until the model actually classifies it
+  /// `null` for a brain-dump idea until the model actually classifies it
   /// (defensive default — a parse failure on one block shouldn't crash
   /// the rest of the reply).
   final TicketType? suggestedType;

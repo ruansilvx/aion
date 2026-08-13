@@ -37,7 +37,7 @@ class CreateTicketRouteExtra {
 /// The `/tickets/new` route: title, type, parent, priority, complexity,
 /// and description fields followed by a full-width submit button. The parent
 /// field is hidden whenever the selected type is always a subtree root
-/// ([TicketType.epic], [TicketType.signal], or [TicketType.release] — see
+/// ([TicketType.epic], [TicketType.idea], or [TicketType.release] — see
 /// [TicketTypeHierarchy.isAlwaysRoot]). When the selected type is
 /// [TicketType.bug], an additional field block (severity — required —
 /// plus optional steps-to-reproduce/expected-behavior/actual-behavior
@@ -196,7 +196,12 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                         labelText: context.l10n.createTicketTypeLabel,
                         value: _selectedType,
                         items: TicketType.values
-                            .where((type) => type != TicketType.page)
+                            .where(
+                              (type) =>
+                                  type != TicketType.page &&
+                                  type != TicketType.knownGap &&
+                                  type != TicketType.openQuestion,
+                            )
                             .toList(),
                         onChanged: (v) => setState(() {
                           _selectedType = v;

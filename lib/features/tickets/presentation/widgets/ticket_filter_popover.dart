@@ -76,7 +76,9 @@ class TicketFilterPopover extends StatefulWidget {
 
   /// The `Type` group's fixed, client-side-filtered item list —
   /// `page`/`resource` moved to the Documentation section and no longer
-  /// appear here; `signal`/`release` excluded as a pre-existing gap.
+  /// appear here; `idea`/`knownGap`/`openQuestion`/`release` excluded (the
+  /// first three inherit `signal`'s original pre-existing-gap exclusion —
+  /// see `aion-arch/changes/idea-gap-question-ticket-types`).
   /// Mirrors the same hardcoded list `TicketsListScreen`'s old
   /// `AppDropdown<TicketType?>` used.
   static const typeOptions = [
@@ -397,7 +399,9 @@ class _TypeAccentSquare extends StatelessWidget {
       TicketType.epic => c.typeEpic,
       TicketType.resource => c.typeResource,
       TicketType.page => c.typePage,
-      TicketType.signal => c.typeSignal,
+      TicketType.idea => c.typeIdea,
+      TicketType.knownGap => c.typeKnownGap,
+      TicketType.openQuestion => c.typeOpenQuestion,
       TicketType.release => c.typeRelease,
       TicketType.chat => c.typeChat,
       TicketType.bug => c.typeBug,

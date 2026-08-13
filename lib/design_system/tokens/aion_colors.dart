@@ -162,8 +162,18 @@ class AionColors {
   /// Base accent color for [TicketType.page] chips.
   final Color typePage;
 
-  /// Base accent color for [TicketType.signal] chips.
-  final Color typeSignal;
+  /// Base accent color for [TicketType.idea] chips. Renamed from
+  /// `typeSignal` for `aion-arch/changes/idea-gap-question-ticket-types` —
+  /// same values, since the rename is value-preserving.
+  final Color typeIdea;
+
+  /// Base accent color for [TicketType.knownGap] chips. Added for
+  /// `aion-arch/changes/idea-gap-question-ticket-types`.
+  final Color typeKnownGap;
+
+  /// Base accent color for [TicketType.openQuestion] chips. Added for
+  /// `aion-arch/changes/idea-gap-question-ticket-types`.
+  final Color typeOpenQuestion;
 
   /// Base accent color for [TicketType.release] chips.
   final Color typeRelease;
@@ -206,7 +216,9 @@ class AionColors {
     required this.typeEpic,
     required this.typeResource,
     required this.typePage,
-    required this.typeSignal,
+    required this.typeIdea,
+    required this.typeKnownGap,
+    required this.typeOpenQuestion,
     required this.typeRelease,
     required this.typeChat,
     required this.typeBug,
@@ -285,7 +297,9 @@ const AionColors arctic = AionColors(
   typeEpic: Color(0xFF6A5AD0),
   typeResource: Color(0xFFC2622E),
   typePage: Color(0xFFB0499E),
-  typeSignal: Color(0xFF0E8C9E),
+  typeIdea: Color(0xFF0E8C9E),
+  typeKnownGap: Color(0xFF2F9E3F),
+  typeOpenQuestion: Color(0xFFC6397D),
   typeRelease: Color(0xFFD8402C),
   typeChat: Color(0xFF4C6FDE),
   typeBug: Color(0xFF5E8C1E),
@@ -315,7 +329,9 @@ const AionColors obsidian = AionColors(
   typeEpic: Color(0xFF5C7CF5),
   typeResource: Color(0xFFE68A4E),
   typePage: Color(0xFFD98CE6),
-  typeSignal: Color(0xFF34C6D6),
+  typeIdea: Color(0xFF34C6D6),
+  typeKnownGap: Color(0xFF54C85C),
+  typeOpenQuestion: Color(0xFFEE72AE),
   typeRelease: Color(0xFFF26A4B),
   typeChat: Color(0xFF7C93FF),
   typeBug: Color(0xFF98D13C),
@@ -479,25 +495,26 @@ extension AionColorsHubTokens on AionColors {
   Color dangerIconTint(bool isDark) =>
       danger.withValues(alpha: isDark ? 0.24 : 0.16);
 
-  // signal family — CodebaseAnalysisBanner's identity accent
-  // (typeSignal), since a scan's output is `signal` tickets. No prior
-  // consumer of typeSignal as a tint family. Added for
-  // new-project-onboarding; see design.md §1.2.
+  // idea family — CodebaseAnalysisBanner's identity accent (typeIdea),
+  // since a scan's output is `idea` tickets. Renamed from the
+  // `signal*`/`typeSignal` family (value-preserving) for
+  // `aion-arch/changes/idea-gap-question-ticket-types`. Originally added
+  // for new-project-onboarding; see that change's design.md §1.2.
   /// `CodebaseAnalysisBanner`'s `offer`-state fill.
-  Color signalFill(bool isDark) =>
-      typeSignal.withValues(alpha: isDark ? 0.13 : 0.08);
+  Color ideaFill(bool isDark) =>
+      typeIdea.withValues(alpha: isDark ? 0.13 : 0.08);
 
   /// `CodebaseAnalysisBanner`'s `offer`-state border.
-  Color signalBorderTint(bool isDark) =>
-      typeSignal.withValues(alpha: isDark ? 0.34 : 0.26);
+  Color ideaBorderTint(bool isDark) =>
+      typeIdea.withValues(alpha: isDark ? 0.34 : 0.26);
 
   /// `CodebaseAnalysisBanner`'s `offer`-state leading icon-chip fill.
-  Color signalIconTint(bool isDark) =>
-      typeSignal.withValues(alpha: isDark ? 0.22 : 0.15);
+  Color ideaIconTint(bool isDark) =>
+      typeIdea.withValues(alpha: isDark ? 0.22 : 0.15);
 
-  /// `CodebaseAnalysisBanner`'s "SIGNALS" badge fill.
-  Color signalChipTint(bool isDark) =>
-      typeSignal.withValues(alpha: isDark ? 0.20 : 0.13);
+  /// `CodebaseAnalysisBanner`'s "IDEAS" badge fill.
+  Color ideaChipTint(bool isDark) =>
+      typeIdea.withValues(alpha: isDark ? 0.20 : 0.13);
 
   // Generic accent tint, parameterized on an explicit accent rather than
   // one fixed instance field — every other *Tint method above closes over

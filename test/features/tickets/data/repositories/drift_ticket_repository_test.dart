@@ -281,9 +281,9 @@ void main() {
     );
     await repository.createTicket(
       Ticket(
-        id: 'signal-1',
+        id: 'idea-1',
         ticketId: '',
-        type: TicketType.signal,
+        type: TicketType.idea,
         title: 'Brain-dumped idea',
         status: TicketStatus.backlog,
         suggestedType: TicketType.epic,
@@ -305,13 +305,13 @@ void main() {
     );
 
     final plain = await repository.getTicketById('plain');
-    final signal = await repository.getTicketById('signal-1');
+    final idea = await repository.getTicketById('idea-1');
     final chat = await repository.getTicketById('chat-1');
 
     expect(plain!.suggestedType, isNull);
     expect(plain.inboxPurpose, isNull);
-    expect(signal!.suggestedType, TicketType.epic);
-    expect(signal.inboxPurpose, isNull);
+    expect(idea!.suggestedType, TicketType.epic);
+    expect(idea.inboxPurpose, isNull);
     expect(chat!.inboxPurpose, InboxPurpose.brainDump);
     expect(chat.suggestedType, isNull);
   });
@@ -322,16 +322,16 @@ void main() {
       final now = DateTime(2026, 1, 1);
       await repository.createTicket(
         Ticket(
-          id: 'signal-2',
+          id: 'idea-2',
           ticketId: '',
-          type: TicketType.signal,
-          title: 'Signal to update',
+          type: TicketType.idea,
+          title: 'Idea to update',
           status: TicketStatus.backlog,
           createdAt: now,
           updatedAt: now,
         ),
       );
-      final persisted = await repository.getTicketById('signal-2');
+      final persisted = await repository.getTicketById('idea-2');
 
       await repository.updateTicket(
         persisted!.copyWith(
@@ -339,7 +339,7 @@ void main() {
           inboxPurpose: () => InboxPurpose.brainDump,
         ),
       );
-      final updated = await repository.getTicketById('signal-2');
+      final updated = await repository.getTicketById('idea-2');
 
       expect(updated!.suggestedType, TicketType.bug);
       expect(updated.inboxPurpose, InboxPurpose.brainDump);

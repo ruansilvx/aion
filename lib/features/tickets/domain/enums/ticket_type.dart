@@ -35,11 +35,36 @@ enum TicketType {
   /// `aion-arch/changes/mid-task-chat-branching/design.md` §5.
   chat,
 
-  /// Something noticed but not yet resolved into work: a raw idea, a
-  /// known gap, or an open question — not yet shaped into an [epic].
-  /// Parentless; may parent a [chat] for exploration/discussion, nothing
-  /// else. See [TicketTypeHierarchy.isAlwaysRoot].
-  signal,
+  /// A raw idea noticed but not yet resolved into work — not yet shaped
+  /// into an [epic]. Freestanding: no required target, always a subtree
+  /// root, promotable into an [epic] or a [bug] via
+  /// `TicketsCubit.promoteIdea`. Parentless; may parent a [chat] for
+  /// exploration/discussion, nothing else. See
+  /// [TicketTypeHierarchy.isAlwaysRoot]. Was `signal` prior to
+  /// `aion-arch/changes/idea-gap-question-ticket-types`, which split its
+  /// three meanings (idea / known gap / open question) into distinct
+  /// types — `idea` inherits `signal`'s exact prior behavior.
+  idea,
+
+  /// An acknowledged hole in a target ticket's coverage — never
+  /// freestanding. Must be created already linked
+  /// (`TicketLinkType.relatesTo`) to an existing target ticket via
+  /// `TicketsCubit.createGapOrQuestion` or `TicketsCubit.reclassifyIdea`;
+  /// never reachable from the generic New Ticket flow. Parentless; may
+  /// parent a [chat] for exploration/discussion, nothing else. See
+  /// [TicketTypeHierarchy.isAlwaysRoot]. Added for
+  /// `aion-arch/changes/idea-gap-question-ticket-types`.
+  knownGap,
+
+  /// A raised, unresolved point about a target ticket — never
+  /// freestanding. Must be created already linked
+  /// (`TicketLinkType.relatesTo`) to an existing target ticket via
+  /// `TicketsCubit.createGapOrQuestion` or `TicketsCubit.reclassifyIdea`;
+  /// never reachable from the generic New Ticket flow. Parentless; may
+  /// parent a [chat] for exploration/discussion, nothing else. See
+  /// [TicketTypeHierarchy.isAlwaysRoot]. Added for
+  /// `aion-arch/changes/idea-gap-question-ticket-types`.
+  openQuestion,
 
   /// A named release/milestone. Parentless; may parent a [chat] for
   /// release-planning discussion, nothing else. Relates to [epic]/
@@ -68,13 +93,14 @@ enum TicketType {
 extension TicketTypeHierarchy on TicketType {
   /// This type's rank in the epic > story > task/bug work-breakdown
   /// chain, or `null` for a type ([TicketType.resource],
-  /// [TicketType.page], [TicketType.chat], [TicketType.signal],
+  /// [TicketType.page], [TicketType.chat], [TicketType.idea],
+  /// [TicketType.knownGap], [TicketType.openQuestion],
   /// [TicketType.release]) with no rank in that chain. Note that `page`,
-  /// `signal`, and `release` each still have their own nesting rule —
-  /// see [canParent] — despite having no rank here. [TicketType.task]
-  /// and [TicketType.bug] share the same literal rank value, which is
-  /// what makes them siblings: neither can parent the other, exactly
-  /// like every other same-rank pair.
+  /// `idea`/`knownGap`/`openQuestion`, and `release` each still have
+  /// their own nesting rule — see [canParent] — despite having no rank
+  /// here. [TicketType.task] and [TicketType.bug] share the same literal
+  /// rank value, which is what makes them siblings: neither can parent
+  /// the other, exactly like every other same-rank pair.
   int? get _rank => switch (this) {
     TicketType.epic => 0,
     TicketType.story => 1,
@@ -82,7 +108,9 @@ extension TicketTypeHierarchy on TicketType {
     TicketType.resource ||
     TicketType.page ||
     TicketType.chat ||
-    TicketType.signal ||
+    TicketType.idea ||
+    TicketType.knownGap ||
+    TicketType.openQuestion ||
     TicketType.release => null,
   };
 
@@ -93,10 +121,12 @@ extension TicketTypeHierarchy on TicketType {
   ///   sub-page nesting) or [TicketType.resource], and nothing else —
   ///   documentation tickets nest only under other documentation tickets,
   ///   never under a work item.
-  /// - [TicketType.signal] and [TicketType.release] may each parent a
-  ///   [TicketType.chat] only — neither is part of the epic→story→task
-  ///   decomposition chain (a `signal` is promoted *into* an `epic` by a
-  ///   separate mechanism, not parented by one).
+  /// - [TicketType.idea], [TicketType.knownGap], [TicketType.openQuestion],
+  ///   and [TicketType.release] may each parent a [TicketType.chat]
+  ///   only — none is part of the epic→story→task decomposition chain
+  ///   (an `idea` is promoted *into* an `epic`/`bug` by a separate
+  ///   mechanism, not parented by one; `knownGap`/`openQuestion` are
+  ///   never promoted at all).
   /// - A work type (epic/story/task/bug) may parent another work type
   ///   only if strictly higher in the chain (epic > story > task/bug,
   ///   e.g. task cannot parent story), and may still parent
@@ -123,7 +153,10 @@ extension TicketTypeHierarchy on TicketType {
     if (this == TicketType.page) {
       return child == TicketType.page || child == TicketType.resource;
     }
-    if (this == TicketType.signal || this == TicketType.release) {
+    if (this == TicketType.idea ||
+        this == TicketType.knownGap ||
+        this == TicketType.openQuestion ||
+        this == TicketType.release) {
       return child == TicketType.chat;
     }
     if (this == TicketType.chat) {
@@ -138,11 +171,18 @@ extension TicketTypeHierarchy on TicketType {
   }
 
   /// Whether a ticket of this type can never receive a parent — always a
-  /// subtree root. `true` for [TicketType.epic], [TicketType.signal], and
-  /// [TicketType.release]; `false` for every other type.
+  /// subtree root. `true` for [TicketType.epic], [TicketType.idea],
+  /// [TicketType.knownGap], [TicketType.openQuestion], and
+  /// [TicketType.release]; `false` for every other type. The "always
+  /// root" property is about *structural* parentage (`parentId`) —
+  /// `knownGap`/`openQuestion`'s mandatory target relationship is a
+  /// `TicketLink`, a completely separate mechanism, so this stays `true`
+  /// for both exactly as it was for `signal`.
   bool get isAlwaysRoot =>
       this == TicketType.epic ||
-      this == TicketType.signal ||
+      this == TicketType.idea ||
+      this == TicketType.knownGap ||
+      this == TicketType.openQuestion ||
       this == TicketType.release;
 
   /// The [TicketType] values whose move to `TicketStatus.inProgress`
