@@ -1634,6 +1634,65 @@ void main() {
         await v10Db.close();
       },
     );
+
+    test(
+      'onUpgrade from v11 backfills page_wikilinks from an existing page\'s '
+      'bare-title [[...]] reference — '
+      'aion-arch/changes/inline-wikilink-backlinks',
+      () async {
+        final tempDir = Directory.systemTemp.createTempSync(
+          'aion_migration_v12_test',
+        );
+        final dbFile = File('${tempDir.path}/test.sqlite');
+        addTearDown(() => tempDir.deleteSync(recursive: true));
+
+        final v11Db = AppDatabase(_testProject, NativeDatabase(dbFile));
+        final preMigrationRepo = DriftTicketRepository(v11Db);
+        final now = DateTime(2026, 1, 1);
+        await preMigrationRepo.createTicket(
+          Ticket(
+            id: 'target',
+            ticketId: '',
+            type: TicketType.page,
+            title: 'Target Page',
+            description: 'Nothing referencing anything here.',
+            status: TicketStatus.backlog,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+        await preMigrationRepo.createTicket(
+          Ticket(
+            id: 'source',
+            ticketId: '',
+            type: TicketType.page,
+            title: 'Source Page',
+            description: 'See [[Target Page]] for details.',
+            status: TicketStatus.backlog,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+        // `page_wikilinks` doesn't exist pre-v12 — drop it (createAll()
+        // already made it at the real current schemaVersion) and roll
+        // user_version back to 11, simulating a real pre-v12 database.
+        await v11Db.customStatement('DROP TABLE page_wikilinks;');
+        await v11Db.customStatement('PRAGMA user_version = 11;');
+        await v11Db.close();
+
+        // Reopen against the same file at the current schemaVersion (12).
+        // Drift reads user_version=11, sees schemaVersion=12, and runs
+        // the `from < 12` onUpgrade step — create the table, then run
+        // the one-time computed backfill.
+        final v12Db = AppDatabase(_testProject, NativeDatabase(dbFile));
+        final rows = await v12Db.pageWikilinkDao.getOutgoingLinks('source');
+
+        expect(rows, hasLength(1));
+        expect(rows.single.targetPageId, 'target');
+
+        await v12Db.close();
+      },
+    );
   });
 
   group('updateTicket stamps complexitySource/estimateSource', () {

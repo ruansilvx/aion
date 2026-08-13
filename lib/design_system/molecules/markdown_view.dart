@@ -1,12 +1,15 @@
 // design_system/molecules/markdown_view.dart — MarkdownView read-only Markdown renderer (design-system layer).
 
+import 'package:flutter/gestures.dart' show TapGestureRecognizer;
 import 'package:flutter/widgets.dart';
 import 'package:markdown/markdown.dart' as md;
 
+import 'package:aion/core/markdown/wikilink_extractor.dart';
 import 'package:aion/design_system/tokens/aion_colors.dart';
 import 'package:aion/design_system/tokens/aion_radius.dart';
 import 'package:aion/design_system/tokens/aion_text.dart';
 import 'package:aion/design_system/tokens/theme_scope.dart';
+import 'package:aion/features/tickets/domain/entities/ticket.dart';
 
 /// Read-only rendering of a Markdown string, parsed via `package:markdown`
 /// (CommonMark + GFM extensions — tables, strikethrough, task lists,
@@ -18,24 +21,80 @@ import 'package:aion/design_system/tokens/theme_scope.dart';
 /// content as a plain paragraph, so this widget never throws on
 /// unexpected input. Per
 /// `aion-arch/changes/page-content-markdown-editor/design.md` §2.
+///
+/// [resolveWikilink]/[onWikilinkTap]/[onCreateWikilinkTarget] add
+/// optional inline `[[Target]]`/`[[Target|Alias]]` recognition (a
+/// non-standard-syntax extension, same precedent as this widget's
+/// existing GFM-extension handling) — see design.md §5/§6. All three
+/// default to `null`, so every other consumer (comments, descriptions,
+/// anywhere Markdown renders outside a page) is unaffected: `[[...]]`
+/// text there just isn't specially recognized, identical to before. Per
+/// `aion-arch/changes/inline-wikilink-backlinks/design.md`.
 class MarkdownView extends StatelessWidget {
   /// Creates a [MarkdownView] rendering [source].
-  const MarkdownView({super.key, required this.source});
+  const MarkdownView({
+    super.key,
+    required this.source,
+    this.resolveWikilink,
+    this.onWikilinkTap,
+    this.onCreateWikilinkTarget,
+  });
 
   /// The raw Markdown source to parse and render.
   final String source;
+
+  /// Resolves a wikilink match's target (title or `Ticket.ticketId`) to
+  /// the live [Ticket] it refers to, or `null` if unresolved. `null`
+  /// (the default) leaves every `[[...]]` sequence unrecognized.
+  final Ticket? Function(String target)? resolveWikilink;
+
+  /// Called when a resolved wikilink span is tapped.
+  final void Function(Ticket ticket)? onWikilinkTap;
+
+  /// Called with an unresolved wikilink's target when its span is
+  /// tapped — only reachable when the target doesn't itself look like a
+  /// `Ticket.ticketId` (see [WikilinkExtractor.looksLikeTicketId]'s
+  /// dartdoc: an unresolved id means the target was trashed/deleted, not
+  /// a new-page candidate). `null` (the default) keeps every unresolved
+  /// span fully inert.
+  final void Function(String title)? onCreateWikilinkTarget;
 
   static final _document = md.Document(extensionSet: md.ExtensionSet.gitHubWeb);
 
   @override
   Widget build(BuildContext context) {
     final nodes = _document.parse(source);
-    final blocks = _buildBlocks(context, nodes, depth: 0);
+    final wikilink = _WikilinkContext(
+      resolve: resolveWikilink,
+      onTap: onWikilinkTap,
+      onCreate: onCreateWikilinkTarget,
+      isDark: ThemeScope.of(context).isDark,
+    );
+    final blocks = _buildBlocks(context, nodes, depth: 0, wikilink: wikilink);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: blocks,
     );
   }
+}
+
+/// Bundles [MarkdownView]'s three optional wikilink callbacks plus the
+/// active theme's `isDark` flag (needed for the unresolved chip's
+/// alpha — see design.md §1.3) into one value threaded through the
+/// block/inline builder functions below, rather than widening every one
+/// of their signatures by three separate parameters.
+class _WikilinkContext {
+  const _WikilinkContext({
+    required this.resolve,
+    required this.onTap,
+    required this.onCreate,
+    required this.isDark,
+  });
+
+  final Ticket? Function(String target)? resolve;
+  final void Function(Ticket ticket)? onTap;
+  final void Function(String title)? onCreate;
+  final bool isDark;
 }
 
 /// Derived mono text style for inline `code` spans (design.md §2.10).
@@ -63,11 +122,12 @@ List<Widget> _buildBlocks(
   BuildContext context,
   List<md.Node> nodes, {
   required int depth,
+  required _WikilinkContext wikilink,
 }) {
   final widgets = <Widget>[];
   for (var i = 0; i < nodes.length; i++) {
     if (i > 0) widgets.add(const SizedBox(height: AionSpacing.sp12));
-    widgets.add(_buildBlock(context, nodes[i], depth: depth));
+    widgets.add(_buildBlock(context, nodes[i], depth: depth, wikilink: wikilink));
   }
   return widgets;
 }
@@ -75,12 +135,17 @@ List<Widget> _buildBlocks(
 /// Converts a single block-level [node] into a widget, dispatching on
 /// [md.Element.tag]. Falls back to a plain-text paragraph for any
 /// unrecognized tag or bare [md.Text] encountered at block level.
-Widget _buildBlock(BuildContext context, md.Node node, {required int depth}) {
+Widget _buildBlock(
+  BuildContext context,
+  md.Node node, {
+  required int depth,
+  required _WikilinkContext wikilink,
+}) {
   final t = ThemeScope.of(context);
   final c = t.colors;
 
   if (node is! md.Element) {
-    return _buildParagraph(context, [node], color: c.textPrimary);
+    return _buildParagraph(context, [node], color: c.textPrimary, wikilink: wikilink);
   }
 
   switch (node.tag) {
@@ -123,15 +188,16 @@ Widget _buildBlock(BuildContext context, md.Node node, {required int depth}) {
         context,
         node.children ?? const [],
         color: c.textPrimary,
+        wikilink: wikilink,
       );
     case 'ul':
-      return _buildList(context, node, ordered: false, depth: depth);
+      return _buildList(context, node, ordered: false, depth: depth, wikilink: wikilink);
     case 'ol':
-      return _buildList(context, node, ordered: true, depth: depth);
+      return _buildList(context, node, ordered: true, depth: depth, wikilink: wikilink);
     case 'pre':
       return _buildCodeBlock(context, node);
     case 'blockquote':
-      return _buildBlockquote(context, node, depth: depth);
+      return _buildBlockquote(context, node, depth: depth, wikilink: wikilink);
     case 'hr':
       return DecoratedBox(
         decoration: BoxDecoration(color: c.border),
@@ -144,40 +210,47 @@ Widget _buildBlock(BuildContext context, md.Node node, {required int depth}) {
         context,
         [md.Text(node.textContent)],
         color: c.textPrimary,
+        wikilink: wikilink,
       );
   }
 }
 
 /// Builds a paragraph from [inlineNodes] (already inline-parsed by
 /// [md.Document.parse]) as a single [Text.rich] of [TextSpan] runs — bold,
-/// italic, strikethrough, inline code, and links per design.md §2.2.
+/// italic, strikethrough, inline code, links, and (when [wikilink] carries
+/// a non-`null` `resolve`) `[[...]]` wikilink spans per design.md §2.2
+/// and `aion-arch/changes/inline-wikilink-backlinks/design.md` §5/§6.
 Widget _buildParagraph(
   BuildContext context,
   List<md.Node> inlineNodes, {
   required Color color,
+  required _WikilinkContext wikilink,
 }) {
   final c = ThemeScope.of(context).colors;
   final baseStyle = AionText.body.copyWith(color: color, height: 1.5);
   return Text.rich(
     TextSpan(
       style: baseStyle,
-      children: _buildInlineSpans(inlineNodes, baseStyle, c),
+      children: _buildInlineSpans(inlineNodes, baseStyle, c, wikilink),
     ),
   );
 }
 
 /// Recursively converts inline [nodes] (children of a `p`/`li`/etc.) into
 /// [InlineSpan]s, applying the corresponding style delta for each inline
-/// tag per design.md §2.2.
+/// tag per design.md §2.2. Bare [md.Text] runs are additionally split on
+/// any `[[...]]` wikilink occurrence via [_buildWikilinkAwareTextSpans]
+/// when [wikilink] carries a non-`null` `resolve`.
 List<InlineSpan> _buildInlineSpans(
   List<md.Node> nodes,
   TextStyle style,
   AionColors c,
+  _WikilinkContext wikilink,
 ) {
   final spans = <InlineSpan>[];
   for (final node in nodes) {
     if (node is md.Text) {
-      spans.add(TextSpan(text: node.text));
+      spans.addAll(_buildWikilinkAwareTextSpans(node.text, c, wikilink));
       continue;
     }
     if (node is! md.Element) continue;
@@ -191,6 +264,7 @@ List<InlineSpan> _buildInlineSpans(
               node.children ?? const [],
               style,
               c,
+              wikilink,
             ),
           ),
         );
@@ -202,6 +276,7 @@ List<InlineSpan> _buildInlineSpans(
               node.children ?? const [],
               style,
               c,
+              wikilink,
             ),
           ),
         );
@@ -216,6 +291,7 @@ List<InlineSpan> _buildInlineSpans(
               node.children ?? const [],
               style,
               c,
+              wikilink,
             ),
           ),
         );
@@ -235,6 +311,7 @@ List<InlineSpan> _buildInlineSpans(
               node.children ?? const [],
               style,
               c,
+              wikilink,
             ),
           ),
         );
@@ -245,6 +322,91 @@ List<InlineSpan> _buildInlineSpans(
   return spans;
 }
 
+/// Splits [text] on every `[[Target]]`/`[[Target|Alias]]` occurrence
+/// (via [WikilinkExtractor.extractReferences]) into a mix of plain
+/// [TextSpan]s and wikilink spans — resolved (design.md §5: brackets
+/// dropped, `typePage`-colored, underlined, tappable) or unresolved
+/// (§6: brackets kept, muted `neutralTint` chip, tappable-to-create only
+/// when eligible). Returns `[TextSpan(text: text)]` unchanged when
+/// [_WikilinkContext.resolve] is `null` or [text] has no `[[...]]`
+/// occurrence — the exact behavior every other `MarkdownView` consumer
+/// had before this extension existed.
+List<InlineSpan> _buildWikilinkAwareTextSpans(
+  String text,
+  AionColors c,
+  _WikilinkContext wikilink,
+) {
+  final resolve = wikilink.resolve;
+  if (resolve == null) return [TextSpan(text: text)];
+  final matches = WikilinkExtractor.extractReferences(text);
+  if (matches.isEmpty) return [TextSpan(text: text)];
+
+  final spans = <InlineSpan>[];
+  var cursor = 0;
+  for (final match in matches) {
+    final index = text.indexOf(match.raw, cursor);
+    if (index == -1) continue;
+    if (index > cursor) spans.add(TextSpan(text: text.substring(cursor, index)));
+
+    final resolved = resolve(match.target);
+    if (resolved != null) {
+      final onTap = wikilink.onTap;
+      spans.add(
+        TextSpan(
+          text: match.alias ?? resolved.title,
+          style: TextStyle(
+            color: c.typePage,
+            decoration: TextDecoration.underline,
+            decorationColor: c.typePage.withValues(alpha: 0.4),
+          ),
+          mouseCursor: SystemMouseCursors.click,
+          recognizer: onTap == null
+              ? null
+              : (TapGestureRecognizer()..onTap = () => onTap(resolved)),
+        ),
+      );
+    } else {
+      final onCreate = wikilink.onCreate;
+      final canCreate =
+          onCreate != null && !WikilinkExtractor.looksLikeTicketId(match.target);
+      final chipBackground = Paint()
+        ..color = c.textSecondary.withValues(alpha: wikilink.isDark ? 0.14 : 0.09);
+      final recognizer = canCreate
+          ? (TapGestureRecognizer()..onTap = () => onCreate(match.target))
+          : null;
+      final displayText = match.alias ?? match.target;
+      spans.add(
+        TextSpan(
+          mouseCursor: canCreate ? SystemMouseCursors.click : MouseCursor.defer,
+          children: [
+            TextSpan(
+              text: '[[',
+              style: TextStyle(color: c.textMuted, background: chipBackground),
+              recognizer: recognizer,
+            ),
+            TextSpan(
+              text: displayText,
+              style: TextStyle(
+                color: c.textSecondary,
+                background: chipBackground,
+              ),
+              recognizer: recognizer,
+            ),
+            TextSpan(
+              text: ']]',
+              style: TextStyle(color: c.textMuted, background: chipBackground),
+              recognizer: recognizer,
+            ),
+          ],
+        ),
+      );
+    }
+    cursor = index + match.raw.length;
+  }
+  if (cursor < text.length) spans.add(TextSpan(text: text.substring(cursor)));
+  return spans;
+}
+
 /// Builds a bullet/ordered/task list from [node] (an `ul`/`ol` element),
 /// recursing for nested sub-lists per design.md §2.3–§2.6.
 Widget _buildList(
@@ -252,6 +414,7 @@ Widget _buildList(
   md.Element node, {
   required bool ordered,
   required int depth,
+  required _WikilinkContext wikilink,
 }) {
   final items = node.children ?? const [];
   final rows = <Widget>[];
@@ -267,6 +430,7 @@ Widget _buildList(
           ordered: ordered,
           index: index,
           depth: depth,
+          wikilink: wikilink,
         ),
       );
     }
@@ -287,6 +451,7 @@ Widget _buildListItem(
   required bool ordered,
   required int index,
   required int depth,
+  required _WikilinkContext wikilink,
 }) {
   final c = ThemeScope.of(context).colors;
   final isTaskItem = item.attributes['class'] == 'task-list-item';
@@ -378,10 +543,16 @@ Widget _buildListItem(
                   contentNodes,
                   AionText.body,
                   c,
+                  wikilink,
                 ),
               ),
             )
-          : _buildParagraph(context, contentNodes, color: c.textPrimary),
+          : _buildParagraph(
+              context,
+              contentNodes,
+              color: c.textPrimary,
+              wikilink: wikilink,
+            ),
       for (final nested in nestedLists) ...[
         const SizedBox(height: AionSpacing.sp8),
         Padding(
@@ -391,6 +562,7 @@ Widget _buildListItem(
             nested,
             ordered: nested.tag == 'ol',
             depth: depth + 1,
+            wikilink: wikilink,
           ),
         ),
       ],
@@ -460,6 +632,7 @@ Widget _buildBlockquote(
   BuildContext context,
   md.Element node, {
   required int depth,
+  required _WikilinkContext wikilink,
 }) {
   final t = ThemeScope.of(context);
   final c = t.colors;
@@ -482,7 +655,12 @@ Widget _buildBlockquote(
             style: TextStyle(color: c.textSecondary, fontStyle: FontStyle.italic),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: _buildBlocks(context, children, depth: depth),
+              children: _buildBlocks(
+                context,
+                children,
+                depth: depth,
+                wikilink: wikilink,
+              ),
             ),
           ),
         ),

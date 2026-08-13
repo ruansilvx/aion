@@ -1,37 +1,44 @@
 // features/tickets/data/page_ticket_provider_impl.dart — PageTicketProviderImpl (data layer).
 
 import 'package:aion/core/contracts/page_ticket_provider.dart';
+import 'package:aion/features/tickets/domain/entities/backlink_ref.dart';
 import 'package:aion/features/tickets/domain/entities/gap_or_question_ref.dart';
 import 'package:aion/features/tickets/domain/entities/linked_ticket_ref.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
+import 'package:aion/features/tickets/domain/enums/backlink_origin.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
+import 'package:aion/features/tickets/domain/repositories/page_wikilink_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_link_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
 import 'package:aion/features/tickets/domain/utils/ticket_link_direction.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 
 /// Drift/[TicketsCubit]-backed implementation of [PageTicketProvider].
-/// Reads go straight to [TicketRepository]/[TicketLinkRepository] (no
-/// business logic there per project.md's Cubit-vs-repository split);
-/// writes delegate to [TicketsCubit] so page creation/edit/trash (and,
-/// per `aion-arch/changes/ticket-link-management-ui/design.md`, link
+/// Reads go straight to [TicketRepository]/[TicketLinkRepository]/
+/// [PageWikilinkRepository] (no business logic there per project.md's
+/// Cubit-vs-repository split); writes delegate to [TicketsCubit] so page
+/// creation/edit/trash (and, per
+/// `aion-arch/changes/ticket-link-management-ui/design.md`, link
 /// [deleteLink]/[updateLinkType]) reuse exactly the same validation/
 /// invariant logic every other ticket type's screens already trigger —
 /// no duplicated write path. See
 /// `aion-arch/changes/page-content-markdown-editor/design.md`.
 class PageTicketProviderImpl implements PageTicketProvider {
   /// Creates a [PageTicketProviderImpl] backed by [_ticketsCubit] (writes)
-  /// and [_ticketRepository]/[_ticketLinkRepository] (reads).
+  /// and [_ticketRepository]/[_ticketLinkRepository]/
+  /// [_pageWikilinkRepository] (reads).
   const PageTicketProviderImpl(
     this._ticketsCubit,
     this._ticketRepository,
     this._ticketLinkRepository,
+    this._pageWikilinkRepository,
   );
 
   final TicketsCubit _ticketsCubit;
   final TicketRepository _ticketRepository;
   final TicketLinkRepository _ticketLinkRepository;
+  final PageWikilinkRepository _pageWikilinkRepository;
 
   @override
   Future<Ticket?> getPage(String id) async {
@@ -48,7 +55,7 @@ class PageTicketProviderImpl implements PageTicketProvider {
     );
 
     final linkedTickets = <LinkedTicketRef>[];
-    final backlinks = <LinkedTicketRef>[];
+    final backlinks = <BacklinkRef>[];
     final links = await _ticketLinkRepository.getLinksForTicket(pageId);
     for (final link in links) {
       final otherId = link.sourceTicketId == pageId
@@ -56,16 +63,27 @@ class PageTicketProviderImpl implements PageTicketProvider {
           : link.sourceTicketId;
       final other = await _ticketRepository.getTicketById(otherId);
       if (other == null) continue;
-      final ref = (
-        ticket: other,
-        relativeType: relativeLinkType(link, pageId),
-        linkId: link.id,
-      );
       if (other.type == TicketType.page || other.type == TicketType.resource) {
-        backlinks.add(ref);
+        backlinks.add(
+          BacklinkRef(ticket: other, origin: BacklinkOrigin.explicitLink),
+        );
       } else {
-        linkedTickets.add(ref);
+        linkedTickets.add((
+          ticket: other,
+          relativeType: relativeLinkType(link, pageId),
+          linkId: link.id,
+        ));
       }
+    }
+    // `pageId` is always a `page` ticket here (see [getPage]'s type
+    // gate), so no `resource`-gating check is needed — unlike
+    // `TicketsCubit.loadDocumentRelations`'s widened merge, which also
+    // serves `resource` tickets via `TicketDetailScreen`.
+    final incoming = await _pageWikilinkRepository.getIncomingLinks(pageId);
+    for (final link in incoming) {
+      final source = await _ticketRepository.getTicketById(link.sourcePageId);
+      if (source == null) continue;
+      backlinks.add(BacklinkRef(ticket: source, origin: BacklinkOrigin.wikilink));
     }
 
     final gapsAndOpenQuestions = <GapOrQuestionRef>[];
@@ -173,6 +191,14 @@ class PageTicketProviderImpl implements PageTicketProvider {
     String linkId,
     TicketLinkType newRelativeType,
   ) => _ticketsCubit.updateTicketLinkType(pageId, linkId, newRelativeType);
+
+  @override
+  Future<List<Ticket>> getWikilinkCandidates() {
+    return _ticketRepository.getAllTicketsByType([
+      TicketType.page,
+      TicketType.resource,
+    ]);
+  }
 
   /// Builds the full descendant-id set of [rootId] by walking `parentId`
   /// forward through [all] — same cycle definition as

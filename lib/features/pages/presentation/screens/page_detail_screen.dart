@@ -1,11 +1,14 @@
 // features/pages/presentation/screens/page_detail_screen.dart — PageDetailScreen (presentation layer).
 
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:aion/core/core.dart';
+import 'package:aion/core/markdown/wikilink_extractor.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/pages/presentation/cubit/pages_cubit.dart';
 import 'package:aion/features/pages/presentation/cubit/pages_state.dart';
@@ -13,6 +16,8 @@ import 'package:aion/features/pages/presentation/screens/page_create_screen.dart
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
+import 'package:aion/features/tickets/presentation/widgets/ticket_parent_picker.dart'
+    show ancestorBreadcrumb;
 
 /// The `/workspace/pages/:id` route: a `page` ticket's title, Markdown
 /// content editor, sub-pages, linked tickets, backlinks, and gaps/open
@@ -36,11 +41,25 @@ class PageDetailScreen extends StatefulWidget {
 class _PageDetailScreenState extends State<PageDetailScreen> {
   late final PagesCubit _cubit;
 
+  /// Every live `page`/`resource` ticket, fetched once and cached here —
+  /// the wikilink-autocomplete/resolution candidate list. `null` while
+  /// the initial fetch is in flight. Per
+  /// `aion-arch/changes/inline-wikilink-backlinks/design.md`'s
+  /// "no re-fetch per keystroke" precedent.
+  List<Ticket>? _wikilinkCandidates;
+
   @override
   void initState() {
     super.initState();
     _cubit = PagesCubit(context.read<PageTicketProvider>());
     _cubit.loadPage(widget.pageId);
+    unawaited(_loadWikilinkCandidates());
+  }
+
+  Future<void> _loadWikilinkCandidates() async {
+    final candidates = await _cubit.loadWikilinkCandidates();
+    if (!mounted) return;
+    setState(() => _wikilinkCandidates = candidates);
   }
 
   @override
@@ -53,15 +72,21 @@ class _PageDetailScreenState extends State<PageDetailScreen> {
   Widget build(BuildContext context) {
     return BlocProvider<PagesCubit>.value(
       value: _cubit,
-      child: _PageDetailBody(pageId: widget.pageId),
+      child: _PageDetailBody(
+        pageId: widget.pageId,
+        wikilinkCandidates: _wikilinkCandidates,
+      ),
     );
   }
 }
 
 class _PageDetailBody extends StatelessWidget {
-  const _PageDetailBody({required this.pageId});
+  const _PageDetailBody({required this.pageId, required this.wikilinkCandidates});
 
   final String pageId;
+
+  /// See [_PageDetailScreenState._wikilinkCandidates]'s dartdoc.
+  final List<Ticket>? wikilinkCandidates;
 
   @override
   Widget build(BuildContext context) {
@@ -103,7 +128,11 @@ class _PageDetailBody extends StatelessWidget {
                       ),
                     ),
                     PageDetailLoaded(:final page, :final relations) =>
-                      _PageDetailContent(page: page, relations: relations),
+                      _PageDetailContent(
+                        page: page,
+                        relations: relations,
+                        wikilinkCandidates: wikilinkCandidates,
+                      ),
                     _ => const SizedBox.shrink(),
                   };
                 },
@@ -117,10 +146,80 @@ class _PageDetailBody extends StatelessWidget {
 }
 
 class _PageDetailContent extends StatelessWidget {
-  const _PageDetailContent({required this.page, required this.relations});
+  const _PageDetailContent({
+    required this.page,
+    required this.relations,
+    required this.wikilinkCandidates,
+  });
 
   final Ticket page;
   final PageRelations relations;
+
+  /// See [_PageDetailScreenState._wikilinkCandidates]'s dartdoc.
+  final List<Ticket>? wikilinkCandidates;
+
+  /// Case-insensitive substring filter (capped 20) over
+  /// [wikilinkCandidates], mapped to [WikilinkSuggestionItem] — design.md
+  /// §7. `null`/empty candidates (not yet loaded) yields no suggestions,
+  /// leaving `[[` inert until the fetch resolves.
+  List<WikilinkSuggestionItem> _wikilinkSuggestionsFor(String query) {
+    final candidates = wikilinkCandidates;
+    if (candidates == null) return const [];
+    final byId = {for (final t in candidates) t.id: t};
+    final q = query.trim().toLowerCase();
+    final matches = q.isEmpty
+        ? candidates
+        : candidates.where((t) => t.title.toLowerCase().contains(q)).toList();
+    return matches
+        .take(20)
+        .map(
+          (t) => WikilinkSuggestionItem(
+            ticketId: t.ticketId,
+            title: t.title,
+            breadcrumb: ancestorBreadcrumb(t, byId),
+          ),
+        )
+        .toList();
+  }
+
+  /// Resolves a wikilink match's [target] against [wikilinkCandidates] —
+  /// id match first (per [WikilinkExtractor.looksLikeTicketId]), else
+  /// case-insensitive title match — design.md §7.
+  Ticket? _resolveWikilink(String target) {
+    final candidates = wikilinkCandidates;
+    if (candidates == null) return null;
+    if (WikilinkExtractor.looksLikeTicketId(target)) {
+      for (final t in candidates) {
+        if (t.ticketId == target) return t;
+      }
+      return null;
+    }
+    final targetLower = target.toLowerCase();
+    for (final t in candidates) {
+      if (t.title.toLowerCase() == targetLower) return t;
+    }
+    return null;
+  }
+
+  /// Creates a new page titled [title] as a child of [page], for both the
+  /// autocomplete's no-matches state and an unresolved rendered span's
+  /// tap-to-create affordance. Goes through [PageTicketProvider] directly
+  /// rather than `context.read<PagesCubit>().createPage(...)` — this
+  /// screen's own [PagesCubit] instance drives its entire render state
+  /// (see the `BlocBuilder` in [_PageDetailBody]), so routing this
+  /// side-flow through it would emit `PagesLoading`/`PageCreated` and
+  /// blank the screen currently being edited; [PageTicketProvider
+  /// .createPage] is the exact same call `PagesCubit.createPage`
+  /// delegates to, just without that emission. Does not refresh
+  /// [wikilinkCandidates] — the newly created page won't appear in a
+  /// later `[[` autocomplete until this screen is reopened, a documented
+  /// simplification.
+  Future<Ticket> _createLinkedPage(BuildContext context, String title) {
+    return context.read<PageTicketProvider>().createPage(
+      title: title,
+      parentId: page.id,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -142,6 +241,23 @@ class _PageDetailContent extends StatelessWidget {
                     onCommit: (v) => context.read<PagesCubit>().updatePage(
                       page.copyWith(description: () => v.isEmpty ? null : v),
                     ),
+                    wikilinkSuggestions: _wikilinkSuggestionsFor,
+                    onCreatePage: (title) async {
+                      final created = await _createLinkedPage(context, title);
+                      return WikilinkSuggestionItem(
+                        ticketId: created.ticketId,
+                        title: created.title,
+                      );
+                    },
+                    resolveWikilink: _resolveWikilink,
+                    onWikilinkTap: (ticket) =>
+                        context.go(ticketDetailRoute(ticket)),
+                    onCreateWikilinkTarget: (title) async {
+                      final created = await _createLinkedPage(context, title);
+                      if (context.mounted) {
+                        context.go(ticketDetailRoute(created));
+                      }
+                    },
                   ),
                 ],
               ),
@@ -178,7 +294,7 @@ class _PageDetailContent extends StatelessWidget {
                   .updateLinkType(page.id, linkId, newRelativeType),
             ),
             BacklinksSection(
-              tickets: relations.backlinks.map((r) => r.ticket).toList(),
+              backlinks: relations.backlinks,
               onTap: (id) {
                 final backlinkTickets = relations.backlinks
                     .map((r) => r.ticket)

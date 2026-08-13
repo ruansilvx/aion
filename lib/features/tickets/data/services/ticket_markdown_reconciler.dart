@@ -10,6 +10,7 @@ import 'package:aion/core/markdown/ticket_markdown_parse_result.dart';
 import 'package:aion/core/markdown/ticket_markdown_serializer.dart';
 import 'package:aion/core/markdown/ticket_markdown_template.dart';
 import 'package:aion/features/tickets/data/services/active_ticket_view_registry.dart';
+import 'package:aion/features/tickets/data/services/page_wikilink_indexer.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
@@ -63,18 +64,28 @@ class TicketMarkdownReconciler {
   /// [_serializer] (parses the file), [_activeTicketViewRegistry]
   /// (decides blocking vs. background), and [_embeddingProvider] (the
   /// same regen trigger used by `TicketsCubit`, applied here too so the
-  /// two content-change surfaces stay unified).
+  /// two content-change surfaces stay unified). [_wikilinkIndexer] is
+  /// optional (`null` in every construction site except
+  /// `app_router.dart`, and in this class's own existing tests) — when
+  /// supplied, a successfully-reconciled `page` ticket also runs the same
+  /// inline-`[[wikilink]]` reindex/rename-cascade
+  /// `TicketsCubit.updateTicket` triggers for an in-app edit, through the
+  /// same shared [PageWikilinkIndexer] rather than a second, duplicated
+  /// implementation — see `aion-arch/changes/inline-wikilink-backlinks
+  /// /design.md`.
   TicketMarkdownReconciler(
     this._repository,
     this._serializer,
     this._activeTicketViewRegistry,
-    this._embeddingProvider,
-  );
+    this._embeddingProvider, [
+    this._wikilinkIndexer,
+  ]);
 
   final TicketRepository _repository;
   final TicketMarkdownSerializer _serializer;
   final ActiveTicketViewRegistry _activeTicketViewRegistry;
   final EmbeddingProvider _embeddingProvider;
+  final PageWikilinkIndexer? _wikilinkIndexer;
 
   /// Reconciles the ticket identified by human-readable [ticketId] (e.g.
   /// `"AIO-42"`) against its file under `<rootPath>/tickets/`.
@@ -106,8 +117,41 @@ class TicketMarkdownReconciler {
       ticket.id,
       TicketSyncStatus.pendingReconcile,
     );
-    await _apply(ticket, result);
+    final updated = await _apply(ticket, result);
     await _repository.updateSyncStatus(ticket.id, TicketSyncStatus.synced);
+
+    final indexer = _wikilinkIndexer;
+    if (indexer != null && updated != null && ticket.type == TicketType.page) {
+      unawaited(
+        indexer.reindexAndCascade(
+          oldTicket: ticket,
+          newTicket: updated,
+          applyRewrittenReferrer: _applyWikilinkRewrite,
+        ),
+      );
+    }
+  }
+
+  /// Persists a rename-triggered wikilink rewrite of [referrer]'s
+  /// content, then fires the same embedding-regen trigger [_apply] does
+  /// for any other content change. Has no cubit to recurse
+  /// [TicketsCubit.updateTicket] through (unlike `TicketsCubit`'s own
+  /// version of this callback), so it writes directly through
+  /// [_repository] instead — the [PageWikilinkIndexer] this is passed to
+  /// never calls it again for the same referrer within one
+  /// [PageWikilinkIndexer.reindexAndCascade] pass, so there's no
+  /// recursive-regen risk here either.
+  Future<void> _applyWikilinkRewrite(
+    Ticket referrer,
+    String rewrittenDescription,
+  ) async {
+    final updated = referrer.copyWith(description: () => rewrittenDescription);
+    await _repository.updateTicket(updated);
+    unawaited(
+      _embeddingProvider
+          .embed('${updated.title}\n\n$rewrittenDescription')
+          .then((bytes) => _repository.updateEmbedding(updated.id, bytes)),
+    );
   }
 
   /// Re-attempts [reconcile] once [_activeTicketViewRegistry] moves away
@@ -135,7 +179,11 @@ class TicketMarkdownReconciler {
   /// Applies a successful (or partially-successful) parse [result] to
   /// [ticket] in the database, then fires the same async embedding-
   /// regen trigger `TicketsCubit` uses for any other content edit.
-  Future<void> _apply(Ticket ticket, TicketMarkdownParseResult result) async {
+  /// Returns the updated [Ticket] (the same post-apply title/description
+  /// [reconcile] needs to drive its own wikilink reindex/cascade step),
+  /// or `null` for the unreachable [Unparseable] case (callers already
+  /// check this before calling).
+  Future<Ticket?> _apply(Ticket ticket, TicketMarkdownParseResult result) async {
     final Map<String, Object?> fields;
     final String title;
     final String body;
@@ -149,7 +197,7 @@ class TicketMarkdownReconciler {
         title = t;
         body = b;
       case Unparseable():
-        return; // unreachable — callers check this case before calling
+        return null; // unreachable — callers check this case before calling
     }
 
     // `fields[key]` alone can't distinguish "field absent (invalid, keep
@@ -195,5 +243,7 @@ class TicketMarkdownReconciler {
             .then((bytes) => _repository.updateEmbedding(ticket.id, bytes)),
       );
     }
+
+    return updated;
   }
 }

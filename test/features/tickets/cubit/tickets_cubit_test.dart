@@ -23,6 +23,7 @@ import 'package:aion/core/git/github_cli_client.dart';
 import 'package:aion/features/projects/projects.dart';
 import 'package:aion/features/providers/domain/enums/model_phase.dart';
 import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
+import 'package:aion/features/tickets/data/services/active_ticket_view_registry.dart';
 import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_list_sort.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sort_direction.dart';
@@ -64,6 +65,8 @@ class MockTicketListFilterRepository extends Mock
 
 class MockTicketListSortRepository extends Mock
     implements TicketListSortRepository {}
+
+class MockPageWikilinkRepository extends Mock implements PageWikilinkRepository {}
 
 /// Stubs [gitClient]/[gitHubClient] for a coding-execution run that
 /// isolates cleanly, pushes, and opens a PR — the happy path most
@@ -545,6 +548,7 @@ void main() {
     registerFallbackValue(const AgentRequest(prompt: '', model: ''));
     registerFallbackValue(SddStage.exploring);
     registerFallbackValue(<TicketType>[]);
+    registerFallbackValue(<String>{});
     registerFallbackValue(
       TicketComment(
         id: '',
@@ -851,6 +855,350 @@ void main() {
               estimateEdited: true,
             ),
           ).called(1);
+          await cubit.close();
+        },
+      );
+    });
+
+    group('updateTicket wikilink reindex/rename-cascade', () {
+      late MockPageWikilinkRepository wikilinkRepository;
+      late ActiveTicketViewRegistry activeTicketViewRegistry;
+
+      final pageA = Ticket(
+        id: 'page-a',
+        ticketId: 'AIO-100',
+        type: TicketType.page,
+        title: 'Page A',
+        status: TicketStatus.backlog,
+        createdAt: DateTime(2026, 1, 1),
+        updatedAt: DateTime(2026, 1, 1),
+      );
+      // Two live pages sharing the exact same title, distinguished by
+      // createdAt — the duplicate-title case a bare-title `[[Page B]]`
+      // reference resolves via first-match, while `[[AIO-102]]` resolves
+      // unambiguously via ticketId regardless of the collision.
+      final pageB = Ticket(
+        id: 'page-b',
+        ticketId: 'AIO-101',
+        type: TicketType.page,
+        title: 'Page B',
+        status: TicketStatus.backlog,
+        createdAt: DateTime(2026, 1, 2),
+        updatedAt: DateTime(2026, 1, 2),
+      );
+      final pageBDuplicateTitle = Ticket(
+        id: 'page-b2',
+        ticketId: 'AIO-102',
+        type: TicketType.page,
+        title: 'Page B',
+        status: TicketStatus.backlog,
+        createdAt: DateTime(2026, 1, 3),
+        updatedAt: DateTime(2026, 1, 3),
+      );
+
+      setUp(() {
+        wikilinkRepository = MockPageWikilinkRepository();
+        activeTicketViewRegistry = ActiveTicketViewRegistry();
+        when(
+          () => wikilinkRepository.replaceOutgoingLinks(any(), any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => wikilinkRepository.getIncomingLinks(any()),
+        ).thenAnswer((_) async => []);
+      });
+
+      TicketsCubit buildCubit() => TicketsCubit(
+        repository,
+        pageWikilinkRepository: wikilinkRepository,
+        activeTicketViewRegistry: activeTicketViewRegistry,
+      );
+
+      test(
+        'reindexes outgoing links against a widened page/resource candidate '
+        'set, resolving a bare-title and a bare-ticketId reference in the '
+        'same content',
+        () async {
+          final edited = pageA.copyWith(
+            description: () => 'See [[Page B]] and [[AIO-102]].',
+          );
+          when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(pageA.id),
+          ).thenAnswer((_) async => edited);
+          when(
+            () => repository.getAllTicketsByType([
+              TicketType.page,
+              TicketType.resource,
+            ]),
+          ).thenAnswer((_) async => [pageA, pageB, pageBDuplicateTitle]);
+          final cubit = buildCubit();
+
+          await cubit.updateTicket(edited);
+          await Future<void>.delayed(Duration.zero);
+
+          verify(
+            () => wikilinkRepository.replaceOutgoingLinks(edited.id, {
+              pageB.id,
+              pageBDuplicateTitle.id,
+            }),
+          ).called(1);
+          await cubit.close();
+        },
+      );
+
+      test(
+        'no-ops entirely when pageWikilinkRepository is null',
+        () async {
+          final edited = pageA.copyWith(
+            description: () => 'See [[Page B]].',
+          );
+          when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(pageA.id),
+          ).thenAnswer((_) async => edited);
+          final cubit = TicketsCubit(repository); // no pageWikilinkRepository
+
+          await cubit.updateTicket(edited);
+          await Future<void>.delayed(Duration.zero);
+
+          verifyNever(
+            () => repository.getAllTicketsByType([
+              TicketType.page,
+              TicketType.resource,
+            ]),
+          );
+          await cubit.close();
+        },
+      );
+
+      test(
+        'rename triggers getIncomingLinks and rewrites a referrer whose '
+        'content has a title-anchored occurrence, recursing through '
+        'updateTicket',
+        () async {
+          final referrer = Ticket(
+            id: 'referrer-1',
+            ticketId: 'AIO-200',
+            type: TicketType.page,
+            title: 'Referrer',
+            description: 'Links to [[Page A]] and [[AIO-100|alias]].',
+            status: TicketStatus.backlog,
+            createdAt: DateTime(2026, 1, 1),
+            updatedAt: DateTime(2026, 1, 1),
+          );
+          final renamed = pageA.copyWith(title: 'Page A Renamed');
+
+          var callCount = 0;
+          when(() => repository.getTicketById(pageA.id)).thenAnswer((_) async {
+            callCount++;
+            // previous (call 1) is the pre-rename ticket; refreshed (call
+            // 2) is the renamed one — updateTicket's own before/after reads.
+            return callCount == 1 ? pageA : renamed;
+          });
+          when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+          when(
+            () => repository.getAllTicketsByType([
+              TicketType.page,
+              TicketType.resource,
+            ]),
+          ).thenAnswer((_) async => [renamed]);
+          when(
+            () => wikilinkRepository.getIncomingLinks(pageA.id),
+          ).thenAnswer(
+            (_) async => [
+              PageWikilink(
+                id: 'wl-1',
+                sourcePageId: referrer.id,
+                targetPageId: pageA.id,
+                createdAt: DateTime(2026, 1, 1),
+              ),
+            ],
+          );
+          when(
+            () => repository.getTicketById(referrer.id),
+          ).thenAnswer((_) async => referrer);
+          final cubit = buildCubit();
+
+          await cubit.updateTicket(renamed);
+          await Future<void>.delayed(Duration.zero);
+          await Future<void>.delayed(Duration.zero);
+
+          // Only the title-anchored `[[Page A]]` occurrence is rewritten —
+          // the id-anchored `[[AIO-100|alias]]` occurrence's target is
+          // never a title, so it's left untouched even though its own
+          // alias is irrelevant here.
+          final captured = verify(
+            () => repository.updateTicket(captureAny()),
+          ).captured;
+          final referrerUpdate = captured.cast<Ticket>().firstWhere(
+            (t) => t.id == referrer.id,
+          );
+          expect(
+            referrerUpdate.description,
+            'Links to [[Page A Renamed]] and [[AIO-100|alias]].',
+          );
+          await cubit.close();
+        },
+      );
+
+      test(
+        'skips a referrer whose content does not actually contain the old '
+        'title (no redundant recursive update)',
+        () async {
+          final referrer = Ticket(
+            id: 'referrer-2',
+            ticketId: 'AIO-201',
+            type: TicketType.page,
+            title: 'Referrer',
+            description: 'Links via [[AIO-100]] only.',
+            status: TicketStatus.backlog,
+            createdAt: DateTime(2026, 1, 1),
+            updatedAt: DateTime(2026, 1, 1),
+          );
+          final renamed = pageA.copyWith(title: 'Page A Renamed');
+
+          var callCount = 0;
+          when(() => repository.getTicketById(pageA.id)).thenAnswer((_) async {
+            callCount++;
+            return callCount == 1 ? pageA : renamed;
+          });
+          when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+          when(
+            () => repository.getAllTicketsByType([
+              TicketType.page,
+              TicketType.resource,
+            ]),
+          ).thenAnswer((_) async => [renamed]);
+          when(
+            () => wikilinkRepository.getIncomingLinks(pageA.id),
+          ).thenAnswer(
+            (_) async => [
+              PageWikilink(
+                id: 'wl-1',
+                sourcePageId: referrer.id,
+                targetPageId: pageA.id,
+                createdAt: DateTime(2026, 1, 1),
+              ),
+            ],
+          );
+          when(
+            () => repository.getTicketById(referrer.id),
+          ).thenAnswer((_) async => referrer);
+          final cubit = buildCubit();
+
+          await cubit.updateTicket(renamed);
+          await Future<void>.delayed(Duration.zero);
+          await Future<void>.delayed(Duration.zero);
+
+          // The only updateTicket call captured is the primary rename
+          // itself — no second call for the referrer, since its content
+          // has no title-anchored occurrence of the old title.
+          final captured = verify(
+            () => repository.updateTicket(captureAny()),
+          ).captured;
+          expect(captured.cast<Ticket>().map((t) => t.id), [renamed.id]);
+          await cubit.close();
+        },
+      );
+
+      test(
+        'defers rewriting a referrer the user currently has open, then '
+        'rewrites it once activeTicketId changes away',
+        () async {
+          final referrer = Ticket(
+            id: 'referrer-3',
+            ticketId: 'AIO-202',
+            type: TicketType.page,
+            title: 'Referrer',
+            description: 'Links to [[Page A]].',
+            status: TicketStatus.backlog,
+            createdAt: DateTime(2026, 1, 1),
+            updatedAt: DateTime(2026, 1, 1),
+          );
+          final renamed = pageA.copyWith(title: 'Page A Renamed');
+
+          var callCount = 0;
+          when(() => repository.getTicketById(pageA.id)).thenAnswer((_) async {
+            callCount++;
+            return callCount == 1 ? pageA : renamed;
+          });
+          when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+          when(
+            () => repository.getAllTicketsByType([
+              TicketType.page,
+              TicketType.resource,
+            ]),
+          ).thenAnswer((_) async => [renamed]);
+          when(
+            () => wikilinkRepository.getIncomingLinks(pageA.id),
+          ).thenAnswer(
+            (_) async => [
+              PageWikilink(
+                id: 'wl-1',
+                sourcePageId: referrer.id,
+                targetPageId: pageA.id,
+                createdAt: DateTime(2026, 1, 1),
+              ),
+            ],
+          );
+          when(
+            () => repository.getTicketById(referrer.id),
+          ).thenAnswer((_) async => referrer);
+          activeTicketViewRegistry.activeTicketId.value = referrer.ticketId;
+          final cubit = buildCubit();
+
+          await cubit.updateTicket(renamed);
+          await Future<void>.delayed(Duration.zero);
+          await Future<void>.delayed(Duration.zero);
+
+          // Deferred — no rewrite yet while the referrer is the active view.
+          verifyNever(
+            () => repository.updateTicket(
+              any(that: predicate<Ticket>((t) => t.id == referrer.id)),
+            ),
+          );
+
+          activeTicketViewRegistry.activeTicketId.value = null;
+          await Future<void>.delayed(Duration.zero);
+          await Future<void>.delayed(Duration.zero);
+
+          final captured = verify(
+            () => repository.updateTicket(captureAny()),
+          ).captured;
+          final referrerUpdate = captured
+              .cast<Ticket>()
+              .where((t) => t.id == referrer.id);
+          expect(referrerUpdate, hasLength(1));
+          expect(referrerUpdate.single.description, 'Links to [[Page A Renamed]].');
+          await cubit.close();
+        },
+      );
+
+      test(
+        'a thrown error from the wikilink step does not affect the primary '
+        'update\'s emitted state',
+        () async {
+          final edited = pageA.copyWith(description: () => 'See [[Page B]].');
+          when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(pageA.id),
+          ).thenAnswer((_) async => edited);
+          when(
+            () => repository.getAllTicketsByType([
+              TicketType.page,
+              TicketType.resource,
+            ]),
+          ).thenThrow(Exception('boom'));
+          final cubit = buildCubit();
+          final states = <TicketsState>[];
+          final sub = cubit.stream.listen(states.add);
+
+          final result = await cubit.updateTicket(edited);
+          await Future<void>.delayed(Duration.zero);
+
+          expect(result, edited);
+          expect(states, [TicketDetailLoaded(edited)]);
+          await sub.cancel();
           await cubit.close();
         },
       );
@@ -3356,6 +3704,7 @@ void main() {
 
   group('loadDocumentRelations', () {
     late MockTicketLinkRepository linkRepository;
+    late MockPageWikilinkRepository wikilinkRepository;
 
     final page = Ticket(
       id: 'page-1',
@@ -3411,21 +3760,31 @@ void main() {
 
     setUp(() {
       linkRepository = MockTicketLinkRepository();
+      wikilinkRepository = MockPageWikilinkRepository();
       // Default (empty) stubs for the recursive gaps-and-open-questions
       // rollup's reads, added for
       // `aion-arch/changes/idea-gap-question-ticket-types` — every gated
       // ticket's `loadDocumentRelations` call now performs these
       // unconditionally alongside the pre-existing `linkedTickets`/
       // `backlinks` reads. Individual tests override these where the
-      // rollup itself is under test.
+      // rollup itself is under test. Default (empty) stub for the
+      // wikilink-origin backlinks merge, added for
+      // `aion-arch/changes/inline-wikilink-backlinks` — individual tests
+      // override this where the merge itself is under test.
       when(() => repository.getAllTickets()).thenAnswer((_) async => []);
       when(
         () => linkRepository.getLinksByTypes(any()),
       ).thenAnswer((_) async => []);
+      when(
+        () => wikilinkRepository.getIncomingLinks(any()),
+      ).thenAnswer((_) async => []);
     });
 
-    TicketsCubit buildCubit() =>
-        TicketsCubit(repository, linkRepository: linkRepository);
+    TicketsCubit buildCubit() => TicketsCubit(
+      repository,
+      linkRepository: linkRepository,
+      pageWikilinkRepository: wikilinkRepository,
+    );
 
     blocTest<TicketsCubit, TicketsState>(
       'populates childDocs/linkedTickets/backlinks for a page ticket',
@@ -3485,10 +3844,98 @@ void main() {
               [backlinkPage],
             )
             .having(
-              (s) => s.backlinks.single.relativeType,
-              'backlinks relativeType',
-              TicketLinkType.relatesTo,
+              (s) => s.backlinks.single.origin,
+              'backlinks origin',
+              BacklinkOrigin.explicitLink,
             ),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'merges wikilink-origin backlinks alongside explicit-link ones for a '
+      'page-gated ticket, including a two-rows-for-one-ticket case',
+      setUp: () {
+        when(
+          () => repository.getTicketById(page.id),
+        ).thenAnswer((_) async => page);
+        when(
+          () => repository.getTicketsByParent(
+            page.id,
+            types: const [TicketType.page, TicketType.resource],
+          ),
+        ).thenAnswer((_) async => []);
+        // backlinkPage links via both an explicit TicketLink *and* an
+        // inline wikilink — a deliberate two-rows-for-one-ticket case,
+        // each representing a distinct, independently-true relationship.
+        when(() => linkRepository.getLinksForTicket(page.id)).thenAnswer(
+          (_) async => [
+            TicketLinkData(
+              id: 'link-1',
+              sourceTicketId: backlinkPage.id,
+              targetTicketId: page.id,
+              linkType: TicketLinkType.relatesTo.name,
+            ),
+          ],
+        );
+        when(
+          () => repository.getTicketById(backlinkPage.id),
+        ).thenAnswer((_) async => backlinkPage);
+        when(
+          () => wikilinkRepository.getIncomingLinks(page.id),
+        ).thenAnswer(
+          (_) async => [
+            PageWikilink(
+              id: 'wl-1',
+              sourcePageId: backlinkPage.id,
+              targetPageId: page.id,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+      },
+      build: buildCubit,
+      seed: () => TicketDetailLoaded(page),
+      act: (cubit) => cubit.loadDocumentRelations(page.id),
+      expect: () => [
+        isA<TicketDetailLoaded>().having((s) => s.backlinks, 'backlinks', [
+          BacklinkRef(ticket: backlinkPage, origin: BacklinkOrigin.explicitLink),
+          BacklinkRef(ticket: backlinkPage, origin: BacklinkOrigin.wikilink),
+        ]),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'merges wikilink-origin backlinks for a resource-gated ticket',
+      setUp: () {
+        when(
+          () => repository.getTicketById(resourceTicket.id),
+        ).thenAnswer((_) async => resourceTicket);
+        when(
+          () => linkRepository.getLinksForTicket(resourceTicket.id),
+        ).thenAnswer((_) async => []);
+        when(
+          () => wikilinkRepository.getIncomingLinks(resourceTicket.id),
+        ).thenAnswer(
+          (_) async => [
+            PageWikilink(
+              id: 'wl-2',
+              sourcePageId: page.id,
+              targetPageId: resourceTicket.id,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(
+          () => repository.getTicketById(page.id),
+        ).thenAnswer((_) async => page);
+      },
+      build: buildCubit,
+      seed: () => TicketDetailLoaded(resourceTicket),
+      act: (cubit) => cubit.loadDocumentRelations(resourceTicket.id),
+      expect: () => [
+        isA<TicketDetailLoaded>().having((s) => s.backlinks, 'backlinks', [
+          BacklinkRef(ticket: page, origin: BacklinkOrigin.wikilink),
+        ]),
       ],
     );
 

@@ -5,11 +5,15 @@ import 'dart:io';
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:uuid/uuid.dart';
 
+import 'package:aion/core/markdown/wikilink_extractor.dart';
 import 'package:aion/features/projects/domain/entities/project.dart';
 import 'package:aion/features/tickets/data/daos/comment_dao.dart';
+import 'package:aion/features/tickets/data/daos/page_wikilink_dao.dart';
 import 'package:aion/features/tickets/data/daos/ticket_dao.dart';
 import 'package:aion/features/tickets/data/daos/ticket_link_dao.dart';
+import 'package:aion/features/tickets/data/models/page_wikilink_model.dart';
 import 'package:aion/features/tickets/data/models/ticket_comment_model.dart';
 import 'package:aion/features/tickets/data/models/ticket_link_model.dart';
 import 'package:aion/features/tickets/data/models/ticket_model.dart';
@@ -98,14 +102,19 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
 /// gap-vs-question-vs-idea) so the app never crashes deserializing
 /// pre-existing data — see
 /// `aion-arch/changes/idea-gap-question-ticket-types/design.md` §2.1.
+/// Version 12 adds [PageWikilinksTable] and backfills it once from every
+/// existing `page` ticket's `description` (see [_backfillWikilinks]) —
+/// see
+/// `aion-arch/changes/inline-wikilink-backlinks/design.md`.
 @DriftDatabase(
   tables: [
     TicketsTable,
     TicketIdSequenceTable,
     TicketLinksTable,
     TicketCommentsTable,
+    PageWikilinksTable,
   ],
-  daos: [TicketDao, TicketLinkDao, CommentDao],
+  daos: [TicketDao, TicketLinkDao, CommentDao, PageWikilinkDao],
 )
 class AppDatabase extends _$AppDatabase {
   /// Creates an [AppDatabase] for [project]. Pass [executor] to use a
@@ -117,7 +126,7 @@ class AppDatabase extends _$AppDatabase {
     : super(executor ?? _openConnection(project));
 
   @override
-  int get schemaVersion => 11;
+  int get schemaVersion => 12;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -192,6 +201,10 @@ class AppDatabase extends _$AppDatabase {
         await m.database.customStatement(
           "UPDATE tickets SET type = 'idea' WHERE type = 'signal'",
         );
+      }
+      if (from < 12) {
+        await m.createTable(pageWikilinksTable);
+        await _backfillWikilinks(m);
       }
     },
   );
@@ -287,6 +300,79 @@ class AppDatabase extends _$AppDatabase {
         'UPDATE tickets SET estimate_rollup = ?, time_spent_rollup = ? WHERE id = ?',
         [entry.value.estimateRollup, entry.value.timeSpentRollup, entry.key],
       );
+    }
+  }
+
+  /// One-time backfill of [PageWikilinksTable] for every existing `page`
+  /// ticket's `[[...]]`-referencing `description`. Runs only on upgrade
+  /// from a pre-12 schema — a fresh [onCreate] install has no
+  /// pre-existing rows to backfill, so this is never called there (same
+  /// caveat [_backfillRollups] notes). Without this, a `[[...]]` a user
+  /// hand-typed into a page *before* this feature shipped would silently
+  /// miss the Backlinks section until that page happens to be re-saved.
+  ///
+  /// Builds an in-memory candidate set of every live `page`/`resource`
+  /// ticket's `(id, ticketId, title)`, runs [WikilinkExtractor
+  /// .extractReferences] over each live `page`'s `description`, resolves
+  /// each match's target the same way `PageWikilinkIndexer` does at
+  /// runtime (an exact `ticketId` match when
+  /// [WikilinkExtractor.looksLikeTicketId] says it looks like one,
+  /// otherwise a case-insensitive first-`createdAt` title match), then
+  /// bulk-inserts the resolved rows.
+  Future<void> _backfillWikilinks(Migrator m) async {
+    final candidateRows = await m.database
+        .customSelect(
+          "SELECT id, ticket_id, title, created_at FROM tickets "
+          "WHERE deleted_at IS NULL AND type IN ('page', 'resource') "
+          'ORDER BY created_at ASC',
+          readsFrom: {ticketsTable},
+        )
+        .get();
+
+    final idByTicketId = <String, String>{};
+    final idByTitleLower = <String, String>{};
+    for (final row in candidateRows) {
+      final id = row.read<String>('id');
+      idByTicketId[row.read<String>('ticket_id')] = id;
+      idByTitleLower.putIfAbsent(row.read<String>('title').toLowerCase(), () => id);
+    }
+
+    final pageRows = await m.database
+        .customSelect(
+          "SELECT id, description FROM tickets "
+          "WHERE deleted_at IS NULL AND type = 'page'",
+          readsFrom: {ticketsTable},
+        )
+        .get();
+
+    final now = DateTime.now();
+    const uuid = Uuid();
+    for (final row in pageRows) {
+      final sourceId = row.read<String>('id');
+      final description = row.readNullable<String>('description') ?? '';
+      final matches = WikilinkExtractor.extractReferences(description);
+      final resolvedIds = <String>{
+        for (final match in matches)
+          if (WikilinkExtractor.looksLikeTicketId(match.target))
+            ?idByTicketId[match.target]
+          else
+            ?idByTitleLower[match.target.toLowerCase()],
+      };
+      // Typed insert (not raw SQL) so Drift encodes `createdAt` in
+      // whatever on-disk DateTime format it expects, rather than this
+      // migration having to duplicate that encoding by hand. `this`
+      // (not `m.database`) resolves `pageWikilinksTable` — we're already
+      // inside an [AppDatabase] instance method.
+      for (final targetId in resolvedIds) {
+        await into(pageWikilinksTable).insert(
+          PageWikilinksTableCompanion.insert(
+            id: uuid.v4(),
+            sourcePageId: sourceId,
+            targetPageId: targetId,
+            createdAt: now,
+          ),
+        );
+      }
     }
   }
 }

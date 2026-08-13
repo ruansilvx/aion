@@ -28,13 +28,17 @@ import 'package:aion/features/projects/domain/repositories/baseline_repository.d
 import 'package:aion/features/providers/domain/enums/model_phase.dart';
 import 'package:aion/features/providers/domain/repositories/execution_context_cap_repository.dart';
 import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
+import 'package:aion/features/tickets/data/services/active_ticket_view_registry.dart';
+import 'package:aion/features/tickets/data/services/page_wikilink_indexer.dart';
 import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
+import 'package:aion/features/tickets/domain/entities/backlink_ref.dart';
 import 'package:aion/features/tickets/domain/entities/gap_or_question_ref.dart';
 import 'package:aion/features/tickets/domain/entities/linked_ticket_ref.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_list_filters.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_list_sort.dart';
+import 'package:aion/features/tickets/domain/enums/backlink_origin.dart';
 import 'package:aion/features/tickets/domain/enums/comment_author_type.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 import 'package:aion/features/tickets/domain/enums/summarization_depth.dart';
@@ -47,6 +51,7 @@ import 'package:aion/features/tickets/domain/enums/ticket_sort_field.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/repositories/comment_repository.dart';
+import 'package:aion/features/tickets/domain/repositories/page_wikilink_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_link_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_list_filter_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_list_sort_repository.dart';
@@ -131,14 +136,27 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// (`app_router.dart`) always supplies one, alongside the existing
   /// [_filterRepository]/[_projectId]. Added for
   /// `aion-arch/changes/ticket-sort-control-and-board-as-default-view`.
+  /// [pageWikilinkRepository] follows the same optional-dependency
+  /// pattern once more — `null` (every existing construction site except
+  /// `app_router.dart`) makes [updateTicket]'s wikilink reindex/rename-
+  /// cascade step and [loadDocumentRelations]'s wikilink-origin backlinks
+  /// merge both no-op; real usage (`app_router.dart`) always supplies
+  /// one. [activeTicketViewRegistry] is the *existing* desktop-only
+  /// registry `TicketMarkdownWatcherService`/`TicketRepairCubit` already
+  /// use — reused here (not a second instance) to defer, rather than
+  /// clobber, a rename-triggered rewrite of a page the user currently has
+  /// open; `null` on mobile/web, where that deferral simply never
+  /// triggers (no separate file-watcher write path to race against
+  /// there). Both added for `aion-arch/changes/inline-wikilink-backlinks`.
   // The public param names below (embeddingProvider/gitProjector/
   // projectRootPath/providerRegistry/commentRepository/
   // automationSettingsRepository/modelRoutingRepository/gitClient/
   // gitHubClient/baselineRepository/projectId/baselineVersion/
-  // projectName/filterRepository/sortRepository) intentionally differ
-  // from their private backing fields; a private identifier can't be
-  // used as an external named-parameter label from another library, so
-  // `this._foo` shorthand isn't usable here.
+  // projectName/filterRepository/sortRepository/pageWikilinkRepository/
+  // activeTicketViewRegistry) intentionally differ from their private
+  // backing fields; a private identifier can't be used as an external
+  // named-parameter label from another library, so `this._foo` shorthand
+  // isn't usable here.
   TicketsCubit(
     this._repository, {
     EmbeddingProvider? embeddingProvider,
@@ -158,6 +176,8 @@ class TicketsCubit extends Cubit<TicketsState> {
     ExecutionContextCapRepository? executionContextCapRepository,
     TicketListFilterRepository? filterRepository,
     TicketListSortRepository? sortRepository,
+    PageWikilinkRepository? pageWikilinkRepository,
+    ActiveTicketViewRegistry? activeTicketViewRegistry,
   }) : super(const TicketsInitial()) {
     _embeddingProvider = embeddingProvider;
     _gitProjector = gitProjector;
@@ -176,6 +196,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     _executionContextCapRepository = executionContextCapRepository;
     _filterRepository = filterRepository;
     _sortRepository = sortRepository;
+    _pageWikilinkRepository = pageWikilinkRepository;
     _rollupRecomputer = TicketRollupRecomputer(
       _repository,
       gitProjector: gitProjector,
@@ -192,6 +213,13 @@ class TicketsCubit extends Cubit<TicketsState> {
       linkRepository: linkRepository,
       embeddingProvider: embeddingProvider,
     );
+    _wikilinkIndexer = pageWikilinkRepository == null
+        ? null
+        : PageWikilinkIndexer(
+            _repository,
+            pageWikilinkRepository,
+            activeTicketViewRegistry,
+          );
   }
 
   final TicketRepository _repository;
@@ -228,6 +256,13 @@ class TicketsCubit extends Cubit<TicketsState> {
   late final ExecutionContextCapRepository? _executionContextCapRepository;
   late final TicketListFilterRepository? _filterRepository;
   late final TicketListSortRepository? _sortRepository;
+  late final PageWikilinkRepository? _pageWikilinkRepository;
+
+  /// Shared inline-wikilink reindex/rename-cascade logic — see
+  /// [PageWikilinkIndexer]. `null` whenever this cubit was constructed
+  /// without a [PageWikilinkRepository], mirroring every other optional-
+  /// dependency service field above.
+  late final PageWikilinkIndexer? _wikilinkIndexer;
   static const _uuid = Uuid();
 
   /// Broadcasts [CodebaseAnalysisStatus] updates as
@@ -902,6 +937,12 @@ class TicketsCubit extends Cubit<TicketsState> {
             (previous.estimate != refreshed.estimate ||
                 previous.timeSpent != refreshed.timeSpent)) {
           unawaited(_recomputeRollupChain({refreshed.id}, 'rollup updated'));
+        }
+        final indexer = _wikilinkIndexer;
+        if (indexer != null &&
+            previous != null &&
+            refreshed.type == TicketType.page) {
+          unawaited(_reindexAndCascadeWikilinks(indexer, previous, refreshed));
         }
       }
       return refreshed ?? ticket;
@@ -3784,6 +3825,28 @@ class TicketsCubit extends Cubit<TicketsState> {
     await _repository.updateEmbedding(ticket.id, bytes);
   }
 
+  /// Fires [PageWikilinkIndexer.reindexAndCascade] for a `page` edit from
+  /// [oldTicket] to [newTicket] — see [updateTicket]'s tail step. A
+  /// referrer whose content needs a title-anchored rewrite is applied by
+  /// recursing through [updateTicket] itself (`applyRewrittenReferrer`
+  /// below) — inheriting this method's own embedding-regen/rollup/
+  /// wikilink-reindex side effects for free, and safe from further
+  /// recursion since a rewrite call never itself changes a title. Never
+  /// awaited by [updateTicket] — a wikilink reindex must never block a
+  /// ticket save.
+  Future<void> _reindexAndCascadeWikilinks(
+    PageWikilinkIndexer indexer,
+    Ticket oldTicket,
+    Ticket newTicket,
+  ) {
+    return indexer.reindexAndCascade(
+      oldTicket: oldTicket,
+      newTicket: newTicket,
+      applyRewrittenReferrer: (referrer, rewritten) =>
+          updateTicket(referrer.copyWith(description: () => rewritten)),
+    );
+  }
+
   /// Projects [ticket] to its Markdown file and commits it, labelled
   /// [eventLabel]. No-ops if no [_gitProjector]/[_projectRootPath] was
   /// provided (see the constructor's dartdoc) — desktop-only in
@@ -4347,6 +4410,17 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// by descending `createdAt`. Added for
   /// `aion-arch/changes/idea-gap-question-ticket-types`; see that
   /// change's design.md §3.4.
+  ///
+  /// [backlinks] merges two sources into one [BacklinkRef] list, each
+  /// mapped to its [BacklinkOrigin]: `TicketLink` rows where the other
+  /// side is `page`/`resource` ([BacklinkOrigin.explicitLink], as
+  /// before), plus — when [ticketId]'s own type is `page`/`resource`
+  /// **and** this cubit was constructed with a [PageWikilinkRepository] —
+  /// every page whose content resolves an inline `[[...]]` reference to
+  /// [ticketId] ([BacklinkOrigin.wikilink]). A page linked via both
+  /// mechanisms produces two separate rows — each represents a distinct,
+  /// independently-true relationship, not deduplicated. Added for
+  /// `aion-arch/changes/inline-wikilink-backlinks`.
   Future<void> loadDocumentRelations(String ticketId) async {
     final ticket = await _repository.getTicketById(ticketId);
     if (ticket == null) return;
@@ -4367,7 +4441,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         : const <Ticket>[];
 
     final linkedTickets = <LinkedTicketRef>[];
-    final backlinks = <LinkedTicketRef>[];
+    final backlinks = <BacklinkRef>[];
     final linkRepo = _linkRepository;
     if (linkRepo != null) {
       final links = await linkRepo.getLinksForTicket(ticket.id);
@@ -4377,17 +4451,31 @@ class TicketsCubit extends Cubit<TicketsState> {
             : link.sourceTicketId;
         final other = await _repository.getTicketById(otherId);
         if (other == null) continue;
-        final ref = (
-          ticket: other,
-          relativeType: relativeLinkType(link, ticket.id),
-          linkId: link.id,
-        );
         if (other.type == TicketType.page ||
             other.type == TicketType.resource) {
-          backlinks.add(ref);
+          backlinks.add(
+            BacklinkRef(ticket: other, origin: BacklinkOrigin.explicitLink),
+          );
         } else {
-          linkedTickets.add(ref);
+          linkedTickets.add((
+            ticket: other,
+            relativeType: relativeLinkType(link, ticket.id),
+            linkId: link.id,
+          ));
         }
+      }
+    }
+    final wikilinkRepo = _pageWikilinkRepository;
+    if (wikilinkRepo != null &&
+        (ticket.type == TicketType.page ||
+            ticket.type == TicketType.resource)) {
+      final incoming = await wikilinkRepo.getIncomingLinks(ticket.id);
+      for (final link in incoming) {
+        final source = await _repository.getTicketById(link.sourcePageId);
+        if (source == null) continue;
+        backlinks.add(
+          BacklinkRef(ticket: source, origin: BacklinkOrigin.wikilink),
+        );
       }
     }
 

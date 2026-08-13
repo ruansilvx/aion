@@ -27,12 +27,14 @@ import 'package:aion/features/projects/projects.dart';
 import 'package:aion/features/providers/providers.dart';
 import 'package:aion/features/tickets/data/page_ticket_provider_impl.dart';
 import 'package:aion/features/tickets/data/repositories/drift_comment_repository.dart';
+import 'package:aion/features/tickets/data/repositories/drift_page_wikilink_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_link_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_repository.dart';
 import 'package:aion/features/tickets/data/repositories/shared_prefs_ticket_list_filter_repository.dart';
 import 'package:aion/features/tickets/data/repositories/shared_prefs_ticket_list_sort_repository.dart';
 import 'package:aion/features/tickets/data/services/active_ticket_view_registry.dart';
 import 'package:aion/features/tickets/data/services/document_parent_migration_service.dart';
+import 'package:aion/features/tickets/data/services/page_wikilink_indexer.dart';
 import 'package:aion/features/tickets/data/services/ticket_document_search_service.dart';
 import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
 import 'package:aion/features/tickets/data/services/ticket_markdown_reconciler.dart';
@@ -478,6 +480,14 @@ class _WorkspaceShellState extends State<WorkspaceShell>
         RepositoryProvider<TicketLinkRepository>(
           create: (_) => DriftTicketLinkRepository(_database),
         ),
+        // Resolved inline `[[wikilink]]` index — parallel to
+        // TicketLinkRepository above, not gated by `rootPath != null`
+        // (unlike the desktop-only services below): it's a plain
+        // Drift-backed repository with no file-system/git dependency.
+        // See aion-arch/changes/inline-wikilink-backlinks/design.md.
+        RepositoryProvider<PageWikilinkRepository>(
+          create: (_) => DriftPageWikilinkRepository(_database),
+        ),
         // Per-project ticket-list filter persistence — see
         // aion-arch/changes/multi-select-ticket-list-filters/design.md
         // §1.4/§4. No dependencies of its own; scoped alongside the other
@@ -523,6 +533,11 @@ class _WorkspaceShellState extends State<WorkspaceShell>
               context.read<TicketMarkdownSerializer>(),
               context.read<ActiveTicketViewRegistry>(),
               context.read<EmbeddingProvider>(),
+              PageWikilinkIndexer(
+                context.read<TicketRepository>(),
+                context.read<PageWikilinkRepository>(),
+                context.read<ActiveTicketViewRegistry>(),
+              ),
             ),
           ),
           RepositoryProvider<TicketRepairService>(
@@ -567,6 +582,10 @@ class _WorkspaceShellState extends State<WorkspaceShell>
                   .read<ExecutionContextCapRepository>(),
               filterRepository: context.read<TicketListFilterRepository>(),
               sortRepository: context.read<TicketListSortRepository>(),
+              pageWikilinkRepository: context.read<PageWikilinkRepository>(),
+              activeTicketViewRegistry: rootPath != null
+                  ? context.read<ActiveTicketViewRegistry>()
+                  : null,
             ),
             child: Builder(
               builder: (context) => RepositoryProvider<PageTicketProvider>(
@@ -574,6 +593,7 @@ class _WorkspaceShellState extends State<WorkspaceShell>
                   context.read<TicketsCubit>(),
                   context.read<TicketRepository>(),
                   context.read<TicketLinkRepository>(),
+                  context.read<PageWikilinkRepository>(),
                 ),
                 child: WorkspaceNavShell(
                   currentLocation: widget.currentLocation,
