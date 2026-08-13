@@ -71,8 +71,11 @@ abstract interface class PageTicketProvider {
   /// [title] with optional [description], linked to [targetTicketId] —
   /// delegates to `TicketsCubit.createGapOrQuestion` for the same hard-
   /// rule validation/atomic-creation logic every other creation path
-  /// uses. Added for `aion-arch/changes/idea-gap-question-ticket-types`.
-  Future<void> createGapOrQuestion(
+  /// uses. Returns `true` on success, `false` if rejected/failed — the
+  /// creation popover's caller awaits this to decide whether to close or
+  /// show its inline error state. Added for
+  /// `aion-arch/changes/idea-gap-question-ticket-types`.
+  Future<bool> createGapOrQuestion(
     TicketType type, {
     required String title,
     String? description,

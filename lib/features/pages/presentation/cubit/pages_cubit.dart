@@ -129,17 +129,23 @@ class PagesCubit extends Cubit<PagesState> {
 
   /// Creates a [type] (`knownGap`/`openQuestion` only) ticket titled
   /// [title] with optional [description], linked to [pageId], then
-  /// reloads [pageId]'s relations. Same emit/no-op shape as [deleteLink]/
-  /// [updateLinkType]. Added for
+  /// reloads [pageId]'s relations. Returns the provider's own success
+  /// flag (`false` if the creation was rejected/failed) — propagated
+  /// straight through so [RaiseGapOrQuestionPicker]'s caller can await it
+  /// and show the popover's inline error state on a rejected creation,
+  /// same contract as `TicketsCubit.createGapOrQuestion`. Relations are
+  /// still reloaded either way, since a rejected creation may still have
+  /// changed nothing worth diverging the reload for. Otherwise same
+  /// emit/no-op shape as [deleteLink]/[updateLinkType]. Added for
   /// `aion-arch/changes/idea-gap-question-ticket-types`.
-  Future<void> createGapOrQuestion(
+  Future<bool> createGapOrQuestion(
     String pageId,
     TicketType type, {
     required String title,
     String? description,
   }) async {
     try {
-      await _provider.createGapOrQuestion(
+      final success = await _provider.createGapOrQuestion(
         type,
         title: title,
         description: description,
@@ -150,8 +156,10 @@ class PagesCubit extends Cubit<PagesState> {
       if (current is PageDetailLoaded && current.page.id == pageId) {
         emit(PageDetailLoaded(current.page, relations));
       }
+      return success;
     } catch (e) {
       emit(PagesError(e.toString()));
+      return false;
     }
   }
 }

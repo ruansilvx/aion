@@ -1193,6 +1193,35 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
   }
 
+  /// Restores `TicketDetailLoaded` for the ticket with id [ticketId] after
+  /// a guard-clause [TicketsError] — so a rejected `promoteIdea`/
+  /// `reclassifyIdea` call doesn't leave the Cubit stuck on a bare error
+  /// state indefinitely (the whole ticket-detail panel is one
+  /// `BlocBuilder` switching on [TicketsState], so a lingering
+  /// [TicketsError] blanks out the entire screen, not just the action
+  /// that failed). No-ops if [ticketId] no longer resolves to a ticket —
+  /// nothing to restore to. Added for
+  /// `aion-arch/changes/idea-gap-question-ticket-types`'s `/verify` fix-up.
+  Future<void> _emitTicketDetailIfFound(String ticketId) async {
+    final ticket = await _repository.getTicketById(ticketId);
+    if (ticket != null) {
+      emit(TicketDetailLoaded(ticket));
+    }
+  }
+
+  /// Same recovery as [_emitTicketDetailIfFound], for a guard clause on a
+  /// Documentation-mode ticket (`createGapOrQuestion`'s [targetTicketId])
+  /// whose detail screen also depends on [loadDocumentRelations] for its
+  /// Linked Tickets/Backlinks/Gaps & Open Questions sections — restores
+  /// those too, not just the bare ticket. Added for
+  /// `aion-arch/changes/idea-gap-question-ticket-types`'s `/verify` fix-up.
+  Future<void> _restoreDocumentTicketDetail(String ticketId) async {
+    final ticket = await _repository.getTicketById(ticketId);
+    if (ticket == null) return;
+    emit(TicketDetailLoaded(ticket));
+    await loadDocumentRelations(ticketId);
+  }
+
   /// Promotes [idea] into an epic or a bug (per [targetType]): if
   /// [existingTicketId] is given, links [idea] to that ticket via
   /// [TicketLinkRepository.createLink] (as [TicketLinkType.relatesTo]);
@@ -1205,11 +1234,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// ever calls this for an `idea` ticket with [targetType] set to
   /// [TicketType.epic] or [TicketType.bug]) if `idea.type` isn't
   /// [TicketType.idea], or if [targetType] is neither
-  /// [TicketType.epic] nor [TicketType.bug]. No-ops (does not touch the
-  /// repository) if constructed without a [TicketLinkRepository] (see
-  /// the constructor's dartdoc). Renamed from `promoteSignal` for
-  /// `aion-arch/changes/idea-gap-question-ticket-types` — behavior is
-  /// otherwise unchanged.
+  /// [TicketType.epic] nor [TicketType.bug] — either guard then calls
+  /// [_emitTicketDetailIfFound] to recover the screen. No-ops (does not
+  /// touch the repository) if constructed without a
+  /// [TicketLinkRepository] (see the constructor's dartdoc). Renamed from
+  /// `promoteSignal` for `aion-arch/changes/idea-gap-question-ticket-types`
+  /// — behavior is otherwise unchanged.
   Future<void> promoteIdea(
     Ticket idea, {
     required TicketType targetType,
@@ -1217,18 +1247,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   }) async {
     if (idea.type != TicketType.idea) {
       emit(TicketsError('Only idea tickets can be promoted.'));
-      final ticket = await _repository.getTicketById(idea.id);
-      if (ticket != null) {
-        emit(TicketDetailLoaded(ticket));
-      }
+      await _emitTicketDetailIfFound(idea.id);
       return;
     }
     if (targetType != TicketType.epic && targetType != TicketType.bug) {
       emit(TicketsError('Ideas can only be promoted to an epic or a bug.'));
-      final ticket = await _repository.getTicketById(idea.id);
-      if (ticket != null) {
-        emit(TicketDetailLoaded(ticket));
-      }
+      await _emitTicketDetailIfFound(idea.id);
       return;
     }
 
@@ -1271,15 +1295,21 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// Creates a [type] (`knownGap`/`openQuestion` only) ticket titled
   /// [title] with optional [description], linked
   /// ([TicketLinkType.relatesTo]) to [targetTicketId] in the same
-  /// operation. Emits [TicketsError] and refuses to create anything if
-  /// [type] isn't `knownGap`/`openQuestion`, or if [targetTicketId]
-  /// doesn't resolve to an existing ticket — the hard rule that a
-  /// known-gap/open-question can never exist without its target lives
-  /// here, not as a UI-layer convention. No-ops if constructed without a
-  /// [TicketLinkRepository]. Added for
+  /// operation. Returns `true` on success, `false` if rejected or if the
+  /// creation/link write throws — [RaiseGapOrQuestionPicker] awaits this
+  /// to decide whether to close its overlay or show its inline error
+  /// state instead of assuming success. Emits [TicketsError] and refuses
+  /// to create anything if [type] isn't `knownGap`/`openQuestion`, or if
+  /// [targetTicketId] doesn't resolve to an existing ticket — the hard
+  /// rule that a known-gap/open-question can never exist without its
+  /// target lives here, not as a UI-layer convention. Every failure path
+  /// calls [_restoreDocumentTicketDetail] so [targetTicketId]'s detail
+  /// screen (and its Gaps & Open Questions section) recovers instead of
+  /// staying stuck on a bare [TicketsError]. Returns `false` without
+  /// emitting if constructed without a [TicketLinkRepository]. Added for
   /// `aion-arch/changes/idea-gap-question-ticket-types`; see that
   /// change's design.md §3.2.
-  Future<void> createGapOrQuestion(
+  Future<bool> createGapOrQuestion(
     TicketType type, {
     required String title,
     String? description,
@@ -1291,14 +1321,16 @@ class TicketsCubit extends Cubit<TicketsState> {
           'Only known gaps or open questions can be raised this way.',
         ),
       );
-      return;
+      await _restoreDocumentTicketDetail(targetTicketId);
+      return false;
     }
     final linkRepo = _linkRepository;
-    if (linkRepo == null) return;
+    if (linkRepo == null) return false;
     final target = await _repository.getTicketById(targetTicketId);
     if (target == null) {
       emit(TicketsError('The target ticket no longer exists.'));
-      return;
+      await _restoreDocumentTicketDetail(targetTicketId);
+      return false;
     }
     try {
       final now = DateTime.now();
@@ -1319,8 +1351,11 @@ class TicketsCubit extends Cubit<TicketsState> {
         linkType: TicketLinkType.relatesTo,
       );
       await loadDocumentRelations(targetTicketId);
+      return true;
     } catch (e) {
       emit(TicketsError(e.toString()));
+      await _restoreDocumentTicketDetail(targetTicketId);
+      return false;
     }
   }
 
@@ -1331,10 +1366,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// migrated to `idea` by the schema-11 default (see
   /// `AppDatabase`'s migration). Same target-existence/type validation as
   /// [createGapOrQuestion]; additionally refuses if [idea]'s type isn't
-  /// [TicketType.idea]. Mutates the ticket's stored `type` via
-  /// [TicketRepository.updateTicket] — never deletes/recreates it, so its
-  /// id, ticketId, createdAt, and any comments/chat children survive the
-  /// reclassification. Added for
+  /// [TicketType.idea]. Every failure path calls
+  /// [_emitTicketDetailIfFound] to recover [idea]'s own detail screen
+  /// instead of leaving the Cubit stuck on a bare [TicketsError]. Mutates
+  /// the ticket's stored `type` via [TicketRepository.updateTicket] —
+  /// never deletes/recreates it, so its id, ticketId, createdAt, and any
+  /// comments/chat children survive the reclassification. Added for
   /// `aion-arch/changes/idea-gap-question-ticket-types`; see that
   /// change's design.md §3.3.
   Future<void> reclassifyIdea(
@@ -1344,6 +1381,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   }) async {
     if (idea.type != TicketType.idea) {
       emit(TicketsError('Only idea tickets can be reclassified.'));
+      await _emitTicketDetailIfFound(idea.id);
       return;
     }
     if (targetType != TicketType.knownGap &&
@@ -1354,6 +1392,7 @@ class TicketsCubit extends Cubit<TicketsState> {
           'question.',
         ),
       );
+      await _emitTicketDetailIfFound(idea.id);
       return;
     }
     final linkRepo = _linkRepository;
@@ -1361,6 +1400,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     final target = await _repository.getTicketById(targetTicketId);
     if (target == null) {
       emit(TicketsError('The target ticket no longer exists.'));
+      await _emitTicketDetailIfFound(idea.id);
       return;
     }
     try {
@@ -1374,6 +1414,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       if (refreshed != null) emit(TicketDetailLoaded(refreshed));
     } catch (e) {
       emit(TicketsError(e.toString()));
+      await _emitTicketDetailIfFound(idea.id);
     }
   }
 
@@ -4300,7 +4341,10 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// was raised on. Built from the same bulk
   /// [TicketLinkRepository.getLinksByTypes] shape
   /// `_refreshBlockedBoardState` already uses for `blocks`/`blockedBy` —
-  /// one app-wide query, no N+1 across the subtree. Added for
+  /// one app-wide query, no N+1 across the subtree. Sorted per Component
+  /// Spec §2.4: directly-raised entries (raised on [ticketId] itself)
+  /// before rolled-up ones (raised on a descendant), each group ordered
+  /// by descending `createdAt`. Added for
   /// `aion-arch/changes/idea-gap-question-ticket-types`; see that
   /// change's design.md §3.4.
   Future<void> loadDocumentRelations(String ticketId) async {
@@ -4372,6 +4416,16 @@ class TicketsCubit extends Cubit<TicketsState> {
           ));
         }
       }
+      // Component Spec §2.4: directly-raised entries (raised on `ticket`
+      // itself) sort before rolled-up ones (raised on a descendant), each
+      // group ordered by descending `createdAt` of the gap/question
+      // ticket itself.
+      gapsAndOpenQuestions.sort((a, b) {
+        final aDirect = a.raisedOn.id == ticket.id;
+        final bDirect = b.raisedOn.id == ticket.id;
+        if (aDirect != bDirect) return aDirect ? -1 : 1;
+        return b.ticket.createdAt.compareTo(a.ticket.createdAt);
+      });
     }
 
     final current = state;

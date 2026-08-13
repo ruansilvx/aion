@@ -93,6 +93,16 @@ class PageTicketProviderImpl implements PageTicketProvider {
         ));
       }
     }
+    // Component Spec §2.4: directly-raised entries (raised on `pageId`
+    // itself) sort before rolled-up ones (raised on a descendant), each
+    // group ordered by descending `createdAt` of the gap/question ticket
+    // itself. Mirrors `TicketsCubit.loadDocumentRelations`'s identical sort.
+    gapsAndOpenQuestions.sort((a, b) {
+      final aDirect = a.raisedOn.id == pageId;
+      final bDirect = b.raisedOn.id == pageId;
+      if (aDirect != bDirect) return aDirect ? -1 : 1;
+      return b.ticket.createdAt.compareTo(a.ticket.createdAt);
+    });
 
     return PageRelations(
       childDocs: childDocs,
@@ -103,7 +113,7 @@ class PageTicketProviderImpl implements PageTicketProvider {
   }
 
   @override
-  Future<void> createGapOrQuestion(
+  Future<bool> createGapOrQuestion(
     TicketType type, {
     required String title,
     String? description,

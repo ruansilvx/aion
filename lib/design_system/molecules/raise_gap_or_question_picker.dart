@@ -26,7 +26,12 @@ import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 /// mirroring `TicketLinkPicker.onSelected`'s contract; kept
 /// callback-based (rather than reading `TicketsCubit` directly) so this
 /// design-system-layer widget stays feature-agnostic per project.md's
-/// cross-feature rule. Added for
+/// cross-feature rule. [onCreate] returns whether the creation succeeded
+/// — a rejected creation (the hard-rule validation in
+/// `TicketsCubit.createGapOrQuestion` failing, or the write throwing)
+/// keeps the form step open and shows its inline error state (Component
+/// Spec §3.3.5) rather than closing the overlay and silently discarding
+/// the failure. Added for
 /// `aion-arch/changes/idea-gap-question-ticket-types`; see that change's
 /// design.md §6.2 and Component Spec §3.
 class RaiseGapOrQuestionPicker extends StatefulWidget {
@@ -36,8 +41,15 @@ class RaiseGapOrQuestionPicker extends StatefulWidget {
   /// Called with the chosen [TicketType] (`knownGap`/`openQuestion`) and
   /// the form's [title]/[description] once "Create" is committed. The
   /// caller is responsible for actually creating the ticket (e.g. via
-  /// `TicketsCubit.createGapOrQuestion`).
-  final void Function(TicketType type, {required String title, String? description})
+  /// `TicketsCubit.createGapOrQuestion`) and returns whether it
+  /// succeeded — `false` keeps the form step open and shows its inline
+  /// error state (Component Spec §3.3.5) instead of closing the overlay,
+  /// so a rejected creation isn't silently discarded.
+  final Future<bool> Function(
+    TicketType type, {
+    required String title,
+    String? description,
+  })
   onCreate;
 
   @override
@@ -127,24 +139,25 @@ class _RaiseGapOrQuestionPickerState extends State<RaiseGapOrQuestionPicker> {
                           curve: Curves.easeOut,
                           child: type == null
                               ? _TypeChoiceStep(
-                                  onSelected: (picked) =>
-                                      setOverlayState(() => _selectedType = picked),
+                                  onSelected: (picked) => setOverlayState(
+                                    () => _selectedType = picked,
+                                  ),
                                 )
                               : _FormStep(
                                   type: type,
                                   titleController: _titleController,
                                   descriptionController: _descriptionController,
-                                  onBack: () =>
-                                      setOverlayState(() => _selectedType = null),
+                                  onBack: () => setOverlayState(
+                                    () => _selectedType = null,
+                                  ),
                                   onCancel: _removeOverlay,
-                                  onCreate: (title, description) {
-                                    widget.onCreate(
-                                      type,
-                                      title: title,
-                                      description: description,
-                                    );
-                                    _removeOverlay();
-                                  },
+                                  onSubmit: (title, description) =>
+                                      widget.onCreate(
+                                        type,
+                                        title: title,
+                                        description: description,
+                                      ),
+                                  onSuccess: _removeOverlay,
                                 ),
                         );
                       },
@@ -322,6 +335,10 @@ class _TypeChoiceRowState extends State<_TypeChoiceRow> {
 }
 
 /// Step 2: the compact title/description form — Component Spec §3.3.
+/// Tracks its own submitting/error state (Component Spec §3.3.5) since
+/// [onSubmit] is asynchronous and may be rejected by the Cubit's hard-rule
+/// validation or throw — a rejected creation keeps this step open and
+/// shows the inline error line rather than silently closing the overlay.
 class _FormStep extends StatefulWidget {
   const _FormStep({
     required this.type,
@@ -329,7 +346,8 @@ class _FormStep extends StatefulWidget {
     required this.descriptionController,
     required this.onBack,
     required this.onCancel,
-    required this.onCreate,
+    required this.onSubmit,
+    required this.onSuccess,
   });
 
   final TicketType type;
@@ -341,13 +359,22 @@ class _FormStep extends StatefulWidget {
 
   /// Dismisses the overlay entirely — the "Cancel" action button.
   final VoidCallback onCancel;
-  final void Function(String title, String? description) onCreate;
+
+  /// Performs the actual creation (e.g.
+  /// `TicketsCubit.createGapOrQuestion`), returning whether it succeeded.
+  final Future<bool> Function(String title, String? description) onSubmit;
+
+  /// Called once [onSubmit] resolves `true` — closes the overlay.
+  final VoidCallback onSuccess;
 
   @override
   State<_FormStep> createState() => _FormStepState();
 }
 
 class _FormStepState extends State<_FormStep> {
+  bool _isSubmitting = false;
+  bool _hasError = false;
+
   @override
   void initState() {
     super.initState();
@@ -362,11 +389,27 @@ class _FormStepState extends State<_FormStep> {
 
   void _handleTitleChanged() => setState(() {});
 
-  void _submit() {
+  Future<void> _submit() async {
     final title = widget.titleController.text.trim();
-    if (title.isEmpty) return;
+    if (title.isEmpty || _isSubmitting) return;
     final description = widget.descriptionController.text.trim();
-    widget.onCreate(title, description.isEmpty ? null : description);
+    setState(() {
+      _isSubmitting = true;
+      _hasError = false;
+    });
+    final success = await widget.onSubmit(
+      title,
+      description.isEmpty ? null : description,
+    );
+    if (!mounted) return;
+    if (success) {
+      widget.onSuccess();
+    } else {
+      setState(() {
+        _isSubmitting = false;
+        _hasError = true;
+      });
+    }
   }
 
   @override
@@ -381,7 +424,8 @@ class _FormStepState extends State<_FormStep> {
     final titleHint = isKnownGap
         ? context.l10n.ticketRaiseKnownGapTitleHint
         : context.l10n.ticketRaiseOpenQuestionTitleHint;
-    final canSubmit = widget.titleController.text.trim().isNotEmpty;
+    final canSubmit =
+        widget.titleController.text.trim().isNotEmpty && !_isSubmitting;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
@@ -444,6 +488,7 @@ class _FormStepState extends State<_FormStep> {
             labelText: context.l10n.createTicketTitleLabel,
             hintText: titleHint,
             isRequired: true,
+            isError: _hasError,
             textInputAction: TextInputAction.next,
           ),
           const SizedBox(height: AionSpacing.sp12),
@@ -461,18 +506,27 @@ class _FormStepState extends State<_FormStep> {
                 child: AppButton(
                   label: context.l10n.commonCancel,
                   variant: AppButtonVariant.secondary,
-                  onPressed: widget.onCancel,
+                  onPressed: _isSubmitting ? null : widget.onCancel,
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: AppButton(
-                  label: context.l10n.ticketRaiseGapOrQuestionCreateAction,
+                  label: _isSubmitting
+                      ? context.l10n.ticketRaiseGapOrQuestionCreatingAction
+                      : context.l10n.ticketRaiseGapOrQuestionCreateAction,
                   onPressed: canSubmit ? _submit : null,
                 ),
               ),
             ],
           ),
+          if (_hasError) ...[
+            const SizedBox(height: 8),
+            Text(
+              context.l10n.ticketRaiseGapOrQuestionErrorMessage,
+              style: AionText.bodySm.copyWith(fontSize: 12.5, color: c.danger),
+            ),
+          ],
         ],
       ),
     );
