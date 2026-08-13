@@ -256,4 +256,32 @@ void main() {
       expect: () => [isA<PagesError>()],
     );
   });
+
+  group('PagesCubit.loadWikilinkCandidates', () {
+    test(
+      'delegates to PageTicketProvider.getWikilinkCandidates and returns '
+      'its result unmodified',
+      () async {
+        final resource = Ticket(
+          id: 'r1',
+          ticketId: 'AIO-3',
+          type: TicketType.resource,
+          title: 'A resource',
+          status: TicketStatus.backlog,
+          createdAt: now,
+          updatedAt: now,
+        );
+        when(
+          () => provider.getWikilinkCandidates(),
+        ).thenAnswer((_) async => [page, resource]);
+        final cubit = PagesCubit(provider);
+
+        final result = await cubit.loadWikilinkCandidates();
+
+        expect(result, [page, resource]);
+        verify(() => provider.getWikilinkCandidates()).called(1);
+        await cubit.close();
+      },
+    );
+  });
 }

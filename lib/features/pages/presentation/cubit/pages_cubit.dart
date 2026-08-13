@@ -127,6 +127,16 @@ class PagesCubit extends Cubit<PagesState> {
     }
   }
 
+  /// Returns every live `page`/`resource` ticket, for
+  /// `MarkdownEditor.wikilinkSuggestions`/`MarkdownView.resolveWikilink`'s
+  /// candidate list. Query-only — does not emit a state, same precedent
+  /// as `getValidParentCandidates`/`getAllTickets`-shaped reads elsewhere
+  /// in this codebase. Delegates straight to
+  /// [PageTicketProvider.getWikilinkCandidates] — no business logic here.
+  /// Added for `aion-arch/changes/inline-wikilink-backlinks`.
+  Future<List<Ticket>> loadWikilinkCandidates() =>
+      _provider.getWikilinkCandidates();
+
   /// Creates a [type] (`knownGap`/`openQuestion` only) ticket titled
   /// [title] with optional [description], linked to [pageId], then
   /// reloads [pageId]'s relations. Returns the provider's own success

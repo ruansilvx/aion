@@ -4,6 +4,9 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aion/design_system/design_system.dart';
+import 'package:aion/features/tickets/domain/entities/ticket.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
 /// Wraps [child] with the minimum ancestry [MarkdownView] needs:
 /// [Directionality] (required by any text-rendering widget) and
@@ -147,5 +150,117 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.textContaining('raw html-ish content'), findsOneWidget);
     });
+  });
+
+  group('MarkdownView wikilink spans', () {
+    final targetTicket = Ticket(
+      id: 't1',
+      ticketId: 'AIO-42',
+      type: TicketType.page,
+      title: 'Target Title',
+      status: TicketStatus.backlog,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    testWidgets(
+      'a resolved [[TicketId]] reference renders the target\'s live title and is tappable',
+      (tester) async {
+        Ticket? tapped;
+        await tester.pumpWidget(
+          _wrap(
+            MarkdownView(
+              source: '[[AIO-42]]',
+              resolveWikilink: (target) =>
+                  target == 'AIO-42' ? targetTicket : null,
+              onWikilinkTap: (t) => tapped = t,
+            ),
+          ),
+        );
+
+        expect(find.text('Target Title'), findsOneWidget);
+        await tester.tap(find.text('Target Title'));
+        expect(tapped, targetTicket);
+      },
+    );
+
+    testWidgets(
+      'a resolved [[Target|Alias]] reference renders the literal alias verbatim, not the live title',
+      (tester) async {
+        await tester.pumpWidget(
+          _wrap(
+            MarkdownView(
+              source: '[[AIO-42|Custom Label]]',
+              resolveWikilink: (target) =>
+                  target == 'AIO-42' ? targetTicket : null,
+            ),
+          ),
+        );
+
+        expect(find.text('Custom Label'), findsOneWidget);
+        expect(find.text('Target Title'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'an unresolved reference renders the chip-backed treatment and is '
+      'tappable-to-create when onCreateWikilinkTarget is supplied and the '
+      'target does not look like a ticketId',
+      (tester) async {
+        String? createdTitle;
+        await tester.pumpWidget(
+          _wrap(
+            MarkdownView(
+              source: '[[Missing Page]]',
+              resolveWikilink: (target) => null,
+              onCreateWikilinkTarget: (title) => createdTitle = title,
+            ),
+          ),
+        );
+
+        final richText = tester.widgetList<RichText>(find.byType(RichText));
+        final combined = richText.map((w) => w.text.toPlainText()).join();
+        expect(combined, contains('[['));
+        expect(combined, contains('Missing Page'));
+        expect(combined, contains(']]'));
+
+        await tester.tap(find.byType(RichText).first);
+        expect(createdTitle, 'Missing Page');
+      },
+    );
+
+    testWidgets(
+      'an unresolved id-anchored reference is not tappable-to-create even '
+      'when onCreateWikilinkTarget is supplied',
+      (tester) async {
+        String? createdTitle;
+        await tester.pumpWidget(
+          _wrap(
+            MarkdownView(
+              source: '[[AIO-99]]',
+              resolveWikilink: (target) => null,
+              onCreateWikilinkTarget: (title) => createdTitle = title,
+            ),
+          ),
+        );
+
+        await tester.tap(find.byType(RichText).first);
+        expect(createdTitle, isNull);
+      },
+    );
+
+    testWidgets(
+      'every callback defaulting to null leaves [[...]] text unrecognized '
+      '(existing non-page consumers unaffected)',
+      (tester) async {
+        await tester.pumpWidget(
+          _wrap(const MarkdownView(source: 'See [[Some Page]] here.')),
+        );
+
+        final richText = tester.widgetList<RichText>(find.byType(RichText));
+        final combined = richText.map((w) => w.text.toPlainText()).join();
+        expect(combined, 'See [[Some Page]] here.');
+      },
+    );
   });
 }

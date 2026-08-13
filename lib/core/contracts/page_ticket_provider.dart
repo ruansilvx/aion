@@ -2,6 +2,7 @@
 
 import 'package:equatable/equatable.dart';
 
+import 'package:aion/features/tickets/domain/entities/backlink_ref.dart';
 import 'package:aion/features/tickets/domain/entities/gap_or_question_ref.dart';
 import 'package:aion/features/tickets/domain/entities/linked_ticket_ref.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
@@ -81,6 +82,14 @@ abstract interface class PageTicketProvider {
     String? description,
     required String targetTicketId,
   });
+
+  /// Every live `page`/`resource` ticket, for wikilink-autocomplete/
+  /// resolution — widened beyond `page`-only since a wikilink can now
+  /// target a resource too (see design.md's "Resource participation,
+  /// widened"). No self/descendant exclusion — unlike parent-candidate
+  /// queries, a wikilink reference has no cycle constraint. Added for
+  /// `aion-arch/changes/inline-wikilink-backlinks`.
+  Future<List<Ticket>> getWikilinkCandidates();
 }
 
 /// A page's sub-pages, linked tickets, and backlinks — the same three
@@ -105,9 +114,11 @@ class PageRelations extends Equatable {
   /// underlying link row's id — see [LinkedTicketRef].
   final List<LinkedTicketRef> linkedTickets;
 
-  /// Other `page`/`resource` tickets linked to this page via `TicketLink`.
-  /// Same [LinkedTicketRef] shape as [linkedTickets].
-  final List<LinkedTicketRef> backlinks;
+  /// Other `page`/`resource` tickets that reference this page, either via
+  /// an explicit `TicketLink` or an inline `[[wikilink]]` — see
+  /// [BacklinkRef.origin]. Was `List<LinkedTicketRef>` (`TicketLink`-only)
+  /// before `aion-arch/changes/inline-wikilink-backlinks`.
+  final List<BacklinkRef> backlinks;
 
   /// Every `knownGap`/`openQuestion` ticket `relatesTo`-linked to this
   /// page itself or to any descendant of it, recursively rolled up —

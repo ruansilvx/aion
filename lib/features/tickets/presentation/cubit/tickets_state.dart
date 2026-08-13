@@ -2,6 +2,7 @@
 
 import 'package:equatable/equatable.dart';
 
+import 'package:aion/features/tickets/domain/entities/backlink_ref.dart';
 import 'package:aion/features/tickets/domain/entities/gap_or_question_ref.dart';
 import 'package:aion/features/tickets/domain/entities/linked_ticket_ref.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
@@ -357,11 +358,14 @@ class TicketDetailLoaded extends TicketsState {
   /// [TicketsCubit.loadDocumentRelations] resolves.
   final List<LinkedTicketRef> linkedTickets;
 
-  /// Other `page`/`resource` tickets linked to [ticket] via `TicketLink`
-  /// (see [TicketsCubit.loadDocumentRelations]'s dartdoc for the scoping
-  /// rationale). Same [LinkedTicketRef] shape as [linkedTickets]. Empty
-  /// until [TicketsCubit.loadDocumentRelations] resolves.
-  final List<LinkedTicketRef> backlinks;
+  /// Other `page`/`resource` tickets that reference [ticket], either via
+  /// an explicit `TicketLink` or an inline `[[wikilink]]` — see
+  /// [TicketsCubit.loadDocumentRelations]'s dartdoc for the merge/scoping
+  /// rationale and [BacklinkRef.origin]. Was `List<LinkedTicketRef>`
+  /// (`TicketLink`-only) before
+  /// `aion-arch/changes/inline-wikilink-backlinks`. Empty until
+  /// [TicketsCubit.loadDocumentRelations] resolves.
+  final List<BacklinkRef> backlinks;
 
   /// Every `knownGap`/`openQuestion` ticket `relatesTo`-linked to [ticket]
   /// itself or to any descendant of it, recursively rolled up — see

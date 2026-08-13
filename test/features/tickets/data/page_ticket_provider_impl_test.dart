@@ -14,10 +14,13 @@ class MockTicketRepository extends Mock implements TicketRepository {}
 
 class MockTicketLinkRepository extends Mock implements TicketLinkRepository {}
 
+class MockPageWikilinkRepository extends Mock implements PageWikilinkRepository {}
+
 void main() {
   late MockTicketsCubit ticketsCubit;
   late MockTicketRepository ticketRepository;
   late MockTicketLinkRepository ticketLinkRepository;
+  late MockPageWikilinkRepository pageWikilinkRepository;
   late PageTicketProviderImpl provider;
 
   final now = DateTime(2026, 1, 1);
@@ -45,11 +48,19 @@ void main() {
     ticketsCubit = MockTicketsCubit();
     ticketRepository = MockTicketRepository();
     ticketLinkRepository = MockTicketLinkRepository();
+    pageWikilinkRepository = MockPageWikilinkRepository();
     provider = PageTicketProviderImpl(
       ticketsCubit,
       ticketRepository,
       ticketLinkRepository,
+      pageWikilinkRepository,
     );
+    // Default (empty) stub for loadPageRelations' wikilink-origin
+    // backlinks merge — individual tests override this where the merge
+    // itself is under test.
+    when(
+      () => pageWikilinkRepository.getIncomingLinks(any()),
+    ).thenAnswer((_) async => []);
   });
 
   group('PageTicketProviderImpl reads', () {
@@ -148,11 +159,93 @@ void main() {
         expect(relations.linkedTickets.single.linkId, 'link-1');
         expect(relations.backlinks.map((r) => r.ticket), [backlinkPage]);
         expect(
-          relations.backlinks.single.relativeType,
-          TicketLinkType.relatesTo,
+          relations.backlinks.single.origin,
+          BacklinkOrigin.explicitLink,
         );
-        expect(relations.backlinks.single.linkId, 'link-2');
         expect(relations.gapsAndOpenQuestions, isEmpty);
+      },
+    );
+
+    test(
+      'loadPageRelations merges wikilink-origin backlinks alongside explicit-link ones',
+      () async {
+        final page = buildTicket(id: 'p1', type: TicketType.page);
+        final explicitBacklink = buildTicket(id: 'p2', type: TicketType.page);
+        final wikilinkBacklink = buildTicket(id: 'p3', type: TicketType.page);
+
+        when(
+          () => ticketRepository.getTicketsByParent(
+            'p1',
+            types: const [TicketType.page, TicketType.resource],
+          ),
+        ).thenAnswer((_) async => []);
+        when(() => ticketLinkRepository.getLinksForTicket('p1')).thenAnswer(
+          (_) async => [
+            TicketLinkData(
+              id: 'link-1',
+              sourceTicketId: 'p2',
+              targetTicketId: 'p1',
+              linkType: TicketLinkType.relatesTo.name,
+            ),
+          ],
+        );
+        when(
+          () => ticketRepository.getTicketById('p2'),
+        ).thenAnswer((_) async => explicitBacklink);
+        when(
+          () => ticketRepository.getTicketById('p3'),
+        ).thenAnswer((_) async => wikilinkBacklink);
+        when(
+          () => ticketRepository.getAllTickets(),
+        ).thenAnswer((_) async => [page, explicitBacklink, wikilinkBacklink]);
+        when(
+          () =>
+              ticketLinkRepository.getLinksByTypes([TicketLinkType.relatesTo]),
+        ).thenAnswer((_) async => []);
+        when(() => pageWikilinkRepository.getIncomingLinks('p1')).thenAnswer(
+          (_) async => [
+            PageWikilink(
+              id: 'wl-1',
+              sourcePageId: 'p3',
+              targetPageId: 'p1',
+              createdAt: now,
+            ),
+          ],
+        );
+
+        final relations = await provider.loadPageRelations(page.id);
+
+        expect(relations.backlinks, hasLength(2));
+        expect(
+          relations.backlinks
+              .firstWhere((r) => r.ticket.id == 'p2')
+              .origin,
+          BacklinkOrigin.explicitLink,
+        );
+        expect(
+          relations.backlinks
+              .firstWhere((r) => r.ticket.id == 'p3')
+              .origin,
+          BacklinkOrigin.wikilink,
+        );
+      },
+    );
+
+    test(
+      'getWikilinkCandidates returns every live page and resource, no exclusion',
+      () async {
+        final page1 = buildTicket(id: 'p1', type: TicketType.page);
+        final resource1 = buildTicket(id: 'r1', type: TicketType.resource);
+        when(
+          () => ticketRepository.getAllTicketsByType([
+            TicketType.page,
+            TicketType.resource,
+          ]),
+        ).thenAnswer((_) async => [page1, resource1]);
+
+        final result = await provider.getWikilinkCandidates();
+
+        expect(result, [page1, resource1]);
       },
     );
 

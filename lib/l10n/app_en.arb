@@ -588,6 +588,16 @@
   "documentationLinkedTicketsLabel": "LINKED TICKETS",
   "documentationLinkedTicketsEmpty": "No linked tickets",
   "documentationBacklinksLabel": "BACKLINKS",
+  "wikilinkBacklinkOriginTag": "In text",
+  "wikilinkSuggestionNoMatches": "No pages match “{query}”",
+  "@wikilinkSuggestionNoMatches": {
+    "placeholders": {
+      "query": {
+        "type": "String"
+      }
+    }
+  },
+  "wikilinkSuggestionCreateHint": "Press ↵ to create it",
   "documentationGapsAndQuestionsLabel": "GAPS & OPEN QUESTIONS",
   "documentationGapsAndQuestionsEmpty": "No gaps or open questions raised yet.",
   "documentationGapsAndQuestionsRaisedOn": "on {title}",

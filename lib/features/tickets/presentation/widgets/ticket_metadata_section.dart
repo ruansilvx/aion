@@ -864,7 +864,7 @@ class TicketMetadataSection extends StatelessWidget {
                   ),
                 ),
                 BacklinksSection(
-                  tickets: state.backlinks.map((r) => r.ticket).toList(),
+                  backlinks: state.backlinks,
                   onTap: (id) => context.go('/workspace/tickets/$id'),
                 ),
                 GapsAndOpenQuestionsSection(

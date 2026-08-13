@@ -34,3 +34,4 @@ export 'molecules/raise_gap_or_question_picker.dart';
 export 'molecules/severity_badge.dart';
 export 'molecules/sync_status_badge.dart';
 export 'molecules/type_chip.dart';
+export 'molecules/wikilink_suggestion_list.dart';
