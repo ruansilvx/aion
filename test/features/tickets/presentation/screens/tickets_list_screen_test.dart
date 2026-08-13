@@ -116,7 +116,7 @@ void main() {
       Ticket(
         id: 'fallback',
         ticketId: '',
-        type: TicketType.signal,
+        type: TicketType.idea,
         title: '',
         status: TicketStatus.backlog,
         createdAt: DateTime(2026),

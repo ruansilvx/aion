@@ -38,9 +38,7 @@ void main() {
   );
 
   setUpAll(() {
-    registerFallbackValue(
-      buildTicket(id: 'fallback', type: TicketType.page),
-    );
+    registerFallbackValue(buildTicket(id: 'fallback', type: TicketType.page));
   });
 
   setUp(() {
@@ -127,18 +125,34 @@ void main() {
         when(
           () => ticketRepository.getTicketById('p2'),
         ).thenAnswer((_) async => backlinkPage);
+        // The recursive gaps-and-open-questions rollup's own reads,
+        // added for `aion-arch/changes/idea-gap-question-ticket-types`
+        // — `loadPageRelations` now performs these unconditionally
+        // alongside the pre-existing `linkedTickets`/`backlinks` reads.
+        when(
+          () => ticketRepository.getAllTickets(),
+        ).thenAnswer((_) async => [page, childDoc, linkedTask, backlinkPage]);
+        when(
+          () =>
+              ticketLinkRepository.getLinksByTypes([TicketLinkType.relatesTo]),
+        ).thenAnswer((_) async => []);
 
         final relations = await provider.loadPageRelations(page.id);
 
         expect(relations.childDocs, [childDoc]);
         expect(relations.linkedTickets.map((r) => r.ticket), [linkedTask]);
-        expect(relations.linkedTickets.single.relativeType,
-            TicketLinkType.relatesTo);
+        expect(
+          relations.linkedTickets.single.relativeType,
+          TicketLinkType.relatesTo,
+        );
         expect(relations.linkedTickets.single.linkId, 'link-1');
         expect(relations.backlinks.map((r) => r.ticket), [backlinkPage]);
-        expect(relations.backlinks.single.relativeType,
-            TicketLinkType.relatesTo);
+        expect(
+          relations.backlinks.single.relativeType,
+          TicketLinkType.relatesTo,
+        );
         expect(relations.backlinks.single.linkId, 'link-2');
+        expect(relations.gapsAndOpenQuestions, isEmpty);
       },
     );
 
@@ -213,9 +227,7 @@ void main() {
 
     test('updatePage delegates to TicketsCubit.updateTicket', () async {
       final page = buildTicket(id: 'p1', type: TicketType.page);
-      when(
-        () => ticketsCubit.updateTicket(page),
-      ).thenAnswer((_) async => page);
+      when(() => ticketsCubit.updateTicket(page)).thenAnswer((_) async => page);
 
       final result = await provider.updatePage(page);
 
@@ -224,9 +236,7 @@ void main() {
     });
 
     test('trashPage delegates to TicketsCubit.trashTicket', () async {
-      when(
-        () => ticketsCubit.trashTicket('p1'),
-      ).thenAnswer((_) async {});
+      when(() => ticketsCubit.trashTicket('p1')).thenAnswer((_) async {});
 
       await provider.trashPage('p1');
 
@@ -261,6 +271,38 @@ void main() {
             'p1',
             'link-1',
             TicketLinkType.blocks,
+          ),
+        ).called(1);
+      },
+    );
+
+    test(
+      'createGapOrQuestion delegates to TicketsCubit.createGapOrQuestion',
+      () async {
+        when(
+          () => ticketsCubit.createGapOrQuestion(
+            TicketType.knownGap,
+            title: 'A gap',
+            description: 'A description',
+            targetTicketId: 'p1',
+          ),
+        ).thenAnswer((_) async => true);
+
+        final result = await provider.createGapOrQuestion(
+          TicketType.knownGap,
+          title: 'A gap',
+          description: 'A description',
+          targetTicketId: 'p1',
+        );
+
+        expect(result, isTrue);
+
+        verify(
+          () => ticketsCubit.createGapOrQuestion(
+            TicketType.knownGap,
+            title: 'A gap',
+            description: 'A description',
+            targetTicketId: 'p1',
           ),
         ).called(1);
       },

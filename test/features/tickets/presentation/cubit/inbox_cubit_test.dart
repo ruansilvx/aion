@@ -10,6 +10,7 @@ import 'package:aion/core/contracts/agent_provider.dart';
 import 'package:aion/core/contracts/consumption_signal.dart';
 import 'package:aion/core/contracts/provider_id.dart';
 import 'package:aion/core/contracts/provider_registry.dart';
+import 'package:aion/core/database/app_database.dart';
 import 'package:aion/core/git/git_repository_client.dart';
 import 'package:aion/features/providers/domain/enums/model_phase.dart';
 import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
@@ -87,7 +88,7 @@ void main() {
       Ticket(
         id: 'fallback',
         ticketId: '',
-        type: TicketType.signal,
+        type: TicketType.idea,
         title: '',
         status: TicketStatus.backlog,
         createdAt: DateTime(2026),
@@ -237,16 +238,16 @@ void main() {
   group('startBrainDump', () {
     test(
       'creates a parentless chat with inboxPurpose brainDump, resolves '
-      'ModelPhase.frontier, and materializes one signal ticket per '
+      'ModelPhase.frontier, and materializes one idea ticket per '
       'parsed block with the correct suggestedType',
       () async {
         when(() => agentClient.run(any())).thenAnswer(
           (_) async => Stream.fromIterable(const [
             AgentTextEvent(
-              'SIGNAL: Add dark mode toggle\n'
+              'IDEA: Add dark mode toggle\n'
               'Users have asked for a way to switch themes manually.\n'
               'TYPE: epic\n'
-              'SIGNAL: Crash on empty title\n'
+              'IDEA: Crash on empty title\n'
               'Creating a ticket with no title crashes the app.\n'
               'TYPE: bug\n'
               'BRAINDUMP: DONE',
@@ -276,29 +277,29 @@ void main() {
         final chat = created.singleWhere((t) => t.type == TicketType.chat);
         expect(chat.inboxPurpose, InboxPurpose.brainDump);
 
-        final signals = created
-            .where((t) => t.type == TicketType.signal)
+        final ideas = created
+            .where((t) => t.type == TicketType.idea)
             .toList();
-        expect(signals, hasLength(2));
+        expect(ideas, hasLength(2));
         expect(
-          signals.singleWhere((s) => s.title == 'Add dark mode toggle').suggestedType,
+          ideas.singleWhere((s) => s.title == 'Add dark mode toggle').suggestedType,
           TicketType.epic,
         );
         expect(
-          signals.singleWhere((s) => s.title == 'Crash on empty title').suggestedType,
+          ideas.singleWhere((s) => s.title == 'Crash on empty title').suggestedType,
           TicketType.bug,
         );
       },
     );
 
     test(
-      'a block with a missing/malformed TYPE line still creates a signal '
+      'a block with a missing/malformed TYPE line still creates an idea '
       'ticket, with suggestedType null',
       () async {
         when(() => agentClient.run(any())).thenAnswer(
           (_) async => Stream.fromIterable(const [
             AgentTextEvent(
-              'SIGNAL: Unclear idea\n'
+              'IDEA: Unclear idea\n'
               'No TYPE line follows this one.\n'
               'BRAINDUMP: DONE',
             ),
@@ -319,9 +320,9 @@ void main() {
         final created = verify(
           () => repository.createTicket(captureAny()),
         ).captured.cast<Ticket>();
-        final signal = created.singleWhere((t) => t.type == TicketType.signal);
-        expect(signal.title, 'Unclear idea');
-        expect(signal.suggestedType, isNull);
+        final idea = created.singleWhere((t) => t.type == TicketType.idea);
+        expect(idea.title, 'Unclear idea');
+        expect(idea.suggestedType, isNull);
       },
     );
   });
@@ -329,7 +330,7 @@ void main() {
   group('startWhatNextGuidance', () {
     test(
       'creates a parentless chat with inboxPurpose whatNextGuidance and '
-      'resolves ModelPhase.frontier, creating no signal tickets',
+      'resolves ModelPhase.frontier, creating no idea tickets',
       () async {
         when(() => agentClient.run(any())).thenAnswer(
           (_) async => Stream.fromIterable(const [
@@ -361,6 +362,113 @@ void main() {
         ).captured.cast<Ticket>();
         expect(created, hasLength(1));
         expect(created.single.inboxPurpose, InboxPurpose.whatNextGuidance);
+      },
+    );
+
+    test(
+      'assembled context queries open knownGap/openQuestion tickets '
+      'directly (each named alongside its relatesTo target) and open, '
+      'not-yet-promoted idea tickets — no markdown "Known gaps" scanning',
+      () async {
+        final target = Ticket(
+          id: 'story-1',
+          ticketId: 'AIO-story-1',
+          type: TicketType.story,
+          title: 'Login flow',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final knownGap = Ticket(
+          id: 'gap-1',
+          ticketId: 'AIO-gap-1',
+          type: TicketType.knownGap,
+          title: 'No password-reset flow',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final openIdea = Ticket(
+          id: 'idea-1',
+          ticketId: 'AIO-idea-1',
+          type: TicketType.idea,
+          title: 'Add dark mode',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final promotedIdea = Ticket(
+          id: 'idea-2',
+          ticketId: 'AIO-idea-2',
+          type: TicketType.idea,
+          title: 'Already promoted idea',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Advisory prose only.'),
+            AgentDoneEvent(),
+          ]),
+        );
+        when(
+          () => repository.getAllTickets(),
+        ).thenAnswer((_) async => [target, knownGap, openIdea, promotedIdea]);
+        when(
+          () => repository.getTicketById('story-1'),
+        ).thenAnswer((_) async => target);
+        when(
+          () => linkRepository.getLinksForTicket('gap-1'),
+        ).thenAnswer(
+          (_) async => [
+            TicketLinkData(
+              id: 'link-1',
+              sourceTicketId: 'gap-1',
+              targetTicketId: 'story-1',
+              linkType: TicketLinkType.relatesTo.name,
+            ),
+          ],
+        );
+        when(
+          () => linkRepository.getLinksForTicket('idea-1'),
+        ).thenAnswer((_) async => []);
+        when(
+          () => linkRepository.getLinksForTicket('idea-2'),
+        ).thenAnswer(
+          (_) async => [
+            TicketLinkData(
+              id: 'link-2',
+              sourceTicketId: 'idea-2',
+              targetTicketId: 'epic-9',
+              linkType: TicketLinkType.relatesTo.name,
+            ),
+          ],
+        );
+        when(
+          () => repository.getTicketsByParent(
+            null,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => []);
+
+        final cubit = buildCubit();
+        await cubit.startWhatNextGuidance();
+        await cubit.close();
+
+        final postedComments = verify(
+          () => commentRepository.addComment(captureAny()),
+        ).captured.cast<TicketComment>();
+        final systemPrompt = postedComments
+            .firstWhere((c) => c.authorType == CommentAuthorType.system)
+            .content;
+
+        expect(systemPrompt, contains('No password-reset flow'));
+        expect(systemPrompt, contains('Login flow'));
+        expect(systemPrompt, contains('Add dark mode'));
+        expect(systemPrompt, isNot(contains('Already promoted idea')));
+        expect(systemPrompt, isNot(contains('Known gaps from documentation')));
       },
     );
   });

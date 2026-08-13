@@ -6,6 +6,7 @@ import 'package:aion/core/contracts/page_ticket_provider.dart';
 import 'package:aion/features/pages/presentation/cubit/pages_state.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
 /// UI-orchestration Cubit for the `pages` feature. Mirrors the shape of
 /// `TicketsCubit`'s detail/create flows, but scoped to `page` tickets only
@@ -19,9 +20,9 @@ class PagesCubit extends Cubit<PagesState> {
   final PageTicketProvider _provider;
 
   /// Loads the `page` ticket with id [id] plus its sub-pages/linked-
-  /// tickets/backlinks. Emits [PagesLoading] then [PageDetailLoaded] on
-  /// success, or [PagesError] if the page isn't found or the provider
-  /// call throws.
+  /// tickets/backlinks/gaps-and-open-questions. Emits [PagesLoading] then
+  /// [PageDetailLoaded] on success, or [PagesError] if the page isn't
+  /// found or the provider call throws.
   Future<void> loadPage(String id) async {
     emit(const PagesLoading());
     try {
@@ -123,6 +124,42 @@ class PagesCubit extends Cubit<PagesState> {
       }
     } catch (e) {
       emit(PagesError(e.toString()));
+    }
+  }
+
+  /// Creates a [type] (`knownGap`/`openQuestion` only) ticket titled
+  /// [title] with optional [description], linked to [pageId], then
+  /// reloads [pageId]'s relations. Returns the provider's own success
+  /// flag (`false` if the creation was rejected/failed) — propagated
+  /// straight through so [RaiseGapOrQuestionPicker]'s caller can await it
+  /// and show the popover's inline error state on a rejected creation,
+  /// same contract as `TicketsCubit.createGapOrQuestion`. Relations are
+  /// still reloaded either way, since a rejected creation may still have
+  /// changed nothing worth diverging the reload for. Otherwise same
+  /// emit/no-op shape as [deleteLink]/[updateLinkType]. Added for
+  /// `aion-arch/changes/idea-gap-question-ticket-types`.
+  Future<bool> createGapOrQuestion(
+    String pageId,
+    TicketType type, {
+    required String title,
+    String? description,
+  }) async {
+    try {
+      final success = await _provider.createGapOrQuestion(
+        type,
+        title: title,
+        description: description,
+        targetTicketId: pageId,
+      );
+      final relations = await _provider.loadPageRelations(pageId);
+      final current = state;
+      if (current is PageDetailLoaded && current.page.id == pageId) {
+        emit(PageDetailLoaded(current.page, relations));
+      }
+      return success;
+    } catch (e) {
+      emit(PagesError(e.toString()));
+      return false;
     }
   }
 }

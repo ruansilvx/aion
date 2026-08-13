@@ -15,9 +15,10 @@ import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
 /// The `/workspace/pages/:id` route: a `page` ticket's title, Markdown
-/// content editor, sub-pages, linked tickets, and backlinks — no
-/// priority/estimate/time-spent/status fields, no comment thread (those
-/// are work-item-only, see proposal.md's scope boundaries). Builds its
+/// content editor, sub-pages, linked tickets, backlinks, and gaps/open
+/// questions — no priority/estimate/time-spent/status fields, no comment
+/// thread (those are work-item-only, see proposal.md's scope
+/// boundaries). Builds its
 /// own [PagesCubit], backed by the workspace-scoped [PageTicketProvider]
 /// read from context. Per
 /// `aion-arch/changes/page-content-markdown-editor/design.md` §3.
@@ -188,6 +189,21 @@ class _PageDetailContent extends StatelessWidget {
                 );
                 context.go(ticketDetailRoute(ticket));
               },
+            ),
+            GapsAndOpenQuestionsSection(
+              viewedTicketId: page.id,
+              refs: relations.gapsAndOpenQuestions,
+              onTap: (id) => context.go('/workspace/tickets/$id'),
+              trailing: RaiseGapOrQuestionPicker(
+                onCreate: (type, {required title, description}) => context
+                    .read<PagesCubit>()
+                    .createGapOrQuestion(
+                      page.id,
+                      type,
+                      title: title,
+                      description: description,
+                    ),
+              ),
             ),
           ],
         ),

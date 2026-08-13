@@ -84,7 +84,7 @@ class TicketsTable extends Table {
   TextColumn get actualBehavior =>
       text().named('actual_behavior').nullable()();
 
-  /// `TicketType.name`, nullable. Meaningful only for `TicketType.signal`
+  /// `TicketType.name`, nullable. Meaningful only for `TicketType.idea`
   /// tickets created by the Inbox brain-dump purpose — the model's
   /// suggested promotion target (epic or bug).
   TextColumn get suggestedType =>

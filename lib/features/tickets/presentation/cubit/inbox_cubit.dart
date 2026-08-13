@@ -111,11 +111,11 @@ class InboxCubit extends Cubit<InboxState> {
     }
   }
 
-  /// Classifies [rawText] into one or more `signal` tickets. Creates a
+  /// Classifies [rawText] into one or more `idea` tickets. Creates a
   /// parentless `chat` ticket (`inboxPurpose: brainDump`), posts the
   /// brain-dump prompt as a system comment, runs the opening turn
   /// (`toolsEnabled: false`, [ModelPhase.frontier]), then parses the
-  /// reply (§5.1) into `signal` tickets each carrying a
+  /// reply (§5.1) into `idea` tickets each carrying a
   /// `Ticket.suggestedType`. Returns the created chat ticket's id, or
   /// `null` if the launch failed (in which case [InboxError] was
   /// emitted). Reloads [history] before returning either way.
@@ -142,7 +142,7 @@ class InboxCubit extends Cubit<InboxState> {
       if (succeeded) {
         final reply = await _lastCommentContent(chat.id);
         if (reply != null) {
-          await _materializeBrainDumpSignals(reply);
+          await _materializeBrainDumpIdeas(reply);
         }
       }
       await load();
@@ -414,13 +414,13 @@ class InboxCubit extends Cubit<InboxState> {
   }
 
   /// §5.1's brain-dump prompt: instructs the model to classify [rawText]
-  /// into one or more `SIGNAL:`/`TYPE:` blocks, terminated by a
+  /// into one or more `IDEA:`/`TYPE:` blocks, terminated by a
   /// `BRAINDUMP: DONE` line.
   String _brainDumpPrompt(String rawText) {
     return 'Read the following raw notes and identify one or more '
         'distinct ideas or issues worth turning into tickets. For each, '
         'reply in exactly this format:\n\n'
-        'SIGNAL: <short title>\n'
+        'IDEA: <short title>\n'
         '<one to three sentence description>\n'
         'TYPE: epic|bug\n\n'
         'End your reply with exactly one line: "BRAINDUMP: DONE".\n\n'
@@ -429,9 +429,9 @@ class InboxCubit extends Cubit<InboxState> {
 
   /// Parses a brain-dump reply (mirrors
   /// `TicketsCubit._parseSummaryFindings`'s block-splitting shape): each
-  /// `SIGNAL:` line starts a new block; a `TYPE:` line (case-insensitive,
+  /// `IDEA:` line starts a new block; a `TYPE:` line (case-insensitive,
   /// `epic` or `bug`, anything else treated as absent) sets that block's
-  /// suggested type; everything else until the next `SIGNAL:`/terminal
+  /// suggested type; everything else until the next `IDEA:`/terminal
   /// line is the description. A block with an empty title is dropped.
   List<({String title, String description, TicketType? suggestedType})>
   _parseBrainDumpBlocks(String reply) {
@@ -456,10 +456,10 @@ class InboxCubit extends Cubit<InboxState> {
 
     for (final line in reply.split('\n')) {
       final trimmed = line.trim();
-      final signalMatch = RegExp(r'^SIGNAL:\s*(.*)$').firstMatch(trimmed);
-      if (signalMatch != null) {
+      final ideaMatch = RegExp(r'^IDEA:\s*(.*)$').firstMatch(trimmed);
+      if (ideaMatch != null) {
         flush();
-        currentTitle = signalMatch.group(1);
+        currentTitle = ideaMatch.group(1);
         continue;
       }
       if (trimmed == 'BRAINDUMP: DONE') {
@@ -488,18 +488,20 @@ class InboxCubit extends Cubit<InboxState> {
     return blocks;
   }
 
-  /// Creates one `signal` ticket per [_parseBrainDumpBlocks] block found
+  /// Creates one `idea` ticket per [_parseBrainDumpBlocks] block found
   /// in [reply], each carrying its parsed `suggestedType` (`null` if the
   /// model omitted or malformed its `TYPE:` line — a parse failure on one
-  /// block shouldn't crash the rest of the reply).
-  Future<void> _materializeBrainDumpSignals(String reply) async {
+  /// block shouldn't crash the rest of the reply). Renamed from
+  /// `_materializeBrainDumpSignals` for
+  /// `aion-arch/changes/idea-gap-question-ticket-types`.
+  Future<void> _materializeBrainDumpIdeas(String reply) async {
     final now = DateTime.now();
     for (final block in _parseBrainDumpBlocks(reply)) {
       await _ticketRepository.createTicket(
         Ticket(
           id: _uuid.v4(),
           ticketId: '',
-          type: TicketType.signal,
+          type: TicketType.idea,
           title: block.title,
           description: block.description.isEmpty ? null : block.description,
           status: TicketStatus.backlog,
@@ -511,11 +513,16 @@ class InboxCubit extends Cubit<InboxState> {
     }
   }
 
-  /// §5.2's context assembly: in-flight SDD-stage tickets, "Known gaps"
-  /// sections from Documentation `page` tickets, and open (not yet
-  /// promoted) `signal` tickets — assembled as one plain-text prompt (no
-  /// tool access, matching `designSync`'s existing shape). The model's
-  /// reply is advisory prose, never parsed or acted on programmatically.
+  /// §5.2's context assembly: in-flight SDD-stage tickets, open
+  /// `knownGap`/`openQuestion` tickets (each resolved against its own
+  /// `relatesTo` target for context), and open (not yet promoted) `idea`
+  /// tickets — assembled as one plain-text prompt (no tool access,
+  /// matching `designSync`'s existing shape). The model's reply is
+  /// advisory prose, never parsed or acted on programmatically. The prior
+  /// markdown "## Known gaps" page-scanning path
+  /// (`_extractKnownGapsSection`) is retired as of
+  /// `aion-arch/changes/idea-gap-question-ticket-types` — superseded by
+  /// first-class `knownGap`/`openQuestion` tickets.
   Future<String> _assembleWhatNextContext() async {
     final all = await _ticketRepository.getAllTickets();
 
@@ -523,34 +530,48 @@ class InboxCubit extends Cubit<InboxState> {
         .where((t) => t.sddStage != null && t.sddStage != SddStage.archived)
         .toList();
 
-    final pages = await _ticketRepository.getAllTicketsByType(const [
-      TicketType.page,
-    ]);
-    final knownGaps = <String>[];
-    for (final page in pages) {
-      final section = _extractKnownGapsSection(page.description);
-      if (section != null) {
-        knownGaps.add('${page.title}:\n$section');
+    final gapsAndQuestions = all
+        .where(
+          (t) =>
+              t.type == TicketType.knownGap ||
+              t.type == TicketType.openQuestion,
+        )
+        .toList();
+    final gapsAndQuestionsWithTarget = <(Ticket, Ticket?)>[];
+    for (final gap in gapsAndQuestions) {
+      final links = await _linkRepository.getLinksForTicket(gap.id);
+      String? targetId;
+      for (final l in links) {
+        if (l.sourceTicketId == gap.id &&
+            l.linkType == TicketLinkType.relatesTo.name) {
+          targetId = l.targetTicketId;
+          break;
+        }
       }
+      final target = targetId == null
+          ? null
+          : await _ticketRepository.getTicketById(targetId);
+      gapsAndQuestionsWithTarget.add((gap, target));
     }
 
-    final openSignals = <Ticket>[];
-    for (final signal in all.where((t) => t.type == TicketType.signal)) {
-      final links = await _linkRepository.getLinksForTicket(signal.id);
+    final openIdeas = <Ticket>[];
+    for (final idea in all.where((t) => t.type == TicketType.idea)) {
+      final links = await _linkRepository.getLinksForTicket(idea.id);
       final promoted = links.any(
         (l) =>
-            l.sourceTicketId == signal.id &&
+            l.sourceTicketId == idea.id &&
             l.linkType == TicketLinkType.relatesTo.name,
       );
-      if (!promoted) openSignals.add(signal);
+      if (!promoted) openIdeas.add(idea);
     }
 
     final buffer = StringBuffer()
       ..writeln(
         'Recommend the single most valuable next action for this '
         'project, in this priority order: (1) any in-flight SDD-stage '
-        'work already underway, (2) known gaps documented in the '
-        "project's own docs, (3) open, not-yet-promoted raw signals.",
+        'work already underway, (2) open known gaps/open questions '
+        'raised against existing tickets, (3) open, not-yet-promoted '
+        'ideas.',
       )
       ..writeln();
 
@@ -562,17 +583,20 @@ class InboxCubit extends Cubit<InboxState> {
       }
       buffer.writeln();
     }
-    if (knownGaps.isNotEmpty) {
-      buffer.writeln('Known gaps from documentation:');
-      for (final gap in knownGaps) {
-        buffer
-          ..writeln(gap)
-          ..writeln();
+    if (gapsAndQuestionsWithTarget.isNotEmpty) {
+      buffer.writeln('Open known gaps / open questions:');
+      for (final (gap, target) in gapsAndQuestionsWithTarget) {
+        final label = gap.type == TicketType.knownGap
+            ? 'Known gap'
+            : 'Open question';
+        final onTarget = target == null ? '' : ' (on "${target.title}")';
+        buffer.writeln('- $label: ${gap.title}$onTarget');
       }
+      buffer.writeln();
     }
-    if (openSignals.isNotEmpty) {
-      buffer.writeln('Open, not-yet-promoted signals:');
-      for (final t in openSignals) {
+    if (openIdeas.isNotEmpty) {
+      buffer.writeln('Open, not-yet-promoted ideas:');
+      for (final t in openIdeas) {
         final description = t.description;
         buffer.writeln(
           description == null || description.isEmpty
@@ -587,32 +611,6 @@ class InboxCubit extends Cubit<InboxState> {
       'Do not create or modify any ticket.',
     );
     return buffer.toString().trim();
-  }
-
-  /// Scans [description] (a Documentation `page` ticket's body) for a
-  /// markdown heading containing "Known gaps" (case-insensitive), and
-  /// returns the text between it and the next heading (or the end of the
-  /// document), or `null` if no such heading exists or its section is
-  /// empty. No new parsing infrastructure — the same plain-text content
-  /// `PageDetailScreen` already renders from `Ticket.description`.
-  String? _extractKnownGapsSection(String? description) {
-    if (description == null) return null;
-    final lines = description.split('\n');
-    final headingIndex = lines.indexWhere(
-      (l) => RegExp(
-        r'^#{1,6}\s*known gaps',
-        caseSensitive: false,
-      ).hasMatch(l.trim()),
-    );
-    if (headingIndex == -1) return null;
-
-    final body = <String>[];
-    for (var i = headingIndex + 1; i < lines.length; i++) {
-      if (RegExp(r'^#{1,6}\s').hasMatch(lines[i].trim())) break;
-      body.add(lines[i]);
-    }
-    final joined = body.join('\n').trim();
-    return joined.isEmpty ? null : joined;
   }
 
   /// §5.3's context assembly: every current Epic/Story/Task/Bug ticket's

@@ -14,10 +14,13 @@ import 'package:aion/features/tickets/presentation/widgets/ticket_link_picker.da
 /// The ticket "more actions" `⋯` trigger, shared across
 /// `TicketDetailScreen`'s header, `TicketListTile` (list rows), and
 /// `TicketBoardCard` (board cards). Opens a small overlay listing "Delete
-/// ticket" plus, for `signal` tickets only, "Promote to Epic"/"Promote to
+/// ticket" plus, for `idea` tickets only, "Promote to Epic"/"Promote to
 /// Bug" (linking to an existing ticket of that type via
 /// [TicketLinkPicker], or creating a new one, via
-/// [TicketsCubit.promoteSignal]) above it. Same `Overlay`/
+/// [TicketsCubit.promoteIdea]) and "Change to Known Gap"/"Change to Open
+/// Question" (linking to an existing target ticket via [TicketLinkPicker],
+/// no "create new" option, via [TicketsCubit.reclassifyIdea]) above it.
+/// Same `Overlay`/
 /// `LayerLink`/`CompositedTransformFollower`/`mounted`-guard mechanics as
 /// `MoveToStatusMenu` (`tickets_board_view.dart`) — a third instance of
 /// that pattern, since this is an *action list* rather than a *value
@@ -66,6 +69,13 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
   /// currently showing, or `null` when the overlay is showing the root
   /// action list instead. Reset to `null` whenever the overlay closes.
   TicketType? _promoteTargetType;
+
+  /// The target type ([TicketType.knownGap]/[TicketType.openQuestion]) of
+  /// the reclassify target picker currently showing, or `null` when the
+  /// overlay is showing the root action list (or the promote chooser)
+  /// instead. Reset to `null` whenever the overlay closes. Added for
+  /// `aion-arch/changes/idea-gap-question-ticket-types`.
+  TicketType? _reclassifyTargetType;
 
   @override
   void dispose() {
@@ -117,54 +127,82 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
                     minWidth: 180,
-                    maxWidth: _promoteTargetType != null
+                    maxWidth: (_promoteTargetType != null ||
+                            _reclassifyTargetType != null)
                         ? 210
-                        : (widget.ticket.type == TicketType.signal
+                        : (widget.ticket.type == TicketType.idea
                               ? 210
                               : 240),
                   ),
                   child: StatefulBuilder(
                     builder: (context, setOverlayState) {
-                      final targetType = _promoteTargetType;
-                      return targetType != null
-                          ? _PromoteChooser(
-                              targetType: targetType,
-                              onBack: () => setOverlayState(
-                                () => _promoteTargetType = null,
-                              ),
-                              candidatesLoader: () async {
-                                final all = await ticketsCubit.getAllTickets();
-                                return all
-                                    .where((t) => t.type == targetType)
-                                    .toList();
-                              },
-                              onLinkSelected: (existing) {
-                                ticketsCubit.promoteSignal(
-                                  widget.ticket,
-                                  targetType: targetType,
-                                  existingTicketId: existing.id,
-                                );
-                                _removeOverlay();
-                              },
-                              onCreateNewTap: () {
-                                ticketsCubit.promoteSignal(
-                                  widget.ticket,
-                                  targetType: targetType,
-                                );
-                                _removeOverlay();
-                              },
-                            )
-                          : _RootMenu(
-                              ticketType: widget.ticket.type,
-                              suggestedType: widget.ticket.suggestedType,
-                              onPromoteTap: (type) => setOverlayState(
-                                () => _promoteTargetType = type,
-                              ),
-                              onDeleteTap: () {
-                                _removeOverlay();
-                                _onDeletePressed();
-                              },
+                      final promoteTargetType = _promoteTargetType;
+                      final reclassifyTargetType = _reclassifyTargetType;
+                      if (promoteTargetType != null) {
+                        return _PromoteChooser(
+                          targetType: promoteTargetType,
+                          onBack: () => setOverlayState(
+                            () => _promoteTargetType = null,
+                          ),
+                          candidatesLoader: () async {
+                            final all = await ticketsCubit.getAllTickets();
+                            return all
+                                .where((t) => t.type == promoteTargetType)
+                                .toList();
+                          },
+                          onLinkSelected: (existing) {
+                            ticketsCubit.promoteIdea(
+                              widget.ticket,
+                              targetType: promoteTargetType,
+                              existingTicketId: existing.id,
                             );
+                            _removeOverlay();
+                          },
+                          onCreateNewTap: () {
+                            ticketsCubit.promoteIdea(
+                              widget.ticket,
+                              targetType: promoteTargetType,
+                            );
+                            _removeOverlay();
+                          },
+                        );
+                      }
+                      if (reclassifyTargetType != null) {
+                        return _ReclassifyChooser(
+                          targetType: reclassifyTargetType,
+                          onBack: () => setOverlayState(
+                            () => _reclassifyTargetType = null,
+                          ),
+                          candidatesLoader: () async {
+                            final all = await ticketsCubit.getAllTickets();
+                            return all
+                                .where((t) => t.id != widget.ticket.id)
+                                .toList();
+                          },
+                          onTargetSelected: (target) {
+                            ticketsCubit.reclassifyIdea(
+                              widget.ticket,
+                              targetType: reclassifyTargetType,
+                              targetTicketId: target.id,
+                            );
+                            _removeOverlay();
+                          },
+                        );
+                      }
+                      return _RootMenu(
+                        ticketType: widget.ticket.type,
+                        suggestedType: widget.ticket.suggestedType,
+                        onPromoteTap: (type) => setOverlayState(
+                          () => _promoteTargetType = type,
+                        ),
+                        onReclassifyTap: (type) => setOverlayState(
+                          () => _reclassifyTargetType = type,
+                        ),
+                        onDeleteTap: () {
+                          _removeOverlay();
+                          _onDeletePressed();
+                        },
+                      );
                     },
                   ),
                 ),
@@ -183,6 +221,7 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
     _overlayEntry?.remove();
     _overlayEntry = null;
     _promoteTargetType = null;
+    _reclassifyTargetType = null;
     // Guards against setState-after-dispose — the same class of bug
     // project.md's AppDropdown overlay-dismiss crash note warns about.
     if (mounted) {
@@ -286,22 +325,24 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
   }
 }
 
-/// The root action-list content ("Promote to Epic"/"Promote to Bug", for
-/// `signal` tickets only, then Delete ticket). Per design.md §7.1 Widened
-/// "Promote" menu.
+/// The root action-list content ("Promote to Epic"/"Promote to Bug" and
+/// "Change to Known Gap"/"Change to Open Question", for `idea` tickets
+/// only, then Delete ticket). Per design.md §7.1 Widened "Promote" menu
+/// and `aion-arch/changes/idea-gap-question-ticket-types/design.md` §4.
 class _RootMenu extends StatelessWidget {
   const _RootMenu({
     required this.ticketType,
     required this.suggestedType,
     required this.onPromoteTap,
+    required this.onReclassifyTap,
     required this.onDeleteTap,
   });
 
-  /// The overflow menu's ticket's type — the promote rows render only
-  /// when this is [TicketType.signal].
+  /// The overflow menu's ticket's type — the promote/reclassify rows
+  /// render only when this is [TicketType.idea].
   final TicketType ticketType;
 
-  /// The signal's AI-suggested promotion target ([Ticket.suggestedType]),
+  /// The idea's AI-suggested promotion target ([Ticket.suggestedType]),
   /// if any — the matching promote row renders the "Suggested" treatment
   /// (§7.3).
   final TicketType? suggestedType;
@@ -309,6 +350,11 @@ class _RootMenu extends StatelessWidget {
   /// Called with [TicketType.epic] or [TicketType.bug] when the
   /// corresponding promote row is tapped.
   final ValueChanged<TicketType> onPromoteTap;
+
+  /// Called with [TicketType.knownGap] or [TicketType.openQuestion] when
+  /// the corresponding reclassify row is tapped. Added for
+  /// `aion-arch/changes/idea-gap-question-ticket-types`.
+  final ValueChanged<TicketType> onReclassifyTap;
 
   /// Called when "Delete ticket" is tapped.
   final VoidCallback onDeleteTap;
@@ -321,7 +367,7 @@ class _RootMenu extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (ticketType == TicketType.signal) ...[
+          if (ticketType == TicketType.idea) ...[
             _PromoteRootRow(
               icon: PhosphorIcons.crownLight,
               label: context.l10n.ticketOverflowPromoteToEpic,
@@ -338,6 +384,20 @@ class _RootMenu extends StatelessWidget {
               suggested: suggestedType == TicketType.bug,
               onTap: () => onPromoteTap(TicketType.bug),
             ),
+            _PromoteRootRow(
+              icon: PhosphorIcons.warningCircleLight,
+              label: context.l10n.ticketOverflowReclassifyToKnownGap,
+              accent: c.typeKnownGap,
+              suggested: false,
+              onTap: () => onReclassifyTap(TicketType.knownGap),
+            ),
+            _PromoteRootRow(
+              icon: PhosphorIcons.questionMarkLight,
+              label: context.l10n.ticketOverflowReclassifyToOpenQuestion,
+              accent: c.typeOpenQuestion,
+              suggested: false,
+              onTap: () => onReclassifyTap(TicketType.openQuestion),
+            ),
             Container(color: c.border, height: 1),
           ],
           _MenuActionRow(
@@ -346,10 +406,10 @@ class _RootMenu extends StatelessWidget {
             labelColor: c.danger,
             label: context.l10n.ticketDeleteMenuItem,
             onTap: onDeleteTap,
-            // Only the promote rows above it can precede it, and those
-            // render only for signal tickets — so this is row 0 whenever
-            // they're absent.
-            autofocus: ticketType != TicketType.signal,
+            // Only the promote/reclassify rows above it can precede it,
+            // and those render only for idea tickets — so this is row 0
+            // whenever they're absent.
+            autofocus: ticketType != TicketType.idea,
           ),
         ],
       ),
@@ -378,7 +438,7 @@ class _PromoteRootRow extends StatelessWidget {
   /// resting tint and the "Suggested" pill when [suggested] is `true`.
   final Color accent;
 
-  /// Whether this row matches the signal's `Ticket.suggestedType`.
+  /// Whether this row matches the idea's `Ticket.suggestedType`.
   final bool suggested;
   final VoidCallback onTap;
 
@@ -582,7 +642,7 @@ class _PromoteChooser extends StatelessWidget {
                 candidatesLoader: candidatesLoader,
                 // This picker is reused here purely as a searchable
                 // "pick an existing epic/bug" control (see
-                // `promoteSignal`) — no `TicketLink` is ever created
+                // `promoteIdea`) — no `TicketLink` is ever created
                 // from this call site, so no link-type choice is
                 // offered and the picked type is discarded.
                 linkTypeOptions: const [],
@@ -616,6 +676,88 @@ class _PromoteChooser extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The "Change to Known Gap"/"Change to Open Question" target picker
+/// (`aion-arch/changes/idea-gap-question-ticket-types/design.md` §4.2): a
+/// back header, then a single "Pick target ticket" row embedding
+/// [TicketLinkPicker] as a searchable existing-ticket picker. Unlike
+/// [_PromoteChooser], there is no "create new" option — a reclassification
+/// target must already exist. [candidatesLoader]/[onTargetSelected] are
+/// supplied by [_TicketOverflowMenuState._showOverlay] using its own
+/// `context` — this widget itself never reads `TicketsCubit`, same
+/// rationale as [_PromoteChooser]. Added for
+/// `aion-arch/changes/idea-gap-question-ticket-types`.
+class _ReclassifyChooser extends StatelessWidget {
+  const _ReclassifyChooser({
+    required this.targetType,
+    required this.onBack,
+    required this.candidatesLoader,
+    required this.onTargetSelected,
+  });
+
+  /// Which type the reclassified ticket becomes — [TicketType.knownGap]
+  /// or [TicketType.openQuestion].
+  final TicketType targetType;
+
+  /// Called when the back caret is tapped, returning to [_RootMenu].
+  final VoidCallback onBack;
+
+  /// Loads [TicketLinkPicker]'s candidates — every other existing ticket,
+  /// unfiltered by type (a known gap/open question's target may be any
+  /// existing ticket).
+  final Future<List<Ticket>> Function() candidatesLoader;
+
+  /// Called with the selected ticket once a target is picked.
+  final ValueChanged<Ticket> onTargetSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    final isKnownGap = targetType == TicketType.knownGap;
+    final headerTitle = isKnownGap
+        ? context.l10n.ticketOverflowReclassifyToKnownGap
+        : context.l10n.ticketOverflowReclassifyToOpenQuestion;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _ChooserHeader(onBack: onBack, title: headerTitle),
+        Container(color: c.border, height: 1),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+          child: Row(
+            children: [
+              PhosphorIcon(
+                PhosphorIcons.linkLight,
+                size: 16,
+                color: c.textSecondary,
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Text(
+                  context.l10n.ticketReclassifyPickTarget,
+                  style: AionText.bodySm.copyWith(
+                    color: c.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              TicketLinkPicker(
+                candidatesLoader: candidatesLoader,
+                // Reused purely as a searchable "pick a target ticket"
+                // control (see `reclassifyIdea`) — no `TicketLink` is
+                // ever created from this call site, so no link-type
+                // choice is offered and the picked type is discarded.
+                linkTypeOptions: const [],
+                onSelected: (ticket, _) => onTargetSelected(ticket),
+              ),
+            ],
           ),
         ),
       ],

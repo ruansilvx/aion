@@ -304,11 +304,11 @@ void main() {
     createdAt: chatTicket.createdAt,
     updatedAt: chatTicket.updatedAt,
   );
-  final signalTicket = Ticket(
+  final ideaTicket = Ticket(
     id: '10',
     ticketId: 'AIO-10',
-    type: TicketType.signal,
-    title: 'Signal ticket',
+    type: TicketType.idea,
+    title: 'Idea ticket',
     status: TicketStatus.backlog,
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
@@ -2221,20 +2221,20 @@ void main() {
       );
 
       blocTest<TicketsCubit, TicketsState>(
-        'rejects reparenting a signal ticket without calling the repository',
+        'rejects reparenting an idea ticket without calling the repository',
         setUp: () {
           when(
-            () => repository.getTicketById(signalTicket.id),
-          ).thenAnswer((_) async => signalTicket);
+            () => repository.getTicketById(ideaTicket.id),
+          ).thenAnswer((_) async => ideaTicket);
         },
         build: () => TicketsCubit(repository),
-        act: (cubit) => cubit.updateTicketParent(signalTicket, unrelated.id),
+        act: (cubit) => cubit.updateTicketParent(ideaTicket, unrelated.id),
         verify: (_) {
           verifyNever(() => repository.updateTicketParent(any(), any()));
         },
         expect: () => [
           const TicketsError('', reason: TicketsErrorReason.invalidParent),
-          TicketDetailLoaded(signalTicket),
+          TicketDetailLoaded(ideaTicket),
         ],
       );
 
@@ -3406,10 +3406,22 @@ void main() {
 
     setUpAll(() {
       registerFallbackValue(TicketLinkType.relatesTo);
+      registerFallbackValue(const [TicketLinkType.relatesTo]);
     });
 
     setUp(() {
       linkRepository = MockTicketLinkRepository();
+      // Default (empty) stubs for the recursive gaps-and-open-questions
+      // rollup's reads, added for
+      // `aion-arch/changes/idea-gap-question-ticket-types` — every gated
+      // ticket's `loadDocumentRelations` call now performs these
+      // unconditionally alongside the pre-existing `linkedTickets`/
+      // `backlinks` reads. Individual tests override these where the
+      // rollup itself is under test.
+      when(() => repository.getAllTickets()).thenAnswer((_) async => []);
+      when(
+        () => linkRepository.getLinksByTypes(any()),
+      ).thenAnswer((_) async => []);
     });
 
     TicketsCubit buildCubit() =>
@@ -3614,6 +3626,268 @@ void main() {
         ).called(1);
       },
     );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'gapsAndOpenQuestions recursively rolls up a gap raised on a '
+      'grandchild Task onto its ancestor Epic, correctly attributing '
+      'raisedOn',
+      setUp: () {
+        final rollupEpic = Ticket(
+          id: 'rollup-epic',
+          ticketId: 'AIO-30',
+          type: TicketType.epic,
+          title: 'Rollup epic',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final rollupStory = Ticket(
+          id: 'rollup-story',
+          ticketId: 'AIO-31',
+          type: TicketType.story,
+          title: 'Rollup story',
+          status: TicketStatus.backlog,
+          parentId: rollupEpic.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final rollupTask = Ticket(
+          id: 'rollup-task',
+          ticketId: 'AIO-32',
+          type: TicketType.task,
+          title: 'Rollup task',
+          status: TicketStatus.backlog,
+          parentId: rollupStory.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final gap = Ticket(
+          id: 'rollup-gap',
+          ticketId: 'AIO-33',
+          type: TicketType.knownGap,
+          title: 'Grandchild gap',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final unrelatedGap = Ticket(
+          id: 'unrelated-gap',
+          ticketId: 'AIO-34',
+          type: TicketType.knownGap,
+          title: 'Unrelated gap',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        // A ticket outside `rollupEpic`'s subtree entirely — `unrelatedGap`
+        // is raised on this one, not on anything under `rollupEpic`, so it
+        // must not roll up onto `rollupEpic`'s section.
+        final outsideTicket = Ticket(
+          id: 'outside-ticket',
+          ticketId: 'AIO-35',
+          type: TicketType.task,
+          title: 'Outside ticket',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+
+        when(
+          () => repository.getTicketById(rollupEpic.id),
+        ).thenAnswer((_) async => rollupEpic);
+        when(() => repository.getAllTickets()).thenAnswer(
+          (_) async => [
+            rollupEpic,
+            rollupStory,
+            rollupTask,
+            gap,
+            unrelatedGap,
+            outsideTicket,
+          ],
+        );
+        when(
+          () => linkRepository.getLinksForTicket(rollupEpic.id),
+        ).thenAnswer((_) async => []);
+        when(
+          () => linkRepository.getLinksByTypes([TicketLinkType.relatesTo]),
+        ).thenAnswer(
+          (_) async => [
+            TicketLinkData(
+              id: 'gap-link',
+              sourceTicketId: gap.id,
+              targetTicketId: rollupTask.id,
+              linkType: TicketLinkType.relatesTo.name,
+            ),
+            TicketLinkData(
+              id: 'unrelated-link',
+              sourceTicketId: unrelatedGap.id,
+              targetTicketId: outsideTicket.id,
+              linkType: TicketLinkType.relatesTo.name,
+            ),
+          ],
+        );
+      },
+      build: buildCubit,
+      seed: () => TicketDetailLoaded(
+        Ticket(
+          id: 'rollup-epic',
+          ticketId: 'AIO-30',
+          type: TicketType.epic,
+          title: 'Rollup epic',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        ),
+      ),
+      act: (cubit) => cubit.loadDocumentRelations('rollup-epic'),
+      expect: () => [
+        isA<TicketDetailLoaded>()
+            .having(
+              (s) => s.gapsAndOpenQuestions.map((r) => r.ticket.id),
+              'gapsAndOpenQuestions ticket ids',
+              ['rollup-gap'],
+            )
+            .having(
+              (s) => s.gapsAndOpenQuestions.single.raisedOn.id,
+              'gapsAndOpenQuestions raisedOn id',
+              'rollup-task',
+            ),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'gapsAndOpenQuestions sorts directly-raised entries before '
+      'rolled-up ones, each group by descending createdAt (Component '
+      'Spec §2.4)',
+      setUp: () {
+        final sortEpic = Ticket(
+          id: 'sort-epic',
+          ticketId: 'AIO-36',
+          type: TicketType.epic,
+          title: 'Sort epic',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final sortStory = Ticket(
+          id: 'sort-story',
+          ticketId: 'AIO-37',
+          type: TicketType.story,
+          title: 'Sort story',
+          status: TicketStatus.backlog,
+          parentId: sortEpic.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        // Direct entries — raised on `sortEpic` itself.
+        final directOld = Ticket(
+          id: 'direct-old',
+          ticketId: 'AIO-38',
+          type: TicketType.knownGap,
+          title: 'Direct old',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026, 1, 1),
+          updatedAt: DateTime(2026, 1, 1),
+        );
+        final directNew = Ticket(
+          id: 'direct-new',
+          ticketId: 'AIO-39',
+          type: TicketType.openQuestion,
+          title: 'Direct new',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026, 6, 1),
+          updatedAt: DateTime(2026, 6, 1),
+        );
+        // Rolled-up entries — raised on `sortStory`, a descendant.
+        final rolledUpOld = Ticket(
+          id: 'rolled-up-old',
+          ticketId: 'AIO-40',
+          type: TicketType.knownGap,
+          title: 'Rolled up old',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026, 2, 1),
+          updatedAt: DateTime(2026, 2, 1),
+        );
+        final rolledUpNew = Ticket(
+          id: 'rolled-up-new',
+          ticketId: 'AIO-41',
+          type: TicketType.openQuestion,
+          title: 'Rolled up new',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026, 5, 1),
+          updatedAt: DateTime(2026, 5, 1),
+        );
+
+        when(
+          () => repository.getTicketById(sortEpic.id),
+        ).thenAnswer((_) async => sortEpic);
+        when(() => repository.getAllTickets()).thenAnswer(
+          (_) async => [
+            sortEpic,
+            sortStory,
+            directOld,
+            directNew,
+            rolledUpOld,
+            rolledUpNew,
+          ],
+        );
+        when(
+          () => linkRepository.getLinksForTicket(sortEpic.id),
+        ).thenAnswer((_) async => []);
+        when(
+          () => linkRepository.getLinksByTypes([TicketLinkType.relatesTo]),
+        ).thenAnswer(
+          (_) async => [
+            // Deliberately out of the expected final order, so the
+            // assertion below can't pass by accident of query order.
+            TicketLinkData(
+              id: 'rolled-up-old-link',
+              sourceTicketId: rolledUpOld.id,
+              targetTicketId: sortStory.id,
+              linkType: TicketLinkType.relatesTo.name,
+            ),
+            TicketLinkData(
+              id: 'direct-old-link',
+              sourceTicketId: directOld.id,
+              targetTicketId: sortEpic.id,
+              linkType: TicketLinkType.relatesTo.name,
+            ),
+            TicketLinkData(
+              id: 'rolled-up-new-link',
+              sourceTicketId: rolledUpNew.id,
+              targetTicketId: sortStory.id,
+              linkType: TicketLinkType.relatesTo.name,
+            ),
+            TicketLinkData(
+              id: 'direct-new-link',
+              sourceTicketId: directNew.id,
+              targetTicketId: sortEpic.id,
+              linkType: TicketLinkType.relatesTo.name,
+            ),
+          ],
+        );
+      },
+      build: buildCubit,
+      seed: () => TicketDetailLoaded(
+        Ticket(
+          id: 'sort-epic',
+          ticketId: 'AIO-36',
+          type: TicketType.epic,
+          title: 'Sort epic',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        ),
+      ),
+      act: (cubit) => cubit.loadDocumentRelations('sort-epic'),
+      expect: () => [
+        isA<TicketDetailLoaded>().having(
+          (s) => s.gapsAndOpenQuestions.map((r) => r.ticket.id),
+          'gapsAndOpenQuestions ticket ids, in order',
+          ['direct-new', 'direct-old', 'rolled-up-new', 'rolled-up-old'],
+        ),
+      ],
+    );
   });
 
   group('createTicketLink / deleteTicketLink / updateTicketLinkType', () {
@@ -3648,13 +3922,22 @@ void main() {
     /// Stubs [loadDocumentRelations]'s own repository reads for
     /// [ticket] so the create/delete/update methods' internal refresh
     /// call doesn't throw — doesn't stub anything about the mutation
-    /// itself.
+    /// itself. Also stubs the recursive gaps-and-open-questions rollup's
+    /// `getAllTickets`/`getLinksByTypes` reads (empty by default) added
+    /// for `aion-arch/changes/idea-gap-question-ticket-types` — every
+    /// gated ticket's `loadDocumentRelations` call now performs these
+    /// unconditionally alongside the pre-existing `linkedTickets`/
+    /// `backlinks` reads.
     void stubDocumentRelationsRefresh(Ticket ticket) {
       when(
         () => repository.getTicketById(ticket.id),
       ).thenAnswer((_) async => ticket);
       when(
         () => linkRepository.getLinksForTicket(ticket.id),
+      ).thenAnswer((_) async => []);
+      when(() => repository.getAllTickets()).thenAnswer((_) async => [ticket]);
+      when(
+        () => linkRepository.getLinksByTypes(any()),
       ).thenAnswer((_) async => []);
     }
 
@@ -3747,7 +4030,12 @@ void main() {
         ),
         expect: () => [],
         verify: (_) {
-          verifyNever(() => linkRepository.getLinksByTypes(any()));
+          verifyNever(
+            () => linkRepository.getLinksByTypes([
+              TicketLinkType.blocks,
+              TicketLinkType.blockedBy,
+            ]),
+          );
         },
       );
 
@@ -3851,7 +4139,12 @@ void main() {
         act: (cubit) => cubit.deleteTicketLink(sourceTicket.id, 'link-1'),
         expect: () => [],
         verify: (_) {
-          verifyNever(() => linkRepository.getLinksByTypes(any()));
+          verifyNever(
+            () => linkRepository.getLinksByTypes([
+              TicketLinkType.blocks,
+              TicketLinkType.blockedBy,
+            ]),
+          );
         },
       );
 
@@ -4065,7 +4358,12 @@ void main() {
         ),
         expect: () => [],
         verify: (_) {
-          verifyNever(() => linkRepository.getLinksByTypes(any()));
+          verifyNever(
+            () => linkRepository.getLinksByTypes([
+              TicketLinkType.blocks,
+              TicketLinkType.blockedBy,
+            ]),
+          );
         },
       );
 
@@ -7504,7 +7802,7 @@ void main() {
     },
   );
 
-  group('promoteSignal', () {
+  group('promoteIdea', () {
     late MockTicketLinkRepository linkRepository;
 
     setUp(() {
@@ -7515,14 +7813,14 @@ void main() {
         TicketsCubit(repository, linkRepository: linkRepository);
 
     blocTest<TicketsCubit, TicketsState>(
-      'rejects a non-signal ticket without calling the repository',
+      'rejects a non-idea ticket without calling the repository',
       setUp: () {
         when(
           () => repository.getTicketById(ticket.id),
         ).thenAnswer((_) async => ticket);
       },
       build: buildCubit,
-      act: (cubit) => cubit.promoteSignal(ticket, targetType: TicketType.epic),
+      act: (cubit) => cubit.promoteIdea(ticket, targetType: TicketType.epic),
       verify: (_) {
         verifyNever(() => repository.createTicket(any()));
         verifyNever(
@@ -7540,12 +7838,12 @@ void main() {
       'rejects an invalid targetType without calling the repository',
       setUp: () {
         when(
-          () => repository.getTicketById(signalTicket.id),
-        ).thenAnswer((_) async => signalTicket);
+          () => repository.getTicketById(ideaTicket.id),
+        ).thenAnswer((_) async => ideaTicket);
       },
       build: buildCubit,
       act: (cubit) =>
-          cubit.promoteSignal(signalTicket, targetType: TicketType.task),
+          cubit.promoteIdea(ideaTicket, targetType: TicketType.task),
       verify: (_) {
         verifyNever(() => repository.createTicket(any()));
         verifyNever(
@@ -7556,7 +7854,7 @@ void main() {
           ),
         );
       },
-      expect: () => [isA<TicketsError>(), TicketDetailLoaded(signalTicket)],
+      expect: () => [isA<TicketsError>(), TicketDetailLoaded(ideaTicket)],
     );
 
     blocTest<TicketsCubit, TicketsState>(
@@ -7566,18 +7864,18 @@ void main() {
         when(() => repository.createTicket(any())).thenAnswer((_) async {});
         when(
           () => linkRepository.createLink(
-            sourceTicketId: signalTicket.id,
+            sourceTicketId: ideaTicket.id,
             targetTicketId: any(named: 'targetTicketId'),
             linkType: TicketLinkType.relatesTo,
           ),
         ).thenAnswer((_) async {});
         when(
-          () => repository.getTicketById(signalTicket.id),
-        ).thenAnswer((_) async => signalTicket);
+          () => repository.getTicketById(ideaTicket.id),
+        ).thenAnswer((_) async => ideaTicket);
       },
       build: buildCubit,
       act: (cubit) =>
-          cubit.promoteSignal(signalTicket, targetType: TicketType.epic),
+          cubit.promoteIdea(ideaTicket, targetType: TicketType.epic),
       verify: (_) {
         final created = verify(
           () => repository.createTicket(captureAny()),
@@ -7586,13 +7884,13 @@ void main() {
         expect((created.first as Ticket).type, TicketType.epic);
         verify(
           () => linkRepository.createLink(
-            sourceTicketId: signalTicket.id,
+            sourceTicketId: ideaTicket.id,
             targetTicketId: any(named: 'targetTicketId'),
             linkType: TicketLinkType.relatesTo,
           ),
         ).called(1);
       },
-      expect: () => [TicketDetailLoaded(signalTicket)],
+      expect: () => [TicketDetailLoaded(ideaTicket)],
     );
 
     blocTest<TicketsCubit, TicketsState>(
@@ -7602,18 +7900,17 @@ void main() {
         when(() => repository.createTicket(any())).thenAnswer((_) async {});
         when(
           () => linkRepository.createLink(
-            sourceTicketId: signalTicket.id,
+            sourceTicketId: ideaTicket.id,
             targetTicketId: any(named: 'targetTicketId'),
             linkType: TicketLinkType.relatesTo,
           ),
         ).thenAnswer((_) async {});
         when(
-          () => repository.getTicketById(signalTicket.id),
-        ).thenAnswer((_) async => signalTicket);
+          () => repository.getTicketById(ideaTicket.id),
+        ).thenAnswer((_) async => ideaTicket);
       },
       build: buildCubit,
-      act: (cubit) =>
-          cubit.promoteSignal(signalTicket, targetType: TicketType.bug),
+      act: (cubit) => cubit.promoteIdea(ideaTicket, targetType: TicketType.bug),
       verify: (_) {
         final created = verify(
           () => repository.createTicket(captureAny()),
@@ -7622,13 +7919,13 @@ void main() {
         expect((created.first as Ticket).type, TicketType.bug);
         verify(
           () => linkRepository.createLink(
-            sourceTicketId: signalTicket.id,
+            sourceTicketId: ideaTicket.id,
             targetTicketId: any(named: 'targetTicketId'),
             linkType: TicketLinkType.relatesTo,
           ),
         ).called(1);
       },
-      expect: () => [TicketDetailLoaded(signalTicket)],
+      expect: () => [TicketDetailLoaded(ideaTicket)],
     );
 
     blocTest<TicketsCubit, TicketsState>(
@@ -7637,18 +7934,18 @@ void main() {
       setUp: () {
         when(
           () => linkRepository.createLink(
-            sourceTicketId: signalTicket.id,
+            sourceTicketId: ideaTicket.id,
             targetTicketId: epic.id,
             linkType: TicketLinkType.relatesTo,
           ),
         ).thenAnswer((_) async {});
         when(
-          () => repository.getTicketById(signalTicket.id),
-        ).thenAnswer((_) async => signalTicket);
+          () => repository.getTicketById(ideaTicket.id),
+        ).thenAnswer((_) async => ideaTicket);
       },
       build: buildCubit,
-      act: (cubit) => cubit.promoteSignal(
-        signalTicket,
+      act: (cubit) => cubit.promoteIdea(
+        ideaTicket,
         targetType: TicketType.epic,
         existingTicketId: epic.id,
       ),
@@ -7656,13 +7953,294 @@ void main() {
         verifyNever(() => repository.createTicket(any()));
         verify(
           () => linkRepository.createLink(
-            sourceTicketId: signalTicket.id,
+            sourceTicketId: ideaTicket.id,
             targetTicketId: epic.id,
             linkType: TicketLinkType.relatesTo,
           ),
         ).called(1);
       },
-      expect: () => [TicketDetailLoaded(signalTicket)],
+      expect: () => [TicketDetailLoaded(ideaTicket)],
+    );
+  });
+
+  group('createGapOrQuestion', () {
+    late MockTicketLinkRepository linkRepository;
+
+    final targetTicket = Ticket(
+      id: 'gq-target',
+      ticketId: 'AIO-40',
+      type: TicketType.story,
+      title: 'Target story',
+      status: TicketStatus.backlog,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    setUp(() {
+      linkRepository = MockTicketLinkRepository();
+      // Default (empty) stubs for `loadDocumentRelations`'s own refresh
+      // call at the end of a successful `createGapOrQuestion`, and for
+      // `_restoreDocumentTicketDetail`'s recovery call on a rejected one.
+      when(() => repository.getAllTickets()).thenAnswer((_) async => []);
+      when(
+        () => repository.getTicketById(targetTicket.id),
+      ).thenAnswer((_) async => targetTicket);
+      when(
+        () => linkRepository.getLinksByTypes(any()),
+      ).thenAnswer((_) async => []);
+      when(
+        () => linkRepository.getLinksForTicket(any()),
+      ).thenAnswer((_) async => []);
+    });
+
+    TicketsCubit buildCubit() =>
+        TicketsCubit(repository, linkRepository: linkRepository);
+
+    blocTest<TicketsCubit, TicketsState>(
+      'rejects a type other than knownGap/openQuestion without touching '
+      'the repository, then recovers the target ticket\'s detail state',
+      build: buildCubit,
+      act: (cubit) => cubit.createGapOrQuestion(
+        TicketType.idea,
+        title: 'Not allowed',
+        targetTicketId: targetTicket.id,
+      ),
+      verify: (_) {
+        verifyNever(() => repository.createTicket(any()));
+        verifyNever(
+          () => linkRepository.createLink(
+            sourceTicketId: any(named: 'sourceTicketId'),
+            targetTicketId: any(named: 'targetTicketId'),
+            linkType: any(named: 'linkType'),
+          ),
+        );
+      },
+      expect: () => [isA<TicketsError>(), TicketDetailLoaded(targetTicket)],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'no-ops without emitting when constructed without a '
+      'TicketLinkRepository',
+      build: () => TicketsCubit(repository), // no linkRepository
+      act: (cubit) => cubit.createGapOrQuestion(
+        TicketType.knownGap,
+        title: 'A gap',
+        targetTicketId: targetTicket.id,
+      ),
+      verify: (_) {
+        verifyNever(() => repository.createTicket(any()));
+      },
+      expect: () => [],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'rejects a target that does not exist, without creating anything',
+      setUp: () {
+        when(
+          () => repository.getTicketById('missing'),
+        ).thenAnswer((_) async => null);
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.createGapOrQuestion(
+        TicketType.knownGap,
+        title: 'A gap',
+        targetTicketId: 'missing',
+      ),
+      verify: (_) {
+        verifyNever(() => repository.createTicket(any()));
+        verifyNever(
+          () => linkRepository.createLink(
+            sourceTicketId: any(named: 'sourceTicketId'),
+            targetTicketId: any(named: 'targetTicketId'),
+            linkType: any(named: 'linkType'),
+          ),
+        );
+      },
+      expect: () => [isA<TicketsError>()],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'creates the ticket and its relatesTo link atomically on the happy '
+      'path',
+      setUp: () {
+        when(
+          () => repository.getTicketById(targetTicket.id),
+        ).thenAnswer((_) async => targetTicket);
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        when(
+          () => linkRepository.createLink(
+            sourceTicketId: any(named: 'sourceTicketId'),
+            targetTicketId: targetTicket.id,
+            linkType: TicketLinkType.relatesTo,
+          ),
+        ).thenAnswer((_) async {});
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.createGapOrQuestion(
+        TicketType.openQuestion,
+        title: 'Should this support offline mode?',
+        description: 'Raised while reviewing the sync design.',
+        targetTicketId: targetTicket.id,
+      ),
+      verify: (_) {
+        final created = verify(
+          () => repository.createTicket(captureAny()),
+        ).captured.cast<Ticket>();
+        expect(created, hasLength(1));
+        expect(created.single.type, TicketType.openQuestion);
+        expect(created.single.title, 'Should this support offline mode?');
+        verify(
+          () => linkRepository.createLink(
+            sourceTicketId: created.single.id,
+            targetTicketId: targetTicket.id,
+            linkType: TicketLinkType.relatesTo,
+          ),
+        ).called(1);
+      },
+    );
+  });
+
+  group('reclassifyIdea', () {
+    late MockTicketLinkRepository linkRepository;
+
+    final targetTicket = Ticket(
+      id: 'ri-target',
+      ticketId: 'AIO-41',
+      type: TicketType.epic,
+      title: 'Target epic',
+      status: TicketStatus.backlog,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    setUp(() {
+      linkRepository = MockTicketLinkRepository();
+    });
+
+    TicketsCubit buildCubit() =>
+        TicketsCubit(repository, linkRepository: linkRepository);
+
+    blocTest<TicketsCubit, TicketsState>(
+      'rejects reclassifying a ticket whose current type is not idea, '
+      'then recovers the ticket\'s own detail state',
+      setUp: () {
+        when(
+          () => repository.getTicketById(epic.id),
+        ).thenAnswer((_) async => epic);
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.reclassifyIdea(
+        epic,
+        targetType: TicketType.knownGap,
+        targetTicketId: targetTicket.id,
+      ),
+      verify: (_) {
+        verifyNever(() => repository.updateTicket(any()));
+        verifyNever(
+          () => linkRepository.createLink(
+            sourceTicketId: any(named: 'sourceTicketId'),
+            targetTicketId: any(named: 'targetTicketId'),
+            linkType: any(named: 'linkType'),
+          ),
+        );
+      },
+      expect: () => [isA<TicketsError>(), TicketDetailLoaded(epic)],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'rejects a targetType other than knownGap/openQuestion, then '
+      'recovers the idea\'s own detail state',
+      setUp: () {
+        when(
+          () => repository.getTicketById(ideaTicket.id),
+        ).thenAnswer((_) async => ideaTicket);
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.reclassifyIdea(
+        ideaTicket,
+        targetType: TicketType.epic,
+        targetTicketId: targetTicket.id,
+      ),
+      verify: (_) {
+        verifyNever(() => repository.updateTicket(any()));
+      },
+      expect: () => [isA<TicketsError>(), TicketDetailLoaded(ideaTicket)],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'rejects a target that does not exist, without mutating the '
+      'ticket, then recovers the idea\'s own detail state',
+      setUp: () {
+        when(
+          () => repository.getTicketById('missing'),
+        ).thenAnswer((_) async => null);
+        when(
+          () => repository.getTicketById(ideaTicket.id),
+        ).thenAnswer((_) async => ideaTicket);
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.reclassifyIdea(
+        ideaTicket,
+        targetType: TicketType.knownGap,
+        targetTicketId: 'missing',
+      ),
+      verify: (_) {
+        verifyNever(() => repository.updateTicket(any()));
+        verifyNever(
+          () => linkRepository.createLink(
+            sourceTicketId: any(named: 'sourceTicketId'),
+            targetTicketId: any(named: 'targetTicketId'),
+            linkType: any(named: 'linkType'),
+          ),
+        );
+      },
+      expect: () => [isA<TicketsError>(), TicketDetailLoaded(ideaTicket)],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'mutates the type in place, creates the relatesTo link, and '
+      'preserves id/createdAt on the happy path',
+      setUp: () {
+        when(
+          () => repository.getTicketById(targetTicket.id),
+        ).thenAnswer((_) async => targetTicket);
+        when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+        when(
+          () => linkRepository.createLink(
+            sourceTicketId: ideaTicket.id,
+            targetTicketId: targetTicket.id,
+            linkType: TicketLinkType.relatesTo,
+          ),
+        ).thenAnswer((_) async {});
+        when(() => repository.getTicketById(ideaTicket.id)).thenAnswer(
+          (_) async => ideaTicket.copyWith(type: TicketType.knownGap),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.reclassifyIdea(
+        ideaTicket,
+        targetType: TicketType.knownGap,
+        targetTicketId: targetTicket.id,
+      ),
+      verify: (_) {
+        final updated = verify(
+          () => repository.updateTicket(captureAny()),
+        ).captured.cast<Ticket>();
+        expect(updated, hasLength(1));
+        expect(updated.single.type, TicketType.knownGap);
+        expect(updated.single.id, ideaTicket.id);
+        expect(updated.single.createdAt, ideaTicket.createdAt);
+        verify(
+          () => linkRepository.createLink(
+            sourceTicketId: ideaTicket.id,
+            targetTicketId: targetTicket.id,
+            linkType: TicketLinkType.relatesTo,
+          ),
+        ).called(1);
+      },
+      expect: () => [
+        TicketDetailLoaded(ideaTicket.copyWith(type: TicketType.knownGap)),
+      ],
     );
   });
 

@@ -321,7 +321,24 @@ class TicketMetadataSection extends StatelessWidget {
                                     type: ticket.type,
                                     isRow: false,
                                   ),
-                                  items: TicketType.values,
+                                  // `knownGap`/`openQuestion` are excluded
+                                  // from this generic in-place type
+                                  // switcher — like `CreateTicketScreen`'s
+                                  // dropdown, they can never be assigned
+                                  // this way, since doing so would bypass
+                                  // `TicketsCubit.createGapOrQuestion`/
+                                  // `.reclassifyIdea`'s hard target-link
+                                  // requirement. `ticket.type` may still
+                                  // legitimately already be one of these
+                                  // (set via `reclassifyIdea`); this only
+                                  // prevents *switching into* them here.
+                                  items: TicketType.values
+                                      .where(
+                                        (ty) =>
+                                            ty != TicketType.knownGap &&
+                                            ty != TicketType.openQuestion,
+                                      )
+                                      .toList(),
                                   itemLabel: (ty) =>
                                       ticketTypeLabel(context, ty),
                                   currentValue: ticket.type,
@@ -348,6 +365,9 @@ class TicketMetadataSection extends StatelessWidget {
                                 ),
                               ],
                             ),
+                            if (ticket.type == TicketType.knownGap ||
+                                ticket.type == TicketType.openQuestion)
+                              _RaisedOnIndicator(ticket: ticket),
                             if (ticket.type != TicketType.epic) ...[
                               const SizedBox(height: AionSpacing.sp8),
                               TicketParentPicker(
@@ -773,19 +793,28 @@ class TicketMetadataSection extends StatelessWidget {
             // `page` tickets never reach this far — the
             // `TicketDetailLoaded` listener above redirects
             // them to `PageDetailScreen` first. Every other type
-            // except `chat`/`signal`/`release` (no `TicketLink` use
-            // case) renders Linked Tickets/Backlinks here (sub-pages
-            // moved to `PageDetailScreen` entirely, since only `page`
-            // tickets have sub-pages). `resource` keeps its original
-            // single-tap `relatesTo`-only flow (see `linkTypeOptions`
-            // below); `epic`/`story`/`task`/`bug` gained this section
-            // for `aion-arch/changes/board-task-ordering-indication`,
+            // except `chat`/`idea`/`knownGap`/`openQuestion`/`release`
+            // (no `TicketLink` use case) renders Linked Tickets/
+            // Backlinks/Gaps & Open Questions here (sub-pages moved to
+            // `PageDetailScreen` entirely, since only `page` tickets have
+            // sub-pages). `idea` keeps `signal`'s original exclusion
+            // (freestanding, nothing to link); `knownGap`/`openQuestion`
+            // are also excluded — their one relationship is fixed at
+            // creation, shown instead via the read-only "Raised on"
+            // indicator below (see `_RaisedOnIndicator`), per
+            // `aion-arch/changes/idea-gap-question-ticket-types/design.md`
+            // §4.1/§4.3. `resource` keeps its original single-tap
+            // `relatesTo`-only flow (see `linkTypeOptions` below);
+            // `epic`/`story`/`task`/`bug` gained this section for
+            // `aion-arch/changes/board-task-ordering-indication`,
             // offering the full `blocks`/`blockedBy`/`relatesTo`/
             // `duplicates` set — `bug`'s existing use case (linking an
             // affected `release` via `relatesTo`) still works
             // unchanged, just with more options available alongside it.
             if (ticket.type == TicketType.chat ||
-                ticket.type == TicketType.signal ||
+                ticket.type == TicketType.idea ||
+                ticket.type == TicketType.knownGap ||
+                ticket.type == TicketType.openQuestion ||
                 ticket.type == TicketType.release) {
               return const SizedBox.shrink();
             }
@@ -838,12 +867,181 @@ class TicketMetadataSection extends StatelessWidget {
                   tickets: state.backlinks.map((r) => r.ticket).toList(),
                   onTap: (id) => context.go('/workspace/tickets/$id'),
                 ),
+                GapsAndOpenQuestionsSection(
+                  viewedTicketId: ticket.id,
+                  refs: state.gapsAndOpenQuestions,
+                  onTap: (id) => context.go('/workspace/tickets/$id'),
+                  trailing: RaiseGapOrQuestionPicker(
+                    onCreate: (type, {required title, description}) => context
+                        .read<TicketsCubit>()
+                        .createGapOrQuestion(
+                          type,
+                          title: title,
+                          description: description,
+                          targetTicketId: ticket.id,
+                        ),
+                  ),
+                ),
               ],
             );
           },
         ),
         Container(color: c.border, height: 1),
       ],
+    );
+  }
+}
+
+/// A `knownGap`/`openQuestion` ticket's own detail-screen "Raised on"
+/// indicator — a read-only, tap-to-navigate row naming the specific
+/// ticket this gap/question was raised against, shown below the type
+/// chip/status row in place of the generic Linked Tickets/Backlinks
+/// block (those never render for these two types — see
+/// [TicketMetadataSection]'s Documentation-mode gate). There is no
+/// "unlink" affordance: a `knownGap`/`openQuestion` can never exist
+/// without its target, so the relationship is immutable from this
+/// screen. Resolves its target once via
+/// [TicketsCubit.getRaisedOnTicket] rather than reusing
+/// [TicketsCubit.loadDocumentRelations] (which excludes these types from
+/// its gated list entirely). Added for
+/// `aion-arch/changes/idea-gap-question-ticket-types`; see that change's
+/// design.md §4.3/Component Spec §5.
+class _RaisedOnIndicator extends StatefulWidget {
+  const _RaisedOnIndicator({required this.ticket});
+
+  /// The `knownGap`/`openQuestion` ticket to resolve the target of.
+  final Ticket ticket;
+
+  @override
+  State<_RaisedOnIndicator> createState() => _RaisedOnIndicatorState();
+}
+
+class _RaisedOnIndicatorState extends State<_RaisedOnIndicator> {
+  Future<Ticket?>? _targetFuture;
+  bool _isHovered = false;
+  bool _isFocused = false;
+  bool _isPressed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant _RaisedOnIndicator oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.ticket.id != widget.ticket.id) _load();
+  }
+
+  void _load() {
+    _targetFuture = context.read<TicketsCubit>().getRaisedOnTicket(
+      widget.ticket.id,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Ticket?>(
+      future: _targetFuture,
+      builder: (context, snapshot) {
+        final target = snapshot.data;
+        if (target == null) return const SizedBox.shrink();
+        final t = ThemeScope.of(context);
+        final c = t.colors;
+        final isRaised = _isHovered || _isFocused;
+
+        return Padding(
+          padding: const EdgeInsets.only(top: AionSpacing.sp12),
+          child: Semantics(
+            button: true,
+            label: target.title,
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              onEnter: (_) => setState(() => _isHovered = true),
+              onExit: (_) => setState(() => _isHovered = false),
+              child: Focus(
+                onFocusChange: (focused) =>
+                    setState(() => _isFocused = focused),
+                child: GestureDetector(
+                  onTap: () =>
+                      context.go('/workspace/tickets/${target.id}'),
+                  onTapDown: (_) => setState(() => _isPressed = true),
+                  onTapUp: (_) => setState(() => _isPressed = false),
+                  onTapCancel: () => setState(() => _isPressed = false),
+                  child: AnimatedScale(
+                    scale: _isPressed ? 0.99 : 1.0,
+                    duration: const Duration(milliseconds: 80),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 100),
+                      decoration: BoxDecoration(
+                        color: _isPressed ? c.border : c.surfaceHover,
+                        border: Border.all(
+                          color: isRaised ? c.borderStrong : c.border,
+                          width: 1,
+                        ),
+                        borderRadius: const BorderRadius.all(AionRadius.md),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(10, 8, 12, 8),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Text(
+                              context.l10n.ticketRaisedOnEyebrow,
+                              style: AionText.caption.copyWith(
+                                color: c.textMuted,
+                              ),
+                            ),
+                            const SizedBox(width: AionSpacing.sp8),
+                            DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: c.surface,
+                                border: Border.all(color: c.border, width: 1),
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                child: Text(
+                                  target.ticketId,
+                                  style: AionText.key.copyWith(
+                                    color: c.textSecondary,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: AionSpacing.sp8),
+                            Expanded(
+                              child: Text(
+                                target.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AionText.bodySm.copyWith(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: c.textPrimary,
+                                ),
+                              ),
+                            ),
+                            PhosphorIcon(
+                              PhosphorIcons.caretRightLight,
+                              size: 16,
+                              color: c.textMuted,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

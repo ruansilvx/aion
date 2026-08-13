@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
 import 'package:aion/design_system/design_system.dart';
+import 'package:aion/features/tickets/presentation/widgets/ticket_link_picker.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_metadata_section.dart';
 import 'package:aion/features/tickets/tickets.dart';
 import 'package:aion/l10n/generated/app_localizations.dart';
@@ -182,9 +183,17 @@ void main() {
 
       expect(find.text('LINKED TICKETS'), findsOneWidget);
 
-      await tester.ensureVisible(find.text('Add'));
+      // Scoped to `TicketLinkPicker`'s own trigger — the new
+      // `GapsAndOpenQuestionsSection` (idea-gap-question-ticket-types)
+      // renders a second "Add" button (its `RaiseGapOrQuestionPicker`
+      // trigger) alongside it.
+      final linkedTicketsAdd = find.descendant(
+        of: find.byType(TicketLinkPicker),
+        matching: find.text('Add'),
+      );
+      await tester.ensureVisible(linkedTicketsAdd);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Add'));
+      await tester.tap(linkedTicketsAdd);
       await tester.pumpAndSettle();
 
       // Default link type before any change.
@@ -232,9 +241,15 @@ void main() {
 
       expect(find.text('LINKED TICKETS'), findsOneWidget);
 
-      await tester.ensureVisible(find.text('Add'));
+      // Scoped to `TicketLinkPicker`'s own trigger — see the equivalent
+      // comment in the task-ticket test above.
+      final linkedTicketsAdd = find.descendant(
+        of: find.byType(TicketLinkPicker),
+        matching: find.text('Add'),
+      );
+      await tester.ensureVisible(linkedTicketsAdd);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Add'));
+      await tester.tap(linkedTicketsAdd);
       await tester.pumpAndSettle();
 
       // No link-type selector row for resource — a single-tap flow.

@@ -2,6 +2,7 @@
 
 import 'package:equatable/equatable.dart';
 
+import 'package:aion/features/tickets/domain/entities/gap_or_question_ref.dart';
 import 'package:aion/features/tickets/domain/entities/linked_ticket_ref.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/presentation/cubit/pending_tool_proposal.dart';
@@ -323,6 +324,7 @@ class TicketDetailLoaded extends TicketsState {
     this.childDocs = const [],
     this.linkedTickets = const [],
     this.backlinks = const [],
+    this.gapsAndOpenQuestions = const [],
     this.canAdvanceSddStage = false,
     this.sddStageBlockReason,
     this.needsDesignReview,
@@ -360,6 +362,15 @@ class TicketDetailLoaded extends TicketsState {
   /// rationale). Same [LinkedTicketRef] shape as [linkedTickets]. Empty
   /// until [TicketsCubit.loadDocumentRelations] resolves.
   final List<LinkedTicketRef> backlinks;
+
+  /// Every `knownGap`/`openQuestion` ticket `relatesTo`-linked to [ticket]
+  /// itself or to any descendant of it, recursively rolled up — see
+  /// [GapOrQuestionRef]. Populated only for the same gated types
+  /// `linkedTickets`/`backlinks` use (`epic`/`story`/`task`/`bug`/
+  /// `resource`/`page`). Empty until
+  /// [TicketsCubit.loadDocumentRelations] resolves. Added for
+  /// `aion-arch/changes/idea-gap-question-ticket-types`.
+  final List<GapOrQuestionRef> gapsAndOpenQuestions;
 
   /// Whether [ticket] (an `epic`/`story`) currently satisfies the
   /// precondition for `TicketsCubit.advanceSddStage` to succeed.
@@ -477,6 +488,7 @@ class TicketDetailLoaded extends TicketsState {
     childDocs,
     linkedTickets,
     backlinks,
+    gapsAndOpenQuestions,
     canAdvanceSddStage,
     sddStageBlockReason,
     needsDesignReview,

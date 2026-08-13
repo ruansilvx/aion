@@ -16,7 +16,7 @@ import 'package:aion/features/tickets/domain/enums/inbox_purpose.dart';
 /// `aion-arch/changes/new-project-onboarding-inbox/design.md` §0.3.
 Color inboxAccentFor(InboxPurpose purpose, AionColors c) {
   return switch (purpose) {
-    InboxPurpose.brainDump => c.typeSignal,
+    InboxPurpose.brainDump => c.typeIdea,
     InboxPurpose.whatNextGuidance => c.typeStory,
     InboxPurpose.releasePlanning => c.typeRelease,
     InboxPurpose.qa => c.typeChat,

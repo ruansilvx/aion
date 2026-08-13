@@ -61,10 +61,10 @@
   "ticketsListLoadMoreRetry": "Couldn't load more — tap to retry",
 
   "codebaseAnalysisOfferTitle": "Draft a starting backlog from this codebase",
-  "codebaseAnalysisOfferBadge": "SIGNALS",
+  "codebaseAnalysisOfferBadge": "IDEAS",
   "codebaseAnalysisOfferBodyBefore": "Aion can read ",
   "codebaseAnalysisOfferBodyMiddle": " and draft ",
-  "codebaseAnalysisOfferBodySignal": "signal",
+  "codebaseAnalysisOfferBodyIdea": "idea",
   "codebaseAnalysisOfferBodyAfter": " tickets for the work it infers — you review before anything is kept.",
   "codebaseAnalysisOfferBodyFallbackName": "this codebase",
   "codebaseAnalysisShallowLabel": "Shallow scan",
@@ -75,7 +75,7 @@
   "codebaseAnalysisRunningTitleFull": "Analyzing codebase — full scan",
   "codebaseAnalysisRunningDefaultStatus": "Starting…",
   "codebaseAnalysisHideAction": "Hide",
-  "codebaseAnalysisDoneTitle": "{count, plural, one{Drafted 1 signal ticket} other{Drafted {count} signal tickets}}",
+  "codebaseAnalysisDoneTitle": "{count, plural, one{Drafted 1 idea ticket} other{Drafted {count} idea tickets}}",
   "@codebaseAnalysisDoneTitle": {
     "placeholders": {
       "count": { "type": "int" }
@@ -135,7 +135,9 @@
   "ticketTypeResource": "Resource",
   "ticketTypePage": "Page",
   "ticketTypeChat": "Chat",
-  "ticketTypeSignal": "Signal",
+  "ticketTypeIdea": "Idea",
+  "ticketTypeKnownGap": "Known Gap",
+  "ticketTypeOpenQuestion": "Open Question",
   "ticketTypeRelease": "Release",
   "ticketTypeBug": "Bug",
 
@@ -343,6 +345,9 @@
   "ticketPromoteCreateNewEpic": "Create new epic",
   "ticketPromoteCreateNewBug": "Create new bug",
   "ticketOverflowSuggestedPill": "SUGGESTED",
+  "ticketOverflowReclassifyToKnownGap": "Change to Known Gap",
+  "ticketOverflowReclassifyToOpenQuestion": "Change to Open Question",
+  "ticketReclassifyPickTarget": "Pick target ticket",
   "inboxScreenTitle": "Inbox",
   "inboxScreenEyebrow": "AION · INBOX",
   "inboxScreenSubtitle": "Start a focused AI session — or pick up where you left off.",
@@ -583,6 +588,26 @@
   "documentationLinkedTicketsLabel": "LINKED TICKETS",
   "documentationLinkedTicketsEmpty": "No linked tickets",
   "documentationBacklinksLabel": "BACKLINKS",
+  "documentationGapsAndQuestionsLabel": "GAPS & OPEN QUESTIONS",
+  "documentationGapsAndQuestionsEmpty": "No gaps or open questions raised yet.",
+  "documentationGapsAndQuestionsRaisedOn": "on {title}",
+  "@documentationGapsAndQuestionsRaisedOn": {
+    "placeholders": {
+      "title": { "type": "String" }
+    }
+  },
+  "ticketRaisedOnEyebrow": "RAISED ON",
+  "ticketRaiseKnownGapMenuTitle": "Raise a known gap",
+  "ticketRaiseKnownGapMenuSubtitle": "An acknowledged hole in this ticket",
+  "ticketRaiseOpenQuestionMenuTitle": "Raise an open question",
+  "ticketRaiseOpenQuestionMenuSubtitle": "An unresolved point on this ticket",
+  "ticketRaiseKnownGapFormHeader": "New known gap",
+  "ticketRaiseOpenQuestionFormHeader": "New open question",
+  "ticketRaiseKnownGapTitleHint": "Gap title",
+  "ticketRaiseOpenQuestionTitleHint": "Question title",
+  "ticketRaiseGapOrQuestionCreateAction": "Create",
+  "ticketRaiseGapOrQuestionCreatingAction": "Creating…",
+  "ticketRaiseGapOrQuestionErrorMessage": "Couldn't create — try again.",
   "documentationChildCount": "{count}",
   "@documentationChildCount": {
     "placeholders": {

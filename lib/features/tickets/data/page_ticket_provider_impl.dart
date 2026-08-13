@@ -1,6 +1,7 @@
 // features/tickets/data/page_ticket_provider_impl.dart — PageTicketProviderImpl (data layer).
 
 import 'package:aion/core/contracts/page_ticket_provider.dart';
+import 'package:aion/features/tickets/domain/entities/gap_or_question_ref.dart';
 import 'package:aion/features/tickets/domain/entities/linked_ticket_ref.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
@@ -67,12 +68,62 @@ class PageTicketProviderImpl implements PageTicketProvider {
       }
     }
 
+    final gapsAndOpenQuestions = <GapOrQuestionRef>[];
+    final all = await _ticketRepository.getAllTickets();
+    final byId = {for (final t in all) t.id: t};
+    final subtreeIds = {pageId, ..._descendantIds(pageId, all)};
+    final relatesToLinks = await _ticketLinkRepository.getLinksByTypes([
+      TicketLinkType.relatesTo,
+    ]);
+    for (final link in relatesToLinks) {
+      final source = byId[link.sourceTicketId];
+      final target = byId[link.targetTicketId];
+      if (source == null || target == null) continue;
+      // The gap/question ticket is always the `relatesTo` link's
+      // *source* — createGapOrQuestion/reclassifyIdea always create it
+      // that way — so only that direction is checked. Mirrors
+      // `TicketsCubit.loadDocumentRelations`'s identical aggregation.
+      if ((source.type == TicketType.knownGap ||
+              source.type == TicketType.openQuestion) &&
+          subtreeIds.contains(target.id)) {
+        gapsAndOpenQuestions.add((
+          ticket: source,
+          raisedOn: target,
+          linkId: link.id,
+        ));
+      }
+    }
+    // Component Spec §2.4: directly-raised entries (raised on `pageId`
+    // itself) sort before rolled-up ones (raised on a descendant), each
+    // group ordered by descending `createdAt` of the gap/question ticket
+    // itself. Mirrors `TicketsCubit.loadDocumentRelations`'s identical sort.
+    gapsAndOpenQuestions.sort((a, b) {
+      final aDirect = a.raisedOn.id == pageId;
+      final bDirect = b.raisedOn.id == pageId;
+      if (aDirect != bDirect) return aDirect ? -1 : 1;
+      return b.ticket.createdAt.compareTo(a.ticket.createdAt);
+    });
+
     return PageRelations(
       childDocs: childDocs,
       linkedTickets: linkedTickets,
       backlinks: backlinks,
+      gapsAndOpenQuestions: gapsAndOpenQuestions,
     );
   }
+
+  @override
+  Future<bool> createGapOrQuestion(
+    TicketType type, {
+    required String title,
+    String? description,
+    required String targetTicketId,
+  }) => _ticketsCubit.createGapOrQuestion(
+    type,
+    title: title,
+    description: description,
+    targetTicketId: targetTicketId,
+  );
 
   @override
   Future<Ticket> createPage({
