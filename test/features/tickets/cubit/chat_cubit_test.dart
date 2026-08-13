@@ -11,6 +11,7 @@ import 'package:aion/core/contracts/provider_id.dart';
 import 'package:aion/core/contracts/provider_registry.dart';
 import 'package:aion/features/providers/domain/enums/model_phase.dart';
 import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
+import 'package:aion/features/tickets/presentation/cubit/chat_branch_tool_definitions.dart';
 import 'package:aion/features/tickets/tickets.dart';
 
 class MockCommentRepository extends Mock implements CommentRepository {}
@@ -238,6 +239,131 @@ void main() {
         verify(() => repository.addComment(any())).called(2);
       },
       expect: () => [isA<ChatLoaded>(), isA<ChatError>(), isA<ChatLoaded>()],
+    );
+  });
+
+  group('_toolsFor / onToolCall (via sendMessage)', () {
+    // taskParent: a non-chat parent — makes branchEligibleChat eligible for
+    // branch_ticket. rootChatParent/branchChat: a chat-under-chat pair —
+    // makes branchChat eligible for close_branch only. Added for
+    // `aion-arch/changes/mid-task-chat-branching`.
+    final taskParent = Ticket(
+      id: 'tools-task-parent',
+      ticketId: 'AIO-tools-1',
+      type: TicketType.task,
+      title: 'Task',
+      status: TicketStatus.inProgress,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final branchEligibleChat = Ticket(
+      id: 'tools-branch-eligible-chat',
+      ticketId: 'AIO-tools-2',
+      type: TicketType.chat,
+      title: 'Root chat',
+      status: TicketStatus.backlog,
+      parentId: taskParent.id,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final rootChatParent = Ticket(
+      id: 'tools-root-chat-parent',
+      ticketId: 'AIO-tools-3',
+      type: TicketType.chat,
+      title: 'Root chat',
+      status: TicketStatus.backlog,
+      parentId: taskParent.id,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final branchChat = Ticket(
+      id: 'tools-branch-chat',
+      ticketId: 'AIO-tools-4',
+      type: TicketType.chat,
+      title: 'Branch chat',
+      status: TicketStatus.backlog,
+      parentId: rootChatParent.id,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    Future<Map<String, dynamic>> noopOnToolCall(
+      String toolCallId,
+      String toolName,
+      Map<String, dynamic> arguments,
+    ) async => {'accepted': false};
+
+    blocTest<ChatCubit, ChatState>(
+      'offers branchTicketToolDefinition and threads the caller-supplied '
+      "onToolCall through to the AgentRequest when the chat's own parent "
+      'is not a chat',
+      setUp: () {
+        when(
+          () => ticketRepository.getTicketById(branchEligibleChat.id),
+        ).thenAnswer((_) async => branchEligibleChat);
+        when(
+          () => ticketRepository.getTicketById(taskParent.id),
+        ).thenAnswer((_) async => taskParent);
+        when(
+          () => modelRoutingRepository.getModelForPhase(ModelPhase.execution),
+        ).thenAnswer((_) async => _sonnet);
+        when(() => repository.addComment(any())).thenAnswer((_) async {});
+        when(
+          () => repository.getCommentsForTicket(branchEligibleChat.id),
+        ).thenAnswer((_) async => []);
+        when(() => client.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.sendMessage(
+        chatTicketId: branchEligibleChat.id,
+        content: 'Hello',
+        onToolCall: noopOnToolCall,
+      ),
+      verify: (_) {
+        final captured =
+            verify(() => client.run(captureAny())).captured.single
+                as AgentRequest;
+        expect(captured.tools, [branchTicketToolDefinition]);
+        expect(captured.onToolCall, noopOnToolCall);
+      },
+    );
+
+    blocTest<ChatCubit, ChatState>(
+      "offers closeBranchToolDefinition when the chat's own parent is "
+      'itself a chat (a branch chat)',
+      setUp: () {
+        when(
+          () => ticketRepository.getTicketById(branchChat.id),
+        ).thenAnswer((_) async => branchChat);
+        when(
+          () => ticketRepository.getTicketById(rootChatParent.id),
+        ).thenAnswer((_) async => rootChatParent);
+        when(
+          () => modelRoutingRepository.getModelForPhase(ModelPhase.capable),
+        ).thenAnswer((_) async => _sonnet);
+        when(() => repository.addComment(any())).thenAnswer((_) async {});
+        when(
+          () => repository.getCommentsForTicket(branchChat.id),
+        ).thenAnswer((_) async => []);
+        when(() => client.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.sendMessage(
+        chatTicketId: branchChat.id,
+        content: 'Hello',
+        onToolCall: noopOnToolCall,
+      ),
+      verify: (_) {
+        final captured =
+            verify(() => client.run(captureAny())).captured.single
+                as AgentRequest;
+        expect(captured.tools, [closeBranchToolDefinition]);
+        expect(captured.onToolCall, noopOnToolCall);
+      },
     );
   });
 

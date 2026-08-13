@@ -3082,14 +3082,19 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Resolves [ChatCubit.runChatTurn]'s `tools`/`onToolCall` for
-  /// [chatTicketId] in one step, for the three call sites that build an
-  /// `AgentRequest` for a chat turn from inside this cubit
-  /// (`_runStageChatTurn`, `_runCodingExecution`'s execution-chat turns,
-  /// `retryDesignSync`) — `tools` empty and `onToolCall` `null` together
-  /// if [chatTicketId] can't be read back, keeping [AgentRequest]'s own
-  /// "non-empty tools needs onToolCall" invariant honest rather than
-  /// assumed (it should never actually be unreadable at these call
-  /// sites). Added for `aion-arch/changes/mid-task-chat-branching`.
+  /// [chatTicketId] in one step, for the two call sites that build an
+  /// `AgentRequest` for a chat turn from inside this cubit without already
+  /// holding the chat [Ticket] in hand (`_runStageChatTurn`,
+  /// `_runCodingExecution`'s execution-chat turns) — `tools` empty and
+  /// `onToolCall` `null` together if [chatTicketId] can't be read back,
+  /// keeping [AgentRequest]'s own "non-empty tools needs onToolCall"
+  /// invariant honest rather than assumed (it should never actually be
+  /// unreadable at these call sites). `retryDesignSync` does *not* call
+  /// this: it already has its chat ticket as a parameter, so it inlines the
+  /// equivalent `_toolsFor`/`_onToolCallFor` pair directly rather than
+  /// paying for a redundant [TicketRepository.getTicketById] this helper's
+  /// own lookup would otherwise duplicate. Added for
+  /// `aion-arch/changes/mid-task-chat-branching`.
   Future<
     (
       List<AgentToolDefinition> tools,
