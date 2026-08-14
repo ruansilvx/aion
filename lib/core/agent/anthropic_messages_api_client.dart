@@ -71,6 +71,20 @@ class AnthropicMessagesApiClient implements AgentModelClient {
   final Dio _dio;
   final Future<String?> Function() _getApiKey;
 
+  /// Runs currently in flight, keyed by [AgentRequest.runId]. Only runs
+  /// started with a non-null `runId` are tracked — a run with no `runId`
+  /// can't be cancelled, so there is nothing for [cancel] to look up.
+  /// One [CancelToken] per run, shared across every POST in that run's
+  /// tool-calling re-POST loop, so cancelling mid-loop takes effect on
+  /// whichever pass is currently in flight. Added for
+  /// `aion-arch/changes/parallel-work`; see that change's design.md §2.
+  final _cancelTokens = <String, CancelToken>{};
+
+  @override
+  void cancel(String runId) {
+    _cancelTokens[runId]?.cancel();
+  }
+
   static const _messagesEndpoint = 'https://api.anthropic.com/v1/messages';
 
   /// Anthropic Messages API version header value — a fixed API version
@@ -107,7 +121,10 @@ class AnthropicMessagesApiClient implements AgentModelClient {
     }
 
     final controller = StreamController<AgentEvent>();
-    unawaited(_streamResponse(controller, request, apiKey));
+    final runId = request.runId;
+    final cancelToken = CancelToken();
+    if (runId != null) _cancelTokens[runId] = cancelToken;
+    unawaited(_streamResponse(controller, request, apiKey, cancelToken));
     return controller.stream;
   }
 
@@ -123,6 +140,7 @@ class AnthropicMessagesApiClient implements AgentModelClient {
     StreamController<AgentEvent> controller,
     AgentRequest request,
     String apiKey,
+    CancelToken cancelToken,
   ) async {
     // Local, per-call mutable state — this client instance is shared
     // (registered once in `main.dart`), so token counts and conversation
@@ -149,6 +167,7 @@ class AnthropicMessagesApiClient implements AgentModelClient {
           request: request,
           apiKey: apiKey,
           messages: messages,
+          cancelToken: cancelToken,
         );
         if (pass.inputTokens != null) {
           totalInputTokens = (totalInputTokens ?? 0) + pass.inputTokens!;
@@ -204,7 +223,11 @@ class AnthropicMessagesApiClient implements AgentModelClient {
       }
     } catch (error) {
       if (!responseHandled) {
-        controller.add(AgentErrorEvent(error.toString()));
+        if (error is DioException && error.type == DioExceptionType.cancel) {
+          controller.add(const AgentCancelledEvent());
+        } else {
+          controller.add(AgentErrorEvent(error.toString()));
+        }
         responseHandled = true;
       }
     } finally {
@@ -213,6 +236,8 @@ class AnthropicMessagesApiClient implements AgentModelClient {
           const AgentErrorEvent('Connection closed before the run finished.'),
         );
       }
+      final runId = request.runId;
+      if (runId != null) _cancelTokens.remove(runId);
       await controller.close();
     }
   }
@@ -228,6 +253,7 @@ class AnthropicMessagesApiClient implements AgentModelClient {
     required AgentRequest request,
     required String apiKey,
     required List<Map<String, dynamic>> messages,
+    required CancelToken cancelToken,
   }) async {
     int? inputTokens;
     int? outputTokens;
@@ -333,6 +359,7 @@ class AnthropicMessagesApiClient implements AgentModelClient {
         // throw a DioException for any non-2xx response.
         validateStatus: (_) => true,
       ),
+      cancelToken: cancelToken,
     );
 
     final body = response.data;

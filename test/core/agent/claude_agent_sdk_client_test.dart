@@ -18,6 +18,14 @@ import 'package:aion/core/contracts/agent_tool_definition.dart';
 /// without depending on the real Claude Agent SDK, its `node_modules`, or
 /// network access.
 class _FixtureBridgeLocator extends AgentBridgeLocator {
+  /// Creates a [_FixtureBridgeLocator] resolving to [fixtureName] under
+  /// `test/core/agent/fixtures/` — defaults to the tool-call round-trip
+  /// fixture; the cancellation tests below pass
+  /// `fake_sleep_bridge.mjs` instead.
+  _FixtureBridgeLocator([this.fixtureName = 'fake_tool_call_bridge.mjs']);
+
+  final String fixtureName;
+
   @override
   String resolve() => p.join(
     Directory.current.path,
@@ -25,7 +33,7 @@ class _FixtureBridgeLocator extends AgentBridgeLocator {
     'core',
     'agent',
     'fixtures',
-    'fake_tool_call_bridge.mjs',
+    fixtureName,
   );
 }
 
@@ -93,5 +101,43 @@ void main() {
       },
       timeout: const Timeout(Duration(seconds: 15)),
     );
+  });
+
+  group('ClaudeAgentSdkClient.cancel', () {
+    test(
+      'AgentCancelledEvent is the sole terminal event on a cancelled run',
+      () async {
+        final client = ClaudeAgentSdkClient(
+          _FixtureBridgeLocator('fake_sleep_bridge.mjs'),
+        );
+
+        final stream = await client.run(
+          const AgentRequest(
+            prompt: 'irrelevant',
+            model: 'irrelevant',
+            runId: 'run-1',
+          ),
+        );
+        // Give the process a moment to spawn and start reading stdin
+        // before cancelling — the fixture never emits anything on its
+        // own, so this is the only thing that can end the stream.
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        client.cancel('run-1');
+
+        final events = await stream.toList();
+
+        expect(events, hasLength(1));
+        expect(events.single, isA<AgentCancelledEvent>());
+        expect(events.whereType<AgentDoneEvent>(), isEmpty);
+        expect(events.whereType<AgentErrorEvent>(), isEmpty);
+      },
+      timeout: const Timeout(Duration(seconds: 15)),
+    );
+
+    test('cancelling an unknown runId is a no-op', () async {
+      final client = ClaudeAgentSdkClient(_FixtureBridgeLocator());
+      // Must not throw.
+      client.cancel('no-such-run');
+    });
   });
 }

@@ -28,6 +28,7 @@ import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_list_screen.dart';
+import 'package:aion/features/tickets/presentation/widgets/execution_cancel_control.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_link_picker.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_needs_repair_banner.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_parent_picker.dart';
@@ -610,6 +611,9 @@ class TicketMetadataSection extends StatelessWidget {
                                 onRetry: () => context
                                     .read<TicketsCubit>()
                                     .retryCodingExecution(ticket),
+                                onCancel: () => context
+                                    .read<TicketsCubit>()
+                                    .cancelCodingExecution(ticket),
                               ),
                               const SizedBox(height: AionSpacing.sp16),
                               Container(color: c.border, height: 1),
@@ -2281,6 +2285,7 @@ class _CodingExecutionSection extends StatelessWidget {
     required this.executionLiveActivity,
     required this.onMarkReadyForReview,
     required this.onRetry,
+    required this.onCancel,
   });
 
   final bool isExecuting;
@@ -2290,6 +2295,12 @@ class _CodingExecutionSection extends StatelessWidget {
   final String? executionLiveActivity;
   final VoidCallback onMarkReadyForReview;
   final VoidCallback onRetry;
+
+  /// Called when the running/queued Cancel button (see
+  /// [ExecutionCancelControl]) is activated. Only rendered while
+  /// [isExecuting] or [executionQueuePosition] is non-`null`. Added for
+  /// `aion-arch/changes/parallel-work`.
+  final VoidCallback onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -2328,6 +2339,13 @@ class _CodingExecutionSection extends StatelessWidget {
               statusText,
               style: AionText.body.copyWith(color: c.textPrimary),
             ),
+            if (isExecuting || executionQueuePosition != null) ...[
+              const Spacer(),
+              ExecutionCancelControl(
+                placement: CancelPlacement.detailButton,
+                onCancel: onCancel,
+              ),
+            ],
           ],
         ),
         const SizedBox(height: 14),

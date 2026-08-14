@@ -11,6 +11,7 @@ import 'package:aion/core/contracts/provider_registry.dart';
 import 'package:aion/core/git/git_repository_client.dart';
 import 'package:aion/features/providers/domain/enums/model_phase.dart';
 import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
+import 'package:aion/features/tickets/domain/entities/chat_turn_result.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
 import 'package:aion/features/tickets/domain/enums/comment_author_type.dart';
@@ -131,7 +132,7 @@ class InboxCubit extends Cubit<InboxState> {
       final (model, provider) = await _resolveModelAndProvider(
         ModelPhase.frontier,
       );
-      final succeeded = await ChatCubit.runChatTurn(
+      final result = await ChatCubit.runChatTurn(
         client: provider.client,
         provider: provider,
         commentRepo: _commentRepository,
@@ -139,7 +140,10 @@ class InboxCubit extends Cubit<InboxState> {
         prompt: prompt,
         model: model,
       );
-      if (succeeded) {
+      // No `runId` is passed above, so ChatTurnCancelled can never
+      // actually occur here in practice — handled defensively anyway,
+      // preserving today's exact bool-equivalent behavior.
+      if (result is ChatTurnSuccess) {
         final reply = await _lastCommentContent(chat.id);
         if (reply != null) {
           await _materializeBrainDumpIdeas(reply);
@@ -209,7 +213,7 @@ class InboxCubit extends Cubit<InboxState> {
       final (model, provider) = await _resolveModelAndProvider(
         ModelPhase.frontier,
       );
-      final succeeded = await ChatCubit.runChatTurn(
+      final result = await ChatCubit.runChatTurn(
         client: provider.client,
         provider: provider,
         commentRepo: _commentRepository,
@@ -217,7 +221,10 @@ class InboxCubit extends Cubit<InboxState> {
         prompt: prompt,
         model: model,
       );
-      if (succeeded) {
+      // No `runId` is passed above, so ChatTurnCancelled can never
+      // actually occur here in practice — handled defensively anyway,
+      // preserving today's exact bool-equivalent behavior.
+      if (result is ChatTurnSuccess) {
         final reply = await _lastCommentContent(chat.id);
         if (reply != null) {
           await handleReleasePlanningReply(chat.id, reply);

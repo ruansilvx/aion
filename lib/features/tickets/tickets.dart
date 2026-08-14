@@ -5,6 +5,8 @@
 // exported — see flutter-conventions.md "Barrel files".
 
 export 'domain/entities/backlink_ref.dart';
+export 'domain/entities/chat_turn_result.dart';
+export 'domain/entities/execution_queue_entry.dart';
 export 'domain/entities/linked_ticket_ref.dart';
 export 'domain/entities/page_wikilink.dart';
 export 'domain/entities/ticket.dart';
@@ -25,6 +27,7 @@ export 'domain/enums/ticket_status.dart';
 export 'domain/enums/ticket_sync_status.dart';
 export 'domain/enums/ticket_type.dart';
 export 'domain/repositories/comment_repository.dart';
+export 'domain/repositories/execution_queue_repository.dart';
 export 'domain/repositories/page_wikilink_repository.dart';
 export 'domain/repositories/ticket_link_repository.dart';
 export 'domain/repositories/ticket_list_filter_repository.dart';

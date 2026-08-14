@@ -462,6 +462,22 @@ extension AionColorsHubTokens on AionColors {
       ? Color.lerp(warning, const Color(0xFFFFFFFF), 0.30)!
       : Color.lerp(warning, const Color(0xFF000000), 0.45)!;
 
+  // danger family — cancellation affordances (`ExecutionCancelControl`'s
+  // focus ring and label text). Added for parallel-work; see that
+  // change's design.md §7.1.
+  /// `ExecutionCancelControl`'s focused-state ring color — a
+  /// `danger`-keyed parallel of [focusRing], same alpha values.
+  Color cancelFocusRing(bool isDark) =>
+      danger.withValues(alpha: isDark ? 0.30 : 0.16);
+
+  /// A `danger`-derived text color legible as body copy over
+  /// danger-tinted chrome — blended toward white in dark mode, toward
+  /// black in light mode. Derived exactly like [warningText], keyed to
+  /// `danger` instead of `warning`.
+  Color dangerText(bool isDark) => isDark
+      ? Color.lerp(danger, const Color(0xFFFFFFFF), 0.22)!
+      : Color.lerp(danger, const Color(0xFF000000), 0.35)!;
+
   // AI/override-tone family — a `primary`-keyed border distinct from the
   // neutral `noticeBorder` family, for surfaces that read as "this is
   // AI/skill-authored," matching `primarySubtle`'s existing "AI comment

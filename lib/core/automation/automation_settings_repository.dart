@@ -3,12 +3,13 @@
 import 'package:aion/core/automation/automation_confidence.dart';
 import 'package:aion/core/automation/automation_context.dart';
 
-/// Persists an [AutomationConfidence] value per [AutomationContext] —
-/// SDD-stage-triggering (see `TicketsCubit.advanceSddStage`) and
-/// coding-execution completion (see `TicketsCubit._runCodingExecution`)
-/// each get their own independently-stored value. Implemented by the
-/// data layer ([SharedPrefsAutomationSettingsRepository]); UI and domain
-/// code depend only on this interface, never on a concrete data source.
+/// Persists an [AutomationConfidence] value per [AutomationContext] — each
+/// of the five contexts (SDD-stage-triggering, coding-execution
+/// completion, coding-execution verify-gate retry, mid-task/issue chat
+/// branching, and coding-execution restart resume) gets its own
+/// independently-stored value. Implemented by the data layer
+/// ([SharedPrefsAutomationSettingsRepository]); UI and domain code depend
+/// only on this interface, never on a concrete data source.
 abstract interface class AutomationSettingsRepository {
   /// Returns the persisted confidence level for [context], defaulting to
   /// [AutomationConfidence.gated] if none has been saved yet — surfaces

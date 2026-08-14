@@ -105,6 +105,7 @@ class ProviderSettingsCubit extends Cubit<ProviderSettingsState> {
           case AgentToolUseEvent():
           case AgentToolCallEvent(): // never emitted — this call sends no tools
           case AgentDoneEvent():
+          case AgentCancelledEvent(): // never emitted — this call sets no runId
             break;
           case AgentOverageDetectedEvent(:final message):
             overageMessage = message;

@@ -100,6 +100,7 @@ void main() {
           any(),
           data: any(named: 'data'),
           options: any(named: 'options'),
+          cancelToken: any(named: 'cancelToken'),
         ),
       );
     });
@@ -123,6 +124,7 @@ void main() {
           any(),
           data: any(named: 'data'),
           options: any(named: 'options'),
+          cancelToken: any(named: 'cancelToken'),
         ),
       );
     });
@@ -134,6 +136,7 @@ void main() {
           any(),
           data: any(named: 'data'),
           options: any(named: 'options'),
+          cancelToken: any(named: 'cancelToken'),
         ),
       ).thenAnswer((_) async => _response(_successSse, 200));
 
@@ -156,6 +159,7 @@ void main() {
           any(),
           data: any(named: 'data'),
           options: any(named: 'options'),
+          cancelToken: any(named: 'cancelToken'),
         ),
       ).thenAnswer(
         (_) async => _response(
@@ -188,6 +192,7 @@ void main() {
           any(),
           data: any(named: 'data'),
           options: any(named: 'options'),
+          cancelToken: any(named: 'cancelToken'),
         ),
       ).thenAnswer(
         (_) async => _response(
@@ -224,6 +229,7 @@ void main() {
           any(),
           data: any(named: 'data'),
           options: any(named: 'options'),
+          cancelToken: any(named: 'cancelToken'),
         ),
       ).thenAnswer((invocation) async {
         requestBodies.add(
@@ -282,6 +288,45 @@ void main() {
       expect(toolResultBlock['type'], 'tool_result');
       expect(toolResultBlock['tool_use_id'], 'toolu_1');
       expect(toolResultBlock['content'], '{"accepted":true}');
+    });
+
+    test('a cancelled POST (DioExceptionType.cancel) emits '
+        'AgentCancelledEvent as the sole terminal event', () async {
+      when(
+        () => dio.post<ResponseBody>(
+          any(),
+          data: any(named: 'data'),
+          options: any(named: 'options'),
+          cancelToken: any(named: 'cancelToken'),
+        ),
+      ).thenAnswer(
+        (_) async => throw DioException(
+          requestOptions: RequestOptions(
+            path: 'https://api.anthropic.com/v1/messages',
+          ),
+          type: DioExceptionType.cancel,
+        ),
+      );
+
+      final client = AnthropicMessagesApiClient(dio, () async => 'sk-ant-x');
+      final events = await (await client.run(
+        const AgentRequest(
+          prompt: 'hi',
+          model: 'claude-sonnet-5',
+          runId: 'run-1',
+        ),
+      )).toList();
+
+      expect(events, hasLength(1));
+      expect(events.single, isA<AgentCancelledEvent>());
+      expect(events.whereType<AgentDoneEvent>(), isEmpty);
+      expect(events.whereType<AgentErrorEvent>(), isEmpty);
+    });
+
+    test('cancelling an unknown runId is a no-op', () async {
+      final client = AnthropicMessagesApiClient(dio, () async => 'sk-ant-x');
+      // Must not throw.
+      client.cancel('no-such-run');
     });
   });
 }

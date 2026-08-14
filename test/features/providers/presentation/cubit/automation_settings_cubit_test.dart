@@ -38,6 +38,10 @@ void main() {
         when(
           () => repository.getConfidence(AutomationContext.chatBranching),
         ).thenAnswer((_) async => AutomationConfidence.gated);
+        when(
+          () =>
+              repository.getConfidence(AutomationContext.codingExecutionResume),
+        ).thenAnswer((_) async => AutomationConfidence.gated);
       },
       build: () => AutomationSettingsCubit(repository),
       act: (cubit) => cubit.load(),
@@ -47,6 +51,7 @@ void main() {
           AutomationContext.codingExecution: AutomationConfidence.manual,
           AutomationContext.codingExecutionRetry: AutomationConfidence.gated,
           AutomationContext.chatBranching: AutomationConfidence.gated,
+          AutomationContext.codingExecutionResume: AutomationConfidence.gated,
         }),
       ],
     );

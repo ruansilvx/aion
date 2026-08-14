@@ -86,6 +86,21 @@
   "codebaseAnalysisFailedBody": "The scan stopped before drafting any tickets. Your project is unaffected — add tickets manually for now.",
   "codebaseAnalysisDismissLabel": "Dismiss",
 
+  "resumeRunsPromptTitle": "{count, plural, one{1 coding-execution run was interrupted} other{{count} coding-execution runs were interrupted}}",
+  "@resumeRunsPromptTitle": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "resumeRunsPromptMore": "{count, plural, one{…and 1 more} other{…and {count} more}}",
+  "@resumeRunsPromptMore": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "resumeRunsPromptResumeAction": "Resume",
+  "resumeRunsPromptDismissAction": "Dismiss",
+
   "baselineUpgradeOfferTitle": "A newer baseline is available",
   "baselineUpgradeOfferBodyBefore": "Update this project to baseline ",
   "baselineUpgradeOfferBodyAfter": " for the latest default skills, model config, and conventions.",
@@ -691,6 +706,18 @@
       }
     }
   },
+  "settingsExecutionSchedulingLabel": "Coding Execution Scheduling",
+  "settingsExecutionSchedulingDescription": "Controls how many coding-execution runs may be in flight at once.",
+  "settingsExecutionSchedulingStrictFifoLabel": "Strict FIFO",
+  "settingsExecutionSchedulingParallelLabel": "Parallel",
+  "settingsExecutionSchedulingHybridLabel": "Hybrid",
+  "settingsExecutionSchedulingStrictFifoSubLabel": "One run at a time, in order",
+  "settingsExecutionSchedulingParallelSubLabel": "Multiple runs at once, up to your ceiling",
+  "settingsExecutionSchedulingHybridSubLabel": "Parallel, but Tasks/Bugs under the same Story never overlap",
+  "settingsExecutionSchedulingConcurrencyCeilingLabel": "Concurrency ceiling",
+  "settingsExecutionSchedulingConcurrencyCeilingDescription": "The most coding-execution runs allowed in flight at once under Parallel/Hybrid.",
+  "settingsExecutionSchedulingConcurrencyCeilingError": "Enter a whole number of 1 or more.",
+
   "settingsAutomationEyebrow": "AUTOMATION",
   "settingsAutomationLabel": "SDD Stage Automation",
   "settingsAutomationDescription": "Controls whether tickets advance through Explore, Propose, Verify, and Archive on their own, or wait for you.",
@@ -717,6 +744,12 @@
   "settingsAutomationChatBranchingAutoSubLabel": "Branches and folds back on its own",
   "settingsAutomationChatBranchingGatedSubLabel": "Asks before each branch or fold",
   "settingsAutomationChatBranchingManualSubLabel": "You branch and fold manually",
+
+  "settingsAutomationCodingExecutionResumeLabel": "Resume After Restart",
+  "settingsAutomationCodingExecutionResumeDescription": "When a coding-execution run was interrupted by an app restart, resume it automatically, ask first, or leave it for a manual retry.",
+  "settingsAutomationCodingExecutionResumeAutoSubLabel": "Resumes interrupted runs on launch",
+  "settingsAutomationCodingExecutionResumeGatedSubLabel": "Asks before resuming interrupted runs",
+  "settingsAutomationCodingExecutionResumeManualSubLabel": "You retry interrupted runs yourself",
   "settingsOverridesEyebrow": "OVERRIDES",
   "settingsOverridesSummary": "Browse every baseline skill and convention for this project and edit a plain-text local override for any one of them.",
   "settingsOverridesManageButton": "Manage Overrides",

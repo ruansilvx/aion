@@ -19,8 +19,20 @@ import 'agent_tool_definition.dart';
 abstract interface class AgentModelClient {
   /// Starts a model run for [request], returning a stream of incremental
   /// [AgentEvent]s. The returned stream is finished by exactly one
-  /// terminal event ([AgentDoneEvent] or [AgentErrorEvent]).
+  /// terminal event ([AgentDoneEvent], [AgentErrorEvent], or
+  /// [AgentCancelledEvent]).
   Future<Stream<AgentEvent>> run(AgentRequest request);
+
+  /// Cancels the run identified by [runId] (the [AgentRequest.runId] it
+  /// was started with), causing its [run] stream to close with a
+  /// terminal [AgentCancelledEvent] instead of whatever it would
+  /// otherwise have ended with. A no-op if [runId] doesn't match any
+  /// currently active run — already finished, never started, or unknown
+  /// to this client instance — so a caller racing a cancel against a
+  /// run's own natural completion never needs to guard the call itself.
+  /// Added for `aion-arch/changes/parallel-work`; see that change's
+  /// design.md §2.
+  void cancel(String runId);
 }
 
 /// A single request to an [AgentModelClient].
@@ -39,6 +51,7 @@ class AgentRequest extends Equatable {
     this.workingDirectory,
     this.tools = const [],
     this.onToolCall,
+    this.runId,
   });
 
   /// The user- or system-authored prompt text.
@@ -87,6 +100,13 @@ class AgentRequest extends Equatable {
   )?
   onToolCall;
 
+  /// Caller-supplied identifier for this run, later passed to
+  /// [AgentModelClient.cancel] to cancel it mid-flight. `null` (the
+  /// default) for every call site that has no cancellation UI wired to
+  /// it — a run with no [runId] simply can't be cancelled. Added for
+  /// `aion-arch/changes/parallel-work`; see that change's design.md §2.
+  final String? runId;
+
   @override
   List<Object?> get props => [
     prompt,
@@ -94,6 +114,7 @@ class AgentRequest extends Equatable {
     toolsEnabled,
     workingDirectory,
     tools,
+    runId,
   ];
 }
 
@@ -185,6 +206,20 @@ class AgentToolUseEvent extends AgentEvent {
 
   @override
   List<Object?> get props => [toolName, summary];
+}
+
+/// The run was cancelled via [AgentModelClient.cancel]. Terminal, but
+/// **not** a failure — distinct from [AgentErrorEvent], which always
+/// represents something going wrong. Always the last event on a
+/// cancelled stream; no [AgentDoneEvent]/[AgentErrorEvent] follows.
+/// Added for `aion-arch/changes/parallel-work`; see that change's
+/// design.md §2.
+class AgentCancelledEvent extends AgentEvent {
+  /// Creates an [AgentCancelledEvent].
+  const AgentCancelledEvent();
+
+  @override
+  List<Object?> get props => [];
 }
 
 /// An app-defined tool call the model made mid-run — distinct from

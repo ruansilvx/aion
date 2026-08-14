@@ -25,12 +25,46 @@ import 'package:aion/core/contracts/agent_model_client.dart';
 /// bridge can be answered with a matching reply line — see
 /// [_handleToolCallRequest] and
 /// `aion-arch/changes/mid-task-chat-branching/design.md` §3.
+///
+/// Supports cancellation (see [cancel]): every [AgentRequest] carrying a
+/// non-null [AgentRequest.runId] has its spawned [Process] tracked in
+/// [_activeRuns] for the run's duration, escalating from `SIGTERM` to
+/// `SIGKILL` if the process hasn't exited shortly after the first signal.
+/// Added for `aion-arch/changes/parallel-work`; see that change's
+/// design.md §2.
 class ClaudeAgentSdkClient implements AgentModelClient {
   /// Creates a [ClaudeAgentSdkClient] that resolves the bridge script's
   /// path via [bridgeLocator].
   ClaudeAgentSdkClient(this._bridgeLocator);
 
   final AgentBridgeLocator _bridgeLocator;
+
+  /// How long [cancel] waits after `SIGTERM` before escalating to
+  /// `SIGKILL` — long enough for the bridge process to flush and exit
+  /// cleanly on its own, short enough that a stuck process doesn't hang
+  /// cancellation indefinitely.
+  static const _killEscalationDelay = Duration(seconds: 5);
+
+  /// Runs currently in flight, keyed by [AgentRequest.runId]. Only runs
+  /// started with a non-null `runId` are tracked — a run with no `runId`
+  /// can't be cancelled, so there is nothing for [cancel] to look up.
+  final _activeRuns = <String, _ActiveRun>{};
+
+  @override
+  void cancel(String runId) {
+    final activeRun = _activeRuns[runId];
+    if (activeRun == null) return;
+    activeRun.cancelled = true;
+    activeRun.process.kill(ProcessSignal.sigterm);
+    Timer(_killEscalationDelay, () {
+      // Only escalate if this exact run is still the one tracked under
+      // `runId` — it may have already exited and been replaced by an
+      // unrelated later run reusing the same id.
+      if (identical(_activeRuns[runId], activeRun)) {
+        activeRun.process.kill(ProcessSignal.sigkill);
+      }
+    });
+  }
 
   @override
   Future<Stream<AgentEvent>> run(AgentRequest request) async {
@@ -51,6 +85,14 @@ class ClaudeAgentSdkClient implements AgentModelClient {
       );
       unawaited(controller.close());
       return controller.stream;
+    }
+
+    final runId = request.runId;
+    final _ActiveRun? activeRun = runId == null
+        ? null
+        : _ActiveRun(process);
+    if (runId != null && activeRun != null) {
+      _activeRuns[runId] = activeRun;
     }
 
     process.stdin.writeln(
@@ -131,11 +173,16 @@ class ClaudeAgentSdkClient implements AgentModelClient {
     unawaited(
       process.exitCode.then((exitCode) async {
         if (!sawTerminalEvent) {
-          final message = stderrBuffer.length > 0
-              ? stderrBuffer.toString().trim()
-              : 'agent_bridge exited with code $exitCode and no result.';
-          controller.add(AgentErrorEvent(message));
+          if (activeRun?.cancelled ?? false) {
+            controller.add(const AgentCancelledEvent());
+          } else {
+            final message = stderrBuffer.length > 0
+                ? stderrBuffer.toString().trim()
+                : 'agent_bridge exited with code $exitCode and no result.';
+            controller.add(AgentErrorEvent(message));
+          }
         }
+        if (runId != null) _activeRuns.remove(runId);
         await process.stdin.close();
         await controller.close();
       }),
@@ -201,4 +248,22 @@ class ClaudeAgentSdkClient implements AgentModelClient {
       _ => null,
     };
   }
+}
+
+/// One run tracked in [ClaudeAgentSdkClient._activeRuns] — pairs the
+/// spawned [process] with whether [ClaudeAgentSdkClient.cancel] has been
+/// called for it, so the process-exit handler in
+/// [ClaudeAgentSdkClient.run] knows whether to emit [AgentCancelledEvent]
+/// instead of [AgentErrorEvent] for an exit with no terminal event seen.
+class _ActiveRun {
+  /// Creates an [_ActiveRun] tracking [process], not yet cancelled.
+  _ActiveRun(this.process);
+
+  /// The spawned bridge process this run's [ClaudeAgentSdkClient.cancel]
+  /// call (if any) signals.
+  final Process process;
+
+  /// Set by [ClaudeAgentSdkClient.cancel] just before signalling
+  /// [process] — read back once [process] exits.
+  bool cancelled = false;
 }

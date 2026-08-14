@@ -1,6 +1,7 @@
 // presentation/cubit/chat_cubit.dart — ChatCubit business logic (presentation layer).
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:uuid/uuid.dart';
 
 import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/core/contracts/agent_model_descriptor.dart';
@@ -10,6 +11,7 @@ import 'package:aion/core/contracts/consumption_signal.dart';
 import 'package:aion/core/contracts/provider_registry.dart';
 import 'package:aion/features/providers/domain/enums/model_phase.dart';
 import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
+import 'package:aion/features/tickets/domain/entities/chat_turn_result.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
 import 'package:aion/features/tickets/domain/enums/comment_author_type.dart';
 import 'package:aion/features/tickets/domain/enums/inbox_purpose.dart';
@@ -52,6 +54,7 @@ class ChatCubit extends Cubit<ChatState> {
   final ProviderRegistry _providerRegistry;
   final TicketRepository _ticketRepository;
   final ModelRoutingRepository _modelRoutingRepository;
+  static const _uuid = Uuid();
 
   /// Fetches all comments for [chatTicketId]. Emits [ChatLoaded] on
   /// success (with no `streamingText`), or [ChatError] if the repository
@@ -80,6 +83,17 @@ class ChatCubit extends Cubit<ChatState> {
   /// `TicketsCubit` (ticket creation, automation-confidence gating), so
   /// the caller (`TicketDetailScreen`) supplies it. Added for
   /// `aion-arch/changes/mid-task-chat-branching`.
+  ///
+  /// Generates a fresh `runId` (`const Uuid().v4()`) for this turn,
+  /// threaded through to [AgentRequest.runId] via [runChatTurn] and
+  /// stored on [ChatLoaded.activeRunId] for the whole turn's duration —
+  /// [cancelReply] resolves it from there. On [ChatTurnCancelled],
+  /// persists [ChatTurnCancelled.accumulatedText] as one
+  /// [CommentAuthorType.ai] comment if non-empty (a hard failure/success
+  /// already persisted its own comment inside [runChatTurn] — only a
+  /// cancelled turn needs the caller to do it), then reloads the thread
+  /// and clears `streamingText`/`currentToolUse`/`activeRunId`. Added for
+  /// `aion-arch/changes/parallel-work`; see that change's design.md §3.
   Future<void> sendMessage({
     required String chatTicketId,
     required String content,
@@ -105,22 +119,30 @@ class ChatCubit extends Cubit<ChatState> {
 
       final phase = await _phaseForChat(chatTicketId);
       final (model, provider) = await _resolveModelAndProvider(phase);
+      final runId = _uuid.v4();
+      // Emitted before the run itself starts (not just from the first
+      // onChunk/onToolUse below) so a cancel button has something to act
+      // on even before the model's first token streams in.
+      emit(ChatLoaded(afterHuman, activeRunId: runId));
 
       // Tracks the most recent onChunk text so onToolUse can carry it
       // forward instead of blanking it — a tool call fired mid-turn
       // (after some text already streamed) would otherwise reset
       // ChatLoaded.streamingText to null via its constructor default.
       String? latestStreamingText;
-      final succeeded = await runChatTurn(
+      final result = await runChatTurn(
         client: provider.client,
         provider: provider,
         commentRepo: _repository,
         chatTicketId: chatTicketId,
         prompt: content,
         model: model,
+        runId: runId,
         onChunk: (textSoFar) {
           latestStreamingText = textSoFar;
-          emit(ChatLoaded(afterHuman, streamingText: textSoFar));
+          emit(
+            ChatLoaded(afterHuman, streamingText: textSoFar, activeRunId: runId),
+          );
         },
         onToolUse: (toolName, summary) => emit(
           ChatLoaded(
@@ -129,22 +151,59 @@ class ChatCubit extends Cubit<ChatState> {
             currentToolUse: summary == null
                 ? 'Running $toolName...'
                 : 'Running $toolName: $summary...',
+            activeRunId: runId,
           ),
         ),
         tools: await _toolsFor(chatTicketId),
         onToolCall: onToolCall,
       );
 
-      if (!succeeded) {
-        emit(ChatError('The model run failed. Please try again.'));
-        emit(ChatLoaded(afterHuman));
-        return;
+      switch (result) {
+        case ChatTurnSuccess():
+          final afterReply = await _repository.getCommentsForTicket(
+            chatTicketId,
+          );
+          emit(ChatLoaded(afterReply));
+        case ChatTurnFailure():
+          emit(ChatError('The model run failed. Please try again.'));
+          emit(ChatLoaded(afterHuman));
+        case ChatTurnCancelled(:final accumulatedText):
+          if (accumulatedText.isNotEmpty) {
+            await _repository.addComment(
+              TicketComment(
+                id: '',
+                ticketId: chatTicketId,
+                content: accumulatedText,
+                authorType: CommentAuthorType.ai,
+                aiModel: model.modelId,
+                createdAt: DateTime.now(),
+              ),
+            );
+          }
+          final afterCancel = await _repository.getCommentsForTicket(
+            chatTicketId,
+          );
+          emit(ChatLoaded(afterCancel));
       }
-      final afterReply = await _repository.getCommentsForTicket(chatTicketId);
-      emit(ChatLoaded(afterReply));
     } catch (e) {
       emit(ChatError(e.toString()));
     }
+  }
+
+  /// Cancels [chatTicketId]'s currently in-flight reply, if any — no-op
+  /// if [state] isn't [ChatLoaded] or [ChatLoaded.activeRunId] is `null`.
+  /// Resolves the same provider [sendMessage] would (via [_phaseForChat]/
+  /// [_resolveModelAndProvider]) and calls
+  /// [AgentModelClient.cancel] with the active run's id. Added for
+  /// `aion-arch/changes/parallel-work`; see that change's design.md §3.
+  Future<void> cancelReply(String chatTicketId) async {
+    final current = state;
+    if (current is! ChatLoaded) return;
+    final runId = current.activeRunId;
+    if (runId == null) return;
+    final phase = await _phaseForChat(chatTicketId);
+    final (_, provider) = await _resolveModelAndProvider(phase);
+    provider.client.cancel(runId);
   }
 
   /// Resolves [phase] to its currently configured [AgentModelDescriptor]
@@ -268,13 +327,28 @@ class ChatCubit extends Cubit<ChatState> {
   /// progress channel `AgentToolUseEvent` already uses — the actual
   /// execution/result round trip happens inside [client] via
   /// [onToolCall], not here.
-  static Future<bool> runChatTurn({
+  ///
+  /// [runId], if given, is threaded through to [AgentRequest.runId] so a
+  /// caller can later cancel this exact turn via [AgentModelClient.cancel].
+  /// `null` (the default) for a caller with no cancellation UI wired to
+  /// it. On an [AgentCancelledEvent], returns [ChatTurnCancelled] carrying
+  /// whatever text had accumulated so far and persists nothing itself —
+  /// unlike the success/failure paths below, a cancelled turn's caller
+  /// decides for itself whether/how to persist the partial text (see
+  /// [sendMessage]/`TicketsCubit._runCodingExecution`). Added for
+  /// `aion-arch/changes/parallel-work`; see that change's design.md §3.
+  ///
+  /// @returns a [ChatTurnResult]: [ChatTurnSuccess] or [ChatTurnFailure]
+  /// once this method has already persisted the matching comment itself,
+  /// or [ChatTurnCancelled] with nothing persisted.
+  static Future<ChatTurnResult> runChatTurn({
     required AgentModelClient client,
     required AgentProvider provider,
     required CommentRepository commentRepo,
     required String chatTicketId,
     required String prompt,
     required AgentModelDescriptor model,
+    String? runId,
     void Function(String textSoFar)? onChunk,
     bool toolsEnabled = false,
     String? workingDirectory,
@@ -290,6 +364,7 @@ class ChatCubit extends Cubit<ChatState> {
   }) async {
     final buffer = StringBuffer();
     var succeeded = true;
+    var cancelled = false;
     String? failureMessage;
     AgentDoneEvent? doneEvent;
     try {
@@ -301,6 +376,7 @@ class ChatCubit extends Cubit<ChatState> {
           workingDirectory: workingDirectory,
           tools: tools,
           onToolCall: onToolCall,
+          runId: runId,
         ),
       );
       await for (final event in events) {
@@ -322,12 +398,16 @@ class ChatCubit extends Cubit<ChatState> {
           case AgentErrorEvent(:final message):
             succeeded = false;
             failureMessage = provider.normalizeErrorMessage(message);
+          case AgentCancelledEvent():
+            cancelled = true;
         }
       }
     } catch (e) {
       succeeded = false;
       failureMessage = e.toString();
     }
+
+    if (cancelled) return ChatTurnCancelled(buffer.toString());
 
     if (succeeded && buffer.isNotEmpty) {
       await commentRepo.addComment(
@@ -356,6 +436,6 @@ class ChatCubit extends Cubit<ChatState> {
         ),
       );
     }
-    return succeeded;
+    return succeeded ? const ChatTurnSuccess() : const ChatTurnFailure();
   }
 }

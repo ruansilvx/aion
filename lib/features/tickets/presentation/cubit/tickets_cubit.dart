@@ -25,13 +25,17 @@ import 'package:aion/core/git/git_repository_client.dart';
 import 'package:aion/core/git/github_cli_client.dart';
 import 'package:aion/features/projects/domain/entities/baseline_asset.dart';
 import 'package:aion/features/projects/domain/repositories/baseline_repository.dart';
+import 'package:aion/features/providers/domain/enums/execution_scheduling_mode.dart';
 import 'package:aion/features/providers/domain/enums/model_phase.dart';
 import 'package:aion/features/providers/domain/repositories/execution_context_cap_repository.dart';
+import 'package:aion/features/providers/domain/repositories/execution_scheduling_repository.dart';
 import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
 import 'package:aion/features/tickets/data/services/active_ticket_view_registry.dart';
 import 'package:aion/features/tickets/data/services/page_wikilink_indexer.dart';
 import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
 import 'package:aion/features/tickets/domain/entities/backlink_ref.dart';
+import 'package:aion/features/tickets/domain/entities/chat_turn_result.dart';
+import 'package:aion/features/tickets/domain/entities/execution_queue_entry.dart';
 import 'package:aion/features/tickets/domain/entities/gap_or_question_ref.dart';
 import 'package:aion/features/tickets/domain/entities/linked_ticket_ref.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
@@ -51,6 +55,7 @@ import 'package:aion/features/tickets/domain/enums/ticket_sort_field.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/repositories/comment_repository.dart';
+import 'package:aion/features/tickets/domain/repositories/execution_queue_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/page_wikilink_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_link_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_list_filter_repository.dart';
@@ -61,6 +66,7 @@ import 'package:aion/features/tickets/domain/utils/ticket_rollup_calculator.dart
 import 'package:aion/features/tickets/presentation/cubit/chat_branch_tool_definitions.dart';
 import 'package:aion/features/tickets/presentation/cubit/chat_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/codebase_analysis_status.dart';
+import 'package:aion/features/tickets/presentation/cubit/in_flight_execution_run.dart';
 import 'package:aion/features/tickets/presentation/cubit/pending_tool_proposal.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_context_enricher.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_estimation_suggester.dart';
@@ -148,12 +154,21 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// open; `null` on mobile/web, where that deferral simply never
   /// triggers (no separate file-watcher write path to race against
   /// there). Both added for `aion-arch/changes/inline-wikilink-backlinks`.
+  /// [executionSchedulingRepository]/[executionQueueRepository] follow the
+  /// same optional-dependency pattern once more — `null`
+  /// (every existing construction site except `app_router.dart`) makes
+  /// [_effectiveConcurrencyCeiling] always resolve
+  /// [ExecutionSchedulingMode.strictFifo] (today's unchanged behavior) and
+  /// [restoreExecutionQueue]/[_persistExecutionQueueSnapshot] both no-op;
+  /// real usage (`app_router.dart`) always supplies both. Added for
+  /// `aion-arch/changes/parallel-work`.
   // The public param names below (embeddingProvider/gitProjector/
   // projectRootPath/providerRegistry/commentRepository/
   // automationSettingsRepository/modelRoutingRepository/gitClient/
   // gitHubClient/baselineRepository/projectId/baselineVersion/
   // projectName/filterRepository/sortRepository/pageWikilinkRepository/
-  // activeTicketViewRegistry) intentionally differ from their private
+  // activeTicketViewRegistry/executionSchedulingRepository/
+  // executionQueueRepository) intentionally differ from their private
   // backing fields; a private identifier can't be used as an external
   // named-parameter label from another library, so `this._foo` shorthand
   // isn't usable here.
@@ -178,6 +193,8 @@ class TicketsCubit extends Cubit<TicketsState> {
     TicketListSortRepository? sortRepository,
     PageWikilinkRepository? pageWikilinkRepository,
     ActiveTicketViewRegistry? activeTicketViewRegistry,
+    ExecutionSchedulingRepository? executionSchedulingRepository,
+    ExecutionQueueRepository? executionQueueRepository,
   }) : super(const TicketsInitial()) {
     _embeddingProvider = embeddingProvider;
     _gitProjector = gitProjector;
@@ -197,6 +214,8 @@ class TicketsCubit extends Cubit<TicketsState> {
     _filterRepository = filterRepository;
     _sortRepository = sortRepository;
     _pageWikilinkRepository = pageWikilinkRepository;
+    _executionSchedulingRepository = executionSchedulingRepository;
+    _executionQueueRepository = executionQueueRepository;
     _rollupRecomputer = TicketRollupRecomputer(
       _repository,
       gitProjector: gitProjector,
@@ -258,6 +277,20 @@ class TicketsCubit extends Cubit<TicketsState> {
   late final TicketListSortRepository? _sortRepository;
   late final PageWikilinkRepository? _pageWikilinkRepository;
 
+  /// Persists the user's coding-execution scheduling mode/concurrency
+  /// ceiling — see [_effectiveConcurrencyCeiling]. `null` (every existing
+  /// construction site except `app_router.dart`) makes scheduling always
+  /// resolve [ExecutionSchedulingMode.strictFifo]. Added for
+  /// `aion-arch/changes/parallel-work`.
+  late final ExecutionSchedulingRepository? _executionSchedulingRepository;
+
+  /// Persists the in-flight/queued coding-execution snapshot across an
+  /// app restart — see [restoreExecutionQueue]/
+  /// [_persistExecutionQueueSnapshot]. `null` (every existing construction
+  /// site except `app_router.dart`) makes both no-op. Added for
+  /// `aion-arch/changes/parallel-work`.
+  late final ExecutionQueueRepository? _executionQueueRepository;
+
   /// Shared inline-wikilink reindex/rename-cascade logic — see
   /// [PageWikilinkIndexer]. `null` whenever this cubit was constructed
   /// without a [PageWikilinkRepository], mirroring every other optional-
@@ -301,14 +334,42 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// `aion-arch/changes/coding-execution-reliability-and-safety`.
   static const _maxVerifyRetries = 2;
 
-  /// The Task id of the coding-execution run currently in flight, or
-  /// `null` if none is running. In-memory only — does not survive an app
-  /// restart (see proposal.md's Out of scope).
-  String? _inFlightExecutionTaskId;
+  /// Task/Bug ids with a coding-execution run currently in flight —
+  /// replaces the single-slot `_inFlightExecutionTaskId` this cubit used
+  /// before `aion-arch/changes/parallel-work` to support
+  /// [ExecutionSchedulingMode.parallel]/[ExecutionSchedulingMode.hybrid]'s
+  /// concurrent runs. Persisted (see [_persistExecutionQueueSnapshot])
+  /// but rebuilt from scratch on every app launch via
+  /// [restoreExecutionQueue] — this in-memory field itself does not
+  /// survive a restart.
+  final Set<String> _inFlightExecutionIds = {};
 
-  /// Task ids waiting behind [_inFlightExecutionTaskId], FIFO — index 0
-  /// runs next.
+  /// Each entry in [_inFlightExecutionIds]'s currently-active model turn,
+  /// keyed by Task/Bug id — see [InFlightExecutionRun]. Updated every time
+  /// [_runCodingExecution] starts a fresh implement/verify turn, read by
+  /// [cancelCodingExecution] to resolve which run to cancel.
+  final Map<String, InFlightExecutionRun> _inFlightRuns = {};
+
+  /// Each currently-in-flight-or-queued Task/Bug's [Ticket.status]
+  /// immediately before it moved to [TicketStatus.inProgress] — captured
+  /// by [_interceptTaskExecutionTrigger]'s allowed path (and
+  /// [updateStatusForTickets]'s own gate loop) right before the write,
+  /// consumed by [cancelCodingExecution] to know which status to revert
+  /// to on cancel.
+  final Map<String, TicketStatus> _preExecutionStatus = {};
+
+  /// Task ids waiting to start, FIFO — index 0 is next in line, though
+  /// under [ExecutionSchedulingMode.hybrid] a later-queued id may start
+  /// ahead of it if index 0's parent already has an in-flight sibling
+  /// (see [_nextEligibleForHybrid]).
   final List<String> _executionQueue = [];
+
+  /// Interrupted coding-execution runs [restoreExecutionQueue] found on
+  /// this launch under [AutomationConfidence.gated], surfaced via
+  /// [TicketsLoaded.pendingResumePrompt] for `ResumeRunsPrompt` to render
+  /// — `null` once nothing is pending (the default), or after
+  /// [resumePendingExecutions]/[dismissPendingResumePrompt] clears it.
+  List<Ticket>? _pendingResumeTickets;
 
   /// Epic/Story ids currently mid-advance (their [advanceSddStage] chat
   /// spawn hasn't finished its stage-chat turn yet), plus — once known —
@@ -629,6 +690,24 @@ class TicketsCubit extends Cubit<TicketsState> {
           page.tickets,
           hasMore: page.hasMore,
           blockedTicketIds: blockedTicketIds,
+          // Seeded from the cubit's own in-memory scheduling/stage-advance
+          // state — _refreshInFlightBoardState only ever *updates* an
+          // already-emitted TicketsLoaded (it no-ops otherwise), so this
+          // fresh emission is the sole place that ever seeds these fields
+          // for a just-opened/just-filtered Board. Without this, a Task
+          // already running/queued at the moment the Board loads (e.g.
+          // right after restoreExecutionQueue's auto/gated resume, or
+          // simply navigating back to the Board mid-run) shows no
+          // Running/Queued badge and no cancel affordance until some
+          // unrelated mutation happens to call _refreshInFlightBoardState.
+          // Fixed for `aion-arch/changes/parallel-work` post-/verify.
+          inFlightExecutionIds: Set.unmodifiable(_inFlightExecutionIds),
+          executionQueuePositions: {
+            for (var i = 0; i < _executionQueue.length; i++)
+              _executionQueue[i]: i + 1,
+          },
+          inFlightAdvanceIds: Set.unmodifiable(_inFlightStageAdvanceIds),
+          pendingResumePrompt: _pendingResumeTickets ?? const [],
         ),
       );
     } catch (e) {
@@ -680,6 +759,16 @@ class TicketsCubit extends Cubit<TicketsState> {
           combined,
           hasMore: page.hasMore,
           blockedTicketIds: blockedTicketIds,
+          // Same fix as searchTickets — see its comment. Without this, a
+          // load-more triggered while runs are already in flight/queued
+          // would otherwise wipe their Board badges/cancel affordances.
+          inFlightExecutionIds: Set.unmodifiable(_inFlightExecutionIds),
+          executionQueuePositions: {
+            for (var i = 0; i < _executionQueue.length; i++)
+              _executionQueue[i]: i + 1,
+          },
+          inFlightAdvanceIds: Set.unmodifiable(_inFlightStageAdvanceIds),
+          pendingResumePrompt: _pendingResumeTickets ?? const [],
         ),
       );
     } catch (e) {
@@ -1801,6 +1890,10 @@ class TicketsCubit extends Cubit<TicketsState> {
       emit(TicketDetailLoaded(task));
       return false;
     }
+    // Captured immediately before the caller's own inProgress status
+    // write, so cancelCodingExecution knows which status to revert to.
+    // Added for `aion-arch/changes/parallel-work`.
+    _preExecutionStatus[task.id] = task.status;
     return true;
   }
 
@@ -1832,19 +1925,20 @@ class TicketsCubit extends Cubit<TicketsState> {
     return false;
   }
 
-  /// Starts [task]'s coding-execution run immediately if no other run is
-  /// in flight, or appends it to [_executionQueue] (FIFO) otherwise.
-  /// Called by [changeTicketStatus]/[updateTicketStatus] after a Task's
-  /// status write to [TicketStatus.inProgress] succeeds.
+  /// Enqueues [task]'s coding-execution run, then immediately tries to
+  /// start it (and any other now-eligible queued run) via
+  /// [_tryStartNextQueuedExecutions] — under
+  /// [ExecutionSchedulingMode.strictFifo] (today's unchanged default),
+  /// this only ever actually starts [task] when nothing else is running,
+  /// exactly as the old single-slot behavior did. Called by
+  /// [changeTicketStatus]/[updateTicketStatus] after a Task's status
+  /// write to [TicketStatus.inProgress] succeeds.
   Future<void> _triggerOrQueueCodingExecution(Ticket task) async {
-    if (_inFlightExecutionTaskId != null) {
-      _executionQueue.add(task.id);
-      _refreshInFlightBoardState();
-      return;
-    }
-    _inFlightExecutionTaskId = task.id;
+    _executionQueue.add(task.id);
     _refreshInFlightBoardState();
-    unawaited(_runCodingExecution(task));
+    _refreshTaskDetailIfShowing();
+    unawaited(_persistExecutionQueueSnapshot());
+    unawaited(_tryStartNextQueuedExecutions());
   }
 
   /// Re-emits the current list-shaped state (`TicketsLoaded` only — a
@@ -1852,14 +1946,17 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// active, since there's no Board to refresh in that case) with
   /// [TicketsLoaded.inFlightExecutionIds]/
   /// [TicketsLoaded.executionQueuePositions]/
-  /// [TicketsLoaded.inFlightAdvanceIds] recomputed from
-  /// [_inFlightExecutionTaskId]/[_executionQueue]/
-  /// [_inFlightStageAdvanceIds]. Called at every mutation site of those
-  /// three: [_triggerOrQueueCodingExecution], [_dequeueNext],
-  /// [_runCodingExecution]'s completion and catch-path clears, and every
+  /// [TicketsLoaded.inFlightAdvanceIds]/[TicketsLoaded.pendingResumePrompt]
+  /// recomputed from [_inFlightExecutionIds]/[_executionQueue]/
+  /// [_inFlightStageAdvanceIds]/[_pendingResumeTickets]. Called at every
+  /// mutation site of those: [_triggerOrQueueCodingExecution],
+  /// [_tryStartNextQueuedExecutions], [cancelCodingExecution],
+  /// [_runCodingExecution]'s completion and catch-path clears, every
   /// [_inFlightStageAdvanceIds] mutation in [advanceSddStage]/
-  /// [_runStageChatTurn] — so `TicketBoardCard` never needs to poll.
-  /// Added for `aion-arch/changes/board-execution-indicators-and-notifications`.
+  /// [_runStageChatTurn], and [resumePendingExecutions]/
+  /// [dismissPendingResumePrompt] — so `TicketBoardCard` never needs to
+  /// poll. Added for
+  /// `aion-arch/changes/board-execution-indicators-and-notifications`.
   void _refreshInFlightBoardState() {
     final current = state;
     if (current is! TicketsLoaded) return;
@@ -1867,15 +1964,63 @@ class TicketsCubit extends Cubit<TicketsState> {
       TicketsLoaded(
         current.tickets,
         hasMore: current.hasMore,
-        inFlightExecutionIds: _inFlightExecutionTaskId == null
-            ? const {}
-            : {_inFlightExecutionTaskId!},
+        inFlightExecutionIds: Set.unmodifiable(_inFlightExecutionIds),
         executionQueuePositions: {
           for (var i = 0; i < _executionQueue.length; i++)
             _executionQueue[i]: i + 1,
         },
         inFlightAdvanceIds: Set.unmodifiable(_inFlightStageAdvanceIds),
         blockedTicketIds: current.blockedTicketIds,
+        pendingResumePrompt: _pendingResumeTickets ?? const [],
+      ),
+    );
+  }
+
+  /// Re-emits [TicketDetailLoaded] with `isExecuting`/
+  /// `executionQueuePosition` recomputed from [_inFlightExecutionIds]/
+  /// [_executionQueue] — but only when the cubit's current `state` is
+  /// still [TicketDetailLoaded], and only if either value actually
+  /// changed (avoids an unnecessary rebuild on every unrelated
+  /// scheduling mutation). Every other field is copied unchanged from
+  /// the current state. Needed because [_refreshInFlightBoardState]
+  /// only refreshes a list-shaped `TicketsLoaded` state and is a no-op
+  /// while a detail screen is showing — without this, a Task's own
+  /// already-open detail screen (its cancel button, its "Queued #N"
+  /// hint) never reflects a scheduling change that happens while it's
+  /// open — e.g. triggering it from that very screen, or a sibling's
+  /// scheduling decision shifting its queue position — until the user
+  /// navigates away and back. Called from the same coding-execution
+  /// scheduling mutation sites as [_refreshInFlightBoardState]
+  /// (SDD-stage-advance's own [_inFlightStageAdvanceIds] mutations don't
+  /// call this — [TicketDetailLoaded] has no equivalent field for those).
+  /// Fixed for `aion-arch/changes/parallel-work` post-/verify.
+  void _refreshTaskDetailIfShowing() {
+    final current = state;
+    if (current is! TicketDetailLoaded) return;
+    final taskId = current.ticket.id;
+    final isExecuting = _inFlightExecutionIds.contains(taskId);
+    final queueIndex = _executionQueue.indexOf(taskId);
+    final executionQueuePosition = queueIndex >= 0 ? queueIndex + 1 : null;
+    if (isExecuting == current.isExecuting &&
+        executionQueuePosition == current.executionQueuePosition) {
+      return;
+    }
+    emit(
+      TicketDetailLoaded(
+        current.ticket,
+        childDocs: current.childDocs,
+        linkedTickets: current.linkedTickets,
+        backlinks: current.backlinks,
+        canAdvanceSddStage: current.canAdvanceSddStage,
+        sddStageBlockReason: current.sddStageBlockReason,
+        needsDesignReview: current.needsDesignReview,
+        linkedDesignPage: current.linkedDesignPage,
+        isExecuting: isExecuting,
+        executionQueuePosition: executionQueuePosition,
+        executionAwaitingReview: current.executionAwaitingReview,
+        executionFailureReason: current.executionFailureReason,
+        executionCanRetry: current.executionCanRetry,
+        executionLiveActivity: current.executionLiveActivity,
       ),
     );
   }
@@ -1978,6 +2123,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         executionQueuePositions: current.executionQueuePositions,
         inFlightAdvanceIds: current.inFlightAdvanceIds,
         blockedTicketIds: blockedTicketIds,
+        pendingResumePrompt: current.pendingResumePrompt,
       ),
     );
   }
@@ -2164,7 +2310,11 @@ class TicketsCubit extends Cubit<TicketsState> {
       prompt: _assembleHandoffContext(transcript),
       model: model,
     );
-    if (!summarized) return (oldChat, null);
+    // ChatTurnCancelled is unreachable here — this call passes no `runId`,
+    // so there is no way to cancel it — but is still treated the same as
+    // a failure defensively, preserving today's exact bool-equivalent
+    // behavior.
+    if (summarized is! ChatTurnSuccess) return (oldChat, null);
 
     final summary = await _lastCommentContent(oldChat.id);
     final continuationIndex = await _executionChatCount(task.id);
@@ -2256,7 +2406,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [GitRepositoryClient.createWorktree]/[GitHubCliClient.openPullRequest]/
   /// etc. throwing — so the exception can't propagate out of this
   /// `unawaited`-run method and permanently wedge
-  /// [_inFlightExecutionTaskId]. The worktree (never the branch) is
+  /// [_inFlightExecutionIds]. The worktree (never the branch) is
   /// always removed in a `finally`, success or failure — itself wrapped
   /// in its own try/catch, since a worktree that was never actually
   /// created has nothing to remove.
@@ -2275,11 +2425,24 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [TicketDetailLoaded.executionLiveActivity] update, see
   /// [_emitLiveExecutionActivity]) emitted mid-run would otherwise
   /// clobber `state` and make a live re-check wrongly skip the refresh.
-  /// Then dequeues the next run (see [_dequeueNext]), no-opping
-  /// gracefully if constructed without a [ProviderRegistry]/
-  /// [CommentRepository]/[GitRepositoryClient]/[GitHubCliClient]/
-  /// [BaselineRepository]/`projectId`/`baselineVersion`/`projectRootPath`
-  /// (see the constructor's dartdoc).
+  /// Then tries to start the next queued run(s) (see
+  /// [_tryStartNextQueuedExecutions]), no-opping gracefully if constructed
+  /// without a [ProviderRegistry]/[CommentRepository]/[GitRepositoryClient]/
+  /// [GitHubCliClient]/[BaselineRepository]/`projectId`/`baselineVersion`/
+  /// `projectRootPath` (see the constructor's dartdoc).
+  ///
+  /// Every implement/verify turn below gets a fresh `runId`, tracked in
+  /// [_inFlightRuns] for the run's duration — [cancelCodingExecution]
+  /// resolves it from there. On a `ChatTurnCancelled` result from either
+  /// turn (see [ChatCubit.runChatTurn]), persists the accumulated text (if
+  /// any) as one [CommentAuthorType.ai] comment, posts an `"Execution
+  /// cancelled."` [CommentAuthorType.system] comment, reverts [task]'s
+  /// status to whatever [_preExecutionStatus] captured before the trigger,
+  /// and stops the loop entirely — no verify turn, no PR. The worktree is
+  /// still always removed in the `finally` block below (the branch/commits
+  /// already pushed to it are not) — cancellation doesn't change that.
+  /// Added for `aion-arch/changes/parallel-work`; see that change's
+  /// design.md §5.4/§5.5.
   Future<void> _runCodingExecution(Ticket task) async {
     final providerRegistry = _providerRegistry;
     final commentRepo = _commentRepository;
@@ -2298,9 +2461,12 @@ class TicketsCubit extends Cubit<TicketsState> {
         projectId == null ||
         baselineVersion == null ||
         rootPath == null) {
-      _inFlightExecutionTaskId = null;
+      _inFlightExecutionIds.remove(task.id);
+      _inFlightRuns.remove(task.id);
       _refreshInFlightBoardState();
-      unawaited(_dequeueNext());
+      _refreshTaskDetailIfShowing();
+      unawaited(_persistExecutionQueueSnapshot());
+      unawaited(_tryStartNextQueuedExecutions());
       return;
     }
 
@@ -2318,9 +2484,12 @@ class TicketsCubit extends Cubit<TicketsState> {
 
     final (chat, handoffSummary) = await _resolveExecutionChat(task);
     if (chat == null) {
-      _inFlightExecutionTaskId = null;
+      _inFlightExecutionIds.remove(task.id);
+      _inFlightRuns.remove(task.id);
       _refreshInFlightBoardState();
-      unawaited(_dequeueNext());
+      _refreshTaskDetailIfShowing();
+      unawaited(_persistExecutionQueueSnapshot());
+      unawaited(_tryStartNextQueuedExecutions());
       return;
     }
 
@@ -2376,13 +2545,19 @@ class TicketsCubit extends Cubit<TicketsState> {
       while (true) {
         final (implementModel, implementProvider) =
             await _resolveModelAndProvider(ModelPhase.execution);
-        final implementSucceeded = await ChatCubit.runChatTurn(
+        final implementRunId = _uuid.v4();
+        _inFlightRuns[task.id] = InFlightExecutionRun(
+          implementRunId,
+          implementProvider,
+        );
+        final implementResult = await ChatCubit.runChatTurn(
           client: implementProvider.client,
           provider: implementProvider,
           commentRepo: commentRepo,
           chatTicketId: chat.id,
           prompt: prompt,
           model: implementModel,
+          runId: implementRunId,
           toolsEnabled: true,
           workingDirectory: worktreePath,
           onChunk: onChunk,
@@ -2391,7 +2566,11 @@ class TicketsCubit extends Cubit<TicketsState> {
           tools: executionTools,
           onToolCall: executionOnToolCall,
         );
-        if (!implementSucceeded) {
+        if (implementResult is ChatTurnCancelled) {
+          await _handleExecutionCancelled(task, chat, implementResult);
+          break;
+        }
+        if (implementResult is! ChatTurnSuccess) {
           // A hard error (API failure, thrown exception) — `runChatTurn`
           // already persisted an "Execution failed: ..." comment itself.
           // Don't run a verify turn against a worktree whose
@@ -2403,13 +2582,19 @@ class TicketsCubit extends Cubit<TicketsState> {
         final (verifyModel, verifyProvider) = await _resolveModelAndProvider(
           ModelPhase.execution,
         );
-        final verifySucceeded = await ChatCubit.runChatTurn(
+        final verifyRunId = _uuid.v4();
+        _inFlightRuns[task.id] = InFlightExecutionRun(
+          verifyRunId,
+          verifyProvider,
+        );
+        final verifyResult = await ChatCubit.runChatTurn(
           client: verifyProvider.client,
           provider: verifyProvider,
           commentRepo: commentRepo,
           chatTicketId: chat.id,
           prompt: verifyPrompt,
           model: verifyModel,
+          runId: verifyRunId,
           toolsEnabled: true,
           workingDirectory: worktreePath,
           onChunk: onChunk,
@@ -2418,7 +2603,11 @@ class TicketsCubit extends Cubit<TicketsState> {
           tools: executionTools,
           onToolCall: executionOnToolCall,
         );
-        if (!verifySucceeded) {
+        if (verifyResult is ChatTurnCancelled) {
+          await _handleExecutionCancelled(task, chat, verifyResult);
+          break;
+        }
+        if (verifyResult is! ChatTurnSuccess) {
           // A hard error during the verify turn itself — same shape as
           // above; `runChatTurn` already posted the failure comment.
           break;
@@ -2492,7 +2681,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       // Without this catch, the exception would propagate out of
       // _runCodingExecution uncaught (it's run via `unawaited`),
       // skipping everything below — including clearing
-      // _inFlightExecutionTaskId — and permanently wedging the
+      // _inFlightExecutionIds — and permanently wedging the
       // execution queue.
       await commentRepo.addComment(
         TicketComment(
@@ -2530,14 +2719,61 @@ class TicketsCubit extends Cubit<TicketsState> {
     // Cleared before the refresh below (not after) so getTicketById's own
     // `isExecuting` computation correctly sees this run as finished,
     // rather than reporting the just-completed run as still in flight.
-    _inFlightExecutionTaskId = null;
+    _inFlightExecutionIds.remove(task.id);
+    _inFlightRuns.remove(task.id);
     _refreshInFlightBoardState();
+    _refreshTaskDetailIfShowing();
+    unawaited(_persistExecutionQueueSnapshot());
 
     if (wasShowingTaskDetail) {
       await getTicketById(task.id);
     }
 
-    unawaited(_dequeueNext());
+    unawaited(_tryStartNextQueuedExecutions());
+  }
+
+  /// Handles a `ChatTurnCancelled` result from either of
+  /// [_runCodingExecution]'s implement/verify turns: persists
+  /// [result]'s accumulated text as one [CommentAuthorType.ai] comment on
+  /// [chat] if non-empty (`runChatTurn` persists nothing itself for a
+  /// cancelled turn — see [ChatCubit.runChatTurn]'s dartdoc), posts an
+  /// `"Execution cancelled."` [CommentAuthorType.system] comment so the
+  /// ticket doesn't look untouched, then reverts [task]'s status to
+  /// whatever [_preExecutionStatus] captured immediately before the
+  /// trigger that started this run (a no-op if nothing was captured —
+  /// defensive only, every real trigger path captures one). Added for
+  /// `aion-arch/changes/parallel-work`; see that change's design.md §5.4.
+  Future<void> _handleExecutionCancelled(
+    Ticket task,
+    Ticket chat,
+    ChatTurnCancelled result,
+  ) async {
+    final commentRepo = _commentRepository;
+    if (commentRepo == null) return;
+    if (result.accumulatedText.isNotEmpty) {
+      await commentRepo.addComment(
+        TicketComment(
+          id: '',
+          ticketId: chat.id,
+          content: result.accumulatedText,
+          authorType: CommentAuthorType.ai,
+          createdAt: DateTime.now(),
+        ),
+      );
+    }
+    await commentRepo.addComment(
+      TicketComment(
+        id: '',
+        ticketId: chat.id,
+        content: 'Execution cancelled.',
+        authorType: CommentAuthorType.system,
+        createdAt: DateTime.now(),
+      ),
+    );
+    final previousStatus = _preExecutionStatus.remove(task.id);
+    if (previousStatus != null) {
+      await _repository.updateTicketStatus(task.id, previousStatus);
+    }
   }
 
   /// Re-enters the coding-execution flow for [task] from scratch in the
@@ -2557,6 +2793,56 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// per-execution-trigger`.
   Future<void> retryCodingExecution(Ticket task) async {
     await _triggerOrQueueCodingExecution(task);
+  }
+
+  /// Cancels [task]'s coding-execution run — covers both the still-queued
+  /// case (simply drops [task.id] from [_executionQueue] and reverts its
+  /// status) and the in-flight case (signals
+  /// [AgentModelClient.cancel] on the run's current turn via
+  /// [_inFlightRuns]; the actual comment-persist/status-revert/cleanup
+  /// sequence happens once that turn's stream actually terminates with
+  /// `ChatTurnCancelled`, inside [_runCodingExecution] itself — see
+  /// [_handleExecutionCancelled]). No-op if [task.id] is neither queued
+  /// nor in flight. Called by the Board badge/detail-screen cancel
+  /// affordances and `ExecutionCancelControl`. Added for
+  /// `aion-arch/changes/parallel-work`; see that change's design.md §5.4.
+  Future<void> cancelCodingExecution(Ticket task) async {
+    if (_executionQueue.remove(task.id)) {
+      final previousStatus = _preExecutionStatus.remove(task.id);
+      if (previousStatus != null) {
+        await _repository.updateTicketStatus(task.id, previousStatus);
+      }
+      // Posted on a best-effort basis — _resolveExecutionChat may itself
+      // create the chat ticket if this is the queued entry's very first
+      // trigger, so a comment repository is still required; a
+      // constructor without one (or a chat-resolution failure) simply
+      // skips the note rather than blocking the cancel itself. Matches
+      // design.md §5.4. Fixed for `aion-arch/changes/parallel-work`
+      // post-/verify — this comment was missing entirely.
+      final commentRepo = _commentRepository;
+      if (commentRepo != null) {
+        final (chat, _) = await _resolveExecutionChat(task);
+        if (chat != null) {
+          await commentRepo.addComment(
+            TicketComment(
+              id: '',
+              ticketId: chat.id,
+              content: 'Execution cancelled before it started.',
+              authorType: CommentAuthorType.system,
+              createdAt: DateTime.now(),
+            ),
+          );
+        }
+      }
+      _refreshInFlightBoardState();
+      _refreshTaskDetailIfShowing();
+      unawaited(_persistExecutionQueueSnapshot());
+      return;
+    }
+
+    if (!_inFlightExecutionIds.contains(task.id)) return;
+    final run = _inFlightRuns[task.id];
+    run?.provider.client.cancel(run.runId);
   }
 
   /// Re-emits [TicketDetailLoaded] with `executionLiveActivity` set to
@@ -2635,24 +2921,220 @@ class TicketsCubit extends Cubit<TicketsState> {
         : await automationRepo.getConfidence(AutomationContext.codingExecution);
   }
 
-  /// Pops the next queued Task id (if any) off [_executionQueue] and
-  /// starts its run via [_runCodingExecution], skipping ids that no
-  /// longer resolve to a ticket (defensive — not expected in practice).
-  Future<void> _dequeueNext() async {
-    if (_executionQueue.isEmpty) return;
-    final nextId = _executionQueue.removeAt(0);
-    final next = await _repository.getTicketById(nextId);
-    if (next == null) {
-      // The pop above already changed _executionQueue's positions, even
-      // though nothing started running — refresh so the Board doesn't
-      // show a stale queue position for the ids behind the skipped one.
+  /// The user's persisted coding-execution scheduling mode, defaulting to
+  /// [ExecutionSchedulingMode.strictFifo] when constructed without an
+  /// [ExecutionSchedulingRepository] — today's unchanged behavior. Added
+  /// for `aion-arch/changes/parallel-work`.
+  Future<ExecutionSchedulingMode> _effectiveSchedulingMode() async {
+    final repo = _executionSchedulingRepository;
+    if (repo == null) return ExecutionSchedulingMode.strictFifo;
+    return repo.getMode();
+  }
+
+  /// The number of coding-execution runs allowed in flight at once for
+  /// [mode]: always `1` under [ExecutionSchedulingMode.strictFifo]
+  /// (ignoring whatever concurrency ceiling is persisted); otherwise the
+  /// persisted [ExecutionSchedulingRepository.getConcurrencyCeiling]
+  /// (defaulting to `2` without a repository), additionally capped to `1`
+  /// for the rest of the session once [_overageDetectedThisSession] is
+  /// `true` — the same reactive-only budget-handling precedent
+  /// [_effectiveCodingExecutionConfidence]'s overage-forces-`gated` check
+  /// already established, applied here to concurrency instead of
+  /// automation confidence. Added for `aion-arch/changes/parallel-work`.
+  Future<int> _effectiveConcurrencyCeiling(ExecutionSchedulingMode mode) async {
+    if (mode == ExecutionSchedulingMode.strictFifo) return 1;
+    if (_overageDetectedThisSession) return 1;
+    final repo = _executionSchedulingRepository;
+    if (repo == null) return 2;
+    return repo.getConcurrencyCeiling();
+  }
+
+  /// Under [ExecutionSchedulingMode.hybrid], returns the first still-
+  /// queued Task/Bug id (FIFO order) whose parent isn't already
+  /// represented among [_inFlightExecutionIds]'s own tickets — same-parent
+  /// siblings never run concurrently, but an unrelated queued ticket may
+  /// start ahead of one that's blocked this way. Returns the id of a
+  /// queued ticket that no longer resolves (stale — defensive, not
+  /// expected in practice) immediately, so the caller can skip and retry
+  /// rather than stalling the whole queue behind it. Returns `null` only
+  /// when every remaining queued id's parent already has an in-flight
+  /// sibling — nothing eligible to start right now. Added for
+  /// `aion-arch/changes/parallel-work`; see that change's design.md §5.2.
+  Future<String?> _nextEligibleForHybrid() async {
+    final inFlightParentIds = <String?>{};
+    for (final id in _inFlightExecutionIds) {
+      final ticket = await _repository.getTicketById(id);
+      inFlightParentIds.add(ticket?.parentId);
+    }
+    for (final queuedId in _executionQueue) {
+      final ticket = await _repository.getTicketById(queuedId);
+      if (ticket == null) return queuedId;
+      if (ticket.parentId == null ||
+          !inFlightParentIds.contains(ticket.parentId)) {
+        return queuedId;
+      }
+    }
+    return null;
+  }
+
+  /// Starts as many queued Task/Bug runs as [_effectiveConcurrencyCeiling]
+  /// currently allows, replacing the old single-slot `_dequeueNext`.
+  /// Under [ExecutionSchedulingMode.strictFifo] this only ever starts one
+  /// (the loop's own `_inFlightExecutionIds.length < ceiling` condition
+  /// stops after the first, exactly like the old single-slot behavior);
+  /// under [ExecutionSchedulingMode.parallel] it pops [_executionQueue]'s
+  /// own FIFO head each time; under [ExecutionSchedulingMode.hybrid] it
+  /// resolves each pick via [_nextEligibleForHybrid] instead, so a
+  /// same-parent sibling never starts ahead of its already-in-flight
+  /// counterpart, while an unrelated queued ticket still starts
+  /// immediately. Skips (and refreshes past) any queued id that no longer
+  /// resolves to a ticket. Called from every trigger/completion/cancel
+  /// site that might have freed up scheduling capacity. Added for
+  /// `aion-arch/changes/parallel-work`; see that change's design.md §5.2.
+  Future<void> _tryStartNextQueuedExecutions() async {
+    final mode = await _effectiveSchedulingMode();
+    final ceiling = await _effectiveConcurrencyCeiling(mode);
+    while (_inFlightExecutionIds.length < ceiling &&
+        _executionQueue.isNotEmpty) {
+      final nextId = mode == ExecutionSchedulingMode.hybrid
+          ? await _nextEligibleForHybrid()
+          : _executionQueue.first;
+      if (nextId == null) break; // Hybrid: nothing eligible right now.
+
+      _executionQueue.remove(nextId);
+      final next = await _repository.getTicketById(nextId);
+      if (next == null) {
+        // Already removed above, even though nothing started running —
+        // refresh so the Board doesn't show a stale queue position for
+        // the ids behind the skipped one.
+        _refreshInFlightBoardState();
+        _refreshTaskDetailIfShowing();
+        continue;
+      }
+      _inFlightExecutionIds.add(next.id);
       _refreshInFlightBoardState();
-      unawaited(_dequeueNext());
+      _refreshTaskDetailIfShowing();
+      unawaited(_persistExecutionQueueSnapshot());
+      unawaited(_runCodingExecution(next));
+    }
+  }
+
+  /// Persists the current [_inFlightExecutionIds]/[_executionQueue]
+  /// snapshot via [_executionQueueRepository] — a no-op without one.
+  /// Called (`unawaited`) from every mutation site of those two:
+  /// [_triggerOrQueueCodingExecution], [_tryStartNextQueuedExecutions],
+  /// [cancelCodingExecution], and [_runCodingExecution]'s completion and
+  /// early-return guard paths. Added for `aion-arch/changes/parallel-work`;
+  /// see that change's design.md §5.3.
+  Future<void> _persistExecutionQueueSnapshot() async {
+    final repo = _executionQueueRepository;
+    if (repo == null) return;
+    await repo.replaceSnapshot([
+      for (final id in _inFlightExecutionIds)
+        ExecutionQueueEntry(taskId: id, inFlight: true),
+      // 1-based, matching ExecutionQueueEntry.queuePosition's/design.md
+      // §5.3's documented contract — the first still-queued entry is
+      // position 1, not 0.
+      for (var i = 0; i < _executionQueue.length; i++)
+        ExecutionQueueEntry(
+          taskId: _executionQueue[i],
+          inFlight: false,
+          queuePosition: i + 1,
+        ),
+    ]);
+  }
+
+  /// Restores the coding-execution queue from [_executionQueueRepository]
+  /// after an app restart — a no-op without one. Re-validates every
+  /// persisted entry against the current repository state first: an
+  /// entry whose ticket no longer exists, or is no longer
+  /// [TicketStatus.inProgress] (e.g. the user manually moved it while the
+  /// app was closed), is silently dropped rather than resumed. If nothing
+  /// survives re-validation, just clears the stale persisted snapshot.
+  /// Otherwise branches on [AutomationContext.codingExecutionResume]'s
+  /// effective confidence (via [_automationSettingsRepository], falling
+  /// back to [AutomationConfidence.gated] without one):
+  ///
+  /// - [AutomationConfidence.auto]: re-enqueues every surviving entry and
+  ///   calls [_tryStartNextQueuedExecutions] immediately.
+  /// - [AutomationConfidence.gated]: surfaces the surviving tickets via
+  ///   [_pendingResumeTickets]/[TicketsLoaded.pendingResumePrompt] for
+  ///   `ResumeRunsPrompt` to render — [resumePendingExecutions]/
+  ///   [dismissPendingResumePrompt] decide from there.
+  /// - [AutomationConfidence.manual]: clears the persisted snapshot and
+  ///   leaves the tickets for the existing orphaned/stalled
+  ///   [_computeExecutionFailure] retry banner to pick up.
+  ///
+  /// Called once, immediately after construction, by whichever call site
+  /// constructs this cubit's project-scoped instance (`app_router.dart`).
+  /// Added for `aion-arch/changes/parallel-work`; see that change's
+  /// design.md §5.3.
+  Future<void> restoreExecutionQueue() async {
+    final queueRepo = _executionQueueRepository;
+    if (queueRepo == null) return;
+    final snapshot = await queueRepo.getSnapshot();
+    if (snapshot.isEmpty) return;
+
+    final survivingTickets = <Ticket>[];
+    for (final entry in snapshot) {
+      final ticket = await _repository.getTicketById(entry.taskId);
+      if (ticket != null && ticket.status == TicketStatus.inProgress) {
+        survivingTickets.add(ticket);
+      }
+    }
+    if (survivingTickets.isEmpty) {
+      unawaited(_persistExecutionQueueSnapshot());
       return;
     }
-    _inFlightExecutionTaskId = next.id;
+
+    final automationRepo = _automationSettingsRepository;
+    final confidence = automationRepo == null
+        ? AutomationConfidence.gated
+        : await automationRepo.getConfidence(
+            AutomationContext.codingExecutionResume,
+          );
+
+    switch (confidence) {
+      case AutomationConfidence.auto:
+        _executionQueue.addAll(survivingTickets.map((t) => t.id));
+        _refreshInFlightBoardState();
+        unawaited(_tryStartNextQueuedExecutions());
+      case AutomationConfidence.gated:
+        _pendingResumeTickets = survivingTickets;
+        _refreshInFlightBoardState();
+      case AutomationConfidence.manual:
+        unawaited(_persistExecutionQueueSnapshot());
+    }
+  }
+
+  /// Resumes every ticket [restoreExecutionQueue]'s `gated` branch
+  /// surfaced via [_pendingResumeTickets]/[TicketsLoaded.pendingResumePrompt]
+  /// — re-enqueues each, clears the prompt, and calls
+  /// [_tryStartNextQueuedExecutions], mirroring [restoreExecutionQueue]'s
+  /// own `auto` branch. No-op if nothing is pending. Called by
+  /// `ResumeRunsPrompt`'s Resume action. Added for
+  /// `aion-arch/changes/parallel-work`.
+  Future<void> resumePendingExecutions() async {
+    final pending = _pendingResumeTickets;
+    if (pending == null) return;
+    _executionQueue.addAll(pending.map((t) => t.id));
+    _pendingResumeTickets = null;
     _refreshInFlightBoardState();
-    unawaited(_runCodingExecution(next));
+    unawaited(_tryStartNextQueuedExecutions());
+  }
+
+  /// Dismisses [restoreExecutionQueue]'s `gated`-branch resume prompt
+  /// without resuming anything — clears [_pendingResumeTickets] and the
+  /// persisted snapshot, falling back to [AutomationConfidence.manual]'s
+  /// own behavior (the existing orphaned/stalled
+  /// [_computeExecutionFailure] retry banner is still available per
+  /// ticket). Called by `ResumeRunsPrompt`'s Dismiss action. Added for
+  /// `aion-arch/changes/parallel-work`.
+  Future<void> dismissPendingResumePrompt() async {
+    if (_pendingResumeTickets == null) return;
+    _pendingResumeTickets = null;
+    _refreshInFlightBoardState();
+    unawaited(_persistExecutionQueueSnapshot());
   }
 
   /// Resolves the effective content for baseline asset [assetKey] in the
@@ -3194,7 +3676,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         stage.modelPhase,
       );
       final (tools, onToolCall) = await _toolCallParamsFor(chatId);
-      final succeeded = await ChatCubit.runChatTurn(
+      final result = await ChatCubit.runChatTurn(
         client: provider.client,
         provider: provider,
         commentRepo: commentRepo,
@@ -3204,6 +3686,15 @@ class TicketsCubit extends Cubit<TicketsState> {
         tools: tools,
         onToolCall: onToolCall,
       );
+      // No `runId` is passed above, so ChatTurnCancelled can never
+      // actually occur here in practice (no stop-button UI is wired to
+      // SDD-stage chats this slice) — handled defensively anyway,
+      // preserving today's exact true/false-equivalent behavior for
+      // ChatTurnSuccess/ChatTurnFailure.
+      final succeeded = switch (result) {
+        ChatTurnSuccess() => true,
+        ChatTurnFailure() || ChatTurnCancelled() => false,
+      };
       if (succeeded && stage == SddStage.proposed) {
         final comments = await commentRepo.getCommentsForTicket(chatId);
         if (comments.isNotEmpty) {
@@ -4034,7 +4525,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       String? executionFailureReason;
       var executionCanRetry = false;
       if (ticket.type.isExecutable) {
-        isExecuting = _inFlightExecutionTaskId == ticket.id;
+        isExecuting = _inFlightExecutionIds.contains(ticket.id);
         final queueIndex = _executionQueue.indexOf(ticket.id);
         // 1-based: the first entry in the FIFO queue is "next in line"
         // (position 1) once the in-flight run finishes — nothing *in the
@@ -4282,6 +4773,11 @@ class TicketsCubit extends Cubit<TicketsState> {
           if (ticket.type.isExecutable) {
             final check = await _codingExecutionGateCheck(ticket);
             if (!check.canStart) continue;
+            // Mirrors _interceptTaskExecutionTrigger's own capture, for
+            // cancelCodingExecution's status-revert on this batch-
+            // triggered path too. Added for
+            // `aion-arch/changes/parallel-work`.
+            _preExecutionStatus[id] = ticket.status;
           }
           writableIds.add(id);
         }
@@ -4799,6 +5295,8 @@ class TicketsCubit extends Cubit<TicketsState> {
           break; // toolsEnabled is false — not expected, ignored defensively.
         case AgentToolCallEvent():
           break; // This call sends no tools — never emitted, ignored defensively.
+        case AgentCancelledEvent():
+          break; // No `runId` is passed above — never emitted, ignored defensively.
         case AgentErrorEvent(:final message):
           throw StateError(message);
       }
@@ -4872,7 +5370,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       final (model, provider) = await _resolveModelAndProvider(
         ModelPhase.execution,
       );
-      final succeeded = await ChatCubit.runChatTurn(
+      final result = await ChatCubit.runChatTurn(
         client: provider.client,
         provider: provider,
         commentRepo: commentRepo,
@@ -4896,7 +5394,10 @@ class TicketsCubit extends Cubit<TicketsState> {
           ),
         ),
       );
-      if (!succeeded) {
+      // ChatTurnCancelled is unreachable here — this call passes no
+      // `runId` — but is still treated the same as a failure defensively,
+      // preserving today's exact bool-equivalent behavior.
+      if (result is! ChatTurnSuccess) {
         throw StateError('The analysis turn did not complete successfully.');
       }
 

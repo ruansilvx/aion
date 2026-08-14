@@ -158,5 +158,40 @@ void main() {
         );
       },
     );
+
+    test(
+      'AutomationContext.codingExecutionResume is stored under its own '
+      'key (aion-arch/changes/parallel-work) and defaults to gated when '
+      'unset',
+      () async {
+        final repository = SharedPrefsAutomationSettingsRepository();
+
+        expect(
+          await repository.getConfidence(
+            AutomationContext.codingExecutionResume,
+          ),
+          AutomationConfidence.gated,
+        );
+
+        await repository.setConfidence(
+          AutomationContext.codingExecutionResume,
+          AutomationConfidence.auto,
+        );
+
+        final prefs = await SharedPreferences.getInstance();
+        expect(
+          prefs.getString(
+            'automation_settings.coding_execution_resume_automation',
+          ),
+          'auto',
+        );
+        expect(
+          await repository.getConfidence(
+            AutomationContext.codingExecutionResume,
+          ),
+          AutomationConfidence.auto,
+        );
+      },
+    );
   });
 }
