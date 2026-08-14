@@ -24,8 +24,9 @@ class ExecutionQueueTable extends Table {
   /// was persisted, as opposed to merely queued.
   BoolColumn get inFlight => boolean().named('in_flight')();
 
-  /// This row's FIFO position among still-queued (non-[inFlight]) rows,
-  /// lowest running next. `null` when [inFlight] is `true`.
+  /// This row's 1-based FIFO position among still-queued (non-
+  /// [inFlight]) rows — the front of the queue is `1`, not `0`. `null`
+  /// when [inFlight] is `true`.
   IntColumn get queuePosition => integer().named('queue_position').nullable()();
 
   @override

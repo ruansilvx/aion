@@ -690,6 +690,23 @@ class TicketsCubit extends Cubit<TicketsState> {
           page.tickets,
           hasMore: page.hasMore,
           blockedTicketIds: blockedTicketIds,
+          // Seeded from the cubit's own in-memory scheduling/stage-advance
+          // state — _refreshInFlightBoardState only ever *updates* an
+          // already-emitted TicketsLoaded (it no-ops otherwise), so this
+          // fresh emission is the sole place that ever seeds these fields
+          // for a just-opened/just-filtered Board. Without this, a Task
+          // already running/queued at the moment the Board loads (e.g.
+          // right after restoreExecutionQueue's auto/gated resume, or
+          // simply navigating back to the Board mid-run) shows no
+          // Running/Queued badge and no cancel affordance until some
+          // unrelated mutation happens to call _refreshInFlightBoardState.
+          // Fixed for `aion-arch/changes/parallel-work` post-/verify.
+          inFlightExecutionIds: Set.unmodifiable(_inFlightExecutionIds),
+          executionQueuePositions: {
+            for (var i = 0; i < _executionQueue.length; i++)
+              _executionQueue[i]: i + 1,
+          },
+          inFlightAdvanceIds: Set.unmodifiable(_inFlightStageAdvanceIds),
           pendingResumePrompt: _pendingResumeTickets ?? const [],
         ),
       );
@@ -742,6 +759,16 @@ class TicketsCubit extends Cubit<TicketsState> {
           combined,
           hasMore: page.hasMore,
           blockedTicketIds: blockedTicketIds,
+          // Same fix as searchTickets — see its comment. Without this, a
+          // load-more triggered while runs are already in flight/queued
+          // would otherwise wipe their Board badges/cancel affordances.
+          inFlightExecutionIds: Set.unmodifiable(_inFlightExecutionIds),
+          executionQueuePositions: {
+            for (var i = 0; i < _executionQueue.length; i++)
+              _executionQueue[i]: i + 1,
+          },
+          inFlightAdvanceIds: Set.unmodifiable(_inFlightStageAdvanceIds),
+          pendingResumePrompt: _pendingResumeTickets ?? const [],
         ),
       );
     } catch (e) {
@@ -1909,6 +1936,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   Future<void> _triggerOrQueueCodingExecution(Ticket task) async {
     _executionQueue.add(task.id);
     _refreshInFlightBoardState();
+    _refreshTaskDetailIfShowing();
     unawaited(_persistExecutionQueueSnapshot());
     unawaited(_tryStartNextQueuedExecutions());
   }
@@ -1944,6 +1972,55 @@ class TicketsCubit extends Cubit<TicketsState> {
         inFlightAdvanceIds: Set.unmodifiable(_inFlightStageAdvanceIds),
         blockedTicketIds: current.blockedTicketIds,
         pendingResumePrompt: _pendingResumeTickets ?? const [],
+      ),
+    );
+  }
+
+  /// Re-emits [TicketDetailLoaded] with `isExecuting`/
+  /// `executionQueuePosition` recomputed from [_inFlightExecutionIds]/
+  /// [_executionQueue] — but only when the cubit's current `state` is
+  /// still [TicketDetailLoaded], and only if either value actually
+  /// changed (avoids an unnecessary rebuild on every unrelated
+  /// scheduling mutation). Every other field is copied unchanged from
+  /// the current state. Needed because [_refreshInFlightBoardState]
+  /// only refreshes a list-shaped `TicketsLoaded` state and is a no-op
+  /// while a detail screen is showing — without this, a Task's own
+  /// already-open detail screen (its cancel button, its "Queued #N"
+  /// hint) never reflects a scheduling change that happens while it's
+  /// open — e.g. triggering it from that very screen, or a sibling's
+  /// scheduling decision shifting its queue position — until the user
+  /// navigates away and back. Called from the same coding-execution
+  /// scheduling mutation sites as [_refreshInFlightBoardState]
+  /// (SDD-stage-advance's own [_inFlightStageAdvanceIds] mutations don't
+  /// call this — [TicketDetailLoaded] has no equivalent field for those).
+  /// Fixed for `aion-arch/changes/parallel-work` post-/verify.
+  void _refreshTaskDetailIfShowing() {
+    final current = state;
+    if (current is! TicketDetailLoaded) return;
+    final taskId = current.ticket.id;
+    final isExecuting = _inFlightExecutionIds.contains(taskId);
+    final queueIndex = _executionQueue.indexOf(taskId);
+    final executionQueuePosition = queueIndex >= 0 ? queueIndex + 1 : null;
+    if (isExecuting == current.isExecuting &&
+        executionQueuePosition == current.executionQueuePosition) {
+      return;
+    }
+    emit(
+      TicketDetailLoaded(
+        current.ticket,
+        childDocs: current.childDocs,
+        linkedTickets: current.linkedTickets,
+        backlinks: current.backlinks,
+        canAdvanceSddStage: current.canAdvanceSddStage,
+        sddStageBlockReason: current.sddStageBlockReason,
+        needsDesignReview: current.needsDesignReview,
+        linkedDesignPage: current.linkedDesignPage,
+        isExecuting: isExecuting,
+        executionQueuePosition: executionQueuePosition,
+        executionAwaitingReview: current.executionAwaitingReview,
+        executionFailureReason: current.executionFailureReason,
+        executionCanRetry: current.executionCanRetry,
+        executionLiveActivity: current.executionLiveActivity,
       ),
     );
   }
@@ -2387,6 +2464,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       _inFlightExecutionIds.remove(task.id);
       _inFlightRuns.remove(task.id);
       _refreshInFlightBoardState();
+      _refreshTaskDetailIfShowing();
       unawaited(_persistExecutionQueueSnapshot());
       unawaited(_tryStartNextQueuedExecutions());
       return;
@@ -2409,6 +2487,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       _inFlightExecutionIds.remove(task.id);
       _inFlightRuns.remove(task.id);
       _refreshInFlightBoardState();
+      _refreshTaskDetailIfShowing();
       unawaited(_persistExecutionQueueSnapshot());
       unawaited(_tryStartNextQueuedExecutions());
       return;
@@ -2643,6 +2722,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     _inFlightExecutionIds.remove(task.id);
     _inFlightRuns.remove(task.id);
     _refreshInFlightBoardState();
+    _refreshTaskDetailIfShowing();
     unawaited(_persistExecutionQueueSnapshot());
 
     if (wasShowingTaskDetail) {
@@ -2732,7 +2812,30 @@ class TicketsCubit extends Cubit<TicketsState> {
       if (previousStatus != null) {
         await _repository.updateTicketStatus(task.id, previousStatus);
       }
+      // Posted on a best-effort basis — _resolveExecutionChat may itself
+      // create the chat ticket if this is the queued entry's very first
+      // trigger, so a comment repository is still required; a
+      // constructor without one (or a chat-resolution failure) simply
+      // skips the note rather than blocking the cancel itself. Matches
+      // design.md §5.4. Fixed for `aion-arch/changes/parallel-work`
+      // post-/verify — this comment was missing entirely.
+      final commentRepo = _commentRepository;
+      if (commentRepo != null) {
+        final (chat, _) = await _resolveExecutionChat(task);
+        if (chat != null) {
+          await commentRepo.addComment(
+            TicketComment(
+              id: '',
+              ticketId: chat.id,
+              content: 'Execution cancelled before it started.',
+              authorType: CommentAuthorType.system,
+              createdAt: DateTime.now(),
+            ),
+          );
+        }
+      }
       _refreshInFlightBoardState();
+      _refreshTaskDetailIfShowing();
       unawaited(_persistExecutionQueueSnapshot());
       return;
     }
@@ -2905,10 +3008,12 @@ class TicketsCubit extends Cubit<TicketsState> {
         // refresh so the Board doesn't show a stale queue position for
         // the ids behind the skipped one.
         _refreshInFlightBoardState();
+        _refreshTaskDetailIfShowing();
         continue;
       }
       _inFlightExecutionIds.add(next.id);
       _refreshInFlightBoardState();
+      _refreshTaskDetailIfShowing();
       unawaited(_persistExecutionQueueSnapshot());
       unawaited(_runCodingExecution(next));
     }
@@ -2927,11 +3032,14 @@ class TicketsCubit extends Cubit<TicketsState> {
     await repo.replaceSnapshot([
       for (final id in _inFlightExecutionIds)
         ExecutionQueueEntry(taskId: id, inFlight: true),
+      // 1-based, matching ExecutionQueueEntry.queuePosition's/design.md
+      // §5.3's documented contract — the first still-queued entry is
+      // position 1, not 0.
       for (var i = 0; i < _executionQueue.length; i++)
         ExecutionQueueEntry(
           taskId: _executionQueue[i],
           inFlight: false,
-          queuePosition: i,
+          queuePosition: i + 1,
         ),
     ]);
   }

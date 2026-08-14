@@ -92,7 +92,12 @@
       "count": { "type": "int" }
     }
   },
-  "resumeRunsPromptBody": "Aion restarted while these Tasks/Bugs were running. Resume them where they left off, or dismiss and retry manually later.",
+  "resumeRunsPromptMore": "{count, plural, one{…and 1 more} other{…and {count} more}}",
+  "@resumeRunsPromptMore": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
   "resumeRunsPromptResumeAction": "Resume",
   "resumeRunsPromptDismissAction": "Dismiss",
 

@@ -21,9 +21,10 @@ class ExecutionQueueEntry extends Equatable {
   /// it was persisted, as opposed to merely queued.
   final bool inFlight;
 
-  /// This entry's FIFO position among still-queued (non-[inFlight])
-  /// entries, lowest running next. `null` when [inFlight] is `true` —
-  /// an in-flight run has no queue position.
+  /// This entry's 1-based FIFO position among still-queued (non-
+  /// [inFlight]) entries — the front of the queue is `1`, not `0`.
+  /// `null` when [inFlight] is `true` — an in-flight run has no queue
+  /// position.
   final int? queuePosition;
 
   @override

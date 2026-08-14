@@ -6457,6 +6457,23 @@ void main() {
         TicketDetailLoaded(
           taskNoStory.copyWith(status: TicketStatus.inProgress),
         ),
+        // Queued, then started, then cleared once _runCodingExecution's
+        // no-providerRegistry early-return runs — _refreshTaskDetailIfShowing
+        // keeps this already-open detail screen's isExecuting/
+        // executionQueuePosition in sync with each step, matching
+        // _refreshInFlightBoardState's own Board-side refresh. Added for
+        // `aion-arch/changes/parallel-work` post-/verify.
+        TicketDetailLoaded(
+          taskNoStory.copyWith(status: TicketStatus.inProgress),
+          executionQueuePosition: 1,
+        ),
+        TicketDetailLoaded(
+          taskNoStory.copyWith(status: TicketStatus.inProgress),
+          isExecuting: true,
+        ),
+        TicketDetailLoaded(
+          taskNoStory.copyWith(status: TicketStatus.inProgress),
+        ),
       ],
     );
 
@@ -6916,6 +6933,20 @@ void main() {
         TicketDetailLoaded(
           taskUnderStoryNoDesign.copyWith(status: TicketStatus.inProgress),
         ),
+        // See the "no governing Story" case above for why these two extra
+        // emissions are expected — _refreshTaskDetailIfShowing, added for
+        // `aion-arch/changes/parallel-work` post-/verify.
+        TicketDetailLoaded(
+          taskUnderStoryNoDesign.copyWith(status: TicketStatus.inProgress),
+          executionQueuePosition: 1,
+        ),
+        TicketDetailLoaded(
+          taskUnderStoryNoDesign.copyWith(status: TicketStatus.inProgress),
+          isExecuting: true,
+        ),
+        TicketDetailLoaded(
+          taskUnderStoryNoDesign.copyWith(status: TicketStatus.inProgress),
+        ),
       ],
     );
 
@@ -6955,6 +6986,20 @@ void main() {
         );
       },
       expect: () => [
+        TicketDetailLoaded(
+          taskUnderEpic.copyWith(status: TicketStatus.inProgress),
+        ),
+        // See the "no governing Story" case above for why these two extra
+        // emissions are expected — _refreshTaskDetailIfShowing, added for
+        // `aion-arch/changes/parallel-work` post-/verify.
+        TicketDetailLoaded(
+          taskUnderEpic.copyWith(status: TicketStatus.inProgress),
+          executionQueuePosition: 1,
+        ),
+        TicketDetailLoaded(
+          taskUnderEpic.copyWith(status: TicketStatus.inProgress),
+          isExecuting: true,
+        ),
         TicketDetailLoaded(
           taskUnderEpic.copyWith(status: TicketStatus.inProgress),
         ),
@@ -7131,6 +7176,17 @@ void main() {
       expect: () => [
         TicketDetailLoaded(
           taskUnderStory.copyWith(status: TicketStatus.inProgress),
+        ),
+        // See the "no governing Story" case above for why these two extra
+        // emissions are expected — _refreshTaskDetailIfShowing, added for
+        // `aion-arch/changes/parallel-work` post-/verify.
+        TicketDetailLoaded(
+          taskUnderStory.copyWith(status: TicketStatus.inProgress),
+          executionQueuePosition: 1,
+        ),
+        TicketDetailLoaded(
+          taskUnderStory.copyWith(status: TicketStatus.inProgress),
+          isExecuting: true,
         ),
         const TicketsError(
           '',
@@ -7401,11 +7457,18 @@ void main() {
       });
 
       blocTest<TicketsCubit, TicketsState>(
-        'is a no-op (no new emission) when the cubit\'s last state was '
-        'TicketDetailLoaded, not TicketsLoaded',
+        'still keeps an already-open TicketDetailLoaded screen in sync '
+        '(via _refreshTaskDetailIfShowing) even though '
+        '_refreshInFlightBoardState itself no-ops for it, not TicketsLoaded',
         // A cubit missing git/baseline deps — _runCodingExecution hits its
         // own missing-deps guard immediately, so this test only needs to
-        // observe changeTicketStatus's own single emission, not a full run.
+        // observe changeTicketStatus's own emissions, not a full run.
+        // _refreshInFlightBoardState (Board-shaped state only) is still a
+        // no-op the whole way through here — _refreshTaskDetailIfShowing
+        // is what keeps this open detail screen's isExecuting/
+        // executionQueuePosition accurate instead. Renamed/updated for
+        // `aion-arch/changes/parallel-work` post-/verify, which added
+        // that method to close this exact gap.
         build: () => TicketsCubit(
           repository,
           providerRegistry: registry,
@@ -7426,6 +7489,17 @@ void main() {
             cubit.changeTicketStatus(otherTask, TicketStatus.inProgress),
         wait: const Duration(milliseconds: 50),
         expect: () => [
+          TicketDetailLoaded(
+            otherTask.copyWith(status: TicketStatus.inProgress),
+          ),
+          TicketDetailLoaded(
+            otherTask.copyWith(status: TicketStatus.inProgress),
+            executionQueuePosition: 1,
+          ),
+          TicketDetailLoaded(
+            otherTask.copyWith(status: TicketStatus.inProgress),
+            isExecuting: true,
+          ),
           TicketDetailLoaded(
             otherTask.copyWith(status: TicketStatus.inProgress),
           ),
@@ -7635,6 +7709,21 @@ void main() {
         ).called(1);
       },
       expect: () => [
+        TicketDetailLoaded(
+          bugNoStory.copyWith(status: TicketStatus.inProgress),
+        ),
+        // See the Task-parity case in the coding-execution trigger group
+        // above for why these two extra emissions are expected —
+        // _refreshTaskDetailIfShowing, added for
+        // `aion-arch/changes/parallel-work` post-/verify.
+        TicketDetailLoaded(
+          bugNoStory.copyWith(status: TicketStatus.inProgress),
+          executionQueuePosition: 1,
+        ),
+        TicketDetailLoaded(
+          bugNoStory.copyWith(status: TicketStatus.inProgress),
+          isExecuting: true,
+        ),
         TicketDetailLoaded(
           bugNoStory.copyWith(status: TicketStatus.inProgress),
         ),
@@ -7926,6 +8015,17 @@ void main() {
           TicketDetailLoaded(
             taskNoStory.copyWith(status: TicketStatus.inProgress),
           ),
+          // See the "no governing Story" trigger case above for why these
+          // two extra emissions are expected — _refreshTaskDetailIfShowing,
+          // added for `aion-arch/changes/parallel-work` post-/verify.
+          TicketDetailLoaded(
+            taskNoStory.copyWith(status: TicketStatus.inProgress),
+            executionQueuePosition: 1,
+          ),
+          TicketDetailLoaded(
+            taskNoStory.copyWith(status: TicketStatus.inProgress),
+            isExecuting: true,
+          ),
           // The `gated` toast.
           const TicketsError(
             '',
@@ -7978,6 +8078,26 @@ void main() {
           ).called(1);
         },
         expect: () => [
+          TicketDetailLoaded(
+            taskNoStory.copyWith(status: TicketStatus.inProgress),
+          ),
+          // See the "no governing Story" trigger case above for why these
+          // two extra emissions are expected — _refreshTaskDetailIfShowing,
+          // added for `aion-arch/changes/parallel-work` post-/verify.
+          TicketDetailLoaded(
+            taskNoStory.copyWith(status: TicketStatus.inProgress),
+            executionQueuePosition: 1,
+          ),
+          TicketDetailLoaded(
+            taskNoStory.copyWith(status: TicketStatus.inProgress),
+            isExecuting: true,
+          ),
+          // Unlike the `gated` case above, nothing here interrupts state
+          // with a TicketsError toast — so _runCodingExecution's own
+          // completion cleanup (which clears isExecuting) still finds
+          // this same TicketDetailLoaded showing, and
+          // _refreshTaskDetailIfShowing emits once more for it before the
+          // post-run refresh below.
           TicketDetailLoaded(
             taskNoStory.copyWith(status: TicketStatus.inProgress),
           ),
@@ -10232,6 +10352,48 @@ void main() {
     );
 
     test(
+      'searchTickets seeds TicketsLoaded.inFlightExecutionIds/'
+      'executionQueuePositions from already-in-flight/queued state — a '
+      'fresh Board load reflects runs that started before it, not just '
+      'runs that start while it is already showing',
+      () async {
+        // Regression coverage for a /verify finding: _refreshInFlightBoardState
+        // can only ever *update* an already-emitted TicketsLoaded — it's a
+        // no-op otherwise — so searchTickets (the sole method that emits a
+        // *fresh* TicketsLoaded) is the only place that can seed these
+        // fields for a just-opened/just-filtered Board. Before this fix,
+        // searchTickets always emitted them at their `const {}` defaults,
+        // so a Task already running/queued at the moment the Board loads
+        // showed no Running/Queued badge and no cancel affordance. Added
+        // for `aion-arch/changes/parallel-work` post-/verify.
+        when(
+          () => schedulingRepository.getMode(),
+        ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
+        when(
+          () => schedulingRepository.getConcurrencyCeiling(),
+        ).thenAnswer((_) async => 1);
+
+        final cubit = buildSchedulingCubit(
+          executionSchedulingRepository: schedulingRepository,
+        );
+        addTearDown(cubit.close);
+
+        await cubit.updateTicketStatus(siblingA.id, TicketStatus.inProgress);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.updateTicketStatus(unrelatedTaskC.id, TicketStatus.inProgress);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        // Simulates navigating to (or back to) the Board — a fresh
+        // TicketsLoaded, not a refresh of one already on screen.
+        await cubit.searchTickets();
+
+        final loaded = cubit.state as TicketsLoaded;
+        expect(loaded.inFlightExecutionIds, contains(siblingA.id));
+        expect(loaded.executionQueuePositions[unrelatedTaskC.id], 1);
+      },
+    );
+
+    test(
       'cancelCodingExecution reverts a still-queued Task to its '
       'pre-trigger status and drops it from the queue',
       () async {
@@ -10266,6 +10428,21 @@ void main() {
           () => repository.updateTicketStatus(
             unrelatedTaskC.id,
             TicketStatus.backlog,
+          ),
+        ).called(1);
+        // Regression coverage for a /verify finding: this comment was
+        // missing entirely from the queued-cancel path despite design.md
+        // §5.4 documenting it. Added for
+        // `aion-arch/changes/parallel-work` post-/verify.
+        verify(
+          () => commentRepository.addComment(
+            any(
+              that: predicate<TicketComment>(
+                (c) =>
+                    c.content == 'Execution cancelled before it started.' &&
+                    c.authorType == CommentAuthorType.system,
+              ),
+            ),
           ),
         ).called(1);
         await cubit.getTicketById(unrelatedTaskC.id);
