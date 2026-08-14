@@ -7,13 +7,19 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
+import 'package:aion/features/providers/domain/enums/execution_scheduling_mode.dart';
+import 'package:aion/features/providers/presentation/cubit/execution_scheduling_cubit.dart';
+import 'package:aion/features/providers/presentation/cubit/execution_scheduling_state.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
+import 'package:aion/features/tickets/domain/utils/sibling_cluster.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_selection_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_list_screen.dart';
+import 'package:aion/features/tickets/presentation/widgets/execution_cancel_control.dart';
+import 'package:aion/features/tickets/presentation/widgets/resume_runs_prompt.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_overflow_menu.dart';
 
 /// Fixed width of a single [BoardColumn].
@@ -73,7 +79,9 @@ String ticketsErrorMessage(BuildContext context, TicketsErrorReason reason) {
 /// [TicketStatus], in declaration order — all 6 columns always render,
 /// including when a status has no tickets. [tickets] must already be
 /// filtered by the caller (e.g. to task/story types); this widget only
-/// groups by status, it does not filter by type.
+/// groups by status, it does not filter by type. Pins [ResumeRunsPrompt]
+/// above the columns whenever `TicketsLoaded.pendingResumePrompt` is
+/// non-empty. Added for `aion-arch/changes/parallel-work`.
 class TicketBoardView extends StatelessWidget {
   /// Creates a [TicketBoardView] rendering [tickets] grouped by status.
   const TicketBoardView({super.key, required this.tickets});
@@ -87,7 +95,42 @@ class TicketBoardView extends StatelessWidget {
       for (final status in TicketStatus.values)
         status: tickets.where((t) => t.status == status).toList(),
     };
+    final pendingResumePrompt = context.select(
+      (TicketsCubit cubit) => switch (cubit.state) {
+        TicketsLoaded(:final pendingResumePrompt) => pendingResumePrompt,
+        _ => const <Ticket>[],
+      },
+    );
 
+    return Column(
+      children: [
+        if (pendingResumePrompt.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AionSpacing.sp20,
+              AionSpacing.sp16,
+              AionSpacing.sp20,
+              0,
+            ),
+            child: ResumeRunsPrompt(tickets: pendingResumePrompt),
+          ),
+        Expanded(child: _BoardColumns(grouped: grouped)),
+      ],
+    );
+  }
+}
+
+/// The horizontal, per-status-column region of [TicketBoardView] —
+/// hoisted out so [TicketBoardView.build] can wrap it with
+/// [ResumeRunsPrompt] above without nesting the whole column list one
+/// level deeper. Added for `aion-arch/changes/parallel-work`.
+class _BoardColumns extends StatelessWidget {
+  const _BoardColumns({required this.grouped});
+
+  final Map<TicketStatus, List<Ticket>> grouped;
+
+  @override
+  Widget build(BuildContext context) {
     return ListView.separated(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(
@@ -110,7 +153,12 @@ class TicketBoardView extends StatelessWidget {
 
 /// A single status column on [TicketBoardView]: a header (status label +
 /// ticket count) and a [DragTarget] accepting dropped [Ticket]s, moving
-/// them to [status] via [TicketsCubit.updateTicketStatus].
+/// them to [status] via [TicketsCubit.updateTicketStatus]. Under
+/// [ExecutionSchedulingMode.hybrid], applies [clusterSiblingsAdjacently]
+/// to [tickets] so the sibling serialization that mode enforces is
+/// visible on the Board, not just inferred from behavior — every other
+/// mode renders [tickets] in its given order unchanged. Added for
+/// `aion-arch/changes/parallel-work`; see that change's design.md §9.
 class BoardColumn extends StatelessWidget {
   /// Creates a [BoardColumn] for [status], rendering [tickets].
   const BoardColumn({super.key, required this.status, required this.tickets});
@@ -118,13 +166,23 @@ class BoardColumn extends StatelessWidget {
   /// The status this column represents.
   final TicketStatus status;
 
-  /// The tickets currently in [status].
+  /// The tickets currently in [status], in the Board's own primary sort
+  /// order.
   final List<Ticket> tickets;
 
   @override
   Widget build(BuildContext context) {
     final t = ThemeScope.of(context);
     final c = t.colors;
+    final isHybrid = context.select(
+      (ExecutionSchedulingCubit cubit) =>
+          cubit.state is ExecutionSchedulingReady &&
+          (cubit.state as ExecutionSchedulingReady).mode ==
+              ExecutionSchedulingMode.hybrid,
+    );
+    final displayedTickets = isHybrid
+        ? clusterSiblingsAdjacently(tickets)
+        : tickets;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -194,11 +252,12 @@ class BoardColumn extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(
                             vertical: AionSpacing.sp4,
                           ),
-                          itemCount: tickets.length,
+                          itemCount: displayedTickets.length,
                           separatorBuilder: (context, index) =>
                               const SizedBox(height: AionSpacing.sp8),
-                          itemBuilder: (context, index) =>
-                              TicketBoardCard(ticket: tickets[index]),
+                          itemBuilder: (context, index) => TicketBoardCard(
+                            ticket: displayedTickets[index],
+                          ),
                         ),
                 ),
               );
@@ -495,6 +554,17 @@ class _CardVisual extends StatelessWidget {
                     status: execState,
                     queuePosition: queuePosition,
                   ),
+                  if (interactive &&
+                      (execState == _CardExecutionState.running ||
+                          execState == _CardExecutionState.queued)) ...[
+                    const SizedBox(width: AionSpacing.sp4),
+                    ExecutionCancelControl(
+                      placement: CancelPlacement.boardBadge,
+                      onCancel: () => context
+                          .read<TicketsCubit>()
+                          .cancelCodingExecution(ticket),
+                    ),
+                  ],
                 ],
               ],
             ),

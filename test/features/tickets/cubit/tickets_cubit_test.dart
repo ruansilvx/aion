@@ -21,7 +21,9 @@ import 'package:aion/core/database/app_database.dart';
 import 'package:aion/core/git/git_repository_client.dart';
 import 'package:aion/core/git/github_cli_client.dart';
 import 'package:aion/features/projects/projects.dart';
+import 'package:aion/features/providers/domain/enums/execution_scheduling_mode.dart';
 import 'package:aion/features/providers/domain/enums/model_phase.dart';
+import 'package:aion/features/providers/domain/repositories/execution_scheduling_repository.dart';
 import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
 import 'package:aion/features/tickets/data/services/active_ticket_view_registry.dart';
 import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
@@ -67,6 +69,12 @@ class MockTicketListSortRepository extends Mock
     implements TicketListSortRepository {}
 
 class MockPageWikilinkRepository extends Mock implements PageWikilinkRepository {}
+
+class MockExecutionSchedulingRepository extends Mock
+    implements ExecutionSchedulingRepository {}
+
+class MockExecutionQueueRepository extends Mock
+    implements ExecutionQueueRepository {}
 
 /// Stubs [gitClient]/[gitHubClient] for a coding-execution run that
 /// isolates cleanly, pushes, and opens a PR — the happy path most
@@ -9964,5 +9972,518 @@ void main() {
         isEmpty,
       );
     });
+  });
+
+  group('parallel-work scheduling/cancellation/restore', () {
+    late MockAgentModelClient agentClient;
+    late MockProviderRegistry registry;
+    late MockCommentRepository commentRepository;
+    late MockGitRepositoryClient gitClient;
+    late MockGitHubCliClient gitHubClient;
+    late MockBaselineRepository baselineRepository;
+    late MockExecutionSchedulingRepository schedulingRepository;
+    late MockAutomationSettingsRepository automationSettingsRepository;
+    late MockExecutionQueueRepository executionQueueRepository;
+
+    // Tracks each task fixture's *live* status, mutable per-test (e.g. the
+    // restoreExecutionQueue tests below simulate a Task interrupted mid-
+    // execution by pre-setting its live status to inProgress before
+    // restoring) — see the outer setUp's `repository.getTicketById`/
+    // `repository.updateTicketStatus` stubs, which both read/write it.
+    late Map<String, TicketStatus> liveStatus;
+
+    final parentEpic = Ticket(
+      id: 'sched-parent-epic',
+      ticketId: 'AIO-SCHED-EPIC',
+      type: TicketType.epic,
+      title: 'Parent epic',
+      status: TicketStatus.backlog,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final siblingA = Ticket(
+      id: 'sched-sibling-a',
+      ticketId: 'AIO-SCHED-A',
+      type: TicketType.task,
+      title: 'Sibling A',
+      status: TicketStatus.backlog,
+      parentId: parentEpic.id,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final siblingB = Ticket(
+      id: 'sched-sibling-b',
+      ticketId: 'AIO-SCHED-B',
+      type: TicketType.task,
+      title: 'Sibling B',
+      status: TicketStatus.backlog,
+      parentId: parentEpic.id,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final unrelatedTaskC = Ticket(
+      id: 'sched-task-c',
+      ticketId: 'AIO-SCHED-C',
+      type: TicketType.task,
+      title: 'Unrelated task C',
+      status: TicketStatus.backlog,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    setUp(() {
+      agentClient = MockAgentModelClient();
+      registry = buildProviderStack(agentClient).registry;
+      commentRepository = MockCommentRepository();
+      gitClient = MockGitRepositoryClient();
+      gitHubClient = MockGitHubCliClient();
+      baselineRepository = MockBaselineRepository();
+      schedulingRepository = MockExecutionSchedulingRepository();
+      automationSettingsRepository = MockAutomationSettingsRepository();
+      executionQueueRepository = MockExecutionQueueRepository();
+      stubSuccessfulCodingExecutionInfra(gitClient, gitHubClient);
+      stubEmptyBaseline(baselineRepository);
+
+      final byId = {
+        parentEpic.id: parentEpic,
+        siblingA.id: siblingA,
+        siblingB.id: siblingB,
+        unrelatedTaskC.id: unrelatedTaskC,
+      };
+      // So a pre-transition read (the one `_interceptTaskExecutionTrigger`
+      // captures into `_preExecutionStatus`) sees the real prior status,
+      // not `inProgress` from the very first lookup.
+      liveStatus = <String, TicketStatus>{
+        for (final entry in byId.entries) entry.key: entry.value.status,
+      };
+      when(() => repository.getTicketById(any())).thenAnswer((
+        invocation,
+      ) async {
+        final id = invocation.positionalArguments[0] as String;
+        final base = byId[id];
+        if (base != null) return base.copyWith(status: liveStatus[id]);
+        // Anything else is a freshly created execution chat's own id.
+        return Ticket(
+          id: id,
+          ticketId: '',
+          type: TicketType.chat,
+          title: 'Coding Execution — synthetic',
+          status: TicketStatus.backlog,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+      });
+      when(
+        () => repository.updateTicketStatus(any(), any()),
+      ).thenAnswer((invocation) async {
+        final id = invocation.positionalArguments[0] as String;
+        final status = invocation.positionalArguments[1] as TicketStatus;
+        if (liveStatus.containsKey(id)) liveStatus[id] = status;
+      });
+      when(
+        () => repository.getTicketsByParent(any(), types: const [TicketType.chat]),
+      ).thenAnswer((_) async => []);
+      when(() => repository.createTicket(any())).thenAnswer((_) async {});
+      when(
+        () => repository.searchTickets(
+          query: any(named: 'query'),
+          statuses: any(named: 'statuses'),
+          types: any(named: 'types'),
+          priorities: any(named: 'priorities'),
+          sort: any(named: 'sort'),
+          limit: any(named: 'limit'),
+        ),
+      ).thenAnswer((_) async => const TicketSearchPage(tickets: [], hasMore: false));
+      when(() => commentRepository.addComment(any())).thenAnswer((_) async {});
+      when(() => commentRepository.getCommentsForTicket(any())).thenAnswer(
+        (_) async => [],
+      );
+      // Every run just hangs forever — never emits, never closes — so a
+      // triggered run's implement turn stays "in flight" for the whole
+      // test, letting these tests assert on TicketsCubit's scheduling
+      // decisions without needing any run to actually complete.
+      when(() => agentClient.run(any())).thenAnswer(
+        (_) async =>
+            Stream<AgentEvent>.fromFuture(Completer<AgentEvent>().future),
+      );
+    });
+
+    TicketsCubit buildSchedulingCubit({
+      ExecutionSchedulingRepository? executionSchedulingRepository,
+      ExecutionQueueRepository? executionQueueRepository,
+      AutomationSettingsRepository? automationSettingsRepository,
+    }) => TicketsCubit(
+      repository,
+      providerRegistry: registry,
+      commentRepository: commentRepository,
+      automationSettingsRepository: automationSettingsRepository,
+      projectRootPath: '/fake/project/root',
+      gitClient: gitClient,
+      gitHubClient: gitHubClient,
+      baselineRepository: baselineRepository,
+      projectId: 'project-1',
+      baselineVersion: '0.1.0',
+      executionSchedulingRepository: executionSchedulingRepository,
+      executionQueueRepository: executionQueueRepository,
+    );
+
+    test(
+      'ExecutionSchedulingMode.strictFifo: a second Task stays queued '
+      "behind the first, even though nothing links them (today's default, "
+      'unchanged)',
+      () async {
+        when(
+          () => schedulingRepository.getMode(),
+        ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
+        when(
+          () => schedulingRepository.getConcurrencyCeiling(),
+        ).thenAnswer((_) async => 2); // Ignored under strictFifo.
+
+        final cubit = buildSchedulingCubit(
+          executionSchedulingRepository: schedulingRepository,
+        );
+        addTearDown(cubit.close);
+
+        await cubit.updateTicketStatus(siblingA.id, TicketStatus.inProgress);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.updateTicketStatus(unrelatedTaskC.id, TicketStatus.inProgress);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        await cubit.getTicketById(siblingA.id);
+        expect((cubit.state as TicketDetailLoaded).isExecuting, isTrue);
+
+        await cubit.getTicketById(unrelatedTaskC.id);
+        final taskCState = cubit.state as TicketDetailLoaded;
+        expect(taskCState.isExecuting, isFalse);
+        expect(taskCState.executionQueuePosition, 1);
+
+        verify(() => agentClient.run(any())).called(1);
+      },
+    );
+
+    test(
+      'ExecutionSchedulingMode.parallel: two unrelated Tasks both run '
+      'concurrently',
+      () async {
+        when(
+          () => schedulingRepository.getMode(),
+        ).thenAnswer((_) async => ExecutionSchedulingMode.parallel);
+        when(
+          () => schedulingRepository.getConcurrencyCeiling(),
+        ).thenAnswer((_) async => 2);
+
+        final cubit = buildSchedulingCubit(
+          executionSchedulingRepository: schedulingRepository,
+        );
+        addTearDown(cubit.close);
+
+        await cubit.updateTicketStatus(siblingA.id, TicketStatus.inProgress);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.updateTicketStatus(unrelatedTaskC.id, TicketStatus.inProgress);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        await cubit.getTicketById(siblingA.id);
+        expect((cubit.state as TicketDetailLoaded).isExecuting, isTrue);
+
+        await cubit.getTicketById(unrelatedTaskC.id);
+        expect((cubit.state as TicketDetailLoaded).isExecuting, isTrue);
+
+        verify(() => agentClient.run(any())).called(2);
+      },
+    );
+
+    test(
+      'ExecutionSchedulingMode.hybrid: a same-parent sibling serializes '
+      'behind its in-flight counterpart, while an unrelated queued Task '
+      'starts immediately (skip-ahead)',
+      () async {
+        when(
+          () => schedulingRepository.getMode(),
+        ).thenAnswer((_) async => ExecutionSchedulingMode.hybrid);
+        when(
+          () => schedulingRepository.getConcurrencyCeiling(),
+        ).thenAnswer((_) async => 2);
+
+        final cubit = buildSchedulingCubit(
+          executionSchedulingRepository: schedulingRepository,
+        );
+        addTearDown(cubit.close);
+
+        await cubit.updateTicketStatus(siblingA.id, TicketStatus.inProgress);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.updateTicketStatus(siblingB.id, TicketStatus.inProgress);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.updateTicketStatus(unrelatedTaskC.id, TicketStatus.inProgress);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        await cubit.getTicketById(siblingA.id);
+        expect((cubit.state as TicketDetailLoaded).isExecuting, isTrue);
+
+        await cubit.getTicketById(siblingB.id);
+        final siblingBState = cubit.state as TicketDetailLoaded;
+        expect(siblingBState.isExecuting, isFalse);
+        expect(siblingBState.executionQueuePosition, 1);
+
+        await cubit.getTicketById(unrelatedTaskC.id);
+        expect((cubit.state as TicketDetailLoaded).isExecuting, isTrue);
+
+        verify(() => agentClient.run(any())).called(2);
+      },
+    );
+
+    test(
+      'cancelCodingExecution reverts a still-queued Task to its '
+      'pre-trigger status and drops it from the queue',
+      () async {
+        when(
+          () => schedulingRepository.getMode(),
+        ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
+        when(
+          () => schedulingRepository.getConcurrencyCeiling(),
+        ).thenAnswer((_) async => 1);
+
+        final cubit = buildSchedulingCubit(
+          executionSchedulingRepository: schedulingRepository,
+        );
+        addTearDown(cubit.close);
+
+        await cubit.updateTicketStatus(siblingA.id, TicketStatus.inProgress);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.updateTicketStatus(unrelatedTaskC.id, TicketStatus.inProgress);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.getTicketById(unrelatedTaskC.id);
+        expect(
+          (cubit.state as TicketDetailLoaded).executionQueuePosition,
+          1,
+        );
+
+        await cubit.cancelCodingExecution(
+          unrelatedTaskC.copyWith(status: TicketStatus.inProgress),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        verify(
+          () => repository.updateTicketStatus(
+            unrelatedTaskC.id,
+            TicketStatus.backlog,
+          ),
+        ).called(1);
+        await cubit.getTicketById(unrelatedTaskC.id);
+        final afterCancel = cubit.state as TicketDetailLoaded;
+        expect(afterCancel.isExecuting, isFalse);
+        expect(afterCancel.executionQueuePosition, isNull);
+      },
+    );
+
+    test(
+      'cancelCodingExecution signals AgentModelClient.cancel with the '
+      "in-flight run's current runId",
+      () async {
+        when(
+          () => schedulingRepository.getMode(),
+        ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
+        when(
+          () => schedulingRepository.getConcurrencyCeiling(),
+        ).thenAnswer((_) async => 1);
+
+        final cubit = buildSchedulingCubit(
+          executionSchedulingRepository: schedulingRepository,
+        );
+        addTearDown(cubit.close);
+
+        await cubit.updateTicketStatus(siblingA.id, TicketStatus.inProgress);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.getTicketById(siblingA.id);
+        expect((cubit.state as TicketDetailLoaded).isExecuting, isTrue);
+
+        await cubit.cancelCodingExecution(
+          siblingA.copyWith(status: TicketStatus.inProgress),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        final capturedRunId =
+            verify(() => agentClient.cancel(captureAny())).captured.single
+                as String;
+        expect(capturedRunId, isNotEmpty);
+      },
+    );
+
+    test(
+      'restoreExecutionQueue (auto): resumes a surviving interrupted run '
+      'immediately, with no resume prompt',
+      () async {
+        // Simulates a Task the app left `inProgress` mid-execution before
+        // an interrupting restart.
+        liveStatus[siblingA.id] = TicketStatus.inProgress;
+        when(
+          () => executionQueueRepository.getSnapshot(),
+        ).thenAnswer(
+          (_) async => [
+            const ExecutionQueueEntry(taskId: 'sched-sibling-a', inFlight: true),
+          ],
+        );
+        when(
+          () => executionQueueRepository.replaceSnapshot(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecutionResume,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.auto);
+        when(
+          () => schedulingRepository.getMode(),
+        ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
+        when(
+          () => schedulingRepository.getConcurrencyCeiling(),
+        ).thenAnswer((_) async => 1);
+
+        final cubit = buildSchedulingCubit(
+          executionSchedulingRepository: schedulingRepository,
+          executionQueueRepository: executionQueueRepository,
+          automationSettingsRepository: automationSettingsRepository,
+        );
+        addTearDown(cubit.close);
+
+        await cubit.restoreExecutionQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        await cubit.getTicketById(siblingA.id);
+
+        expect((cubit.state as TicketDetailLoaded).isExecuting, isTrue);
+        await cubit.searchTickets();
+        expect((cubit.state as TicketsLoaded).pendingResumePrompt, isEmpty);
+      },
+    );
+
+    test(
+      'restoreExecutionQueue (gated): surfaces the surviving run via '
+      'pendingResumePrompt without starting it',
+      () async {
+        // Simulates a Task the app left `inProgress` mid-execution before
+        // an interrupting restart.
+        liveStatus[siblingA.id] = TicketStatus.inProgress;
+        when(
+          () => executionQueueRepository.getSnapshot(),
+        ).thenAnswer(
+          (_) async => [
+            const ExecutionQueueEntry(taskId: 'sched-sibling-a', inFlight: true),
+          ],
+        );
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecutionResume,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.gated);
+
+        final cubit = buildSchedulingCubit(
+          executionSchedulingRepository: schedulingRepository,
+          executionQueueRepository: executionQueueRepository,
+          automationSettingsRepository: automationSettingsRepository,
+        );
+        addTearDown(cubit.close);
+
+        await cubit.restoreExecutionQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.searchTickets();
+
+        final loaded = cubit.state as TicketsLoaded;
+        expect(loaded.pendingResumePrompt.map((t) => t.id), [siblingA.id]);
+        verifyNever(() => agentClient.run(any()));
+      },
+    );
+
+    test(
+      'restoreExecutionQueue (manual): clears the persisted snapshot and '
+      'starts nothing, no resume prompt',
+      () async {
+        // Simulates a Task the app left `inProgress` mid-execution before
+        // an interrupting restart.
+        liveStatus[siblingA.id] = TicketStatus.inProgress;
+        when(
+          () => executionQueueRepository.getSnapshot(),
+        ).thenAnswer(
+          (_) async => [
+            const ExecutionQueueEntry(taskId: 'sched-sibling-a', inFlight: true),
+          ],
+        );
+        when(
+          () => executionQueueRepository.replaceSnapshot(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecutionResume,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.manual);
+
+        final cubit = buildSchedulingCubit(
+          executionSchedulingRepository: schedulingRepository,
+          executionQueueRepository: executionQueueRepository,
+          automationSettingsRepository: automationSettingsRepository,
+        );
+        addTearDown(cubit.close);
+
+        await cubit.restoreExecutionQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.searchTickets();
+
+        expect((cubit.state as TicketsLoaded).pendingResumePrompt, isEmpty);
+        verifyNever(() => agentClient.run(any()));
+        verify(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecutionResume,
+          ),
+        ).called(1);
+        verify(() => executionQueueRepository.replaceSnapshot([])).called(1);
+      },
+    );
+
+    test(
+      'restoreExecutionQueue drops a stale entry whose ticket is no '
+      'longer inProgress, clearing the snapshot without surfacing '
+      'anything',
+      () async {
+        when(
+          () => executionQueueRepository.getSnapshot(),
+        ).thenAnswer(
+          (_) async => [
+            const ExecutionQueueEntry(taskId: 'no-longer-running', inFlight: true),
+          ],
+        );
+        when(
+          () => executionQueueRepository.replaceSnapshot(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById('no-longer-running'),
+        ).thenAnswer(
+          (_) async => Ticket(
+            id: 'no-longer-running',
+            ticketId: 'AIO-SCHED-STALE',
+            type: TicketType.task,
+            title: 'No longer running',
+            status: TicketStatus.done,
+            createdAt: DateTime(2026),
+            updatedAt: DateTime(2026),
+          ),
+        );
+
+        final cubit = buildSchedulingCubit(
+          executionSchedulingRepository: schedulingRepository,
+          executionQueueRepository: executionQueueRepository,
+          automationSettingsRepository: automationSettingsRepository,
+        );
+        addTearDown(cubit.close);
+
+        await cubit.restoreExecutionQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.searchTickets();
+
+        expect((cubit.state as TicketsLoaded).pendingResumePrompt, isEmpty);
+        verifyNever(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecutionResume,
+          ),
+        );
+        verify(() => executionQueueRepository.replaceSnapshot([])).called(1);
+      },
+    );
   });
 }

@@ -10,9 +10,11 @@ import 'package:uuid/uuid.dart';
 import 'package:aion/core/markdown/wikilink_extractor.dart';
 import 'package:aion/features/projects/domain/entities/project.dart';
 import 'package:aion/features/tickets/data/daos/comment_dao.dart';
+import 'package:aion/features/tickets/data/daos/execution_queue_dao.dart';
 import 'package:aion/features/tickets/data/daos/page_wikilink_dao.dart';
 import 'package:aion/features/tickets/data/daos/ticket_dao.dart';
 import 'package:aion/features/tickets/data/daos/ticket_link_dao.dart';
+import 'package:aion/features/tickets/data/models/execution_queue_table.dart';
 import 'package:aion/features/tickets/data/models/page_wikilink_model.dart';
 import 'package:aion/features/tickets/data/models/ticket_comment_model.dart';
 import 'package:aion/features/tickets/data/models/ticket_link_model.dart';
@@ -105,7 +107,11 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
 /// Version 12 adds [PageWikilinksTable] and backfills it once from every
 /// existing `page` ticket's `description` (see [_backfillWikilinks]) —
 /// see
-/// `aion-arch/changes/inline-wikilink-backlinks/design.md`.
+/// `aion-arch/changes/inline-wikilink-backlinks/design.md`. Version 13
+/// adds [ExecutionQueueTable], with no backfill — a pre-13 database has
+/// no persisted queue state to migrate; `TicketsCubit.restoreExecutionQueue`
+/// simply finds nothing to resume on its first post-upgrade launch. See
+/// `aion-arch/changes/parallel-work/design.md` §7.
 @DriftDatabase(
   tables: [
     TicketsTable,
@@ -113,8 +119,9 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
     TicketLinksTable,
     TicketCommentsTable,
     PageWikilinksTable,
+    ExecutionQueueTable,
   ],
-  daos: [TicketDao, TicketLinkDao, CommentDao, PageWikilinkDao],
+  daos: [TicketDao, TicketLinkDao, CommentDao, PageWikilinkDao, ExecutionQueueDao],
 )
 class AppDatabase extends _$AppDatabase {
   /// Creates an [AppDatabase] for [project]. Pass [executor] to use a
@@ -126,7 +133,7 @@ class AppDatabase extends _$AppDatabase {
     : super(executor ?? _openConnection(project));
 
   @override
-  int get schemaVersion => 12;
+  int get schemaVersion => 13;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -205,6 +212,9 @@ class AppDatabase extends _$AppDatabase {
       if (from < 12) {
         await m.createTable(pageWikilinksTable);
         await _backfillWikilinks(m);
+      }
+      if (from < 13) {
+        await m.createTable(executionQueueTable);
       }
     },
   );

@@ -43,6 +43,9 @@ class MockAutomationSettingsRepository extends Mock
 class MockExecutionContextCapRepository extends Mock
     implements ExecutionContextCapRepository {}
 
+class MockExecutionSchedulingRepository extends Mock
+    implements ExecutionSchedulingRepository {}
+
 /// Exercises the real `appRouter` singleton (not a stand-in `GoRouter`,
 /// unlike `workspace_nav_shell_test.dart`'s own routing test) to prove the
 /// `/workspace/inbox` `GoRoute` added by
@@ -155,6 +158,19 @@ void main() {
         ),
         RepositoryProvider<AutomationSettingsRepository>(
           create: (_) => MockAutomationSettingsRepository(),
+        ),
+        // Added for `aion-arch/changes/parallel-work` — `TicketsCubit`
+        // (constructed inside `WorkspaceShell`) reads this unconditionally
+        // now, mirroring `main.dart`'s own app-level registration.
+        RepositoryProvider<ExecutionSchedulingRepository>(
+          create: (_) {
+            final repo = MockExecutionSchedulingRepository();
+            when(
+              () => repo.getMode(),
+            ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
+            when(() => repo.getConcurrencyCeiling()).thenAnswer((_) async => 2);
+            return repo;
+          },
         ),
       ],
       child: BlocProvider<ActiveProjectCubit>.value(

@@ -20,6 +20,7 @@ import 'package:aion/features/projects/data/services/baseline_tailoring_service.
 import 'package:aion/features/projects/projects.dart';
 import 'package:aion/features/providers/data/repositories/secure_storage_anthropic_api_key_repository.dart';
 import 'package:aion/features/providers/data/repositories/shared_prefs_execution_context_cap_repository.dart';
+import 'package:aion/features/providers/data/repositories/shared_prefs_execution_scheduling_repository.dart';
 import 'package:aion/features/providers/data/repositories/shared_prefs_model_routing_repository.dart';
 import 'package:aion/features/providers/providers.dart';
 
@@ -143,6 +144,12 @@ class _AionAppState extends State<AionApp> with WidgetsBindingObserver {
         // aion-arch/changes/dont-spawn-new-chat-ticket-per-execution-trigger.
         RepositoryProvider<ExecutionContextCapRepository>(
           create: (_) => SharedPrefsExecutionContextCapRepository(),
+        ),
+        // The coding-execution scheduling mode/concurrency-ceiling
+        // choice — also global, mirroring ExecutionContextCapRepository's
+        // own scope. Added for `aion-arch/changes/parallel-work`.
+        RepositoryProvider<ExecutionSchedulingRepository>(
+          create: (_) => SharedPrefsExecutionSchedulingRepository(),
         ),
         // Global (not per-project) SDD-stage-triggering confidence
         // setting — see aion-arch/changes/sdd-ticket-execution/design.md.

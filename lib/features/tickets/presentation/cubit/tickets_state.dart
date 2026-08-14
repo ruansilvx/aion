@@ -39,6 +39,7 @@ class TicketsLoaded extends TicketsState {
     this.executionQueuePositions = const {},
     this.inFlightAdvanceIds = const {},
     this.blockedTicketIds = const {},
+    this.pendingResumePrompt = const [],
   });
 
   /// The tickets loaded so far, most recently created first (or by
@@ -81,6 +82,19 @@ class TicketsLoaded extends TicketsState {
   /// `aion-arch/changes/board-task-ordering-indication`.
   final Set<String> blockedTicketIds;
 
+  /// Interrupted coding-execution runs found on this launch under
+  /// [AutomationConfidence](../../../../core/automation/automation_confidence.dart)
+  /// `.gated`, awaiting a Resume/Dismiss decision — drives
+  /// `ResumeRunsPrompt`, the one-time-per-launch banner pinned to the top
+  /// of the Board view. Recomputed by
+  /// [TicketsCubit._refreshInFlightBoardState] from
+  /// [TicketsCubit._pendingResumeTickets] (populated by
+  /// [TicketsCubit.restoreExecutionQueue], cleared by
+  /// [TicketsCubit.resumePendingExecutions]/
+  /// [TicketsCubit.dismissPendingResumePrompt]). Added for
+  /// `aion-arch/changes/parallel-work`.
+  final List<Ticket> pendingResumePrompt;
+
   @override
   List<Object?> get props => [
     tickets,
@@ -89,6 +103,7 @@ class TicketsLoaded extends TicketsState {
     executionQueuePositions,
     inFlightAdvanceIds,
     blockedTicketIds,
+    pendingResumePrompt,
   ];
 }
 

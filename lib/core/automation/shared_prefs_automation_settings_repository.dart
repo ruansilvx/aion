@@ -32,12 +32,19 @@ class SharedPrefsAutomationSettingsRepository
   static const _chatBranchingAutomationKey =
       'automation_settings.chat_branching_automation';
 
+  /// [AutomationContext.codingExecutionResume]'s key. Added for
+  /// `aion-arch/changes/parallel-work`.
+  static const _codingExecutionResumeAutomationKey =
+      'automation_settings.coding_execution_resume_automation';
+
   String _keyFor(AutomationContext context) => switch (context) {
     AutomationContext.sddStage => _sddStageAutomationKey,
     AutomationContext.codingExecution => _codingExecutionAutomationKey,
     AutomationContext.codingExecutionRetry =>
       _codingExecutionRetryAutomationKey,
     AutomationContext.chatBranching => _chatBranchingAutomationKey,
+    AutomationContext.codingExecutionResume =>
+      _codingExecutionResumeAutomationKey,
   };
 
   @override

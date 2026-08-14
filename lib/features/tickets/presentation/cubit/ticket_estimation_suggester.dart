@@ -152,6 +152,8 @@ class TicketEstimationSuggester {
             break;
           case AgentErrorEvent():
             return; // background nicety — swallow, never surface TicketsError
+          case AgentCancelledEvent(): // never emitted — this call sets no runId
+            return;
         }
       }
 

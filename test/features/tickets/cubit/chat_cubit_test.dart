@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -199,6 +201,11 @@ void main() {
       expect: () => [
         isA<ChatLoaded>(),
         isA<ChatLoaded>().having(
+          (s) => s.activeRunId,
+          'activeRunId',
+          isNotNull,
+        ),
+        isA<ChatLoaded>().having(
           (s) => s.streamingText,
           'streamingText',
           'Hi ',
@@ -238,7 +245,177 @@ void main() {
         // isn't silently missing a trace of the failed run.
         verify(() => repository.addComment(any())).called(2);
       },
-      expect: () => [isA<ChatLoaded>(), isA<ChatError>(), isA<ChatLoaded>()],
+      expect: () => [
+        isA<ChatLoaded>(),
+        isA<ChatLoaded>().having(
+          (s) => s.activeRunId,
+          'activeRunId',
+          isNotNull,
+        ),
+        isA<ChatError>(),
+        isA<ChatLoaded>(),
+      ],
+    );
+
+    blocTest<ChatCubit, ChatState>(
+      'on AgentCancelledEvent, persists the accumulated text as one ai '
+      'comment (no ChatError), reloads the thread, and clears '
+      'activeRunId',
+      setUp: () {
+        when(
+          () => ticketRepository.getTicketById('chat-1'),
+        ).thenAnswer((_) async => chatTicket);
+        when(
+          () => modelRoutingRepository.getModelForPhase(ModelPhase.capable),
+        ).thenAnswer((_) async => _sonnet);
+
+        var addCallCount = 0;
+        when(() => repository.addComment(any())).thenAnswer((_) async {
+          addCallCount++;
+        });
+        when(() => repository.getCommentsForTicket('chat-1')).thenAnswer((
+          _,
+        ) async {
+          return addCallCount >= 2
+              ? [
+                  humanComment,
+                  TicketComment(
+                    id: 'ai-1',
+                    ticketId: 'chat-1',
+                    content: 'Partial reply',
+                    authorType: CommentAuthorType.ai,
+                    aiModel: _sonnet.modelId,
+                    createdAt: DateTime(2026),
+                  ),
+                ]
+              : [humanComment];
+        });
+        when(() => client.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Partial '),
+            AgentTextEvent('reply'),
+            AgentCancelledEvent(),
+          ]),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) =>
+          cubit.sendMessage(chatTicketId: 'chat-1', content: 'Hello'),
+      verify: (_) {
+        // The human comment, plus the accumulated-text comment persisted
+        // by sendMessage itself (runChatTurn persists nothing for a
+        // cancelled turn).
+        final captured = verify(
+          () => repository.addComment(captureAny()),
+        ).captured;
+        expect(captured, hasLength(2));
+        final persistedAiComment = captured[1] as TicketComment;
+        expect(persistedAiComment.content, 'Partial reply');
+        expect(persistedAiComment.authorType, CommentAuthorType.ai);
+      },
+      expect: () => [
+        isA<ChatLoaded>().having((s) => s.activeRunId, 'activeRunId', isNull),
+        isA<ChatLoaded>().having(
+          (s) => s.activeRunId,
+          'activeRunId',
+          isNotNull,
+        ),
+        isA<ChatLoaded>().having(
+          (s) => s.streamingText,
+          'streamingText',
+          'Partial ',
+        ),
+        isA<ChatLoaded>().having(
+          (s) => s.streamingText,
+          'streamingText',
+          'Partial reply',
+        ),
+        isA<ChatLoaded>().having((s) => s.activeRunId, 'activeRunId', isNull),
+      ],
+    );
+
+    blocTest<ChatCubit, ChatState>(
+      'on AgentCancelledEvent with no accumulated text, persists no ai '
+      'comment',
+      setUp: () {
+        when(
+          () => ticketRepository.getTicketById('chat-1'),
+        ).thenAnswer((_) async => chatTicket);
+        when(
+          () => modelRoutingRepository.getModelForPhase(ModelPhase.capable),
+        ).thenAnswer((_) async => _sonnet);
+        when(() => repository.addComment(any())).thenAnswer((_) async {});
+        when(
+          () => repository.getCommentsForTicket('chat-1'),
+        ).thenAnswer((_) async => [humanComment]);
+        when(() => client.run(any())).thenAnswer(
+          (_) async =>
+              Stream.fromIterable(const [AgentCancelledEvent()]),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) =>
+          cubit.sendMessage(chatTicketId: 'chat-1', content: 'Hello'),
+      verify: (_) {
+        // Only the human comment — nothing accumulated to persist.
+        verify(() => repository.addComment(any())).called(1);
+      },
+    );
+  });
+
+  group('cancelReply', () {
+    blocTest<ChatCubit, ChatState>(
+      "calls AgentModelClient.cancel with the in-flight run's runId",
+      setUp: () {
+        when(
+          () => ticketRepository.getTicketById('chat-1'),
+        ).thenAnswer((_) async => chatTicket);
+        when(
+          () => modelRoutingRepository.getModelForPhase(ModelPhase.capable),
+        ).thenAnswer((_) async => _sonnet);
+        when(() => repository.addComment(any())).thenAnswer((_) async {});
+        when(
+          () => repository.getCommentsForTicket('chat-1'),
+        ).thenAnswer((_) async => [humanComment]);
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        final eventsController = StreamController<AgentEvent>();
+        when(
+          () => client.run(any()),
+        ).thenAnswer((_) async => eventsController.stream);
+
+        final sendFuture = cubit.sendMessage(
+          chatTicketId: 'chat-1',
+          content: 'Hello',
+        );
+        // Let sendMessage run up through its pre-stream activeRunId emit.
+        await Future<void>.delayed(Duration.zero);
+
+        await cubit.cancelReply('chat-1');
+
+        eventsController.add(const AgentCancelledEvent());
+        await eventsController.close();
+        await sendFuture;
+      },
+      verify: (_) {
+        final capturedRunId =
+            verify(() => client.cancel(captureAny())).captured.single
+                as String;
+        final capturedRequest =
+            verify(() => client.run(captureAny())).captured.single
+                as AgentRequest;
+        expect(capturedRunId, capturedRequest.runId);
+      },
+    );
+
+    blocTest<ChatCubit, ChatState>(
+      'is a no-op when no reply is in flight (state is ChatInitial)',
+      build: buildCubit,
+      act: (cubit) => cubit.cancelReply('chat-1'),
+      verify: (_) {
+        verifyNever(() => client.cancel(any()));
+      },
     );
   });
 
@@ -720,7 +897,7 @@ void main() {
         ]),
       );
 
-      final succeeded = await ChatCubit.runChatTurn(
+      final result = await ChatCubit.runChatTurn(
         client: client,
         provider: provider,
         commentRepo: repository,
@@ -729,7 +906,7 @@ void main() {
         model: _sonnet,
       );
 
-      expect(succeeded, isTrue);
+      expect(result, isA<ChatTurnSuccess>());
       expect(persisted?.inputTokens, 123);
       expect(persisted?.outputTokens, 456);
     });
@@ -745,7 +922,7 @@ void main() {
             Stream.fromIterable(const [AgentErrorEvent('model unavailable')]),
       );
 
-      final succeeded = await ChatCubit.runChatTurn(
+      final result = await ChatCubit.runChatTurn(
         client: client,
         provider: provider,
         commentRepo: repository,
@@ -754,7 +931,7 @@ void main() {
         model: _sonnet,
       );
 
-      expect(succeeded, isFalse);
+      expect(result, isA<ChatTurnFailure>());
       expect(persisted?.inputTokens, isNull);
       expect(persisted?.outputTokens, isNull);
     });

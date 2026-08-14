@@ -27,6 +27,7 @@ import 'package:aion/features/projects/projects.dart';
 import 'package:aion/features/providers/providers.dart';
 import 'package:aion/features/tickets/data/page_ticket_provider_impl.dart';
 import 'package:aion/features/tickets/data/repositories/drift_comment_repository.dart';
+import 'package:aion/features/tickets/data/repositories/drift_execution_queue_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_page_wikilink_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_link_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_repository.dart';
@@ -111,8 +112,20 @@ final appRouter = GoRouter(
       routes: [
         GoRoute(
           path: '/workspace/tickets',
-          builder: (context, state) => BlocProvider<TicketSelectionCubit>(
-            create: (_) => TicketSelectionCubit(),
+          builder: (context, state) => MultiBlocProvider(
+            providers: [
+              BlocProvider<TicketSelectionCubit>(
+                create: (_) => TicketSelectionCubit(),
+              ),
+              // Board-only signal: whether `BoardColumn` should cluster
+              // same-parent siblings adjacently (hybrid scheduling mode).
+              // See aion-arch/changes/parallel-work/design.md §9.
+              BlocProvider<ExecutionSchedulingCubit>(
+                create: (context) => ExecutionSchedulingCubit(
+                  context.read<ExecutionSchedulingRepository>(),
+                )..load(),
+              ),
+            ],
             child: const TicketsListScreen(),
           ),
         ),
@@ -259,6 +272,11 @@ final appRouter = GoRouter(
                 create: (context) => ExecutionContextCapCubit(
                   context.read<ExecutionContextCapRepository>(),
                   context.read<ModelRoutingRepository>(),
+                )..load(),
+              ),
+              BlocProvider<ExecutionSchedulingCubit>(
+                create: (context) => ExecutionSchedulingCubit(
+                  context.read<ExecutionSchedulingRepository>(),
                 )..load(),
               ),
               BlocProvider<BaselineUpgradeCubit>(
@@ -488,6 +506,12 @@ class _WorkspaceShellState extends State<WorkspaceShell>
         RepositoryProvider<PageWikilinkRepository>(
           create: (_) => DriftPageWikilinkRepository(_database),
         ),
+        // Persisted coding-execution queue snapshot — parallel to
+        // PageWikilinkRepository above, same plain Drift-backed shape.
+        // See aion-arch/changes/parallel-work/design.md §5.3/§7.
+        RepositoryProvider<ExecutionQueueRepository>(
+          create: (_) => DriftExecutionQueueRepository(_database),
+        ),
         // Per-project ticket-list filter persistence — see
         // aion-arch/changes/multi-select-ticket-list-filters/design.md
         // §1.4/§4. No dependencies of its own; scoped alongside the other
@@ -586,7 +610,11 @@ class _WorkspaceShellState extends State<WorkspaceShell>
               activeTicketViewRegistry: rootPath != null
                   ? context.read<ActiveTicketViewRegistry>()
                   : null,
-            ),
+              executionSchedulingRepository: context
+                  .read<ExecutionSchedulingRepository>(),
+              executionQueueRepository: context
+                  .read<ExecutionQueueRepository>(),
+            )..restoreExecutionQueue(),
             child: Builder(
               builder: (context) => RepositoryProvider<PageTicketProvider>(
                 create: (context) => PageTicketProviderImpl(

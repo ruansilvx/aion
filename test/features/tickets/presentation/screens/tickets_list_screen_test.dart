@@ -17,6 +17,9 @@ import 'package:aion/core/contracts/provider_registry.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/projects/domain/entities/project.dart';
 import 'package:aion/features/projects/domain/repositories/baseline_repository.dart';
+import 'package:aion/features/providers/domain/enums/execution_scheduling_mode.dart';
+import 'package:aion/features/providers/domain/repositories/execution_scheduling_repository.dart';
+import 'package:aion/features/providers/presentation/cubit/execution_scheduling_cubit.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_list_sort.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sort_direction.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sort_field.dart';
@@ -36,6 +39,9 @@ class MockProviderRegistry extends Mock implements ProviderRegistry {}
 class MockActiveProjectProvider extends Mock implements ActiveProjectProvider {}
 
 class MockBaselineRepository extends Mock implements BaselineRepository {}
+
+class MockExecutionSchedulingRepository extends Mock
+    implements ExecutionSchedulingRepository {}
 
 Widget _wrap({
   required TicketsCubit ticketsCubit,
@@ -66,6 +72,23 @@ Widget _wrap({
               BlocProvider<TicketsCubit>.value(value: ticketsCubit),
               BlocProvider<TicketSelectionCubit>(
                 create: (_) => TicketSelectionCubit(),
+              ),
+              // BoardColumn (via TicketBoardView) reads this to decide
+              // whether to cluster same-parent siblings — a plain
+              // strictFifo/2 stub, since these tests don't exercise
+              // Hybrid-mode clustering. Added for
+              // `aion-arch/changes/parallel-work`.
+              BlocProvider<ExecutionSchedulingCubit>(
+                create: (_) {
+                  final repo = MockExecutionSchedulingRepository();
+                  when(
+                    () => repo.getMode(),
+                  ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
+                  when(
+                    () => repo.getConcurrencyCeiling(),
+                  ).thenAnswer((_) async => 2);
+                  return ExecutionSchedulingCubit(repo)..load();
+                },
               ),
             ],
             child: const TicketsListScreen(),

@@ -18,8 +18,11 @@ import 'package:aion/features/providers/presentation/cubit/anthropic_provider_co
 import 'package:aion/features/providers/presentation/cubit/anthropic_provider_config_state.dart';
 import 'package:aion/features/providers/presentation/cubit/automation_settings_cubit.dart';
 import 'package:aion/features/providers/presentation/cubit/automation_settings_state.dart';
+import 'package:aion/features/providers/domain/enums/execution_scheduling_mode.dart';
 import 'package:aion/features/providers/presentation/cubit/execution_context_cap_cubit.dart';
 import 'package:aion/features/providers/presentation/cubit/execution_context_cap_state.dart';
+import 'package:aion/features/providers/presentation/cubit/execution_scheduling_cubit.dart';
+import 'package:aion/features/providers/presentation/cubit/execution_scheduling_state.dart';
 import 'package:aion/features/providers/presentation/cubit/model_routing_cubit.dart';
 import 'package:aion/features/providers/presentation/cubit/model_routing_state.dart';
 import 'package:aion/features/providers/presentation/cubit/provider_settings_cubit.dart';
@@ -28,9 +31,13 @@ import 'package:aion/features/providers/presentation/widgets/provider_connection
 
 /// The `/workspace/settings` route: shows the configured provider's
 /// connection status (auto-checked on open, with a manual "Test
-/// Connection" action), a model picker, automation-confidence pickers, an
-/// "OVERRIDES" section linking to `OverridesListScreen`, and a "BASELINE"
-/// section (`_BaselineUpgradeSection`) offering a manual baseline-version
+/// Connection" action), a model picker, a coding-execution scheduling
+/// picker (`_ExecutionSchedulingSection`, mode + conditional concurrency
+/// ceiling — see `aion-arch/changes/parallel-work/design.md` §6/§8),
+/// automation-confidence pickers (now five, including "Resume After
+/// Restart" — `AutomationContext.codingExecutionResume`), an "OVERRIDES"
+/// section linking to `OverridesListScreen`, and a "BASELINE" section
+/// (`_BaselineUpgradeSection`) offering a manual baseline-version
 /// upgrade — always available regardless of whether
 /// `BaselineUpgradeBanner` has already been shown/declined this session
 /// (see `aion-arch/changes/baseline-version-upgrade-flow/design.md` §2).
@@ -113,6 +120,8 @@ class SettingsScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 20),
                         const _ExecutionContextCapSection(),
+                        const SizedBox(height: 20),
+                        const _ExecutionSchedulingSection(),
                         const SizedBox(height: 22),
                         Text(
                           context.l10n.settingsAutomationEyebrow,
@@ -154,6 +163,17 @@ class SettingsScreen extends StatelessWidget {
                           description: context
                               .l10n
                               .settingsAutomationChatBranchingDescription,
+                        ),
+                        const SizedBox(height: 20),
+                        _AutomationSection(
+                          automationContext:
+                              AutomationContext.codingExecutionResume,
+                          label: context
+                              .l10n
+                              .settingsAutomationCodingExecutionResumeLabel,
+                          description: context
+                              .l10n
+                              .settingsAutomationCodingExecutionResumeDescription,
                         ),
                         const SizedBox(height: 22),
                         Text(
@@ -257,6 +277,14 @@ String _confidenceSubLabel(
       context.l10n.settingsAutomationChatBranchingGatedSubLabel,
     AutomationConfidence.manual =>
       context.l10n.settingsAutomationChatBranchingManualSubLabel,
+  },
+  AutomationContext.codingExecutionResume => switch (confidence) {
+    AutomationConfidence.auto =>
+      context.l10n.settingsAutomationCodingExecutionResumeAutoSubLabel,
+    AutomationConfidence.gated =>
+      context.l10n.settingsAutomationCodingExecutionResumeGatedSubLabel,
+    AutomationConfidence.manual =>
+      context.l10n.settingsAutomationCodingExecutionResumeManualSubLabel,
   },
 };
 
@@ -827,6 +855,275 @@ class _ExecutionContextCapHelperRow extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Mode-dot tone for [mode], mirroring [_confidenceDotColor]'s shape:
+/// [ExecutionSchedulingMode.strictFifo] (today's unchanged default) reads
+/// neutral/`secondary`, [ExecutionSchedulingMode.parallel] reads
+/// `success` (more throughput, a positive framing), and
+/// [ExecutionSchedulingMode.hybrid] reads `primary` (still concurrent,
+/// but with the AI-adjacent "smart serialization" framing `primary`
+/// already carries elsewhere in this app). Per the Claude Design export's
+/// design.md §1. Added for `aion-arch/changes/parallel-work`.
+Color _schedulingModeDotColor(AionColors c, ExecutionSchedulingMode mode) =>
+    switch (mode) {
+      ExecutionSchedulingMode.strictFifo => c.secondary,
+      ExecutionSchedulingMode.parallel => c.success,
+      ExecutionSchedulingMode.hybrid => c.primary,
+    };
+
+/// Localized display label for [mode]. Module-private since
+/// [_ExecutionSchedulingSection]/[_ExecutionSchedulingTrigger]/
+/// [_ExecutionSchedulingMenuRow] are its only consumers.
+String _schedulingModeLabel(BuildContext context, ExecutionSchedulingMode mode) =>
+    switch (mode) {
+      ExecutionSchedulingMode.strictFifo =>
+        context.l10n.settingsExecutionSchedulingStrictFifoLabel,
+      ExecutionSchedulingMode.parallel =>
+        context.l10n.settingsExecutionSchedulingParallelLabel,
+      ExecutionSchedulingMode.hybrid =>
+        context.l10n.settingsExecutionSchedulingHybridLabel,
+    };
+
+/// One-line explanatory sub-label for [mode], shown in
+/// [_ExecutionSchedulingMenuRow].
+String _schedulingModeSubLabel(
+  BuildContext context,
+  ExecutionSchedulingMode mode,
+) => switch (mode) {
+  ExecutionSchedulingMode.strictFifo =>
+    context.l10n.settingsExecutionSchedulingStrictFifoSubLabel,
+  ExecutionSchedulingMode.parallel =>
+    context.l10n.settingsExecutionSchedulingParallelSubLabel,
+  ExecutionSchedulingMode.hybrid =>
+    context.l10n.settingsExecutionSchedulingHybridSubLabel,
+};
+
+/// The "MODELS" group's fifth row — a mode-dot [SelectionMenu] picking
+/// [ExecutionSchedulingMode], backed by [ExecutionSchedulingCubit], plus a
+/// conditional numeric concurrency-ceiling [AppTextField] shown only under
+/// [ExecutionSchedulingMode.parallel]/[ExecutionSchedulingMode.hybrid]
+/// (hidden, not disabled, under
+/// [ExecutionSchedulingMode.strictFifo] — the ceiling is meaningless
+/// there). Mirrors [_AutomationSection]'s mode-dot `SelectionMenu` shape
+/// and [_ExecutionContextCapSection]'s numeric-field shape. Per the Claude
+/// Design export's design.md §1. Added for
+/// `aion-arch/changes/parallel-work`.
+class _ExecutionSchedulingSection extends StatefulWidget {
+  /// Creates an [_ExecutionSchedulingSection].
+  const _ExecutionSchedulingSection();
+
+  @override
+  State<_ExecutionSchedulingSection> createState() =>
+      _ExecutionSchedulingSectionState();
+}
+
+class _ExecutionSchedulingSectionState
+    extends State<_ExecutionSchedulingSection> {
+  final _ceilingController = TextEditingController();
+  final _ceilingFocusNode = FocusNode();
+  bool _seeded = false;
+  bool _showCeilingError = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ceilingFocusNode.addListener(() {
+      if (!_ceilingFocusNode.hasFocus) _commitCeiling(_ceilingController.text);
+    });
+  }
+
+  @override
+  void dispose() {
+    _ceilingController.dispose();
+    _ceilingFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _commitCeiling(String value) {
+    final parsed = int.tryParse(value);
+    if (parsed == null || parsed < 1) {
+      setState(() => _showCeilingError = true);
+      return;
+    }
+    setState(() => _showCeilingError = false);
+    context.read<ExecutionSchedulingCubit>().setConcurrencyCeiling(parsed);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+
+    return BlocBuilder<ExecutionSchedulingCubit, ExecutionSchedulingState>(
+      builder: (context, state) {
+        if (state is! ExecutionSchedulingReady) {
+          return const SizedBox.shrink();
+        }
+
+        final expected = state.concurrencyCeiling.toString();
+        if (!_seeded) {
+          _seeded = true;
+          _ceilingController.text = expected;
+        } else if (!_ceilingFocusNode.hasFocus &&
+            _ceilingController.text != expected) {
+          _ceilingController.text = expected;
+        }
+
+        final showCeilingField =
+            state.mode != ExecutionSchedulingMode.strictFifo;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              context.l10n.settingsExecutionSchedulingLabel,
+              style: AionText.label.copyWith(color: c.textSecondary),
+            ),
+            const SizedBox(height: AionSpacing.sp4),
+            Text(
+              context.l10n.settingsExecutionSchedulingDescription,
+              style: AionText.bodySm.copyWith(color: c.textMuted),
+            ),
+            const SizedBox(height: AionSpacing.sp8),
+            SelectionMenu<ExecutionSchedulingMode>(
+              semanticsLabel: context.l10n.settingsExecutionSchedulingLabel,
+              items: ExecutionSchedulingMode.values,
+              itemLabel: (v) => _schedulingModeLabel(context, v),
+              currentValue: state.mode,
+              onSelected: (v) =>
+                  context.read<ExecutionSchedulingCubit>().selectMode(v),
+              itemBuilder: (context, c, item) =>
+                  _ExecutionSchedulingMenuRow(mode: item),
+              trigger: _ExecutionSchedulingTrigger(mode: state.mode),
+            ),
+            if (showCeilingField) ...[
+              const SizedBox(height: AionSpacing.sp12),
+              Text(
+                context.l10n.settingsExecutionSchedulingConcurrencyCeilingLabel,
+                style: AionText.label.copyWith(color: c.textSecondary),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                context
+                    .l10n
+                    .settingsExecutionSchedulingConcurrencyCeilingDescription,
+                style: AionText.bodySm.copyWith(color: c.textMuted, height: 1.5),
+              ),
+              const SizedBox(height: 10),
+              AppTextField(
+                controller: _ceilingController,
+                focusNode: _ceilingFocusNode,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                maxLines: 1,
+                textInputAction: TextInputAction.done,
+                onSubmitted: _commitCeiling,
+              ),
+              if (_showCeilingError) ...[
+                const SizedBox(height: 6),
+                Text(
+                  context
+                      .l10n
+                      .settingsExecutionSchedulingConcurrencyCeilingError,
+                  style: AionText.bodySm.copyWith(
+                    fontSize: 12.5,
+                    color: c.dangerText(t.isDark),
+                  ),
+                ),
+              ],
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// [SelectionMenu]`<ExecutionSchedulingMode>`'s closed trigger: a mode
+/// dot, [mode]'s name, and a trailing caret. Mirrors
+/// [_AutomationTrigger]'s exact shape.
+class _ExecutionSchedulingTrigger extends StatelessWidget {
+  const _ExecutionSchedulingTrigger({required this.mode});
+
+  final ExecutionSchedulingMode mode;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border.all(color: c.border, width: 1),
+        borderRadius: BorderRadius.all(AionRadius.lg),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: _schedulingModeDotColor(c, mode),
+                shape: BoxShape.circle,
+              ),
+              child: const SizedBox(width: 8, height: 8),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _schedulingModeLabel(context, mode),
+                style: AionText.bodySm.copyWith(color: c.textPrimary),
+              ),
+            ),
+            const SizedBox(width: 6),
+            PhosphorIcon(
+              PhosphorIcons.caretDownLight,
+              size: 12,
+              color: c.textMuted,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One [SelectionMenu]`<ExecutionSchedulingMode>` menu row: the mode dot,
+/// [mode]'s name, and a trailing one-line sub-label. Mirrors
+/// [_AutomationMenuRow]'s exact shape.
+class _ExecutionSchedulingMenuRow extends StatelessWidget {
+  const _ExecutionSchedulingMenuRow({required this.mode});
+
+  final ExecutionSchedulingMode mode;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: _schedulingModeDotColor(c, mode),
+            shape: BoxShape.circle,
+          ),
+          child: const SizedBox(width: 8, height: 8),
+        ),
+        const SizedBox(width: 11),
+        Expanded(
+          child: Text(
+            _schedulingModeLabel(context, mode),
+            style: AionText.bodySm.copyWith(color: c.textPrimary),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          _schedulingModeSubLabel(context, mode),
+          style: AionText.time.copyWith(color: c.textMuted),
+        ),
+      ],
     );
   }
 }

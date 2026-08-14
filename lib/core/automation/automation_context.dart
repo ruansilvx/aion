@@ -25,4 +25,14 @@ enum AutomationContext {
   /// `aion-arch/changes/mid-task-chat-branching`; see
   /// `TicketsCubit._handleBranchToolCall`/`_handleCloseBranchToolCall`.
   chatBranching,
+
+  /// Restart recovery for interrupted coding-execution runs — whether a
+  /// Task/Bug left `inProgress` by an app restart resumes silently
+  /// ([AutomationConfidence.auto]), asks first
+  /// ([AutomationConfidence.gated]), or is left for the existing
+  /// orphaned/stalled failure-banner retry path
+  /// ([AutomationConfidence.manual]). Added for
+  /// `aion-arch/changes/parallel-work`; see
+  /// `TicketsCubit.restoreExecutionQueue`.
+  codingExecutionResume,
 }

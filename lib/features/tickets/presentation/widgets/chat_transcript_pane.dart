@@ -14,6 +14,7 @@ import 'package:aion/features/tickets/presentation/cubit/chat_state.dart';
 import 'package:aion/features/tickets/presentation/widgets/chat_message_bubble.dart';
 import 'package:aion/features/tickets/presentation/widgets/chat_meta_header.dart';
 import 'package:aion/features/tickets/presentation/widgets/comment_author_avatar.dart';
+import 'package:aion/features/tickets/presentation/widgets/execution_cancel_control.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_metadata_section.dart';
 
 /// A `chat`-type ticket's message transcript: a single scrolling region
@@ -111,6 +112,7 @@ class _ChatTranscriptPaneState extends State<ChatTranscriptPane> {
             :final comments,
             :final streamingText,
             :final currentToolUse,
+            :final activeRunId,
           ) =>
             comments.isEmpty && streamingText == null && currentToolUse == null
                 ? _ChatEmptyState(
@@ -136,9 +138,11 @@ class _ChatTranscriptPaneState extends State<ChatTranscriptPane> {
                         sliver: SliverList(
                           delegate: SliverChildBuilderDelegate(
                             (context, index) => _TranscriptListItem(
+                              chatTicketId: widget.ticketId,
                               comments: comments,
                               streamingText: streamingText,
                               currentToolUse: currentToolUse,
+                              activeRunId: activeRunId,
                               index: index,
                             ),
                             childCount:
@@ -180,15 +184,28 @@ class _ChatTranscriptPaneState extends State<ChatTranscriptPane> {
 /// `ChatTranscriptPane`'s `SliverChildBuilderDelegate`.
 class _TranscriptListItem extends StatelessWidget {
   const _TranscriptListItem({
+    required this.chatTicketId,
     required this.comments,
     required this.streamingText,
     required this.currentToolUse,
+    required this.activeRunId,
     required this.index,
   });
+
+  /// Internal id of the chat ticket this transcript belongs to — passed
+  /// through to [_StreamingBubble]'s stop button, which resolves
+  /// `ChatCubit.cancelReply` against it. Added for
+  /// `aion-arch/changes/parallel-work`.
+  final String chatTicketId;
 
   final List<TicketComment> comments;
   final String? streamingText;
   final String? currentToolUse;
+
+  /// The in-flight reply's `AgentRequest.runId`, or `null` when no reply
+  /// is streaming — mirrors `ChatLoaded.activeRunId`. Added for
+  /// `aion-arch/changes/parallel-work`.
+  final String? activeRunId;
   final int index;
 
   @override
@@ -207,7 +224,12 @@ class _TranscriptListItem extends StatelessWidget {
     if (messageIndex < comments.length) {
       return ChatMessageBubble(comment: comments[messageIndex]);
     }
-    return _StreamingBubble(text: streamingText, toolUse: currentToolUse);
+    return _StreamingBubble(
+      chatTicketId: chatTicketId,
+      text: streamingText,
+      toolUse: currentToolUse,
+      activeRunId: activeRunId,
+    );
   }
 }
 
@@ -499,7 +521,17 @@ class _WaitingForReplyIndicatorState extends State<_WaitingForReplyIndicator>
 /// [MarkdownView] instead of a plain `TextSpan`, and adds [toolUse]
 /// (previously tracked by [ChatState] but never rendered anywhere).
 class _StreamingBubble extends StatefulWidget {
-  const _StreamingBubble({required this.text, required this.toolUse});
+  const _StreamingBubble({
+    required this.chatTicketId,
+    required this.text,
+    required this.toolUse,
+    required this.activeRunId,
+  });
+
+  /// Internal id of the chat ticket this bubble belongs to — passed to
+  /// `ChatCubit.cancelReply` by the stop button. Added for
+  /// `aion-arch/changes/parallel-work`.
+  final String chatTicketId;
 
   /// The accumulated reply text so far, `null` before any text chunk
   /// has streamed in.
@@ -508,6 +540,11 @@ class _StreamingBubble extends StatefulWidget {
   /// The current "Running `<tool>`…" status, `null` when no tool call
   /// is in flight.
   final String? toolUse;
+
+  /// The in-flight reply's `AgentRequest.runId` — the stop button is
+  /// visible iff this is non-`null`. Added for
+  /// `aion-arch/changes/parallel-work`.
+  final String? activeRunId;
 
   @override
   State<_StreamingBubble> createState() => _StreamingBubbleState();
@@ -564,6 +601,15 @@ class _StreamingBubbleState extends State<_StreamingBubble>
                       context.l10n.ticketDetailTyping,
                       style: AionText.time.copyWith(color: c.textMuted),
                     ),
+                    if (widget.activeRunId != null) ...[
+                      const SizedBox(width: 7),
+                      ExecutionCancelControl(
+                        placement: CancelPlacement.chatStream,
+                        onCancel: () => context.read<ChatCubit>().cancelReply(
+                          widget.chatTicketId,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 6),
