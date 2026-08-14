@@ -255,7 +255,29 @@ class BoardColumn extends StatelessWidget {
                           itemCount: displayedTickets.length,
                           separatorBuilder: (context, index) =>
                               const SizedBox(height: AionSpacing.sp8),
+                          // Keyed by ticket id (not left to Flutter's
+                          // positional default) so a ticket's own
+                          // subtree — its `context.select` subscriptions,
+                          // its `MoveToStatusMenu`/`SelectionMenu`
+                          // Overlay+LayerLink state, its Draggable — stays
+                          // bound to that ticket's identity rather than to
+                          // a list slot. Under rapid successive
+                          // `TicketsLoaded` re-emissions (concurrent
+                          // scheduling's more frequent emissions) plus
+                          // Hybrid's `clusterSiblingsAdjacently`
+                          // reordering, an unkeyed list lets Flutter
+                          // reuse one ticket's Element for a different
+                          // ticket mid-flight, corrupting `InheritedElement`
+                          // dependent tracking and the render tree — this
+                          // was the root cause of the intermittent
+                          // `RenderFlex overflowed`/`Duplicate GlobalKey`/
+                          // `'_dependents.isEmpty': is not true` crashes
+                          // flagged in tasks.md T50. `TicketsListScreen`
+                          // sidesteps the same class of bug by keying its
+                          // whole body on the joined ticket-id list; this
+                          // is the equivalent fix scoped to each card.
                           itemBuilder: (context, index) => TicketBoardCard(
+                            key: ValueKey(displayedTickets[index].id),
                             ticket: displayedTickets[index],
                           ),
                         ),
