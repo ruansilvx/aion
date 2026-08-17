@@ -459,10 +459,13 @@ class DriftTicketRepository implements TicketRepository {
   }
 
   /// One grouped `SUM`, not one query per id: joins every `tickets` row
-  /// whose `parent_id` is in [taskIds] and whose `title` starts with
-  /// `'Coding Execution — '` to `ticket_comments` on `ticket_id`, grouping
-  /// by `parent_id` and summing `COALESCE(input_tokens, 0) +
-  /// COALESCE(output_tokens, 0)`. See
+  /// whose `type` is `'chat'`, whose `parent_id` is in [taskIds], and
+  /// whose `title` starts with `'Coding Execution — '` to
+  /// `ticket_comments` on `ticket_id`, grouping by `parent_id` and
+  /// summing `COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)`.
+  /// The `type = 'chat'` filter guards against a same-titled non-chat
+  /// ticket (e.g. a hand-created page) ever being swept into a task's
+  /// token total by title match alone. See
   /// [TicketRepository.getExecutionTokenTotals] for the full contract.
   @override
   Future<Map<String, int>> getExecutionTokenTotals(
@@ -477,7 +480,8 @@ class DriftTicketRepository implements TicketRepository {
           'COALESCE(ticket_comments.output_tokens, 0)) AS total '
           'FROM tickets '
           'JOIN ticket_comments ON ticket_comments.ticket_id = tickets.id '
-          "WHERE tickets.parent_id IN ($placeholders) "
+          "WHERE tickets.type = 'chat' "
+          "AND tickets.parent_id IN ($placeholders) "
           "AND tickets.title LIKE 'Coding Execution — %' "
           'GROUP BY tickets.parent_id',
           variables: [for (final id in taskIds) Variable<String>(id)],

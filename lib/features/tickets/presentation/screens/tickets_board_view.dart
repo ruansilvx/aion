@@ -489,7 +489,13 @@ bool _cardIsBlocked(TicketsState s, Ticket t) =>
 /// `aion-arch/changes/estimate-timespent-rollup-for-ticket-hierarchy/design.md`
 /// §2.5. Also renders a [TokenCountLabel] (right after [RollupBadge],
 /// before [_BoardCardStatusBadge]) reflecting [_cardTokenLabel] — see
-/// that helper's dartdoc for the display-precedence rule. Added for
+/// that helper's dartdoc for the display-precedence rule. The trailing
+/// cluster (`RollupBadge` → `TokenCountLabel` → `_BoardCardStatusBadge`
+/// [+ `ExecutionCancelControl`]) sits inside a right-aligned `Wrap`
+/// (`spacing`/`runSpacing` 8, `Expanded` to preserve right-alignment on
+/// a single line) rather than a plain `Row`, so a busy card wraps to a
+/// second meta line instead of overflowing — Component Spec §2.3
+/// (`aion-arch/changes/token-cost-prediction/design.md`). Added for
 /// `aion-arch/changes/board-execution-indicators-and-notifications`,
 /// `aion-arch/changes/board-task-ordering-indication`, and
 /// `aion-arch/changes/token-cost-prediction`.
@@ -607,6 +613,7 @@ class _CardVisual extends StatelessWidget {
             ),
             const SizedBox(height: AionSpacing.sp8),
             Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 TypeChip(type: ticket.type),
                 if (ticket.priority != TicketPriority.none) ...[
@@ -620,40 +627,52 @@ class _CardVisual extends StatelessWidget {
                 if (hasRollup ||
                     tokenLabel != null ||
                     execState != _CardExecutionState.none)
-                  const Spacer(),
-                if (hasRollup) RollupBadge(ticket: ticket),
-                if (tokenLabel != null) ...[
-                  if (hasRollup) const SizedBox(width: AionSpacing.sp8),
-                  tokenLabel.mode == TokenCountMode.total
-                      ? TokenCountLabel.total(
-                          total: tokenLabel.total!,
-                          variant: TokenCountVariant.compact,
-                        )
-                      : TokenCountLabel.range(
-                          low: tokenLabel.low!,
-                          high: tokenLabel.high!,
-                          variant: TokenCountVariant.compact,
-                        ),
-                ],
-                if (execState != _CardExecutionState.none) ...[
-                  if (hasRollup || tokenLabel != null)
-                    const SizedBox(width: AionSpacing.sp8),
-                  _BoardCardStatusBadge(
-                    status: execState,
-                    queuePosition: queuePosition,
-                  ),
-                  if (interactive &&
-                      (execState == _CardExecutionState.running ||
-                          execState == _CardExecutionState.queued)) ...[
-                    const SizedBox(width: AionSpacing.sp4),
-                    ExecutionCancelControl(
-                      placement: CancelPlacement.boardBadge,
-                      onCancel: () => context
-                          .read<TicketsCubit>()
-                          .cancelCodingExecution(ticket),
+                  Expanded(
+                    child: Wrap(
+                      alignment: WrapAlignment.end,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: AionSpacing.sp8,
+                      runSpacing: AionSpacing.sp8,
+                      children: [
+                        if (hasRollup) RollupBadge(ticket: ticket),
+                        if (tokenLabel != null)
+                          tokenLabel.mode == TokenCountMode.total
+                              ? TokenCountLabel.total(
+                                  total: tokenLabel.total!,
+                                  variant: TokenCountVariant.compact,
+                                )
+                              : TokenCountLabel.range(
+                                  low: tokenLabel.low!,
+                                  high: tokenLabel.high!,
+                                  variant: TokenCountVariant.compact,
+                                ),
+                        if (execState != _CardExecutionState.none)
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              _BoardCardStatusBadge(
+                                status: execState,
+                                queuePosition: queuePosition,
+                              ),
+                              if (interactive &&
+                                  (execState ==
+                                          _CardExecutionState.running ||
+                                      execState ==
+                                          _CardExecutionState.queued)) ...[
+                                const SizedBox(width: AionSpacing.sp4),
+                                ExecutionCancelControl(
+                                  placement: CancelPlacement.boardBadge,
+                                  onCancel: () => context
+                                      .read<TicketsCubit>()
+                                      .cancelCodingExecution(ticket),
+                                ),
+                              ],
+                            ],
+                          ),
+                      ],
                     ),
-                  ],
-                ],
+                  ),
               ],
             ),
           ],

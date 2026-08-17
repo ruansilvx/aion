@@ -2121,6 +2121,28 @@ void main() {
 
       expect(totals, {'task-1': 50});
     });
+
+    test(
+        'a same-titled non-chat ticket is excluded even though its title '
+        'matches', () async {
+      await repository.createTicket(buildTicket(id: 'task-1'));
+      final decoy = Ticket(
+        id: 'page-a',
+        ticketId: '',
+        type: TicketType.page,
+        title: 'Coding Execution — Test ticket',
+        status: TicketStatus.backlog,
+        parentId: 'task-1',
+        createdAt: DateTime(2026, 1, 1),
+        updatedAt: DateTime(2026, 1, 1),
+      );
+      await repository.createTicket(decoy);
+      await addAiComment('page-a', inputTokens: 999, outputTokens: 999);
+
+      final totals = await repository.getExecutionTokenTotals(['task-1']);
+
+      expect(totals.containsKey('task-1'), isFalse);
+    });
   });
 
   group('applyTokenPrediction', () {
