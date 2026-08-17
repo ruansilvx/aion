@@ -6,7 +6,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:aion/core/core.dart';
 import 'package:aion/features/projects/projects.dart';
-import 'package:aion/features/tickets/data/repositories/drift_comment_repository.dart';
+import 'package:aion/features/tickets/data/repositories/drift_comment_repository.dart'
+    show DriftCommentRepository;
 import 'package:aion/features/tickets/data/repositories/drift_ticket_link_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_repository.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_list_sort.dart';
@@ -1433,6 +1434,14 @@ void main() {
         await v1Db.customStatement(
           'ALTER TABLE ticket_comments DROP COLUMN output_tokens;',
         );
+        // predicted_execution_tokens_low/high (v14) — same reasoning as
+        // estimate_rollup/time_spent_rollup above.
+        await v1Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN predicted_execution_tokens_low;',
+        );
+        await v1Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN predicted_execution_tokens_high;',
+        );
         await v1Db.customStatement('PRAGMA user_version = 1;');
         await v1Db.close();
 
@@ -1496,6 +1505,14 @@ void main() {
       );
       await v7Db.customStatement(
         'ALTER TABLE tickets DROP COLUMN estimate_source;',
+      );
+      // predicted_execution_tokens_low/high (v14) — same reasoning as
+      // complexity_source/estimate_source above.
+      await v7Db.customStatement(
+        'ALTER TABLE tickets DROP COLUMN predicted_execution_tokens_low;',
+      );
+      await v7Db.customStatement(
+        'ALTER TABLE tickets DROP COLUMN predicted_execution_tokens_high;',
       );
       await v7Db.customStatement('PRAGMA user_version = 7;');
       await v7Db.close();
@@ -1577,6 +1594,14 @@ void main() {
         await v8Db.customStatement(
           'ALTER TABLE tickets DROP COLUMN estimate_source;',
         );
+        // predicted_execution_tokens_low/high (v14) — same reasoning as
+        // complexity_source/estimate_source above.
+        await v8Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN predicted_execution_tokens_low;',
+        );
+        await v8Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN predicted_execution_tokens_high;',
+        );
         await v8Db.customStatement('PRAGMA user_version = 8;');
         await v8Db.close();
 
@@ -1650,6 +1675,14 @@ void main() {
         await v9Db.customStatement(
           'ALTER TABLE tickets DROP COLUMN estimate_source;',
         );
+        // predicted_execution_tokens_low/high (v14) — same reasoning as
+        // complexity_source/estimate_source above.
+        await v9Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN predicted_execution_tokens_low;',
+        );
+        await v9Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN predicted_execution_tokens_high;',
+        );
         await v9Db.customStatement('PRAGMA user_version = 9;');
         await v9Db.close();
 
@@ -1714,6 +1747,16 @@ void main() {
         // already made it at the real current schemaVersion) and roll
         // user_version back to 11, simulating a real pre-v12 database.
         await v11Db.customStatement('DROP TABLE page_wikilinks;');
+        // predicted_execution_tokens_low/high (v14) — same reasoning as
+        // the other migration-simulation tests in this file: createAll()
+        // already created them, so onUpgrade's `from < 14` addColumn step
+        // needs them absent first.
+        await v11Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN predicted_execution_tokens_low;',
+        );
+        await v11Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN predicted_execution_tokens_high;',
+        );
         await v11Db.customStatement('PRAGMA user_version = 11;');
         await v11Db.close();
 
@@ -1953,6 +1996,170 @@ void main() {
         found!.complexitySource,
         TicketEstimationSource.aiSuggestedLowConfidence,
       );
+    });
+  });
+
+  group('getExecutionTokenTotals', () {
+    late DriftCommentRepository commentRepository;
+
+    setUp(() {
+      commentRepository = DriftCommentRepository(database);
+    });
+
+    Future<void> addAiComment(
+      String chatId, {
+      int? inputTokens,
+      int? outputTokens,
+    }) {
+      return commentRepository.addComment(
+        TicketComment(
+          id: '',
+          ticketId: chatId,
+          content: 'reply',
+          authorType: CommentAuthorType.ai,
+          inputTokens: inputTokens,
+          outputTokens: outputTokens,
+          createdAt: DateTime(2026, 1, 1),
+        ),
+      );
+    }
+
+    test('sums multiple execution chats under the same task together',
+        () async {
+      await repository.createTicket(buildTicket(id: 'task-1'));
+      final chatA = Ticket(
+        id: 'chat-a',
+        ticketId: '',
+        type: TicketType.chat,
+        title: 'Coding Execution — Test ticket',
+        status: TicketStatus.backlog,
+        parentId: 'task-1',
+        createdAt: DateTime(2026, 1, 1),
+        updatedAt: DateTime(2026, 1, 1),
+      );
+      final chatB = Ticket(
+        id: 'chat-b',
+        ticketId: '',
+        type: TicketType.chat,
+        title: 'Coding Execution — Test ticket (continued)',
+        status: TicketStatus.backlog,
+        parentId: 'task-1',
+        createdAt: DateTime(2026, 1, 2),
+        updatedAt: DateTime(2026, 1, 2),
+      );
+      await repository.createTicket(chatA);
+      await repository.createTicket(chatB);
+      await addAiComment('chat-a', inputTokens: 100, outputTokens: 200);
+      await addAiComment('chat-b', inputTokens: 50, outputTokens: 25);
+
+      final totals = await repository.getExecutionTokenTotals(['task-1']);
+
+      expect(totals['task-1'], 375);
+    });
+
+    test('a task with zero execution chats is absent from the result map',
+        () async {
+      await repository.createTicket(buildTicket(id: 'task-1'));
+
+      final totals = await repository.getExecutionTokenTotals(['task-1']);
+
+      expect(totals.containsKey('task-1'), isFalse);
+    });
+
+    test('null inputTokens/outputTokens on a comment contribute 0',
+        () async {
+      await repository.createTicket(buildTicket(id: 'task-1'));
+      final chat = Ticket(
+        id: 'chat-a',
+        ticketId: '',
+        type: TicketType.chat,
+        title: 'Coding Execution — Test ticket',
+        status: TicketStatus.backlog,
+        parentId: 'task-1',
+        createdAt: DateTime(2026, 1, 1),
+        updatedAt: DateTime(2026, 1, 1),
+      );
+      await repository.createTicket(chat);
+      // A system comment with no token usage recorded.
+      await commentRepository.addComment(
+        TicketComment(
+          id: '',
+          ticketId: 'chat-a',
+          content: 'context',
+          authorType: CommentAuthorType.system,
+          createdAt: DateTime(2026, 1, 1),
+        ),
+      );
+      await addAiComment('chat-a', inputTokens: 10, outputTokens: null);
+
+      final totals = await repository.getExecutionTokenTotals(['task-1']);
+
+      expect(totals['task-1'], 10);
+    });
+
+    test('a multi-id batch query returns entries only for ids with data',
+        () async {
+      await repository.createTicket(buildTicket(id: 'task-1'));
+      await repository.createTicket(buildTicket(id: 'task-2'));
+      final chat = Ticket(
+        id: 'chat-a',
+        ticketId: '',
+        type: TicketType.chat,
+        title: 'Coding Execution — Test ticket',
+        status: TicketStatus.backlog,
+        parentId: 'task-1',
+        createdAt: DateTime(2026, 1, 1),
+        updatedAt: DateTime(2026, 1, 1),
+      );
+      await repository.createTicket(chat);
+      await addAiComment('chat-a', inputTokens: 40, outputTokens: 10);
+
+      final totals = await repository.getExecutionTokenTotals([
+        'task-1',
+        'task-2',
+      ]);
+
+      expect(totals, {'task-1': 50});
+    });
+
+    test(
+        'a same-titled non-chat ticket is excluded even though its title '
+        'matches', () async {
+      await repository.createTicket(buildTicket(id: 'task-1'));
+      final decoy = Ticket(
+        id: 'page-a',
+        ticketId: '',
+        type: TicketType.page,
+        title: 'Coding Execution — Test ticket',
+        status: TicketStatus.backlog,
+        parentId: 'task-1',
+        createdAt: DateTime(2026, 1, 1),
+        updatedAt: DateTime(2026, 1, 1),
+      );
+      await repository.createTicket(decoy);
+      await addAiComment('page-a', inputTokens: 999, outputTokens: 999);
+
+      final totals = await repository.getExecutionTokenTotals(['task-1']);
+
+      expect(totals.containsKey('task-1'), isFalse);
+    });
+  });
+
+  group('applyTokenPrediction', () {
+    test('persists both fields together and touches no other field',
+        () async {
+      await repository.createTicket(buildTicket(id: '1'));
+      final before = await repository.getTicketById('1');
+
+      await repository.applyTokenPrediction('1', low: 12000, high: 34000);
+      final after = await repository.getTicketById('1');
+
+      expect(after!.predictedExecutionTokensLow, 12000);
+      expect(after.predictedExecutionTokensHigh, 34000);
+      expect(after.title, before!.title);
+      expect(after.status, before.status);
+      expect(after.priority, before.priority);
+      expect(after.updatedAt, before.updatedAt);
     });
   });
 }

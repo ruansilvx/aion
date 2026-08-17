@@ -396,6 +396,8 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                   onAdvanceSddStage: (t) => _advanceSddStage(t),
                                   onMaybeAutoAdvance: (t, canAdvance) =>
                                       _maybeAutoAdvanceSddStage(t, canAdvance),
+                                  executionTokenTotal:
+                                      state.executionTokenTotal,
                                 ),
                                 Padding(
                                   padding: const EdgeInsets.fromLTRB(

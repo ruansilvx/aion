@@ -216,6 +216,44 @@ void main() {
         );
       },
     );
+
+    // Same shape as the estimateRollup/timeSpentRollup and
+    // complexitySource/estimateSource tests above —
+    // predictedExecutionTokensLow/High have no copyWith parameter either
+    // (see design.md's citation of `ticket-copywith-drops-deletedat` as
+    // the failure mode this exclusion avoids), so the only
+    // runtime-testable property is that they pass through unaffected by
+    // every other copyWith call.
+    test(
+      'predictedExecutionTokensLow/High pass through unchanged on every '
+      'copyWith call, since neither is a settable parameter',
+      () {
+        final withPrediction = Ticket(
+          id: baseTicket.id,
+          ticketId: baseTicket.ticketId,
+          type: baseTicket.type,
+          title: baseTicket.title,
+          description: baseTicket.description,
+          status: baseTicket.status,
+          priority: baseTicket.priority,
+          estimate: baseTicket.estimate,
+          timeSpent: baseTicket.timeSpent,
+          createdAt: baseTicket.createdAt,
+          updatedAt: baseTicket.updatedAt,
+          predictedExecutionTokensLow: 12000,
+          predictedExecutionTokensHigh: 34000,
+        );
+
+        final result = withPrediction.copyWith(
+          title: 'Changed',
+          priority: TicketPriority.high,
+          estimate: () => 999,
+        );
+
+        expect(result.predictedExecutionTokensLow, 12000);
+        expect(result.predictedExecutionTokensHigh, 34000);
+      },
+    );
   });
 
   group('Ticket equality (props)', () {

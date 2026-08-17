@@ -372,6 +372,12 @@ class _CollapsingChatHeaderDelegate extends SliverPersistentHeaderDelegate {
                         automationConfidence: automationConfidence,
                         onAdvanceSddStage: onAdvanceSddStage,
                         onMaybeAutoAdvance: onMaybeAutoAdvance,
+                        // `chat` tickets are never task/bug, so no
+                        // coding-execution token spend ever applies here
+                        // — TicketMetadataSection's own type gate never
+                        // renders anything from this value for a chat
+                        // ticket.
+                        executionTokenTotal: null,
                       ),
                     ),
                   ),

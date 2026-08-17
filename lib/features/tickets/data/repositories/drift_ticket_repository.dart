@@ -458,6 +458,66 @@ class DriftTicketRepository implements TicketRepository {
     return rows.map(_toEntity).toList();
   }
 
+  /// One grouped `SUM`, not one query per id: joins every `tickets` row
+  /// whose `type` is `'chat'`, whose `parent_id` is in [taskIds], and
+  /// whose `title` starts with `'Coding Execution — '` to
+  /// `ticket_comments` on `ticket_id`, grouping by `parent_id` and
+  /// summing `COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)`.
+  /// The `type = 'chat'` filter guards against a same-titled non-chat
+  /// ticket (e.g. a hand-created page) ever being swept into a task's
+  /// token total by title match alone. See
+  /// [TicketRepository.getExecutionTokenTotals] for the full contract.
+  @override
+  Future<Map<String, int>> getExecutionTokenTotals(
+    List<String> taskIds,
+  ) async {
+    if (taskIds.isEmpty) return const {};
+    final placeholders = List.filled(taskIds.length, '?').join(', ');
+    final rows = await _db
+        .customSelect(
+          'SELECT tickets.parent_id AS task_id, '
+          'SUM(COALESCE(ticket_comments.input_tokens, 0) + '
+          'COALESCE(ticket_comments.output_tokens, 0)) AS total '
+          'FROM tickets '
+          'JOIN ticket_comments ON ticket_comments.ticket_id = tickets.id '
+          "WHERE tickets.type = 'chat' "
+          "AND tickets.parent_id IN ($placeholders) "
+          "AND tickets.title LIKE 'Coding Execution — %' "
+          'GROUP BY tickets.parent_id',
+          variables: [for (final id in taskIds) Variable<String>(id)],
+          readsFrom: {_db.ticketsTable, _db.ticketCommentsTable},
+        )
+        .get();
+
+    final result = <String, int>{};
+    for (final row in rows) {
+      final total = row.read<int>('total');
+      if (total == 0) continue;
+      result[row.read<String>('task_id')] = total;
+    }
+    return result;
+  }
+
+  /// Writes only `predicted_execution_tokens_low`/
+  /// `predicted_execution_tokens_high` — no `updated_at` bump, same
+  /// rationale as [updateEmbedding]/[updateRollup]: a background
+  /// prediction is not a user edit. See
+  /// [TicketRepository.applyTokenPrediction] for the full contract.
+  @override
+  Future<void> applyTokenPrediction(
+    String id, {
+    required int low,
+    required int high,
+  }) {
+    return _db.ticketDao.updateFields(
+      id,
+      TicketsTableCompanion(
+        predictedExecutionTokensLow: Value(low),
+        predictedExecutionTokensHigh: Value(high),
+      ),
+    );
+  }
+
   /// Maps a generated [TicketData] row to the [Ticket] domain entity,
   /// falling back to safe defaults for unrecognised enum strings.
   Ticket _toEntity(TicketData row) {
@@ -509,6 +569,8 @@ class DriftTicketRepository implements TicketRepository {
         TicketEstimationSource.values,
         row.estimateSource,
       ),
+      predictedExecutionTokensLow: row.predictedExecutionTokensLow,
+      predictedExecutionTokensHigh: row.predictedExecutionTokensHigh,
     );
   }
 

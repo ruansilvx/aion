@@ -70,6 +70,7 @@ import 'package:aion/features/tickets/presentation/cubit/in_flight_execution_run
 import 'package:aion/features/tickets/presentation/cubit/pending_tool_proposal.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_context_enricher.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_estimation_suggester.dart';
+import 'package:aion/features/tickets/presentation/cubit/ticket_token_predictor.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_rollup_counts.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_rollup_recomputer.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
@@ -227,6 +228,10 @@ class TicketsCubit extends Cubit<TicketsState> {
       providerRegistry: providerRegistry,
       modelRoutingRepository: modelRoutingRepository,
     );
+    _tokenPredictor = TicketTokenPredictor(
+      _repository,
+      embeddingProvider: embeddingProvider,
+    );
     _contextEnricher = TicketContextEnricher(
       _repository,
       linkRepository: linkRepository,
@@ -256,6 +261,34 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [_embeddingProvider]/[_providerRegistry]/[_modelRoutingRepository]
   /// this cubit already holds.
   late final TicketEstimationSuggester _estimationSuggester;
+
+  /// Deterministic pre-execution token-cost prediction orchestrator — see
+  /// [TicketTokenPredictor]. Wired to the same [_repository]/
+  /// [_embeddingProvider] this cubit already holds, constructed alongside
+  /// [_estimationSuggester]. Added for
+  /// `aion-arch/changes/token-cost-prediction`.
+  late final TicketTokenPredictor _tokenPredictor;
+
+  /// Task/Bug id → total coding-execution token spend recorded so far —
+  /// the in-memory running-total cache backing
+  /// [TicketsLoaded.executionTokenTotals]/
+  /// [TicketDetailLoaded.executionTokenTotal]. Fully reconstructable at
+  /// any time from [TicketRepository.getExecutionTokenTotals] (this is a
+  /// cache, not the source of truth — the persisted comment rows are),
+  /// which is exactly what [loadTickets]/[loadMoreTickets]/
+  /// [getTicketById] do to batch-seed any not-yet-cached id. Once seeded,
+  /// an entry is only ever incremented in place by
+  /// [_runCodingExecution]'s own turn-completion points — never
+  /// recomputed from scratch on every read, the same "seed once, update
+  /// incrementally" shape [_inFlightExecutionIds] and its siblings
+  /// already use. Deliberately untouched by
+  /// [_refreshInFlightBoardState]'s own recompute walk — that method
+  /// mirrors this cache's *current* contents into every fresh
+  /// [TicketsLoaded] emission, but never mutates it, so a scheduling-only
+  /// event (a run starting/stopping) can't accidentally reset a token
+  /// total that has nothing to do with scheduling. Added for
+  /// `aion-arch/changes/token-cost-prediction`.
+  final Map<String, int> _executionTokenTotals = {};
 
   /// Shared related-tickets context-assembly walk — see
   /// [TicketContextEnricher]. Wired to the same [_repository]/
@@ -685,6 +718,8 @@ class TicketsCubit extends Cubit<TicketsState> {
       if (generation != _searchGeneration) return;
       final blockedTicketIds = await _computeBlockedTicketIds(page.tickets);
       if (generation != _searchGeneration) return;
+      await _seedExecutionTokenTotals(page.tickets.map((t) => t.id));
+      if (generation != _searchGeneration) return;
       emit(
         TicketsLoaded(
           page.tickets,
@@ -708,6 +743,12 @@ class TicketsCubit extends Cubit<TicketsState> {
           },
           inFlightAdvanceIds: Set.unmodifiable(_inFlightStageAdvanceIds),
           pendingResumePrompt: _pendingResumeTickets ?? const [],
+          // Same rationale as the fields above — this fresh emission is
+          // the sole place that seeds a just-opened/just-filtered Board's
+          // running totals; without it, a ticket with recorded execution
+          // spend would show no token label until an unrelated mutation
+          // happened to call _refreshInFlightBoardState.
+          executionTokenTotals: Map.unmodifiable(_executionTokenTotals),
         ),
       );
     } catch (e) {
@@ -754,6 +795,8 @@ class TicketsCubit extends Cubit<TicketsState> {
       final combined = [...currentTickets, ...page.tickets];
       final blockedTicketIds = await _computeBlockedTicketIds(combined);
       if (generation != _searchGeneration) return;
+      await _seedExecutionTokenTotals(page.tickets.map((t) => t.id));
+      if (generation != _searchGeneration) return;
       emit(
         TicketsLoaded(
           combined,
@@ -769,6 +812,7 @@ class TicketsCubit extends Cubit<TicketsState> {
           },
           inFlightAdvanceIds: Set.unmodifiable(_inFlightStageAdvanceIds),
           pendingResumePrompt: _pendingResumeTickets ?? const [],
+          executionTokenTotals: Map.unmodifiable(_executionTokenTotals),
         ),
       );
     } catch (e) {
@@ -802,10 +846,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// caller that does await this (e.g. `PageTicketProviderImpl`) sees the
   /// failure rather than a value of the wrong type.
   ///
-  /// Also fires a fire-and-forget [_estimationSuggester] call alongside
+  /// Also fires a fire-and-forget [_estimationSuggester] call, alongside a
+  /// fire-and-forget [_tokenPredictor] call, alongside
   /// [_triggerEmbeddingRegen] — always, on every create, same condition as
   /// embedding regen — so a freshly created ticket's unset `complexity`/
-  /// `estimate` get an AI first guess without blocking this save.
+  /// `estimate` get an AI first guess, and (for a `task`/`bug`) a
+  /// token-cost prediction, without blocking this save.
   Future<Ticket> createTicket({
     required TicketType type,
     required String title,
@@ -857,6 +903,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         // compare against), fire-and-forget.
         unawaited(_triggerEmbeddingRegen(persisted));
         unawaited(_estimationSuggester.suggest(persisted));
+        unawaited(_tokenPredictor.suggest(persisted));
         unawaited(_triggerGitProjection(persisted, 'created'));
       }
       final page = await _repository.searchTickets(
@@ -977,10 +1024,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// ticket with its own children needs its own rollup recomputed too
   /// before the walk continues upward to its ancestors.
   ///
-  /// Also fires a fire-and-forget [_estimationSuggester] call alongside
+  /// Also fires a fire-and-forget [_estimationSuggester] call, alongside a
+  /// fire-and-forget [_tokenPredictor] call, alongside
   /// [_triggerEmbeddingRegen], under the same title/description-changed
   /// condition, so a content edit gets a fresh AI complexity/estimate
-  /// suggestion for whichever field isn't `manual`-locked.
+  /// suggestion for whichever field isn't `manual`-locked, and (for a
+  /// `task`/`bug` not yet executing) a fresh token-cost prediction.
   ///
   /// [complexityEdited]/[estimateEdited] tell [TicketRepository.updateTicket]
   /// whether *this specific call* is the Complexity picker's `onSelected`
@@ -1021,6 +1070,7 @@ class TicketsCubit extends Cubit<TicketsState> {
             previous.description != refreshed.description) {
           unawaited(_triggerEmbeddingRegen(refreshed));
           unawaited(_estimationSuggester.suggest(refreshed));
+          unawaited(_tokenPredictor.suggest(refreshed));
         }
         if (previous != null &&
             (previous.estimate != refreshed.estimate ||
@@ -1957,6 +2007,10 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [dismissPendingResumePrompt] — so `TicketBoardCard` never needs to
   /// poll. Added for
   /// `aion-arch/changes/board-execution-indicators-and-notifications`.
+  /// Also re-mirrors [TicketsLoaded.executionTokenTotals] from
+  /// [_executionTokenTotals]'s current contents — a mirror, not a
+  /// mutation; this method never writes to that cache itself. Added for
+  /// `aion-arch/changes/token-cost-prediction`.
   void _refreshInFlightBoardState() {
     final current = state;
     if (current is! TicketsLoaded) return;
@@ -1972,6 +2026,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         inFlightAdvanceIds: Set.unmodifiable(_inFlightStageAdvanceIds),
         blockedTicketIds: current.blockedTicketIds,
         pendingResumePrompt: _pendingResumeTickets ?? const [],
+        executionTokenTotals: Map.unmodifiable(_executionTokenTotals),
       ),
     );
   }
@@ -2067,6 +2122,30 @@ class TicketsCubit extends Cubit<TicketsState> {
       }
     }
     return blocked;
+  }
+
+  /// Batch-seeds [_executionTokenTotals] for every id in [ids] not
+  /// already cached — one [TicketRepository.getExecutionTokenTotals]
+  /// call for the whole not-yet-cached subset, never one query per id.
+  /// Merges results with a compare-and-keep-max against any existing
+  /// in-memory value, so a batch read that resolves after a concurrent
+  /// [_runCodingExecution] increment can never clobber it with a staler
+  /// total. Called by [searchTickets]/[loadMoreTickets]/[getTicketById]
+  /// for whichever ids they just loaded. Added for
+  /// `aion-arch/changes/token-cost-prediction`.
+  Future<void> _seedExecutionTokenTotals(Iterable<String> ids) async {
+    final uncached = [
+      for (final id in ids)
+        if (!_executionTokenTotals.containsKey(id)) id,
+    ];
+    if (uncached.isEmpty) return;
+    final totals = await _repository.getExecutionTokenTotals(uncached);
+    for (final entry in totals.entries) {
+      final existing = _executionTokenTotals[entry.key];
+      if (existing == null || entry.value > existing) {
+        _executionTokenTotals[entry.key] = entry.value;
+      }
+    }
   }
 
   /// Whether [ticket] currently has an unresolved `blocks`/`blockedBy`
@@ -2443,6 +2522,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// already pushed to it are not) — cancellation doesn't change that.
   /// Added for `aion-arch/changes/parallel-work`; see that change's
   /// design.md §5.4/§5.5.
+  ///
+  /// Also updates [_executionTokenTotals] (via [_addExecutionTokens])
+  /// right after each implement/verify turn's `ai` comment is persisted —
+  /// see `TicketsLoaded.executionTokenTotals`'s dartdoc for how that
+  /// running total then surfaces. Added for
+  /// `aion-arch/changes/token-cost-prediction`.
   Future<void> _runCodingExecution(Ticket task) async {
     final providerRegistry = _providerRegistry;
     final commentRepo = _commentRepository;
@@ -2577,6 +2662,7 @@ class TicketsCubit extends Cubit<TicketsState> {
           // implementation turn never actually completed.
           break;
         }
+        await _addExecutionTokens(task.id, chat.id);
 
         final verifyPrompt = await _assembleVerificationContext(task);
         final (verifyModel, verifyProvider) = await _resolveModelAndProvider(
@@ -2612,6 +2698,7 @@ class TicketsCubit extends Cubit<TicketsState> {
           // above; `runChatTurn` already posted the failure comment.
           break;
         }
+        await _addExecutionTokens(task.id, chat.id);
 
         final verifyReply = await _lastCommentContent(chat.id);
         final failureReason = _verificationFailureReason(verifyReply);
@@ -3307,6 +3394,29 @@ class TicketsCubit extends Cubit<TicketsState> {
       (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
     );
     return mostRecent.content;
+  }
+
+  /// Adds [chatTicketId]'s most recently persisted comment's
+  /// `inputTokens + outputTokens` (each treated as `0` when `null`) onto
+  /// [_executionTokenTotals]`[taskId]`. Called by [_runCodingExecution]
+  /// right after each implement/verify `ChatCubit.runChatTurn` call
+  /// returns [ChatTurnSuccess] — at that point the turn's `ai` comment
+  /// has already been persisted (by `runChatTurn` itself), so the most
+  /// recent comment for [chatTicketId] is exactly the one this turn just
+  /// wrote. Mirrors [_lastCommentContent]'s own "find the most recent
+  /// comment" lookup. No-ops if constructed without a [CommentRepository]
+  /// (mirrors [_lastCommentContent]'s same fallback). Added for
+  /// `aion-arch/changes/token-cost-prediction`.
+  Future<void> _addExecutionTokens(String taskId, String chatTicketId) async {
+    final commentRepo = _commentRepository;
+    if (commentRepo == null) return;
+    final comments = await commentRepo.getCommentsForTicket(chatTicketId);
+    if (comments.isEmpty) return;
+    final mostRecent = comments.reduce(
+      (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
+    );
+    final tokens = (mostRecent.inputTokens ?? 0) + (mostRecent.outputTokens ?? 0);
+    _executionTokenTotals[taskId] = (_executionTokenTotals[taskId] ?? 0) + tokens;
   }
 
   /// Parses a verify turn's reply ([reply], from [_lastCommentContent])
@@ -4494,6 +4604,10 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [TicketDetailLoaded.sddStageCanRetry] via
   /// [_computeStageAdvanceFailure]. Added for
   /// `aion-arch/changes/board-execution-indicators-and-notifications`.
+  /// Also batch-seeds [_executionTokenTotals] for [id] (see
+  /// [_seedExecutionTokenTotals]) and populates
+  /// [TicketDetailLoaded.executionTokenTotal] from it. Added for
+  /// `aion-arch/changes/token-cost-prediction`.
   Future<void> getTicketById(String id) async {
     emit(const TicketsLoading());
     try {
@@ -4564,6 +4678,8 @@ class TicketsCubit extends Cubit<TicketsState> {
         sddStageCanRetry = canRetry;
       }
 
+      await _seedExecutionTokenTotals([ticket.id]);
+
       emit(
         TicketDetailLoaded(
           ticket,
@@ -4579,6 +4695,7 @@ class TicketsCubit extends Cubit<TicketsState> {
           isAdvancingStage: isAdvancingStage,
           sddStageFailureReason: sddStageFailureReason,
           sddStageCanRetry: sddStageCanRetry,
+          executionTokenTotal: _executionTokenTotals[ticket.id],
         ),
       );
     } catch (e) {

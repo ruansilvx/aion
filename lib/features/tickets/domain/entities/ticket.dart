@@ -149,6 +149,23 @@ class Ticket extends Equatable {
   /// Same as [complexitySource], for [estimate].
   final TicketEstimationSource? estimateSource;
 
+  /// Low end of the pre-execution token-cost estimate range for this
+  /// `task`/`bug` ticket, or `null` if no estimate is available yet (no
+  /// comparable candidate with recorded execution history existed at
+  /// prediction time) or the ticket has already started executing.
+  /// Written only by `TicketTokenPredictor` via
+  /// `TicketRepository.applyTokenPrediction` — never part of [copyWith],
+  /// same treatment as [complexitySource]/[estimateSource] and for the
+  /// same reason: a generic content edit must not be able to silently
+  /// clobber a value only a dedicated write path should touch. See
+  /// `aion-arch/ideas/ticket-copywith-drops-deletedat.md` for the failure
+  /// mode this precedent avoids.
+  final int? predictedExecutionTokensLow;
+
+  /// High end of the pre-execution token-cost estimate range. See
+  /// [predictedExecutionTokensLow].
+  final int? predictedExecutionTokensHigh;
+
   /// Creates a [Ticket]. [priority] defaults to [TicketPriority.none].
   const Ticket({
     required this.id,
@@ -178,6 +195,8 @@ class Ticket extends Equatable {
     this.timeSpentRollup,
     this.complexitySource,
     this.estimateSource,
+    this.predictedExecutionTokensLow,
+    this.predictedExecutionTokensHigh,
   });
 
   @override
@@ -209,6 +228,8 @@ class Ticket extends Equatable {
     timeSpentRollup,
     complexitySource,
     estimateSource,
+    predictedExecutionTokensLow,
+    predictedExecutionTokensHigh,
   ];
 
   /// Returns a copy of this ticket with the given fields replaced.
@@ -221,17 +242,25 @@ class Ticket extends Equatable {
   /// apart from "explicitly set to null," since both look like `null` at
   /// the call site. `id`, `ticketId`, `parentId`, `embedding`,
   /// `syncStatus`, `createdAt`, `sddStage`, `estimateRollup`,
-  /// `timeSpentRollup`, `complexitySource`, and `estimateSource` are never
-  /// mutated by this method — `sddStage` is written only via
+  /// `timeSpentRollup`, `complexitySource`, `estimateSource`,
+  /// `predictedExecutionTokensLow`, and `predictedExecutionTokensHigh` are
+  /// never mutated by this method — `sddStage` is written only via
   /// `TicketsCubit.advanceSddStage`, `estimateRollup`/`timeSpentRollup`
-  /// are written only via `TicketRepository.updateRollup`, and
+  /// are written only via `TicketRepository.updateRollup`,
   /// `complexitySource`/`estimateSource` are written only via
-  /// `TicketRepository.updateTicket`/`applyEstimationSuggestion`, so none
-  /// of their preconditions can be bypassed by a plain edit. Like
+  /// `TicketRepository.updateTicket`/`applyEstimationSuggestion`, and
+  /// `predictedExecutionTokensLow`/`predictedExecutionTokensHigh` are
+  /// written only via `TicketRepository.applyTokenPrediction`, so none of
+  /// their preconditions can be bypassed by a plain edit. Like
   /// `estimateRollup`/`timeSpentRollup`, `complexitySource`/
-  /// `estimateSource` still pass through unchanged on every call (there's
-  /// no settable parameter for either) — only [complexity]/[estimate]
-  /// themselves are settable here.
+  /// `estimateSource`/`predictedExecutionTokensLow`/
+  /// `predictedExecutionTokensHigh` still pass through unchanged on every
+  /// call (there's no settable parameter for any of them) — only
+  /// [complexity]/[estimate] themselves are settable here. This is a
+  /// deliberate repeat of the same field-exclusion pattern
+  /// `aion-arch/ideas/ticket-copywith-drops-deletedat.md` flagged as a
+  /// past failure mode for `deletedAt` — `copyWith` must go out of its way
+  /// to preserve fields it doesn't understand, not silently drop them.
   Ticket copyWith({
     String? title,
     TicketFieldSetter<String?>? description,
@@ -284,6 +313,8 @@ class Ticket extends Equatable {
       timeSpentRollup: timeSpentRollup,
       complexitySource: complexitySource,
       estimateSource: estimateSource,
+      predictedExecutionTokensLow: predictedExecutionTokensLow,
+      predictedExecutionTokensHigh: predictedExecutionTokensHigh,
     );
   }
 }
