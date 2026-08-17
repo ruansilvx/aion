@@ -577,6 +577,16 @@ void main() {
     // every pre-existing test's assertions about today's exact prompt
     // output correct without each one having to know about the walk.
     when(() => repository.getAllTickets()).thenAnswer((_) async => []);
+    // Default for _seedExecutionTokenTotals, called by searchTickets/
+    // loadMoreTickets/getTicketById on every page/ticket load — empty
+    // means no ticket has any recorded execution spend, so
+    // TicketsLoaded.executionTokenTotals/TicketDetailLoaded
+    // .executionTokenTotal stay at their own defaults unless a test
+    // overrides this with its own totals. Added for
+    // `aion-arch/changes/token-cost-prediction`.
+    when(
+      () => repository.getExecutionTokenTotals(any()),
+    ).thenAnswer((_) async => {});
   });
 
   group('TicketsCubit', () {
@@ -3152,6 +3162,170 @@ void main() {
           ).called(1);
         },
         expect: () => [TicketDetailLoaded(ticket.copyWith(title: 'New'))],
+      );
+    });
+
+    group('token-prediction triggers (token-cost-prediction)', () {
+      late MockEmbeddingProvider embeddingProvider;
+
+      // `Ticket.embedding` (unlike `ticket` above) is required for
+      // `TicketTokenPredictor.suggest` to get past its own-embedding
+      // guard — built directly rather than via `copyWith` since
+      // `embedding` isn't a settable `copyWith` parameter.
+      final embeddedTicket = Ticket(
+        id: ticket.id,
+        ticketId: ticket.ticketId,
+        type: TicketType.task,
+        title: ticket.title,
+        status: ticket.status,
+        createdAt: ticket.createdAt,
+        updatedAt: ticket.updatedAt,
+        embedding: Uint8List.fromList([1, 2, 3, 4]),
+      );
+      final comparableTicket = Ticket(
+        id: 'other',
+        ticketId: 'AIO-other',
+        type: TicketType.task,
+        title: 'Other ticket',
+        status: TicketStatus.backlog,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+        embedding: Uint8List.fromList([1, 2, 3, 4]),
+      );
+
+      setUp(() {
+        embeddingProvider = MockEmbeddingProvider();
+        // Also fires alongside the token predictor (both are unawaited
+        // background calls off create/update) — stubbed so it doesn't
+        // throw an unstubbed-call error, mirroring the estimation-
+        // suggestion trigger group above.
+        when(
+          () => embeddingProvider.embed(any()),
+        ).thenAnswer((_) async => Uint8List.fromList([1, 2, 3]));
+        when(
+          () => repository.updateEmbedding(any(), any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketsByParent(
+            any(),
+            types: any(named: 'types'),
+          ),
+        ).thenAnswer((_) async => []);
+        when(
+          () => repository.getAllTicketsByType(any()),
+        ).thenAnswer((_) async => [comparableTicket]);
+        when(
+          () => repository.getExecutionTokenTotals(any()),
+        ).thenAnswer((_) async => {'other': 20000});
+        when(
+          () => repository.applyTokenPrediction(
+            any(),
+            low: any(named: 'low'),
+            high: any(named: 'high'),
+          ),
+        ).thenAnswer((_) async {});
+      });
+
+      TicketsCubit buildCubit() =>
+          TicketsCubit(repository, embeddingProvider: embeddingProvider);
+
+      blocTest<TicketsCubit, TicketsState>(
+        'createTicket fires the token predictor in the background',
+        setUp: () {
+          when(() => repository.createTicket(any())).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(any()),
+          ).thenAnswer((_) async => embeddedTicket);
+          when(
+            () => repository.searchTickets(
+              query: any(named: 'query'),
+              statuses: any(named: 'statuses'),
+              types: any(named: 'types'),
+              priorities: any(named: 'priorities'),
+              sort: any(named: 'sort'),
+              limit: any(named: 'limit'),
+              offset: any(named: 'offset'),
+            ),
+          ).thenAnswer(
+            (_) async =>
+                TicketSearchPage(tickets: [embeddedTicket], hasMore: false),
+          );
+        },
+        build: buildCubit,
+        act: (cubit) =>
+            cubit.createTicket(type: TicketType.task, title: 'New ticket'),
+        wait: const Duration(milliseconds: 10),
+        verify: (_) {
+          verify(
+            () => repository.applyTokenPrediction(
+              embeddedTicket.id,
+              low: any(named: 'low'),
+              high: any(named: 'high'),
+            ),
+          ).called(1);
+        },
+        expect: () => [
+          const TicketCreating([]),
+          TicketCreated([embeddedTicket], hasMore: false),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'updateTicket fires the token predictor when the title changed',
+        setUp: () {
+          when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+          var callCount = 0;
+          when(() => repository.getTicketById(embeddedTicket.id)).thenAnswer((
+            _,
+          ) async {
+            callCount++;
+            // First call ("previous") returns the original ticket; second
+            // call ("refreshed") returns the title-changed one.
+            return callCount == 1
+                ? embeddedTicket
+                : embeddedTicket.copyWith(title: 'New');
+          });
+        },
+        build: buildCubit,
+        act: (cubit) =>
+            cubit.updateTicket(embeddedTicket.copyWith(title: 'New')),
+        wait: const Duration(milliseconds: 10),
+        verify: (_) {
+          verify(
+            () => repository.applyTokenPrediction(
+              embeddedTicket.id,
+              low: any(named: 'low'),
+              high: any(named: 'high'),
+            ),
+          ).called(1);
+        },
+        expect: () => [TicketDetailLoaded(embeddedTicket.copyWith(title: 'New'))],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'updateTicket does not fire the token predictor when title/'
+        'description are unchanged',
+        setUp: () {
+          when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+          when(() => repository.getTicketById(embeddedTicket.id)).thenAnswer(
+            (_) async => embeddedTicket, // "previous" and "refreshed" match
+          );
+        },
+        build: buildCubit,
+        act: (cubit) => cubit.updateTicket(
+          embeddedTicket.copyWith(priority: TicketPriority.high),
+        ),
+        wait: const Duration(milliseconds: 10),
+        verify: (_) {
+          verifyNever(
+            () => repository.applyTokenPrediction(
+              any(),
+              low: any(named: 'low'),
+              high: any(named: 'high'),
+            ),
+          );
+        },
+        expect: () => [TicketDetailLoaded(embeddedTicket)],
       );
     });
 
@@ -7196,9 +7370,13 @@ void main() {
         // The forced-`gated` override applies here too (not just to the
         // skipped auto-flip above) — the ready-for-review banner must
         // still surface even though the configured confidence is `auto`.
+        // executionTokenTotal is 0, not null, since both turns completed
+        // (each with a bare AgentDoneEvent() reporting no usage) — the
+        // running total starts at 0 the moment any turn completes.
         TicketDetailLoaded(
           taskUnderStory.copyWith(status: TicketStatus.inProgress),
           executionAwaitingReview: true,
+          executionTokenTotal: 0,
         ),
       ],
     );
@@ -7916,6 +8094,41 @@ void main() {
       );
 
       blocTest<TicketsCubit, TicketsState>(
+        'accumulates executionTokenTotal across the implement and verify '
+        'turns (token-cost-prediction)',
+        build: buildCubit,
+        setUp: () {
+          var call = 0;
+          when(() => agentClient.run(any())).thenAnswer((_) async {
+            call++;
+            // Turn 1 (implement) reports 1000+500; turn 2 (agentic
+            // verify, which passes) reports 2000+800 — the running total
+            // should reflect both turns summed together.
+            return call == 1
+                ? Stream.fromIterable(const [
+                    AgentTextEvent('Implemented.'),
+                    AgentDoneEvent(inputTokens: 1000, outputTokens: 500),
+                  ])
+                : Stream.fromIterable(const [
+                    AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+                    AgentDoneEvent(inputTokens: 2000, outputTokens: 800),
+                  ]);
+          });
+        },
+        act: (cubit) =>
+            cubit.changeTicketStatus(taskNoStory, TicketStatus.inProgress),
+        wait: const Duration(milliseconds: 50),
+        verify: (bloc) {
+          final state = bloc.state;
+          expect(state, isA<TicketDetailLoaded>());
+          expect(
+            (state as TicketDetailLoaded).executionTokenTotal,
+            1000 + 500 + 2000 + 800,
+          );
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
         'removes the worktree even when the implementation turn hard-fails, '
         'and never reaches the verify/push/PR steps',
         build: buildCubit,
@@ -8035,10 +8248,15 @@ void main() {
           // The post-run refresh — `getCommentsForTicket` now genuinely
           // reflects the failure comment `_runCodingExecution` posted
           // (see `stubStatefulComments`), so it's echoed verbatim here.
+          // executionTokenTotal is 0, not null — both the implement and
+          // verify turns completed (each with a bare AgentDoneEvent()
+          // reporting no usage) before the verify reply was found to
+          // fail.
           TicketDetailLoaded(
             taskNoStory.copyWith(status: TicketStatus.inProgress),
             executionFailureReason: 'Execution failed verification:\n\nerror Y',
             executionCanRetry: true,
+            executionTokenTotal: 0,
           ),
         ],
       );
@@ -8103,10 +8321,15 @@ void main() {
           ),
           // No toast for `manual` — straight to the post-run refresh.
           const TicketsLoading(),
+          // executionTokenTotal is 0, not null — both the implement and
+          // verify turns completed (each with a bare AgentDoneEvent()
+          // reporting no usage) before the verify reply was found to
+          // fail.
           TicketDetailLoaded(
             taskNoStory.copyWith(status: TicketStatus.inProgress),
             executionFailureReason: 'Execution failed verification:\n\nerror Z',
             executionCanRetry: true,
+            executionTokenTotal: 0,
           ),
         ],
       );

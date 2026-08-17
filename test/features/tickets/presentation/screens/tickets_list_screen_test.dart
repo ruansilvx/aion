@@ -228,6 +228,14 @@ void main() {
     when(
       () => linkRepository.getLinksByTypes(any()),
     ).thenAnswer((_) async => []);
+    // Default for TicketsCubit._seedExecutionTokenTotals, called on
+    // every searchTickets/loadMoreTickets/getTicketById success —
+    // token-cost-prediction. No test in this file exercises actual
+    // token-total display, so an empty result everywhere is the correct
+    // default.
+    when(
+      () => repository.getExecutionTokenTotals(any()),
+    ).thenAnswer((_) async => {});
     when(
       () => activeProjectProvider.consumeCodebaseAnalysisOffer(),
     ).thenReturn(null);

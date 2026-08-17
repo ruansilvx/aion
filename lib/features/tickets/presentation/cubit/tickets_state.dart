@@ -40,6 +40,7 @@ class TicketsLoaded extends TicketsState {
     this.inFlightAdvanceIds = const {},
     this.blockedTicketIds = const {},
     this.pendingResumePrompt = const [],
+    this.executionTokenTotals = const {},
   });
 
   /// The tickets loaded so far, most recently created first (or by
@@ -95,6 +96,17 @@ class TicketsLoaded extends TicketsState {
   /// `aion-arch/changes/parallel-work`.
   final List<Ticket> pendingResumePrompt;
 
+  /// Task/Bug id → total coding-execution token spend recorded so far
+  /// (summed `inputTokens + outputTokens` across every
+  /// `"Coding Execution — "`-prefixed child chat's comments), mirroring
+  /// [TicketsCubit._executionTokenTotals]. An id absent from this map has
+  /// no recorded execution spend yet — `TokenCountLabel`'s Board-card
+  /// display precedence (see `_cardTokenLabel`) falls back to the
+  /// ticket's own `predictedExecutionTokensLow`/`High` in that case.
+  /// Recomputed by [TicketsCubit._refreshInFlightBoardState]. Added for
+  /// `aion-arch/changes/token-cost-prediction`.
+  final Map<String, int> executionTokenTotals;
+
   @override
   List<Object?> get props => [
     tickets,
@@ -104,6 +116,7 @@ class TicketsLoaded extends TicketsState {
     inFlightAdvanceIds,
     blockedTicketIds,
     pendingResumePrompt,
+    executionTokenTotals,
   ];
 }
 
@@ -355,6 +368,7 @@ class TicketDetailLoaded extends TicketsState {
     this.sddStageFailureReason,
     this.sddStageCanRetry = false,
     this.pendingToolProposal,
+    this.executionTokenTotal,
   });
 
   /// The loaded ticket.
@@ -501,6 +515,16 @@ class TicketDetailLoaded extends TicketsState {
   /// design.md §8.
   final PendingToolProposal? pendingToolProposal;
 
+  /// [ticket]'s (a `task`/`bug`) total coding-execution token spend
+  /// recorded so far — see `TicketsLoaded.executionTokenTotals`'s dartdoc
+  /// for the exact accumulation rule. `null` means no execution turn has
+  /// completed yet, in which case `TicketMetadataSection` falls back to
+  /// showing [ticket]'s own `predictedExecutionTokensLow`/`High` instead.
+  /// Computed by [TicketsCubit.getTicketById] from
+  /// [TicketsCubit._executionTokenTotals]. Added for
+  /// `aion-arch/changes/token-cost-prediction`.
+  final int? executionTokenTotal;
+
   @override
   List<Object?> get props => [
     ticket,
@@ -522,6 +546,7 @@ class TicketDetailLoaded extends TicketsState {
     sddStageFailureReason,
     sddStageCanRetry,
     pendingToolProposal,
+    executionTokenTotal,
   ];
 }
 

@@ -13,6 +13,7 @@ import 'package:aion/features/providers/presentation/cubit/execution_scheduling_
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/utils/sibling_cluster.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_selection_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
@@ -21,6 +22,7 @@ import 'package:aion/features/tickets/presentation/screens/tickets_list_screen.d
 import 'package:aion/features/tickets/presentation/widgets/execution_cancel_control.dart';
 import 'package:aion/features/tickets/presentation/widgets/resume_runs_prompt.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_overflow_menu.dart';
+import 'package:aion/features/tickets/presentation/widgets/token_count_label.dart';
 
 /// Fixed width of a single [BoardColumn].
 const double _kColumnWidth = 280.0;
@@ -431,6 +433,48 @@ enum _CardExecutionState { none, running, queued, advancing }
 bool _cardIsBlocked(TicketsState s, Ticket t) =>
     s is TicketsLoaded && s.blockedTicketIds.contains(t.id);
 
+/// Resolves [t]'s token-count figures for [_CardVisual]'s meta-chip row,
+/// or `null` when nothing should render — mirrors [_cardExecutionState]'s
+/// same no-signal-outside-`TicketsLoaded` floor, and its own record-return
+/// shape (rather than a [TokenCountLabel] instance directly, which would
+/// defeat `context.select`'s narrow-rebuild scoping — [StatelessWidget]
+/// has no value equality of its own, but a Dart record does). `null` for
+/// every ticket type other than [TicketType.task]/[TicketType.bug]
+/// (Component Spec §2.4 — coding execution, and therefore token spend, is
+/// a Task/Bug-only mechanism). Implements this change's display-
+/// precedence rule
+/// (`aion-arch/changes/token-cost-prediction/design.md` §5): a running
+/// total (from [TicketsLoaded.executionTokenTotals]) takes precedence
+/// over the persisted prediction whenever present; otherwise, the
+/// prediction shows only if [t] isn't currently running or queued — the
+/// queued-state carve-out (design.md §5, Component Spec §2.1) suppresses
+/// a stale leftover prediction for the entire window between a run being
+/// triggered and its first turn completing, not just while literally
+/// queued.
+({TokenCountMode mode, int? low, int? high, int? total})? _cardTokenLabel(
+  TicketsState s,
+  Ticket t,
+) {
+  if (t.type != TicketType.task && t.type != TicketType.bug) return null;
+  if (s is! TicketsLoaded) return null;
+
+  final total = s.executionTokenTotals[t.id];
+  if (total != null) {
+    return (mode: TokenCountMode.total, low: null, high: null, total: total);
+  }
+
+  final (execState, _) = _cardExecutionState(s, t);
+  if (execState == _CardExecutionState.running ||
+      execState == _CardExecutionState.queued) {
+    return null;
+  }
+
+  final low = t.predictedExecutionTokensLow;
+  final high = t.predictedExecutionTokensHigh;
+  if (low == null || high == null) return null;
+  return (mode: TokenCountMode.range, low: low, high: high, total: null);
+}
+
 /// The visual card body shared by [TicketBoardCard]'s in-place, drag
 /// feedback, and drag-placeholder renderings. Also renders a trailing
 /// [_BoardCardStatusBadge] in the meta-chip row (beside [TypeChip]/
@@ -443,9 +487,12 @@ bool _cardIsBlocked(TicketsState s, Ticket t) =>
 /// [_BoardCardStatusBadge]) when [ticket] has a live-children rollup —
 /// see
 /// `aion-arch/changes/estimate-timespent-rollup-for-ticket-hierarchy/design.md`
-/// §2.5. Added for
-/// `aion-arch/changes/board-execution-indicators-and-notifications` and
-/// `aion-arch/changes/board-task-ordering-indication`.
+/// §2.5. Also renders a [TokenCountLabel] (right after [RollupBadge],
+/// before [_BoardCardStatusBadge]) reflecting [_cardTokenLabel] — see
+/// that helper's dartdoc for the display-precedence rule. Added for
+/// `aion-arch/changes/board-execution-indicators-and-notifications`,
+/// `aion-arch/changes/board-task-ordering-indication`, and
+/// `aion-arch/changes/token-cost-prediction`.
 class _CardVisual extends StatelessWidget {
   const _CardVisual({
     required this.ticket,
@@ -487,6 +534,9 @@ class _CardVisual extends StatelessWidget {
     );
     final isBlocked = context.select(
       (TicketsCubit cubit) => _cardIsBlocked(cubit.state, ticket),
+    );
+    final tokenLabel = context.select(
+      (TicketsCubit cubit) => _cardTokenLabel(cubit.state, ticket),
     );
     // design.md §2.5: cards have no selection background variant, so
     // `RollupBadge` always uses its default fill here — no
@@ -567,11 +617,27 @@ class _CardVisual extends StatelessWidget {
                   const SizedBox(width: AionSpacing.sp8),
                   const _BlockedBadge(),
                 ],
-                if (hasRollup || execState != _CardExecutionState.none)
+                if (hasRollup ||
+                    tokenLabel != null ||
+                    execState != _CardExecutionState.none)
                   const Spacer(),
                 if (hasRollup) RollupBadge(ticket: ticket),
-                if (execState != _CardExecutionState.none) ...[
+                if (tokenLabel != null) ...[
                   if (hasRollup) const SizedBox(width: AionSpacing.sp8),
+                  tokenLabel.mode == TokenCountMode.total
+                      ? TokenCountLabel.total(
+                          total: tokenLabel.total!,
+                          variant: TokenCountVariant.compact,
+                        )
+                      : TokenCountLabel.range(
+                          low: tokenLabel.low!,
+                          high: tokenLabel.high!,
+                          variant: TokenCountVariant.compact,
+                        ),
+                ],
+                if (execState != _CardExecutionState.none) ...[
+                  if (hasRollup || tokenLabel != null)
+                    const SizedBox(width: AionSpacing.sp8),
                   _BoardCardStatusBadge(
                     status: execState,
                     queuePosition: queuePosition,

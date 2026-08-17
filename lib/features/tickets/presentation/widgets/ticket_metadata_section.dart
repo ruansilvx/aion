@@ -28,6 +28,7 @@ import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_list_screen.dart';
+import 'package:aion/features/tickets/presentation/widgets/token_count_label.dart';
 import 'package:aion/features/tickets/presentation/widgets/execution_cancel_control.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_link_picker.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_needs_repair_banner.dart';
@@ -70,6 +71,37 @@ import 'package:aion/features/tickets/presentation/widgets/ticket_parent_picker.
 /// section is for, but the body always renders from the freshest
 /// `TicketsCubit` state rather than this field directly.
 class TicketMetadataSection extends StatelessWidget {
+  /// Whether the predicted-token-range line (Component Spec §3) should
+  /// render for this build — [ticket] has a persisted prediction, and no
+  /// coding-execution chat exists yet for it. Implements this change's
+  /// display-precedence rule and its queued-state carve-out
+  /// (`aion-arch/changes/token-cost-prediction/design.md` §5): a stale
+  /// leftover prediction must stay hidden for the entire window between a
+  /// run being triggered and its first turn completing, not just while
+  /// [executionTokenTotal] happens to still be `null` for other reasons.
+  /// [executionAwaitingReview]/[executionFailureReason] cover the
+  /// completed-without-a-fresh-total and failed-run cases respectively —
+  /// either one, like [isExecuting]/[executionQueuePosition], means a
+  /// coding-execution chat already exists for [ticket].
+  static bool _showPredictedTokenRange(
+    Ticket ticket,
+    int? executionTokenTotal, {
+    required bool isExecuting,
+    required int? executionQueuePosition,
+    required bool executionAwaitingReview,
+    required String? executionFailureReason,
+  }) {
+    if (ticket.predictedExecutionTokensLow == null) return false;
+    if (executionTokenTotal != null) return false;
+    if (isExecuting ||
+        executionQueuePosition != null ||
+        executionAwaitingReview ||
+        executionFailureReason != null) {
+      return false;
+    }
+    return true;
+  }
+
   /// Creates a [TicketMetadataSection] for [ticket].
   const TicketMetadataSection({
     super.key,
@@ -77,6 +109,7 @@ class TicketMetadataSection extends StatelessWidget {
     required this.automationConfidence,
     required this.onAdvanceSddStage,
     required this.onMaybeAutoAdvance,
+    required this.executionTokenTotal,
   });
 
   /// The ticket this section renders metadata for — see the class doc
@@ -102,6 +135,18 @@ class TicketMetadataSection extends StatelessWidget {
   /// needs mutable state (`_autoAdvancedKey`) that belongs to the
   /// owning screen, not this stateless section.
   final void Function(Ticket ticket, bool canAdvance) onMaybeAutoAdvance;
+
+  /// [ticket]'s (a `task`/`bug`) total coding-execution token spend
+  /// recorded so far — passed down from the owning screen's own
+  /// `TicketDetailLoaded.executionTokenTotal`, the same "loaded by the
+  /// caller, passed down" pattern [automationConfidence] already uses,
+  /// rather than re-derived from this widget's own internal
+  /// `BlocBuilder` (the caller's outer `BlocBuilder` already rebuilds
+  /// this whole subtree on every relevant `TicketsCubit` emission, so
+  /// staleness isn't a concern). `null` means no coding-execution turn
+  /// has completed yet — see [_showPredictedTokenRange]. Added for
+  /// `aion-arch/changes/token-cost-prediction`.
+  final int? executionTokenTotal;
 
   /// [ActiveTicketViewRegistry] is only provided on desktop with a
   /// resolved project directory — mirrors
@@ -559,6 +604,39 @@ class TicketMetadataSection extends StatelessWidget {
                                 ),
                               ],
                             ),
+                            if (_showPredictedTokenRange(
+                              ticket,
+                              executionTokenTotal,
+                              isExecuting: isExecuting,
+                              executionQueuePosition: executionQueuePosition,
+                              executionAwaitingReview: executionAwaitingReview,
+                              executionFailureReason: executionFailureReason,
+                            )) ...[
+                              const SizedBox(height: AionSpacing.sp16),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    context
+                                        .l10n
+                                        .ticketDetailPredictedTokensCaption,
+                                    style: AionText.caption.copyWith(
+                                      color: c.textMuted,
+                                    ),
+                                  ),
+                                  const SizedBox(height: AionSpacing.sp8),
+                                  Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: TokenCountLabel.range(
+                                      low: ticket.predictedExecutionTokensLow!,
+                                      high:
+                                          ticket.predictedExecutionTokensHigh!,
+                                      variant: TokenCountVariant.detail,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                             if (needsDesignReview == true &&
                                 linkedDesignPage != null) ...[
                               const SizedBox(height: 11),
@@ -602,6 +680,7 @@ class TicketMetadataSection extends StatelessWidget {
                                     executionAwaitingReview,
                                 executionFailureReason: executionFailureReason,
                                 executionLiveActivity: executionLiveActivity,
+                                executionTokenTotal: executionTokenTotal,
                                 onMarkReadyForReview: () => context
                                     .read<TicketsCubit>()
                                     .changeTicketStatus(
@@ -2275,7 +2354,12 @@ class _ManualAdvanceButton extends StatelessWidget {
 /// [executionAwaitingReview] — the two are mutually exclusive, a Task is
 /// never both awaiting review and showing a failure. Per
 /// `aion-arch/changes/coding-execution-reliability-and-safety/design.md`
-/// §0.
+/// §0. Also renders a running-total [TokenCountLabel] line below the
+/// state body whenever [executionTokenTotal] is non-`null` — the
+/// in-flight variant ([_InFlightTokenLine]) while [isExecuting], the
+/// settled variant otherwise — without altering this section's own
+/// overall visibility gate above. Added for
+/// `aion-arch/changes/token-cost-prediction`.
 class _CodingExecutionSection extends StatelessWidget {
   const _CodingExecutionSection({
     required this.isExecuting,
@@ -2283,6 +2367,7 @@ class _CodingExecutionSection extends StatelessWidget {
     required this.executionAwaitingReview,
     required this.executionFailureReason,
     required this.executionLiveActivity,
+    required this.executionTokenTotal,
     required this.onMarkReadyForReview,
     required this.onRetry,
     required this.onCancel,
@@ -2293,6 +2378,13 @@ class _CodingExecutionSection extends StatelessWidget {
   final bool executionAwaitingReview;
   final String? executionFailureReason;
   final String? executionLiveActivity;
+
+  /// This Task's total coding-execution token spend recorded so far.
+  /// `null` while queued (no turn has completed yet) — the token line is
+  /// gated on this being non-`null` (Component Spec §4.2), independent
+  /// of the section's own overall visibility gate. Added for
+  /// `aion-arch/changes/token-cost-prediction`.
+  final int? executionTokenTotal;
   final VoidCallback onMarkReadyForReview;
   final VoidCallback onRetry;
 
@@ -2369,6 +2461,109 @@ class _CodingExecutionSection extends StatelessWidget {
                 context.l10n.ticketDetailCodingExecutionMarkReadyButton,
             onAction: onMarkReadyForReview,
           ),
+        // Gated on `executionTokenTotal != null` independent of the
+        // section's own state-body branch above — a queued run has no
+        // total yet (Component Spec §4.2), so this never renders
+        // alongside `_ExecutionQueueHint`.
+        if (executionTokenTotal != null) ...[
+          const SizedBox(height: 14),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: isExecuting
+                ? _InFlightTokenLine(total: executionTokenTotal!)
+                : TokenCountLabel.total(
+                    total: executionTokenTotal!,
+                    variant: TokenCountVariant.detail,
+                  ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// The execution banner's in-flight token line (Component Spec §4.3): a
+/// still-neutral [TokenCountLabel.total] paired with a *sibling* pulsing
+/// liveness dot and a `"counting…"` caption — the label itself never
+/// changes appearance while live (no accent recoloring); liveness is
+/// carried entirely by this row's own dot/caption, the same way
+/// `_WaitingForReplyIndicator` (`chat_transcript_pane.dart`) pairs a
+/// pulsing dot with its own waiting-for-reply caption. Static (no
+/// animation) under `MediaQuery.disableAnimations`. Added for
+/// `aion-arch/changes/token-cost-prediction`.
+class _InFlightTokenLine extends StatefulWidget {
+  const _InFlightTokenLine({required this.total});
+
+  /// The running total to render via [TokenCountLabel.total].
+  final int total;
+
+  @override
+  State<_InFlightTokenLine> createState() => _InFlightTokenLineState();
+}
+
+class _InFlightTokenLineState extends State<_InFlightTokenLine>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulseController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  );
+
+  bool _startedPulsing = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_startedPulsing && !MediaQuery.of(context).disableAnimations) {
+      _startedPulsing = true;
+      _pulseController.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    final reducedMotion = MediaQuery.of(context).disableAnimations;
+    final dot = DecoratedBox(
+      decoration: BoxDecoration(color: c.primary, shape: BoxShape.circle),
+      child: const SizedBox(width: 7, height: 7),
+    );
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        TokenCountLabel.total(
+          total: widget.total,
+          variant: TokenCountVariant.detail,
+          live: true,
+        ),
+        const SizedBox(width: 8),
+        reducedMotion
+            ? dot
+            : ScaleTransition(
+                scale: Tween<double>(
+                  begin: 0.8,
+                  end: 1.0,
+                ).animate(_pulseController),
+                child: FadeTransition(
+                  opacity: Tween<double>(
+                    begin: 0.35,
+                    end: 1.0,
+                  ).animate(_pulseController),
+                  child: dot,
+                ),
+              ),
+        const SizedBox(width: 8),
+        Text(
+          context.l10n.ticketDetailTokenCountingCaption,
+          style: AionText.time.copyWith(color: c.textMuted),
+        ),
       ],
     );
   }

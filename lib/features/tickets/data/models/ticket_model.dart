@@ -117,6 +117,17 @@ class TicketsTable extends Table {
   TextColumn get estimateSource =>
       text().named('estimate_source').nullable()();
 
+  /// Low end of the pre-execution token-cost estimate range, nullable.
+  /// Written only by `TicketTokenPredictor` via
+  /// `TicketRepository.applyTokenPrediction`.
+  IntColumn get predictedExecutionTokensLow =>
+      integer().named('predicted_execution_tokens_low').nullable()();
+
+  /// High end of the pre-execution token-cost estimate range, nullable.
+  /// See [predictedExecutionTokensLow].
+  IntColumn get predictedExecutionTokensHigh =>
+      integer().named('predicted_execution_tokens_high').nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
 }

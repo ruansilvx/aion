@@ -71,6 +71,7 @@ Widget _wrap({
                   automationConfidence: null,
                   onAdvanceSddStage: (_) {},
                   onMaybeAutoAdvance: (_, _) {},
+                  executionTokenTotal: null,
                 ),
               ),
             ),

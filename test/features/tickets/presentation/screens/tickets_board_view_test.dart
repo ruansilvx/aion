@@ -13,6 +13,7 @@ import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/providers/domain/enums/execution_scheduling_mode.dart';
 import 'package:aion/features/providers/domain/repositories/execution_scheduling_repository.dart';
 import 'package:aion/features/providers/presentation/cubit/execution_scheduling_cubit.dart';
+import 'package:aion/features/tickets/presentation/widgets/token_count_label.dart';
 import 'package:aion/features/tickets/tickets.dart';
 import 'package:aion/l10n/generated/app_localizations.dart';
 
@@ -160,6 +161,110 @@ void main() {
     expect(find.text('Running'), findsNothing);
     expect(find.textContaining('Queued'), findsNothing);
     expect(find.text('Advancing'), findsNothing);
+  });
+
+  group('_cardTokenLabel precedence (token-cost-prediction)', () {
+    final taskWithPrediction = Ticket(
+      id: 'task-2',
+      ticketId: 'AIO-3',
+      type: TicketType.task,
+      title: 'A predicted Task',
+      status: TicketStatus.backlog,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+      predictedExecutionTokensLow: 28000,
+      predictedExecutionTokensHigh: 61000,
+    );
+
+    testWidgets(
+      'a running total present takes precedence over a predicted range',
+      (tester) async {
+        await tester.pumpWidget(
+          _wrap(
+            ticketsState: TicketsLoaded(
+              [taskWithPrediction],
+              hasMore: false,
+              executionTokenTotals: const {'task-2': 18400},
+            ),
+            card: TicketBoardCard(ticket: taskWithPrediction),
+          ),
+        );
+        await tester.pump();
+
+        expect(find.text('~18.4K'), findsOneWidget);
+        expect(find.text('~28K–61K'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'a predicted range shows when no running total is present',
+      (tester) async {
+        await tester.pumpWidget(
+          _wrap(
+            ticketsState: TicketsLoaded([taskWithPrediction], hasMore: false),
+            card: TicketBoardCard(ticket: taskWithPrediction),
+          ),
+        );
+        await tester.pump();
+
+        expect(find.text('~28K–61K'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'neither a running total nor a predicted range renders nothing',
+      (tester) async {
+        await tester.pumpWidget(
+          _wrap(
+            ticketsState: TicketsLoaded([task], hasMore: false),
+            card: TicketBoardCard(ticket: task),
+          ),
+        );
+        await tester.pump();
+
+        expect(find.byType(TokenCountLabel), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'a non-task/bug ticket never renders a token label, even with a '
+      'running total keyed to its id',
+      (tester) async {
+        await tester.pumpWidget(
+          _wrap(
+            ticketsState: TicketsLoaded(
+              [epic],
+              hasMore: false,
+              executionTokenTotals: {epic.id: 18400},
+            ),
+            card: TicketBoardCard(ticket: epic),
+          ),
+        );
+        await tester.pump();
+
+        expect(find.byType(TokenCountLabel), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'a queued run suppresses a stale predicted range — the queued-state '
+      'carve-out',
+      (tester) async {
+        await tester.pumpWidget(
+          _wrap(
+            ticketsState: TicketsLoaded(
+              [taskWithPrediction],
+              hasMore: false,
+              executionQueuePositions: const {'task-2': 1},
+            ),
+            card: TicketBoardCard(ticket: taskWithPrediction),
+          ),
+        );
+        await tester.pump();
+
+        expect(find.byType(TokenCountLabel), findsNothing);
+      },
+    );
   });
 
   testWidgets(

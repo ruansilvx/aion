@@ -260,4 +260,33 @@ abstract interface class TicketRepository {
   /// [TicketDocumentSearchService] to scan every page/resource ticket for
   /// embedding-based search.
   Future<List<Ticket>> getAllTicketsByType(List<TicketType> types);
+
+  /// For each id in [taskIds], sums `inputTokens + outputTokens` (each
+  /// treated as `0` when `null`) across every comment in every one of
+  /// that task's `"Coding Execution — "`-prefixed `chat` children —
+  /// spanning implement/verify turns, retries, and continuation handoffs
+  /// alike, since a continuation handoff chat also carries that same
+  /// prefix (see `TicketsCubit._executionChatTitle`). One batched grouped
+  /// query, not one query per id — the whole point of taking a list.
+  /// Returns only the ids whose total is non-zero; an id with no
+  /// execution chats yet, or whose execution chats have no comments,
+  /// is simply absent from the result map rather than mapped to `0`.
+  /// Powers both `TicketTokenPredictor`'s candidate token-history lookups
+  /// and `TicketsCubit`'s running-total cache.
+  Future<Map<String, int>> getExecutionTokenTotals(List<String> taskIds);
+
+  /// Writes a token-cost prediction for the ticket with id [id]: [low]
+  /// and [high] together replace `predictedExecutionTokensLow`/
+  /// `predictedExecutionTokensHigh`. Never routed through
+  /// [updateTicket]/`copyWith` — a dedicated write, mirroring
+  /// [applyEstimationSuggestion]'s own shape, so a plain content edit
+  /// can't accidentally clobber a value only `TicketTokenPredictor` should
+  /// touch. Never touches `updatedAt` — a prediction is a background side
+  /// effect, not a user edit, mirroring [updateEmbedding]/[updateRollup].
+  /// Throws if [id] does not exist.
+  Future<void> applyTokenPrediction(
+    String id, {
+    required int low,
+    required int high,
+  });
 }

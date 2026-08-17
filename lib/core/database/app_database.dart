@@ -111,7 +111,12 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
 /// adds [ExecutionQueueTable], with no backfill — a pre-13 database has
 /// no persisted queue state to migrate; `TicketsCubit.restoreExecutionQueue`
 /// simply finds nothing to resume on its first post-upgrade launch. See
-/// `aion-arch/changes/parallel-work/design.md` §7.
+/// `aion-arch/changes/parallel-work/design.md` §7. Version 14 adds
+/// `TicketsTable.predictedExecutionTokensLow`/`predictedExecutionTokensHigh`,
+/// with no backfill — a pre-14 database has no recorded predictions to
+/// migrate; `TicketTokenPredictor` simply produces its first estimate for
+/// each not-yet-executed `task`/`bug` ticket the next time it's created or
+/// updated. See `aion-arch/changes/token-cost-prediction/design.md` §1.2.
 @DriftDatabase(
   tables: [
     TicketsTable,
@@ -133,7 +138,7 @@ class AppDatabase extends _$AppDatabase {
     : super(executor ?? _openConnection(project));
 
   @override
-  int get schemaVersion => 13;
+  int get schemaVersion => 14;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -215,6 +220,16 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 13) {
         await m.createTable(executionQueueTable);
+      }
+      if (from < 14) {
+        await m.addColumn(
+          ticketsTable,
+          ticketsTable.predictedExecutionTokensLow,
+        );
+        await m.addColumn(
+          ticketsTable,
+          ticketsTable.predictedExecutionTokensHigh,
+        );
       }
     },
   );
