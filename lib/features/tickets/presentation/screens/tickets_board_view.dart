@@ -78,18 +78,34 @@ String ticketsErrorMessage(BuildContext context, TicketsErrorReason reason) {
 }
 
 /// The `/tickets` board view: tickets grouped into one column per
-/// [TicketStatus], in declaration order — all 6 columns always render,
-/// including when a status has no tickets. [tickets] must already be
-/// filtered by the caller (e.g. to task/story types); this widget only
-/// groups by status, it does not filter by type. Pins [ResumeRunsPrompt]
-/// above the columns whenever `TicketsLoaded.pendingResumePrompt` is
-/// non-empty. Added for `aion-arch/changes/parallel-work`.
+/// [TicketStatus], in declaration order — every column not in
+/// [hiddenStatuses] renders, including when a visible status has no
+/// tickets; column *order* is unaffected by [hiddenStatuses], only which
+/// columns appear at all. [tickets] must already be filtered by the
+/// caller (e.g. to task/story types); this widget only groups by status
+/// and applies visibility, it does not filter by type. Pins
+/// [ResumeRunsPrompt] above the columns whenever
+/// `TicketsLoaded.pendingResumePrompt` is non-empty. Added for
+/// `aion-arch/changes/parallel-work`; [hiddenStatuses] added for
+/// `aion-arch/changes/list-board-view-and-column-visibility`.
 class TicketBoardView extends StatelessWidget {
-  /// Creates a [TicketBoardView] rendering [tickets] grouped by status.
-  const TicketBoardView({super.key, required this.tickets});
+  /// Creates a [TicketBoardView] rendering [tickets] grouped by status,
+  /// skipping every status in [hiddenStatuses].
+  const TicketBoardView({
+    super.key,
+    required this.tickets,
+    required this.hiddenStatuses,
+  });
 
   /// The tickets to render, already filtered to the desired ticket types.
   final List<Ticket> tickets;
+
+  /// Statuses whose column is currently hidden — see
+  /// `TicketsCubit.hiddenBoardColumns`. A display preference only: a
+  /// ticket can still be moved into a hidden status via
+  /// [MoveToStatusMenu], it simply won't be visible on the board until
+  /// that column is shown again.
+  final Set<TicketStatus> hiddenStatuses;
 
   @override
   Widget build(BuildContext context) {
@@ -116,7 +132,9 @@ class TicketBoardView extends StatelessWidget {
             ),
             child: ResumeRunsPrompt(tickets: pendingResumePrompt),
           ),
-        Expanded(child: _BoardColumns(grouped: grouped)),
+        Expanded(
+          child: _BoardColumns(grouped: grouped, hiddenStatuses: hiddenStatuses),
+        ),
       ],
     );
   }
@@ -125,30 +143,118 @@ class TicketBoardView extends StatelessWidget {
 /// The horizontal, per-status-column region of [TicketBoardView] —
 /// hoisted out so [TicketBoardView.build] can wrap it with
 /// [ResumeRunsPrompt] above without nesting the whole column list one
-/// level deeper. Added for `aion-arch/changes/parallel-work`.
+/// level deeper. Added for `aion-arch/changes/parallel-work`. Renders
+/// [_NoColumnsVisibleHint] instead of the column scroller when every
+/// status is in [hiddenStatuses] — added for
+/// `aion-arch/changes/list-board-view-and-column-visibility`.
 class _BoardColumns extends StatelessWidget {
-  const _BoardColumns({required this.grouped});
+  const _BoardColumns({required this.grouped, required this.hiddenStatuses});
 
   final Map<TicketStatus, List<Ticket>> grouped;
+  final Set<TicketStatus> hiddenStatuses;
 
   @override
   Widget build(BuildContext context) {
+    final visibleStatuses = TicketStatus.values
+        .where((s) => !hiddenStatuses.contains(s))
+        .toList();
+    if (visibleStatuses.isEmpty) {
+      return const _NoColumnsVisibleHint();
+    }
     return ListView.separated(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(
         horizontal: AionSpacing.sp20,
         vertical: AionSpacing.sp16,
       ),
-      itemCount: TicketStatus.values.length,
+      itemCount: visibleStatuses.length,
       separatorBuilder: (context, index) =>
           const SizedBox(width: AionSpacing.sp12),
       itemBuilder: (context, index) {
-        final status = TicketStatus.values[index];
+        final status = visibleStatuses[index];
         return SizedBox(
           width: _kColumnWidth,
           child: BoardColumn(status: status, tickets: grouped[status]!),
         );
       },
+    );
+  }
+}
+
+/// Centered empty-state content shown in place of [_BoardColumns]'
+/// horizontal scroller when every [TicketStatus] column is currently
+/// hidden (the user unchecked every row in `TicketColumnsPopover`).
+/// Distinct from `TicketsListScreen`'s "No tickets match your search"/
+/// "No tickets yet" empty states, which are about ticket *content*, not
+/// column *visibility* — reachable only through deliberate user action,
+/// and just as reachable back out of via the still-available Columns
+/// trigger above. Added for
+/// `aion-arch/changes/list-board-view-and-column-visibility`; see that
+/// change's design.md §6 and Component Spec §4.
+class _NoColumnsVisibleHint extends StatelessWidget {
+  const _NoColumnsVisibleHint();
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    final isDark = t.isDark;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 44),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: c.primaryWash(isDark),
+                borderRadius: BorderRadius.all(AionRadius.xl),
+                border: Border.all(
+                  color: c.columnsMotifBorderTint(isDark),
+                  width: 1,
+                ),
+              ),
+              child: SizedBox(
+                width: 60,
+                height: 60,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    for (var i = 0; i < 3; i++) ...[
+                      if (i > 0) const SizedBox(width: 4),
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: c.columnsMotifBarTint,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                        child: const SizedBox(width: 6, height: 24),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              context.l10n.ticketsListNoColumnsVisibleTitle,
+              textAlign: TextAlign.center,
+              style: AionText.body.copyWith(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: c.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 7),
+            Text(
+              context.l10n.ticketsListNoColumnsVisibleHint,
+              textAlign: TextAlign.center,
+              style: AionText.bodySm.copyWith(color: c.textMuted, height: 1.5),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

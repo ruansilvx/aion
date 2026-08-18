@@ -10,6 +10,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
+import 'package:aion/features/tickets/domain/entities/ticket_list_view_mode.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
@@ -24,6 +25,7 @@ import 'package:aion/features/tickets/presentation/widgets/codebase_analysis_ban
 import 'package:aion/features/tickets/domain/entities/ticket_list_sort.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sort_direction.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sort_field.dart';
+import 'package:aion/features/tickets/presentation/widgets/ticket_columns_popover.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_filter_popover.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_overflow_menu.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_selection_bar.dart';
@@ -58,23 +60,7 @@ class TicketsListScreen extends StatefulWidget {
   State<TicketsListScreen> createState() => _TicketsListScreenState();
 }
 
-/// Which rendering [_TicketsListScreenState] uses for the loaded ticket
-/// list. Local, non-persisted UI state — the screen always opens in
-/// [board] (see
-/// `aion-arch/changes/ticket-sort-control-and-board-as-default-view`); a
-/// fixed default, not user-configurable, exactly as [list] was the fixed
-/// default before.
-enum _TicketViewMode {
-  /// The flat, chronologically-sorted [ListView] of every ticket.
-  list,
-
-  /// [TicketBoardView], grouped by status and filtered to task/story
-  /// tickets.
-  board,
-}
-
 class _TicketsListScreenState extends State<TicketsListScreen> {
-  _TicketViewMode _viewMode = _TicketViewMode.board;
 
   /// Whether to show [CodebaseAnalysisBanner] — set once in [initState]
   /// from `ActiveProjectProvider.offerCodebaseAnalysis`, then owned
@@ -141,21 +127,64 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
     unawaited(_initializeAndSearch());
   }
 
-  /// Awaits [TicketsCubit.loadPersistedFilters]/
-  /// [TicketsCubit.loadPersistedSort] (restoring this project's saved
-  /// filter and sort selections, if any, into the cubit's remembered
-  /// fields), then runs [_runSearch] — so the very first search after
-  /// opening the ticket list already reflects both persisted selections
+  /// Awaits [TicketsCubit.loadPersistedViewMode]/
+  /// [TicketsCubit.loadPersistedBoardColumnVisibility]/
+  /// [TicketsCubit.loadPersistedFilters]/[TicketsCubit.loadPersistedSort]
+  /// (restoring this project's saved view mode/hidden-column/filter/sort
+  /// selections, if any, into the cubit's remembered fields), forces a
+  /// rebuild so the first paint reflects the restored view mode/hidden
+  /// columns (neither lives in [TicketsState], so nothing else would
+  /// otherwise pick them up before this — same reasoning
+  /// [_handleViewModeChanged]/[_handleColumnVisibilityToggled] document),
+  /// then runs [_runSearch] — so the very first search after opening the
+  /// ticket list already reflects the persisted filter/sort selections
   /// instead of flashing an unfiltered, implicitly-sorted list first.
   /// Called via `unawaited(...)` from [initState], same fire-and-forget
   /// precedent this file already uses for
   /// [_loadBaselineUpgradeTargetVersion].
   Future<void> _initializeAndSearch() async {
     final cubit = context.read<TicketsCubit>();
+    await cubit.loadPersistedViewMode();
+    await cubit.loadPersistedBoardColumnVisibility();
     await cubit.loadPersistedFilters();
     await cubit.loadPersistedSort();
     if (!mounted) return;
+    setState(() {});
     _runSearch();
+  }
+
+  /// Calls [TicketsCubit.setViewMode] with [mode], then forces a local
+  /// rebuild so [_ViewModeToggle] and the board/list body switch reflect
+  /// the new selection immediately. [TicketsCubit.setViewMode] never
+  /// emits a [TicketsState] (a view-mode change doesn't affect which
+  /// tickets are loaded), so nothing about `context.watch`ing the cubit
+  /// elsewhere in this build would pick the change up on its own — same
+  /// forced-rebuild precedent `_TicketFilterAndSortSectionState
+  /// ._handleSortSelected` already established for `setSort`'s
+  /// `currentSort`, which likewise lives outside [TicketsState].
+  Future<void> _handleViewModeChanged(TicketListViewMode mode) async {
+    await context.read<TicketsCubit>().setViewMode(mode);
+    if (mounted) setState(() {});
+  }
+
+  /// Calls [TicketsCubit.toggleBoardColumnVisibility] for [status], then
+  /// forces a local rebuild — same reasoning as
+  /// [_handleViewModeChanged]. This lives on
+  /// [_TicketsListScreenState] itself, not inside
+  /// `_TicketFilterAndSortSectionState` the way the Filters popover's own
+  /// `onToggleStatus`/`onToggleType`/`onTogglePriority` are wired: those
+  /// three each re-run `searchTickets()` internally, whose resulting
+  /// [TicketsLoaded] emission is what eventually updates [TicketBoardView]
+  /// (a sibling of `_TicketFilterAndSortSection`, outside its subtree) via
+  /// its own independent `context.watch` subscription.
+  /// [TicketsCubit.toggleBoardColumnVisibility] has no such emission to
+  /// piggyback on, so the forced rebuild has to happen here, at the
+  /// common ancestor of both `_TicketFilterAndSortSection` (the Columns
+  /// trigger) and [TicketBoardView] (which reads `hiddenBoardColumns` to
+  /// decide which columns to skip).
+  Future<void> _handleColumnVisibilityToggled(TicketStatus status) async {
+    await context.read<TicketsCubit>().toggleBoardColumnVisibility(status);
+    if (mounted) setState(() {});
   }
 
   @override
@@ -288,12 +317,13 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
     _ => false,
   };
 
-  /// Narrows [tickets] to whatever [_viewMode] actually renders as
-  /// selectable rows/cards — the board view only shows story/task/bug
-  /// types, so "select all" while on the board must not silently include
-  /// ids for tickets that have no checkbox on screen.
+  /// Narrows [tickets] to whatever `TicketsCubit.currentViewMode` actually
+  /// renders as selectable rows/cards — the board view only shows
+  /// story/task/bug types, so "select all" while on the board must not
+  /// silently include ids for tickets that have no checkbox on screen.
   List<Ticket> _visibleTickets(List<Ticket> tickets) {
-    if (_viewMode == _TicketViewMode.board) {
+    if (context.read<TicketsCubit>().currentViewMode ==
+        TicketListViewMode.board) {
       return tickets
           .where((t) => t.type == TicketType.story || t.type.isExecutable)
           .toList();
@@ -390,6 +420,11 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
           final tickets = _currentTickets(state);
           final visibleTickets = _visibleTickets(tickets);
           final selection = context.watch<TicketSelectionCubit>().state;
+          // Read fresh every build rather than cached in a field — see
+          // _handleViewModeChanged/_handleColumnVisibilityToggled for why
+          // this and hiddenBoardColumns both live on TicketsCubit outside
+          // TicketsState, and force their own rebuild after mutating it.
+          final viewMode = context.read<TicketsCubit>().currentViewMode;
 
           return ColoredBox(
             color: c.background,
@@ -420,9 +455,8 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                                 ),
                               ),
                               _ViewModeToggle(
-                                mode: _viewMode,
-                                onChanged: (mode) =>
-                                    setState(() => _viewMode = mode),
+                                mode: viewMode,
+                                onChanged: _handleViewModeChanged,
                               ),
                               if (tickets.isNotEmpty) ...[
                                 const SizedBox(width: AionSpacing.sp8),
@@ -490,6 +524,9 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                             hasActiveQuery: _searchController.text
                                 .trim()
                                 .isNotEmpty,
+                            viewMode: viewMode,
+                            onToggleColumnVisibility:
+                                _handleColumnVisibilityToggled,
                           ),
                         ],
                       ),
@@ -561,7 +598,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                                 child: _TicketsBody(
                                   tickets: tickets,
                                   state: state,
-                                  viewMode: _viewMode,
+                                  viewMode: viewMode,
                                   hasActiveFilter: _hasActiveFilter,
                                   scrollController: _scrollController,
                                 ),
@@ -615,7 +652,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                       ),
                     ),
                   ),
-                if (_viewMode == _TicketViewMode.board &&
+                if (viewMode == TicketListViewMode.board &&
                     (_hasMore(state) || state is TicketsLoadingMore) &&
                     !selection.isActive)
                   Positioned(
@@ -654,7 +691,7 @@ class _TicketsBody extends StatelessWidget {
 
   final List<Ticket> tickets;
   final TicketsState state;
-  final _TicketViewMode viewMode;
+  final TicketListViewMode viewMode;
   final bool hasActiveFilter;
   final ScrollController scrollController;
 
@@ -716,14 +753,17 @@ class _TicketsBody extends StatelessWidget {
       );
     }
 
-    if (viewMode == _TicketViewMode.board) {
+    if (viewMode == TicketListViewMode.board) {
       final boardTickets = tickets
           .where(
             (ticket) =>
                 ticket.type == TicketType.story || ticket.type.isExecutable,
           )
           .toList();
-      return TicketBoardView(tickets: boardTickets);
+      return TicketBoardView(
+        tickets: boardTickets,
+        hiddenStatuses: context.read<TicketsCubit>().hiddenBoardColumns,
+      );
     }
 
     final isLoadingMore = state is TicketsLoadingMore;
@@ -810,10 +850,10 @@ class _ViewModeToggle extends StatelessWidget {
   const _ViewModeToggle({required this.mode, required this.onChanged});
 
   /// The currently active view mode.
-  final _TicketViewMode mode;
+  final TicketListViewMode mode;
 
   /// Called with the newly selected mode when the user taps an icon.
-  final ValueChanged<_TicketViewMode> onChanged;
+  final ValueChanged<TicketListViewMode> onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -823,15 +863,15 @@ class _ViewModeToggle extends StatelessWidget {
         _ViewModeIcon(
           icon: PhosphorIcons.listLight,
           label: context.l10n.ticketsListSwitchToListView,
-          isActive: mode == _TicketViewMode.list,
-          onTap: () => onChanged(_TicketViewMode.list),
+          isActive: mode == TicketListViewMode.list,
+          onTap: () => onChanged(TicketListViewMode.list),
         ),
         const SizedBox(width: AionSpacing.sp4),
         _ViewModeIcon(
           icon: PhosphorIcons.hexagonLight,
           label: context.l10n.ticketsListSwitchToBoardView,
-          isActive: mode == _TicketViewMode.board,
-          onTap: () => onChanged(_TicketViewMode.board),
+          isActive: mode == TicketListViewMode.board,
+          onTap: () => onChanged(TicketListViewMode.board),
         ),
       ],
     );
@@ -1004,7 +1044,11 @@ class _SelectModeToggleState extends State<_SelectModeToggle> {
 /// added; see
 /// `aion-arch/changes/ticket-sort-control-and-board-as-default-view`.
 class _TicketFilterAndSortSection extends StatefulWidget {
-  const _TicketFilterAndSortSection({required this.hasActiveQuery});
+  const _TicketFilterAndSortSection({
+    required this.hasActiveQuery,
+    required this.viewMode,
+    required this.onToggleColumnVisibility,
+  });
 
   /// Whether the search field currently holds non-whitespace text —
   /// passed down from `_TicketsListScreenState` (which owns the search
@@ -1013,6 +1057,20 @@ class _TicketFilterAndSortSection extends StatefulWidget {
   /// [TicketSortPopover]'s `Relevance` row is enabled — see
   /// [TicketSortPopover.hasActiveQuery].
   final bool hasActiveQuery;
+
+  /// The currently active view mode — gates whether the Columns trigger
+  /// renders at all (it has no meaning in
+  /// [TicketListViewMode.list] mode). Added for
+  /// `aion-arch/changes/list-board-view-and-column-visibility`.
+  final TicketListViewMode viewMode;
+
+  /// Called with the toggled status when a `TicketColumnsPopover` row is
+  /// tapped/activated. Threaded in from `_TicketsListScreenState`
+  /// (`_handleColumnVisibilityToggled`) rather than wired locally here
+  /// the way `onToggleStatus`/`onToggleType`/`onTogglePriority` below
+  /// are — see that method's own dartdoc for why. Added for
+  /// `aion-arch/changes/list-board-view-and-column-visibility`.
+  final ValueChanged<TicketStatus> onToggleColumnVisibility;
 
   @override
   State<_TicketFilterAndSortSection> createState() =>
@@ -1032,6 +1090,16 @@ class _TicketFilterAndSortSectionState
   /// [_isTriggerFocused] for the Sort trigger.
   bool _isSortTriggerFocused = false;
 
+  /// Whether `TicketColumnsPopover`'s overlay is currently open — mirrors
+  /// [_isPopoverOpen] for the Columns trigger. Added for
+  /// `aion-arch/changes/list-board-view-and-column-visibility`.
+  bool _isColumnsPopoverOpen = false;
+
+  /// Whether the Columns trigger currently holds keyboard focus — mirrors
+  /// [_isTriggerFocused] for the Columns trigger. Added for
+  /// `aion-arch/changes/list-board-view-and-column-visibility`.
+  bool _isColumnsTriggerFocused = false;
+
   @override
   Widget build(BuildContext context) {
     final cubit = context.watch<TicketsCubit>();
@@ -1044,6 +1112,7 @@ class _TicketFilterAndSortSectionState
         selectedPriorities.length;
     final hasChips = activeCount > 0;
     final currentSort = cubit.currentSort;
+    final hiddenColumns = cubit.hiddenBoardColumns;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1085,6 +1154,22 @@ class _TicketFilterAndSortSectionState
               onFocusChanged: (isFocused) =>
                   setState(() => _isSortTriggerFocused = isFocused),
             ),
+            if (widget.viewMode == TicketListViewMode.board) ...[
+              const SizedBox(width: AionSpacing.sp8),
+              TicketColumnsPopover(
+                trigger: _ColumnsTriggerButton(
+                  hiddenCount: hiddenColumns.length,
+                  isOpen: _isColumnsPopoverOpen,
+                  isFocused: _isColumnsTriggerFocused,
+                ),
+                hiddenStatuses: hiddenColumns,
+                onToggleColumn: widget.onToggleColumnVisibility,
+                onOpenChanged: (isOpen) =>
+                    setState(() => _isColumnsPopoverOpen = isOpen),
+                onFocusChanged: (isFocused) =>
+                    setState(() => _isColumnsTriggerFocused = isFocused),
+              ),
+            ],
           ],
         ),
         if (hasChips) ...[
@@ -1444,6 +1529,149 @@ String _triggerFieldLabel(BuildContext context, TicketSortField field) {
     return context.l10n.ticketsListSortFieldUpdatedAtAbbreviated;
   }
   return ticketSortFieldLabel(context, field);
+}
+
+/// The "Columns" trigger button that opens `TicketColumnsPopover`. A
+/// visual sibling of [_FilterTriggerButton] — same idle/active/open/
+/// focused state language — differing only in icon (a column-layout
+/// glyph, not a funnel), label text, and badge semantics: the trailing
+/// count reflects how many columns are currently **hidden**, mirroring
+/// Filters' "how many filters are active" badge grammar rather than
+/// Sort's label-text swap, since a hidden-column count is naturally a
+/// number to show, not a field name. Purely presentational —
+/// `TicketColumnsPopover` (which wraps this as its `trigger`) owns the
+/// actual tap/keyboard-activation handling; [isOpen] and [isFocused] are
+/// fed back in via `TicketColumnsPopover.onOpenChanged`/
+/// `TicketColumnsPopover.onFocusChanged`. Rendered only while Board mode
+/// is active — see `_TicketFilterAndSortSection`'s `viewMode` gating.
+/// See `aion-arch/changes/list-board-view-and-column-visibility/design.md`
+/// §7.2 and that change's Component Spec §2.
+class _ColumnsTriggerButton extends StatefulWidget {
+  const _ColumnsTriggerButton({
+    required this.hiddenCount,
+    required this.isOpen,
+    required this.isFocused,
+  });
+
+  /// How many board status columns are currently hidden. Zero means the
+  /// idle sub-state; any other value means active, with the count shown
+  /// in a trailing badge.
+  final int hiddenCount;
+
+  /// Whether `TicketColumnsPopover`'s overlay is currently open —
+  /// rendered as the same emphasized look as keyboard focus.
+  final bool isOpen;
+
+  /// Whether this trigger currently holds keyboard focus — rendered as
+  /// the same emphasized look as [isOpen].
+  final bool isFocused;
+
+  @override
+  State<_ColumnsTriggerButton> createState() => _ColumnsTriggerButtonState();
+}
+
+class _ColumnsTriggerButtonState extends State<_ColumnsTriggerButton> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    final isActive = widget.hiddenCount > 0;
+    final showRing = widget.isOpen || widget.isFocused;
+    final emphasized = isActive || showRing;
+
+    final Color fill = isActive ? c.primarySubtle : c.surface;
+    final Color border = isActive
+        ? c.primary
+        : (showRing ? c.primary : (_isHovered ? c.borderStrong : c.border));
+    final Color foreground = isActive
+        ? c.primary
+        : (showRing ? c.primary : c.textSecondary);
+    final Color labelColor = isActive || showRing
+        ? (isActive ? c.primary : c.textPrimary)
+        : c.textPrimary;
+
+    return Semantics(
+      button: true,
+      label: context.l10n.ticketsListColumnsTriggerSemantics(
+        widget.hiddenCount,
+      ),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: fill,
+            borderRadius: BorderRadius.all(AionRadius.lg),
+            border: Border.all(color: border, width: emphasized ? 1.5 : 1),
+            boxShadow: showRing
+                ? [
+                    BoxShadow(
+                      color: c.primary.withValues(
+                        alpha: t.isDark ? 0.30 : 0.16,
+                      ),
+                      spreadRadius: 3,
+                    ),
+                  ]
+                : const <BoxShadow>[],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              PhosphorIcon(
+                PhosphorIcons.columnsLight,
+                size: 16,
+                color: foreground,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                context.l10n.ticketsListColumnsTriggerLabel,
+                style: AionText.button.copyWith(color: labelColor),
+              ),
+              if (isActive) ...[
+                const SizedBox(width: 8),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: c.primary,
+                    borderRadius: BorderRadius.all(AionRadius.pill),
+                  ),
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: widget.hiddenCount >= 10 ? 5 : 0,
+                      vertical: 1,
+                    ),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        minWidth: 18,
+                        minHeight: 18,
+                      ),
+                      child: Center(
+                        child: Text(
+                          '${widget.hiddenCount}',
+                          style: const TextStyle(
+                            fontFamily: 'Manrope',
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            height: 1.0,
+                            color: Color(0xFFFFFFFF),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// The last item appended to [TicketsListScreen]'s flat `ListView` while

@@ -604,4 +604,17 @@ extension AionColorsHubTokens on AionColors {
   /// success/danger banner borders.
   Color chatBorderTint(bool isDark) =>
       typeChat.withValues(alpha: isDark ? 0.42 : 0.28);
+
+  // primary family — _NoColumnsVisibleHint's motif (the board's
+  // all-columns-hidden empty state). Distinct alpha stops from
+  // primaryWash/focusRing above, so not reused from either. Added for
+  // list-board-view-and-column-visibility; see that change's design.md
+  // (Component Spec) §4.3.
+  /// `_NoColumnsVisibleHint`'s motif border.
+  Color columnsMotifBorderTint(bool isDark) =>
+      primary.withValues(alpha: isDark ? 0.30 : 0.18);
+
+  /// `_NoColumnsVisibleHint`'s motif bar fill — flat across both themes,
+  /// unlike every other tint in this family (Component Spec §4.3).
+  Color get columnsMotifBarTint => primary.withValues(alpha: 0.28);
 }

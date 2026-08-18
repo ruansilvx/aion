@@ -411,6 +411,7 @@ void main() {
                     tickets: state is TicketsLoaded
                         ? state.tickets
                         : const <Ticket>[],
+                    hiddenStatuses: const {},
                   ),
                 ),
               ),
