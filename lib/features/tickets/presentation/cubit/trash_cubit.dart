@@ -1,10 +1,9 @@
 // presentation/cubit/trash_cubit.dart — TrashCubit business logic (presentation layer).
 
-import 'dart:async';
-
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
+import 'package:aion/features/tickets/data/services/ticket_parent_trash_service.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_list_sort.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sort_direction.dart';
@@ -12,7 +11,6 @@ import 'package:aion/features/tickets/domain/enums/ticket_sort_field.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_list_sort_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
 import 'package:aion/features/tickets/domain/utils/ticket_sort_comparator.dart';
-import 'package:aion/features/tickets/presentation/cubit/ticket_rollup_recomputer.dart';
 import 'package:aion/features/tickets/presentation/cubit/trash_state.dart';
 
 /// Loads and mutates the trash (`/tickets/trash`) via [TicketRepository].
@@ -21,15 +19,15 @@ import 'package:aion/features/tickets/presentation/cubit/trash_state.dart';
 class TrashCubit extends Cubit<TrashState> {
   /// Creates a [TrashCubit] backed by [_repository]. [gitProjector] and
   /// [projectRootPath] are optional — when either is `null` (the default,
-  /// and every existing call site/test), [restore]'s git-projection side
-  /// effect simply no-ops, matching `TicketsCubit`'s identical
-  /// optional-dependency pattern for the same desktop-only feature. Real
-  /// usage (`app_router.dart`) supplies both whenever the active project
-  /// has a `rootPath`. [sortRepository]/[projectId] follow the same
-  /// optional-dependency pattern once more — `null` for either makes
-  /// [_resolveSort] fall back to `createdAt` descending with no
-  /// persisted sort applied; real usage (`app_router.dart`) always
-  /// supplies both, mirroring `TicketsCubit`'s own
+  /// and every existing call site/test), [_parentTrashService]'s
+  /// git-projection side effect simply no-ops, matching `TicketsCubit`'s
+  /// identical optional-dependency pattern for the same desktop-only
+  /// feature. Real usage (`app_router.dart`) supplies both whenever the
+  /// active project has a `rootPath`. [sortRepository]/[projectId]
+  /// follow the same optional-dependency pattern once more — `null` for
+  /// either makes [_resolveSort] fall back to `createdAt` descending
+  /// with no persisted sort applied; real usage (`app_router.dart`)
+  /// always supplies both, mirroring `TicketsCubit`'s own
   /// `sortRepository`/`projectId`. Added for
   /// `aion-arch/changes/ticket-sort-control-and-board-as-default-view`.
   TrashCubit(
@@ -39,11 +37,9 @@ class TrashCubit extends Cubit<TrashState> {
     TicketListSortRepository? sortRepository,
     String? projectId,
   }) : super(const TrashLoading()) {
-    _gitProjector = gitProjector;
-    _projectRootPath = projectRootPath;
     _sortRepository = sortRepository;
     _projectId = projectId;
-    _rollupRecomputer = TicketRollupRecomputer(
+    _parentTrashService = TicketParentTrashService(
       _repository,
       gitProjector: gitProjector,
       projectRootPath: projectRootPath,
@@ -51,14 +47,15 @@ class TrashCubit extends Cubit<TrashState> {
   }
 
   final TicketRepository _repository;
-  late final TicketGitProjector? _gitProjector;
-  late final String? _projectRootPath;
   late final TicketListSortRepository? _sortRepository;
   late final String? _projectId;
-  /// Shared estimate/timeSpent rollup-recompute walk — see
-  /// [TicketRollupRecomputer]. Wired to the same [_repository]/
-  /// [_gitProjector]/[_projectRootPath] this cubit already holds.
-  late final TicketRollupRecomputer _rollupRecomputer;
+
+  /// Shared parentId-reparent and trash/restore domain logic — see
+  /// [TicketParentTrashService]. Wired to the same [_repository] and the
+  /// constructor's `gitProjector`/`projectRootPath`, so [restore]
+  /// delegates to one instance instead of duplicating cascade logic that
+  /// `TicketMarkdownReconciler`/`TicketRepairService` also need.
+  late final TicketParentTrashService _parentTrashService;
 
   /// How old a trashed ticket must be before "Purge old" will remove it.
   /// Fixed, not user-configurable (see proposal.md's Non-goals).
@@ -140,45 +137,19 @@ class TrashCubit extends Cubit<TrashState> {
   }
 
   /// Restores the ticket with internal id [id] via
-  /// [TicketRepository.restoreTicket], then reloads the trash list. Note:
-  /// [TicketRepository.restoreTicket] also revives any currently-trashed
-  /// ancestors/descendants of [id], but only [id] itself is projected
-  /// here — mirroring `TicketsCubit.trashTickets`' existing scope
-  /// simplification for the symmetric trash-side case.
-  ///
-  /// The `'restored'` git-projection for [id] (see [_triggerGitProjection])
-  /// and the rollup recompute for its ancestor chain (see
-  /// [TicketRollupRecomputer.recompute], seeded from the restored ticket's
-  /// `parentId`) both touch the same git repository's add/commit sequence,
-  /// so they're sequenced into one chain — the single-ticket projection
-  /// commits first, then the ancestor batch — and fired as a single
-  /// fire-and-forget unit. Running them as two independent unawaited calls
-  /// (as this used to) races the underlying git client's add/commit steps: the
-  /// ancestor batch's staged files can get silently swept into the
-  /// single-ticket commit instead of producing their own correctly-labelled
-  /// `"N ancestors rollup updated"` commit. Emits [TrashError] if the
-  /// repository call throws.
+  /// [TicketParentTrashService.restore] (which carries
+  /// [TicketRepository.restoreTicket]'s ancestor/descendant-revival
+  /// cascade write plus the same git-projection/rollup-recompute side
+  /// effects this method used to trigger inline — see
+  /// [_parentTrashService]), then reloads the trash list. Emits
+  /// [TrashError] if the repository call throws.
   Future<void> restore(String id) async {
     try {
-      await _repository.restoreTicket(id);
-      final restored = await _repository.getTicketById(id);
-      if (restored != null) {
-        final parentId = restored.parentId;
-        unawaited(_restoreGitSideEffects(restored, parentId));
-      }
+      await _parentTrashService.restore(id);
       await load();
     } catch (e) {
       emit(TrashError(e.toString()));
     }
-  }
-
-  /// Runs [restored]'s single-ticket `'restored'` projection followed by
-  /// its ancestor chain's rollup recompute (seeded from [parentId]), in
-  /// that order — see [restore]'s dartdoc for why these must be sequenced
-  /// rather than fired concurrently.
-  Future<void> _restoreGitSideEffects(Ticket restored, String? parentId) async {
-    await _triggerGitProjection(restored, 'restored');
-    await _rollupRecomputer.recompute({?parentId}, 'rollup updated');
   }
 
   /// Permanently deletes the ticket with internal id [id] via
@@ -216,16 +187,5 @@ class TrashCubit extends Cubit<TrashState> {
     } catch (e) {
       emit(TrashError(e.toString()));
     }
-  }
-
-  /// Projects [ticket] to its Markdown file and commits it, labelled
-  /// [eventLabel]. No-ops if no [_gitProjector]/[_projectRootPath] was
-  /// provided (see the constructor's dartdoc) — desktop-only in
-  /// practice, since `WorkspaceShell` only supplies these on desktop.
-  Future<void> _triggerGitProjection(Ticket ticket, String eventLabel) async {
-    final projector = _gitProjector;
-    final rootPath = _projectRootPath;
-    if (projector == null || rootPath == null) return;
-    await projector.project(ticket, rootPath, eventLabel);
   }
 }

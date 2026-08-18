@@ -33,6 +33,8 @@ import 'package:aion/features/providers/domain/repositories/model_routing_reposi
 import 'package:aion/features/tickets/data/services/active_ticket_view_registry.dart';
 import 'package:aion/features/tickets/data/services/page_wikilink_indexer.dart';
 import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
+import 'package:aion/features/tickets/data/services/ticket_parent_change_result.dart';
+import 'package:aion/features/tickets/data/services/ticket_parent_trash_service.dart';
 import 'package:aion/features/tickets/domain/entities/backlink_ref.dart';
 import 'package:aion/features/tickets/domain/entities/chat_turn_result.dart';
 import 'package:aion/features/tickets/domain/entities/execution_queue_entry.dart';
@@ -222,6 +224,11 @@ class TicketsCubit extends Cubit<TicketsState> {
       gitProjector: gitProjector,
       projectRootPath: projectRootPath,
     );
+    _parentTrashService = TicketParentTrashService(
+      _repository,
+      gitProjector: gitProjector,
+      projectRootPath: projectRootPath,
+    );
     _estimationSuggester = TicketEstimationSuggester(
       _repository,
       embeddingProvider: embeddingProvider,
@@ -255,6 +262,14 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [TicketRollupRecomputer]. Wired to the same [_repository]/
   /// [_gitProjector]/[_projectRootPath] this cubit already holds.
   late final TicketRollupRecomputer _rollupRecomputer;
+
+  /// Shared parentId-reparent and trash domain logic — see
+  /// [TicketParentTrashService]. Wired to the same [_repository]/
+  /// [_gitProjector]/[_projectRootPath] this cubit already holds, so
+  /// [updateTicketParent]/[trashTicket] delegate to one instance instead
+  /// of duplicating validation/cascade logic that
+  /// `TicketMarkdownReconciler`/`TicketRepairService` also need.
+  late final TicketParentTrashService _parentTrashService;
 
   /// AI-assisted complexity/estimate suggestion orchestrator — see
   /// [TicketEstimationSuggester]. Wired to the same [_repository]/
@@ -1236,72 +1251,31 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Reassigns [ticket]'s parent to [newParentId] (`null` clears it).
-  /// Rejects self-parenting and cycles locally — without calling the
-  /// repository — by re-deriving the same descendant set
-  /// [getValidParentCandidates] would, then emits
-  /// [TicketsError] with [TicketsErrorReason.invalidParent] followed
-  /// immediately by a re-emitted [TicketDetailLoaded] (same pattern as
-  /// [deleteTicket]'s `hasChildren` handling), so the detail screen shows
-  /// a toast rather than collapsing to the generic error view. Also
-  /// rejects any attempt to set a non-null parent on a ticket whose type
-  /// is always a subtree root ([TicketType.epic], [TicketType.idea],
-  /// [TicketType.knownGap], [TicketType.openQuestion], or
-  /// [TicketType.release] — see [TicketTypeHierarchy.isAlwaysRoot]) — and
-  /// any candidate parent whose type cannot structurally parent [ticket]'s
-  /// type per [TicketTypeHierarchy.canParent], via the same rejection
-  /// path. A second, instance-level (not type-level) rejection applies to
-  /// an Inbox-spawned chat: a ticket with `type == TicketType.chat` and a
-  /// non-null `Ticket.inboxPurpose` is also rejected for any non-null
-  /// [newParentId], since [TicketTypeHierarchy.isAlwaysRoot] has no way to
-  /// express "only when this specific ticket came from the Inbox" — every
-  /// other `chat` ticket keeps its existing, unrestricted reparent
-  /// behavior. On a valid reparent, persists via
-  /// [TicketRepository.updateTicketParent] and emits the refreshed
-  /// [TicketDetailLoaded]. Also fires a fire-and-forget rollup recompute
-  /// (see [_recomputeRollupChain]) seeded from `{ticket.id, oldParentId}`
-  /// — walking up from `ticket.id` against the post-write tree reaches
-  /// the *new* parent chain (its `parentId` now points there), while
-  /// `oldParentId` (captured before the write) is walked separately to
-  /// reach the *old* parent chain directly, since post-write nothing else
-  /// points there anymore.
+  /// Validation (self-parenting, cycles, always-root types, an
+  /// Inbox-spawned chat, and structural type-compatibility) and the
+  /// actual write/rollup-recompute now live in
+  /// [TicketParentTrashService.changeParent] — shared with
+  /// `TicketMarkdownReconciler`/`TicketRepairService`, see
+  /// [_parentTrashService] — so this method only translates the result
+  /// into UI state: [ParentChangeRejected] emits [TicketsError] with
+  /// [TicketsErrorReason.invalidParent] followed immediately by a
+  /// re-emitted [TicketDetailLoaded] (via [_emitInvalidParent], same
+  /// pattern as [deleteTicket]'s `hasChildren` handling), so the detail
+  /// screen shows a toast rather than collapsing to the generic error
+  /// view; [ParentChangeSuccess] emits the refreshed [TicketDetailLoaded]
+  /// directly.
   Future<void> updateTicketParent(Ticket ticket, String? newParentId) async {
-    final oldParentId = ticket.parentId;
-    if (newParentId != null) {
-      if (newParentId == ticket.id) {
-        await _emitInvalidParent(ticket.id);
-        return;
-      }
-      if (ticket.type.isAlwaysRoot) {
-        await _emitInvalidParent(ticket.id);
-        return;
-      }
-      if (ticket.type == TicketType.chat && ticket.inboxPurpose != null) {
-        await _emitInvalidParent(ticket.id);
-        return;
-      }
-      final all = await _repository.getAllTickets();
-      final descendantIds = _descendantIds(ticket.id, all);
-      if (descendantIds.contains(newParentId)) {
-        await _emitInvalidParent(ticket.id);
-        return;
-      }
-      final candidateParent = await _repository.getTicketById(newParentId);
-      if (candidateParent == null ||
-          !candidateParent.type.canParent(ticket.type)) {
-        await _emitInvalidParent(ticket.id);
-        return;
-      }
-    }
-
     try {
-      await _repository.updateTicketParent(ticket.id, newParentId);
-      final refreshed = await _repository.getTicketById(ticket.id);
-      if (refreshed != null) {
-        emit(TicketDetailLoaded(refreshed));
-      }
-      unawaited(
-        _recomputeRollupChain({ticket.id, ?oldParentId}, 'rollup updated'),
+      final result = await _parentTrashService.changeParent(
+        ticket,
+        newParentId,
       );
+      switch (result) {
+        case ParentChangeRejected():
+          await _emitInvalidParent(ticket.id);
+        case ParentChangeSuccess(:final ticket):
+          emit(TicketDetailLoaded(ticket));
+      }
     } catch (e) {
       emit(TicketsError(e.toString()));
     }
@@ -4570,18 +4544,6 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
   }
 
-  /// Runs [trashed]'s single-ticket `'trashed'` projection (no-op if
-  /// [trashed] is `null`) followed by [parentId]'s ancestor chain's rollup
-  /// recompute, in that order — see [trashTicket]'s dartdoc for why these
-  /// must be sequenced rather than fired concurrently as two independent
-  /// unawaited calls.
-  Future<void> _trashGitSideEffects(Ticket? trashed, String? parentId) async {
-    if (trashed != null) {
-      await _triggerGitProjection(trashed, 'trashed');
-    }
-    await _recomputeRollupChain({?parentId}, 'rollup updated');
-  }
-
   /// Runs each id in [ids]' single-ticket `'trashed'` projection (in
   /// order, re-fetching each from [_repository] since [trashTickets]
   /// itself never holds the post-trash rows) followed by one batched
@@ -4833,7 +4795,10 @@ class TicketsCubit extends Cubit<TicketsState> {
     return _repository.previewTrashCount(ids);
   }
 
-  /// Moves ticket [id] to trash via [TicketRepository.trashTicket].
+  /// Moves ticket [id] to trash via [TicketParentTrashService.trash]
+  /// (which carries [TicketRepository.trashTicket]'s descendant-cascade
+  /// write plus the same git-projection/rollup-recompute side effects
+  /// this method used to trigger inline — see [_parentTrashService]).
   /// Context-aware on the state active before the call: if it was
   /// [TicketDetailLoaded] (the caller is `TicketDetailScreen`), emits
   /// [TicketTrashed] on success; any other (list/board-shaped) previous
@@ -4843,20 +4808,6 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// `TicketsListScreen`/`TicketBoardView` never fall into a blank state.
   /// Trash never fails except on a genuine unexpected repository error,
   /// which emits [TicketsError].
-  ///
-  /// The `'trashed'` git-projection for [id] (see [_triggerGitProjection])
-  /// and the rollup recompute for its pre-trash `parentId`'s ancestor
-  /// chain (see [_recomputeRollupChain] — [id]'s `parentId` is read before
-  /// the trash write so it's captured before `deletedAt` excludes [id]
-  /// from [_recomputeRollupChain]'s `getAllTickets()` read) both touch the
-  /// same git repository's add/commit sequence, so they're sequenced into
-  /// one chain — the single-ticket projection commits first, then the
-  /// ancestor batch — and fired as a single fire-and-forget unit. Running
-  /// them as two independent unawaited calls (as this used to) races the
-  /// underlying git client's add/commit steps: the ancestor batch's staged
-  /// files can get silently swept into the single-ticket commit instead of
-  /// producing their own correctly-labelled `"N ancestors rollup updated"`
-  /// commit.
   Future<void> trashTicket(String id) async {
     _searchGeneration++;
     final previousState = state;
@@ -4873,11 +4824,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     };
     emit(const TicketTrashing());
     try {
-      final preTrash = await _repository.getTicketById(id);
-      await _repository.trashTicket(id);
-      final trashed = await _repository.getTicketById(id);
-      final parentId = preTrash?.parentId;
-      unawaited(_trashGitSideEffects(trashed, parentId));
+      await _parentTrashService.trash(id);
       if (previousState is TicketDetailLoaded) {
         emit(const TicketTrashed());
       } else {

@@ -9,6 +9,7 @@ import 'package:aion/core/markdown/ticket_markdown_serializer.dart';
 import 'package:aion/features/tickets/data/services/active_ticket_view_registry.dart';
 import 'package:aion/features/tickets/data/services/page_wikilink_indexer.dart';
 import 'package:aion/features/tickets/data/services/ticket_markdown_reconciler.dart';
+import 'package:aion/features/tickets/data/services/ticket_parent_trash_service.dart';
 import 'package:aion/features/tickets/tickets.dart';
 
 class MockTicketRepository extends Mock implements TicketRepository {}
@@ -16,6 +17,9 @@ class MockTicketRepository extends Mock implements TicketRepository {}
 class MockEmbeddingProvider extends Mock implements EmbeddingProvider {}
 
 class MockPageWikilinkRepository extends Mock implements PageWikilinkRepository {}
+
+class MockTicketParentTrashService extends Mock
+    implements TicketParentTrashService {}
 
 void main() {
   late MockTicketRepository repository;
@@ -63,6 +67,7 @@ void main() {
         updatedAt: DateTime.utc(2026),
       ),
     );
+    registerFallbackValue(<String, Object?>{});
   });
 
   setUp(() async {
@@ -314,4 +319,217 @@ void main() {
       },
     );
   });
+
+  group(
+    'parentId/deletedAt (reconciler-applies-hand-edited-parentid-deletedat)',
+    () {
+      late MockTicketParentTrashService parentTrashService;
+      late TicketMarkdownReconciler reconcilerWithParentTrash;
+
+      final reparentedOnDisk = Ticket(
+        id: resourceTicket.id,
+        ticketId: resourceTicket.ticketId,
+        type: resourceTicket.type,
+        title: resourceTicket.title,
+        description: resourceTicket.description,
+        status: resourceTicket.status,
+        parentId: 'new-parent-id',
+        createdAt: resourceTicket.createdAt,
+        updatedAt: resourceTicket.updatedAt,
+      );
+      final trashedOnDisk = Ticket(
+        id: resourceTicket.id,
+        ticketId: resourceTicket.ticketId,
+        type: resourceTicket.type,
+        title: resourceTicket.title,
+        description: resourceTicket.description,
+        status: resourceTicket.status,
+        deletedAt: DateTime.utc(2026, 8, 1),
+        createdAt: resourceTicket.createdAt,
+        updatedAt: resourceTicket.updatedAt,
+      );
+      final trashedInDb = Ticket(
+        id: resourceTicket.id,
+        ticketId: resourceTicket.ticketId,
+        type: resourceTicket.type,
+        title: resourceTicket.title,
+        description: resourceTicket.description,
+        status: resourceTicket.status,
+        deletedAt: DateTime.utc(2026, 8, 1),
+        createdAt: resourceTicket.createdAt,
+        updatedAt: resourceTicket.updatedAt,
+      );
+
+      setUp(() {
+        parentTrashService = MockTicketParentTrashService();
+        reconcilerWithParentTrash = TicketMarkdownReconciler(
+          repository,
+          TicketMarkdownSerializer(),
+          registry,
+          embeddingProvider,
+          null,
+          parentTrashService,
+        );
+      });
+
+      test(
+        'applies a hand-edited parentId via TicketParentTrashService and '
+        'stays synced when accepted',
+        () async {
+          when(
+            () => repository.getAllTickets(),
+          ).thenAnswer((_) async => [resourceTicket]);
+          when(
+            () => parentTrashService.applyFromParsedFields(any(), any()),
+          ).thenAnswer((_) async => true);
+          final serializer = TicketMarkdownSerializer();
+          await writeFile(serializer.serialize(reparentedOnDisk));
+
+          await reconcilerWithParentTrash.reconcile('AIO-42', tempDir.path);
+
+          verify(
+            () => parentTrashService.applyFromParsedFields(
+              resourceTicket,
+              any(that: containsPair('parentId', 'new-parent-id')),
+            ),
+          ).called(1);
+          verify(
+            () => repository.updateSyncStatus(
+              resourceTicket.id,
+              TicketSyncStatus.synced,
+            ),
+          ).called(1);
+          verifyNever(
+            () => repository.updateSyncStatus(
+              resourceTicket.id,
+              TicketSyncStatus.needsRepair,
+            ),
+          );
+        },
+      );
+
+      test(
+        'flips to needsRepair when TicketParentTrashService rejects the '
+        'hand-edited parentId',
+        () async {
+          when(
+            () => repository.getAllTickets(),
+          ).thenAnswer((_) async => [resourceTicket]);
+          when(
+            () => parentTrashService.applyFromParsedFields(any(), any()),
+          ).thenAnswer((_) async => false);
+          final serializer = TicketMarkdownSerializer();
+          await writeFile(serializer.serialize(reparentedOnDisk));
+
+          await reconcilerWithParentTrash.reconcile('AIO-42', tempDir.path);
+
+          verify(
+            () => repository.updateSyncStatus(
+              resourceTicket.id,
+              TicketSyncStatus.needsRepair,
+            ),
+          ).called(1);
+          verifyNever(
+            () => repository.updateSyncStatus(
+              resourceTicket.id,
+              TicketSyncStatus.synced,
+            ),
+          );
+        },
+      );
+
+      test(
+        'a hand-edited deletedAt null->timestamp is forwarded to '
+        'TicketParentTrashService as part of applyFromParsedFields',
+        () async {
+          when(
+            () => repository.getAllTickets(),
+          ).thenAnswer((_) async => [resourceTicket]);
+          when(
+            () => parentTrashService.applyFromParsedFields(any(), any()),
+          ).thenAnswer((_) async => true);
+          final serializer = TicketMarkdownSerializer();
+          await writeFile(serializer.serialize(trashedOnDisk));
+
+          await reconcilerWithParentTrash.reconcile('AIO-42', tempDir.path);
+
+          verify(
+            () => parentTrashService.applyFromParsedFields(
+              resourceTicket,
+              any(
+                that: containsPair(
+                  'deletedAt',
+                  DateTime.utc(2026, 8, 1),
+                ),
+              ),
+            ),
+          ).called(1);
+        },
+      );
+
+      test(
+        'a hand-edited deletedAt timestamp->null is forwarded to '
+        'TicketParentTrashService as part of applyFromParsedFields',
+        () async {
+          when(
+            () => repository.getAllTickets(),
+          ).thenAnswer((_) async => [trashedInDb]);
+          when(
+            () => parentTrashService.applyFromParsedFields(any(), any()),
+          ).thenAnswer((_) async => true);
+          final serializer = TicketMarkdownSerializer();
+          final restoredOnDisk = Ticket(
+            id: trashedInDb.id,
+            ticketId: trashedInDb.ticketId,
+            type: trashedInDb.type,
+            title: trashedInDb.title,
+            description: trashedInDb.description,
+            status: trashedInDb.status,
+            createdAt: trashedInDb.createdAt,
+            updatedAt: trashedInDb.updatedAt,
+          );
+          await writeFile(serializer.serialize(restoredOnDisk));
+
+          await reconcilerWithParentTrash.reconcile('AIO-42', tempDir.path);
+
+          verify(
+            () => parentTrashService.applyFromParsedFields(
+              trashedInDb,
+              any(that: containsPair('deletedAt', null)),
+            ),
+          ).called(1);
+        },
+      );
+
+      test(
+        'a hand-edited parentId is silently ignored when no '
+        'TicketParentTrashService is supplied (pre-existing behavior)',
+        () async {
+          when(
+            () => repository.getAllTickets(),
+          ).thenAnswer((_) async => [resourceTicket]);
+          final serializer = TicketMarkdownSerializer();
+          await writeFile(serializer.serialize(reparentedOnDisk));
+
+          // The default `reconciler` (from the top-level setUp) has no
+          // TicketParentTrashService — matches every other test in this
+          // file that doesn't construct one explicitly.
+          await reconciler.reconcile('AIO-42', tempDir.path);
+
+          verify(
+            () => repository.updateSyncStatus(
+              resourceTicket.id,
+              TicketSyncStatus.synced,
+            ),
+          ).called(1);
+          verifyNever(
+            () => repository.updateSyncStatus(
+              resourceTicket.id,
+              TicketSyncStatus.needsRepair,
+            ),
+          );
+        },
+      );
+    },
+  );
 }
