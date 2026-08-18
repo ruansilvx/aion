@@ -9,13 +9,18 @@ import 'package:aion/core/markdown/ticket_markdown_serializer.dart';
 import 'package:aion/features/tickets/data/services/active_ticket_view_registry.dart';
 import 'package:aion/features/tickets/data/services/page_wikilink_indexer.dart';
 import 'package:aion/features/tickets/data/services/ticket_markdown_reconciler.dart';
+import 'package:aion/features/tickets/data/services/ticket_parent_trash_service.dart';
 import 'package:aion/features/tickets/tickets.dart';
 
 class MockTicketRepository extends Mock implements TicketRepository {}
 
 class MockEmbeddingProvider extends Mock implements EmbeddingProvider {}
 
-class MockPageWikilinkRepository extends Mock implements PageWikilinkRepository {}
+class MockPageWikilinkRepository extends Mock
+    implements PageWikilinkRepository {}
+
+class MockTicketParentTrashService extends Mock
+    implements TicketParentTrashService {}
 
 void main() {
   late MockTicketRepository repository;
@@ -63,6 +68,7 @@ void main() {
         updatedAt: DateTime.utc(2026),
       ),
     );
+    registerFallbackValue(<String, Object?>{});
   });
 
   setUp(() async {
@@ -80,13 +86,19 @@ void main() {
     );
     await Directory('${tempDir.path}/tickets').create(recursive: true);
 
-    when(() => repository.updateSyncStatus(any(), any())).thenAnswer((_) async {});
+    when(
+      () => repository.updateSyncStatus(any(), any()),
+    ).thenAnswer((_) async {});
     when(() => repository.updateTicket(any())).thenAnswer((_) async {});
-    when(() => repository.updateTicketStatus(any(), any())).thenAnswer((_) async {});
-    when(() => repository.updateEmbedding(any(), any())).thenAnswer((_) async {});
-    when(() => embeddingProvider.embed(any())).thenAnswer(
-      (_) async => Uint8List.fromList([1, 2, 3]),
-    );
+    when(
+      () => repository.updateTicketStatus(any(), any()),
+    ).thenAnswer((_) async {});
+    when(
+      () => repository.updateEmbedding(any(), any()),
+    ).thenAnswer((_) async {});
+    when(
+      () => embeddingProvider.embed(any()),
+    ).thenAnswer((_) async => Uint8List.fromList([1, 2, 3]));
   });
 
   tearDown(() async {
@@ -98,7 +110,9 @@ void main() {
   }
 
   test('no-ops for a non-resource/page ticket type', () async {
-    when(() => repository.getAllTickets()).thenAnswer((_) async => [workItemTicket]);
+    when(
+      () => repository.getAllTickets(),
+    ).thenAnswer((_) async => [workItemTicket]);
     await writeFile('not valid frontmatter');
 
     await reconciler.reconcile('AIO-42', tempDir.path);
@@ -117,7 +131,9 @@ void main() {
 
   group('Unparseable', () {
     test('sets needsRepair and does not touch content', () async {
-      when(() => repository.getAllTickets()).thenAnswer((_) async => [resourceTicket]);
+      when(
+        () => repository.getAllTickets(),
+      ).thenAnswer((_) async => [resourceTicket]);
       await writeFile('this is not valid frontmatter at all');
 
       await reconciler.reconcile('AIO-42', tempDir.path);
@@ -134,7 +150,9 @@ void main() {
 
   group('ParsedOk — background apply (not actively viewed)', () {
     test('applies fields and cycles pendingReconcile -> synced', () async {
-      when(() => repository.getAllTickets()).thenAnswer((_) async => [resourceTicket]);
+      when(
+        () => repository.getAllTickets(),
+      ).thenAnswer((_) async => [resourceTicket]);
       final serializer = TicketMarkdownSerializer();
       await writeFile(
         serializer.serialize(
@@ -159,14 +177,18 @@ void main() {
           TicketSyncStatus.synced,
         ),
       ).called(1);
-      final captured = verify(() => repository.updateTicket(captureAny())).captured;
+      final captured = verify(
+        () => repository.updateTicket(captureAny()),
+      ).captured;
       final updated = captured.single as Ticket;
       expect(updated.title, 'Edited externally');
       expect(updated.description, 'Edited body.');
     });
 
     test('triggers embedding regen when title/description changed', () async {
-      when(() => repository.getAllTickets()).thenAnswer((_) async => [resourceTicket]);
+      when(
+        () => repository.getAllTickets(),
+      ).thenAnswer((_) async => [resourceTicket]);
       final serializer = TicketMarkdownSerializer();
       await writeFile(
         serializer.serialize(resourceTicket.copyWith(title: 'New title')),
@@ -178,13 +200,17 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       verify(() => embeddingProvider.embed(any())).called(1);
-      verify(() => repository.updateEmbedding(resourceTicket.id, any())).called(1);
+      verify(
+        () => repository.updateEmbedding(resourceTicket.id, any()),
+      ).called(1);
     });
   });
 
   group('ParsedPartial', () {
     test('applies valid fields, keeps DB value for the invalid one', () async {
-      when(() => repository.getAllTickets()).thenAnswer((_) async => [resourceTicket]);
+      when(
+        () => repository.getAllTickets(),
+      ).thenAnswer((_) async => [resourceTicket]);
       final serializer = TicketMarkdownSerializer();
       final content = serializer
           .serialize(resourceTicket)
@@ -209,27 +235,36 @@ void main() {
   });
 
   group('active-view blocking', () {
-    test('defers apply while the ticket is actively viewed, then applies', () async {
-      when(() => repository.getAllTickets()).thenAnswer((_) async => [resourceTicket]);
-      final serializer = TicketMarkdownSerializer();
-      await writeFile(
-        serializer.serialize(resourceTicket.copyWith(title: 'Edited while viewing')),
-      );
-      registry.activeTicketId.value = 'AIO-42';
+    test(
+      'defers apply while the ticket is actively viewed, then applies',
+      () async {
+        when(
+          () => repository.getAllTickets(),
+        ).thenAnswer((_) async => [resourceTicket]);
+        final serializer = TicketMarkdownSerializer();
+        await writeFile(
+          serializer.serialize(
+            resourceTicket.copyWith(title: 'Edited while viewing'),
+          ),
+        );
+        registry.activeTicketId.value = 'AIO-42';
 
-      await reconciler.reconcile('AIO-42', tempDir.path);
-      // Deferred — nothing applied yet while still the active view.
-      verifyNever(() => repository.updateTicket(any()));
+        await reconciler.reconcile('AIO-42', tempDir.path);
+        // Deferred — nothing applied yet while still the active view.
+        verifyNever(() => repository.updateTicket(any()));
 
-      registry.activeTicketId.value = null;
-      // The deferred re-reconcile does real file I/O (not just
-      // microtasks), so a zero-duration delay isn't reliably enough to
-      // let it finish before asserting.
-      await Future<void>.delayed(const Duration(milliseconds: 100));
+        registry.activeTicketId.value = null;
+        // The deferred re-reconcile does real file I/O (not just
+        // microtasks), so a zero-duration delay isn't reliably enough to
+        // let it finish before asserting.
+        await Future<void>.delayed(const Duration(milliseconds: 100));
 
-      final captured = verify(() => repository.updateTicket(captureAny())).captured;
-      expect((captured.single as Ticket).title, 'Edited while viewing');
-    });
+        final captured = verify(
+          () => repository.updateTicket(captureAny()),
+        ).captured;
+        expect((captured.single as Ticket).title, 'Edited while viewing');
+      },
+    );
   });
 
   group('wikilink reindex (inline-wikilink-backlinks)', () {
@@ -253,34 +288,31 @@ void main() {
       ).thenAnswer((_) async => []);
     });
 
-    test(
-      'fires the shared PageWikilinkIndexer for a page reconcile whose '
-      'description actually changed',
-      () async {
-        when(
-          () => repository.getAllTickets(),
-        ).thenAnswer((_) async => [pageTicket]);
-        when(
-          () => repository.getAllTicketsByType([
-            TicketType.page,
-            TicketType.resource,
-          ]),
-        ).thenAnswer((_) async => [pageTicket]);
-        final serializer = TicketMarkdownSerializer();
-        await writeFile(
-          serializer.serialize(
-            pageTicket.copyWith(description: () => 'See [[Some Title]].'),
-          ),
-        );
+    test('fires the shared PageWikilinkIndexer for a page reconcile whose '
+        'description actually changed', () async {
+      when(
+        () => repository.getAllTickets(),
+      ).thenAnswer((_) async => [pageTicket]);
+      when(
+        () => repository.getAllTicketsByType([
+          TicketType.page,
+          TicketType.resource,
+        ]),
+      ).thenAnswer((_) async => [pageTicket]);
+      final serializer = TicketMarkdownSerializer();
+      await writeFile(
+        serializer.serialize(
+          pageTicket.copyWith(description: () => 'See [[Some Title]].'),
+        ),
+      );
 
-        await reconcilerWithIndexer.reconcile('AIO-42', tempDir.path);
-        await Future<void>.delayed(Duration.zero);
+      await reconcilerWithIndexer.reconcile('AIO-42', tempDir.path);
+      await Future<void>.delayed(Duration.zero);
 
-        verify(
-          () => wikilinkRepository.replaceOutgoingLinks(pageTicket.id, any()),
-        ).called(1);
-      },
-    );
+      verify(
+        () => wikilinkRepository.replaceOutgoingLinks(pageTicket.id, any()),
+      ).called(1);
+    });
 
     test(
       'does not fire the indexer when neither title nor description '
@@ -314,4 +346,206 @@ void main() {
       },
     );
   });
+
+  group(
+    'parentId/deletedAt (reconciler-applies-hand-edited-parentid-deletedat)',
+    () {
+      late MockTicketParentTrashService parentTrashService;
+      late TicketMarkdownReconciler reconcilerWithParentTrash;
+
+      final reparentedOnDisk = Ticket(
+        id: resourceTicket.id,
+        ticketId: resourceTicket.ticketId,
+        type: resourceTicket.type,
+        title: resourceTicket.title,
+        description: resourceTicket.description,
+        status: resourceTicket.status,
+        parentId: 'new-parent-id',
+        createdAt: resourceTicket.createdAt,
+        updatedAt: resourceTicket.updatedAt,
+      );
+      final trashedOnDisk = Ticket(
+        id: resourceTicket.id,
+        ticketId: resourceTicket.ticketId,
+        type: resourceTicket.type,
+        title: resourceTicket.title,
+        description: resourceTicket.description,
+        status: resourceTicket.status,
+        deletedAt: DateTime.utc(2026, 8, 1),
+        createdAt: resourceTicket.createdAt,
+        updatedAt: resourceTicket.updatedAt,
+      );
+      final trashedInDb = Ticket(
+        id: resourceTicket.id,
+        ticketId: resourceTicket.ticketId,
+        type: resourceTicket.type,
+        title: resourceTicket.title,
+        description: resourceTicket.description,
+        status: resourceTicket.status,
+        deletedAt: DateTime.utc(2026, 8, 1),
+        createdAt: resourceTicket.createdAt,
+        updatedAt: resourceTicket.updatedAt,
+      );
+
+      setUp(() {
+        parentTrashService = MockTicketParentTrashService();
+        reconcilerWithParentTrash = TicketMarkdownReconciler(
+          repository,
+          TicketMarkdownSerializer(),
+          registry,
+          embeddingProvider,
+          null,
+          parentTrashService,
+        );
+      });
+
+      test('applies a hand-edited parentId via TicketParentTrashService and '
+          'stays synced when accepted', () async {
+        when(
+          () => repository.getAllTickets(),
+        ).thenAnswer((_) async => [resourceTicket]);
+        when(
+          () => parentTrashService.applyFromParsedFields(any(), any()),
+        ).thenAnswer((_) async => true);
+        final serializer = TicketMarkdownSerializer();
+        await writeFile(serializer.serialize(reparentedOnDisk));
+
+        await reconcilerWithParentTrash.reconcile('AIO-42', tempDir.path);
+
+        verify(
+          () => parentTrashService.applyFromParsedFields(
+            resourceTicket,
+            any(that: containsPair('parentId', 'new-parent-id')),
+          ),
+        ).called(1);
+        verify(
+          () => repository.updateSyncStatus(
+            resourceTicket.id,
+            TicketSyncStatus.synced,
+          ),
+        ).called(1);
+        verifyNever(
+          () => repository.updateSyncStatus(
+            resourceTicket.id,
+            TicketSyncStatus.needsRepair,
+          ),
+        );
+      });
+
+      test('flips to needsRepair when TicketParentTrashService rejects the '
+          'hand-edited parentId', () async {
+        when(
+          () => repository.getAllTickets(),
+        ).thenAnswer((_) async => [resourceTicket]);
+        when(
+          () => parentTrashService.applyFromParsedFields(any(), any()),
+        ).thenAnswer((_) async => false);
+        final serializer = TicketMarkdownSerializer();
+        await writeFile(serializer.serialize(reparentedOnDisk));
+
+        await reconcilerWithParentTrash.reconcile('AIO-42', tempDir.path);
+
+        verify(
+          () => repository.updateSyncStatus(
+            resourceTicket.id,
+            TicketSyncStatus.needsRepair,
+          ),
+        ).called(1);
+        verifyNever(
+          () => repository.updateSyncStatus(
+            resourceTicket.id,
+            TicketSyncStatus.synced,
+          ),
+        );
+      });
+
+      test(
+        'a hand-edited deletedAt null->timestamp is forwarded to '
+        'TicketParentTrashService as part of applyFromParsedFields',
+        () async {
+          when(
+            () => repository.getAllTickets(),
+          ).thenAnswer((_) async => [resourceTicket]);
+          when(
+            () => parentTrashService.applyFromParsedFields(any(), any()),
+          ).thenAnswer((_) async => true);
+          final serializer = TicketMarkdownSerializer();
+          await writeFile(serializer.serialize(trashedOnDisk));
+
+          await reconcilerWithParentTrash.reconcile('AIO-42', tempDir.path);
+
+          verify(
+            () => parentTrashService.applyFromParsedFields(
+              resourceTicket,
+              any(that: containsPair('deletedAt', DateTime.utc(2026, 8, 1))),
+            ),
+          ).called(1);
+        },
+      );
+
+      test(
+        'a hand-edited deletedAt timestamp->null is forwarded to '
+        'TicketParentTrashService as part of applyFromParsedFields',
+        () async {
+          when(
+            () => repository.getAllTickets(),
+          ).thenAnswer((_) async => [trashedInDb]);
+          when(
+            () => parentTrashService.applyFromParsedFields(any(), any()),
+          ).thenAnswer((_) async => true);
+          final serializer = TicketMarkdownSerializer();
+          final restoredOnDisk = Ticket(
+            id: trashedInDb.id,
+            ticketId: trashedInDb.ticketId,
+            type: trashedInDb.type,
+            title: trashedInDb.title,
+            description: trashedInDb.description,
+            status: trashedInDb.status,
+            createdAt: trashedInDb.createdAt,
+            updatedAt: trashedInDb.updatedAt,
+          );
+          await writeFile(serializer.serialize(restoredOnDisk));
+
+          await reconcilerWithParentTrash.reconcile('AIO-42', tempDir.path);
+
+          verify(
+            () => parentTrashService.applyFromParsedFields(
+              trashedInDb,
+              any(that: containsPair('deletedAt', null)),
+            ),
+          ).called(1);
+        },
+      );
+
+      test(
+        'a hand-edited parentId is silently ignored when no '
+        'TicketParentTrashService is supplied (pre-existing behavior)',
+        () async {
+          when(
+            () => repository.getAllTickets(),
+          ).thenAnswer((_) async => [resourceTicket]);
+          final serializer = TicketMarkdownSerializer();
+          await writeFile(serializer.serialize(reparentedOnDisk));
+
+          // The default `reconciler` (from the top-level setUp) has no
+          // TicketParentTrashService — matches every other test in this
+          // file that doesn't construct one explicitly.
+          await reconciler.reconcile('AIO-42', tempDir.path);
+
+          verify(
+            () => repository.updateSyncStatus(
+              resourceTicket.id,
+              TicketSyncStatus.synced,
+            ),
+          ).called(1);
+          verifyNever(
+            () => repository.updateSyncStatus(
+              resourceTicket.id,
+              TicketSyncStatus.needsRepair,
+            ),
+          );
+        },
+      );
+    },
+  );
 }

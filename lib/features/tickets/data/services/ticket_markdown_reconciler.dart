@@ -11,6 +11,7 @@ import 'package:aion/core/markdown/ticket_markdown_serializer.dart';
 import 'package:aion/core/markdown/ticket_markdown_template.dart';
 import 'package:aion/features/tickets/data/services/active_ticket_view_registry.dart';
 import 'package:aion/features/tickets/data/services/page_wikilink_indexer.dart';
+import 'package:aion/features/tickets/data/services/ticket_parent_trash_service.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
@@ -23,26 +24,21 @@ import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart
 /// sync. Only ever called for `resource`/`page` tickets (see
 /// `TicketMarkdownWatcherService`); a no-op for any other type.
 ///
-/// **Known limitation**: does not apply a `parentId` change from a
-/// hand-edited file, even though `parentId` round-trips through
-/// [TicketMarkdownSerializer]'s frontmatter. Reparenting's cycle-
-/// prevention logic lives in `TicketsCubit` (`project.md`'s Cubit-holds-
-/// domain-logic convention), not the repository — applying a bare
-/// `TicketRepository.updateTicketParent` from this background service
-/// would bypass that check entirely. Left out rather than risk a
-/// corrupted parent graph; revisit if hand-edited reparenting becomes a
-/// real need.
-///
-/// **Known limitation**: does not apply a `deletedAt` change from a
-/// hand-edited file either, for the same reason as `parentId` above —
-/// `TicketRepository.trashTicket`/`.restoreTicket` carry cascade logic
-/// (trashing cascades to descendants; restoring revives trashed
-/// ancestors/descendants too) that a bare field write from this
-/// background service would bypass, risking a corrupted trash state.
-/// `deletedAt` round-trips through [TicketMarkdownSerializer] (needed by
-/// `TicketDbReconstructionService`, which builds a fresh [Ticket] with
-/// no existing row to protect), but [_apply] below has no case for it
-/// and none is planned.
+/// Applies a `parentId` change from a hand-edited file through
+/// [TicketParentTrashService.changeParent] — the same cycle-prevention
+/// and structural type-compatibility validation `TicketsCubit
+/// .updateTicketParent` enforces for an in-app reparent, so a background
+/// apply can never corrupt the parent graph. Similarly applies a
+/// `deletedAt` change (`null` → timestamp trashes; timestamp → `null`
+/// restores) through [TicketParentTrashService.trash]/`.restore`, which
+/// carry `TicketRepository`'s existing descendant/ancestor-revival
+/// cascade logic. Either rejection (an invalid reparent, or an
+/// unexpected trash/restore failure) flips the ticket's `syncStatus` to
+/// [TicketSyncStatus.needsRepair] instead of silently keeping the
+/// database's old value — see [_apply] and [reconcile]. Both are no-ops
+/// when [_parentTrashService] is `null` (not every construction site
+/// supplies one — see the constructor's dartdoc), preserving this
+/// class's original silent-ignore behavior for those callers.
 ///
 /// **Known limitation**: does not apply `estimateRollup`/
 /// `timeSpentRollup` from a hand-edited file either — but unlike the two
@@ -73,13 +69,19 @@ class TicketMarkdownReconciler {
   /// in-app edit (same content-changed gate as that trigger), through the
   /// same shared [PageWikilinkIndexer] rather than a second, duplicated
   /// implementation — see `aion-arch/changes/inline-wikilink-backlinks
-  /// /design.md`.
+  /// /design.md`. [_parentTrashService] is likewise optional (`null` in
+  /// every construction site except `app_router.dart`, and in this
+  /// class's own existing tests that don't need it) — when supplied, a
+  /// hand-edited `parentId`/`deletedAt` change is validated and applied
+  /// through it (see the class-level dartdoc); when `null`, both fields
+  /// are silently ignored, matching this class's original behavior.
   TicketMarkdownReconciler(
     this._repository,
     this._serializer,
     this._activeTicketViewRegistry,
     this._embeddingProvider, [
     this._wikilinkIndexer,
+    this._parentTrashService,
   ]);
 
   final TicketRepository _repository;
@@ -87,6 +89,7 @@ class TicketMarkdownReconciler {
   final ActiveTicketViewRegistry _activeTicketViewRegistry;
   final EmbeddingProvider _embeddingProvider;
   final PageWikilinkIndexer? _wikilinkIndexer;
+  final TicketParentTrashService? _parentTrashService;
 
   /// Reconciles the ticket identified by human-readable [ticketId] (e.g.
   /// `"AIO-42"`) against its file under `<rootPath>/tickets/`.
@@ -118,8 +121,14 @@ class TicketMarkdownReconciler {
       ticket.id,
       TicketSyncStatus.pendingReconcile,
     );
-    final updated = await _apply(ticket, result);
-    await _repository.updateSyncStatus(ticket.id, TicketSyncStatus.synced);
+    final applyResult = await _apply(ticket, result);
+    final updated = applyResult.ticket;
+    await _repository.updateSyncStatus(
+      ticket.id,
+      applyResult.rejected
+          ? TicketSyncStatus.needsRepair
+          : TicketSyncStatus.synced,
+    );
 
     final indexer = _wikilinkIndexer;
     if (indexer != null &&
@@ -184,11 +193,19 @@ class TicketMarkdownReconciler {
   /// Applies a successful (or partially-successful) parse [result] to
   /// [ticket] in the database, then fires the same async embedding-
   /// regen trigger `TicketsCubit` uses for any other content edit.
-  /// Returns the updated [Ticket] (the same post-apply title/description
-  /// [reconcile] needs to drive its own wikilink reindex/cascade step),
-  /// or `null` for the unreachable [Unparseable] case (callers already
-  /// check this before calling).
-  Future<Ticket?> _apply(Ticket ticket, TicketMarkdownParseResult result) async {
+  /// Returns a record carrying the updated [Ticket] (the same post-apply
+  /// title/description [reconcile] needs to drive its own wikilink
+  /// reindex/cascade step; `null` for the unreachable [Unparseable] case
+  /// — callers already check this before calling) and whether a
+  /// `parentId`/`deletedAt` transition present in [result]'s fields was
+  /// rejected by [_parentTrashService] (always `false` when
+  /// [_parentTrashService] is `null`, or when neither field has a
+  /// relevant transition) — see [TicketParentTrashService
+  /// .applyFromParsedFields].
+  Future<({Ticket? ticket, bool rejected})> _apply(
+    Ticket ticket,
+    TicketMarkdownParseResult result,
+  ) async {
     final Map<String, Object?> fields;
     final String title;
     final String body;
@@ -202,7 +219,10 @@ class TicketMarkdownReconciler {
         title = t;
         body = b;
       case Unparseable():
-        return null; // unreachable — callers check this case before calling
+        return (
+          ticket: null,
+          rejected: false,
+        ); // unreachable — callers check this case before calling
     }
 
     // `fields[key]` alone can't distinguish "field absent (invalid, keep
@@ -249,6 +269,13 @@ class TicketMarkdownReconciler {
       );
     }
 
-    return updated;
+    var rejected = false;
+    final parentTrashService = _parentTrashService;
+    if (parentTrashService != null) {
+      final ok = await parentTrashService.applyFromParsedFields(ticket, fields);
+      if (!ok) rejected = true;
+    }
+
+    return (ticket: updated, rejected: rejected);
   }
 }

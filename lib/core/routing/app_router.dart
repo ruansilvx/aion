@@ -40,6 +40,7 @@ import 'package:aion/features/tickets/data/services/ticket_document_search_servi
 import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
 import 'package:aion/features/tickets/data/services/ticket_markdown_reconciler.dart';
 import 'package:aion/features/tickets/data/services/ticket_markdown_watcher_service.dart';
+import 'package:aion/features/tickets/data/services/ticket_parent_trash_service.dart';
 import 'package:aion/features/tickets/data/services/ticket_repair_service.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_list_sort_repository.dart';
 import 'package:aion/features/tickets/tickets.dart';
@@ -551,6 +552,17 @@ class _WorkspaceShellState extends State<WorkspaceShell>
               context.read<GitRepositoryClient>(),
             ),
           ),
+          // Shared parentId-reparent/trash/restore domain logic — see
+          // aion-arch/changes/reconciler-applies-hand-edited-parentid-
+          // deletedat/design.md. Consumed below by both
+          // TicketMarkdownReconciler and TicketRepairService.
+          RepositoryProvider<TicketParentTrashService>(
+            create: (context) => TicketParentTrashService(
+              context.read<TicketRepository>(),
+              gitProjector: context.read<TicketGitProjector>(),
+              projectRootPath: rootPath,
+            ),
+          ),
           RepositoryProvider<TicketMarkdownReconciler>(
             create: (context) => TicketMarkdownReconciler(
               context.read<TicketRepository>(),
@@ -562,12 +574,14 @@ class _WorkspaceShellState extends State<WorkspaceShell>
                 context.read<PageWikilinkRepository>(),
                 context.read<ActiveTicketViewRegistry>(),
               ),
+              context.read<TicketParentTrashService>(),
             ),
           ),
           RepositoryProvider<TicketRepairService>(
             create: (context) => TicketRepairService(
               context.read<TicketRepository>(),
               context.read<TicketMarkdownSerializer>(),
+              context.read<TicketParentTrashService>(),
             ),
           ),
         ],
