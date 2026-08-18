@@ -254,6 +254,42 @@ void main() {
         expect(result.predictedExecutionTokensHigh, 34000);
       },
     );
+
+    // Same shape as the three tests above — deletedAt has no copyWith
+    // parameter either, so the only runtime-testable property is that it
+    // passes through unaffected by every other copyWith call. Regression
+    // test for `aion-arch/ideas/ticket-copywith-drops-deletedat.md`: this
+    // used to silently reset to null on every copyWith call instead of
+    // being preserved.
+    test(
+      'deletedAt passes through unchanged on every copyWith call, since '
+      "it isn't a settable parameter",
+      () {
+        final trashedAt = DateTime(2026, 3, 1);
+        final trashed = Ticket(
+          id: baseTicket.id,
+          ticketId: baseTicket.ticketId,
+          type: baseTicket.type,
+          title: baseTicket.title,
+          description: baseTicket.description,
+          status: baseTicket.status,
+          priority: baseTicket.priority,
+          estimate: baseTicket.estimate,
+          timeSpent: baseTicket.timeSpent,
+          createdAt: baseTicket.createdAt,
+          updatedAt: baseTicket.updatedAt,
+          deletedAt: trashedAt,
+        );
+
+        final result = trashed.copyWith(
+          title: 'Changed',
+          priority: TicketPriority.high,
+          estimate: () => 999,
+        );
+
+        expect(result.deletedAt, trashedAt);
+      },
+    );
   });
 
   group('Ticket equality (props)', () {
