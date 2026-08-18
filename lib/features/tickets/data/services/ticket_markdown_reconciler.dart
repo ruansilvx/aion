@@ -219,7 +219,10 @@ class TicketMarkdownReconciler {
         title = t;
         body = b;
       case Unparseable():
-        return (ticket: null, rejected: false); // unreachable — callers check this case before calling
+        return (
+          ticket: null,
+          rejected: false,
+        ); // unreachable — callers check this case before calling
     }
 
     // `fields[key]` alone can't distinguish "field absent (invalid, keep
@@ -269,10 +272,7 @@ class TicketMarkdownReconciler {
     var rejected = false;
     final parentTrashService = _parentTrashService;
     if (parentTrashService != null) {
-      final ok = await parentTrashService.applyFromParsedFields(
-        ticket,
-        fields,
-      );
+      final ok = await parentTrashService.applyFromParsedFields(ticket, fields);
       if (!ok) rejected = true;
     }
 

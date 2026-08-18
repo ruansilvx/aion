@@ -41,12 +41,20 @@ void main() {
     repository = MockTicketRepository();
     parentTrashService = MockTicketParentTrashService();
     serializer = TicketMarkdownSerializer();
-    repairService = TicketRepairService(repository, serializer, parentTrashService);
-    tempDir = await Directory.systemTemp.createTemp('ticket_repair_service_test');
+    repairService = TicketRepairService(
+      repository,
+      serializer,
+      parentTrashService,
+    );
+    tempDir = await Directory.systemTemp.createTemp(
+      'ticket_repair_service_test',
+    );
     await Directory('${tempDir.path}/tickets').create(recursive: true);
 
     when(() => repository.getAllTickets()).thenAnswer((_) async => [ticket]);
-    when(() => repository.updateSyncStatus(any(), any())).thenAnswer((_) async {});
+    when(
+      () => repository.updateSyncStatus(any(), any()),
+    ).thenAnswer((_) async {});
   });
 
   tearDown(() async {
@@ -80,31 +88,28 @@ void main() {
       },
     );
 
-    test(
-      'trims, re-validates parentId/deletedAt, writes the file, and marks '
-      'synced when there is no relevant transition',
-      () async {
-        when(
-          () => parentTrashService.applyFromParsedFields(any(), any()),
-        ).thenAnswer((_) async => true);
-        final withTrailingWhitespace = '${serializer.serialize(ticket)}   \n';
-        await writeFile(withTrailingWhitespace);
+    test('trims, re-validates parentId/deletedAt, writes the file, and marks '
+        'synced when there is no relevant transition', () async {
+      when(
+        () => parentTrashService.applyFromParsedFields(any(), any()),
+      ).thenAnswer((_) async => true);
+      final withTrailingWhitespace = '${serializer.serialize(ticket)}   \n';
+      await writeFile(withTrailingWhitespace);
 
-        final ok = await repairService.reformat('AIO-42', tempDir.path);
+      final ok = await repairService.reformat('AIO-42', tempDir.path);
 
-        expect(ok, isTrue);
-        verify(
-          () => parentTrashService.applyFromParsedFields(ticket, any()),
-        ).called(1);
-        verify(
-          () => repository.updateSyncStatus(ticket.id, TicketSyncStatus.synced),
-        ).called(1);
-        final written = await File(
-          '${tempDir.path}/tickets/AIO-42.md',
-        ).readAsString();
-        expect(written.contains('   \n'), isFalse);
-      },
-    );
+      expect(ok, isTrue);
+      verify(
+        () => parentTrashService.applyFromParsedFields(ticket, any()),
+      ).called(1);
+      verify(
+        () => repository.updateSyncStatus(ticket.id, TicketSyncStatus.synced),
+      ).called(1);
+      final written = await File(
+        '${tempDir.path}/tickets/AIO-42.md',
+      ).readAsString();
+      expect(written.contains('   \n'), isFalse);
+    });
 
     test(
       'returns false and does not touch the file/DB when '

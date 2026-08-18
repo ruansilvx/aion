@@ -94,10 +94,7 @@ class TicketParentTrashService {
     // even in the near-impossible case where an immediate re-fetch of
     // the ticket that was just written finds nothing.
     unawaited(
-      _rollupRecomputer.recompute(
-        {ticket.id, ?oldParentId},
-        'rollup updated',
-      ),
+      _rollupRecomputer.recompute({ticket.id, ?oldParentId}, 'rollup updated'),
     );
     if (refreshed == null) return const ParentChangeRejected();
     return ParentChangeSuccess(refreshed);
@@ -106,41 +103,46 @@ class TicketParentTrashService {
   /// Trashes the ticket with internal id [id] via
   /// [TicketRepository.trashTicket] — which already carries the full
   /// descendant-cascade logic, so no validation happens here beyond what
-  /// the repository itself already guards (throwing if [id] doesn't
-  /// exist — propagated to the caller, same as before this logic was
-  /// factored out). Mirrors `TicketsCubit`'s previous
-  /// `_trashGitSideEffects`: projects the trashed ticket to git
-  /// (`'trashed'`) and fires a rollup recompute seeded from the ticket's
-  /// pre-trash `parentId`. Returns the trashed [Ticket], or `null` only
-  /// in the (essentially unreachable) case where the post-write re-fetch
-  /// itself returns nothing.
+  /// the repository itself already guards (the ticket existing). Mirrors
+  /// `TicketsCubit`'s previous `_trashGitSideEffects`: projects the
+  /// trashed ticket to git (`'trashed'`) and fires a rollup recompute
+  /// seeded from the ticket's pre-trash `parentId`. Returns the trashed
+  /// [Ticket], or `null` if [id] doesn't exist — checked up front so a
+  /// missing id never reaches [TicketRepository.trashTicket] (which would
+  /// otherwise throw), keeping this a graceful rejection for callers like
+  /// [applyFromParsedFields] that need one instead of an uncaught
+  /// exception.
   Future<Ticket?> trash(String id) async {
     final preTrash = await _repository.getTicketById(id);
+    if (preTrash == null) return null;
     await _repository.trashTicket(id);
     final trashed = await _repository.getTicketById(id);
     if (trashed != null) await _triggerGitProjection(trashed, 'trashed');
     unawaited(
-      _rollupRecomputer.recompute({?preTrash?.parentId}, 'rollup updated'),
+      _rollupRecomputer.recompute({?preTrash.parentId}, 'rollup updated'),
     );
     return trashed;
   }
 
   /// Restores the ticket with internal id [id] via
   /// [TicketRepository.restoreTicket] — which already revives trashed
-  /// ancestors/descendants (and, like [trash], throws if [id] doesn't
-  /// exist — propagated to the caller). Mirrors `TrashCubit`'s previous
+  /// ancestors/descendants. Mirrors `TrashCubit`'s previous
   /// `_restoreGitSideEffects`: projects the restored ticket to git
   /// (`'restored'`) and fires a rollup recompute seeded from its
   /// (now-restored) `parentId`. Returns the restored [Ticket], or `null`
-  /// only in the (essentially unreachable) case where the post-write
-  /// re-fetch itself returns nothing.
+  /// if [id] doesn't exist — checked up front so a missing id never
+  /// reaches [TicketRepository.restoreTicket] (which would otherwise
+  /// throw), keeping this a graceful rejection for callers like
+  /// [applyFromParsedFields] that need one instead of an uncaught
+  /// exception.
   Future<Ticket?> restore(String id) async {
     final existing = await _repository.getTicketById(id);
+    if (existing == null) return null;
     await _repository.restoreTicket(id);
     final restored = await _repository.getTicketById(id);
     if (restored != null) await _triggerGitProjection(restored, 'restored');
     unawaited(
-      _rollupRecomputer.recompute({?existing?.parentId}, 'rollup updated'),
+      _rollupRecomputer.recompute({?existing.parentId}, 'rollup updated'),
     );
     return restored;
   }

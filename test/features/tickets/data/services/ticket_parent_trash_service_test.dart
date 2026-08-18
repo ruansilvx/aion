@@ -139,109 +139,130 @@ void main() {
       verifyNever(() => repository.updateTicketParent(any(), any()));
     });
 
-    test(
-      'rejects reparenting an always-root type (epic) without calling '
-      'the repository',
-      () async {
-        final service = TicketParentTrashService(repository);
-        final result = await service.changeParent(epic, unrelated.id);
+    test('rejects reparenting an always-root type (epic) without calling '
+        'the repository', () async {
+      final service = TicketParentTrashService(repository);
+      final result = await service.changeParent(epic, unrelated.id);
 
-        expect(result, const ParentChangeRejected());
-        verifyNever(() => repository.updateTicketParent(any(), any()));
-      },
-    );
+      expect(result, const ParentChangeRejected());
+      verifyNever(() => repository.updateTicketParent(any(), any()));
+    });
 
-    test(
-      'rejects reparenting an Inbox-spawned chat without calling the '
-      'repository',
-      () async {
-        final service = TicketParentTrashService(repository);
-        final result = await service.changeParent(inboxChat, ticket.id);
+    test('rejects reparenting an Inbox-spawned chat without calling the '
+        'repository', () async {
+      final service = TicketParentTrashService(repository);
+      final result = await service.changeParent(inboxChat, ticket.id);
 
-        expect(result, const ParentChangeRejected());
-        verifyNever(() => repository.updateTicketParent(any(), any()));
-      },
-    );
+      expect(result, const ParentChangeRejected());
+      verifyNever(() => repository.updateTicketParent(any(), any()));
+    });
 
-    test(
-      'rejects reparenting onto a descendant (cycle) without calling the '
-      'repository',
-      () async {
-        when(
-          () => repository.getAllTickets(),
-        ).thenAnswer((_) async => [ticket, child, unrelated]);
+    test('rejects reparenting onto a descendant (cycle) without calling the '
+        'repository', () async {
+      when(
+        () => repository.getAllTickets(),
+      ).thenAnswer((_) async => [ticket, child, unrelated]);
 
-        final service = TicketParentTrashService(repository);
-        final result = await service.changeParent(ticket, child.id);
+      final service = TicketParentTrashService(repository);
+      final result = await service.changeParent(ticket, child.id);
 
-        expect(result, const ParentChangeRejected());
-        verifyNever(() => repository.updateTicketParent(any(), any()));
-      },
-    );
+      expect(result, const ParentChangeRejected());
+      verifyNever(() => repository.updateTicketParent(any(), any()));
+    });
 
-    test(
-      'rejects reparenting under a type-incompatible candidate (task '
-      'under task) without calling the repository',
-      () async {
-        when(
-          () => repository.getAllTickets(),
-        ).thenAnswer((_) async => [ticket, otherTask]);
-        when(
-          () => repository.getTicketById(otherTask.id),
-        ).thenAnswer((_) async => otherTask);
+    test('rejects reparenting under a type-incompatible candidate (task '
+        'under task) without calling the repository', () async {
+      when(
+        () => repository.getAllTickets(),
+      ).thenAnswer((_) async => [ticket, otherTask]);
+      when(
+        () => repository.getTicketById(otherTask.id),
+      ).thenAnswer((_) async => otherTask);
 
-        final service = TicketParentTrashService(repository);
-        final result = await service.changeParent(ticket, otherTask.id);
+      final service = TicketParentTrashService(repository);
+      final result = await service.changeParent(ticket, otherTask.id);
 
-        expect(result, const ParentChangeRejected());
-        verifyNever(() => repository.updateTicketParent(any(), any()));
-      },
-    );
+      expect(result, const ParentChangeRejected());
+      verifyNever(() => repository.updateTicketParent(any(), any()));
+    });
   });
 
   group('trash', () {
+    test('calls TicketRepository.trashTicket and projects "trashed" when a '
+        'TicketGitProjector is supplied', () async {
+      when(
+        () => repository.getTicketById(ticket.id),
+      ).thenAnswer((_) async => ticket);
+      when(() => repository.trashTicket(ticket.id)).thenAnswer((_) async {});
+
+      final service = TicketParentTrashService(
+        repository,
+        gitProjector: gitProjector,
+        projectRootPath: '/root',
+      );
+      final result = await service.trash(ticket.id);
+
+      expect(result, ticket);
+      verify(() => repository.trashTicket(ticket.id)).called(1);
+      verify(() => gitProjector.project(ticket, '/root', 'trashed')).called(1);
+    });
+
     test(
-      'calls TicketRepository.trashTicket and projects "trashed" when a '
-      'TicketGitProjector is supplied',
+      'no-ops git projection when no TicketGitProjector is supplied',
       () async {
         when(
           () => repository.getTicketById(ticket.id),
         ).thenAnswer((_) async => ticket);
         when(() => repository.trashTicket(ticket.id)).thenAnswer((_) async {});
 
-        final service = TicketParentTrashService(
-          repository,
-          gitProjector: gitProjector,
-          projectRootPath: '/root',
-        );
+        final service = TicketParentTrashService(repository);
         final result = await service.trash(ticket.id);
 
         expect(result, ticket);
-        verify(() => repository.trashTicket(ticket.id)).called(1);
-        verify(
-          () => gitProjector.project(ticket, '/root', 'trashed'),
-        ).called(1);
+        verifyNever(() => gitProjector.project(any(), any(), any()));
       },
     );
 
-    test('no-ops git projection when no TicketGitProjector is supplied', () async {
+    test('returns null without calling TicketRepository.trashTicket when the '
+        'id does not exist', () async {
       when(
-        () => repository.getTicketById(ticket.id),
-      ).thenAnswer((_) async => ticket);
-      when(() => repository.trashTicket(ticket.id)).thenAnswer((_) async {});
+        () => repository.getTicketById('missing'),
+      ).thenAnswer((_) async => null);
 
       final service = TicketParentTrashService(repository);
-      final result = await service.trash(ticket.id);
+      final result = await service.trash('missing');
 
-      expect(result, ticket);
-      verifyNever(() => gitProjector.project(any(), any(), any()));
+      expect(result, isNull);
+      verifyNever(() => repository.trashTicket(any()));
     });
   });
 
   group('restore', () {
+    test('calls TicketRepository.restoreTicket and projects "restored" when '
+        'a TicketGitProjector is supplied', () async {
+      when(
+        () => repository.getTicketById(trashedTicket.id),
+      ).thenAnswer((_) async => trashedTicket);
+      when(
+        () => repository.restoreTicket(trashedTicket.id),
+      ).thenAnswer((_) async {});
+
+      final service = TicketParentTrashService(
+        repository,
+        gitProjector: gitProjector,
+        projectRootPath: '/root',
+      );
+      final result = await service.restore(trashedTicket.id);
+
+      expect(result, trashedTicket);
+      verify(() => repository.restoreTicket(trashedTicket.id)).called(1);
+      verify(
+        () => gitProjector.project(trashedTicket, '/root', 'restored'),
+      ).called(1);
+    });
+
     test(
-      'calls TicketRepository.restoreTicket and projects "restored" when '
-      'a TicketGitProjector is supplied',
+      'no-ops git projection when no TicketGitProjector is supplied',
       () async {
         when(
           () => repository.getTicketById(trashedTicket.id),
@@ -250,34 +271,25 @@ void main() {
           () => repository.restoreTicket(trashedTicket.id),
         ).thenAnswer((_) async {});
 
-        final service = TicketParentTrashService(
-          repository,
-          gitProjector: gitProjector,
-          projectRootPath: '/root',
-        );
+        final service = TicketParentTrashService(repository);
         final result = await service.restore(trashedTicket.id);
 
         expect(result, trashedTicket);
-        verify(() => repository.restoreTicket(trashedTicket.id)).called(1);
-        verify(
-          () => gitProjector.project(trashedTicket, '/root', 'restored'),
-        ).called(1);
+        verifyNever(() => gitProjector.project(any(), any(), any()));
       },
     );
 
-    test('no-ops git projection when no TicketGitProjector is supplied', () async {
+    test('returns null without calling TicketRepository.restoreTicket when '
+        'the id does not exist', () async {
       when(
-        () => repository.getTicketById(trashedTicket.id),
-      ).thenAnswer((_) async => trashedTicket);
-      when(
-        () => repository.restoreTicket(trashedTicket.id),
-      ).thenAnswer((_) async {});
+        () => repository.getTicketById('missing'),
+      ).thenAnswer((_) async => null);
 
       final service = TicketParentTrashService(repository);
-      final result = await service.restore(trashedTicket.id);
+      final result = await service.restore('missing');
 
-      expect(result, trashedTicket);
-      verifyNever(() => gitProjector.project(any(), any(), any()));
+      expect(result, isNull);
+      verifyNever(() => repository.restoreTicket(any()));
     });
   });
 
@@ -367,19 +379,16 @@ void main() {
       verify(() => repository.restoreTicket(trashedTicket.id)).called(1);
     });
 
-    test(
-      'a changed-but-still-non-null deletedAt (re-trashing with a '
-      'different stamp) is a no-op',
-      () async {
-        final service = TicketParentTrashService(repository);
-        final ok = await service.applyFromParsedFields(trashedTicket, {
-          'deletedAt': DateTime(2026, 5, 5),
-        });
+    test('a changed-but-still-non-null deletedAt (re-trashing with a '
+        'different stamp) is a no-op', () async {
+      final service = TicketParentTrashService(repository);
+      final ok = await service.applyFromParsedFields(trashedTicket, {
+        'deletedAt': DateTime(2026, 5, 5),
+      });
 
-        expect(ok, isTrue);
-        verifyNever(() => repository.trashTicket(any()));
-        verifyNever(() => repository.restoreTicket(any()));
-      },
-    );
+      expect(ok, isTrue);
+      verifyNever(() => repository.trashTicket(any()));
+      verifyNever(() => repository.restoreTicket(any()));
+    });
   });
 }
