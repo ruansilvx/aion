@@ -3163,6 +3163,50 @@ void main() {
         },
         expect: () => [TicketDetailLoaded(ticket.copyWith(title: 'New'))],
       );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'updateTicket live-refreshes the ticket\'s own already-open detail '
+        'screen once the passive suggestion lands, with no intervening '
+        'TicketsLoading (live-refresh-open-ticket-detail-screen)',
+        setUp: () {
+          when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+          var callCount = 0;
+          when(() => repository.getTicketById(ticket.id)).thenAnswer((_) async {
+            callCount++;
+            // 1st call: updateTicket's "previous" fetch — must return the
+            // *unchanged* title, or the title-changed check that gates
+            // firing the estimation suggester never sees a difference and
+            // the whole chain this test exists to cover never fires. 2nd
+            // call: updateTicket's own "refreshed" fetch (emitted
+            // synchronously). 3rd+ call: the live-refresh triggered once
+            // the background suggestion lands, via
+            // _refreshDetailIfOpenAndAffected.
+            return switch (callCount) {
+              1 => ticket,
+              2 => ticket.copyWith(title: 'New'),
+              _ => ticket.copyWith(
+                title: 'New',
+                complexity: () => TicketComplexity.medium,
+                estimate: () => 60,
+              ),
+            };
+          });
+        },
+        build: buildCubit,
+        seed: () => TicketDetailLoaded(ticket),
+        act: (cubit) => cubit.updateTicket(ticket.copyWith(title: 'New')),
+        wait: const Duration(milliseconds: 10),
+        expect: () => [
+          TicketDetailLoaded(ticket.copyWith(title: 'New')),
+          TicketDetailLoaded(
+            ticket.copyWith(
+              title: 'New',
+              complexity: () => TicketComplexity.medium,
+              estimate: () => 60,
+            ),
+          ),
+        ],
+      );
     });
 
     group('token-prediction triggers (token-cost-prediction)', () {
@@ -5925,13 +5969,16 @@ void main() {
         await cubit.getTicketById(epic.id);
       },
       verify: (_) {},
+      // No intervening TicketsLoading — the trailing getTicketById(epic.id)
+      // re-enters for the ticket already shown, which getTicketById's
+      // same-id Loading-skip now covers (added for
+      // `aion-arch/changes/live-refresh-open-ticket-detail-screen`).
       expect: () => [
         isA<TicketDetailLoaded>().having(
           (s) => s.isAdvancingStage,
           'isAdvancingStage',
           true,
         ),
-        const TicketsLoading(),
         isA<TicketDetailLoaded>().having(
           (s) => s.isAdvancingStage,
           'isAdvancingStage',
@@ -8319,8 +8366,10 @@ void main() {
           TicketDetailLoaded(
             taskNoStory.copyWith(status: TicketStatus.inProgress),
           ),
-          // No toast for `manual` — straight to the post-run refresh.
-          const TicketsLoading(),
+          // No toast for `manual` — straight to the post-run refresh. No
+          // intervening TicketsLoading — getTicketById's same-id
+          // Loading-skip now covers this re-fetch too (added for
+          // `aion-arch/changes/live-refresh-open-ticket-detail-screen`).
           // executionTokenTotal is 0, not null — both the implement and
           // verify turns completed (each with a bare AgentDoneEvent()
           // reporting no usage) before the verify reply was found to
@@ -9184,6 +9233,225 @@ void main() {
       expect: () => [const TicketsLoading(), TicketDetailLoaded(ticket)],
     );
   });
+
+  group(
+    'live-refresh an open ticket detail screen '
+    '(live-refresh-open-ticket-detail-screen)',
+    () {
+      Future<TicketSearchPage> searchAnyArgs() => repository.searchTickets(
+        query: any(named: 'query'),
+        statuses: any(named: 'statuses'),
+        types: any(named: 'types'),
+        priorities: any(named: 'priorities'),
+        sort: any(named: 'sort'),
+        limit: any(named: 'limit'),
+        offset: any(named: 'offset'),
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'updateTicketStatus live-refreshes an open Story detail screen '
+        'when a direct Task child\'s status changes, flipping '
+        'canAdvanceSddStage — via a transient TicketsLoading, since the '
+        'write\'s own TicketStatusUpdated emission already overwrote '
+        '`state` by the time the refresh check runs',
+        setUp: () {
+          final taskChildNowDone = taskChildNotDone.copyWith(
+            status: TicketStatus.done,
+          );
+          when(
+            () => repository.updateTicketStatus(
+              taskChildNotDone.id,
+              TicketStatus.done,
+            ),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(taskChildNotDone.id),
+          ).thenAnswer((_) async => taskChildNowDone);
+          when(
+            () => repository.getTicketById(storyProposed.id),
+          ).thenAnswer((_) async => storyProposed);
+          when(searchAnyArgs).thenAnswer(
+            (_) async => TicketSearchPage(tickets: const [], hasMore: false),
+          );
+          when(
+            () => repository.getTicketsByParent(
+              storyProposed.id,
+              types: any(named: 'types'),
+            ),
+          ).thenAnswer((_) async => [taskChildDone, taskChildNowDone]);
+        },
+        build: () => TicketsCubit(repository),
+        seed: () => TicketDetailLoaded(storyProposed),
+        act: (cubit) =>
+            cubit.updateTicketStatus(taskChildNotDone.id, TicketStatus.done),
+        wait: const Duration(milliseconds: 10),
+        expect: () => [
+          const TicketStatusUpdating([]),
+          const TicketStatusUpdated([], hasMore: false),
+          const TicketsLoading(),
+          TicketDetailLoaded(
+            storyProposed,
+            canAdvanceSddStage: true,
+            needsDesignReview: false,
+          ),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'updateTicketStatus live-refreshes the same ticket\'s own '
+        'already-open detail screen',
+        setUp: () {
+          final done = ticket.copyWith(status: TicketStatus.done);
+          when(
+            () => repository.updateTicketStatus(ticket.id, TicketStatus.done),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(ticket.id),
+          ).thenAnswer((_) async => done);
+          when(searchAnyArgs).thenAnswer(
+            (_) async => TicketSearchPage(tickets: const [], hasMore: false),
+          );
+        },
+        build: () => TicketsCubit(repository),
+        seed: () => TicketDetailLoaded(ticket),
+        act: (cubit) => cubit.updateTicketStatus(ticket.id, TicketStatus.done),
+        wait: const Duration(milliseconds: 10),
+        expect: () => [
+          const TicketStatusUpdating([]),
+          const TicketStatusUpdated([], hasMore: false),
+          const TicketsLoading(),
+          TicketDetailLoaded(ticket.copyWith(status: TicketStatus.done)),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'updateTicketStatus attempts no refresh when no detail screen is '
+        'open',
+        setUp: () {
+          when(
+            () =>
+                repository.updateTicketStatus(otherTask.id, TicketStatus.done),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(otherTask.id),
+          ).thenAnswer((_) async => otherTask.copyWith(status: TicketStatus.done));
+          when(searchAnyArgs).thenAnswer(
+            (_) async => TicketSearchPage(tickets: const [], hasMore: false),
+          );
+        },
+        build: () => TicketsCubit(repository),
+        act: (cubit) => cubit.updateTicketStatus(otherTask.id, TicketStatus.done),
+        wait: const Duration(milliseconds: 10),
+        verify: (_) {
+          verifyNever(
+            () => repository.getTicketsByParent(
+              any(),
+              types: any(named: 'types'),
+            ),
+          );
+        },
+        expect: () => [
+          const TicketStatusUpdating([]),
+          const TicketStatusUpdated([], hasMore: false),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'updateTicketStatus checks but does not refresh an open Story '
+        'detail screen when the written ticket is not one of its '
+        'children',
+        setUp: () {
+          when(
+            () =>
+                repository.updateTicketStatus(otherTask.id, TicketStatus.done),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(otherTask.id),
+          ).thenAnswer((_) async => otherTask.copyWith(status: TicketStatus.done));
+          when(searchAnyArgs).thenAnswer(
+            (_) async => TicketSearchPage(tickets: const [], hasMore: false),
+          );
+          when(
+            () => repository.getTicketsByParent(
+              storyProposed.id,
+              types: any(named: 'types'),
+            ),
+          ).thenAnswer((_) async => [taskChildDone, taskChildNotDone]);
+        },
+        build: () => TicketsCubit(repository),
+        seed: () => TicketDetailLoaded(storyProposed),
+        act: (cubit) => cubit.updateTicketStatus(otherTask.id, TicketStatus.done),
+        wait: const Duration(milliseconds: 10),
+        expect: () => [
+          const TicketStatusUpdating([]),
+          const TicketStatusUpdated([], hasMore: false),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'updateTicketStatus skips the children query entirely when the '
+        'open detail screen isn\'t a story',
+        setUp: () {
+          when(
+            () =>
+                repository.updateTicketStatus(otherTask.id, TicketStatus.done),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(otherTask.id),
+          ).thenAnswer((_) async => otherTask.copyWith(status: TicketStatus.done));
+          when(searchAnyArgs).thenAnswer(
+            (_) async => TicketSearchPage(tickets: const [], hasMore: false),
+          );
+        },
+        build: () => TicketsCubit(repository),
+        seed: () => TicketDetailLoaded(ticket), // ticket.type == task
+        act: (cubit) => cubit.updateTicketStatus(otherTask.id, TicketStatus.done),
+        wait: const Duration(milliseconds: 10),
+        verify: (_) {
+          verifyNever(
+            () => repository.getTicketsByParent(
+              any(),
+              types: any(named: 'types'),
+            ),
+          );
+        },
+        expect: () => [
+          const TicketStatusUpdating([]),
+          const TicketStatusUpdated([], hasMore: false),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'getTicketById skips TicketsLoading when re-entering for the '
+        'ticket already shown, but still emits it when navigating to a '
+        'different ticket',
+        setUp: () {
+          // Returns a genuinely refreshed value (not identical to the
+          // seed) — Cubit.emit is a no-op for a value equal to the
+          // current state, which would otherwise make the first
+          // re-entry's emission invisible to this test for the wrong
+          // reason (deduped, not because Loading was skipped).
+          when(() => repository.getTicketById(ticket.id)).thenAnswer(
+            (_) async => ticket.copyWith(title: 'Refreshed'),
+          );
+          when(
+            () => repository.getTicketById(otherTask.id),
+          ).thenAnswer((_) async => otherTask);
+        },
+        build: () => TicketsCubit(repository),
+        seed: () => TicketDetailLoaded(ticket),
+        act: (cubit) async {
+          await cubit.getTicketById(ticket.id);
+          await cubit.getTicketById(otherTask.id);
+        },
+        expect: () => [
+          TicketDetailLoaded(ticket.copyWith(title: 'Refreshed')),
+          const TicketsLoading(),
+          TicketDetailLoaded(otherTask),
+        ],
+      );
+    },
+  );
 
   group('per-phase model routing (per-phase-tier-based-model-routing)', () {
     late MockAgentModelClient agentClient;

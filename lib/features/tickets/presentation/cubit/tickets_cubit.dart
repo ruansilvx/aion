@@ -851,7 +851,13 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [_triggerEmbeddingRegen] — always, on every create, same condition as
   /// embedding regen — so a freshly created ticket's unset `complexity`/
   /// `estimate` get an AI first guess, and (for a `task`/`bug`) a
-  /// token-cost prediction, without blocking this save.
+  /// token-cost prediction, without blocking this save. The
+  /// [_estimationSuggester] call chains
+  /// [_refreshDetailIfOpenAndAffected] onto its completion, so a
+  /// suggestion that lands while the same ticket's detail screen is
+  /// already open (e.g. the user navigated there right after creating it)
+  /// live-refreshes instead of waiting for a manual reload. Added for
+  /// `aion-arch/changes/live-refresh-open-ticket-detail-screen`.
   Future<Ticket> createTicket({
     required TicketType type,
     required String title,
@@ -902,7 +908,11 @@ class TicketsCubit extends Cubit<TicketsState> {
         // Always regenerate on create (no prior title/description to
         // compare against), fire-and-forget.
         unawaited(_triggerEmbeddingRegen(persisted));
-        unawaited(_estimationSuggester.suggest(persisted));
+        unawaited(
+          _estimationSuggester
+              .suggest(persisted)
+              .then((_) => _refreshDetailIfOpenAndAffected(persisted.id)),
+        );
         unawaited(_tokenPredictor.suggest(persisted));
         unawaited(_triggerGitProjection(persisted, 'created'));
       }
@@ -941,7 +951,11 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [_triggerOrQueueCodingExecution] starts (or queues) the
   /// coding-execution run once the write succeeds. Also calls
   /// [_refreshBlockedBoardState] on success, since [id] may be another
-  /// ticket's blocker.
+  /// ticket's blocker, and fires a fire-and-forget
+  /// [_refreshDetailIfOpenAndAffected] call so a Story's already-open
+  /// detail screen live-refreshes [TicketDetailLoaded.canAdvanceSddStage]
+  /// when [id] is one of its direct Task/Bug children. Added for
+  /// `aion-arch/changes/live-refresh-open-ticket-detail-screen`.
   Future<void> updateTicketStatus(String id, TicketStatus status) async {
     // Only fetch the ticket up front when the status is the one the
     // interceptors can actually reject (inProgress) — every other
@@ -958,6 +972,12 @@ class TicketsCubit extends Cubit<TicketsState> {
         }
       }
     }
+
+    // Captured before this call's own TicketStatusUpdating/TicketStatusUpdated
+    // emissions below overwrite `state` — see _refreshDetailIfOpenAndAffected's
+    // dartdoc for why a live `state` read after those emissions would never
+    // see a detail screen that was open when this call started.
+    final stateBeforeThisWrite = state;
 
     _searchGeneration++;
     final currentTickets = switch (state) {
@@ -995,6 +1015,9 @@ class TicketsCubit extends Cubit<TicketsState> {
       );
       emit(TicketStatusUpdated(page.tickets, hasMore: page.hasMore));
       unawaited(_refreshBlockedBoardState());
+      unawaited(
+        _refreshDetailIfOpenAndAffected(id, fromState: stateBeforeThisWrite),
+      );
     } catch (e) {
       emit(TicketsError(e.toString()));
     }
@@ -1029,7 +1052,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [_triggerEmbeddingRegen], under the same title/description-changed
   /// condition, so a content edit gets a fresh AI complexity/estimate
   /// suggestion for whichever field isn't `manual`-locked, and (for a
-  /// `task`/`bug` not yet executing) a fresh token-cost prediction.
+  /// `task`/`bug` not yet executing) a fresh token-cost prediction. The
+  /// [_estimationSuggester] call chains [_refreshDetailIfOpenAndAffected]
+  /// onto its completion, so a passive suggestion that lands while
+  /// [refreshed]'s own detail screen is still open live-refreshes instead
+  /// of waiting for a manual reload. Added for
+  /// `aion-arch/changes/live-refresh-open-ticket-detail-screen`.
   ///
   /// [complexityEdited]/[estimateEdited] tell [TicketRepository.updateTicket]
   /// whether *this specific call* is the Complexity picker's `onSelected`
@@ -1069,7 +1097,11 @@ class TicketsCubit extends Cubit<TicketsState> {
             previous.title != refreshed.title ||
             previous.description != refreshed.description) {
           unawaited(_triggerEmbeddingRegen(refreshed));
-          unawaited(_estimationSuggester.suggest(refreshed));
+          unawaited(
+            _estimationSuggester
+                .suggest(refreshed)
+                .then((_) => _refreshDetailIfOpenAndAffected(refreshed.id)),
+          );
           unawaited(_tokenPredictor.suggest(refreshed));
         }
         if (previous != null &&
@@ -4484,6 +4516,60 @@ class TicketsCubit extends Cubit<TicketsState> {
     return _rollupRecomputer.recompute(startIds, eventLabel);
   }
 
+  /// Re-fetches and silently re-emits [TicketDetailLoaded] for the
+  /// currently open ticket detail screen when a background write may have
+  /// changed data it depends on. Added for
+  /// `aion-arch/changes/live-refresh-open-ticket-detail-screen`.
+  ///
+  /// Two cases trigger a refresh:
+  /// - [writtenTicketId] is the ticket currently shown
+  ///   ([TicketDetailLoaded.ticket]'s `id` matches) — e.g. a passive
+  ///   AI-suggestion landed for it (see [createTicket]/[updateTicket]'s
+  ///   [_estimationSuggester] trigger).
+  /// - The currently shown ticket is a `story` and [writtenTicketId] is
+  ///   one of its direct Task/Bug children (see
+  ///   [TicketTypeHierarchy.executableTypes]) — e.g. a sibling Task's
+  ///   status changed via [updateTicketStatus], which may flip
+  ///   [TicketDetailLoaded.canAdvanceSddStage].
+  ///
+  /// No-ops when no detail screen is open, or the open ticket is
+  /// unrelated to [writtenTicketId]. Delegates to [getTicketById], which
+  /// never flashes [TicketsLoading] and preserves the open ticket's
+  /// already-loaded Documentation-section relations when re-entering for
+  /// the same id — see that method's dartdoc.
+  ///
+  /// [fromState] defaults to a live read of [state] — correct for the
+  /// [createTicket]/[updateTicket] call sites, which chain this onto
+  /// [_estimationSuggester]'s completion sometime *after* their own
+  /// synchronous emission, so "is a detail screen open right now" is the
+  /// right question. [updateTicketStatus] instead passes the state it
+  /// captured *before* its own `TicketStatusUpdating`/`TicketStatusUpdated`
+  /// emissions, since those would otherwise have already overwritten
+  /// [state] by the time this runs — reading live [state] there would
+  /// never see the detail screen that was open when the call started.
+  Future<void> _refreshDetailIfOpenAndAffected(
+    String writtenTicketId, {
+    TicketsState? fromState,
+  }) async {
+    final current = fromState ?? state;
+    if (current is! TicketDetailLoaded) return;
+
+    if (current.ticket.id == writtenTicketId) {
+      await getTicketById(current.ticket.id);
+      return;
+    }
+
+    if (current.ticket.type == TicketType.story) {
+      final children = await _repository.getTicketsByParent(
+        current.ticket.id,
+        types: TicketTypeHierarchy.executableTypes,
+      );
+      if (children.any((c) => c.id == writtenTicketId)) {
+        await getTicketById(current.ticket.id);
+      }
+    }
+  }
+
   /// Runs [trashed]'s single-ticket `'trashed'` projection (no-op if
   /// [trashed] is `null`) followed by [parentId]'s ancestor chain's rollup
   /// recompute, in that order — see [trashTicket]'s dartdoc for why these
@@ -4574,7 +4660,27 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Fetches the ticket with internal id [id]. Emits [TicketsLoading] then
   /// [TicketDetailLoaded] on success, or [TicketsError] if not found or the
-  /// repository call throws. For an `epic`/`story` ticket, also fetches
+  /// repository call throws — unless the current state is already
+  /// [TicketDetailLoaded] for this exact [id], in which case the
+  /// [TicketsLoading] emission is skipped (mirrors [searchTickets]'s
+  /// existing no-flash-over-content-already-shown precedent, scoped
+  /// per-id instead of per-list) and the refreshed [TicketDetailLoaded]
+  /// carries forward that previous state's [TicketDetailLoaded.childDocs]/
+  /// [TicketDetailLoaded.linkedTickets]/[TicketDetailLoaded.backlinks]/
+  /// [TicketDetailLoaded.gapsAndOpenQuestions]/
+  /// [TicketDetailLoaded.pendingToolProposal] unchanged, since this
+  /// method's own fetch never recomputes those Documentation-section/
+  /// chat-branching fields (only [loadDocumentRelations] does) and a
+  /// same-id re-fetch shouldn't silently blow them away. Added for
+  /// `aion-arch/changes/live-refresh-open-ticket-detail-screen`, so
+  /// [_refreshDetailIfOpenAndAffected]'s silent background refresh lands
+  /// invisibly instead of flickering the screen or dropping already-loaded
+  /// relations — and, as a side effect, every pre-existing same-id
+  /// re-fetch-via-[getTicketById] call site (e.g. [updateTicket],
+  /// [changeTicketStatus], [regenerateComplexitySuggestion], the
+  /// post-run coding-execution refresh, the post-stage-advance refresh)
+  /// is quietly smoothed too, none of which depended on a
+  /// [TicketsLoading] flash occurring. For an `epic`/`story` ticket, also fetches
   /// its direct children and evaluates [advanceSddStage]'s precondition
   /// for the ticket's current stage, populating
   /// [TicketDetailLoaded.canAdvanceSddStage] and, when that's `false`,
@@ -4609,7 +4715,13 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [TicketDetailLoaded.executionTokenTotal] from it. Added for
   /// `aion-arch/changes/token-cost-prediction`.
   Future<void> getTicketById(String id) async {
-    emit(const TicketsLoading());
+    final current = state;
+    final previousDetail = current is TicketDetailLoaded && current.ticket.id == id
+        ? current
+        : null;
+    if (previousDetail == null) {
+      emit(const TicketsLoading());
+    }
     try {
       final ticket = await _repository.getTicketById(id);
       if (ticket == null) {
@@ -4683,6 +4795,11 @@ class TicketsCubit extends Cubit<TicketsState> {
       emit(
         TicketDetailLoaded(
           ticket,
+          childDocs: previousDetail?.childDocs ?? const [],
+          linkedTickets: previousDetail?.linkedTickets ?? const [],
+          backlinks: previousDetail?.backlinks ?? const [],
+          gapsAndOpenQuestions: previousDetail?.gapsAndOpenQuestions ?? const [],
+          pendingToolProposal: previousDetail?.pendingToolProposal,
           canAdvanceSddStage: check.canAdvance,
           sddStageBlockReason: check.blockReason,
           needsDesignReview: needsDesignReview,
