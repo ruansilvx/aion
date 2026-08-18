@@ -41,9 +41,11 @@ import 'package:aion/features/tickets/domain/entities/execution_queue_entry.dart
 import 'package:aion/features/tickets/domain/entities/gap_or_question_ref.dart';
 import 'package:aion/features/tickets/domain/entities/linked_ticket_ref.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
+import 'package:aion/features/tickets/domain/entities/ticket_board_column_visibility.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_list_filters.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_list_sort.dart';
+import 'package:aion/features/tickets/domain/entities/ticket_list_view_mode.dart';
 import 'package:aion/features/tickets/domain/enums/backlink_origin.dart';
 import 'package:aion/features/tickets/domain/enums/comment_author_type.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
@@ -59,9 +61,11 @@ import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/repositories/comment_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/execution_queue_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/page_wikilink_repository.dart';
+import 'package:aion/features/tickets/domain/repositories/ticket_board_column_visibility_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_link_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_list_filter_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_list_sort_repository.dart';
+import 'package:aion/features/tickets/domain/repositories/ticket_list_view_mode_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
 import 'package:aion/features/tickets/domain/utils/ticket_link_direction.dart';
 import 'package:aion/features/tickets/domain/utils/ticket_rollup_calculator.dart';
@@ -169,7 +173,8 @@ class TicketsCubit extends Cubit<TicketsState> {
   // projectRootPath/providerRegistry/commentRepository/
   // automationSettingsRepository/modelRoutingRepository/gitClient/
   // gitHubClient/baselineRepository/projectId/baselineVersion/
-  // projectName/filterRepository/sortRepository/pageWikilinkRepository/
+  // projectName/filterRepository/sortRepository/viewModeRepository/
+  // boardColumnVisibilityRepository/pageWikilinkRepository/
   // activeTicketViewRegistry/executionSchedulingRepository/
   // executionQueueRepository) intentionally differ from their private
   // backing fields; a private identifier can't be used as an external
@@ -194,6 +199,8 @@ class TicketsCubit extends Cubit<TicketsState> {
     ExecutionContextCapRepository? executionContextCapRepository,
     TicketListFilterRepository? filterRepository,
     TicketListSortRepository? sortRepository,
+    TicketListViewModeRepository? viewModeRepository,
+    TicketBoardColumnVisibilityRepository? boardColumnVisibilityRepository,
     PageWikilinkRepository? pageWikilinkRepository,
     ActiveTicketViewRegistry? activeTicketViewRegistry,
     ExecutionSchedulingRepository? executionSchedulingRepository,
@@ -216,6 +223,8 @@ class TicketsCubit extends Cubit<TicketsState> {
     _executionContextCapRepository = executionContextCapRepository;
     _filterRepository = filterRepository;
     _sortRepository = sortRepository;
+    _viewModeRepository = viewModeRepository;
+    _boardColumnVisibilityRepository = boardColumnVisibilityRepository;
     _pageWikilinkRepository = pageWikilinkRepository;
     _executionSchedulingRepository = executionSchedulingRepository;
     _executionQueueRepository = executionQueueRepository;
@@ -323,6 +332,22 @@ class TicketsCubit extends Cubit<TicketsState> {
   late final ExecutionContextCapRepository? _executionContextCapRepository;
   late final TicketListFilterRepository? _filterRepository;
   late final TicketListSortRepository? _sortRepository;
+
+  /// Backs [currentViewMode]/[setViewMode]/[loadPersistedViewMode] — see
+  /// those methods. `null` (the default, and every existing test/call
+  /// site) makes [setViewMode] skip persistence (the in-memory override
+  /// still works) and [loadPersistedViewMode] a no-op; real usage
+  /// (`app_router.dart`) always supplies one. Added for
+  /// `aion-arch/changes/list-board-view-and-column-visibility`.
+  late final TicketListViewModeRepository? _viewModeRepository;
+
+  /// Backs [hiddenBoardColumns]/[toggleBoardColumnVisibility]/
+  /// [loadPersistedBoardColumnVisibility] — see those methods. Same
+  /// optional-dependency convention as [_viewModeRepository]. Added for
+  /// `aion-arch/changes/list-board-view-and-column-visibility`.
+  late final TicketBoardColumnVisibilityRepository?
+  _boardColumnVisibilityRepository;
+
   late final PageWikilinkRepository? _pageWikilinkRepository;
 
   /// Persists the user's coding-execution scheduling mode/concurrency
@@ -643,6 +668,103 @@ class TicketsCubit extends Cubit<TicketsState> {
     final projectId = _projectId;
     if (repo == null || projectId == null) return;
     _explicitSort = await repo.getSort(projectId);
+  }
+
+  /// The ticket list's current view mode — `board` until an explicit
+  /// choice is made or restored via [loadPersistedViewMode]. Plain state,
+  /// not part of [TicketsState]: switching view mode never changes which
+  /// tickets are loaded, only which widget renders the already-loaded
+  /// list, so it doesn't belong in the list-loading lifecycle states
+  /// [TicketsState] models — same reasoning [selectedStatuses]/
+  /// [currentSort] already follow. See
+  /// `aion-arch/changes/list-board-view-and-column-visibility`.
+  TicketListViewMode _viewMode = TicketListViewMode.board;
+
+  /// The currently active view mode. Read by `TicketsListScreen`
+  /// everywhere it needs to know whether List or Board mode is active.
+  TicketListViewMode get currentViewMode => _viewMode;
+
+  /// Sets [mode] as the current view mode, then persists it via
+  /// [_viewModeRepository]/[_projectId] (no-op if either is `null`, same
+  /// optional-dependency pattern as [setSort]). Does **not** call
+  /// [searchTickets] — a view-mode change never affects which tickets
+  /// match the current query, only which widget renders the
+  /// already-loaded list — so this method never emits a [TicketsState].
+  /// Callers must force their own rebuild after awaiting this (see
+  /// `TicketsListScreen._handleViewModeChanged`), the same
+  /// forced-rebuild precedent [setSort]'s callers already establish for
+  /// state that lives outside [TicketsState].
+  Future<void> setViewMode(TicketListViewMode mode) async {
+    _viewMode = mode;
+    final repo = _viewModeRepository;
+    final projectId = _projectId;
+    if (repo != null && projectId != null) {
+      await repo.setViewMode(projectId, mode);
+    }
+  }
+
+  /// Reads this project's persisted [TicketListViewMode] (via
+  /// [_viewModeRepository]/[_projectId]) into [_viewMode], without
+  /// emitting a state — same load-before-first-render precedent as
+  /// [loadPersistedSort], called alongside it from
+  /// `TicketsListScreen._initializeAndSearch`. No-ops if
+  /// [_viewModeRepository] or [_projectId] is `null`, or if nothing was
+  /// persisted yet (leaves [_viewMode] at its [TicketListViewMode.board]
+  /// default).
+  Future<void> loadPersistedViewMode() async {
+    final repo = _viewModeRepository;
+    final projectId = _projectId;
+    if (repo == null || projectId == null) return;
+    final mode = await repo.getViewMode(projectId);
+    if (mode != null) _viewMode = mode;
+  }
+
+  /// The [TicketStatus] values whose board column is currently hidden —
+  /// empty means every column is visible. Plain state, not part of
+  /// [TicketsState], for the same reason [_viewMode] isn't: hiding a
+  /// column never changes which tickets are loaded, only which
+  /// `BoardColumn`s `TicketBoardView` renders. See
+  /// `aion-arch/changes/list-board-view-and-column-visibility`.
+  Set<TicketStatus> _hiddenColumns = const {};
+
+  /// The board's currently hidden status columns. Read by
+  /// `TicketBoardView` (which columns to skip) and `TicketColumnsPopover`
+  /// (each row's checked state).
+  Set<TicketStatus> get hiddenBoardColumns => _hiddenColumns;
+
+  /// Toggles [status]'s membership in [hiddenBoardColumns] — hides it if
+  /// currently visible, shows it if currently hidden — then persists the
+  /// updated [TicketBoardColumnVisibility] via
+  /// [_boardColumnVisibilityRepository]/[_projectId] (no-op if either is
+  /// `null`). Does **not** call [searchTickets], same reasoning as
+  /// [setViewMode] — never emits a [TicketsState]; callers must force
+  /// their own rebuild after awaiting this (see
+  /// `TicketsListScreen._handleColumnVisibilityToggled`).
+  Future<void> toggleBoardColumnVisibility(TicketStatus status) async {
+    _hiddenColumns = _toggleFilter(_hiddenColumns, status);
+    final repo = _boardColumnVisibilityRepository;
+    final projectId = _projectId;
+    if (repo != null && projectId != null) {
+      await repo.setHiddenColumns(
+        projectId,
+        TicketBoardColumnVisibility(hiddenStatuses: _hiddenColumns),
+      );
+    }
+  }
+
+  /// Reads this project's persisted [TicketBoardColumnVisibility] (via
+  /// [_boardColumnVisibilityRepository]/[_projectId]) into
+  /// [_hiddenColumns], without emitting a state — same
+  /// load-before-first-render precedent as [loadPersistedViewMode],
+  /// called alongside it from `TicketsListScreen._initializeAndSearch`.
+  /// No-ops if [_boardColumnVisibilityRepository] or [_projectId] is
+  /// `null`.
+  Future<void> loadPersistedBoardColumnVisibility() async {
+    final repo = _boardColumnVisibilityRepository;
+    final projectId = _projectId;
+    if (repo == null || projectId == null) return;
+    final visibility = await repo.getHiddenColumns(projectId);
+    _hiddenColumns = visibility.hiddenStatuses;
   }
 
   /// Pulls the current tickets and [TicketsState]-carried `hasMore` out of

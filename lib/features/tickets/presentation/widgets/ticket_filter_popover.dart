@@ -110,7 +110,26 @@ class _TicketFilterPopoverState extends State<TicketFilterPopover> {
     // showing its state from when the popover was opened, even though
     // the trigger badge, chip row, and ticket list (driven directly by
     // `TicketsListScreen`'s own `BlocBuilder`) all update correctly.
-    _overlayEntry?.markNeedsBuild();
+    // Deferred to a post-frame callback rather than called synchronously
+    // here — this `didUpdateWidget` can itself run nested inside
+    // another ancestor's build pass (concretely: the very first open,
+    // where `_showOverlay`'s `onOpenChanged` callback marks
+    // `_TicketFilterAndSortSection` dirty in the same frame this
+    // widget's own state changes), and the `OverlayEntry` lives outside
+    // this widget's own subtree (under the root `Overlay`), so a
+    // synchronous `markNeedsBuild()` here hits Flutter's "setState
+    // called during build" assertion for a non-descendant target —
+    // reproducible by tapping this trigger on a native desktop build
+    // (see `aion-arch/changes/list-board-view-and-column-visibility`'s
+    // manual verification pass). `TicketSortPopover`'s own
+    // `didUpdateWidget` already used this fix; this one hadn't been
+    // updated to match until now.
+    final entry = _overlayEntry;
+    if (entry != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_overlayEntry == entry) entry.markNeedsBuild();
+      });
+    }
   }
 
   @override

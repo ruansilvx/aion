@@ -27,10 +27,14 @@ import 'package:aion/features/providers/domain/repositories/execution_scheduling
 import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
 import 'package:aion/features/tickets/data/services/active_ticket_view_registry.dart';
 import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
+import 'package:aion/features/tickets/domain/entities/ticket_board_column_visibility.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_list_sort.dart';
+import 'package:aion/features/tickets/domain/entities/ticket_list_view_mode.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sort_direction.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sort_field.dart';
+import 'package:aion/features/tickets/domain/repositories/ticket_board_column_visibility_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_list_sort_repository.dart';
+import 'package:aion/features/tickets/domain/repositories/ticket_list_view_mode_repository.dart';
 import 'package:aion/features/tickets/tickets.dart';
 import 'package:aion/l10n/generated/app_localizations.dart';
 
@@ -67,6 +71,12 @@ class MockTicketListFilterRepository extends Mock
 
 class MockTicketListSortRepository extends Mock
     implements TicketListSortRepository {}
+
+class MockTicketListViewModeRepository extends Mock
+    implements TicketListViewModeRepository {}
+
+class MockTicketBoardColumnVisibilityRepository extends Mock
+    implements TicketBoardColumnVisibilityRepository {}
 
 class MockPageWikilinkRepository extends Mock implements PageWikilinkRepository {}
 
@@ -552,6 +562,8 @@ void main() {
         direction: TicketSortDirection.descending,
       ),
     );
+    registerFallbackValue(TicketListViewMode.board);
+    registerFallbackValue(const TicketBoardColumnVisibility());
     registerFallbackValue(Uint8List(0));
     registerFallbackValue(const AgentRequest(prompt: '', model: ''));
     registerFallbackValue(SddStage.exploring);
@@ -2488,6 +2500,275 @@ void main() {
           ),
         ).called(1);
       });
+    });
+
+    group('setViewMode/loadPersistedViewMode/toggleBoardColumnVisibility/'
+        'loadPersistedBoardColumnVisibility '
+        '(list-board-view-and-column-visibility)', () {
+      late MockTicketListViewModeRepository viewModeRepository;
+      late MockTicketBoardColumnVisibilityRepository
+      boardColumnVisibilityRepository;
+
+      setUp(() {
+        viewModeRepository = MockTicketListViewModeRepository();
+        boardColumnVisibilityRepository =
+            MockTicketBoardColumnVisibilityRepository();
+      });
+
+      test('currentViewMode defaults to board before any explicit choice '
+          'or restore', () {
+        final cubit = TicketsCubit(repository);
+
+        expect(cubit.currentViewMode, TicketListViewMode.board);
+      });
+
+      test('setViewMode persists via viewModeRepository when projectId is '
+          'supplied, and never emits a state', () async {
+        when(
+          () => viewModeRepository.setViewMode(any(), any()),
+        ).thenAnswer((_) async {});
+        final cubit = TicketsCubit(
+          repository,
+          viewModeRepository: viewModeRepository,
+          projectId: 'proj-1',
+        );
+        final states = <TicketsState>[];
+        final subscription = cubit.stream.listen(states.add);
+
+        await cubit.setViewMode(TicketListViewMode.list);
+
+        verify(
+          () => viewModeRepository.setViewMode(
+            'proj-1',
+            TicketListViewMode.list,
+          ),
+        ).called(1);
+        expect(cubit.currentViewMode, TicketListViewMode.list);
+        expect(states, isEmpty);
+        await subscription.cancel();
+      });
+
+      test(
+        'setViewMode does not persist when viewModeRepository is null',
+        () async {
+          final cubit = TicketsCubit(repository, projectId: 'proj-1');
+
+          await cubit.setViewMode(TicketListViewMode.list);
+
+          expect(cubit.currentViewMode, TicketListViewMode.list);
+        },
+      );
+
+      test('setViewMode does not persist when projectId is null', () async {
+        final cubit = TicketsCubit(
+          repository,
+          viewModeRepository: viewModeRepository,
+        );
+
+        await cubit.setViewMode(TicketListViewMode.list);
+
+        verifyNever(() => viewModeRepository.setViewMode(any(), any()));
+        expect(cubit.currentViewMode, TicketListViewMode.list);
+      });
+
+      test('loadPersistedViewMode populates currentViewMode from a fake '
+          'repository without emitting a state', () async {
+        when(
+          () => viewModeRepository.getViewMode('proj-1'),
+        ).thenAnswer((_) async => TicketListViewMode.list);
+        final cubit = TicketsCubit(
+          repository,
+          viewModeRepository: viewModeRepository,
+          projectId: 'proj-1',
+        );
+        final states = <TicketsState>[];
+        final subscription = cubit.stream.listen(states.add);
+
+        await cubit.loadPersistedViewMode();
+
+        expect(cubit.currentViewMode, TicketListViewMode.list);
+        expect(states, isEmpty);
+        await subscription.cancel();
+      });
+
+      test(
+        'loadPersistedViewMode no-ops when viewModeRepository is null',
+        () async {
+          final cubit = TicketsCubit(repository, projectId: 'proj-1');
+
+          await cubit.loadPersistedViewMode();
+
+          expect(cubit.currentViewMode, TicketListViewMode.board);
+        },
+      );
+
+      test('loadPersistedViewMode no-ops when projectId is null', () async {
+        final cubit = TicketsCubit(
+          repository,
+          viewModeRepository: viewModeRepository,
+        );
+
+        await cubit.loadPersistedViewMode();
+
+        verifyNever(() => viewModeRepository.getViewMode(any()));
+        expect(cubit.currentViewMode, TicketListViewMode.board);
+      });
+
+      test('loadPersistedViewMode leaves the board default when nothing '
+          'was persisted yet', () async {
+        when(
+          () => viewModeRepository.getViewMode('proj-1'),
+        ).thenAnswer((_) async => null);
+        final cubit = TicketsCubit(
+          repository,
+          viewModeRepository: viewModeRepository,
+          projectId: 'proj-1',
+        );
+
+        await cubit.loadPersistedViewMode();
+
+        expect(cubit.currentViewMode, TicketListViewMode.board);
+      });
+
+      test('hiddenBoardColumns defaults to empty (nothing hidden)', () {
+        final cubit = TicketsCubit(repository);
+
+        expect(cubit.hiddenBoardColumns, isEmpty);
+      });
+
+      test('toggleBoardColumnVisibility hides a visible column, persists '
+          'via boardColumnVisibilityRepository, and never emits a state', () async {
+        when(
+          () => boardColumnVisibilityRepository.setHiddenColumns(any(), any()),
+        ).thenAnswer((_) async {});
+        final cubit = TicketsCubit(
+          repository,
+          boardColumnVisibilityRepository: boardColumnVisibilityRepository,
+          projectId: 'proj-1',
+        );
+        final states = <TicketsState>[];
+        final subscription = cubit.stream.listen(states.add);
+
+        await cubit.toggleBoardColumnVisibility(TicketStatus.backlog);
+
+        verify(
+          () => boardColumnVisibilityRepository.setHiddenColumns(
+            'proj-1',
+            const TicketBoardColumnVisibility(
+              hiddenStatuses: {TicketStatus.backlog},
+            ),
+          ),
+        ).called(1);
+        expect(cubit.hiddenBoardColumns, {TicketStatus.backlog});
+        expect(states, isEmpty);
+        await subscription.cancel();
+      });
+
+      test('toggleBoardColumnVisibility shows an already-hidden column '
+          'again (toggles off)', () async {
+        when(
+          () => boardColumnVisibilityRepository.setHiddenColumns(any(), any()),
+        ).thenAnswer((_) async {});
+        final cubit = TicketsCubit(
+          repository,
+          boardColumnVisibilityRepository: boardColumnVisibilityRepository,
+          projectId: 'proj-1',
+        );
+        await cubit.toggleBoardColumnVisibility(TicketStatus.backlog);
+
+        await cubit.toggleBoardColumnVisibility(TicketStatus.backlog);
+
+        expect(cubit.hiddenBoardColumns, isEmpty);
+      });
+
+      test(
+        'toggleBoardColumnVisibility does not persist when '
+        'boardColumnVisibilityRepository is null',
+        () async {
+          final cubit = TicketsCubit(repository, projectId: 'proj-1');
+
+          await cubit.toggleBoardColumnVisibility(TicketStatus.backlog);
+
+          expect(cubit.hiddenBoardColumns, {TicketStatus.backlog});
+        },
+      );
+
+      test(
+        'toggleBoardColumnVisibility does not persist when projectId is '
+        'null',
+        () async {
+          final cubit = TicketsCubit(
+            repository,
+            boardColumnVisibilityRepository: boardColumnVisibilityRepository,
+          );
+
+          await cubit.toggleBoardColumnVisibility(TicketStatus.backlog);
+
+          verifyNever(
+            () => boardColumnVisibilityRepository.setHiddenColumns(
+              any(),
+              any(),
+            ),
+          );
+          expect(cubit.hiddenBoardColumns, {TicketStatus.backlog});
+        },
+      );
+
+      test('loadPersistedBoardColumnVisibility populates hiddenBoardColumns '
+          'from a fake repository without emitting a state', () async {
+        when(
+          () => boardColumnVisibilityRepository.getHiddenColumns('proj-1'),
+        ).thenAnswer(
+          (_) async => const TicketBoardColumnVisibility(
+            hiddenStatuses: {TicketStatus.backlog, TicketStatus.cancelled},
+          ),
+        );
+        final cubit = TicketsCubit(
+          repository,
+          boardColumnVisibilityRepository: boardColumnVisibilityRepository,
+          projectId: 'proj-1',
+        );
+        final states = <TicketsState>[];
+        final subscription = cubit.stream.listen(states.add);
+
+        await cubit.loadPersistedBoardColumnVisibility();
+
+        expect(cubit.hiddenBoardColumns, {
+          TicketStatus.backlog,
+          TicketStatus.cancelled,
+        });
+        expect(states, isEmpty);
+        await subscription.cancel();
+      });
+
+      test(
+        'loadPersistedBoardColumnVisibility no-ops when '
+        'boardColumnVisibilityRepository is null',
+        () async {
+          final cubit = TicketsCubit(repository, projectId: 'proj-1');
+
+          await cubit.loadPersistedBoardColumnVisibility();
+
+          expect(cubit.hiddenBoardColumns, isEmpty);
+        },
+      );
+
+      test(
+        'loadPersistedBoardColumnVisibility no-ops when projectId is null',
+        () async {
+          final cubit = TicketsCubit(
+            repository,
+            boardColumnVisibilityRepository: boardColumnVisibilityRepository,
+          );
+
+          await cubit.loadPersistedBoardColumnVisibility();
+
+          verifyNever(
+            () => boardColumnVisibilityRepository.getHiddenColumns(any()),
+          );
+          expect(cubit.hiddenBoardColumns, isEmpty);
+        },
+      );
     });
 
     group('getValidParentCandidates', () {

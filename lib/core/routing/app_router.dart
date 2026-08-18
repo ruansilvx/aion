@@ -31,8 +31,10 @@ import 'package:aion/features/tickets/data/repositories/drift_execution_queue_re
 import 'package:aion/features/tickets/data/repositories/drift_page_wikilink_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_link_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_repository.dart';
+import 'package:aion/features/tickets/data/repositories/shared_prefs_ticket_board_column_visibility_repository.dart';
 import 'package:aion/features/tickets/data/repositories/shared_prefs_ticket_list_filter_repository.dart';
 import 'package:aion/features/tickets/data/repositories/shared_prefs_ticket_list_sort_repository.dart';
+import 'package:aion/features/tickets/data/repositories/shared_prefs_ticket_list_view_mode_repository.dart';
 import 'package:aion/features/tickets/data/services/active_ticket_view_registry.dart';
 import 'package:aion/features/tickets/data/services/document_parent_migration_service.dart';
 import 'package:aion/features/tickets/data/services/page_wikilink_indexer.dart';
@@ -42,7 +44,9 @@ import 'package:aion/features/tickets/data/services/ticket_markdown_reconciler.d
 import 'package:aion/features/tickets/data/services/ticket_markdown_watcher_service.dart';
 import 'package:aion/features/tickets/data/services/ticket_parent_trash_service.dart';
 import 'package:aion/features/tickets/data/services/ticket_repair_service.dart';
+import 'package:aion/features/tickets/domain/repositories/ticket_board_column_visibility_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_list_sort_repository.dart';
+import 'package:aion/features/tickets/domain/repositories/ticket_list_view_mode_repository.dart';
 import 'package:aion/features/tickets/tickets.dart';
 
 /// The app's route table: `/hub`, `/hub/new` (project switcher, no
@@ -529,6 +533,19 @@ class _WorkspaceShellState extends State<WorkspaceShell>
         RepositoryProvider<TicketListSortRepository>(
           create: (_) => SharedPrefsTicketListSortRepository(),
         ),
+        // Per-project ticket-list view-mode persistence — same scoping
+        // rationale as TicketListFilterRepository/TicketListSortRepository
+        // above. See
+        // aion-arch/changes/list-board-view-and-column-visibility.
+        RepositoryProvider<TicketListViewModeRepository>(
+          create: (_) => SharedPrefsTicketListViewModeRepository(),
+        ),
+        // Per-project board column-visibility persistence — same scoping
+        // rationale as the three ticket-list repositories above. See
+        // aion-arch/changes/list-board-view-and-column-visibility.
+        RepositoryProvider<TicketBoardColumnVisibilityRepository>(
+          create: (_) => SharedPrefsTicketBoardColumnVisibilityRepository(),
+        ),
         // Desktop-only project-scoped services below — git projection,
         // bidirectional resource/page reconcile, and repair. Absent
         // entirely on mobile/web (no rootPath to address git commands
@@ -620,6 +637,10 @@ class _WorkspaceShellState extends State<WorkspaceShell>
                   .read<ExecutionContextCapRepository>(),
               filterRepository: context.read<TicketListFilterRepository>(),
               sortRepository: context.read<TicketListSortRepository>(),
+              viewModeRepository: context
+                  .read<TicketListViewModeRepository>(),
+              boardColumnVisibilityRepository: context
+                  .read<TicketBoardColumnVisibilityRepository>(),
               pageWikilinkRepository: context.read<PageWikilinkRepository>(),
               activeTicketViewRegistry: rootPath != null
                   ? context.read<ActiveTicketViewRegistry>()

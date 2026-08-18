@@ -56,6 +56,15 @@
   },
   "ticketsListSortDirectionAscendingSemantics": ", ascending",
   "ticketsListSortDirectionDescendingSemantics": ", descending",
+  "ticketsListColumnsTriggerLabel": "Columns",
+  "ticketsListColumnsTriggerSemantics": "{count, plural, =0{Columns, none hidden} one{Columns, 1 hidden} other{Columns, {count} hidden}}",
+  "@ticketsListColumnsTriggerSemantics": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "ticketsListNoColumnsVisibleTitle": "No columns are visible",
+  "ticketsListNoColumnsVisibleHint": "Reopen Columns above to show one.",
   "ticketsListNoResultsState": "No tickets match your search",
   "ticketsListNoResultsHint": "Try a different term, or reset a filter to its \"All\" option.",
   "ticketsListLoadMoreRetry": "Couldn't load more — tap to retry",
