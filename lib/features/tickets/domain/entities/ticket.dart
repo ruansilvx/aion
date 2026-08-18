@@ -241,26 +241,28 @@ class Ticket extends Equatable {
   /// it unchanged. A plain `?? this.x` fallback can't tell "not passed"
   /// apart from "explicitly set to null," since both look like `null` at
   /// the call site. `id`, `ticketId`, `parentId`, `embedding`,
-  /// `syncStatus`, `createdAt`, `sddStage`, `estimateRollup`,
+  /// `syncStatus`, `createdAt`, `deletedAt`, `sddStage`, `estimateRollup`,
   /// `timeSpentRollup`, `complexitySource`, `estimateSource`,
   /// `predictedExecutionTokensLow`, and `predictedExecutionTokensHigh` are
-  /// never mutated by this method — `sddStage` is written only via
-  /// `TicketsCubit.advanceSddStage`, `estimateRollup`/`timeSpentRollup`
-  /// are written only via `TicketRepository.updateRollup`,
-  /// `complexitySource`/`estimateSource` are written only via
+  /// never mutated by this method — `deletedAt` is written only via
+  /// `TicketRepository.trashTicket`/`trashTickets`/`restoreTicket`,
+  /// `sddStage` is written only via `TicketsCubit.advanceSddStage`,
+  /// `estimateRollup`/`timeSpentRollup` are written only via
+  /// `TicketRepository.updateRollup`, `complexitySource`/`estimateSource`
+  /// are written only via
   /// `TicketRepository.updateTicket`/`applyEstimationSuggestion`, and
   /// `predictedExecutionTokensLow`/`predictedExecutionTokensHigh` are
   /// written only via `TicketRepository.applyTokenPrediction`, so none of
   /// their preconditions can be bypassed by a plain edit. Like
-  /// `estimateRollup`/`timeSpentRollup`, `complexitySource`/
+  /// `estimateRollup`/`timeSpentRollup`, `deletedAt`/`complexitySource`/
   /// `estimateSource`/`predictedExecutionTokensLow`/
   /// `predictedExecutionTokensHigh` still pass through unchanged on every
   /// call (there's no settable parameter for any of them) — only
-  /// [complexity]/[estimate] themselves are settable here. This is a
-  /// deliberate repeat of the same field-exclusion pattern
-  /// `aion-arch/ideas/ticket-copywith-drops-deletedat.md` flagged as a
-  /// past failure mode for `deletedAt` — `copyWith` must go out of its way
-  /// to preserve fields it doesn't understand, not silently drop them.
+  /// [complexity]/[estimate] themselves are settable here. `deletedAt`
+  /// used to be silently dropped (reset to `null`) here instead of passed
+  /// through — see `aion-arch/ideas/ticket-copywith-drops-deletedat.md`
+  /// for that past failure mode, now fixed by following this same
+  /// preserve-unconditionally pattern.
   Ticket copyWith({
     String? title,
     TicketFieldSetter<String?>? description,
@@ -293,6 +295,7 @@ class Ticket extends Equatable {
       timeSpent: timeSpent != null ? timeSpent() : this.timeSpent,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: deletedAt,
       complexity: complexity != null ? complexity() : this.complexity,
       sddStage: sddStage,
       severity: severity != null ? severity() : this.severity,
