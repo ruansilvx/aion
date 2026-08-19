@@ -5,11 +5,18 @@ import 'package:flutter/widgets.dart';
 
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
+import 'package:aion/features/tickets/domain/entities/default_workflow_statuses.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart'
     show ticketPriorityLabel, ticketStatusLabel;
+
+/// The default baseline preset's status names, in
+/// `WorkflowStatus.sortOrder` order. See `tickets_board_view.dart`'s
+/// `_defaultStatusOrder` for the same "known limitation" note.
+final List<String> _defaultStatusOrder = [
+  for (final s in defaultWorkflowStatuses) s.name,
+];
 
 /// The `TicketsListScreen` filters trigger's open overlay panel: three
 /// independently-toggleable checkbox groups (Status, Type, Priority).
@@ -53,9 +60,9 @@ class TicketFilterPopover extends StatefulWidget {
   /// [trigger] that doesn't need this may omit it.
   final ValueChanged<bool>? onFocusChanged;
 
-  /// Currently selected [TicketStatus] values, used to render each
-  /// status row's checked state.
-  final Set<TicketStatus> selectedStatuses;
+  /// Currently selected status names, used to render each status row's
+  /// checked state.
+  final Set<String> selectedStatuses;
 
   /// Currently selected [TicketType] values, used to render each type
   /// row's checked state.
@@ -66,7 +73,7 @@ class TicketFilterPopover extends StatefulWidget {
   final Set<TicketPriority> selectedPriorities;
 
   /// Called with the tapped/activated status row's value.
-  final ValueChanged<TicketStatus> onToggleStatus;
+  final ValueChanged<String> onToggleStatus;
 
   /// Called with the tapped/activated type row's value.
   final ValueChanged<TicketType> onToggleType;
@@ -214,7 +221,7 @@ class _TicketFilterPopoverState extends State<TicketFilterPopover> {
                                 _GroupHeader(
                                   context.l10n.ticketsListFilterStatusLabel,
                                 ),
-                                for (final status in TicketStatus.values)
+                                for (final status in _defaultStatusOrder)
                                   OverlayMenuItem(
                                     onTap: () =>
                                         widget.onToggleStatus(status),
@@ -222,7 +229,7 @@ class _TicketFilterPopoverState extends State<TicketFilterPopover> {
                                       context,
                                       status,
                                     ),
-                                    autofocus: status == TicketStatus.values.first,
+                                    autofocus: status == _defaultStatusOrder.first,
                                     child: _CheckRow(
                                       checked: widget.selectedStatuses
                                           .contains(status),
@@ -379,21 +386,20 @@ class _CheckRow extends StatelessWidget {
 
 /// An 8×8 accent dot for a `_CheckRow`'s Status group, mirroring
 /// `StatusIndicator`'s own color mapping (`tickets_list_screen.dart`):
-/// [TicketStatus.backlog] → `c.textMuted`, [TicketStatus.inProgress] →
-/// `c.primary`, [TicketStatus.done] → `c.success`, every other status →
-/// `c.textMuted`.
+/// `'backlog'` → `c.textMuted`, `'inProgress'` → `c.primary`, `'done'` →
+/// `c.success`, every other status → `c.textMuted`.
 class _StatusAccentDot extends StatelessWidget {
   const _StatusAccentDot({required this.status});
 
-  final TicketStatus status;
+  final String status;
 
   @override
   Widget build(BuildContext context) {
     final c = ThemeScope.of(context).colors;
     final color = switch (status) {
-      TicketStatus.backlog => c.textMuted,
-      TicketStatus.inProgress => c.primary,
-      TicketStatus.done => c.success,
+      'backlog' => c.textMuted,
+      'inProgress' => c.primary,
+      'done' => c.success,
       _ => c.textMuted,
     };
     return DecoratedBox(

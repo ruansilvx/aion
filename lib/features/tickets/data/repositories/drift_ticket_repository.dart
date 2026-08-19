@@ -13,7 +13,6 @@ import 'package:aion/features/tickets/domain/enums/ticket_complexity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_estimation_source.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_severity.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sync_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
@@ -75,7 +74,7 @@ class DriftTicketRepository implements TicketRepository {
       type: ticket.type.name,
       title: ticket.title,
       description: Value(ticket.description),
-      status: ticket.status.name,
+      status: ticket.status,
       priority: Value(ticket.priority.name),
       parentId: Value(ticket.parentId),
       embedding: Value(ticket.embedding),
@@ -101,11 +100,11 @@ class DriftTicketRepository implements TicketRepository {
   }
 
   @override
-  Future<void> updateTicketStatus(String id, TicketStatus status) {
+  Future<void> updateTicketStatus(String id, String status) {
     return _db.ticketDao.updateFields(
       id,
       TicketsTableCompanion(
-        status: Value(status.name),
+        status: Value(status),
         updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
       ),
     );
@@ -114,7 +113,7 @@ class DriftTicketRepository implements TicketRepository {
   /// Thin passthrough to [TicketDao.updateStatusByIds] — see
   /// [TicketRepository.updateStatusForIds] for the contract.
   @override
-  Future<void> updateStatusForIds(List<String> ids, TicketStatus status) {
+  Future<void> updateStatusForIds(List<String> ids, String status) {
     return _db.ticketDao.updateStatusByIds(
       ids,
       status,
@@ -290,18 +289,19 @@ class DriftTicketRepository implements TicketRepository {
   /// [TicketSearchPage.hasMore] without a separate `COUNT` query: if the
   /// DAO returns more than [limit] rows, another page exists — the extra
   /// row is trimmed before mapping to entities. [statuses]/[types]/
-  /// [priorities]/[sort] are passed straight through to the DAO, which
-  /// applies the interface's OR-within-field/AND-across-field/ordering
-  /// semantics (see [TicketRepository.searchTickets]).
+  /// [priorities]/[sort]/[statusSortOrder] are passed straight through to
+  /// the DAO, which applies the interface's OR-within-field/AND-across-
+  /// field/ordering semantics (see [TicketRepository.searchTickets]).
   @override
   Future<TicketSearchPage> searchTickets({
     String? query,
-    Set<TicketStatus> statuses = const {},
+    Set<String> statuses = const {},
     Set<TicketType> types = const {},
     Set<TicketPriority> priorities = const {},
     required TicketListSort sort,
     required int limit,
     int offset = 0,
+    List<String> statusSortOrder = const [],
   }) async {
     final rows = await _db.ticketDao.searchTickets(
       query: query,
@@ -311,6 +311,7 @@ class DriftTicketRepository implements TicketRepository {
       sort: sort,
       limit: limit + 1,
       offset: offset,
+      statusSortOrder: statusSortOrder,
     );
     final hasMore = rows.length > limit;
     final page = hasMore ? rows.take(limit).toList() : rows;
@@ -530,10 +531,7 @@ class DriftTicketRepository implements TicketRepository {
       ),
       title: row.title,
       description: row.description,
-      status: TicketStatus.values.firstWhere(
-        (e) => e.name == row.status,
-        orElse: () => TicketStatus.backlog,
-      ),
+      status: row.status,
       priority: TicketPriority.values.firstWhere(
         (e) => e.name == row.priority,
         orElse: () => TicketPriority.none,

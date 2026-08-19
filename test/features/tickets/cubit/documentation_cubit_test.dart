@@ -24,7 +24,7 @@ void main() {
     ticketId: 'AIO-1',
     type: TicketType.page,
     title: 'Root page',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
   );
@@ -33,7 +33,7 @@ void main() {
     ticketId: 'AIO-2',
     type: TicketType.resource,
     title: 'Child resource',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     parentId: rootPage.id,
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),

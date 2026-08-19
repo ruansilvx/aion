@@ -18,8 +18,8 @@ import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_complexity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_estimation_source.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
+import 'package:aion/features/tickets/domain/entities/default_workflow_statuses.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sync_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_repair_cubit.dart';
@@ -395,11 +395,14 @@ class TicketMetadataSection extends StatelessWidget {
                                       context.l10n.ticketDetailChangeType,
                                 ),
                                 const SizedBox(width: AionSpacing.sp8),
-                                SelectionMenu<TicketStatus>(
+                                SelectionMenu<String>(
                                   trigger: StatusIndicator(
                                     status: ticket.status,
                                   ),
-                                  items: TicketStatus.values,
+                                  items: [
+                                    for (final s in defaultWorkflowStatuses)
+                                      s.name,
+                                  ],
                                   itemLabel: (s) =>
                                       ticketStatusLabel(context, s),
                                   currentValue: ticket.status,
@@ -685,7 +688,13 @@ class TicketMetadataSection extends StatelessWidget {
                                     .read<TicketsCubit>()
                                     .changeTicketStatus(
                                       ticket,
-                                      TicketStatus.inReview,
+                                      // UI-local fallback (mirrors this
+                                      // file's other default-preset-only
+                                      // literals) — the live
+                                      // reviewReady-role status name lives
+                                      // in `TicketsCubit._reviewReadyStatus`,
+                                      // not accessible from widget code.
+                                      'inReview',
                                     ),
                                 onRetry: () => context
                                     .read<TicketsCubit>()

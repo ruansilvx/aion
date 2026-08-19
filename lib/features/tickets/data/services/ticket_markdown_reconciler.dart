@@ -14,7 +14,6 @@ import 'package:aion/features/tickets/data/services/page_wikilink_indexer.dart';
 import 'package:aion/features/tickets/data/services/ticket_parent_trash_service.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sync_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
@@ -256,7 +255,7 @@ class TicketMarkdownReconciler {
     // what happened before `estimateSource` existed to get it wrong.
     await _repository.updateTicket(updated);
 
-    final status = fields[TicketMarkdownTemplate.status] as TicketStatus?;
+    final status = fields[TicketMarkdownTemplate.status] as String?;
     if (status != null && status != ticket.status) {
       await _repository.updateTicketStatus(ticket.id, status);
     }

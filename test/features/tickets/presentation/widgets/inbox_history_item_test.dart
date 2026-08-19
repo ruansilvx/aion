@@ -33,7 +33,7 @@ Ticket _inboxChat({required InboxPurpose purpose, String title = 'A chat'}) {
     ticketId: 'AIO-1',
     type: TicketType.chat,
     title: title,
-    status: TicketStatus.backlog,
+    status: 'backlog',
     inboxPurpose: purpose,
     createdAt: DateTime.now().subtract(const Duration(hours: 2)),
     updatedAt: DateTime.now(),

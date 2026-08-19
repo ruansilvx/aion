@@ -10,7 +10,6 @@ import 'package:aion/features/tickets/domain/entities/ticket_list_sort.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sort_direction.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sort_field.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/utils/ticket_sort_comparator.dart'
     show ticketFieldEnumValues;
@@ -187,12 +186,12 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
   /// change.
   Future<void> updateStatusByIds(
     List<String> ids,
-    TicketStatus status,
+    String status,
     int updatedAtMs,
   ) {
     return (update(ticketsTable)..where((t) => t.id.isIn(ids))).write(
       TicketsTableCompanion(
-        status: Value(status.name),
+        status: Value(status),
         updatedAt: Value(updatedAtMs),
       ),
     );
@@ -259,12 +258,13 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
   /// responsibility (see [DriftTicketRepository.searchTickets]).
   Future<List<TicketData>> searchTickets({
     String? query,
-    Set<TicketStatus> statuses = const {},
+    Set<String> statuses = const {},
     Set<TicketType> types = const {},
     Set<TicketPriority> priorities = const {},
     required TicketListSort sort,
     required int limit,
     int offset = 0,
+    List<String> statusSortOrder = const [],
   }) {
     final trimmed = query?.trim() ?? '';
     if (trimmed.isEmpty) {
@@ -280,7 +280,9 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
         ..where((t) => t.deletedAt.isNull())
         ..orderBy([
           (t) => OrderingTerm(
-            expression: CustomExpression<int>(_sortSql(effectiveSort.field)),
+            expression: CustomExpression<int>(
+              _sortSql(effectiveSort.field, statusSortOrder),
+            ),
             mode: _orderingModeFor(effectiveSort.direction),
           ),
           if (effectiveSort.field != TicketSortField.createdAt)
@@ -288,7 +290,7 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
         ])
         ..limit(limit, offset: offset);
       if (statuses.isNotEmpty) {
-        q.where((t) => t.status.isIn(statuses.map((v) => v.name)));
+        q.where((t) => t.status.isIn(statuses));
       }
       if (types.isNotEmpty) {
         q.where((t) => t.type.isIn(types.map((v) => v.name)));
@@ -313,7 +315,7 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
       }
     }
 
-    addInClause('tickets.status', statuses.map((v) => v.name).toSet());
+    addInClause('tickets.status', statuses);
     addInClause('tickets.type', types.map((v) => v.name).toSet());
     addInClause('tickets.priority', priorities.map((v) => v.name).toSet());
     variables.add(Variable(limit));
@@ -321,7 +323,7 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
 
     final orderBySql = sort.field == TicketSortField.relevance
         ? 'bm25(tickets_fts) ASC'
-        : '${_sortSql(sort.field)} '
+        : '${_sortSql(sort.field, statusSortOrder)} '
               '${sort.direction == TicketSortDirection.ascending ? 'ASC' : 'DESC'}'
               '${sort.field == TicketSortField.createdAt ? '' : ', tickets.created_at DESC'}';
 
@@ -339,19 +341,19 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
   /// Maps [field]'s declared enum values to their ordinal position, as a
   /// SQL `CASE` expression over that field's column (SQLite has no
   /// notion of Dart enum declaration order, so this expresses it
-  /// explicitly) — for [TicketSortField.priority]/[TicketSortField.status]/
-  /// [TicketSortField.type] only. Indexes into the shared
-  /// [ticketFieldEnumValues] lookup (`ticket_sort_comparator.dart`) so
-  /// this SQL-string builder and the in-memory `ticketSortComparator`
-  /// can't silently disagree on ordinal position. Returns `null` for
-  /// every other field — see [_directColumnSql].
+  /// explicitly) — for [TicketSortField.priority]/[TicketSortField.type]
+  /// only. Indexes into the shared [ticketFieldEnumValues] lookup
+  /// (`ticket_sort_comparator.dart`) so this SQL-string builder and the
+  /// in-memory `ticketSortComparator` can't silently disagree on ordinal
+  /// position. Returns `null` for every other field — see
+  /// [_statusOrdinalCaseSql]/[_directColumnSql].
   String? _enumOrdinalCaseSql(TicketSortField field) {
     final values = ticketFieldEnumValues[field];
     if (values == null) return null;
     final column = switch (field) {
       TicketSortField.priority => 'tickets.priority',
-      TicketSortField.status => 'tickets.status',
       TicketSortField.type => 'tickets.type',
+      TicketSortField.status ||
       TicketSortField.createdAt ||
       TicketSortField.updatedAt ||
       TicketSortField.relevance => throw StateError(
@@ -365,28 +367,61 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
     return 'CASE $column $whens ELSE ${values.length} END';
   }
 
+  /// Builds [TicketSortField.status]'s SQL `CASE` expression from
+  /// [statusSortOrder] — the caller's currently-configured `WorkflowStatus`
+  /// name list, already sorted by `WorkflowStatus.sortOrder` — since a
+  /// status is now project-configured data, not a fixed enum. A status
+  /// name absent from [statusSortOrder] (e.g. deleted since a ticket was
+  /// last written) sorts after every recognized status, mirroring
+  /// [_enumOrdinalCaseSql]'s `ELSE` clause. An empty [statusSortOrder]
+  /// (no caller-supplied order — e.g. a direct `TicketDao` test that
+  /// doesn't care about status ordering) has no `WHEN` clause to offer
+  /// SQL's `CASE` syntax, which requires at least one; falls back to a
+  /// constant `0` expression instead of building invalid SQL, so every
+  /// row simply ties on this field (equivalent to not sorting by status
+  /// at all).
+  String _statusOrdinalCaseSql(List<String> statusSortOrder) {
+    // An arithmetic expression, not a bare `0` (parenthesizing alone
+    // doesn't help — SQLite still resolves `(0)` back to the integer
+    // literal `0`) — SQLite's ORDER BY grammar treats a bare integer
+    // literal as a 1-based column-position reference (and `0` is out of
+    // range), not a constant expression. `0 + 0` can't be mistaken for
+    // a column-position literal.
+    if (statusSortOrder.isEmpty) return '0 + 0';
+    final whens = [
+      for (var i = 0; i < statusSortOrder.length; i++)
+        'WHEN \'${statusSortOrder[i]}\' THEN $i',
+    ].join(' ');
+    return 'CASE tickets.status $whens ELSE ${statusSortOrder.length} END';
+  }
+
   /// The literal column [field] sorts by directly —
   /// [TicketSortField.createdAt]/[TicketSortField.updatedAt] only. `null`
-  /// for priority/status/type (see [_enumOrdinalCaseSql]) and relevance
-  /// (handled via `bm25()` directly in [searchTickets], never via this
-  /// column-SQL path).
+  /// for priority/status/type (see [_enumOrdinalCaseSql]/
+  /// [_statusOrdinalCaseSql]) and relevance (handled via `bm25()` directly
+  /// in [searchTickets], never via this column-SQL path).
   String? _directColumnSql(TicketSortField field) => switch (field) {
     TicketSortField.createdAt => 'tickets.created_at',
     TicketSortField.updatedAt => 'tickets.updated_at',
     _ => null,
   };
 
-  /// The case-or-column SQL fragment [field] sorts by — [_enumOrdinalCaseSql]
-  /// for priority/status/type, [_directColumnSql] for createdAt/updatedAt.
-  /// Never called with [TicketSortField.relevance] — both of
-  /// [searchTickets]'s branches resolve that case themselves before
-  /// reaching this helper (the no-query branch substitutes an
-  /// `effectiveSort` of `createdAt` descending; the FTS branch keeps its
-  /// own `bm25()` clause instead of calling this at all).
-  String _sortSql(TicketSortField field) =>
-      _enumOrdinalCaseSql(field) ??
-      _directColumnSql(field) ??
-      (throw StateError('_sortSql must not be called with relevance'));
+  /// The case-or-column SQL fragment [field] sorts by —
+  /// [_statusOrdinalCaseSql] for status, [_enumOrdinalCaseSql] for
+  /// priority/type, [_directColumnSql] for createdAt/updatedAt. Never
+  /// called with [TicketSortField.relevance] — both of [searchTickets]'s
+  /// branches resolve that case themselves before reaching this helper
+  /// (the no-query branch substitutes an `effectiveSort` of `createdAt`
+  /// descending; the FTS branch keeps its own `bm25()` clause instead of
+  /// calling this at all).
+  String _sortSql(TicketSortField field, List<String> statusSortOrder) {
+    if (field == TicketSortField.status) {
+      return _statusOrdinalCaseSql(statusSortOrder);
+    }
+    return _enumOrdinalCaseSql(field) ??
+        _directColumnSql(field) ??
+        (throw StateError('_sortSql must not be called with relevance'));
+  }
 
   /// Converts [direction] to Drift's [OrderingMode].
   OrderingMode _orderingModeFor(TicketSortDirection direction) =>

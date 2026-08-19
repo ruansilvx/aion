@@ -17,7 +17,9 @@ class ParsedOk extends TicketMarkdownParseResult {
 
   /// Parsed frontmatter, keyed by [TicketMarkdownTemplate] field name.
   /// Values are already converted to their target Dart type (e.g. a
-  /// `TicketStatus` field's value is the enum, not the raw string).
+  /// `type` field's value is the `TicketType` enum, not the raw string —
+  /// `status` is itself already a plain, project-defined `String`, so no
+  /// conversion happens for it beyond the non-empty check).
   final Map<String, Object?> fields;
 
   /// The ticket's title, extracted from the body's leading `# ` heading.
@@ -28,8 +30,9 @@ class ParsedOk extends TicketMarkdownParseResult {
 }
 
 /// Frontmatter parsed as valid YAML, but one or more fields failed
-/// validation (e.g. a `status` value that isn't a known [TicketStatus]
-/// name). Valid fields are usable as-is; invalid ones are named so the
+/// validation (e.g. a `type` value that isn't a known `TicketType` name,
+/// or a `status` value that's missing/empty). Valid fields are usable
+/// as-is; invalid ones are named so the
 /// caller can keep the database's last value for just those fields
 /// instead of rejecting the whole update.
 class ParsedPartial extends TicketMarkdownParseResult {

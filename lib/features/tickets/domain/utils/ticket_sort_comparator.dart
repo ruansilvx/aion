@@ -5,18 +5,23 @@ import 'package:aion/features/tickets/domain/entities/ticket_list_sort.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sort_direction.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sort_field.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
 /// Maps each [TicketSortField] to the `List<Enum>` whose *declaration
 /// order* defines that field's ordinal ordering —
-/// [TicketPriority.values]/[TicketStatus.values]/[TicketType.values] for
-/// [TicketSortField.priority]/[TicketSortField.status]/
-/// [TicketSortField.type] respectively. `null` for
-/// [TicketSortField.createdAt]/[TicketSortField.updatedAt] (which sort by
-/// their own timestamp column directly, not an enum ordinal) and
-/// [TicketSortField.relevance] (which sorts by bm25 score, handled
-/// separately by the caller).
+/// [TicketPriority.values]/[TicketType.values] for
+/// [TicketSortField.priority]/[TicketSortField.type] respectively. `null`
+/// for [TicketSortField.createdAt]/[TicketSortField.updatedAt] (which sort
+/// by their own timestamp column directly, not an enum ordinal) and
+/// [TicketSortField.relevance] (handled separately by the caller).
+///
+/// [TicketSortField.status] is deliberately absent from this map — since
+/// `aion-arch/changes/configurable-ticket-workflow`, a ticket's status is
+/// a project-configured [WorkflowStatus](../entities/workflow_status.dart)
+/// name, not a fixed enum, so its ordinal comes from the project's live
+/// `WorkflowStatus.sortOrder` list (a `statusOrder` parameter both
+/// [ticketSortComparator] and `TicketDao`'s SQL builder now take), not
+/// this compile-time lookup.
 ///
 /// A single shared lookup, indexed into by both [ticketSortComparator]
 /// below (the in-memory Dart path, used by `TrashCubit`) and
@@ -28,7 +33,6 @@ import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 final Map<TicketSortField, List<Enum>?> ticketFieldEnumValues = {
   TicketSortField.relevance: null,
   TicketSortField.priority: TicketPriority.values,
-  TicketSortField.status: TicketStatus.values,
   TicketSortField.type: TicketType.values,
   TicketSortField.createdAt: null,
   TicketSortField.updatedAt: null,
@@ -40,11 +44,21 @@ final Map<TicketSortField, List<Enum>?> ticketFieldEnumValues = {
 /// handles List/Board's own ordering at the DB level instead, where the
 /// data already lives.
 ///
+/// [statusOrder] is the caller's currently-configured `WorkflowStatus` name
+/// list, already sorted by `WorkflowStatus.sortOrder` — required only when
+/// [sort.field] is [TicketSortField.status]; a ticket whose status isn't
+/// found in [statusOrder] (e.g. a status the project has since deleted)
+/// sorts after every recognized status, mirroring the SQL path's `ELSE`
+/// clause.
+///
 /// [TicketSortField.relevance] has no search query to score against in a
 /// pure in-memory comparator, so it falls back to `createdAt` descending —
 /// the same fallback `TicketsCubit._implicitSort`/`TrashCubit._resolveSort`
 /// apply whenever relevance isn't actually meaningful.
-Comparator<Ticket> ticketSortComparator(TicketListSort sort) {
+Comparator<Ticket> ticketSortComparator(
+  TicketListSort sort, {
+  List<String> statusOrder = const [],
+}) {
   final effective = sort.field == TicketSortField.relevance
       ? const TicketListSort(
           field: TicketSortField.createdAt,
@@ -54,15 +68,19 @@ Comparator<Ticket> ticketSortComparator(TicketListSort sort) {
   final ascending = effective.direction == TicketSortDirection.ascending;
 
   return (a, b) {
-    final values = ticketFieldEnumValues[effective.field];
     final result = switch (effective.field) {
+      TicketSortField.status => _statusOrdinalOf(
+        a,
+        statusOrder,
+      ).compareTo(_statusOrdinalOf(b, statusOrder)),
       TicketSortField.priority ||
-      TicketSortField.status ||
       TicketSortField.type => _ordinalOf(
         effective.field,
         a,
-        values!,
-      ).compareTo(_ordinalOf(effective.field, b, values)),
+        ticketFieldEnumValues[effective.field]!,
+      ).compareTo(
+        _ordinalOf(effective.field, b, ticketFieldEnumValues[effective.field]!),
+      ),
       TicketSortField.createdAt => a.createdAt.compareTo(b.createdAt),
       TicketSortField.updatedAt => a.updatedAt.compareTo(b.updatedAt),
       TicketSortField.relevance => throw StateError(
@@ -74,14 +92,21 @@ Comparator<Ticket> ticketSortComparator(TicketListSort sort) {
 }
 
 /// [ticket]'s ordinal position within [values] for [field] — the index of
-/// its [Ticket.priority]/[Ticket.status]/[Ticket.type] value within that
-/// enum's own `.values` list.
+/// its [Ticket.priority]/[Ticket.type] value within that enum's own
+/// `.values` list.
 int _ordinalOf(TicketSortField field, Ticket ticket, List<Enum> values) {
   final value = switch (field) {
     TicketSortField.priority => ticket.priority,
-    TicketSortField.status => ticket.status,
     TicketSortField.type => ticket.type,
     _ => throw StateError('unreachable'),
   };
   return values.indexOf(value);
+}
+
+/// [ticket.status]'s ordinal position within [statusOrder] — `statusOrder
+/// .length` (sorts last) if not found, mirroring the SQL path's `ELSE`
+/// clause.
+int _statusOrdinalOf(Ticket ticket, List<String> statusOrder) {
+  final index = statusOrder.indexOf(ticket.status);
+  return index == -1 ? statusOrder.length : index;
 }

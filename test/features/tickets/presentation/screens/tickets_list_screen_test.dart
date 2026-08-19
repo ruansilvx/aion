@@ -141,7 +141,7 @@ void main() {
         ticketId: '',
         type: TicketType.idea,
         title: '',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         createdAt: DateTime(2026),
         updatedAt: DateTime(2026),
       ),
@@ -201,7 +201,8 @@ void main() {
         sort: any(named: 'sort'),
         limit: any(named: 'limit'),
         offset: any(named: 'offset'),
-      ),
+      statusSortOrder: any(named: 'statusSortOrder'),
+            ),
     ).thenAnswer(
       (_) async => const TicketSearchPage(tickets: [], hasMore: false),
     );
@@ -445,7 +446,7 @@ void main() {
       ticketId: 'AIO-1',
       type: TicketType.story,
       title: 'A story',
-      status: TicketStatus.backlog,
+      status: 'backlog',
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
     );
@@ -454,7 +455,7 @@ void main() {
       ticketId: 'AIO-2',
       type: TicketType.task,
       title: 'A task',
-      status: TicketStatus.backlog,
+      status: 'backlog',
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
     );
@@ -463,7 +464,7 @@ void main() {
       ticketId: 'AIO-3',
       type: TicketType.bug,
       title: 'A bug',
-      status: TicketStatus.backlog,
+      status: 'backlog',
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
     );
@@ -476,7 +477,8 @@ void main() {
         sort: any(named: 'sort'),
         limit: any(named: 'limit'),
         offset: any(named: 'offset'),
-      ),
+      statusSortOrder: any(named: 'statusSortOrder'),
+            ),
     ).thenAnswer(
       (_) async =>
           TicketSearchPage(tickets: [story, task, bug], hasMore: false),

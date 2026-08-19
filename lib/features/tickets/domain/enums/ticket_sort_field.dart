@@ -19,9 +19,10 @@ enum TicketSortField {
   /// not alphabetical by name.
   priority,
 
-  /// [TicketStatus](../enums/ticket_status.dart)'s own declaration order
-  /// (`backlog` is index 0) — already semantically meaningful, not
-  /// alphabetical by name.
+  /// Each ticket's resolved `WorkflowStatus.sortOrder` — a project's own
+  /// configured status ordering (`backlog` at index 0 by default), not a
+  /// fixed enum declaration order. Was `TicketStatus`'s own declaration
+  /// order before `aion-arch/changes/configurable-ticket-workflow`.
   status,
 
   /// [TicketType](../enums/ticket_type.dart)'s own declaration order

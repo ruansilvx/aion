@@ -6,8 +6,8 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
+import 'package:aion/features/tickets/domain/entities/default_workflow_statuses.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart'
     show ticketPriorityLabel, ticketStatusLabel;
 
@@ -52,7 +52,7 @@ class TicketSelectionBar extends StatelessWidget {
   /// Called with the chosen status when the Status action's overlay
   /// selects a value. Only reachable when [selectedCount] is greater than
   /// zero.
-  final ValueChanged<TicketStatus> onChangeStatus;
+  final ValueChanged<String> onChangeStatus;
 
   /// Called with the chosen priority when the Priority action's overlay
   /// selects a value. Only reachable when [selectedCount] is greater than
@@ -229,7 +229,7 @@ class _BulkStatusPriorityGroup extends StatefulWidget {
 
   final int selectedCount;
   final bool compact;
-  final ValueChanged<TicketStatus> onChangeStatus;
+  final ValueChanged<String> onChangeStatus;
   final ValueChanged<TicketPriority> onChangePriority;
 
   @override
@@ -748,13 +748,14 @@ class _BulkOverlayRowState extends State<BulkOverlayRow> {
 
 /// Returns the status-dot color for [status]'s [BulkOverlayRow] leading
 /// indicator, per design.md §2.2's fixed table.
-Color _statusDotColor(AionColors c, TicketStatus status) => switch (status) {
-  TicketStatus.backlog => c.textMuted,
-  TicketStatus.todo => c.secondary,
-  TicketStatus.inProgress => c.primary,
-  TicketStatus.inReview => c.warning,
-  TicketStatus.done => c.success,
-  TicketStatus.cancelled => c.danger,
+Color _statusDotColor(AionColors c, String status) => switch (status) {
+  'backlog' => c.textMuted,
+  'todo' => c.secondary,
+  'inProgress' => c.primary,
+  'inReview' => c.warning,
+  'done' => c.success,
+  'cancelled' => c.danger,
+  _ => c.textMuted,
 };
 
 /// Returns the priority-square leading indicator for [priority], per
@@ -895,7 +896,7 @@ class BulkStatusMenu extends StatelessWidget {
   final LayerLink layerLink;
 
   /// Called with the chosen status when a row is selected.
-  final ValueChanged<TicketStatus> onSelected;
+  final ValueChanged<String> onSelected;
 
   /// Called when the overlay is dismissed without a selection (outside
   /// tap or `Escape`).
@@ -905,14 +906,11 @@ class BulkStatusMenu extends StatelessWidget {
   final bool openUpward;
 
   /// Fixed row order — Backlog · To Do · In Progress · In Review · Done ·
-  /// Cancelled, per design.md §2.2.
-  static const List<TicketStatus> order = [
-    TicketStatus.backlog,
-    TicketStatus.todo,
-    TicketStatus.inProgress,
-    TicketStatus.inReview,
-    TicketStatus.done,
-    TicketStatus.cancelled,
+  /// Cancelled, per design.md §2.2. The default baseline preset's own
+  /// order; see `tickets_board_view.dart`'s `_defaultStatusOrder` for the
+  /// same "known limitation" note.
+  static final List<String> order = [
+    for (final s in defaultWorkflowStatuses) s.name,
   ];
 
   @override

@@ -10,7 +10,6 @@ import 'package:aion/core/markdown/ticket_markdown_serializer.dart';
 import 'package:aion/core/markdown/ticket_markdown_template.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
 
@@ -182,7 +181,7 @@ class TicketDbReconstructionService {
 
     final ticketId = fields[TicketMarkdownTemplate.ticketId] as String?;
     final type = fields[TicketMarkdownTemplate.type] as TicketType?;
-    final status = fields[TicketMarkdownTemplate.status] as TicketStatus?;
+    final status = fields[TicketMarkdownTemplate.status] as String?;
     if (ticketId == null || type == null || status == null) return null;
 
     final existing = existingByTicketId[ticketId];

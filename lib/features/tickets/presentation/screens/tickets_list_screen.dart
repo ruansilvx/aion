@@ -12,7 +12,6 @@ import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_list_view_mode.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_link_repository.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_selection_cubit.dart';
@@ -182,7 +181,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
   /// common ancestor of both `_TicketFilterAndSortSection` (the Columns
   /// trigger) and [TicketBoardView] (which reads `hiddenBoardColumns` to
   /// decide which columns to skip).
-  Future<void> _handleColumnVisibilityToggled(TicketStatus status) async {
+  Future<void> _handleColumnVisibilityToggled(String status) async {
     await context.read<TicketsCubit>().toggleBoardColumnVisibility(status);
     if (mounted) setState(() {});
   }
@@ -363,7 +362,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
   void _bulkChangeStatus(
     BuildContext context,
     Set<String> ids,
-    TicketStatus status,
+    String status,
   ) {
     context.read<TicketsCubit>().updateStatusForTickets(ids.toList(), status);
   }
@@ -1070,7 +1069,7 @@ class _TicketFilterAndSortSection extends StatefulWidget {
   /// the way `onToggleStatus`/`onToggleType`/`onTogglePriority` below
   /// are — see that method's own dartdoc for why. Added for
   /// `aion-arch/changes/list-board-view-and-column-visibility`.
-  final ValueChanged<TicketStatus> onToggleColumnVisibility;
+  final ValueChanged<String> onToggleColumnVisibility;
 
   @override
   State<_TicketFilterAndSortSection> createState() =>
@@ -2145,16 +2144,16 @@ class StatusIndicator extends StatelessWidget {
   const StatusIndicator({super.key, required this.status});
 
   /// The status to render.
-  final TicketStatus status;
+  final String status;
 
   @override
   Widget build(BuildContext context) {
     final t = ThemeScope.of(context);
     final c = t.colors;
     final dotColor = switch (status) {
-      TicketStatus.backlog => c.textMuted,
-      TicketStatus.inProgress => c.primary,
-      TicketStatus.done => c.success,
+      'backlog' => c.textMuted,
+      'inProgress' => c.primary,
+      'done' => c.success,
       _ => c.textMuted,
     };
 

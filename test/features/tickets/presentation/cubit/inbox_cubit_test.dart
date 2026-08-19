@@ -90,7 +90,7 @@ void main() {
         ticketId: '',
         type: TicketType.idea,
         title: '',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         createdAt: DateTime(2026),
         updatedAt: DateTime(2026),
       ),
@@ -170,7 +170,7 @@ void main() {
     ticketId: 'AIO-$id',
     type: TicketType.chat,
     title: 'Inbox chat $id',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     inboxPurpose: purpose,
     createdAt: createdAt ?? DateTime(2026),
     updatedAt: createdAt ?? DateTime(2026),
@@ -196,7 +196,7 @@ void main() {
           ticketId: 'AIO-not-inbox',
           type: TicketType.chat,
           title: 'Ordinary chat',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           createdAt: DateTime(2026, 3, 1),
           updatedAt: DateTime(2026, 3, 1),
         );
@@ -375,7 +375,7 @@ void main() {
           ticketId: 'AIO-story-1',
           type: TicketType.story,
           title: 'Login flow',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           createdAt: DateTime(2026),
           updatedAt: DateTime(2026),
         );
@@ -384,7 +384,7 @@ void main() {
           ticketId: 'AIO-gap-1',
           type: TicketType.knownGap,
           title: 'No password-reset flow',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           createdAt: DateTime(2026),
           updatedAt: DateTime(2026),
         );
@@ -393,7 +393,7 @@ void main() {
           ticketId: 'AIO-idea-1',
           type: TicketType.idea,
           title: 'Add dark mode',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           createdAt: DateTime(2026),
           updatedAt: DateTime(2026),
         );
@@ -402,7 +402,7 @@ void main() {
           ticketId: 'AIO-idea-2',
           type: TicketType.idea,
           title: 'Already promoted idea',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           createdAt: DateTime(2026),
           updatedAt: DateTime(2026),
         );
@@ -544,7 +544,7 @@ void main() {
           ticketId: 'AIO-epic-1',
           type: TicketType.epic,
           title: 'Epic one',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           createdAt: DateTime(2026),
           updatedAt: DateTime(2026),
         );

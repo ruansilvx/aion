@@ -56,17 +56,21 @@ import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_severity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sort_direction.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sort_field.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
+import 'package:aion/features/tickets/domain/enums/workflow_status_role.dart';
+import 'package:aion/features/tickets/domain/entities/default_workflow_statuses.dart';
+import 'package:aion/features/tickets/domain/entities/workflow_status.dart';
 import 'package:aion/features/tickets/domain/repositories/comment_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/execution_queue_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/page_wikilink_repository.dart';
+import 'package:aion/features/tickets/domain/repositories/sdd_stage_config_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_board_column_visibility_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_link_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_list_filter_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_list_sort_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_list_view_mode_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
+import 'package:aion/features/tickets/domain/repositories/workflow_status_repository.dart';
 import 'package:aion/features/tickets/domain/utils/ticket_link_direction.dart';
 import 'package:aion/features/tickets/domain/utils/ticket_rollup_calculator.dart';
 import 'package:aion/features/tickets/presentation/cubit/chat_branch_tool_definitions.dart';
@@ -169,6 +173,20 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [restoreExecutionQueue]/[_persistExecutionQueueSnapshot] both no-op;
   /// real usage (`app_router.dart`) always supplies both. Added for
   /// `aion-arch/changes/parallel-work`.
+  /// [workflowStatusRepository]/[sddStageConfigRepository] follow the same
+  /// optional-dependency pattern once more, deliberately — unlike every
+  /// other new dependency listed above, these two back *every* gate/
+  /// trigger this cubit already performs on ticket status (see
+  /// [_workflowStatuses]/[_resolveStatus]/[_roleOf]), so making them
+  /// `required` would force every one of ~40 existing construction sites
+  /// (most of them tests unrelated to workflow configuration) to start
+  /// supplying both just to compile. `null` (every existing construction
+  /// site except `app_router.dart`) makes [_workflowStatuses] stay pinned
+  /// to [defaultWorkflowStatuses] and [_designStagesEnabled] always
+  /// resolve `true` — exactly the pre-configuration hardcoded behavior
+  /// every gate/trigger already had, so an unconfigured/test cubit is
+  /// unaffected. Real usage (`app_router.dart`) always supplies both. Added
+  /// for `aion-arch/changes/configurable-ticket-workflow`.
   // The public param names below (embeddingProvider/gitProjector/
   // projectRootPath/providerRegistry/commentRepository/
   // automationSettingsRepository/modelRoutingRepository/gitClient/
@@ -205,6 +223,8 @@ class TicketsCubit extends Cubit<TicketsState> {
     ActiveTicketViewRegistry? activeTicketViewRegistry,
     ExecutionSchedulingRepository? executionSchedulingRepository,
     ExecutionQueueRepository? executionQueueRepository,
+    WorkflowStatusRepository? workflowStatusRepository,
+    SddStageConfigRepository? sddStageConfigRepository,
   }) : super(const TicketsInitial()) {
     _embeddingProvider = embeddingProvider;
     _gitProjector = gitProjector;
@@ -228,6 +248,11 @@ class TicketsCubit extends Cubit<TicketsState> {
     _pageWikilinkRepository = pageWikilinkRepository;
     _executionSchedulingRepository = executionSchedulingRepository;
     _executionQueueRepository = executionQueueRepository;
+    _workflowStatusRepository = workflowStatusRepository;
+    _sddStageConfigRepository = sddStageConfigRepository;
+    _workflowStatusChangesSubscription = workflowStatusRepository?.onChanged
+        .listen((_) => _loadWorkflowStatuses());
+    unawaited(_loadWorkflowStatuses());
     _rollupRecomputer = TicketRollupRecomputer(
       _repository,
       gitProjector: gitProjector,
@@ -369,6 +394,139 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// without a [PageWikilinkRepository], mirroring every other optional-
   /// dependency service field above.
   late final PageWikilinkIndexer? _wikilinkIndexer;
+
+  /// Persists the project's configured [WorkflowStatus] set. `null`
+  /// (every existing construction site except `app_router.dart`) pins
+  /// [_workflowStatuses] to [defaultWorkflowStatuses] forever — see the
+  /// constructor's own dartdoc. Added for
+  /// `aion-arch/changes/configurable-ticket-workflow`.
+  late final WorkflowStatusRepository? _workflowStatusRepository;
+
+  /// Persists the project's `SddStage` configuration. `null` makes
+  /// [_designStagesEnabled] always resolve `true` and the stage
+  /// display-name resolution point always fall back to each stage's own
+  /// hardcoded name. Added for
+  /// `aion-arch/changes/configurable-ticket-workflow`.
+  late final SddStageConfigRepository? _sddStageConfigRepository;
+
+  /// The project's currently-configured [WorkflowStatus] set — every
+  /// scope, shared base and every per-type extension together. Loaded
+  /// once at construction ([_loadWorkflowStatuses], fired from the
+  /// constructor body without being awaited — a cubit is usable
+  /// immediately with [defaultWorkflowStatuses] as its baseline, then
+  /// silently upgrades to the real configured set once the async load
+  /// resolves) and refreshed every time [_workflowStatusRepository]
+  /// fires [WorkflowStatusRepository.onChanged] (i.e. whenever
+  /// `WorkflowConfigCubit` persists an edit) — the two Cubits stay
+  /// consistent through the shared repository, never a direct reference
+  /// to each other. Every place that used to gate on a literal
+  /// `TicketStatus` value now resolves through [_resolveStatus]/[_roleOf]
+  /// against this list instead. See
+  /// `aion-arch/changes/configurable-ticket-workflow/design.md` §3.
+  List<WorkflowStatus> _workflowStatuses = defaultWorkflowStatuses;
+
+  /// Subscription driving [_workflowStatuses]'s live refresh — see that
+  /// field's dartdoc. `null` whenever this cubit was constructed without
+  /// a [WorkflowStatusRepository]. Cancelled in [close].
+  StreamSubscription<void>? _workflowStatusChangesSubscription;
+
+  /// Reloads [_workflowStatuses] from [_workflowStatusRepository]. A
+  /// no-op (leaving [_workflowStatuses] at its current value) when this
+  /// cubit was constructed without one, or when the repository currently
+  /// has no rows (defensive — `seedDefaultsIfEmpty` should always have
+  /// run before this cubit is used, but an empty result must never
+  /// silently strand every gate/trigger with no `WorkflowStatusRole`
+  /// holder at all).
+  Future<void> _loadWorkflowStatuses() async {
+    final repository = _workflowStatusRepository;
+    if (repository == null) return;
+    final statuses = await repository.getAll();
+    if (isClosed) return;
+    if (statuses.isEmpty) return;
+    _workflowStatuses = statuses;
+  }
+
+  /// Resolves [status] (a raw [Ticket.status] string) to its configured
+  /// [WorkflowStatus], or `null` if it's not present in
+  /// [_workflowStatuses]'s currently-cached scope — e.g. a status the
+  /// project has since deleted. Existence beyond the cache is defensive
+  /// only; a ticket whose status was deleted out from under it still
+  /// round-trips safely as "no role."
+  WorkflowStatus? _resolveStatus(String status) =>
+      _workflowStatuses.where((s) => s.name == status).firstOrNull;
+
+  /// The [WorkflowStatusRole] [status] currently fills, or `null` if it
+  /// fills none (or doesn't resolve at all — see [_resolveStatus]). The
+  /// generalized replacement for every literal `TicketStatus.inProgress`/
+  /// `.inReview`/`.done` comparison this cubit used to perform.
+  WorkflowStatusRole? _roleOf(String status) => _resolveStatus(status)?.role;
+
+  /// The status every new ticket is created at — the shared-base set's
+  /// lowest-[WorkflowStatus.sortOrder] status's name (today's hardcoded
+  /// `TicketStatus.backlog` literal, generalized). Falls back to
+  /// `'backlog'` only if [_workflowStatuses] somehow holds no shared-base
+  /// status at all — defensive, since [defaultWorkflowStatuses] and every
+  /// real configured set always has one.
+  String get _defaultCreationStatus {
+    final base = _workflowStatuses.where((s) => s.ticketType == null).toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    return base.isEmpty ? 'backlog' : base.first.name;
+  }
+
+  /// The name of the shared-base status currently holding
+  /// [WorkflowStatusRole.reviewReady] — what a successful coding-execution
+  /// run auto-writes to (today's hardcoded `TicketStatus.inReview`
+  /// literal, generalized). Falls back to `'inReview'` only if
+  /// [_workflowStatuses] somehow holds no status with this role —
+  /// defensive, since [defaultWorkflowStatuses] and every real configured
+  /// set (`WorkflowConfigCubit` enforces the role invariant) always has
+  /// one.
+  String get _reviewReadyStatus =>
+      _workflowStatuses
+          .where((s) => s.role == WorkflowStatusRole.reviewReady)
+          .firstOrNull
+          ?.name ??
+      'inReview';
+
+  /// The name of the shared-base status currently holding
+  /// [WorkflowStatusRole.done] (today's hardcoded `TicketStatus.done`
+  /// literal, generalized). Same defensive fallback as
+  /// [_reviewReadyStatus].
+  String get _doneStatus =>
+      _workflowStatuses
+          .where((s) => s.role == WorkflowStatusRole.done)
+          .firstOrNull
+          ?.name ??
+      'done';
+
+  /// Every configured status name, ordered by [WorkflowStatus.sortOrder]
+  /// ascending (first occurrence wins on a name collision across scopes)
+  /// — passed to [TicketRepository.searchTickets] as `statusSortOrder` so
+  /// `TicketSortField.status` orders by each ticket's resolved
+  /// `WorkflowStatus.sortOrder` rather than a fixed enum declaration
+  /// order. See `aion-arch/changes/configurable-ticket-workflow/design.md`
+  /// §5.2.
+  List<String> get _statusSortOrder {
+    final sorted = [..._workflowStatuses]
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    final seen = <String>{};
+    return [
+      for (final s in sorted)
+        if (seen.add(s.name)) s.name,
+    ];
+  }
+
+  /// Whether Epics/Stories must clear the `designBrief`/`designSync`
+  /// stage cycle before execution — [_sddStageConfigRepository]'s
+  /// persisted setting, or `true` (matching
+  /// `SharedPrefsSddStageConfigRepository`'s own default) when this cubit
+  /// was constructed without one.
+  Future<bool> _designStagesEnabled() async {
+    final repository = _sddStageConfigRepository;
+    if (repository == null) return true;
+    return repository.getDesignStagesEnabled();
+  }
+
   static const _uuid = Uuid();
 
   /// Broadcasts [CodebaseAnalysisStatus] updates as
@@ -394,6 +552,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   @override
   Future<void> close() {
     _codebaseAnalysisController.close();
+    unawaited(_workflowStatusChangesSubscription?.cancel());
     return super.close();
   }
 
@@ -424,12 +583,13 @@ class TicketsCubit extends Cubit<TicketsState> {
   final Map<String, InFlightExecutionRun> _inFlightRuns = {};
 
   /// Each currently-in-flight-or-queued Task/Bug's [Ticket.status]
-  /// immediately before it moved to [TicketStatus.inProgress] — captured
-  /// by [_interceptTaskExecutionTrigger]'s allowed path (and
+  /// immediately before it moved to a status holding
+  /// [WorkflowStatusRole.executionTrigger] — captured by
+  /// [_interceptTaskExecutionTrigger]'s allowed path (and
   /// [updateStatusForTickets]'s own gate loop) right before the write,
   /// consumed by [cancelCodingExecution] to know which status to revert
   /// to on cancel.
-  final Map<String, TicketStatus> _preExecutionStatus = {};
+  final Map<String, String> _preExecutionStatus = {};
 
   /// Task ids waiting to start, FIFO — index 0 is next in line, though
   /// under [ExecutionSchedulingMode.hybrid] a later-queued id may start
@@ -474,7 +634,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// remembered so [loadMoreTickets] and the mutation-refresh methods
   /// below don't need the screen to pass them again.
   String? _lastQuery;
-  Set<TicketStatus> _lastStatuses = const {};
+  Set<String> _lastStatuses = const {};
   Set<TicketType> _lastTypes = const {};
   Set<TicketPriority> _lastPriorities = const {};
 
@@ -524,10 +684,10 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// by a filter change or another mutation.
   int _searchGeneration = 0;
 
-  /// The [TicketStatus] values currently selected in the ticket list's
-  /// Filters popover — mirrors [_lastStatuses], exposed read-only for the
+  /// The status names currently selected in the ticket list's Filters
+  /// popover — mirrors [_lastStatuses], exposed read-only for the
   /// screen/popover to render checked state and the chip row against.
-  Set<TicketStatus> get selectedStatuses => _lastStatuses;
+  Set<String> get selectedStatuses => _lastStatuses;
 
   /// The [TicketType] values currently selected in the ticket list's
   /// Filters popover. See [selectedStatuses].
@@ -555,7 +715,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// every other optional constructor param (see the constructor's
   /// dartdoc).
   Future<void> _persistFilters({
-    Set<TicketStatus>? statuses,
+    Set<String>? statuses,
     Set<TicketType>? types,
     Set<TicketPriority>? priorities,
   }) async {
@@ -577,7 +737,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// updated selection (see [_persistFilters]), then re-runs
   /// [searchTickets] with the updated statuses and [selectedTypes]/
   /// [selectedPriorities] unchanged, reusing the last text query.
-  Future<void> toggleStatusFilter(TicketStatus status) async {
+  Future<void> toggleStatusFilter(String status) async {
     final updated = _toggleFilter(_lastStatuses, status);
     await _persistFilters(statuses: updated);
     await searchTickets(
@@ -719,18 +879,18 @@ class TicketsCubit extends Cubit<TicketsState> {
     if (mode != null) _viewMode = mode;
   }
 
-  /// The [TicketStatus] values whose board column is currently hidden —
-  /// empty means every column is visible. Plain state, not part of
+  /// The status names whose board column is currently hidden — empty
+  /// means every column is visible. Plain state, not part of
   /// [TicketsState], for the same reason [_viewMode] isn't: hiding a
   /// column never changes which tickets are loaded, only which
   /// `BoardColumn`s `TicketBoardView` renders. See
   /// `aion-arch/changes/list-board-view-and-column-visibility`.
-  Set<TicketStatus> _hiddenColumns = const {};
+  Set<String> _hiddenColumns = const {};
 
   /// The board's currently hidden status columns. Read by
   /// `TicketBoardView` (which columns to skip) and `TicketColumnsPopover`
   /// (each row's checked state).
-  Set<TicketStatus> get hiddenBoardColumns => _hiddenColumns;
+  Set<String> get hiddenBoardColumns => _hiddenColumns;
 
   /// Toggles [status]'s membership in [hiddenBoardColumns] — hides it if
   /// currently visible, shows it if currently hidden — then persists the
@@ -740,7 +900,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [setViewMode] — never emits a [TicketsState]; callers must force
   /// their own rebuild after awaiting this (see
   /// `TicketsListScreen._handleColumnVisibilityToggled`).
-  Future<void> toggleBoardColumnVisibility(TicketStatus status) async {
+  Future<void> toggleBoardColumnVisibility(String status) async {
     _hiddenColumns = _toggleFilter(_hiddenColumns, status);
     final repo = _boardColumnVisibilityRepository;
     final projectId = _projectId;
@@ -819,7 +979,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// throws.
   Future<void> searchTickets({
     String? query,
-    Set<TicketStatus> statuses = const {},
+    Set<String> statuses = const {},
     Set<TicketType> types = const {},
     Set<TicketPriority> priorities = const {},
   }) async {
@@ -851,6 +1011,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         priorities: priorities,
         sort: _lastSort,
         limit: _pageSize,
+        statusSortOrder: _statusSortOrder,
       );
       if (generation != _searchGeneration) return;
       final blockedTicketIds = await _computeBlockedTicketIds(page.tickets);
@@ -927,6 +1088,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         sort: _lastSort,
         limit: _pageSize,
         offset: currentTickets.length,
+        statusSortOrder: _statusSortOrder,
       );
       if (generation != _searchGeneration) return;
       final combined = [...currentTickets, ...page.tickets];
@@ -960,7 +1122,7 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Creates a new ticket of [type] with [title], then reloads the list.
   ///
-  /// [status] always starts at [TicketStatus.backlog]. [complexity]
+  /// [status] always starts at `_defaultCreationStatus`. [complexity]
   /// defaults to `null` (unset), matching [Ticket.complexity]'s own
   /// default. [severity]/[stepsToReproduce]/[expectedBehavior]/
   /// [actualBehavior] are meaningful only when [type] is
@@ -1032,7 +1194,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         type: type,
         title: title,
         description: description,
-        status: TicketStatus.backlog,
+        status: _defaultCreationStatus,
         priority: priority,
         parentId: parentId,
         createdAt: now,
@@ -1060,6 +1222,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         priorities: _lastPriorities,
         sort: _lastSort,
         limit: max(_pageSize, currentTickets.length),
+        statusSortOrder: _statusSortOrder,
       );
       emit(TicketCreated(page.tickets, hasMore: page.hasMore));
       return persisted ?? ticket;
@@ -1077,7 +1240,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// and requests at least as many tickets as were already loaded, so a
   /// background status update (e.g. a board drag) never collapses an
   /// infinite-scrolled list back down to one page. Moving [id] to
-  /// [TicketStatus.inProgress] first runs
+  /// an `executionTrigger`-role status first runs
   /// [_interceptBlockedDependencyTrigger] — every ticket type is
   /// rejected if it has an unresolved `blocks`/`blockedBy` dependency —
   /// then, if [id] is a Task or Bug (see
@@ -1093,12 +1256,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// detail screen live-refreshes [TicketDetailLoaded.canAdvanceSddStage]
   /// when [id] is one of its direct Task/Bug children. Added for
   /// `aion-arch/changes/live-refresh-open-ticket-detail-screen`.
-  Future<void> updateTicketStatus(String id, TicketStatus status) async {
-    // Only fetch the ticket up front when the status is the one the
-    // interceptors can actually reject (inProgress) — every other
-    // transition returns true immediately, so skip the extra round trip
-    // other status changes (e.g. a plain board drag) don't need.
-    if (status == TicketStatus.inProgress) {
+  Future<void> updateTicketStatus(String id, String status) async {
+    // Only fetch the ticket up front when the status holds the
+    // executionTrigger role — every other transition returns true
+    // immediately, so skip the extra round trip other status changes
+    // (e.g. a plain board drag) don't need.
+    if (_roleOf(status) == WorkflowStatusRole.executionTrigger) {
       final target = await _repository.getTicketById(id);
       if (target != null) {
         if (!(await _interceptBlockedDependencyTrigger(target, status))) {
@@ -1138,7 +1301,8 @@ class TicketsCubit extends Cubit<TicketsState> {
       final updated = await _repository.getTicketById(id);
       if (updated != null) {
         unawaited(_triggerGitProjection(updated, 'status-changed'));
-        if (updated.type.isExecutable && status == TicketStatus.inProgress) {
+        if (updated.type.isExecutable &&
+            _roleOf(status) == WorkflowStatusRole.executionTrigger) {
           unawaited(_triggerOrQueueCodingExecution(updated));
         }
       }
@@ -1149,6 +1313,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         priorities: _lastPriorities,
         sort: _lastSort,
         limit: max(_pageSize, currentTickets.length),
+        statusSortOrder: _statusSortOrder,
       );
       emit(TicketStatusUpdated(page.tickets, hasMore: page.hasMore));
       unawaited(_refreshBlockedBoardState());
@@ -1308,7 +1473,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [updateTicketStatus], which emits list-shaped optimistic states built
   /// for the board and would fall through `TicketDetailScreen`'s state
   /// switch. Emits [TicketsError] on failure. Moving [ticket] to
-  /// [TicketStatus.inProgress] first runs
+  /// an `executionTrigger`-role status first runs
   /// [_interceptBlockedDependencyTrigger] — every ticket type is
   /// rejected if it has an unresolved `blocks`/`blockedBy` dependency —
   /// then, if [ticket] is a Task or Bug (see
@@ -1316,7 +1481,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// A rejection from either skips the write entirely; an allowed
   /// transition proceeds as normal, then [_triggerOrQueueCodingExecution]
   /// starts (or queues) the coding-execution run once the write succeeds.
-  Future<void> changeTicketStatus(Ticket ticket, TicketStatus status) async {
+  Future<void> changeTicketStatus(Ticket ticket, String status) async {
     if (!(await _interceptBlockedDependencyTrigger(ticket, status))) return;
     if (!(await _interceptTaskExecutionTrigger(ticket, status))) return;
     try {
@@ -1325,7 +1490,8 @@ class TicketsCubit extends Cubit<TicketsState> {
       if (refreshed != null) {
         emit(TicketDetailLoaded(refreshed));
         unawaited(_triggerGitProjection(refreshed, 'status-changed'));
-        if (refreshed.type.isExecutable && status == TicketStatus.inProgress) {
+        if (refreshed.type.isExecutable &&
+            _roleOf(status) == WorkflowStatusRole.executionTrigger) {
           unawaited(_triggerOrQueueCodingExecution(refreshed));
         }
       }
@@ -1429,7 +1595,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   ///   comment (i.e. isn't mid-run).
   /// - [SddStage.proposed] → [SddStage.verifying]: every direct child at
   ///   the next rank down (Tasks for a story, Stories for an epic) has
-  ///   reached a terminal state ([TicketStatus.done] for a Task,
+  ///   reached a terminal state (a `done`-role status for a Task,
   ///   [SddStage.archived] for a Story) — and at least one such child
   ///   exists.
   /// - [SddStage.verifying] → [SddStage.archived]: same chat-reply check
@@ -1581,7 +1747,7 @@ class TicketsCubit extends Cubit<TicketsState> {
           type: targetType,
           title: idea.title,
           description: idea.description,
-          status: TicketStatus.backlog,
+          status: _defaultCreationStatus,
           createdAt: now,
           updatedAt: now,
         );
@@ -1650,7 +1816,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         type: type,
         title: title,
         description: description,
-        status: TicketStatus.backlog,
+        status: _defaultCreationStatus,
         createdAt: now,
         updatedAt: now,
       );
@@ -1813,7 +1979,7 @@ class TicketsCubit extends Cubit<TicketsState> {
           ticket.id,
           types: TicketTypeHierarchy.executableTypes,
         );
-        return _storyNeedsDesignReview(tasks)
+        return await _storyNeedsDesignReview(tasks)
             ? SddStage.designBrief
             : SddStage.verifying;
       case SddStage.designBrief:
@@ -1835,7 +2001,16 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// fresh every time, not persisted — mirrors how the existing
   /// `proposed` precondition already re-fetches children on every check
   /// rather than caching. Added for `aion-arch/changes/sdd-design-gate`.
-  bool _storyNeedsDesignReview(List<Ticket> tasks) {
+  ///
+  /// Short-circuits to `false` before that heuristic runs at all when
+  /// [_designStagesEnabled] resolves `false` — a project that's turned
+  /// off design-review stages project-wide never routes a Story through
+  /// `designBrief`/`designSync`, regardless of what its Tasks look like.
+  /// When design stages are enabled (the default), this per-Story
+  /// heuristic is completely unchanged. Added for
+  /// `aion-arch/changes/configurable-ticket-workflow`.
+  Future<bool> _storyNeedsDesignReview(List<Ticket> tasks) async {
+    if (!(await _designStagesEnabled())) return false;
     const keywords = ['widget', 'screen', 'component', 'ui'];
     return tasks.any((t) {
       final text = '${t.title} ${t.description ?? ''}'.toLowerCase();
@@ -1892,13 +2067,13 @@ class TicketsCubit extends Cubit<TicketsState> {
         );
         final needsDesign =
             ticket.type == TicketType.story &&
-            _storyNeedsDesignReview(children);
+            await _storyNeedsDesignReview(children);
         final ready =
             children.isNotEmpty &&
             (needsDesign ||
                 children.every(
                   (c) => nextRank == TicketType.task
-                      ? c.status == TicketStatus.done
+                      ? _roleOf(c.status) == WorkflowStatusRole.done
                       : c.sddStage == SddStage.archived,
                 ));
         return (
@@ -1926,7 +2101,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         final ready =
             approved &&
             tasks.isNotEmpty &&
-            tasks.every((t) => t.status == TicketStatus.done);
+            tasks.every((t) => _roleOf(t.status) == WorkflowStatusRole.done);
         return (
           canAdvance: ready,
           blockReason: ready
@@ -2009,7 +2184,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       story.id,
       types: TicketTypeHierarchy.executableTypes,
     );
-    if (!_storyNeedsDesignReview(siblingTasks)) {
+    if (!(await _storyNeedsDesignReview(siblingTasks))) {
       return (canStart: true, reason: null);
     }
     final approved = await _designSyncApproved(story.id);
@@ -2043,7 +2218,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// Checked by [changeTicketStatus]/[updateTicketStatus] before their
   /// repository write, for the one status transition that can be
   /// rejected: a Task or Bug (see `TicketTypeHierarchy.isExecutable`)
-  /// moving to [TicketStatus.inProgress] while [_codingExecutionGateCheck]
+  /// moving to an `executionTrigger`-role status while [_codingExecutionGateCheck]
   /// disallows it. Every other type/status combination always returns
   /// `true` (not a trigger — proceed as normal). On rejection, emits
   /// [TicketsErrorReason.codingExecutionBlocked] then a re-emitted
@@ -2052,9 +2227,10 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// `false` so the caller skips the write entirely.
   Future<bool> _interceptTaskExecutionTrigger(
     Ticket task,
-    TicketStatus status,
+    String status,
   ) async {
-    if (!task.type.isExecutable || status != TicketStatus.inProgress) {
+    if (!task.type.isExecutable ||
+        _roleOf(status) != WorkflowStatusRole.executionTrigger) {
       return true;
     }
     final check = await _codingExecutionGateCheck(task);
@@ -2075,7 +2251,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     return true;
   }
 
-  /// Gate on a ticket's move to [TicketStatus.inProgress]: rejects the
+  /// Gate on a ticket's move to an `executionTrigger`-role status: rejects the
   /// transition if [ticket] currently has an unresolved `blocks`/
   /// `blockedBy` dependency ([_isTicketBlocked]). Unlike
   /// [_interceptTaskExecutionTrigger], applies to every ticket type —
@@ -2089,9 +2265,9 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// `aion-arch/changes/blocked-ticket-transition-gate`.
   Future<bool> _interceptBlockedDependencyTrigger(
     Ticket ticket,
-    TicketStatus status,
+    String status,
   ) async {
-    if (status != TicketStatus.inProgress) return true;
+    if (_roleOf(status) != WorkflowStatusRole.executionTrigger) return true;
     if (!(await _isTicketBlocked(ticket))) return true;
     emit(
       const TicketsError(
@@ -2110,7 +2286,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// this only ever actually starts [task] when nothing else is running,
   /// exactly as the old single-slot behavior did. Called by
   /// [changeTicketStatus]/[updateTicketStatus] after a Task's status
-  /// write to [TicketStatus.inProgress] succeeds.
+  /// write to an `executionTrigger`-role status succeeds.
   Future<void> _triggerOrQueueCodingExecution(Ticket task) async {
     _executionQueue.add(task.id);
     _refreshInFlightBoardState();
@@ -2210,7 +2386,7 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Computes the current set of blocked work-ticket ids: a ticket whose
   /// blocking counterpart (the other side of a `blocks`/`blockedBy` row)
-  /// exists, is live, and is not [TicketStatus.done]. Queries
+  /// exists, is live, and is not a `done`-role status. Queries
   /// [TicketLinkRepository.getLinksByTypes] once for every live
   /// `blocks`/`blockedBy` row app-wide, resolves each row's blockee/blocker
   /// pair via [relativeLinkType] — the ticket whose relative reading of
@@ -2245,7 +2421,8 @@ class TicketsCubit extends Cubit<TicketsState> {
       final blockerId = targetIsBlockee
           ? row.sourceTicketId
           : row.targetTicketId;
-      if (byId[blockerId]?.status != TicketStatus.done) {
+      final blockerStatus = byId[blockerId]?.status;
+      if (blockerStatus == null || _roleOf(blockerStatus) != WorkflowStatusRole.done) {
         blocked.add(blockeeId);
       }
     }
@@ -2279,7 +2456,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// Whether [ticket] currently has an unresolved `blocks`/`blockedBy`
   /// dependency — i.e. a live link whose [relativeLinkType] from
   /// [ticket]'s own side is [TicketLinkType.blockedBy], and whose other
-  /// side either doesn't exist or isn't [TicketStatus.done]. Mirrors
+  /// side either doesn't exist or isn't a `done`-role status. Mirrors
   /// [_computeBlockedTicketIds]'s row-resolution (via the same
   /// [relativeLinkType] helper) but scoped to a single ticket via
   /// [TicketLinkRepository.getLinksForTicket] rather than the board-wide
@@ -2301,7 +2478,7 @@ class TicketsCubit extends Cubit<TicketsState> {
           ? row.targetTicketId
           : row.sourceTicketId;
       final blocker = await _repository.getTicketById(blockerId);
-      if (blocker == null || blocker.status != TicketStatus.done) {
+      if (blocker == null || _roleOf(blocker.status) != WorkflowStatusRole.done) {
         return true;
       }
     }
@@ -2382,7 +2559,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       ticketId: '',
       type: TicketType.chat,
       title: title,
-      status: TicketStatus.backlog,
+      status: _defaultCreationStatus,
       parentId: task.id,
       createdAt: now,
       updatedAt: now,
@@ -2620,7 +2797,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   ///
   /// If a PR was confirmed (see [_executionSucceededWithPr]) and
   /// [_automationSettingsRepository] is configured, flips [task] straight
-  /// to [TicketStatus.inReview] when [AutomationContext.codingExecution]'s
+  /// to a `reviewReady`-role status when [AutomationContext.codingExecution]'s
   /// confidence is [AutomationConfidence.auto] (forced to
   /// [AutomationConfidence.gated] for the rest of the session once
   /// [_overageDetectedThisSession] is `true`) — `gated`/`manual` leave the
@@ -2924,7 +3101,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         automationRepo,
       );
       if (confidence == AutomationConfidence.auto) {
-        await _repository.updateTicketStatus(task.id, TicketStatus.inReview);
+        await _repository.updateTicketStatus(task.id, _reviewReadyStatus);
       }
       // `gated`/`manual`: leave status as-is; getTicketById's re-check
       // surfaces the "ready for review" banner or leaves it to a manual
@@ -3263,7 +3440,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// after an app restart — a no-op without one. Re-validates every
   /// persisted entry against the current repository state first: an
   /// entry whose ticket no longer exists, or is no longer
-  /// [TicketStatus.inProgress] (e.g. the user manually moved it while the
+  /// an `executionTrigger`-role status (e.g. the user manually moved it while the
   /// app was closed), is silently dropped rather than resumed. If nothing
   /// survives re-validation, just clears the stale persisted snapshot.
   /// Otherwise branches on [AutomationContext.codingExecutionResume]'s
@@ -3293,7 +3470,8 @@ class TicketsCubit extends Cubit<TicketsState> {
     final survivingTickets = <Ticket>[];
     for (final entry in snapshot) {
       final ticket = await _repository.getTicketById(entry.taskId);
-      if (ticket != null && ticket.status == TicketStatus.inProgress) {
+      if (ticket != null &&
+          _roleOf(ticket.status) == WorkflowStatusRole.executionTrigger) {
         survivingTickets.add(ticket);
       }
     }
@@ -3827,7 +4005,7 @@ class TicketsCubit extends Cubit<TicketsState> {
           ticketId: '',
           type: TicketType.page,
           title: 'Design — ${parent.title}',
-          status: TicketStatus.backlog,
+          status: _defaultCreationStatus,
           createdAt: now,
           updatedAt: now,
         );
@@ -3844,8 +4022,8 @@ class TicketsCubit extends Cubit<TicketsState> {
       id: _uuid.v4(),
       ticketId: '',
       type: TicketType.chat,
-      title: '${_stagePresentName(stage)} — ${parent.title}',
-      status: TicketStatus.backlog,
+      title: '${await _stagePresentName(stage)} — ${parent.title}',
+      status: _defaultCreationStatus,
       parentId: parent.id,
       createdAt: now,
       updatedAt: now,
@@ -4107,7 +4285,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       type: TicketType.chat,
       title: title,
       description: description,
-      status: TicketStatus.backlog,
+      status: _defaultCreationStatus,
       parentId: chat.id,
       createdAt: now,
       updatedAt: now,
@@ -4117,7 +4295,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Folds [branchChat]'s resolution back into its parent ([parentId]):
-  /// flips [branchChat]'s own status to [TicketStatus.done] and posts one
+  /// flips [branchChat]'s own status to a `done`-role status and posts one
   /// [CommentAuthorType.system] comment carrying [summary] onto
   /// [parentId]'s transcript — the "fold into documentation" `project.md`
   /// §2 describes, adapted to a chat ticket's comment-thread-as-content
@@ -4131,7 +4309,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     String parentId,
     String summary,
   ) async {
-    await _repository.updateTicketStatus(branchChat.id, TicketStatus.done);
+    await _repository.updateTicketStatus(branchChat.id, _doneStatus);
     final commentRepo = _commentRepository;
     if (commentRepo == null) return;
     await commentRepo.addComment(
@@ -4343,7 +4521,7 @@ class TicketsCubit extends Cubit<TicketsState> {
           ..writeln(nextRank == TicketType.task ? '## Tasks' : '## Stories');
         for (final child in children) {
           final statusLabel = nextRank == TicketType.task
-              ? child.status.name
+              ? child.status
               : (child.sddStage?.name ?? 'not started');
           buffer.writeln('- ${child.title} ($statusLabel)');
         }
@@ -4472,7 +4650,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         ticketId: '',
         type: childType,
         title: title,
-        status: TicketStatus.backlog,
+        status: _defaultCreationStatus,
         parentId: parent.id,
         createdAt: now,
         updatedAt: now,
@@ -4532,8 +4710,22 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// Display name for [stage], used in a spawned chat ticket's title —
   /// present-progressive for every stage except [SddStage.designBrief]/
   /// [SddStage.designSync], which read naturally as their plain node
-  /// name instead (design.md §1.3).
-  String _stagePresentName(SddStage stage) => switch (stage) {
+  /// name instead (design.md §1.3). Resolves through
+  /// [_sddStageConfigRepository]'s persisted display-name override first
+  /// (`null` when this cubit was constructed without one, or when the
+  /// project hasn't overridden [stage]), falling back to
+  /// [_stageHardcodedPresentName] — today's exact hardcoded literal —
+  /// otherwise. Added for `aion-arch/changes/configurable-ticket-workflow`.
+  Future<String> _stagePresentName(SddStage stage) async {
+    final override = await _sddStageConfigRepository?.getDisplayNameOverride(
+      stage,
+    );
+    return override ?? _stageHardcodedPresentName(stage);
+  }
+
+  /// [stage]'s own hardcoded present-progressive name — the fallback
+  /// [_stagePresentName] uses when no override is configured.
+  String _stageHardcodedPresentName(SddStage stage) => switch (stage) {
     SddStage.exploring => 'Exploring',
     SddStage.proposed => 'Proposed',
     SddStage.designBrief => 'Design Brief',
@@ -4823,7 +5015,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         );
         needsDesignReview = tasks.isEmpty
             ? null
-            : _storyNeedsDesignReview(tasks);
+            : await _storyNeedsDesignReview(tasks);
         if (needsDesignReview == true) {
           linkedDesignPage = await _linkedDesignPage(ticket.id);
         }
@@ -4844,7 +5036,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         executionQueuePosition = queueIndex >= 0 ? queueIndex + 1 : null;
         if (!isExecuting &&
             executionQueuePosition == null &&
-            ticket.status == TicketStatus.inProgress) {
+            _roleOf(ticket.status) == WorkflowStatusRole.executionTrigger) {
           final prConfirmed = await _executionSucceededWithPr(ticket.id);
           final automationRepo = _automationSettingsRepository;
           final confidence = automationRepo == null
@@ -4957,6 +5149,7 @@ class TicketsCubit extends Cubit<TicketsState> {
           priorities: _lastPriorities,
           sort: _lastSort,
           limit: max(_pageSize, currentTickets.length),
+          statusSortOrder: _statusSortOrder,
         );
         emit(TicketsLoaded(page.tickets, hasMore: page.hasMore));
       }
@@ -5016,6 +5209,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         priorities: _lastPriorities,
         sort: _lastSort,
         limit: max(_pageSize, currentTickets.length),
+        statusSortOrder: _statusSortOrder,
       );
       emit(
         TicketsBatchTrashed(page.tickets, trashedCount, hasMore: page.hasMore),
@@ -5028,11 +5222,11 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// Sets [status] on every ticket in [ids], via
   /// [TicketRepository.updateStatusForIds] — but only for the subset that
   /// passes the same two per-ticket gates [updateTicketStatus] already
-  /// enforces for a single ticket moving to [TicketStatus.inProgress]: the
+  /// enforces for a single ticket moving to an `executionTrigger`-role status: the
   /// Blocked-dependency gate ([_isTicketBlocked]) and, for Task/Bug
   /// tickets ([TicketTypeHierarchy.isExecutable]), the coding-execution
   /// gate ([_codingExecutionGateCheck]). Both gates only apply when
-  /// [status] is [TicketStatus.inProgress] — every other target status
+  /// [status] is an `executionTrigger`-role status — every other target status
   /// skips gating entirely and writes the full [ids] list, mirroring
   /// [updateTicketStatus]'s own short-circuit. Rejected ids are silently
   /// excluded from the write (not reported per-id) — the widget layer
@@ -5043,7 +5237,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// how many were skipped) on success, or [TicketsError] on an unexpected
   /// failure. For every successfully-written ticket: triggers git
   /// projection (`'status-changed'`, same event [updateTicketStatus]
-  /// triggers), and — for a Task/Bug moving to [TicketStatus.inProgress] —
+  /// triggers), and — for a Task/Bug moving to an `executionTrigger`-role status —
   /// starts or queues its coding-execution run via
   /// [_triggerOrQueueCodingExecution], identical to [updateTicketStatus]'s
   /// own post-write side effects. Also calls [_refreshBlockedBoardState]
@@ -5051,7 +5245,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// blocker.
   Future<void> updateStatusForTickets(
     List<String> ids,
-    TicketStatus status,
+    String status,
   ) async {
     _searchGeneration++;
     final currentTickets = switch (state) {
@@ -5068,7 +5262,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     emit(const TicketsBatchStatusUpdating());
     try {
       final writableIds = <String>[];
-      if (status == TicketStatus.inProgress) {
+      if (_roleOf(status) == WorkflowStatusRole.executionTrigger) {
         for (final id in ids) {
           final ticket = await _repository.getTicketById(id);
           if (ticket == null) continue;
@@ -5095,7 +5289,7 @@ class TicketsCubit extends Cubit<TicketsState> {
           if (updated != null) {
             unawaited(_triggerGitProjection(updated, 'status-changed'));
             if (updated.type.isExecutable &&
-                status == TicketStatus.inProgress) {
+                _roleOf(status) == WorkflowStatusRole.executionTrigger) {
               unawaited(_triggerOrQueueCodingExecution(updated));
             }
           }
@@ -5109,6 +5303,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         priorities: _lastPriorities,
         sort: _lastSort,
         limit: max(_pageSize, currentTickets.length),
+        statusSortOrder: _statusSortOrder,
       );
       emit(
         TicketsBatchStatusUpdated(
@@ -5160,6 +5355,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         priorities: _lastPriorities,
         sort: _lastSort,
         limit: max(_pageSize, currentTickets.length),
+        statusSortOrder: _statusSortOrder,
       );
       emit(
         TicketsBatchPriorityUpdated(
@@ -5501,7 +5697,7 @@ class TicketsCubit extends Cubit<TicketsState> {
                 'listing only, no file contents read.'
           : 'Full agentic scan — read the project\'s actual files via an '
                 'isolated, read-only worktree.',
-      status: TicketStatus.backlog,
+      status: _defaultCreationStatus,
       createdAt: now,
       updatedAt: now,
     );
@@ -5533,7 +5729,7 @@ class TicketsCubit extends Cubit<TicketsState> {
           type: TicketType.idea,
           title: finding.title,
           description: description,
-          status: TicketStatus.backlog,
+          status: _defaultCreationStatus,
           createdAt: findingNow,
           updatedAt: findingNow,
         );
@@ -5645,7 +5841,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       ticketId: '',
       type: TicketType.chat,
       title: runTicket.title,
-      status: TicketStatus.backlog,
+      status: _defaultCreationStatus,
       parentId: runTicket.id,
       createdAt: now,
       updatedAt: now,

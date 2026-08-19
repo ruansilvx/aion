@@ -26,7 +26,7 @@ void main() {
     type: TicketType.resource,
     title: 'Original title',
     description: 'Original description.',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     createdAt: DateTime.utc(2026, 7, 18),
     updatedAt: DateTime.utc(2026, 7, 18),
   );

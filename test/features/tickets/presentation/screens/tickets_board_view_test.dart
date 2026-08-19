@@ -76,7 +76,7 @@ void main() {
     ticketId: 'AIO-1',
     type: TicketType.task,
     title: 'A Task',
-    status: TicketStatus.inProgress,
+    status: 'inProgress',
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
   );
@@ -85,7 +85,7 @@ void main() {
     ticketId: 'AIO-2',
     type: TicketType.epic,
     title: 'An Epic',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
   );
@@ -169,7 +169,7 @@ void main() {
       ticketId: 'AIO-3',
       type: TicketType.task,
       title: 'A predicted Task',
-      status: TicketStatus.backlog,
+      status: 'backlog',
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
       predictedExecutionTokensLow: 28000,
@@ -423,7 +423,7 @@ void main() {
       Ticket ticket({
         required String id,
         required String title,
-        required TicketStatus status,
+        required String status,
         String? parentId,
       }) => Ticket(
         id: id,
@@ -444,20 +444,20 @@ void main() {
           final t1 = ticket(
             id: 't1',
             title: 'T1',
-            status: TicketStatus.todo,
+            status: 'todo',
             parentId: 'story-1',
           );
           final t2 = ticket(
             id: 't2',
             title: 'T2',
-            status: TicketStatus.todo,
+            status: 'todo',
             parentId: 'story-1',
           );
-          final t3 = ticket(id: 't3', title: 'T3', status: TicketStatus.todo);
+          final t3 = ticket(id: 't3', title: 'T3', status: 'todo');
           final t4 = ticket(
             id: 't4',
             title: 'T4',
-            status: TicketStatus.inProgress,
+            status: 'inProgress',
           );
 
           final states = [
@@ -467,22 +467,22 @@ void main() {
             // s1: t1 moves to inProgress — removed from the front of
             // todo, appended to inProgress.
             TicketsLoaded(
-              [t1.copyWith(status: TicketStatus.inProgress), t3, t2, t4],
+              [t1.copyWith(status: 'inProgress'), t3, t2, t4],
               hasMore: false,
             ),
             // s2: t2 joins t1 in inProgress too.
             TicketsLoaded(
               [
-                t1.copyWith(status: TicketStatus.inProgress),
+                t1.copyWith(status: 'inProgress'),
                 t3,
-                t2.copyWith(status: TicketStatus.inProgress),
+                t2.copyWith(status: 'inProgress'),
                 t4,
               ],
               hasMore: false,
             ),
             // s3: t1 reverts to todo — rapid back-and-forth.
             TicketsLoaded(
-              [t1, t3, t2.copyWith(status: TicketStatus.inProgress), t4],
+              [t1, t3, t2.copyWith(status: 'inProgress'), t4],
               hasMore: false,
             ),
             // s4: t4 moves to todo too — a second column's churn on top
@@ -491,8 +491,8 @@ void main() {
               [
                 t1,
                 t3,
-                t2.copyWith(status: TicketStatus.inProgress),
-                t4.copyWith(status: TicketStatus.todo),
+                t2.copyWith(status: 'inProgress'),
+                t4.copyWith(status: 'todo'),
               ],
               hasMore: false,
             ),
@@ -560,21 +560,29 @@ void main() {
           final siblingA = ticket(
             id: 'sib-a',
             title: 'Sib A',
-            status: TicketStatus.todo,
+            status: 'todo',
             parentId: 'story-1',
           );
           final siblingB = ticket(
             id: 'sib-b',
             title: 'Sib B',
-            status: TicketStatus.backlog,
+            status: 'backlog',
             parentId: 'story-1',
           );
+          const statusNames = [
+            'backlog',
+            'todo',
+            'inProgress',
+            'inReview',
+            'done',
+            'cancelled',
+          ];
           final loose = List.generate(
             5,
             (i) => ticket(
               id: 'loose-$i',
               title: 'Loose $i',
-              status: TicketStatus.values[i % TicketStatus.values.length],
+              status: statusNames[i % statusNames.length],
             ),
           );
 
@@ -593,13 +601,13 @@ void main() {
           // opposite ends of a differently-ordered list.
           final scrambled = TicketsLoaded(
             [
-              loose[3].copyWith(status: TicketStatus.todo),
-              siblingB.copyWith(status: TicketStatus.todo),
-              loose[1].copyWith(status: TicketStatus.inProgress),
-              loose[4].copyWith(status: TicketStatus.todo),
-              siblingA.copyWith(status: TicketStatus.todo),
-              loose[0].copyWith(status: TicketStatus.backlog),
-              loose[2].copyWith(status: TicketStatus.done),
+              loose[3].copyWith(status: 'todo'),
+              siblingB.copyWith(status: 'todo'),
+              loose[1].copyWith(status: 'inProgress'),
+              loose[4].copyWith(status: 'todo'),
+              siblingA.copyWith(status: 'todo'),
+              loose[0].copyWith(status: 'backlog'),
+              loose[2].copyWith(status: 'done'),
             ],
             hasMore: false,
             inFlightExecutionIds: {siblingA.id},

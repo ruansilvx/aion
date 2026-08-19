@@ -14,7 +14,7 @@ void main() {
     type: TicketType.resource,
     title: 'A resource ticket',
     description: 'Some description text.',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     priority: TicketPriority.medium,
     parentId: 'internal-parent',
     estimate: 30,
@@ -131,9 +131,14 @@ void main() {
 
   group('parse — ParsedPartial', () {
     test('degrades one invalid field, keeps the rest valid', () {
+      // `status` is now a project-defined name, not a fixed enum — any
+      // non-empty string is syntactically valid (see
+      // `TicketMarkdownSerializer._convertField`'s status case), so a
+      // blank value (parses as YAML `null`) is what's actually invalid
+      // for this field now, not an unrecognized-but-non-empty string.
       final content = serializer.serialize(ticket).replaceFirst(
         'status: backlog',
-        'status: not-a-real-status',
+        'status: ',
       );
       final result = serializer.parse(content);
       expect(result, isA<ParsedPartial>());

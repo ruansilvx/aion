@@ -90,7 +90,7 @@ void main() {
     ticketId: 'AIO-99',
     type: TicketType.epic,
     title: 'A candidate epic',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
   );
@@ -135,7 +135,7 @@ void main() {
       ticketId: 'AIO-1',
       type: TicketType.epic,
       title: 'An Epic',
-      status: TicketStatus.backlog,
+      status: 'backlog',
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
     );
@@ -153,7 +153,7 @@ void main() {
       ticketId: 'AIO-2',
       type: TicketType.story,
       title: 'A Story',
-      status: TicketStatus.backlog,
+      status: 'backlog',
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
     );
@@ -174,7 +174,7 @@ void main() {
         ticketId: 'AIO-3',
         type: TicketType.task,
         title: 'A Task',
-        status: TicketStatus.todo,
+        status: 'todo',
         createdAt: DateTime(2026),
         updatedAt: DateTime(2026),
       );
@@ -230,7 +230,7 @@ void main() {
         ticketId: 'AIO-4',
         type: TicketType.resource,
         title: 'A Resource',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         createdAt: DateTime(2026),
         updatedAt: DateTime(2026),
       );
@@ -280,7 +280,7 @@ void main() {
         ticketId: 'AIO-3',
         type: TicketType.task,
         title: 'A Task',
-        status: TicketStatus.todo,
+        status: 'todo',
         createdAt: DateTime(2026),
         updatedAt: DateTime(2026),
       );
@@ -361,7 +361,7 @@ void main() {
         ticketId: 'AIO-9',
         type: TicketType.task,
         title: 'AI-sized task',
-        status: TicketStatus.todo,
+        status: 'todo',
         complexity: TicketComplexity.medium,
         estimate: 60,
         complexitySource: complexitySource,

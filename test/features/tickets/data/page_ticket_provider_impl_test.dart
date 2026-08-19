@@ -34,7 +34,7 @@ void main() {
     ticketId: 'AIO-$id',
     type: type,
     title: 'Title $id',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     parentId: parentId,
     createdAt: now,
     updatedAt: now,

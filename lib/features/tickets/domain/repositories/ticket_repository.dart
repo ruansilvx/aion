@@ -8,7 +8,6 @@ import 'package:aion/features/tickets/domain/entities/ticket_search_page.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_complexity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sync_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
@@ -38,18 +37,22 @@ abstract interface class TicketRepository {
   Future<void> importTicket(Ticket ticket);
 
   /// Updates only the [status] (and `updatedAt`) of the ticket with id
-  /// [id]. Does not touch any other field. Throws if [id] does not exist.
-  Future<void> updateTicketStatus(String id, TicketStatus status);
+  /// [id]. Does not touch any other field. [status] is a project-defined
+  /// status name (see [Ticket.status]) — this method performs no
+  /// validation that [status] names a status the project has actually
+  /// configured; that's a `TicketsCubit`-layer concern. Throws if [id]
+  /// does not exist.
+  Future<void> updateTicketStatus(String id, String status);
 
   /// Writes [status] (and a fresh `updatedAt`) to every ticket in [ids] in
   /// one bulk operation. Unconditional — performs no validation and no
   /// gating (e.g. the Blocked-dependency or coding-execution checks that
-  /// guard a single-ticket move to [TicketStatus.inProgress]); that's a
-  /// `TicketsCubit`-layer concern (see
+  /// guard a single-ticket move to the `executionTrigger`-role status);
+  /// that's a `TicketsCubit`-layer concern (see
   /// `TicketsCubit.updateStatusForTickets`), which is responsible for
   /// filtering [ids] down to the writable subset before calling this. Ids
   /// that don't exist are silently skipped.
-  Future<void> updateStatusForIds(List<String> ids, TicketStatus status);
+  Future<void> updateStatusForIds(List<String> ids, String status);
 
   /// Writes [priority] (and a fresh `updatedAt`) to every ticket in [ids]
   /// in one bulk operation. Unconditional — priority is a plain enum
@@ -232,14 +235,21 @@ abstract interface class TicketRepository {
   /// score to order by; every other field orders independent of whether
   /// [query] is set. See
   /// `aion-arch/changes/ticket-sort-control-and-board-as-default-view`.
+  ///
+  /// [statusSortOrder] is the caller's currently-configured `WorkflowStatus`
+  /// name list, already sorted by `WorkflowStatus.sortOrder` — consulted
+  /// only when `sort.field == TicketSortField.status`, since a status is
+  /// now project-configured data rather than a fixed enum with its own
+  /// declaration order. Ignored for every other sort field.
   Future<TicketSearchPage> searchTickets({
     String? query,
-    Set<TicketStatus> statuses = const {},
+    Set<String> statuses = const {},
     Set<TicketType> types = const {},
     Set<TicketPriority> priorities = const {},
     required TicketListSort sort,
     required int limit,
     int offset = 0,
+    List<String> statusSortOrder = const [],
   });
 
   /// Returns every live (non-trashed) ticket whose `parentId` equals

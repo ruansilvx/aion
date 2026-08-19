@@ -50,7 +50,7 @@ void main() {
     ticketId: 'AIO-1',
     type: TicketType.task,
     title: 'Candidate ticket',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
   );

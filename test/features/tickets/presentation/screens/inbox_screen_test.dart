@@ -27,7 +27,7 @@ Ticket _historyChat({
     ticketId: 'AIO-$id',
     type: TicketType.chat,
     title: title,
-    status: TicketStatus.backlog,
+    status: 'backlog',
     inboxPurpose: purpose,
     createdAt: DateTime(2026, 1, 1),
     updatedAt: DateTime(2026, 1, 1),

@@ -684,6 +684,42 @@
   "pageDetailMarkdownSaveError": "Couldn't save changes. Try again.",
 
   "settingsScreenTitle": "Settings",
+  "workflowSettingsScreenTitle": "Workflow",
+  "workflowSettingsTicketStatusesEyebrow": "TICKET STATUSES",
+  "workflowSettingsSddStagesEyebrow": "SDD STAGES",
+  "workflowSettingsStageLabelsEyebrow": "STAGE LABELS",
+  "workflowSettingsScopeBase": "Base",
+  "workflowSettingsAddStatus": "Add status",
+  "workflowSettingsNewStatusEyebrow": "NEW STATUS · {scope}",
+  "@workflowSettingsNewStatusEyebrow": {
+    "placeholders": {
+      "scope": {"type": "String"}
+    }
+  },
+  "workflowSettingsDisplayNameLabel": "Display name",
+  "workflowSettingsInternalNameLabel": "Internal name",
+  "workflowSettingsCancel": "Cancel",
+  "workflowSettingsDuplicateNameError": "A status named \"{name}\" already exists in this scope.",
+  "@workflowSettingsDuplicateNameError": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
+  "workflowSettingsInheritedTag": "INHERITED",
+  "workflowSettingsTypeOnlyTag": "{type} ONLY",
+  "@workflowSettingsTypeOnlyTag": {
+    "placeholders": {
+      "type": {"type": "String"}
+    }
+  },
+  "workflowSettingsRoleExecutionTrigger": "EXECUTION TRIGGER",
+  "workflowSettingsRoleReviewReady": "REVIEW READY",
+  "workflowSettingsRoleDone": "DONE",
+  "workflowSettingsRoleNone": "NO ROLE",
+  "workflowSettingsRequireDesignReviewTitle": "Require design review stages",
+  "workflowSettingsRequireDesignReviewSubtitle": "Epics and Stories must clear the SDD stage cycle before execution.",
+  "workflowSettingsDeleteStatus": "Delete status",
+  "workflowSettingsChangeRole": "Change role",
   "settingsProviderCardTitle": "Claude Agent SDK",
   "settingsProviderEyebrow": "PROVIDER",
   "settingsProviderSubline": "Authenticated via your Claude plan",

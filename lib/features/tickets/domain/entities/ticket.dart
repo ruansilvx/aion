@@ -10,7 +10,6 @@ import 'package:aion/features/tickets/domain/enums/ticket_complexity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_estimation_source.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_severity.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sync_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
@@ -35,8 +34,18 @@ class Ticket extends Equatable {
   /// Optional long-form description.
   final String? description;
 
-  /// Current workflow state.
-  final TicketStatus status;
+  /// Current workflow state — a project-defined status name (e.g.
+  /// `"backlog"`, `"in_progress"`, or a project's own renamed/added
+  /// status), resolved against `WorkflowStatusRepository`/
+  /// `WorkflowConfigCubit` rather than a fixed enum. Prior to
+  /// `aion-arch/changes/configurable-ticket-workflow`, this field was a
+  /// fixed `TicketStatus` enum; every project now configures its own
+  /// status set (see `WorkflowStatus`), seeded by default with
+  /// `defaultWorkflowStatuses` so an unconfigured project behaves exactly
+  /// as before. `TicketsCubit._roleOf` resolves a status string to its
+  /// configured `WorkflowStatusRole`, if any, for every place that used to
+  /// gate on a literal `TicketStatus` value.
+  final String status;
 
   /// Urgency of the ticket. Defaults to [TicketPriority.none].
   final TicketPriority priority;
@@ -266,7 +275,7 @@ class Ticket extends Equatable {
   Ticket copyWith({
     String? title,
     TicketFieldSetter<String?>? description,
-    TicketStatus? status,
+    String? status,
     TicketPriority? priority,
     TicketType? type,
     TicketFieldSetter<int?>? estimate,

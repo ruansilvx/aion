@@ -30,7 +30,7 @@ void main() {
     ticketId: 'AIO-$id',
     type: type,
     title: 'Doc $id',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     embedding: embedding,
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
