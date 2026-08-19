@@ -4,6 +4,7 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
+import 'package:aion/core/core.dart';
 import 'package:aion/features/tickets/tickets.dart';
 
 class MockWorkflowStatusRepository extends Mock
@@ -14,11 +15,29 @@ class MockSddStageConfigRepository extends Mock
 
 class MockTicketRepository extends Mock implements TicketRepository {}
 
+class MockWorkflowSkillAttachmentRepository extends Mock
+    implements WorkflowSkillAttachmentRepository {}
+
+class MockWorkflowPromptTemplateRepository extends Mock
+    implements WorkflowPromptTemplateRepository {}
+
 void main() {
   setUpAll(() {
     registerFallbackValue(SddStage.exploring);
     registerFallbackValue(
       const WorkflowStatus(id: 'fallback', name: 'fallback', displayName: 'Fallback', sortOrder: 0),
+    );
+    registerFallbackValue(
+      const SkillAttachment(
+        id: 'fallback',
+        workflowStatusId: 'fallback-status',
+        kind: SkillAttachmentKind.delegatedSkill,
+        skillName: 'fallback',
+        confidence: AutomationConfidence.gated,
+      ),
+    );
+    registerFallbackValue(
+      const WorkflowPromptTemplate(id: 'fallback', name: 'fallback', body: 'fallback'),
     );
   });
 
@@ -39,6 +58,8 @@ void _mainBody() {
   late MockWorkflowStatusRepository statusRepository;
   late MockSddStageConfigRepository sddStageConfigRepository;
   late MockTicketRepository ticketRepository;
+  late MockWorkflowSkillAttachmentRepository attachmentRepository;
+  late MockWorkflowPromptTemplateRepository templateRepository;
 
   final backlog = WorkflowStatus(
     id: 'id-backlog',
@@ -62,10 +83,26 @@ void _mainBody() {
   );
   final baseStatuses = [backlog, inProgress, done];
 
+  WorkflowConfigLoaded loadedState({
+    List<WorkflowStatus>? statuses,
+    bool designStagesEnabled = true,
+    Map<SddStage, String> stageDisplayNameOverrides = const {},
+    List<SkillAttachment> attachments = const [],
+    List<WorkflowPromptTemplate> templates = const [],
+  }) => WorkflowConfigLoaded(
+    statuses: statuses ?? baseStatuses,
+    designStagesEnabled: designStagesEnabled,
+    stageDisplayNameOverrides: stageDisplayNameOverrides,
+    attachments: attachments,
+    templates: templates,
+  );
+
   setUp(() {
     statusRepository = MockWorkflowStatusRepository();
     sddStageConfigRepository = MockSddStageConfigRepository();
     ticketRepository = MockTicketRepository();
+    attachmentRepository = MockWorkflowSkillAttachmentRepository();
+    templateRepository = MockWorkflowPromptTemplateRepository();
     when(() => statusRepository.onChanged).thenAnswer((_) => const Stream.empty());
     when(() => statusRepository.getAll()).thenAnswer((_) async => baseStatuses);
     when(
@@ -75,34 +112,32 @@ void _mainBody() {
       () => sddStageConfigRepository.getDisplayNameOverride(any()),
     ).thenAnswer((_) async => null);
     when(() => ticketRepository.getAllTickets()).thenAnswer((_) async => []);
+    when(() => attachmentRepository.onChanged).thenAnswer((_) => const Stream.empty());
+    when(() => attachmentRepository.getAll()).thenAnswer((_) async => []);
+    when(() => templateRepository.getAll()).thenAnswer((_) async => []);
   });
 
-  WorkflowConfigCubit buildCubit() =>
-      WorkflowConfigCubit(statusRepository, sddStageConfigRepository, ticketRepository);
+  WorkflowConfigCubit buildCubit() => WorkflowConfigCubit(
+    statusRepository,
+    sddStageConfigRepository,
+    ticketRepository,
+    attachmentRepository,
+    templateRepository,
+  );
 
   group('load', () {
     blocTest<WorkflowConfigCubit, WorkflowConfigState>(
       'emits WorkflowConfigLoaded with every configured status plus SDD settings',
       build: buildCubit,
       act: (cubit) => cubit.load(),
-      expect: () => [
-        WorkflowConfigLoaded(
-          statuses: baseStatuses,
-          designStagesEnabled: true,
-          stageDisplayNameOverrides: const {},
-        ),
-      ],
+      expect: () => [loadedState()],
     );
   });
 
   group('createStatus', () {
     blocTest<WorkflowConfigCubit, WorkflowConfigState>(
       'rejects a name that collides with an existing base status',
-      seed: () => WorkflowConfigLoaded(
-        statuses: baseStatuses,
-        designStagesEnabled: true,
-        stageDisplayNameOverrides: const {},
-      ),
+      seed: loadedState,
       build: buildCubit,
       act: (cubit) => cubit.createStatus(
         WorkflowStatus(
@@ -121,11 +156,7 @@ void _mainBody() {
     blocTest<WorkflowConfigCubit, WorkflowConfigState>(
       'assigning an existing role to a new status moves it off the '
       'previous holder rather than rejecting',
-      seed: () => WorkflowConfigLoaded(
-        statuses: baseStatuses,
-        designStagesEnabled: true,
-        stageDisplayNameOverrides: const {},
-      ),
+      seed: loadedState,
       build: buildCubit,
       setUp: () {
         when(() => statusRepository.create(any())).thenAnswer((_) async {});
@@ -156,11 +187,7 @@ void _mainBody() {
   group('updateStatus', () {
     blocTest<WorkflowConfigCubit, WorkflowConfigState>(
       'rejects clearing the sole holder of a role to none',
-      seed: () => WorkflowConfigLoaded(
-        statuses: baseStatuses,
-        designStagesEnabled: true,
-        stageDisplayNameOverrides: const {},
-      ),
+      seed: loadedState,
       build: buildCubit,
       act: (cubit) =>
           cubit.updateStatus(done.copyWith(role: () => null)),
@@ -172,11 +199,7 @@ void _mainBody() {
 
     blocTest<WorkflowConfigCubit, WorkflowConfigState>(
       'rejects a rename that collides with another status name in scope',
-      seed: () => WorkflowConfigLoaded(
-        statuses: baseStatuses,
-        designStagesEnabled: true,
-        stageDisplayNameOverrides: const {},
-      ),
+      seed: loadedState,
       build: buildCubit,
       act: (cubit) => cubit.updateStatus(backlog.copyWith(name: 'done')),
       expect: () => [isA<WorkflowConfigError>()],
@@ -189,11 +212,7 @@ void _mainBody() {
   group('deleteStatus', () {
     blocTest<WorkflowConfigCubit, WorkflowConfigState>(
       'rejects deleting the sole holder of a role',
-      seed: () => WorkflowConfigLoaded(
-        statuses: baseStatuses,
-        designStagesEnabled: true,
-        stageDisplayNameOverrides: const {},
-      ),
+      seed: loadedState,
       build: buildCubit,
       act: (cubit) => cubit.deleteStatus(inProgress.id),
       expect: () => [isA<WorkflowConfigError>()],
@@ -204,11 +223,7 @@ void _mainBody() {
 
     blocTest<WorkflowConfigCubit, WorkflowConfigState>(
       'rejects deleting a status currently in use by a live ticket',
-      seed: () => WorkflowConfigLoaded(
-        statuses: baseStatuses,
-        designStagesEnabled: true,
-        stageDisplayNameOverrides: const {},
-      ),
+      seed: loadedState,
       build: buildCubit,
       setUp: () {
         when(
@@ -224,11 +239,7 @@ void _mainBody() {
 
     blocTest<WorkflowConfigCubit, WorkflowConfigState>(
       'deletes a role-free, not-in-use status and reloads',
-      seed: () => WorkflowConfigLoaded(
-        statuses: baseStatuses,
-        designStagesEnabled: true,
-        stageDisplayNameOverrides: const {},
-      ),
+      seed: loadedState,
       build: buildCubit,
       setUp: () {
         when(() => statusRepository.delete(backlog.id)).thenAnswer((_) async {});
@@ -237,24 +248,14 @@ void _mainBody() {
         ).thenAnswer((_) async => [inProgress, done]);
       },
       act: (cubit) => cubit.deleteStatus(backlog.id),
-      expect: () => [
-        WorkflowConfigLoaded(
-          statuses: [inProgress, done],
-          designStagesEnabled: true,
-          stageDisplayNameOverrides: const {},
-        ),
-      ],
+      expect: () => [loadedState(statuses: [inProgress, done])],
     );
   });
 
   group('reorderStatuses', () {
     blocTest<WorkflowConfigCubit, WorkflowConfigState>(
       'persists the new order and reloads',
-      seed: () => WorkflowConfigLoaded(
-        statuses: baseStatuses,
-        designStagesEnabled: true,
-        stageDisplayNameOverrides: const {},
-      ),
+      seed: loadedState,
       build: buildCubit,
       setUp: () {
         when(
@@ -274,11 +275,7 @@ void _mainBody() {
   group('setDesignStagesEnabled / setStageDisplayNameOverride', () {
     blocTest<WorkflowConfigCubit, WorkflowConfigState>(
       'round-trips designStagesEnabled through the repository',
-      seed: () => WorkflowConfigLoaded(
-        statuses: baseStatuses,
-        designStagesEnabled: true,
-        stageDisplayNameOverrides: const {},
-      ),
+      seed: loadedState,
       build: buildCubit,
       setUp: () {
         when(
@@ -289,22 +286,12 @@ void _mainBody() {
         ).thenAnswer((_) async => false);
       },
       act: (cubit) => cubit.setDesignStagesEnabled(false),
-      expect: () => [
-        WorkflowConfigLoaded(
-          statuses: baseStatuses,
-          designStagesEnabled: false,
-          stageDisplayNameOverrides: const {},
-        ),
-      ],
+      expect: () => [loadedState(designStagesEnabled: false)],
     );
 
     blocTest<WorkflowConfigCubit, WorkflowConfigState>(
       'round-trips a stage display-name override through the repository',
-      seed: () => WorkflowConfigLoaded(
-        statuses: baseStatuses,
-        designStagesEnabled: true,
-        stageDisplayNameOverrides: const {},
-      ),
+      seed: loadedState,
       build: buildCubit,
       setUp: () {
         when(
@@ -324,12 +311,213 @@ void _mainBody() {
         'Kickoff',
       ),
       expect: () => [
-        WorkflowConfigLoaded(
-          statuses: baseStatuses,
-          designStagesEnabled: true,
+        loadedState(
           stageDisplayNameOverrides: const {SddStage.exploring: 'Kickoff'},
         ),
       ],
+    );
+  });
+
+  group('createAttachment / updateAttachment / deleteAttachment', () {
+    final existing = SkillAttachment(
+      id: 'attach-1',
+      workflowStatusId: backlog.id,
+      kind: SkillAttachmentKind.delegatedSkill,
+      skillName: 'code-review',
+      confidence: AutomationConfidence.gated,
+    );
+
+    blocTest<WorkflowConfigCubit, WorkflowConfigState>(
+      'creates an attachment on a free target and reloads',
+      seed: loadedState,
+      build: buildCubit,
+      setUp: () {
+        when(() => attachmentRepository.create(any())).thenAnswer((_) async {});
+        when(
+          () => attachmentRepository.getAll(),
+        ).thenAnswer((_) async => [existing]);
+      },
+      act: (cubit) => cubit.createAttachment(existing),
+      expect: () => [loadedState(attachments: [existing])],
+      verify: (_) {
+        verify(() => attachmentRepository.create(existing)).called(1);
+      },
+    );
+
+    blocTest<WorkflowConfigCubit, WorkflowConfigState>(
+      'rejects creating a second attachment on a target that already has one',
+      seed: () => loadedState(attachments: [existing]),
+      build: buildCubit,
+      act: (cubit) => cubit.createAttachment(
+        SkillAttachment(
+          id: 'attach-2',
+          workflowStatusId: backlog.id,
+          kind: SkillAttachmentKind.aionNativeTemplate,
+          templateId: 'template-1',
+          confidence: AutomationConfidence.auto,
+        ),
+      ),
+      expect: () => [isA<WorkflowConfigError>()],
+      verify: (_) {
+        verifyNever(() => attachmentRepository.create(any()));
+      },
+    );
+
+    blocTest<WorkflowConfigCubit, WorkflowConfigState>(
+      'rejects updating an attachment onto a different target already held',
+      seed: () => loadedState(
+        attachments: [
+          existing,
+          SkillAttachment(
+            id: 'attach-2',
+            workflowStatusId: inProgress.id,
+            kind: SkillAttachmentKind.aionNativeTemplate,
+            templateId: 'template-1',
+            confidence: AutomationConfidence.auto,
+          ),
+        ],
+      ),
+      build: buildCubit,
+      act: (cubit) => cubit.updateAttachment(
+        existing.copyWith(workflowStatusId: () => inProgress.id),
+      ),
+      expect: () => [isA<WorkflowConfigError>()],
+      verify: (_) {
+        verifyNever(() => attachmentRepository.update(any()));
+      },
+    );
+
+    blocTest<WorkflowConfigCubit, WorkflowConfigState>(
+      'updates an attachment and reloads',
+      seed: () => loadedState(attachments: [existing]),
+      build: buildCubit,
+      setUp: () {
+        when(() => attachmentRepository.update(any())).thenAnswer((_) async {});
+        final updated = existing.copyWith(confidence: AutomationConfidence.auto);
+        when(
+          () => attachmentRepository.getAll(),
+        ).thenAnswer((_) async => [updated]);
+      },
+      act: (cubit) => cubit.updateAttachment(
+        existing.copyWith(confidence: AutomationConfidence.auto),
+      ),
+      expect: () => [
+        loadedState(
+          attachments: [existing.copyWith(confidence: AutomationConfidence.auto)],
+        ),
+      ],
+    );
+
+    blocTest<WorkflowConfigCubit, WorkflowConfigState>(
+      'deletes an attachment and reloads',
+      seed: () => loadedState(attachments: [existing]),
+      build: buildCubit,
+      setUp: () {
+        when(() => attachmentRepository.delete(existing.id)).thenAnswer((_) async {});
+        when(() => attachmentRepository.getAll()).thenAnswer((_) async => []);
+      },
+      act: (cubit) => cubit.deleteAttachment(existing.id),
+      expect: () => [loadedState()],
+      verify: (_) {
+        verify(() => attachmentRepository.delete(existing.id)).called(1);
+      },
+    );
+  });
+
+  group('createTemplate / updateTemplate / deleteTemplate', () {
+    const existingTemplate = WorkflowPromptTemplate(
+      id: 'template-1',
+      name: 'Repro Steps Request',
+      body: 'Please provide steps to reproduce {{ticket.title}}.',
+    );
+
+    blocTest<WorkflowConfigCubit, WorkflowConfigState>(
+      'creates a template and reloads',
+      seed: loadedState,
+      build: buildCubit,
+      setUp: () {
+        when(() => templateRepository.create(any())).thenAnswer((_) async {});
+        when(
+          () => templateRepository.getAll(),
+        ).thenAnswer((_) async => [existingTemplate]);
+      },
+      act: (cubit) => cubit.createTemplate(existingTemplate),
+      expect: () => [loadedState(templates: [existingTemplate])],
+    );
+
+    blocTest<WorkflowConfigCubit, WorkflowConfigState>(
+      'rejects a template name collision',
+      seed: () => loadedState(templates: [existingTemplate]),
+      build: buildCubit,
+      act: (cubit) => cubit.createTemplate(
+        const WorkflowPromptTemplate(
+          id: 'template-2',
+          name: 'Repro Steps Request',
+          body: 'Different body.',
+        ),
+      ),
+      expect: () => [isA<WorkflowConfigError>()],
+      verify: (_) {
+        verifyNever(() => templateRepository.create(any()));
+      },
+    );
+
+    blocTest<WorkflowConfigCubit, WorkflowConfigState>(
+      'rejects a rename that collides with another template name',
+      seed: () => loadedState(
+        templates: const [
+          existingTemplate,
+          WorkflowPromptTemplate(id: 'template-2', name: 'Other', body: 'x'),
+        ],
+      ),
+      build: buildCubit,
+      act: (cubit) => cubit.updateTemplate(
+        const WorkflowPromptTemplate(
+          id: 'template-2',
+          name: 'Repro Steps Request',
+          body: 'x',
+        ),
+      ),
+      expect: () => [isA<WorkflowConfigError>()],
+      verify: (_) {
+        verifyNever(() => templateRepository.update(any()));
+      },
+    );
+
+    blocTest<WorkflowConfigCubit, WorkflowConfigState>(
+      'rejects deleting a template a live attachment still references',
+      seed: () => loadedState(
+        templates: [existingTemplate],
+        attachments: [
+          SkillAttachment(
+            id: 'attach-1',
+            workflowStatusId: backlog.id,
+            kind: SkillAttachmentKind.aionNativeTemplate,
+            templateId: existingTemplate.id,
+            confidence: AutomationConfidence.gated,
+          ),
+        ],
+      ),
+      build: buildCubit,
+      act: (cubit) => cubit.deleteTemplate(existingTemplate.id),
+      expect: () => [isA<WorkflowConfigError>()],
+      verify: (_) {
+        verifyNever(() => templateRepository.delete(any()));
+      },
+    );
+
+    blocTest<WorkflowConfigCubit, WorkflowConfigState>(
+      'deletes an unreferenced template and reloads',
+      seed: () => loadedState(templates: [existingTemplate]),
+      build: buildCubit,
+      setUp: () {
+        when(
+          () => templateRepository.delete(existingTemplate.id),
+        ).thenAnswer((_) async {});
+        when(() => templateRepository.getAll()).thenAnswer((_) async => []);
+      },
+      act: (cubit) => cubit.deleteTemplate(existingTemplate.id),
+      expect: () => [loadedState()],
     );
   });
 }

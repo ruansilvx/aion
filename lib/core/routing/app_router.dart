@@ -31,6 +31,8 @@ import 'package:aion/features/tickets/data/repositories/drift_execution_queue_re
 import 'package:aion/features/tickets/data/repositories/drift_page_wikilink_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_link_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_repository.dart';
+import 'package:aion/features/tickets/data/repositories/drift_workflow_prompt_template_repository.dart';
+import 'package:aion/features/tickets/data/repositories/drift_workflow_skill_attachment_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_workflow_status_repository.dart';
 import 'package:aion/features/tickets/data/repositories/shared_prefs_sdd_stage_config_repository.dart';
 import 'package:aion/features/tickets/data/repositories/shared_prefs_ticket_board_column_visibility_repository.dart';
@@ -337,8 +339,33 @@ final appRouter = GoRouter(
               context.read<WorkflowStatusRepository>(),
               context.read<SddStageConfigRepository>(),
               context.read<TicketRepository>(),
+              context.read<WorkflowSkillAttachmentRepository>(),
+              context.read<WorkflowPromptTemplateRepository>(),
             )..load(),
             child: const WorkflowStatusSettingsScreen(),
+          ),
+        ),
+        // `WorkflowPromptTemplatesScreen` — reached via `context.push`
+        // from `_AttachmentForm`'s "Manage templates" link and
+        // `WorkflowStatusSettingsScreen`'s header (both in
+        // workflow_status_settings_screen.dart). A separate top-level
+        // route (not nested under `/workspace/settings/workflow`) needs
+        // its own `WorkflowConfigCubit` instance — go_router pushes a
+        // fresh page subtree per route, so a parent route's
+        // `BlocProvider` isn't inherited here, following
+        // `/workspace/settings/workflow`'s own wiring exactly. Added for
+        // `aion-arch/changes/workflow-skill-attachments`.
+        GoRoute(
+          path: '/workspace/settings/workflow/templates',
+          builder: (context, state) => BlocProvider<WorkflowConfigCubit>(
+            create: (context) => WorkflowConfigCubit(
+              context.read<WorkflowStatusRepository>(),
+              context.read<SddStageConfigRepository>(),
+              context.read<TicketRepository>(),
+              context.read<WorkflowSkillAttachmentRepository>(),
+              context.read<WorkflowPromptTemplateRepository>(),
+            )..load(),
+            child: const WorkflowPromptTemplatesScreen(),
           ),
         ),
       ],
@@ -575,6 +602,16 @@ class _WorkspaceShellState extends State<WorkspaceShell>
         RepositoryProvider<SddStageConfigRepository>(
           create: (_) => SharedPrefsSddStageConfigRepository(),
         ),
+        // Phase 2 (workflow-skill-attachments) — both Drift-backed
+        // (per-project database), following WorkflowStatusRepository's
+        // exact wiring precedent. See
+        // aion-arch/changes/workflow-skill-attachments/design.md §6.
+        RepositoryProvider<WorkflowSkillAttachmentRepository>(
+          create: (_) => DriftWorkflowSkillAttachmentRepository(_database),
+        ),
+        RepositoryProvider<WorkflowPromptTemplateRepository>(
+          create: (_) => DriftWorkflowPromptTemplateRepository(_database),
+        ),
         // Desktop-only project-scoped services below — git projection,
         // bidirectional resource/page reconcile, and repair. Absent
         // entirely on mobile/web (no rootPath to address git commands
@@ -682,6 +719,10 @@ class _WorkspaceShellState extends State<WorkspaceShell>
                   .read<WorkflowStatusRepository>(),
               sddStageConfigRepository: context
                   .read<SddStageConfigRepository>(),
+              workflowSkillAttachmentRepository: context
+                  .read<WorkflowSkillAttachmentRepository>(),
+              workflowPromptTemplateRepository: context
+                  .read<WorkflowPromptTemplateRepository>(),
             )..restoreExecutionQueue(),
             child: Builder(
               builder: (context) => RepositoryProvider<PageTicketProvider>(

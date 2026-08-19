@@ -4,11 +4,15 @@ import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:aion/features/tickets/domain/entities/skill_attachment.dart';
+import 'package:aion/features/tickets/domain/entities/workflow_prompt_template.dart';
 import 'package:aion/features/tickets/domain/entities/workflow_status.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 import 'package:aion/features/tickets/domain/enums/workflow_status_role.dart';
 import 'package:aion/features/tickets/domain/repositories/sdd_stage_config_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
+import 'package:aion/features/tickets/domain/repositories/workflow_prompt_template_repository.dart';
+import 'package:aion/features/tickets/domain/repositories/workflow_skill_attachment_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/workflow_status_repository.dart';
 import 'package:aion/features/tickets/presentation/cubit/workflow_config_state.dart';
 
@@ -38,6 +42,15 @@ import 'package:aion/features/tickets/presentation/cubit/workflow_config_state.d
 /// [deleteStatus] additionally rejects deleting a status any live ticket
 /// currently sits at — Phase 1 has no migration story for reassigning a
 /// deleted status's tickets (see proposal.md's Non-goals).
+///
+/// Phase 2 (`aion-arch/changes/workflow-skill-attachments`) adds
+/// [SkillAttachment]/[WorkflowPromptTemplate] CRUD alongside the above,
+/// enforcing two more invariants the same way: [createAttachment]/
+/// [updateAttachment] reject a second attachment on a target
+/// (`WorkflowStatus.id`/`SddStage`) that already holds one; [createTemplate]/
+/// [updateTemplate] reject a project-wide [WorkflowPromptTemplate.name]
+/// collision; [deleteTemplate] rejects while a live [SkillAttachment]
+/// still references it.
 class WorkflowConfigCubit extends Cubit<WorkflowConfigState> {
   /// Creates a [WorkflowConfigCubit]. [_ticketRepository] is consulted
   /// only by [deleteStatus]'s in-use check — a live-ticket count query,
@@ -47,25 +60,40 @@ class WorkflowConfigCubit extends Cubit<WorkflowConfigState> {
     this._statusRepository,
     this._sddStageConfigRepository,
     this._ticketRepository,
+    this._attachmentRepository,
+    this._templateRepository,
   ) : super(const WorkflowConfigInitial());
 
   final WorkflowStatusRepository _statusRepository;
   final SddStageConfigRepository _sddStageConfigRepository;
   final TicketRepository _ticketRepository;
 
+  /// Persists [SkillAttachment]s. Added for
+  /// `aion-arch/changes/workflow-skill-attachments`.
+  final WorkflowSkillAttachmentRepository _attachmentRepository;
+
+  /// Persists [WorkflowPromptTemplate]s. Added for
+  /// `aion-arch/changes/workflow-skill-attachments`.
+  final WorkflowPromptTemplateRepository _templateRepository;
+
   /// Loads every configured [WorkflowStatus] plus the project's `SddStage`
-  /// settings and emits [WorkflowConfigLoaded].
+  /// settings, [SkillAttachment]s, and [WorkflowPromptTemplate]s, and
+  /// emits [WorkflowConfigLoaded].
   Future<void> load() async {
     final statuses = await _statusRepository.getAll();
     final designStagesEnabled = await _sddStageConfigRepository
         .getDesignStagesEnabled();
     final overrides = await _loadStageDisplayNameOverrides();
+    final attachments = await _attachmentRepository.getAll();
+    final templates = await _templateRepository.getAll();
     if (isClosed) return;
     emit(
       WorkflowConfigLoaded(
         statuses: statuses,
         designStagesEnabled: designStagesEnabled,
         stageDisplayNameOverrides: overrides,
+        attachments: attachments,
+        templates: templates,
       ),
     );
   }
@@ -213,6 +241,109 @@ class WorkflowConfigCubit extends Cubit<WorkflowConfigState> {
     await load();
   }
 
+  /// Creates [attachment]. Rejects (emits [WorkflowConfigError], preserving
+  /// the current list) if [attachment]'s target
+  /// ([SkillAttachment.workflowStatusId]/[SkillAttachment.sddStage])
+  /// already holds a different attachment — at most one per target. See
+  /// `aion-arch/changes/workflow-skill-attachments/design.md` §4.
+  Future<void> createAttachment(SkillAttachment attachment) async {
+    final loaded = _requireLoaded();
+    if (loaded == null) return;
+
+    if (_attachmentTargetTaken(loaded.attachments, attachment)) {
+      _emitAttachmentTargetTakenError(loaded);
+      return;
+    }
+
+    await _attachmentRepository.create(attachment);
+    await load();
+  }
+
+  /// Updates [attachment] over its existing row (matched by
+  /// [SkillAttachment.id]). Rejects if [attachment]'s target now collides
+  /// with a *different* attachment already on that target.
+  Future<void> updateAttachment(SkillAttachment attachment) async {
+    final loaded = _requireLoaded();
+    if (loaded == null) return;
+
+    if (_attachmentTargetTaken(loaded.attachments, attachment)) {
+      _emitAttachmentTargetTakenError(loaded);
+      return;
+    }
+
+    await _attachmentRepository.update(attachment);
+    await load();
+  }
+
+  /// Deletes the attachment with id [id]. Never rejected — removing an
+  /// attachment can't violate the at-most-one-per-target invariant, it
+  /// can only free up a target.
+  Future<void> deleteAttachment(String id) async {
+    if (_requireLoaded() == null) return;
+    await _attachmentRepository.delete(id);
+    await load();
+  }
+
+  /// Creates [template]. Rejects (emits [WorkflowConfigError], preserving
+  /// the current list) if [template.name] collides with another
+  /// template's name — a flat, project-wide namespace (see
+  /// [WorkflowPromptTemplate]'s own dartdoc).
+  Future<void> createTemplate(WorkflowPromptTemplate template) async {
+    final loaded = _requireLoaded();
+    if (loaded == null) return;
+
+    if (_templateNameTaken(loaded.templates, template)) {
+      _emitTemplateNameTakenError(template, loaded);
+      return;
+    }
+
+    await _templateRepository.create(template);
+    await load();
+  }
+
+  /// Updates [template] over its existing row (matched by
+  /// [WorkflowPromptTemplate.id]). Rejects on a name collision, same as
+  /// [createTemplate].
+  Future<void> updateTemplate(WorkflowPromptTemplate template) async {
+    final loaded = _requireLoaded();
+    if (loaded == null) return;
+
+    if (_templateNameTaken(loaded.templates, template)) {
+      _emitTemplateNameTakenError(template, loaded);
+      return;
+    }
+
+    await _templateRepository.update(template);
+    await load();
+  }
+
+  /// Deletes the template with id [id]. Rejects if any live
+  /// [SkillAttachment] still references it via
+  /// [SkillAttachment.templateId] — delete the attachment(s) using it
+  /// first.
+  Future<void> deleteTemplate(String id) async {
+    final loaded = _requireLoaded();
+    if (loaded == null) return;
+
+    final inUseCount = loaded.attachments
+        .where((a) => a.templateId == id)
+        .length;
+    if (inUseCount > 0) {
+      _emit(
+        WorkflowConfigError(
+          message:
+              'In use by $inUseCount ${inUseCount == 1 ? 'attachment' : 'attachments'} '
+              '— remove them before deleting this template.',
+          previous: loaded,
+        ),
+      );
+      return;
+    }
+
+    await _templateRepository.delete(id);
+    await load();
+  }
+
   /// Returns the current [WorkflowConfigLoaded] state, or `null` (after
   /// emitting a defensive [WorkflowConfigError]-free no-op) if [load]
   /// hasn't resolved yet or the last state was itself an error — every
@@ -306,4 +437,56 @@ class WorkflowConfigCubit extends Cubit<WorkflowConfigState> {
     WorkflowStatusRole.reviewReady => 'Review Ready',
     WorkflowStatusRole.done => 'Done',
   };
+
+  /// Whether [candidate]'s target (its [SkillAttachment.workflowStatusId]
+  /// or [SkillAttachment.sddStage]) is already held by a *different*
+  /// attachment in [allAttachments] — the at-most-one-per-target
+  /// invariant [createAttachment]/[updateAttachment] enforce.
+  bool _attachmentTargetTaken(
+    List<SkillAttachment> allAttachments,
+    SkillAttachment candidate,
+  ) {
+    return allAttachments.any(
+      (a) =>
+          a.id != candidate.id &&
+          ((candidate.workflowStatusId != null &&
+                  a.workflowStatusId == candidate.workflowStatusId) ||
+              (candidate.sddStage != null &&
+                  a.sddStage == candidate.sddStage)),
+    );
+  }
+
+  void _emitAttachmentTargetTakenError(WorkflowConfigLoaded loaded) {
+    _emit(
+      WorkflowConfigError(
+        message: 'This status/stage already has a skill attached.',
+        previous: loaded,
+      ),
+    );
+  }
+
+  /// Whether [candidate.name] collides with another template's name — a
+  /// flat, project-wide namespace (see [WorkflowPromptTemplate]'s own
+  /// dartdoc).
+  bool _templateNameTaken(
+    List<WorkflowPromptTemplate> allTemplates,
+    WorkflowPromptTemplate candidate,
+  ) {
+    return allTemplates.any(
+      (t) => t.id != candidate.id && t.name == candidate.name,
+    );
+  }
+
+  void _emitTemplateNameTakenError(
+    WorkflowPromptTemplate template,
+    WorkflowConfigLoaded loaded,
+  ) {
+    _emit(
+      WorkflowConfigError(
+        message:
+            'A template named "${template.name}" already exists.',
+        previous: loaded,
+      ),
+    );
+  }
 }

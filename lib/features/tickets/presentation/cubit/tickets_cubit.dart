@@ -40,7 +40,9 @@ import 'package:aion/features/tickets/domain/entities/chat_turn_result.dart';
 import 'package:aion/features/tickets/domain/entities/execution_queue_entry.dart';
 import 'package:aion/features/tickets/domain/entities/gap_or_question_ref.dart';
 import 'package:aion/features/tickets/domain/entities/linked_ticket_ref.dart';
+import 'package:aion/features/tickets/domain/entities/skill_attachment.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
+import 'package:aion/features/tickets/domain/entities/workflow_prompt_template.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_board_column_visibility.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_list_filters.dart';
@@ -56,6 +58,7 @@ import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_severity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sort_direction.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sort_field.dart';
+import 'package:aion/features/tickets/domain/enums/skill_attachment_kind.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/enums/workflow_status_role.dart';
 import 'package:aion/features/tickets/domain/entities/default_workflow_statuses.dart';
@@ -70,7 +73,10 @@ import 'package:aion/features/tickets/domain/repositories/ticket_list_filter_rep
 import 'package:aion/features/tickets/domain/repositories/ticket_list_sort_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_list_view_mode_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
+import 'package:aion/features/tickets/domain/repositories/workflow_prompt_template_repository.dart';
+import 'package:aion/features/tickets/domain/repositories/workflow_skill_attachment_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/workflow_status_repository.dart';
+import 'package:aion/features/tickets/domain/utils/render_workflow_prompt_template.dart';
 import 'package:aion/features/tickets/domain/utils/ticket_link_direction.dart';
 import 'package:aion/features/tickets/domain/utils/ticket_rollup_calculator.dart';
 import 'package:aion/features/tickets/presentation/cubit/chat_branch_tool_definitions.dart';
@@ -187,6 +193,14 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// every gate/trigger already had, so an unconfigured/test cubit is
   /// unaffected. Real usage (`app_router.dart`) always supplies both. Added
   /// for `aion-arch/changes/configurable-ticket-workflow`.
+  /// [workflowSkillAttachmentRepository]/[workflowPromptTemplateRepository]
+  /// follow the same optional-dependency convention once more — `null`
+  /// (every existing construction site except `app_router.dart`) pins
+  /// [_skillAttachments] to `const []` forever, so
+  /// [_attachmentForStatus]/[_attachmentForStage] always resolve `null`
+  /// and no attachment ever fires — exactly Phase 1's behavior, byte for
+  /// byte. Real usage (`app_router.dart`) always supplies both. Added for
+  /// `aion-arch/changes/workflow-skill-attachments`.
   // The public param names below (embeddingProvider/gitProjector/
   // projectRootPath/providerRegistry/commentRepository/
   // automationSettingsRepository/modelRoutingRepository/gitClient/
@@ -194,7 +208,8 @@ class TicketsCubit extends Cubit<TicketsState> {
   // projectName/filterRepository/sortRepository/viewModeRepository/
   // boardColumnVisibilityRepository/pageWikilinkRepository/
   // activeTicketViewRegistry/executionSchedulingRepository/
-  // executionQueueRepository) intentionally differ from their private
+  // executionQueueRepository/workflowSkillAttachmentRepository/
+  // workflowPromptTemplateRepository) intentionally differ from their private
   // backing fields; a private identifier can't be used as an external
   // named-parameter label from another library, so `this._foo` shorthand
   // isn't usable here.
@@ -225,6 +240,8 @@ class TicketsCubit extends Cubit<TicketsState> {
     ExecutionQueueRepository? executionQueueRepository,
     WorkflowStatusRepository? workflowStatusRepository,
     SddStageConfigRepository? sddStageConfigRepository,
+    WorkflowSkillAttachmentRepository? workflowSkillAttachmentRepository,
+    WorkflowPromptTemplateRepository? workflowPromptTemplateRepository,
   }) : super(const TicketsInitial()) {
     _embeddingProvider = embeddingProvider;
     _gitProjector = gitProjector;
@@ -250,9 +267,15 @@ class TicketsCubit extends Cubit<TicketsState> {
     _executionQueueRepository = executionQueueRepository;
     _workflowStatusRepository = workflowStatusRepository;
     _sddStageConfigRepository = sddStageConfigRepository;
+    _workflowSkillAttachmentRepository = workflowSkillAttachmentRepository;
+    _workflowPromptTemplateRepository = workflowPromptTemplateRepository;
     _workflowStatusChangesSubscription = workflowStatusRepository?.onChanged
         .listen((_) => _loadWorkflowStatuses());
     unawaited(_loadWorkflowStatuses());
+    _skillAttachmentChangesSubscription = workflowSkillAttachmentRepository
+        ?.onChanged
+        .listen((_) => _loadSkillAttachments());
+    unawaited(_loadSkillAttachments());
     _rollupRecomputer = TicketRollupRecomputer(
       _repository,
       gitProjector: gitProjector,
@@ -409,6 +432,19 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// `aion-arch/changes/configurable-ticket-workflow`.
   late final SddStageConfigRepository? _sddStageConfigRepository;
 
+  /// Persists the project's configured [SkillAttachment] set. `null`
+  /// (every existing construction site except `app_router.dart`) pins
+  /// [_skillAttachments] to `const []` forever — see the constructor's
+  /// own dartdoc. Added for `aion-arch/changes/workflow-skill-attachments`.
+  late final WorkflowSkillAttachmentRepository? _workflowSkillAttachmentRepository;
+
+  /// Persists the project's [WorkflowPromptTemplate] set, consulted by
+  /// [_promptFor] to render an [SkillAttachmentKind.aionNativeTemplate]
+  /// attachment's prompt. `null` makes [_promptFor] fall back to a
+  /// defensive placeholder for that kind (see its own dartdoc). Added for
+  /// `aion-arch/changes/workflow-skill-attachments`.
+  late final WorkflowPromptTemplateRepository? _workflowPromptTemplateRepository;
+
   /// The project's currently-configured [WorkflowStatus] set — every
   /// scope, shared base and every per-type extension together. Loaded
   /// once at construction ([_loadWorkflowStatuses], fired from the
@@ -460,6 +496,50 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// generalized replacement for every literal `TicketStatus.inProgress`/
   /// `.inReview`/`.done` comparison this cubit used to perform.
   WorkflowStatusRole? _roleOf(String status) => _resolveStatus(status)?.role;
+
+  /// The project's currently-configured [SkillAttachment] set. Loaded
+  /// once at construction ([_loadSkillAttachments], fired from the
+  /// constructor body without being awaited, mirroring
+  /// [_workflowStatuses]'s own load-then-upgrade shape) and refreshed
+  /// every time [_workflowSkillAttachmentRepository] fires
+  /// [WorkflowSkillAttachmentRepository.onChanged] (i.e. whenever
+  /// `WorkflowConfigCubit` persists an attachment edit). Defaults to
+  /// `const []` — the correct empty baseline (unlike
+  /// [_workflowStatuses]'s `defaultWorkflowStatuses` fallback, there is
+  /// no pre-configuration attachment behavior to reproduce). See
+  /// `aion-arch/changes/workflow-skill-attachments/design.md` §3.1.
+  List<SkillAttachment> _skillAttachments = const [];
+
+  /// Subscription driving [_skillAttachments]'s live refresh — see that
+  /// field's dartdoc. `null` whenever this cubit was constructed without
+  /// a [WorkflowSkillAttachmentRepository]. Cancelled in [close].
+  StreamSubscription<void>? _skillAttachmentChangesSubscription;
+
+  /// Reloads [_skillAttachments] from [_workflowSkillAttachmentRepository].
+  /// A no-op (leaving [_skillAttachments] at its current value) when this
+  /// cubit was constructed without one.
+  Future<void> _loadSkillAttachments() async {
+    final repository = _workflowSkillAttachmentRepository;
+    if (repository == null) return;
+    final attachments = await repository.getAll();
+    if (isClosed) return;
+    _skillAttachments = attachments;
+  }
+
+  /// The [SkillAttachment] configured to fire on entry to the
+  /// `WorkflowStatus` with id [workflowStatusId], or `null` if none is
+  /// configured — the target has at most one, enforced by
+  /// `WorkflowConfigCubit.createAttachment`/`.updateAttachment`.
+  SkillAttachment? _attachmentForStatus(String workflowStatusId) =>
+      _skillAttachments
+          .where((a) => a.workflowStatusId == workflowStatusId)
+          .firstOrNull;
+
+  /// The [SkillAttachment] configured to fire on entry to [stage], or
+  /// `null` if none is configured. Same at-most-one guarantee as
+  /// [_attachmentForStatus].
+  SkillAttachment? _attachmentForStage(SddStage stage) =>
+      _skillAttachments.where((a) => a.sddStage == stage).firstOrNull;
 
   /// The status every new ticket is created at — the shared-base set's
   /// lowest-[WorkflowStatus.sortOrder] status's name (today's hardcoded
@@ -557,6 +637,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   Future<void> close() {
     _codebaseAnalysisController.close();
     unawaited(_workflowStatusChangesSubscription?.cancel());
+    unawaited(_skillAttachmentChangesSubscription?.cancel());
     return super.close();
   }
 
@@ -1259,7 +1340,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [_refreshDetailIfOpenAndAffected] call so a Story's already-open
   /// detail screen live-refreshes [TicketDetailLoaded.canAdvanceSddStage]
   /// when [id] is one of its direct Task/Bug children. Added for
-  /// `aion-arch/changes/live-refresh-open-ticket-detail-screen`.
+  /// `aion-arch/changes/live-refresh-open-ticket-detail-screen`. On a
+  /// successful write, also resolves [status] to its configured
+  /// `WorkflowStatus.id` and looks up [_attachmentForStatus]; if one is
+  /// found, fires it via [_resolveAndFireAttachment] — symmetric to, and
+  /// independent of, the `executionTrigger`-role check above. Added for
+  /// `aion-arch/changes/workflow-skill-attachments`.
   Future<void> updateTicketStatus(String id, String status) async {
     // Only fetch the ticket up front when the status holds the
     // executionTrigger role — every other transition returns true
@@ -1303,12 +1389,15 @@ class TicketsCubit extends Cubit<TicketsState> {
     try {
       await _repository.updateTicketStatus(id, status);
       final updated = await _repository.getTicketById(id);
+      SkillAttachment? attachment;
       if (updated != null) {
         unawaited(_triggerGitProjection(updated, 'status-changed'));
         if (updated.type.isExecutable &&
             _roleOf(status) == WorkflowStatusRole.executionTrigger) {
           unawaited(_triggerOrQueueCodingExecution(updated));
         }
+        final statusId = _resolveStatus(status)?.id;
+        attachment = statusId != null ? _attachmentForStatus(statusId) : null;
       }
       final page = await _repository.searchTickets(
         query: _lastQuery,
@@ -1321,8 +1410,23 @@ class TicketsCubit extends Cubit<TicketsState> {
       );
       emit(TicketStatusUpdated(page.tickets, hasMore: page.hasMore));
       unawaited(_refreshBlockedBoardState());
+      // The attachment-firing call is chained *after*
+      // _refreshDetailIfOpenAndAffected resolves, not run alongside it —
+      // both are unawaited, but a `gated` attachment's own
+      // TicketDetailLoaded(pendingSkillAttachment: ...) emission must be
+      // the truly final one for this write, not clobbered by
+      // _refreshDetailIfOpenAndAffected's own (pending-attachment-less)
+      // re-emission landing afterward. Added for
+      // `aion-arch/changes/workflow-skill-attachments`.
       unawaited(
-        _refreshDetailIfOpenAndAffected(id, fromState: stateBeforeThisWrite),
+        _refreshDetailIfOpenAndAffected(
+          id,
+          fromState: stateBeforeThisWrite,
+        ).then((_) {
+          if (updated != null && attachment != null) {
+            return _resolveAndFireAttachment(updated, attachment);
+          }
+        }),
       );
     } catch (e) {
       emit(TicketsError(e.toString()));
@@ -1624,7 +1728,17 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// this now resolves once the chat ticket exists — **not** once its
   /// first AI reply has landed; [isAdvancingStage] stays `true` on both
   /// the Epic/Story and the freshly created chat ticket until
-  /// [_runStageChatTurn] finishes.
+  /// [_runStageChatTurn] finishes. When [nextStage] has a configured
+  /// [_attachmentForStage], the spawned chat's opening comment is
+  /// [_promptFor]'s output instead of [_assembleStageContext]'s (see
+  /// [_createStageChat]), and whether/when [_runStageChatTurn] actually
+  /// runs on it is gated by the attachment's own confidence via
+  /// [_resolveAndFireAttachment] rather than firing unconditionally —
+  /// `auto` behaves identically to the no-attachment path;
+  /// `gated`/`manual` create the chat but leave [isAdvancingStage] `false`
+  /// again immediately, surfacing a pending-confirmation banner or a
+  /// manual "Run" control instead. Added for
+  /// `aion-arch/changes/workflow-skill-attachments`.
   Future<String?> advanceSddStage(Ticket ticket) async {
     if (ticket.type != TicketType.epic && ticket.type != TicketType.story) {
       await _emitSddStagePreconditionNotMet(ticket.id);
@@ -1663,8 +1777,36 @@ class TicketsCubit extends Cubit<TicketsState> {
         _refreshInFlightBoardState();
         return null;
       }
-      _inFlightStageAdvanceIds.add(chatId);
-      unawaited(_runStageChatTurn(refreshed, nextStage, chatId));
+
+      final attachment = _attachmentForStage(nextStage);
+      if (attachment == null) {
+        // No attachment configured for nextStage — identical to before
+        // this change: unconditional, no confidence check.
+        _inFlightStageAdvanceIds.add(chatId);
+        unawaited(_runStageChatTurn(refreshed, nextStage, chatId));
+      } else if (attachment.confidence == AutomationConfidence.auto) {
+        _inFlightStageAdvanceIds.add(chatId);
+        unawaited(
+          _resolveAndFireAttachment(
+            refreshed,
+            attachment,
+            fire: () => _runStageChatTurn(refreshed, nextStage, chatId),
+          ),
+        );
+      } else {
+        // gated/manual: the chat was already created above with
+        // _promptFor's prompt as its opening comment, but the turn
+        // itself doesn't run yet — clear the momentary "advancing"
+        // spinner (isAdvancingStage) rather than leave it stuck true.
+        _inFlightStageAdvanceIds.remove(ticket.id);
+        _refreshInFlightBoardState();
+        emit(TicketDetailLoaded(refreshed));
+        await _resolveAndFireAttachment(
+          refreshed,
+          attachment,
+          fire: () => _runStageChatTurn(refreshed, nextStage, chatId),
+        );
+      }
       return chatId;
     } catch (e) {
       _inFlightStageAdvanceIds.remove(ticket.id);
@@ -3988,7 +4130,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// design ticket (`"Design — <parent.title>"`) and links it to
   /// [parent] via [TicketLinkRepository.createLink] before the chat
   /// itself is created — see [_linkedDesignPage]. Added for
-  /// `aion-arch/changes/sdd-design-gate`.
+  /// `aion-arch/changes/sdd-design-gate`. When [stage] has a configured
+  /// [_attachmentForStage], the posted comment is [_promptFor]'s output
+  /// instead of [_assembleStageContext]'s — the attachment overrides the
+  /// stage's hardcoded prompt, but chat creation itself (including the
+  /// [SddStage.designBrief] design-page special case above) is otherwise
+  /// unaffected. Added for `aion-arch/changes/workflow-skill-attachments`.
   Future<String?> _createStageChat(Ticket parent, SddStage stage) async {
     final providerRegistry = _providerRegistry;
     final commentRepo = _commentRepository;
@@ -4036,7 +4183,10 @@ class TicketsCubit extends Cubit<TicketsState> {
     final persistedChat = await _repository.getTicketById(chatTicket.id);
     if (persistedChat == null) return null;
 
-    final context = await _assembleStageContext(parent, stage);
+    final attachment = _attachmentForStage(stage);
+    final context = attachment != null
+        ? await _promptFor(attachment, parent)
+        : await _assembleStageContext(parent, stage);
     await commentRepo.addComment(
       TicketComment(
         id: '',
@@ -4080,7 +4230,17 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [ChatCubit.runChatTurn]'s shared return contract) and passes it to
   /// [_materializeDecomposition]. Added for
   /// `aion-arch/changes/board-execution-indicators-and-notifications`
-  /// and `aion-arch/changes/board-task-ordering-indication`.
+  /// and `aion-arch/changes/board-task-ordering-indication`. When [stage]
+  /// has a configured [_attachmentForStage], re-derives [_promptFor]'s
+  /// output instead of [_assembleStageContext]'s, resolves the model via
+  /// [attachment.kind]'s [ModelPhase] (mirroring [_fireSkillAttachment]'s
+  /// own selection: [ModelPhase.capable] for `aionNativeTemplate`,
+  /// [ModelPhase.execution] for `delegatedSkill`) instead of [stage
+  /// .modelPhase], sets `toolsEnabled`/`workingDirectory` per
+  /// [attachment.kind] instead of always text-only, and offers no
+  /// app-defined `tools` (skips [_toolCallParamsFor] — see
+  /// proposal.md's Non-goals). Added for
+  /// `aion-arch/changes/workflow-skill-attachments`.
   Future<void> _runStageChatTurn(
     Ticket parent,
     SddStage stage,
@@ -4091,11 +4251,27 @@ class TicketsCubit extends Cubit<TicketsState> {
     if (providerRegistry == null || commentRepo == null) return;
 
     try {
-      final context = await _assembleStageContext(parent, stage);
+      final attachment = _attachmentForStage(stage);
+      final context = attachment != null
+          ? await _promptFor(attachment, parent)
+          : await _assembleStageContext(parent, stage);
+      final attachmentToolsEnabled =
+          attachment?.kind == SkillAttachmentKind.delegatedSkill;
       final (model, provider) = await _resolveModelAndProvider(
-        stage.modelPhase,
+        attachment == null
+            ? stage.modelPhase
+            : (attachmentToolsEnabled ? ModelPhase.execution : ModelPhase.capable),
       );
-      final (tools, onToolCall) = await _toolCallParamsFor(chatId);
+      var tools = const <AgentToolDefinition>[];
+      Future<Map<String, dynamic>> Function(
+        String toolCallId,
+        String toolName,
+        Map<String, dynamic> arguments,
+      )?
+      onToolCall;
+      if (attachment == null) {
+        (tools, onToolCall) = await _toolCallParamsFor(chatId);
+      }
       final result = await ChatCubit.runChatTurn(
         client: provider.client,
         provider: provider,
@@ -4103,6 +4279,10 @@ class TicketsCubit extends Cubit<TicketsState> {
         chatTicketId: chatId,
         prompt: context,
         model: model,
+        toolsEnabled: attachment == null ? false : attachmentToolsEnabled,
+        workingDirectory: attachment == null
+            ? null
+            : (attachmentToolsEnabled ? _projectRootPath : null),
         tools: tools,
         onToolCall: onToolCall,
       );
@@ -4146,6 +4326,276 @@ class TicketsCubit extends Cubit<TicketsState> {
         ..remove(chatId);
       _refreshInFlightBoardState();
     }
+  }
+
+  // ---------------------------------------------------------------------
+  // Skill attachments — generalizes _createStageChat/_runStageChatTurn's
+  // shape (above) to any SkillAttachment, whether it's attached to a
+  // WorkflowStatus or an SddStage. See
+  // aion-arch/changes/workflow-skill-attachments/design.md §3.
+  // ---------------------------------------------------------------------
+
+  /// Builds [attachment]'s run prompt against [parent]:
+  /// [SkillAttachmentKind.aionNativeTemplate] renders the referenced
+  /// [WorkflowPromptTemplate] via [renderWorkflowPromptTemplate] (falling
+  /// back to a defensive `"(template not found)"` placeholder if
+  /// [_workflowPromptTemplateRepository] is `null` or [attachment
+  /// .templateId] no longer resolves — a since-deleted template, or a
+  /// cubit constructed without one); [SkillAttachmentKind.delegatedSkill]
+  /// returns the literal `/<skillName>` slash-command text, chosen over a
+  /// natural-language description match because an automation feature
+  /// needs a deterministic trigger. See
+  /// `aion-arch/changes/workflow-skill-attachments/design.md` §3.2.
+  Future<String> _promptFor(SkillAttachment attachment, Ticket parent) async {
+    switch (attachment.kind) {
+      case SkillAttachmentKind.aionNativeTemplate:
+        final templateRepo = _workflowPromptTemplateRepository;
+        final templateId = attachment.templateId;
+        if (templateRepo == null || templateId == null) {
+          return '(template not found)';
+        }
+        final templates = await templateRepo.getAll();
+        final template = templates
+            .where((t) => t.id == templateId)
+            .firstOrNull;
+        if (template == null) return '(template not found)';
+        return renderWorkflowPromptTemplate(template, parent);
+      case SkillAttachmentKind.delegatedSkill:
+        return '/${attachment.skillName}';
+    }
+  }
+
+  /// A short, human-readable label for [attachment.kind], used to title
+  /// the chat ticket [_fireSkillAttachment] spawns.
+  String _skillAttachmentKindLabel(SkillAttachment attachment) =>
+      switch (attachment.kind) {
+        SkillAttachmentKind.aionNativeTemplate => 'Template',
+        SkillAttachmentKind.delegatedSkill => 'Skill',
+      };
+
+  /// Spawns a `chat`-type child ticket under [parent] titled
+  /// `'<kind label> — <parent.title>'`, posts [_promptFor]'s result as a
+  /// [CommentAuthorType.system] comment, and runs it via
+  /// [ChatCubit.runChatTurn] — generalizing [_createStageChat] +
+  /// [_runStageChatTurn]'s exact two-phase shape to any [SkillAttachment]
+  /// rather than only an [SddStage]. `toolsEnabled`/`workingDirectory` are
+  /// set per [attachment.kind]:
+  ///
+  /// | `kind` | `toolsEnabled` | `workingDirectory` |
+  /// |---|---|---|
+  /// | `aionNativeTemplate` | `false` | `null` |
+  /// | `delegatedSkill` | `true` | [_projectRootPath] |
+  ///
+  /// The model is resolved via [_resolveModelAndProvider] using
+  /// [ModelPhase.capable] for `aionNativeTemplate` (comparatively
+  /// mechanical, text-only work — the same tier `designBrief`/`designSync`
+  /// use) and [ModelPhase.execution] for `delegatedSkill` (the only other
+  /// tool-enabled phase, [ModelPhaseToolAccess.requiredToolAccessTier]
+  /// being [ToolAccessTier.full] for both). No app-defined `tools` are
+  /// offered (see proposal.md's Non-goals). No-ops if constructed without
+  /// a [ProviderRegistry]/[CommentRepository] (see the constructor's
+  /// dartdoc). A hard error is caught and posted as a "Skill attachment
+  /// failed: `<e>`" [CommentAuthorType.system] comment, mirroring
+  /// [_runStageChatTurn]'s own catch-comment shape.
+  Future<void> _fireSkillAttachment(
+    Ticket parent,
+    SkillAttachment attachment,
+  ) async {
+    final providerRegistry = _providerRegistry;
+    final commentRepo = _commentRepository;
+    if (providerRegistry == null || commentRepo == null) return;
+
+    final now = DateTime.now();
+    final chatTicket = Ticket(
+      id: _uuid.v4(),
+      ticketId: '',
+      type: TicketType.chat,
+      title: '${_skillAttachmentKindLabel(attachment)} — ${parent.title}',
+      status: _defaultCreationStatus,
+      parentId: parent.id,
+      createdAt: now,
+      updatedAt: now,
+    );
+    await _repository.createTicket(chatTicket);
+    final persistedChat = await _repository.getTicketById(chatTicket.id);
+    if (persistedChat == null) return;
+
+    final prompt = await _promptFor(attachment, parent);
+    await commentRepo.addComment(
+      TicketComment(
+        id: '',
+        ticketId: persistedChat.id,
+        content: prompt,
+        authorType: CommentAuthorType.system,
+        createdAt: DateTime.now(),
+      ),
+    );
+
+    final toolsEnabled =
+        attachment.kind == SkillAttachmentKind.delegatedSkill;
+    try {
+      final (model, provider) = await _resolveModelAndProvider(
+        toolsEnabled ? ModelPhase.execution : ModelPhase.capable,
+      );
+      await ChatCubit.runChatTurn(
+        client: provider.client,
+        provider: provider,
+        commentRepo: commentRepo,
+        chatTicketId: persistedChat.id,
+        prompt: prompt,
+        model: model,
+        toolsEnabled: toolsEnabled,
+        workingDirectory: toolsEnabled ? _projectRootPath : null,
+      );
+    } catch (e) {
+      await commentRepo.addComment(
+        TicketComment(
+          id: '',
+          ticketId: persistedChat.id,
+          content: 'Skill attachment failed: $e',
+          authorType: CommentAuthorType.system,
+          createdAt: DateTime.now(),
+        ),
+      );
+    }
+  }
+
+  /// Pending `SkillAttachment`s (confidence `gated`) awaiting user
+  /// confirmation, keyed by the *parent* ticket id that just entered the
+  /// attachment's target status/stage — mirrors [_pendingProposals]'
+  /// shape, one level simpler (no [Completer] to resolve, since firing a
+  /// skill attachment doesn't pause an in-flight model turn the way a
+  /// `branch_ticket` tool call does). Each entry pairs the
+  /// [SkillAttachment] shown by [TicketDetailLoaded.pendingSkillAttachment]
+  /// with the actual fire action to run on confirm — see
+  /// [_resolveAndFireAttachment]'s `fire` parameter for why this isn't
+  /// always [_fireSkillAttachment]. Cleared by
+  /// [confirmPendingSkillAttachment]/[rejectPendingSkillAttachment]. See
+  /// `aion-arch/changes/workflow-skill-attachments/design.md` §3.3.
+  final Map<String, ({SkillAttachment attachment, Future<void> Function() fire})>
+  _pendingSkillAttachments = {};
+
+  /// Resolves how [attachment] fires for [parent], per
+  /// [attachment.confidence]: `auto` runs [fire] immediately, `unawaited`;
+  /// `gated` records [parent.id] → `(attachment, fire)` in
+  /// [_pendingSkillAttachments] and, if [parent]'s detail screen is
+  /// currently open, re-emits [TicketDetailLoaded] carrying
+  /// [TicketDetailLoaded.pendingSkillAttachment] (mirrors
+  /// [_refreshDetailIfOpenAndAffected]'s existing "is this ticket's
+  /// detail screen open" check); `manual` no-ops —
+  /// [runAttachedSkillManually] is the only trigger.
+  ///
+  /// [fire] defaults to `() => _fireSkillAttachment(parent, attachment)`
+  /// (spawning a fresh chat) — what [updateTicketStatus]/
+  /// [updateStatusForTickets] pass via [_attachmentForStatus], since a
+  /// status entry has no existing chat to run the attachment on. The
+  /// [SddStage] hook ([_createStageChat]/[advanceSddStage], via
+  /// [_attachmentForStage]) passes an explicit [fire] instead — one that
+  /// runs [_runStageChatTurn] on the stage chat [_createStageChat]
+  /// *already created* (with [_promptFor]'s output as its opening
+  /// comment), per proposal.md's "inside the same existing
+  /// `_createStageChat`/`_runStageChatTurn` flow" — reusing that chat
+  /// rather than spawning a second, orphaned one.
+  Future<void> _resolveAndFireAttachment(
+    Ticket parent,
+    SkillAttachment attachment, {
+    Future<void> Function()? fire,
+  }) async {
+    final fireAction = fire ?? () => _fireSkillAttachment(parent, attachment);
+    switch (attachment.confidence) {
+      case AutomationConfidence.auto:
+        unawaited(fireAction());
+      case AutomationConfidence.gated:
+        _pendingSkillAttachments[parent.id] = (
+          attachment: attachment,
+          fire: fireAction,
+        );
+        final current = state;
+        if (current is TicketDetailLoaded && current.ticket.id == parent.id) {
+          emit(TicketDetailLoaded(parent, pendingSkillAttachment: attachment));
+        }
+      case AutomationConfidence.manual:
+        break;
+    }
+  }
+
+  /// Confirms [ticketId]'s pending [SkillAttachment] (if any): removes it
+  /// from [_pendingSkillAttachments] and runs its recorded fire action,
+  /// `unawaited` (mirrors [_resolveAndFireAttachment]'s own `auto`
+  /// branch). Re-emits [TicketDetailLoaded] for [ticketId] (with no
+  /// `pendingSkillAttachment`). No-ops if [ticketId] has no pending
+  /// attachment. Mirrors [confirmPendingToolProposal]'s shape.
+  Future<void> confirmPendingSkillAttachment(String ticketId) async {
+    final pending = _pendingSkillAttachments.remove(ticketId);
+    if (pending == null) return;
+    unawaited(pending.fire());
+    final ticket = await _repository.getTicketById(ticketId);
+    if (ticket != null) emit(TicketDetailLoaded(ticket));
+  }
+
+  /// Rejects [ticketId]'s pending [SkillAttachment]: removes it from
+  /// [_pendingSkillAttachments] without ever running its fire action.
+  /// Re-emits [TicketDetailLoaded] for [ticketId] (with no
+  /// `pendingSkillAttachment`). No-ops if [ticketId] has no pending
+  /// attachment. Mirrors [rejectPendingToolProposal]'s shape.
+  Future<void> rejectPendingSkillAttachment(String ticketId) async {
+    final pending = _pendingSkillAttachments.remove(ticketId);
+    if (pending == null) return;
+    final ticket = await _repository.getTicketById(ticketId);
+    if (ticket != null) emit(TicketDetailLoaded(ticket));
+  }
+
+  /// A human-readable name for [attachment] — the delegated skill's
+  /// literal name, or its referenced `WorkflowPromptTemplate`'s name
+  /// (falling back to a defensive placeholder if it no longer resolves,
+  /// or if constructed without a [WorkflowPromptTemplateRepository]).
+  /// Exposed for `_PendingSkillAttachmentBanner`/`_RunAttachedSkillButton`
+  /// (`ticket_detail_screen.dart`), which have no direct
+  /// `WorkflowPromptTemplateRepository` access of their own. Added for
+  /// `aion-arch/changes/workflow-skill-attachments`.
+  Future<String> attachmentDisplayName(SkillAttachment attachment) async {
+    if (attachment.kind == SkillAttachmentKind.delegatedSkill) {
+      return attachment.skillName ?? '';
+    }
+    final templateRepo = _workflowPromptTemplateRepository;
+    final templateId = attachment.templateId;
+    if (templateRepo == null || templateId == null) {
+      return '(template not found)';
+    }
+    final templates = await templateRepo.getAll();
+    return templates.where((t) => t.id == templateId).firstOrNull?.name ??
+        '(deleted template)';
+  }
+
+  /// Resolves [ticket]'s current status/stage [SkillAttachment], or
+  /// `null` — status takes precedence (a ticket's status and `sddStage`
+  /// are independent axes, but only one is meaningful for a non-epic/
+  /// story ticket). Shared by [runAttachedSkillManually] (which further
+  /// filters on `confidence == manual` before firing) and exposed
+  /// publicly, read-only, so `_RunAttachedSkillButton`
+  /// (`ticket_detail_screen.dart`) can decide its own visibility without
+  /// duplicating this resolution. Added for
+  /// `aion-arch/changes/workflow-skill-attachments`.
+  SkillAttachment? resolveCurrentAttachment(Ticket ticket) {
+    final statusId = _resolveStatus(ticket.status)?.id;
+    return (statusId != null ? _attachmentForStatus(statusId) : null) ??
+        (ticket.sddStage != null
+            ? _attachmentForStage(ticket.sddStage!)
+            : null);
+  }
+
+  /// Always-available manual trigger: resolves [ticket]'s current
+  /// [resolveCurrentAttachment] and fires it via [_fireSkillAttachment],
+  /// `unawaited`. No-ops if [ticket] has no resolved attachment, or its
+  /// confidence isn't [AutomationConfidence.manual] — every other
+  /// confidence already has its own automatic firing path, so a manual
+  /// re-trigger through this method would double-fire it.
+  Future<void> runAttachedSkillManually(Ticket ticket) async {
+    final attachment = resolveCurrentAttachment(ticket);
+    if (attachment == null || attachment.confidence != AutomationConfidence.manual) {
+      return;
+    }
+    unawaited(_fireSkillAttachment(ticket, attachment));
   }
 
   // ---------------------------------------------------------------------
@@ -4993,7 +5443,13 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// Also batch-seeds [_executionTokenTotals] for [id] (see
   /// [_seedExecutionTokenTotals]) and populates
   /// [TicketDetailLoaded.executionTokenTotal] from it. Added for
-  /// `aion-arch/changes/token-cost-prediction`.
+  /// `aion-arch/changes/token-cost-prediction`. Carries forward
+  /// [TicketDetailLoaded.pendingSkillAttachment] unchanged from
+  /// [previousDetail], mirroring [pendingToolProposal]'s own carry-forward
+  /// — this method never recomputes it, only
+  /// [_resolveAndFireAttachment]/[confirmPendingSkillAttachment]/
+  /// [rejectPendingSkillAttachment] do. Added for
+  /// `aion-arch/changes/workflow-skill-attachments`.
   Future<void> getTicketById(String id) async {
     final current = state;
     final previousDetail = current is TicketDetailLoaded && current.ticket.id == id
@@ -5080,6 +5536,7 @@ class TicketsCubit extends Cubit<TicketsState> {
           backlinks: previousDetail?.backlinks ?? const [],
           gapsAndOpenQuestions: previousDetail?.gapsAndOpenQuestions ?? const [],
           pendingToolProposal: previousDetail?.pendingToolProposal,
+          pendingSkillAttachment: previousDetail?.pendingSkillAttachment,
           canAdvanceSddStage: check.canAdvance,
           sddStageBlockReason: check.blockReason,
           needsDesignReview: needsDesignReview,
@@ -5246,7 +5703,10 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [_triggerOrQueueCodingExecution], identical to [updateTicketStatus]'s
   /// own post-write side effects. Also calls [_refreshBlockedBoardState]
   /// on completion, since a written ticket may be another ticket's
-  /// blocker.
+  /// blocker. For every successfully-written ticket, also fires
+  /// [status]'s configured [_attachmentForStatus] (if any) via
+  /// [_resolveAndFireAttachment] — same hook [updateTicketStatus] gained.
+  /// Added for `aion-arch/changes/workflow-skill-attachments`.
   Future<void> updateStatusForTickets(
     List<String> ids,
     String status,
@@ -5286,8 +5746,16 @@ class TicketsCubit extends Cubit<TicketsState> {
         writableIds.addAll(ids);
       }
 
+      // Deferred until after this method's own final emit below — see
+      // that emit's own comment for why a `gated` attachment's pending
+      // emission must not land before it. Added for
+      // `aion-arch/changes/workflow-skill-attachments`.
+      final pendingAttachmentFires = <(Ticket, SkillAttachment)>[];
       if (writableIds.isNotEmpty) {
         await _repository.updateStatusForIds(writableIds, status);
+        final attachment = _resolveStatus(status)?.id != null
+            ? _attachmentForStatus(_resolveStatus(status)!.id)
+            : null;
         for (final id in writableIds) {
           final updated = await _repository.getTicketById(id);
           if (updated != null) {
@@ -5295,6 +5763,9 @@ class TicketsCubit extends Cubit<TicketsState> {
             if (updated.type.isExecutable &&
                 _roleOf(status) == WorkflowStatusRole.executionTrigger) {
               unawaited(_triggerOrQueueCodingExecution(updated));
+            }
+            if (attachment != null) {
+              pendingAttachmentFires.add((updated, attachment));
             }
           }
         }
@@ -5318,6 +5789,13 @@ class TicketsCubit extends Cubit<TicketsState> {
         ),
       );
       unawaited(_refreshBlockedBoardState());
+      // This method has no per-ticket _refreshDetailIfOpenAndAffected
+      // call to chain after (unlike updateTicketStatus) — the final emit
+      // above is already this method's last state change, so firing here
+      // (still after it) is enough to avoid the same clobbering risk.
+      for (final (updated, attachment) in pendingAttachmentFires) {
+        unawaited(_resolveAndFireAttachment(updated, attachment));
+      }
     } catch (e) {
       emit(TicketsError(e.toString()));
     }

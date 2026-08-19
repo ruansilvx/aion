@@ -5,6 +5,7 @@ import 'package:equatable/equatable.dart';
 import 'package:aion/features/tickets/domain/entities/backlink_ref.dart';
 import 'package:aion/features/tickets/domain/entities/gap_or_question_ref.dart';
 import 'package:aion/features/tickets/domain/entities/linked_ticket_ref.dart';
+import 'package:aion/features/tickets/domain/entities/skill_attachment.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/presentation/cubit/pending_tool_proposal.dart';
 
@@ -370,6 +371,7 @@ class TicketDetailLoaded extends TicketsState {
     this.sddStageCanRetry = false,
     this.pendingToolProposal,
     this.executionTokenTotal,
+    this.pendingSkillAttachment,
   });
 
   /// The loaded ticket.
@@ -526,6 +528,14 @@ class TicketDetailLoaded extends TicketsState {
   /// `aion-arch/changes/token-cost-prediction`.
   final int? executionTokenTotal;
 
+  /// A `SkillAttachment` (confidence `gated`) awaiting user confirmation
+  /// on [ticket] — [ticket] just entered the `WorkflowStatus`/[SddStage]
+  /// this attachment is configured for. `null` whenever no such
+  /// attachment is pending. Drives `_PendingSkillAttachmentBanner`.
+  /// Mirrors [pendingToolProposal]'s exact shape. Added for
+  /// `aion-arch/changes/workflow-skill-attachments`.
+  final SkillAttachment? pendingSkillAttachment;
+
   @override
   List<Object?> get props => [
     ticket,
@@ -548,6 +558,7 @@ class TicketDetailLoaded extends TicketsState {
     sddStageCanRetry,
     pendingToolProposal,
     executionTokenTotal,
+    pendingSkillAttachment,
   ];
 }
 

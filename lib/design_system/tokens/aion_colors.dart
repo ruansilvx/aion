@@ -617,4 +617,12 @@ extension AionColorsHubTokens on AionColors {
   /// `_NoColumnsVisibleHint`'s motif bar fill — flat across both themes,
   /// unlike every other tint in this family (Component Spec §4.3).
   Color get columnsMotifBarTint => primary.withValues(alpha: 0.28);
+
+  // typeChat family — PendingSkillAttachmentBanner's AI-mark halo and
+  // Confirm-button glow. Added for workflow-skill-attachments; see that
+  // change's design.md (Component Spec) §6.1.
+  /// `PendingSkillAttachmentBanner`'s AI-mark halo glow and Confirm
+  /// button's shadow glow — both use this identical typeChat-keyed value.
+  Color chatGlow(bool isDark) =>
+      typeChat.withValues(alpha: isDark ? 0.55 : 0.40);
 }

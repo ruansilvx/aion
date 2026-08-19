@@ -8,8 +8,11 @@ import 'package:uuid/uuid.dart';
 
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
+import 'package:aion/features/tickets/domain/entities/skill_attachment.dart';
+import 'package:aion/features/tickets/domain/entities/workflow_prompt_template.dart';
 import 'package:aion/features/tickets/domain/entities/workflow_status.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
+import 'package:aion/features/tickets/domain/enums/skill_attachment_kind.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/enums/workflow_status_role.dart';
 import 'package:aion/features/tickets/presentation/cubit/workflow_config_cubit.dart';
@@ -60,6 +63,12 @@ class _WorkflowStatusSettingsScreenState
             title: context.l10n.workflowSettingsScreenTitle,
             showBack: true,
             onBack: () => context.go('/workspace/tickets'),
+            // Secondary entry point into WorkflowPromptTemplatesScreen,
+            // alongside _AttachmentForm's own "Manage templates" link.
+            // Added for `aion-arch/changes/workflow-skill-attachments`.
+            trailing: _ManageTemplatesLink(
+              label: context.l10n.workflowSettingsManageTemplates,
+            ),
           ),
           Expanded(
             child: SingleChildScrollView(
@@ -103,6 +112,8 @@ class _WorkflowStatusSettingsScreenState
                         _StatusList(
                           allStatuses: loaded.statuses,
                           scope: _selectedScope,
+                          attachments: loaded.attachments,
+                          templates: loaded.templates,
                         ),
                         const SizedBox(height: 2),
                         _AddStatusControl(
@@ -131,6 +142,10 @@ class _WorkflowStatusSettingsScreenState
                             displayNameOverride:
                                 loaded.stageDisplayNameOverrides[stage],
                             isLast: stage == SddStage.values.last,
+                            attachment: loaded.attachments
+                                .where((a) => a.sddStage == stage)
+                                .firstOrNull,
+                            templates: loaded.templates,
                           ),
                       ],
                     );
@@ -302,10 +317,17 @@ List<WorkflowStatus> _scopedStatuses(
 
 /// The reorderable list of [WorkflowStatus] rows for the active [scope].
 class _StatusList extends StatelessWidget {
-  const _StatusList({required this.allStatuses, required this.scope});
+  const _StatusList({
+    required this.allStatuses,
+    required this.scope,
+    required this.attachments,
+    required this.templates,
+  });
 
   final List<WorkflowStatus> allStatuses;
   final TicketType? scope;
+  final List<SkillAttachment> attachments;
+  final List<WorkflowPromptTemplate> templates;
 
   @override
   Widget build(BuildContext context) {
@@ -322,6 +344,10 @@ class _StatusList extends StatelessWidget {
               canMoveUp: i > 0,
               canMoveDown: i < rows.length - 1,
               scopedOrder: rows,
+              attachment: attachments
+                  .where((a) => a.workflowStatusId == rows[i].id)
+                  .firstOrNull,
+              templates: templates,
             ),
           ),
       ],
@@ -340,6 +366,8 @@ class _StatusRow extends StatefulWidget {
     required this.canMoveUp,
     required this.canMoveDown,
     required this.scopedOrder,
+    required this.attachment,
+    required this.templates,
   });
 
   final WorkflowStatus status;
@@ -348,6 +376,15 @@ class _StatusRow extends StatefulWidget {
   final bool canMoveUp;
   final bool canMoveDown;
   final List<WorkflowStatus> scopedOrder;
+
+  /// This status's configured [SkillAttachment], or `null`. Added for
+  /// `aion-arch/changes/workflow-skill-attachments`.
+  final SkillAttachment? attachment;
+
+  /// Every project-configured [WorkflowPromptTemplate], threaded down to
+  /// [_AttachmentForm]'s template picker. Added for
+  /// `aion-arch/changes/workflow-skill-attachments`.
+  final List<WorkflowPromptTemplate> templates;
 
   @override
   State<_StatusRow> createState() => _StatusRowState();
@@ -358,6 +395,10 @@ class _StatusRowState extends State<_StatusRow> {
   late final FocusNode _focusNode;
   bool _isHovered = false;
   String? _localError;
+
+  /// Whether [_AttachmentForm] is currently expanded below this row's
+  /// meta line. Added for `aion-arch/changes/workflow-skill-attachments`.
+  bool _attachmentFormOpen = false;
 
   /// Whether this row is showing a status inherited from Base into a
   /// type scope — read-only, no delete, no role.
@@ -483,9 +524,13 @@ class _StatusRowState extends State<_StatusRow> {
                   padding: const EdgeInsets.only(left: 22),
                   child: Row(
                     children: [
-                      Text(
-                        widget.status.name,
-                        style: AionText.key.copyWith(color: c.textMuted),
+                      Flexible(
+                        child: Text(
+                          widget.status.name,
+                          style: AionText.key.copyWith(color: c.textMuted),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                       const SizedBox(width: 8),
                       if (isInherited)
@@ -508,6 +553,20 @@ class _StatusRowState extends State<_StatusRow> {
                           border: null,
                         ),
                       const Spacer(),
+                      // Skill attachment indicator — hidden on inherited
+                      // rows (attachments live on the Base/owning status
+                      // only), shown normally otherwise. Added for
+                      // aion-arch/changes/workflow-skill-attachments;
+                      // Component Spec §4.
+                      if (!isInherited) ...[
+                        _AttachmentBadge(
+                          attachment: widget.attachment,
+                          onTap: () => setState(
+                            () => _attachmentFormOpen = !_attachmentFormOpen,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
                       if (widget.scope == null)
                         _RoleDropdown(
                           status: widget.status,
@@ -516,6 +575,16 @@ class _StatusRowState extends State<_StatusRow> {
                     ],
                   ),
                 ),
+                if (_attachmentFormOpen) ...[
+                  const SizedBox(height: 10),
+                  _AttachmentForm(
+                    existing: widget.attachment,
+                    targetLabel: widget.status.displayName,
+                    templates: widget.templates,
+                    workflowStatusId: widget.status.id,
+                    onDone: () => setState(() => _attachmentFormOpen = false),
+                  ),
+                ],
               ],
             ),
           ),
@@ -1260,11 +1329,22 @@ class _SddStageRenameRow extends StatefulWidget {
     required this.stage,
     required this.displayNameOverride,
     required this.isLast,
+    required this.attachment,
+    required this.templates,
   });
 
   final SddStage stage;
   final String? displayNameOverride;
   final bool isLast;
+
+  /// This stage's configured [SkillAttachment], or `null`. Added for
+  /// `aion-arch/changes/workflow-skill-attachments`.
+  final SkillAttachment? attachment;
+
+  /// Every project-configured [WorkflowPromptTemplate], threaded down to
+  /// [_AttachmentForm]'s template picker. Added for
+  /// `aion-arch/changes/workflow-skill-attachments`.
+  final List<WorkflowPromptTemplate> templates;
 
   @override
   State<_SddStageRenameRow> createState() => _SddStageRenameRowState();
@@ -1273,6 +1353,10 @@ class _SddStageRenameRow extends StatefulWidget {
 class _SddStageRenameRowState extends State<_SddStageRenameRow> {
   late final TextEditingController _controller;
   late final FocusNode _focusNode;
+
+  /// Whether [_AttachmentForm] is currently expanded below this row.
+  /// Added for `aion-arch/changes/workflow-skill-attachments`.
+  bool _attachmentFormOpen = false;
 
   @override
   void initState() {
@@ -1318,29 +1402,54 @@ class _SddStageRenameRowState extends State<_SddStageRenameRow> {
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 9),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SizedBox(
-              width: 104,
-              child: Text(
-                _fixedStageName(widget.stage),
-                style: AionText.cardTitle.copyWith(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: c.textSecondary,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: 104,
+                  child: Text(
+                    _fixedStageName(widget.stage),
+                    style: AionText.cardTitle.copyWith(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: c.textSecondary,
+                    ),
+                  ),
                 ),
-              ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: AppTextField(
+                    controller: _controller,
+                    focusNode: _focusNode,
+                    hintText: _fixedStageName(widget.stage),
+                    onSubmitted: (_) => _focusNode.unfocus(),
+                  ),
+                ),
+                // Skill attachment indicator, appended to the display-
+                // label field's line, gap 10 (Component Spec §4). Added
+                // for `aion-arch/changes/workflow-skill-attachments`.
+                const SizedBox(width: 10),
+                _AttachmentBadge(
+                  attachment: widget.attachment,
+                  onTap: () => setState(
+                    () => _attachmentFormOpen = !_attachmentFormOpen,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: AppTextField(
-                controller: _controller,
-                focusNode: _focusNode,
-                hintText: _fixedStageName(widget.stage),
-                onSubmitted: (_) => _focusNode.unfocus(),
+            if (_attachmentFormOpen) ...[
+              const SizedBox(height: 10),
+              _AttachmentForm(
+                existing: widget.attachment,
+                targetLabel: _fixedStageName(widget.stage),
+                templates: widget.templates,
+                sddStage: widget.stage,
+                onDone: () => setState(() => _attachmentFormOpen = false),
               ),
-            ),
+            ],
           ],
         ),
       ),
@@ -1358,3 +1467,824 @@ String _fixedStageName(SddStage stage) => switch (stage) {
   SddStage.verifying => 'Verifying',
   SddStage.archived => 'Archived',
 };
+
+// ---------------------------------------------------------------------
+// Skill attachments (Phase 2) — `_AttachmentBadge`/`_AttachmentForm`,
+// wired onto both `_StatusRow` (any scope) and `_SddStageRenameRow`. See
+// `aion-arch/changes/workflow-skill-attachments/design.md`'s Component
+// Spec §2–§4.
+//
+// Deliberate simplifications from the pasted Component Spec, noted here
+// rather than silently (mirrors this file's own existing precedent for
+// the reorder-controls simplification above): the kind/confidence
+// `SegmentedControl` atom (§3.1) is built as a plain row of toggle
+// buttons ([_SegmentedChoice]) rather than a `GestureDetector` +
+// `AnimatedAlign`-driven sliding thumb — same selectable behavior, far
+// less animation-state machinery. The no-templates empty state's
+// `1.5px dashed` border (§3.4) renders as a solid border — Aion's widget
+// layer has no existing dashed-border primitive and hand-rolling a
+// `CustomPainter` for one dashed rectangle isn't worth it for this single
+// use. The kind glyph (§2.2) omits the template mark's two inset
+// horizontal strokes — the outline alone already reads as "document" at
+// 9×11px.
+// ---------------------------------------------------------------------
+
+/// A human-readable name for [attachment] — the delegated skill's literal
+/// name, or the referenced [WorkflowPromptTemplate]'s name (falling back
+/// to a defensive placeholder if it no longer resolves in [templates]).
+/// Used by [_AttachmentForm]'s "EDIT SKILL · {name}" eyebrow.
+String _attachmentDisplayName(
+  SkillAttachment attachment,
+  List<WorkflowPromptTemplate> templates,
+) {
+  if (attachment.kind == SkillAttachmentKind.delegatedSkill) {
+    return attachment.skillName ?? '';
+  }
+  return templates.where((t) => t.id == attachment.templateId).firstOrNull?.name ??
+      '(deleted template)';
+}
+
+/// A localized label for [kind] (segmented-control option / eyebrow use —
+/// not pre-uppercased). Component Spec §3.1.
+String _kindOptionLabel(BuildContext context, SkillAttachmentKind kind) =>
+    switch (kind) {
+      SkillAttachmentKind.aionNativeTemplate =>
+        context.l10n.workflowSettingsKindTemplate,
+      SkillAttachmentKind.delegatedSkill =>
+        context.l10n.workflowSettingsKindDelegatedSkill,
+    };
+
+/// A localized, pre-uppercased label for [confidence] (segmented-control
+/// option / badge use). Component Spec §1.2/§3.5.
+String _confidenceOptionLabel(
+  BuildContext context,
+  AutomationConfidence confidence,
+) => switch (confidence) {
+  AutomationConfidence.auto => context.l10n.workflowSettingsConfidenceAuto,
+  AutomationConfidence.gated => context.l10n.workflowSettingsConfidenceGated,
+  AutomationConfidence.manual =>
+    context.l10n.workflowSettingsConfidenceManual,
+};
+
+/// The help line under [_AttachmentForm]'s confidence selector, describing
+/// what the currently-selected [confidence] does. Component Spec §3.5.
+String _confidenceHelpText(BuildContext context, AutomationConfidence confidence) =>
+    switch (confidence) {
+      AutomationConfidence.auto =>
+        context.l10n.workflowSettingsConfidenceAutoHelp,
+      AutomationConfidence.gated =>
+        context.l10n.workflowSettingsConfidenceGatedHelp,
+      AutomationConfidence.manual =>
+        context.l10n.workflowSettingsConfidenceManualHelp,
+    };
+
+/// [confidence]'s identity color, per Component Spec §1.2's "strongest →
+/// quietest" mapping — `auto` reads as live/active, `gated` as a pending
+/// decision, `manual` as quiet/opt-in.
+Color _confidenceColor(AionColors c, AutomationConfidence confidence) =>
+    switch (confidence) {
+      AutomationConfidence.auto => c.primary,
+      AutomationConfidence.gated => c.warning,
+      AutomationConfidence.manual => c.textSecondary,
+    };
+
+/// A `9×9`/`9×11` mark encoding [kind] independent of color — a document
+/// outline for [SkillAttachmentKind.aionNativeTemplate], a rotated-square
+/// diamond for [SkillAttachmentKind.delegatedSkill]. Component Spec §2.2.
+class _KindGlyph extends StatelessWidget {
+  const _KindGlyph({required this.kind, required this.color});
+
+  final SkillAttachmentKind kind;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    if (kind == SkillAttachmentKind.delegatedSkill) {
+      return Transform.rotate(
+        angle: 0.785,
+        child: Container(width: 7, height: 7, color: color),
+      );
+    }
+    return Container(
+      width: 9,
+      height: 11,
+      decoration: BoxDecoration(
+        border: Border.all(color: color, width: 1.2),
+        borderRadius: BorderRadius.circular(2),
+      ),
+    );
+  }
+}
+
+/// A status/stage row's attachment indicator: a confidence-tinted chip
+/// when [attachment] is non-`null` (kind glyph + `"{KIND} · {CONFIDENCE}"`
+/// label), or a quiet `+ Attach skill` ghost affordance when it's `null`.
+/// Tapping either calls [onTap] to open [_AttachmentForm]. Component Spec
+/// §2.
+class _AttachmentBadge extends StatefulWidget {
+  const _AttachmentBadge({required this.attachment, required this.onTap});
+
+  final SkillAttachment? attachment;
+  final VoidCallback onTap;
+
+  @override
+  State<_AttachmentBadge> createState() => _AttachmentBadgeState();
+}
+
+class _AttachmentBadgeState extends State<_AttachmentBadge> {
+  bool _isHovered = false;
+  bool _isFocused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    final attachment = widget.attachment;
+
+    return FocusableActionDetector(
+      actions: {
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) {
+            widget.onTap();
+            return null;
+          },
+        ),
+      },
+      onShowFocusHighlight: (value) => setState(() => _isFocused = value),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: GestureDetector(
+          onTap: widget.onTap,
+          child: attachment == null
+              ? _buildResting(context, c, t)
+              : _buildAttached(context, c, t, attachment),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildResting(BuildContext context, AionColors c, AionThemeData t) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: _isHovered
+            ? c.primary.withValues(alpha: t.isDark ? 0.12 : 0.07)
+            : const Color(0x00000000),
+        borderRadius: BorderRadius.all(AionRadius.sm),
+        boxShadow: _isFocused ? AionShadows.focus(c, t.isDark) : null,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(7, 4, 9, 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '+',
+              style: AionText.button.copyWith(fontSize: 13, color: c.primary),
+            ),
+            const SizedBox(width: 5),
+            Text(
+              context.l10n.workflowSettingsAttachSkill,
+              style: AionText.button.copyWith(fontSize: 11.5, color: c.primary),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAttached(
+    BuildContext context,
+    AionColors c,
+    AionThemeData t,
+    SkillAttachment attachment,
+  ) {
+    final col = _confidenceColor(c, attachment.confidence);
+    final isManual = attachment.confidence == AutomationConfidence.manual;
+    final fill = isManual
+        ? c.neutralTint(t.isDark)
+        : col.withValues(alpha: t.isDark ? 0.20 : 0.13);
+    final border = isManual
+        ? c.neutralBorderTint(t.isDark)
+        : (_isHovered ? col.withValues(alpha: 0.35) : null);
+    final kindLabel = attachment.kind == SkillAttachmentKind.delegatedSkill
+        ? context.l10n.workflowSettingsKindSkillBadge
+        : _kindOptionLabel(context, attachment.kind).toUpperCase();
+    final confidenceLabel = _confidenceOptionLabel(
+      context,
+      attachment.confidence,
+    ).toUpperCase();
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: fill,
+        border: border != null ? Border.all(color: border, width: 1) : null,
+        borderRadius: BorderRadius.all(AionRadius.sm),
+        boxShadow: _isFocused ? AionShadows.focus(c, t.isDark) : null,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 4, 9, 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _KindGlyph(kind: attachment.kind, color: col),
+            const SizedBox(width: 6),
+            Text(
+              '$kindLabel · $confidenceLabel',
+              style: AionText.chip.copyWith(color: col),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A generic two/three-option choice row — [_AttachmentForm]'s kind and
+/// confidence selectors. See this section's own simplification note for
+/// why this isn't the Component Spec's literal sliding-thumb
+/// `SegmentedControl`.
+class _SegmentedChoice<T> extends StatelessWidget {
+  const _SegmentedChoice({
+    required this.label,
+    required this.options,
+    required this.optionLabel,
+    required this.value,
+    required this.onChanged,
+    this.dotColor,
+  });
+
+  final String label;
+  final List<T> options;
+  final String Function(T) optionLabel;
+  final T value;
+  final ValueChanged<T> onChanged;
+  final Color Function(T)? dotColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: AionText.label.copyWith(color: c.textSecondary)),
+        const SizedBox(height: 6),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: c.background,
+            border: Border.all(color: c.border, width: 1),
+            borderRadius: BorderRadius.all(AionRadius.md),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(3),
+            child: Row(
+              children: [
+                for (final option in options)
+                  Expanded(
+                    child: _SegmentButton(
+                      label: optionLabel(option),
+                      selected: option == value,
+                      dotColor: dotColor?.call(option),
+                      onTap: () => onChanged(option),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// One [_SegmentedChoice] option button.
+class _SegmentButton extends StatefulWidget {
+  const _SegmentButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.dotColor,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final Color? dotColor;
+
+  @override
+  State<_SegmentButton> createState() => _SegmentButtonState();
+}
+
+class _SegmentButtonState extends State<_SegmentButton> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    final fill = widget.selected
+        ? c.surface
+        : (_isHovered ? c.surfaceHover : const Color(0x00000000));
+    final textColor = widget.selected ? c.textPrimary : c.textSecondary;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeInOut,
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: fill,
+            borderRadius: BorderRadius.circular(7),
+            border: widget.selected
+                ? Border.all(color: c.border, width: 1)
+                : null,
+            boxShadow: widget.selected
+                ? [
+                    BoxShadow(
+                      color: Color.fromRGBO(0, 0, 0, t.isDark ? 0.45 : 0.09),
+                      blurRadius: 3,
+                      offset: const Offset(0, 1),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (widget.dotColor != null) ...[
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: widget.dotColor,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const SizedBox(width: 6, height: 6),
+                ),
+                const SizedBox(width: 6),
+              ],
+              Text(
+                widget.label,
+                style: AionText.button.copyWith(fontSize: 13, color: textColor),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The template picker (kind = `aionNativeTemplate`) — a
+/// [SelectionMenu]-backed dropdown field listing [templates] by name, or
+/// (when [templates] is empty) the no-templates prompt-to-create state.
+/// Component Spec §3.2/§3.4.
+class _TemplatePickerField extends StatefulWidget {
+  const _TemplatePickerField({
+    required this.templates,
+    required this.selectedId,
+    required this.onSelected,
+    required this.isError,
+  });
+
+  final List<WorkflowPromptTemplate> templates;
+  final String? selectedId;
+  final ValueChanged<String?> onSelected;
+  final bool isError;
+
+  @override
+  State<_TemplatePickerField> createState() => _TemplatePickerFieldState();
+}
+
+class _TemplatePickerFieldState extends State<_TemplatePickerField> {
+  bool _isFocused = false;
+  bool _isOpen = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              context.l10n.workflowSettingsTemplateFieldLabel,
+              style: AionText.label.copyWith(color: c.textSecondary),
+            ),
+            Text(
+              context.l10n.commonRequiredMarker,
+              style: AionText.label.copyWith(color: c.danger),
+            ),
+            const Spacer(),
+            _ManageTemplatesLink(
+              label: context.l10n.workflowSettingsManageTemplates,
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        if (widget.templates.isEmpty)
+          _NoTemplatesPrompt()
+        else
+          _buildPicker(context, c, t),
+      ],
+    );
+  }
+
+  Widget _buildPicker(BuildContext context, AionColors c, AionThemeData t) {
+    final selected = widget.templates
+        .where((tp) => tp.id == widget.selectedId)
+        .firstOrNull;
+    return SelectionMenu<WorkflowPromptTemplate?>(
+      semanticsLabel: context.l10n.workflowSettingsTemplateFieldLabel,
+      items: widget.templates,
+      currentValue: selected,
+      itemLabel: (tp) => tp?.name ?? '',
+      onSelected: (tp) => widget.onSelected(tp?.id),
+      onOpenChanged: (open) => setState(() => _isOpen = open),
+      onFocusChange: (focused) => setState(() => _isFocused = focused),
+      trigger: DecoratedBox(
+        decoration: BoxDecoration(
+          color: c.background,
+          border: Border.all(
+            color: widget.isError ? c.danger : c.border,
+            width: widget.isError ? 1.5 : 1,
+          ),
+          borderRadius: BorderRadius.all(AionRadius.md),
+          boxShadow: widget.isError
+              ? [BoxShadow(color: c.errorRing(t.isDark), spreadRadius: 3)]
+              : (_isFocused || _isOpen ? AionShadows.focus(c, t.isDark) : null),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  selected?.name ?? context.l10n.workflowSettingsSelectTemplateHint,
+                  style: AionText.bodySm.copyWith(
+                    fontSize: 14,
+                    color: selected != null ? c.textPrimary : c.textMuted,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              PhosphorIcon(
+                PhosphorIcons.caretDownLight,
+                size: 12,
+                color: c.textMuted,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A tappable link navigating to [WorkflowPromptTemplatesScreen]. Backs
+/// both the template picker's "Manage templates →" link (§3.2) and the
+/// no-templates state's "+ New template" link (§3.4).
+class _ManageTemplatesLink extends StatefulWidget {
+  const _ManageTemplatesLink({required this.label});
+
+  final String label;
+
+  @override
+  State<_ManageTemplatesLink> createState() => _ManageTemplatesLinkState();
+}
+
+class _ManageTemplatesLinkState extends State<_ManageTemplatesLink> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: GestureDetector(
+        onTap: () => context.push('/workspace/settings/workflow/templates'),
+        child: Text(
+          widget.label,
+          style: AionText.label.copyWith(
+            fontSize: 12,
+            color: _isHovered ? c.primaryHover : c.primary,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The template picker's empty-project state — a prompt-to-create row
+/// replacing the dropdown while zero templates exist. Component Spec
+/// §3.4.
+class _NoTemplatesPrompt extends StatelessWidget {
+  const _NoTemplatesPrompt();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.background,
+        border: Border.all(color: c.borderStrong, width: 1.5),
+        borderRadius: BorderRadius.all(AionRadius.md),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        child: Row(
+          children: [
+            PhosphorIcon(
+              PhosphorIcons.fileTextLight,
+              size: 16,
+              color: c.textMuted,
+            ),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    context.l10n.workflowSettingsNoTemplatesTitle,
+                    style: AionText.cardTitle.copyWith(
+                      fontSize: 13,
+                      color: c.textSecondary,
+                    ),
+                  ),
+                  Text(
+                    context.l10n.workflowSettingsNoTemplatesSubtitle,
+                    style: AionText.bodySm.copyWith(
+                      fontSize: 12,
+                      color: c.textMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            _ManageTemplatesLink(
+              label: context.l10n.workflowSettingsNewTemplate,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The inline kind/name/confidence editor opened by tapping an
+/// [_AttachmentBadge] — creates, updates, or removes a [SkillAttachment]
+/// on exactly one target (either [workflowStatusId] or [sddStage], never
+/// both). Component Spec §3.
+class _AttachmentForm extends StatefulWidget {
+  const _AttachmentForm({
+    required this.existing,
+    required this.targetLabel,
+    required this.templates,
+    this.workflowStatusId,
+    this.sddStage,
+    required this.onDone,
+  });
+
+  /// The attachment being edited, or `null` when creating a new one.
+  final SkillAttachment? existing;
+
+  /// The status/stage's display name, used in the eyebrow line.
+  final String targetLabel;
+
+  /// Every project-configured [WorkflowPromptTemplate], for the template
+  /// picker.
+  final List<WorkflowPromptTemplate> templates;
+
+  /// This form's target `WorkflowStatus.id` — exactly one of this and
+  /// [sddStage] is non-`null`.
+  final String? workflowStatusId;
+
+  /// This form's target [SddStage] — exactly one of this and
+  /// [workflowStatusId] is non-`null`.
+  final SddStage? sddStage;
+
+  /// Called after Save/Cancel/Remove to collapse the form back to
+  /// [_AttachmentBadge].
+  final VoidCallback onDone;
+
+  @override
+  State<_AttachmentForm> createState() => _AttachmentFormState();
+}
+
+class _AttachmentFormState extends State<_AttachmentForm> {
+  static const _uuid = Uuid();
+
+  late SkillAttachmentKind _kind;
+  String? _templateId;
+  late final TextEditingController _skillNameController;
+  late AutomationConfidence _confidence;
+  bool _touched = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final existing = widget.existing;
+    _kind = existing?.kind ?? SkillAttachmentKind.aionNativeTemplate;
+    _templateId = existing?.templateId;
+    _skillNameController = TextEditingController(
+      text: existing?.skillName ?? '',
+    );
+    _confidence = existing?.confidence ?? AutomationConfidence.gated;
+    // Rebuilds on every keystroke so Save's enabled/disabled state and
+    // the field-error line track what's being typed live — mirrors
+    // _AddStatusControlState's established pattern for the same reason.
+    _skillNameController.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _skillNameController.dispose();
+    super.dispose();
+  }
+
+  bool get _isValid => switch (_kind) {
+    SkillAttachmentKind.aionNativeTemplate => _templateId != null,
+    SkillAttachmentKind.delegatedSkill =>
+      _skillNameController.text.trim().isNotEmpty,
+  };
+
+  void _save() {
+    if (!_isValid) {
+      setState(() => _touched = true);
+      return;
+    }
+    final attachment = SkillAttachment(
+      id: widget.existing?.id ?? _uuid.v4(),
+      workflowStatusId: widget.workflowStatusId,
+      sddStage: widget.sddStage,
+      kind: _kind,
+      templateId: _kind == SkillAttachmentKind.aionNativeTemplate
+          ? _templateId
+          : null,
+      skillName: _kind == SkillAttachmentKind.delegatedSkill
+          ? _skillNameController.text.trim()
+          : null,
+      confidence: _confidence,
+    );
+    final cubit = context.read<WorkflowConfigCubit>();
+    if (widget.existing == null) {
+      cubit.createAttachment(attachment);
+    } else {
+      cubit.updateAttachment(attachment);
+    }
+    widget.onDone();
+  }
+
+  void _remove() {
+    final existing = widget.existing;
+    if (existing != null) {
+      context.read<WorkflowConfigCubit>().deleteAttachment(existing.id);
+    }
+    widget.onDone();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    final isEditing = widget.existing != null;
+    final showError = _touched && !_isValid;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border.all(color: c.primary, width: 1.5),
+        borderRadius: BorderRadius.all(AionRadius.lg),
+        boxShadow: AionShadows.focus(c, t.isDark),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(15),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isEditing
+                  ? context.l10n.workflowSettingsEditSkillEyebrow(
+                      _attachmentDisplayName(widget.existing!, widget.templates),
+                    )
+                  : context.l10n.workflowSettingsAttachSkillEyebrow(
+                      widget.targetLabel.toUpperCase(),
+                    ),
+              style: AionText.caption.copyWith(color: c.textMuted),
+            ),
+            const SizedBox(height: 13),
+            _SegmentedChoice<SkillAttachmentKind>(
+              label: context.l10n.workflowSettingsKindLabel,
+              options: SkillAttachmentKind.values,
+              optionLabel: (k) => _kindOptionLabel(context, k),
+              value: _kind,
+              onChanged: (k) => setState(() {
+                _kind = k;
+                _touched = true;
+              }),
+            ),
+            const SizedBox(height: 13),
+            if (_kind == SkillAttachmentKind.aionNativeTemplate)
+              _TemplatePickerField(
+                templates: widget.templates,
+                selectedId: _templateId,
+                onSelected: (id) => setState(() {
+                  _templateId = id;
+                  _touched = true;
+                }),
+                isError: showError,
+              )
+            else
+              AppTextField(
+                controller: _skillNameController,
+                labelText: context.l10n.workflowSettingsSkillNameFieldLabel,
+                isRequired: true,
+                hintText: context.l10n.workflowSettingsSkillNameHint,
+                isError: showError,
+                onSubmitted: (_) => _save(),
+              ),
+            if (showError) ...[
+              const SizedBox(height: 6),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('▲', style: TextStyle(fontSize: 11, color: c.danger)),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      _kind == SkillAttachmentKind.aionNativeTemplate
+                          ? context.l10n.workflowSettingsPickTemplateError
+                          : context.l10n.workflowSettingsEnterSkillNameError,
+                      style: AionText.bodySm.copyWith(
+                        fontSize: 12,
+                        color: c.textSecondary,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 13),
+            _SegmentedChoice<AutomationConfidence>(
+              label: context.l10n.workflowSettingsConfidenceLabel,
+              options: AutomationConfidence.values,
+              optionLabel: (v) => _confidenceOptionLabel(context, v),
+              dotColor: (v) => _confidenceColor(c, v),
+              value: _confidence,
+              onChanged: (v) => setState(() {
+                _confidence = v;
+                _touched = true;
+              }),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              _confidenceHelpText(context, _confidence),
+              style: AionText.bodySm.copyWith(
+                fontSize: 12.5,
+                color: c.textMuted,
+              ),
+            ),
+            const SizedBox(height: 13),
+            Row(
+              children: [
+                if (isEditing) ...[
+                  AppButton(
+                    label: context.l10n.workflowSettingsRemoveAttachment,
+                    variant: AppButtonVariant.ghost,
+                    onPressed: _remove,
+                  ),
+                  const Spacer(),
+                ] else
+                  const Spacer(),
+                AppButton(
+                  label: context.l10n.workflowSettingsCancel,
+                  variant: AppButtonVariant.ghost,
+                  onPressed: widget.onDone,
+                ),
+                const SizedBox(width: 9),
+                AppButton(
+                  label: context.l10n.workflowSettingsSaveAttachment,
+                  onPressed: _touched && !_isValid ? null : _save,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

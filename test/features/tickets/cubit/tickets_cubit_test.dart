@@ -84,6 +84,12 @@ class MockExecutionSchedulingRepository extends Mock
 class MockExecutionQueueRepository extends Mock
     implements ExecutionQueueRepository {}
 
+class MockWorkflowSkillAttachmentRepository extends Mock
+    implements WorkflowSkillAttachmentRepository {}
+
+class MockWorkflowPromptTemplateRepository extends Mock
+    implements WorkflowPromptTemplateRepository {}
+
 /// Stubs [gitClient]/[gitHubClient] for a coding-execution run that
 /// isolates cleanly, pushes, and opens a PR — the happy path most
 /// `_runCodingExecution` tests exercise. Whether the run actually
@@ -11473,5 +11479,420 @@ void main() {
         verify(() => executionQueueRepository.replaceSnapshot([])).called(1);
       },
     );
+  });
+
+  group('Skill attachments (Phase 2)', () {
+    late MockAgentModelClient agentClient;
+    late MockProviderRegistry registry;
+    late MockCommentRepository commentRepository;
+    late MockWorkflowSkillAttachmentRepository attachmentRepository;
+    late MockWorkflowPromptTemplateRepository templateRepository;
+
+    // `_workflowStatuses` defaults to `defaultWorkflowStatuses` when no
+    // `WorkflowStatusRepository` is supplied (every existing construction
+    // site's convention) — resolving the real seeded `backlog` status id
+    // this way, rather than hardcoding its literal UUID, keeps these
+    // tests correct if that fixture ever changes.
+    final backlogStatusId = defaultWorkflowStatuses
+        .firstWhere((s) => s.name == 'backlog')
+        .id;
+
+    setUp(() {
+      agentClient = MockAgentModelClient();
+      registry = buildProviderStack(agentClient).registry;
+      commentRepository = MockCommentRepository();
+      attachmentRepository = MockWorkflowSkillAttachmentRepository();
+      templateRepository = MockWorkflowPromptTemplateRepository();
+      when(
+        () => attachmentRepository.onChanged,
+      ).thenAnswer((_) => const Stream.empty());
+      when(() => templateRepository.getAll()).thenAnswer((_) async => []);
+      when(
+        () => repository.updateTicketStatus(any(), any()),
+      ).thenAnswer((_) async {});
+      when(
+        () => repository.searchTickets(
+          query: any(named: 'query'),
+          statuses: any(named: 'statuses'),
+          types: any(named: 'types'),
+          priorities: any(named: 'priorities'),
+          sort: any(named: 'sort'),
+          limit: any(named: 'limit'),
+          offset: any(named: 'offset'),
+          statusSortOrder: any(named: 'statusSortOrder'),
+        ),
+      ).thenAnswer(
+        (_) async => const TicketSearchPage(tickets: [], hasMore: false),
+      );
+      when(() => repository.createTicket(any())).thenAnswer((_) async {});
+      when(
+        () => commentRepository.addComment(any()),
+      ).thenAnswer((_) async {});
+      // _fireSkillAttachment reads back both `ticket` (the parent) and
+      // the fresh chat ticket it just created (a freshly-generated id
+      // this test can't know ahead of time) — echo back a fabricated
+      // chat ticket for any other id, so that second lookup never nulls
+      // out.
+      when(() => repository.getTicketById(any())).thenAnswer((invocation) async {
+        final id = invocation.positionalArguments[0] as String;
+        if (id == ticket.id) return ticket;
+        return Ticket(
+          id: id,
+          ticketId: '',
+          type: TicketType.chat,
+          title: 'Spawned chat',
+          status: 'backlog',
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+      });
+    });
+
+    TicketsCubit buildAttachmentCubit() => TicketsCubit(
+      repository,
+      providerRegistry: registry,
+      commentRepository: commentRepository,
+      workflowSkillAttachmentRepository: attachmentRepository,
+      workflowPromptTemplateRepository: templateRepository,
+      projectRootPath: '/project/root',
+    );
+
+    group('auto confidence — WorkflowStatus entry', () {
+      blocTest<TicketsCubit, TicketsState>(
+        'fires immediately: aionNativeTemplate renders the template '
+        'text-only against the ticket',
+        setUp: () {
+          const template = WorkflowPromptTemplate(
+            id: 'tmpl-1',
+            name: 'Repro',
+            body: 'Investigate {{ticket.title}}.',
+          );
+          final attachment = SkillAttachment(
+            id: 'attach-1',
+            workflowStatusId: backlogStatusId,
+            kind: SkillAttachmentKind.aionNativeTemplate,
+            templateId: 'tmpl-1',
+            confidence: AutomationConfidence.auto,
+          );
+          when(
+            () => attachmentRepository.getAll(),
+          ).thenAnswer((_) async => [attachment]);
+          when(
+            () => templateRepository.getAll(),
+          ).thenAnswer((_) async => [template]);
+          when(
+            () => repository.getTicketById(ticket.id),
+          ).thenAnswer((_) async => ticket);
+          when(() => agentClient.run(any())).thenAnswer(
+            (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+          );
+        },
+        build: buildAttachmentCubit,
+        act: (cubit) async {
+          // Let the constructor's unawaited _loadSkillAttachments settle
+          // before this write, so _attachmentForStatus resolves.
+          await Future<void>.delayed(Duration.zero);
+          await cubit.updateTicketStatus(ticket.id, 'backlog');
+        },
+        wait: const Duration(milliseconds: 50),
+        verify: (_) {
+          verify(() => repository.createTicket(any())).called(1);
+          verify(
+            () => agentClient.run(
+              any(
+                that: predicate<AgentRequest>(
+                  (r) =>
+                      r.prompt == 'Investigate Test ticket.' &&
+                      r.toolsEnabled == false &&
+                      r.workingDirectory == null,
+                ),
+              ),
+            ),
+          ).called(1);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'fires immediately: delegatedSkill sends "/<skillName>", tool-enabled, '
+        'with workingDirectory set to the project checkout path',
+        setUp: () {
+          final attachment = SkillAttachment(
+            id: 'attach-2',
+            workflowStatusId: backlogStatusId,
+            kind: SkillAttachmentKind.delegatedSkill,
+            skillName: 'code-review',
+            confidence: AutomationConfidence.auto,
+          );
+          when(
+            () => attachmentRepository.getAll(),
+          ).thenAnswer((_) async => [attachment]);
+          when(
+            () => repository.getTicketById(ticket.id),
+          ).thenAnswer((_) async => ticket);
+          when(() => agentClient.run(any())).thenAnswer(
+            (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+          );
+        },
+        build: buildAttachmentCubit,
+        act: (cubit) async {
+          await Future<void>.delayed(Duration.zero);
+          await cubit.updateTicketStatus(ticket.id, 'backlog');
+        },
+        wait: const Duration(milliseconds: 50),
+        verify: (_) {
+          verify(
+            () => agentClient.run(
+              any(
+                that: predicate<AgentRequest>(
+                  (r) =>
+                      r.prompt == '/code-review' &&
+                      r.toolsEnabled == true &&
+                      r.workingDirectory == '/project/root',
+                ),
+              ),
+            ),
+          ).called(1);
+        },
+      );
+    });
+
+    group('gated confidence — WorkflowStatus entry', () {
+      blocTest<TicketsCubit, TicketsState>(
+        'surfaces pendingSkillAttachment on the open detail screen without firing',
+        setUp: () {
+          final attachment = SkillAttachment(
+            id: 'attach-3',
+            workflowStatusId: backlogStatusId,
+            kind: SkillAttachmentKind.delegatedSkill,
+            skillName: 'code-review',
+            confidence: AutomationConfidence.gated,
+          );
+          when(
+            () => attachmentRepository.getAll(),
+          ).thenAnswer((_) async => [attachment]);
+          when(
+            () => repository.getTicketById(ticket.id),
+          ).thenAnswer((_) async => ticket);
+        },
+        build: buildAttachmentCubit,
+        seed: () => TicketDetailLoaded(ticket),
+        act: (cubit) async {
+          await Future<void>.delayed(Duration.zero);
+          await cubit.updateTicketStatus(ticket.id, 'backlog');
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        },
+        verify: (cubit) {
+          expect(
+            (cubit.state as TicketDetailLoaded).pendingSkillAttachment?.id,
+            'attach-3',
+          );
+          verifyNever(() => agentClient.run(any()));
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'confirmPendingSkillAttachment fires it and clears the pending entry',
+        setUp: () {
+          final attachment = SkillAttachment(
+            id: 'attach-4',
+            workflowStatusId: backlogStatusId,
+            kind: SkillAttachmentKind.delegatedSkill,
+            skillName: 'code-review',
+            confidence: AutomationConfidence.gated,
+          );
+          when(
+            () => attachmentRepository.getAll(),
+          ).thenAnswer((_) async => [attachment]);
+          when(
+            () => repository.getTicketById(ticket.id),
+          ).thenAnswer((_) async => ticket);
+          when(() => agentClient.run(any())).thenAnswer(
+            (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+          );
+        },
+        build: buildAttachmentCubit,
+        seed: () => TicketDetailLoaded(ticket),
+        act: (cubit) async {
+          await Future<void>.delayed(Duration.zero);
+          await cubit.updateTicketStatus(ticket.id, 'backlog');
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          await cubit.confirmPendingSkillAttachment(ticket.id);
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        },
+        verify: (cubit) {
+          expect(
+            (cubit.state as TicketDetailLoaded).pendingSkillAttachment,
+            isNull,
+          );
+          verify(
+            () => agentClient.run(
+              any(
+                that: predicate<AgentRequest>(
+                  (r) => r.prompt == '/code-review',
+                ),
+              ),
+            ),
+          ).called(1);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'rejectPendingSkillAttachment clears the pending entry and never fires it',
+        setUp: () {
+          final attachment = SkillAttachment(
+            id: 'attach-5',
+            workflowStatusId: backlogStatusId,
+            kind: SkillAttachmentKind.delegatedSkill,
+            skillName: 'code-review',
+            confidence: AutomationConfidence.gated,
+          );
+          when(
+            () => attachmentRepository.getAll(),
+          ).thenAnswer((_) async => [attachment]);
+          when(
+            () => repository.getTicketById(ticket.id),
+          ).thenAnswer((_) async => ticket);
+        },
+        build: buildAttachmentCubit,
+        seed: () => TicketDetailLoaded(ticket),
+        act: (cubit) async {
+          await Future<void>.delayed(Duration.zero);
+          await cubit.updateTicketStatus(ticket.id, 'backlog');
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          await cubit.rejectPendingSkillAttachment(ticket.id);
+        },
+        verify: (cubit) {
+          expect(
+            (cubit.state as TicketDetailLoaded).pendingSkillAttachment,
+            isNull,
+          );
+          verifyNever(() => agentClient.run(any()));
+        },
+      );
+    });
+
+    group('manual confidence — WorkflowStatus entry', () {
+      blocTest<TicketsCubit, TicketsState>(
+        'never fires automatically on entry, but does fire via runAttachedSkillManually',
+        setUp: () {
+          final attachment = SkillAttachment(
+            id: 'attach-6',
+            workflowStatusId: backlogStatusId,
+            kind: SkillAttachmentKind.delegatedSkill,
+            skillName: 'code-review',
+            confidence: AutomationConfidence.manual,
+          );
+          when(
+            () => attachmentRepository.getAll(),
+          ).thenAnswer((_) async => [attachment]);
+          when(
+            () => repository.getTicketById(ticket.id),
+          ).thenAnswer((_) async => ticket);
+          when(() => agentClient.run(any())).thenAnswer(
+            (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+          );
+        },
+        build: buildAttachmentCubit,
+        act: (cubit) async {
+          await Future<void>.delayed(Duration.zero);
+          await cubit.updateTicketStatus(ticket.id, 'backlog');
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          verifyNever(() => agentClient.run(any()));
+
+          await cubit.runAttachedSkillManually(ticket);
+        },
+        wait: const Duration(milliseconds: 20),
+        verify: (_) {
+          verify(
+            () => agentClient.run(
+              any(
+                that: predicate<AgentRequest>(
+                  (r) => r.prompt == '/code-review',
+                ),
+              ),
+            ),
+          ).called(1);
+        },
+      );
+    });
+
+    group('SddStage entry', () {
+      late MockTicketLinkRepository linkRepository;
+
+      setUp(() {
+        linkRepository = MockTicketLinkRepository();
+        when(
+          () => linkRepository.getLinksForTicket(any()),
+        ).thenAnswer((_) async => []);
+      });
+
+      TicketsCubit buildStageCubit() => TicketsCubit(
+        repository,
+        providerRegistry: registry,
+        commentRepository: commentRepository,
+        linkRepository: linkRepository,
+        workflowSkillAttachmentRepository: attachmentRepository,
+        workflowPromptTemplateRepository: templateRepository,
+        projectRootPath: '/project/root',
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'a configured attachment uses its own prompt instead of '
+        '_assembleStageContext, and fires per its own confidence',
+        setUp: () {
+          final attachment = SkillAttachment(
+            id: 'attach-stage-1',
+            sddStage: SddStage.exploring,
+            kind: SkillAttachmentKind.delegatedSkill,
+            skillName: 'kickoff-skill',
+            confidence: AutomationConfidence.auto,
+          );
+          when(
+            () => attachmentRepository.getAll(),
+          ).thenAnswer((_) async => [attachment]);
+          when(
+            () => repository.updateTicketSddStage(epic.id, SddStage.exploring),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(any()),
+          ).thenAnswer((_) async => dummyChatTicket);
+          when(
+            () => repository.getTicketById(epic.id),
+          ).thenAnswer((_) async => epic);
+          when(() => agentClient.run(any())).thenAnswer(
+            (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+          );
+        },
+        build: buildStageCubit,
+        act: (cubit) async {
+          await Future<void>.delayed(Duration.zero);
+          await cubit.advanceSddStage(epic);
+        },
+        wait: const Duration(milliseconds: 50),
+        verify: (_) {
+          verify(
+            () => commentRepository.addComment(
+              any(
+                that: predicate<TicketComment>(
+                  (c) => c.content == '/kickoff-skill',
+                ),
+              ),
+            ),
+          ).called(1);
+          verify(
+            () => agentClient.run(
+              any(
+                that: predicate<AgentRequest>(
+                  (r) =>
+                      r.prompt == '/kickoff-skill' &&
+                      r.toolsEnabled == true &&
+                      r.workingDirectory == '/project/root',
+                ),
+              ),
+            ),
+          ).called(1);
+        },
+      );
+    });
   });
 }

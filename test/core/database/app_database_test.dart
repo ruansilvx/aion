@@ -82,4 +82,27 @@ void main() {
       expect(statuses.map((s) => s.name), contains(ticket!.status));
     },
   );
+
+  group('schema 16 — WorkflowSkillAttachmentsTable/WorkflowPromptTemplatesTable', () {
+    // Same scoping rationale as this file's schema-15 coverage above: no
+    // exported-schema/SchemaVerifier infrastructure exists in this
+    // codebase to open a database pinned at an old schema version and
+    // exercise `onUpgrade` in isolation, and the `from < 16` branch is a
+    // two-line `createTable` pair with no seed/backfill logic to get
+    // wrong (see `app_database.dart`'s version-16 dartdoc) — identical in
+    // shape to every other untested `onUpgrade` branch in this file. This
+    // test instead confirms the fresh-`onCreate` install path (which
+    // shares `createAll()`, the same table set `onUpgrade` incrementally
+    // builds towards) ends with both new tables present and empty.
+    test('a fresh onCreate install has both new tables, empty', () async {
+      final database = AppDatabase(_testProject, NativeDatabase.memory());
+      addTearDown(database.close);
+
+      final attachments = await database.workflowSkillAttachmentDao.getAll();
+      final templates = await database.workflowPromptTemplateDao.getAll();
+
+      expect(attachments, isEmpty);
+      expect(templates, isEmpty);
+    });
+  });
 }
