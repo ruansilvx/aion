@@ -153,6 +153,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     context.read<TicketsCubit>().getTicketById(widget.ticketId);
     context.read<CommentsCubit>().loadComments(widget.ticketId);
     context.read<ChatCubit>().loadMessages(widget.ticketId);
+    context.read<TicketsCubit>().startDetailTicker();
     unawaited(
       context
           .read<AutomationSettingsRepository>()
@@ -209,6 +210,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
         registry!.activeTicketId.value = null;
       }
     }
+    context.read<TicketsCubit>().stopDetailTicker();
     _commentController.dispose();
     super.dispose();
   }

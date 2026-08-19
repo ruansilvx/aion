@@ -40,6 +40,9 @@ Widget _wrap({
     Stream.value(TicketDetailLoaded(ticket, linkedTickets: linkedTickets)),
     initialState: TicketDetailLoaded(ticket, linkedTickets: linkedTickets),
   );
+  when(
+    () => ticketsCubit.detailTick,
+  ).thenAnswer((_) => const Stream<void>.empty());
 
   return MediaQuery(
     data: const MediaQueryData(),
@@ -546,6 +549,34 @@ void main() {
 
           verify(() => ticketsCubit.runAttachedSkillManually(task)).called(1);
         },
+      );
+    },
+  );
+
+  testWidgets(
+    'renders an "Updated {relative}" line below "Created", reflecting '
+    'ticket.updatedAt via formatRelativeTime '
+    '(show-last-updated-timestamp-on-each-ticket)',
+    (tester) async {
+      final task = Ticket(
+        id: 'task-updated',
+        ticketId: 'AIO-5',
+        type: TicketType.task,
+        title: 'A Task',
+        status: 'todo',
+        createdAt: DateTime(2026),
+        updatedAt: DateTime.now().subtract(const Duration(minutes: 5)),
+      );
+
+      await tester.pumpWidget(_wrap(ticket: task, ticketsCubit: ticketsCubit));
+      await tester.pumpAndSettle();
+
+      // Tolerant of the small real-clock skew between fixture
+      // construction and this assertion — same caveat every other
+      // "now"-based render test in this codebase already accepts.
+      expect(
+        find.text('Updated ${formatRelativeTime(task.updatedAt)}'),
+        findsOneWidget,
       );
     },
   );
