@@ -466,7 +466,9 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// `TicketStatus.backlog` literal, generalized). Falls back to
   /// `'backlog'` only if [_workflowStatuses] somehow holds no shared-base
   /// status at all — defensive, since [defaultWorkflowStatuses] and every
-  /// real configured set always has one.
+  /// real configured set always has one; this literal is effectively
+  /// unreachable in practice, same as [_reviewReadyStatus]/[_doneStatus]'s
+  /// own fallbacks below.
   String get _defaultCreationStatus {
     final base = _workflowStatuses.where((s) => s.ticketType == null).toList()
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
@@ -479,8 +481,10 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// literal, generalized). Falls back to `'inReview'` only if
   /// [_workflowStatuses] somehow holds no status with this role —
   /// defensive, since [defaultWorkflowStatuses] and every real configured
-  /// set (`WorkflowConfigCubit` enforces the role invariant) always has
-  /// one.
+  /// set (`WorkflowConfigCubit` enforces the role invariant — see
+  /// `WorkflowConfigCubit.updateStatus`/`.deleteStatus`'s rejection of any
+  /// edit that would leave a role with no holder) always has one, so this
+  /// literal is effectively unreachable in practice.
   String get _reviewReadyStatus =>
       _workflowStatuses
           .where((s) => s.role == WorkflowStatusRole.reviewReady)
@@ -490,8 +494,8 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// The name of the shared-base status currently holding
   /// [WorkflowStatusRole.done] (today's hardcoded `TicketStatus.done`
-  /// literal, generalized). Same defensive fallback as
-  /// [_reviewReadyStatus].
+  /// literal, generalized). Same unreachable-in-practice defensive
+  /// fallback as [_reviewReadyStatus].
   String get _doneStatus =>
       _workflowStatuses
           .where((s) => s.role == WorkflowStatusRole.done)

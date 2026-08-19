@@ -220,6 +220,7 @@ class _ScopePill extends StatefulWidget {
 
 class _ScopePillState extends State<_ScopePill> {
   bool _isHovered = false;
+  bool _isFocused = false;
 
   @override
   Widget build(BuildContext context) {
@@ -252,6 +253,7 @@ class _ScopePillState extends State<_ScopePill> {
           },
         ),
       },
+      onShowFocusHighlight: (value) => setState(() => _isFocused = value),
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         onEnter: (_) => setState(() => _isHovered = true),
@@ -269,6 +271,7 @@ class _ScopePillState extends State<_ScopePill> {
                 width: widget.selected ? 1.5 : 1,
               ),
               borderRadius: BorderRadius.all(AionRadius.md),
+              boxShadow: _isFocused ? AionShadows.focus(c, t.isDark) : null,
             ),
             child: Text(
               widget.label,
@@ -697,38 +700,61 @@ Color _typeAccent(AionColors c, TicketType type) => switch (type) {
 /// [SelectionMenu] excludes [currentValue] from its option list — the
 /// same convention `MoveToStatusMenu` already established — rather than
 /// showing all 4 rows with a checkmark on the current one.
-class _RoleDropdown extends StatelessWidget {
+class _RoleDropdown extends StatefulWidget {
   const _RoleDropdown({required this.status, required this.allStatuses});
 
   final WorkflowStatus status;
   final List<WorkflowStatus> allStatuses;
 
   @override
+  State<_RoleDropdown> createState() => _RoleDropdownState();
+}
+
+class _RoleDropdownState extends State<_RoleDropdown> {
+  // Component Spec §10.2 treats "Pressed / Open" the same as "Focused"
+  // (both show the chip's ring) — mirrors `_LinkTypeSelectorRow`'s own
+  // `isEmphasized = _isFocused || _isOpen` precedent
+  // (`ticket_link_picker.dart`).
+  bool _isFocused = false;
+  bool _isOpen = false;
+
+  @override
   Widget build(BuildContext context) {
-    final roles = <WorkflowStatusRole?>[null, ...WorkflowStatusRole.values];
+    final roles = <WorkflowStatusRole?>[
+      null,
+      ...WorkflowStatusRole.values,
+    ];
     return SelectionMenu<WorkflowStatusRole?>(
       semanticsLabel: context.l10n.workflowSettingsChangeRole,
       items: roles,
-      currentValue: status.role,
+      currentValue: widget.status.role,
       itemLabel: (r) => _roleLabel(context, r),
       itemBuilder: (context, c, item) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 2),
         child: _RoleChip(role: item),
       ),
       onSelected: (role) => context.read<WorkflowConfigCubit>().updateStatus(
-        status.copyWith(role: () => role),
+        widget.status.copyWith(role: () => role),
       ),
-      trigger: _RoleChip(role: status.role),
+      onOpenChanged: (open) => setState(() => _isOpen = open),
+      onFocusChange: (focused) => setState(() => _isFocused = focused),
+      trigger: _RoleChip(
+        role: widget.status.role,
+        emphasized: _isFocused || _isOpen,
+      ),
     );
   }
 }
 
 /// [_RoleDropdown]'s chip visual, both as the closed trigger and as each
-/// open-menu row's content. Component Spec §10.1.
+/// open-menu row's content. Component Spec §10.1. [emphasized] (the
+/// trigger's focused-or-open state, §10.2) adds the chip's focus ring —
+/// always `false` for the plain rows an open menu renders.
 class _RoleChip extends StatelessWidget {
-  const _RoleChip({required this.role});
+  const _RoleChip({required this.role, this.emphasized = false});
 
   final WorkflowStatusRole? role;
+  final bool emphasized;
 
   @override
   Widget build(BuildContext context) {
@@ -762,6 +788,7 @@ class _RoleChip extends StatelessWidget {
         color: fill,
         border: border != null ? Border.all(color: border, width: 1) : null,
         borderRadius: BorderRadius.all(AionRadius.sm),
+        boxShadow: emphasized ? AionShadows.focus(c, t.isDark) : null,
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(9, 4, 7, 4),
@@ -1021,46 +1048,62 @@ class _AddStatusCollapsedButton extends StatefulWidget {
 
 class _AddStatusCollapsedButtonState extends State<_AddStatusCollapsedButton> {
   bool _isHovered = false;
+  bool _isFocused = false;
 
   @override
   Widget build(BuildContext context) {
     final t = ThemeScope.of(context);
     final c = t.colors;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: _isHovered
-                ? c.primary.withValues(alpha: t.isDark ? 0.08 : 0.05)
-                : null,
-            border: Border.all(
-              color: _isHovered ? c.primary : c.borderStrong,
-              width: 1.5,
+    return FocusableActionDetector(
+      actions: {
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) {
+            widget.onTap();
+            return null;
+          },
+        ),
+      },
+      onShowFocusHighlight: (value) => setState(() => _isFocused = value),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: GestureDetector(
+          onTap: widget.onTap,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: _isHovered
+                  ? c.primary.withValues(alpha: t.isDark ? 0.08 : 0.05)
+                  : null,
+              border: Border.all(
+                color: _isHovered || _isFocused ? c.primary : c.borderStrong,
+                width: 1.5,
+              ),
+              borderRadius: BorderRadius.all(AionRadius.lg),
+              boxShadow: _isFocused ? AionShadows.focus(c, t.isDark) : null,
             ),
-            borderRadius: BorderRadius.all(AionRadius.lg),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '+',
-                  style: AionText.button.copyWith(
-                    fontSize: 17,
-                    color: c.primary,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 12,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '+',
+                    style: AionText.button.copyWith(
+                      fontSize: 17,
+                      color: c.primary,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 9),
-                Text(
-                  context.l10n.workflowSettingsAddStatus,
-                  style: AionText.button.copyWith(color: c.primary),
-                ),
-              ],
+                  const SizedBox(width: 9),
+                  Text(
+                    context.l10n.workflowSettingsAddStatus,
+                    style: AionText.button.copyWith(color: c.primary),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -1137,6 +1180,7 @@ class _ToggleSwitch extends StatefulWidget {
 
 class _ToggleSwitchState extends State<_ToggleSwitch> {
   bool _isHovered = false;
+  bool _isFocused = false;
 
   @override
   Widget build(BuildContext context) {
@@ -1161,6 +1205,7 @@ class _ToggleSwitchState extends State<_ToggleSwitch> {
           },
         ),
       },
+      onShowFocusHighlight: (value) => setState(() => _isFocused = value),
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         onEnter: (_) => setState(() => _isHovered = true),
@@ -1177,6 +1222,7 @@ class _ToggleSwitchState extends State<_ToggleSwitch> {
               color: track,
               border: Border.all(color: border, width: 1),
               borderRadius: BorderRadius.circular(13),
+              boxShadow: _isFocused ? AionShadows.focus(c, t.isDark) : null,
             ),
             child: AnimatedAlign(
               duration: const Duration(milliseconds: 160),
