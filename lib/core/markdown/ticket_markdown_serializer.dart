@@ -6,7 +6,6 @@ import 'package:aion/core/markdown/ticket_markdown_parse_result.dart';
 import 'package:aion/core/markdown/ticket_markdown_template.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
 /// Converts between a [Ticket] and its Markdown-with-YAML-frontmatter
@@ -29,7 +28,7 @@ class TicketMarkdownSerializer {
     final values = <String, Object?>{
       TicketMarkdownTemplate.ticketId: ticket.ticketId,
       TicketMarkdownTemplate.type: ticket.type.name,
-      TicketMarkdownTemplate.status: ticket.status.name,
+      TicketMarkdownTemplate.status: ticket.status,
       TicketMarkdownTemplate.priority: ticket.priority.name,
       TicketMarkdownTemplate.parentId: ticket.parentId,
       TicketMarkdownTemplate.estimate: ticket.estimate,
@@ -124,10 +123,13 @@ class TicketMarkdownSerializer {
         }
         return null;
       case TicketMarkdownTemplate.status:
-        for (final s in TicketStatus.values) {
-          if (s.name == value) return (s,);
-        }
-        return null;
+        // A project-defined status name, not a fixed enum — any non-empty
+        // string is syntactically valid here; whether it names a status
+        // the project has actually configured is validated at the
+        // `TicketsCubit`/`WorkflowConfigCubit` layer, not this pure-Dart
+        // parser. Was a `TicketStatus.values` membership check before
+        // `aion-arch/changes/configurable-ticket-workflow`.
+        return value is String && value.isNotEmpty ? (value,) : null;
       case TicketMarkdownTemplate.priority:
         for (final p in TicketPriority.values) {
           if (p.name == value) return (p,);

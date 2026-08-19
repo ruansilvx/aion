@@ -7,7 +7,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:aion/features/tickets/data/repositories/shared_prefs_ticket_board_column_visibility_repository.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_board_column_visibility.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -34,7 +33,7 @@ void main() {
       () async {
         final repository = SharedPrefsTicketBoardColumnVisibilityRepository();
         const visibility = TicketBoardColumnVisibility(
-          hiddenStatuses: {TicketStatus.backlog, TicketStatus.cancelled},
+          hiddenStatuses: {'backlog', 'cancelled'},
         );
 
         await repository.setHiddenColumns('proj-1', visibility);
@@ -53,21 +52,21 @@ void main() {
         await repository.setHiddenColumns(
           'proj-a',
           const TicketBoardColumnVisibility(
-            hiddenStatuses: {TicketStatus.backlog},
+            hiddenStatuses: {'backlog'},
           ),
         );
         await repository.setHiddenColumns(
           'proj-b',
           const TicketBoardColumnVisibility(
-            hiddenStatuses: {TicketStatus.done},
+            hiddenStatuses: {'done'},
           ),
         );
 
         final visibilityA = await repository.getHiddenColumns('proj-a');
         final visibilityB = await repository.getHiddenColumns('proj-b');
 
-        expect(visibilityA.hiddenStatuses, {TicketStatus.backlog});
-        expect(visibilityB.hiddenStatuses, {TicketStatus.done});
+        expect(visibilityA.hiddenStatuses, {'backlog'});
+        expect(visibilityB.hiddenStatuses, {'done'});
       },
     );
 
@@ -79,7 +78,7 @@ void main() {
         await repository.setHiddenColumns(
           'proj-1',
           const TicketBoardColumnVisibility(
-            hiddenStatuses: {TicketStatus.backlog, TicketStatus.cancelled},
+            hiddenStatuses: {'backlog', 'cancelled'},
           ),
         );
 
@@ -94,8 +93,10 @@ void main() {
     );
 
     test(
-      'a stale stored name (e.g. a removed TicketStatus member) is '
-      'silently dropped on read',
+      'a stale stored name (e.g. a status the project has since deleted '
+      'or renamed) round-trips unvalidated — this repository performs '
+      'no enum-membership filtering, since a status is now project-'
+      'defined data rather than a fixed enum',
       () async {
         SharedPreferences.setMockInitialValues({
           'ticket_board_column_visibility.proj-1.hiddenStatuses': [
@@ -107,7 +108,7 @@ void main() {
 
         final visibility = await repository.getHiddenColumns('proj-1');
 
-        expect(visibility.hiddenStatuses, {TicketStatus.backlog});
+        expect(visibility.hiddenStatuses, {'backlog', 'someRemovedStatus'});
       },
     );
   });

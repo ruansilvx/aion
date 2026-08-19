@@ -14,11 +14,13 @@ import 'package:aion/features/tickets/data/daos/execution_queue_dao.dart';
 import 'package:aion/features/tickets/data/daos/page_wikilink_dao.dart';
 import 'package:aion/features/tickets/data/daos/ticket_dao.dart';
 import 'package:aion/features/tickets/data/daos/ticket_link_dao.dart';
+import 'package:aion/features/tickets/data/daos/workflow_status_dao.dart';
 import 'package:aion/features/tickets/data/models/execution_queue_table.dart';
 import 'package:aion/features/tickets/data/models/page_wikilink_model.dart';
 import 'package:aion/features/tickets/data/models/ticket_comment_model.dart';
 import 'package:aion/features/tickets/data/models/ticket_link_model.dart';
 import 'package:aion/features/tickets/data/models/ticket_model.dart';
+import 'package:aion/features/tickets/data/models/workflow_status_table.dart';
 import 'package:aion/features/tickets/domain/utils/ticket_rollup_calculator.dart';
 
 part 'app_database.g.dart';
@@ -117,6 +119,13 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
 /// migrate; `TicketTokenPredictor` simply produces its first estimate for
 /// each not-yet-executed `task`/`bug` ticket the next time it's created or
 /// updated. See `aion-arch/changes/token-cost-prediction/design.md` §1.2.
+/// Version 15 adds [WorkflowStatusesTable], seeded with
+/// `defaultWorkflowStatuses` for both a fresh install and a backfill of
+/// every pre-existing project (via [WorkflowStatusDao.seedDefaultsIfEmpty]),
+/// reproducing the exact hardcoded status set/roles a pre-15 database
+/// already behaved with. No `tickets.status` column change — it was
+/// already a raw `TextColumn`. See
+/// `aion-arch/changes/configurable-ticket-workflow/design.md` §2.2.
 @DriftDatabase(
   tables: [
     TicketsTable,
@@ -125,8 +134,16 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
     TicketCommentsTable,
     PageWikilinksTable,
     ExecutionQueueTable,
+    WorkflowStatusesTable,
   ],
-  daos: [TicketDao, TicketLinkDao, CommentDao, PageWikilinkDao, ExecutionQueueDao],
+  daos: [
+    TicketDao,
+    TicketLinkDao,
+    CommentDao,
+    PageWikilinkDao,
+    ExecutionQueueDao,
+    WorkflowStatusDao,
+  ],
 )
 class AppDatabase extends _$AppDatabase {
   /// Creates an [AppDatabase] for [project]. Pass [executor] to use a
@@ -138,7 +155,7 @@ class AppDatabase extends _$AppDatabase {
     : super(executor ?? _openConnection(project));
 
   @override
-  int get schemaVersion => 14;
+  int get schemaVersion => 15;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -148,6 +165,7 @@ class AppDatabase extends _$AppDatabase {
         const TicketIdSequenceTableCompanion(id: Value(1), seq: Value(0)),
       );
       await _createSearchInfrastructure(m);
+      await workflowStatusDao.seedDefaultsIfEmpty();
     },
     onUpgrade: (Migrator m, int from, int to) async {
       if (from < 2) {
@@ -230,6 +248,10 @@ class AppDatabase extends _$AppDatabase {
           ticketsTable,
           ticketsTable.predictedExecutionTokensHigh,
         );
+      }
+      if (from < 15) {
+        await m.createTable(workflowStatusesTable);
+        await workflowStatusDao.seedDefaultsIfEmpty();
       }
     },
   );

@@ -258,7 +258,7 @@ void main() {
             ticketId: '',
             type: TicketType.chat,
             title: 'Seeded Q&A chat from app_router_test',
-            status: TicketStatus.backlog,
+            status: 'backlog',
             inboxPurpose: InboxPurpose.qa,
             createdAt: now,
             updatedAt: now,

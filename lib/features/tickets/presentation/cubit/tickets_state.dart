@@ -74,9 +74,8 @@ class TicketsLoaded extends TicketsState {
 
   /// Work-ticket (epic/story/task/bug) ids with an unresolved
   /// `blocks`/`blockedBy` relationship — the ticket that blocks them
-  /// exists, is live, and isn't
-  /// [TicketStatus.done](../../domain/enums/ticket_status.dart) yet.
-  /// Recomputed by
+  /// exists, is live, and isn't currently at a status holding
+  /// `WorkflowStatusRole.done` yet. Recomputed by
   /// [TicketsCubit._computeBlockedTicketIds] from persisted link data
   /// (not in-memory/ephemeral, unlike [inFlightExecutionIds] and its
   /// siblings above). Drives the Board's `_BlockedBadge`. Added for
@@ -178,8 +177,9 @@ enum TicketsErrorReason {
   /// this via `ticketsErrorMessage` / `AppToast`.
   sddStagePreconditionNotMet,
 
-  /// A Task ticket was rejected from moving to `TicketStatus.inProgress`
-  /// because its governing Story's design work is outstanding — see
+  /// A Task ticket was rejected from moving to a status holding
+  /// `WorkflowStatusRole.executionTrigger` because its governing Story's
+  /// design work is outstanding — see
   /// `TicketsCubit._codingExecutionGateCheck`. The widget layer reads
   /// this via `ticketsErrorMessage` / `AppToast`.
   codingExecutionBlocked,
@@ -206,8 +206,9 @@ enum TicketsErrorReason {
   /// `aion-arch/changes/board-execution-indicators-and-notifications`.
   sddStageAdvanceFailed,
 
-  /// A ticket was rejected from moving to `TicketStatus.inProgress`
-  /// because it has an unresolved `blocks`/`blockedBy` dependency — see
+  /// A ticket was rejected from moving to a status holding
+  /// `WorkflowStatusRole.executionTrigger` because it has an unresolved
+  /// `blocks`/`blockedBy` dependency — see
   /// `TicketsCubit._isTicketBlocked`. Applies to every ticket type,
   /// unlike [codingExecutionBlocked]. The widget layer reads this via
   /// `ticketsErrorMessage` / `AppToast`. Added for
@@ -448,8 +449,8 @@ class TicketDetailLoaded extends TicketsState {
 
   /// Whether [ticket] (a `task`) has a finished coding-execution run with
   /// a confirmed PR, awaiting human confirmation
-  /// (`AutomationConfidence.gated`) before flipping to
-  /// `TicketStatus.inReview`. Task-only, computed by
+  /// (`AutomationConfidence.gated`) before flipping to the status holding
+  /// `WorkflowStatusRole.reviewReady`. Task-only, computed by
   /// [TicketsCubit.getTicketById]. Added for
   /// `aion-arch/changes/task-to-coding-execution-trigger`.
   final bool executionAwaitingReview;
@@ -609,13 +610,13 @@ class TicketsBatchStatusUpdating extends TicketsState {
 
 /// A batch status-change call completed. Carries the refreshed page, how
 /// many tickets were actually written ([updatedCount]), and how many were
-/// silently skipped ([skippedCount]) because moving to
-/// [TicketStatus.inProgress] would have been rejected by the
+/// silently skipped ([skippedCount]) because moving to a status holding
+/// `WorkflowStatusRole.executionTrigger` would have been rejected by the
 /// Blocked-dependency gate or the coding-execution gate (see
 /// [TicketsCubit._isTicketBlocked]/[TicketsCubit._codingExecutionGateCheck]).
-/// [skippedCount] is always 0 for any target status other than
-/// [TicketStatus.inProgress], since neither gate applies. The widget layer
-/// surfaces both counts via a summary toast.
+/// [skippedCount] is always 0 for any target status not holding that role,
+/// since neither gate applies. The widget layer surfaces both counts via a
+/// summary toast.
 class TicketsBatchStatusUpdated extends TicketsState {
   /// Creates a [TicketsBatchStatusUpdated] state carrying the refreshed
   /// [tickets], [updatedCount], [skippedCount], and [hasMore].

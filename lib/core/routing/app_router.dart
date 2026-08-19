@@ -31,6 +31,8 @@ import 'package:aion/features/tickets/data/repositories/drift_execution_queue_re
 import 'package:aion/features/tickets/data/repositories/drift_page_wikilink_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_link_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_repository.dart';
+import 'package:aion/features/tickets/data/repositories/drift_workflow_status_repository.dart';
+import 'package:aion/features/tickets/data/repositories/shared_prefs_sdd_stage_config_repository.dart';
 import 'package:aion/features/tickets/data/repositories/shared_prefs_ticket_board_column_visibility_repository.dart';
 import 'package:aion/features/tickets/data/repositories/shared_prefs_ticket_list_filter_repository.dart';
 import 'package:aion/features/tickets/data/repositories/shared_prefs_ticket_list_sort_repository.dart';
@@ -44,7 +46,6 @@ import 'package:aion/features/tickets/data/services/ticket_markdown_reconciler.d
 import 'package:aion/features/tickets/data/services/ticket_markdown_watcher_service.dart';
 import 'package:aion/features/tickets/data/services/ticket_parent_trash_service.dart';
 import 'package:aion/features/tickets/data/services/ticket_repair_service.dart';
-import 'package:aion/features/tickets/domain/repositories/ticket_board_column_visibility_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_list_sort_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_list_view_mode_repository.dart';
 import 'package:aion/features/tickets/tickets.dart';
@@ -326,6 +327,20 @@ final appRouter = GoRouter(
             );
           },
         ),
+        // Reached from `WorkspaceNavShell`'s secondary-actions popover,
+        // alongside `/workspace/settings`. See
+        // aion-arch/changes/configurable-ticket-workflow/design.md §5.1.
+        GoRoute(
+          path: '/workspace/settings/workflow',
+          builder: (context, state) => BlocProvider<WorkflowConfigCubit>(
+            create: (context) => WorkflowConfigCubit(
+              context.read<WorkflowStatusRepository>(),
+              context.read<SddStageConfigRepository>(),
+              context.read<TicketRepository>(),
+            )..load(),
+            child: const WorkflowStatusSettingsScreen(),
+          ),
+        ),
       ],
     ),
   ],
@@ -546,6 +561,20 @@ class _WorkspaceShellState extends State<WorkspaceShell>
         RepositoryProvider<TicketBoardColumnVisibilityRepository>(
           create: (_) => SharedPrefsTicketBoardColumnVisibilityRepository(),
         ),
+        // Project-scoped workflow-configuration repositories — see
+        // aion-arch/changes/configurable-ticket-workflow/design.md §6.
+        // WorkflowStatusRepository is Drift-backed (per-project database,
+        // like TicketRepository above); SddStageConfigRepository is
+        // `shared_preferences`-backed (project-id-agnostic keys, same as
+        // AutomationSettingsRepository), so it needs no project scoping
+        // of its own despite living alongside these project-scoped
+        // providers.
+        RepositoryProvider<WorkflowStatusRepository>(
+          create: (_) => DriftWorkflowStatusRepository(_database),
+        ),
+        RepositoryProvider<SddStageConfigRepository>(
+          create: (_) => SharedPrefsSddStageConfigRepository(),
+        ),
         // Desktop-only project-scoped services below — git projection,
         // bidirectional resource/page reconcile, and repair. Absent
         // entirely on mobile/web (no rootPath to address git commands
@@ -649,6 +678,10 @@ class _WorkspaceShellState extends State<WorkspaceShell>
                   .read<ExecutionSchedulingRepository>(),
               executionQueueRepository: context
                   .read<ExecutionQueueRepository>(),
+              workflowStatusRepository: context
+                  .read<WorkflowStatusRepository>(),
+              sddStageConfigRepository: context
+                  .read<SddStageConfigRepository>(),
             )..restoreExecutionQueue(),
             child: Builder(
               builder: (context) => RepositoryProvider<PageTicketProvider>(

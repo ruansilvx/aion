@@ -3,7 +3,6 @@
 import 'package:equatable/equatable.dart';
 
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
 /// The multi-select filter selection for the ticket list, one `Set` per
@@ -22,8 +21,10 @@ class TicketListFilters extends Equatable {
     this.priorities = const {},
   });
 
-  /// The selected [TicketStatus] values. Empty means no status constraint.
-  final Set<TicketStatus> statuses;
+  /// The selected project-defined status names. Empty means no status
+  /// constraint. Was `Set<TicketStatus>` before
+  /// `aion-arch/changes/configurable-ticket-workflow`.
+  final Set<String> statuses;
 
   /// The selected [TicketType] values. Empty means no type constraint.
   final Set<TicketType> types;

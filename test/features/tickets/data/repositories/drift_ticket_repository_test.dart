@@ -66,7 +66,7 @@ void main() {
       ticketId: '',
       type: TicketType.task,
       title: title,
-      status: TicketStatus.backlog,
+      status: 'backlog',
       priority: priority,
       estimate: estimate,
       timeSpent: timeSpent,
@@ -91,7 +91,7 @@ void main() {
     required String title,
     String? description,
     TicketType type = TicketType.task,
-    TicketStatus status = TicketStatus.backlog,
+    String status = 'backlog',
     TicketPriority priority = TicketPriority.none,
   }) {
     final now = DateTime(2026, 1, 1);
@@ -124,7 +124,7 @@ void main() {
         ticketId: 'AIO-99',
         type: TicketType.task,
         title: 'Imported ticket',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         createdAt: now,
         updatedAt: now,
       ),
@@ -158,7 +158,7 @@ void main() {
         ticketId: '',
         type: TicketType.epic,
         title: 'Epic ticket',
-        status: TicketStatus.inReview,
+        status: 'inReview',
         priority: TicketPriority.critical,
         createdAt: now,
         updatedAt: now,
@@ -168,7 +168,7 @@ void main() {
       final tickets = await repository.getAllTickets();
 
       expect(tickets.first.type, TicketType.epic);
-      expect(tickets.first.status, TicketStatus.inReview);
+      expect(tickets.first.status, 'inReview');
       expect(tickets.first.priority, TicketPriority.critical);
     },
   );
@@ -206,7 +206,7 @@ void main() {
       ticketId: '',
       type: TicketType.bug,
       title: 'Login button unresponsive on Safari',
-      status: TicketStatus.backlog,
+      status: 'backlog',
       severity: TicketSeverity.critical,
       stepsToReproduce: '1. Open Safari\n2. Click login',
       expectedBehavior: 'The login modal opens',
@@ -243,7 +243,7 @@ void main() {
       ticketId: '',
       type: TicketType.bug,
       title: 'Bug to update',
-      status: TicketStatus.backlog,
+      status: 'backlog',
       createdAt: now,
       updatedAt: now,
     );
@@ -275,7 +275,7 @@ void main() {
         ticketId: '',
         type: TicketType.task,
         title: 'No inbox fields',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         createdAt: now,
         updatedAt: now,
       ),
@@ -286,7 +286,7 @@ void main() {
         ticketId: '',
         type: TicketType.idea,
         title: 'Brain-dumped idea',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         suggestedType: TicketType.epic,
         createdAt: now,
         updatedAt: now,
@@ -298,7 +298,7 @@ void main() {
         ticketId: '',
         type: TicketType.chat,
         title: 'Inbox chat',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         inboxPurpose: InboxPurpose.brainDump,
         createdAt: now,
         updatedAt: now,
@@ -327,7 +327,7 @@ void main() {
           ticketId: '',
           type: TicketType.idea,
           title: 'Idea to update',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           createdAt: now,
           updatedAt: now,
         ),
@@ -376,10 +376,10 @@ void main() {
 
   test('updateTicketStatus changes the stored status column', () async {
     await repository.createTicket(buildTicket(id: '1'));
-    await repository.updateTicketStatus('1', TicketStatus.done);
+    await repository.updateTicketStatus('1', 'done');
 
     final found = await repository.getTicketById('1');
-    expect(found!.status, TicketStatus.done);
+    expect(found!.status, 'done');
   });
 
   test('updateTicketStatus does not change other fields', () async {
@@ -390,7 +390,7 @@ void main() {
         priority: TicketPriority.high,
       ),
     );
-    await repository.updateTicketStatus('1', TicketStatus.done);
+    await repository.updateTicketStatus('1', 'done');
 
     final found = await repository.getTicketById('1');
     expect(found!.title, 'Unchanged title');
@@ -405,7 +405,7 @@ void main() {
       await repository.createTicket(buildTicket(id: '1'));
       final before = (await repository.getTicketById('1'))!.updatedAt;
 
-      await repository.updateTicketStatus('1', TicketStatus.done);
+      await repository.updateTicketStatus('1', 'done');
       final after = (await repository.getTicketById('1'))!.updatedAt;
 
       expect(after.isAtSameMomentAs(before) || after.isAfter(before), isTrue);
@@ -525,7 +525,7 @@ void main() {
     final found = await repository.getTicketById('1');
     expect(found!.title, 'Unchanged title');
     expect(found.priority, TicketPriority.high);
-    expect(found.status, TicketStatus.backlog);
+    expect(found.status, 'backlog');
     expect(found.type, TicketType.task);
   });
 
@@ -567,7 +567,7 @@ void main() {
         expect(found.timeSpentRollup, 20);
         expect(found.title, 'Unchanged title');
         expect(found.priority, TicketPriority.high);
-        expect(found.status, TicketStatus.backlog);
+        expect(found.status, 'backlog');
         expect(found.type, TicketType.task);
       },
     );
@@ -1140,7 +1140,7 @@ void main() {
           id: 'match',
           title: 'A',
           type: TicketType.story,
-          status: TicketStatus.inProgress,
+          status: 'inProgress',
           priority: TicketPriority.high,
         ),
       );
@@ -1149,14 +1149,14 @@ void main() {
           id: 'wrong-type',
           title: 'B',
           type: TicketType.task,
-          status: TicketStatus.inProgress,
+          status: 'inProgress',
           priority: TicketPriority.high,
         ),
       );
 
       final results = await repository.searchTickets(
         types: {TicketType.story},
-        statuses: {TicketStatus.inProgress},
+        statuses: {'inProgress'},
         priorities: {TicketPriority.high},
         sort: _defaultSort,
         limit: 100,
@@ -1654,7 +1654,7 @@ void main() {
             ticketId: '',
             type: TicketType.task,
             title: 'Pre-v10 sized ticket',
-            status: TicketStatus.backlog,
+            status: 'backlog',
             complexity: TicketComplexity.medium,
             estimate: 60,
             createdAt: now,
@@ -1726,7 +1726,7 @@ void main() {
             type: TicketType.page,
             title: 'Target Page',
             description: 'Nothing referencing anything here.',
-            status: TicketStatus.backlog,
+            status: 'backlog',
             createdAt: now,
             updatedAt: now,
           ),
@@ -1738,7 +1738,7 @@ void main() {
             type: TicketType.page,
             title: 'Source Page',
             description: 'See [[Target Page]] for details.',
-            status: TicketStatus.backlog,
+            status: 'backlog',
             createdAt: now,
             updatedAt: now,
           ),
@@ -1884,7 +1884,7 @@ void main() {
           ticketId: '',
           type: TicketType.task,
           title: 'Sized ticket',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           complexity: TicketComplexity.small,
           estimate: 30,
           createdAt: now,
@@ -1918,7 +1918,7 @@ void main() {
           ticketId: '',
           type: TicketType.task,
           title: 'Sized at creation',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           complexity: TicketComplexity.large,
           estimate: 200,
           createdAt: now,
@@ -2032,7 +2032,7 @@ void main() {
         ticketId: '',
         type: TicketType.chat,
         title: 'Coding Execution — Test ticket',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         parentId: 'task-1',
         createdAt: DateTime(2026, 1, 1),
         updatedAt: DateTime(2026, 1, 1),
@@ -2042,7 +2042,7 @@ void main() {
         ticketId: '',
         type: TicketType.chat,
         title: 'Coding Execution — Test ticket (continued)',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         parentId: 'task-1',
         createdAt: DateTime(2026, 1, 2),
         updatedAt: DateTime(2026, 1, 2),
@@ -2074,7 +2074,7 @@ void main() {
         ticketId: '',
         type: TicketType.chat,
         title: 'Coding Execution — Test ticket',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         parentId: 'task-1',
         createdAt: DateTime(2026, 1, 1),
         updatedAt: DateTime(2026, 1, 1),
@@ -2106,7 +2106,7 @@ void main() {
         ticketId: '',
         type: TicketType.chat,
         title: 'Coding Execution — Test ticket',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         parentId: 'task-1',
         createdAt: DateTime(2026, 1, 1),
         updatedAt: DateTime(2026, 1, 1),
@@ -2131,7 +2131,7 @@ void main() {
         ticketId: '',
         type: TicketType.page,
         title: 'Coding Execution — Test ticket',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         parentId: 'task-1',
         createdAt: DateTime(2026, 1, 1),
         updatedAt: DateTime(2026, 1, 1),

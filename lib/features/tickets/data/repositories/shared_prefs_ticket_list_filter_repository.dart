@@ -4,16 +4,22 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:aion/features/tickets/domain/entities/ticket_list_filters.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_list_filter_repository.dart';
 
 /// `shared_preferences`-backed implementation of
 /// [TicketListFilterRepository]. Stores each field of a project's
 /// [TicketListFilters] as its own project-id-prefixed string-list key
-/// (`ticket_list_filters.<projectId>.statuses`/`.types`/`.priorities`),
-/// each entry the selected enum value's `.name`. A project with no
-/// persisted keys yet reads back as a default-empty [TicketListFilters].
+/// (`ticket_list_filters.<projectId>.statuses`/`.types`/`.priorities`).
+/// `types`/`priorities` entries are the selected enum value's `.name`,
+/// validated against that enum's live `.values` on read (a stale stored
+/// name is silently dropped). `statuses` entries are a project-defined
+/// `WorkflowStatus.name` and round-trip unvalidated — there's no fixed
+/// enum left to validate against; a stale stored status name (deleted or
+/// renamed since) is naturally never matched by any caller that checks it
+/// against the project's live configured status list, and is dropped the
+/// next time a fresh selection is persisted. A project with no persisted
+/// keys yet reads back as a default-empty [TicketListFilters].
 class SharedPrefsTicketListFilterRepository
     implements TicketListFilterRepository {
   String _statusesKey(String projectId) =>
@@ -34,12 +40,7 @@ class SharedPrefsTicketListFilterRepository
         prefs.getStringList(_prioritiesKey(projectId)) ?? [];
 
     return TicketListFilters(
-      statuses: statusNames
-          .map(
-            (name) => TicketStatus.values.where((v) => v.name == name),
-          )
-          .expand((matches) => matches)
-          .toSet(),
+      statuses: statusNames.toSet(),
       types: typeNames
           .map((name) => TicketType.values.where((v) => v.name == name))
           .expand((matches) => matches)
@@ -58,7 +59,7 @@ class SharedPrefsTicketListFilterRepository
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(
       _statusesKey(projectId),
-      filters.statuses.map((v) => v.name).toList(),
+      filters.statuses.toList(),
     );
     await prefs.setStringList(
       _typesKey(projectId),

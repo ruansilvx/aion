@@ -8,7 +8,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:aion/features/tickets/data/repositories/shared_prefs_ticket_list_filter_repository.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_list_filters.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
 void main() {
@@ -34,7 +33,7 @@ void main() {
     test('setFilters then getFilters round-trips all three fields', () async {
       final repository = SharedPrefsTicketListFilterRepository();
       const filters = TicketListFilters(
-        statuses: {TicketStatus.todo, TicketStatus.inProgress},
+        statuses: {'todo', 'inProgress'},
         types: {TicketType.bug},
         priorities: {TicketPriority.high, TicketPriority.critical},
       );
@@ -53,18 +52,18 @@ void main() {
 
         await repository.setFilters(
           'proj-a',
-          const TicketListFilters(statuses: {TicketStatus.todo}),
+          const TicketListFilters(statuses: {'todo'}),
         );
         await repository.setFilters(
           'proj-b',
-          const TicketListFilters(statuses: {TicketStatus.done}),
+          const TicketListFilters(statuses: {'done'}),
         );
 
         final filtersA = await repository.getFilters('proj-a');
         final filtersB = await repository.getFilters('proj-b');
 
-        expect(filtersA.statuses, {TicketStatus.todo});
-        expect(filtersB.statuses, {TicketStatus.done});
+        expect(filtersA.statuses, {'todo'});
+        expect(filtersB.statuses, {'done'});
       },
     );
 
@@ -76,7 +75,7 @@ void main() {
         await repository.setFilters(
           'proj-1',
           const TicketListFilters(
-            statuses: {TicketStatus.todo},
+            statuses: {'todo'},
             types: {TicketType.bug},
             priorities: {TicketPriority.high},
           ),

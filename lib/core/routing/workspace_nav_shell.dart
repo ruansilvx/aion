@@ -586,6 +586,10 @@ enum _SecondaryAction {
 
   /// Navigates to `/workspace/settings`.
   settings,
+
+  /// Navigates to `/workspace/settings/workflow`. Added for
+  /// `aion-arch/changes/configurable-ticket-workflow`.
+  workflowSettings,
 }
 
 /// The shared secondary-actions entry point rendered by both [_Sidebar]
@@ -671,6 +675,8 @@ class _SecondaryActionsTriggerState extends State<_SecondaryActionsTrigger> {
         _SecondaryAction.switchProject => context.l10n.projectSwitcherMenuLabel,
         _SecondaryAction.trash => context.l10n.ticketTrashScreenTitle,
         _SecondaryAction.settings => context.l10n.settingsScreenTitle,
+        _SecondaryAction.workflowSettings =>
+          context.l10n.workflowSettingsScreenTitle,
         null => '',
       },
       onSelected: (action) {
@@ -681,6 +687,8 @@ class _SecondaryActionsTriggerState extends State<_SecondaryActionsTrigger> {
             context.go('/workspace/tickets/trash');
           case _SecondaryAction.settings:
             context.go('/workspace/settings');
+          case _SecondaryAction.workflowSettings:
+            context.go('/workspace/settings/workflow');
           case null:
             break;
         }

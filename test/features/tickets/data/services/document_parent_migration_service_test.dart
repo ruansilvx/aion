@@ -22,7 +22,7 @@ void main() {
     ticketId: 'AIO-$id',
     type: type,
     title: 'Ticket $id',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     parentId: parentId,
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),

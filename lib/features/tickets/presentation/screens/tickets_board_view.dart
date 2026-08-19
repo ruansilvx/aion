@@ -10,9 +10,9 @@ import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/providers/domain/enums/execution_scheduling_mode.dart';
 import 'package:aion/features/providers/presentation/cubit/execution_scheduling_cubit.dart';
 import 'package:aion/features/providers/presentation/cubit/execution_scheduling_state.dart';
+import 'package:aion/features/tickets/domain/entities/default_workflow_statuses.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/utils/sibling_cluster.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_selection_cubit.dart';
@@ -27,19 +27,53 @@ import 'package:aion/features/tickets/presentation/widgets/token_count_label.dar
 /// Fixed width of a single [BoardColumn].
 const double _kColumnWidth = 280.0;
 
+/// The default baseline preset's status names, in
+/// [WorkflowStatus.sortOrder] order — the fixed column order every board
+/// still renders in. Board/list column ordering does not yet follow a
+/// project's live reconfigured status set (see
+/// `aion-arch/changes/configurable-ticket-workflow`'s "Known limitation"
+/// note in `proposal.md`); a project that reorders/renames/adds statuses
+/// via the new Workflow settings screen changes what `Ticket.status`
+/// itself is written as, and every gate/trigger honors that, but the
+/// Board/List/Filters/Columns UI in this file still assumes this fixed
+/// default set until a follow-up change threads `WorkflowConfigCubit`
+/// through it.
+final List<String> _defaultStatusOrder = [
+  for (final s in defaultWorkflowStatuses) s.name,
+];
+
 /// Returns the display label for [status] (e.g. `"In progress"`). Shared by
 /// [StatusIndicator] (`tickets_list_screen.dart`) and [BoardColumn]'s
-/// header so the 6-case status→label mapping lives in exactly one place.
-String ticketStatusLabel(BuildContext context, TicketStatus status) {
+/// header. Localizes the 6 default baseline preset names via `l10n`;
+/// falls back to a humanized form of [status] itself (e.g.
+/// `"needsRepro"` → `"Needs repro"`) for a project-renamed/added status
+/// name, so a customized project still gets a readable label rather than
+/// a crash. Was a total `switch` over the fixed `TicketStatus` enum
+/// before `aion-arch/changes/configurable-ticket-workflow`.
+String ticketStatusLabel(BuildContext context, String status) {
   final l10n = context.l10n;
   return switch (status) {
-    TicketStatus.backlog => l10n.ticketStatusBacklog,
-    TicketStatus.todo => l10n.ticketStatusToDo,
-    TicketStatus.inProgress => l10n.ticketStatusInProgress,
-    TicketStatus.inReview => l10n.ticketStatusInReview,
-    TicketStatus.done => l10n.ticketStatusDone,
-    TicketStatus.cancelled => l10n.ticketStatusCancelled,
+    'backlog' => l10n.ticketStatusBacklog,
+    'todo' => l10n.ticketStatusToDo,
+    'inProgress' => l10n.ticketStatusInProgress,
+    'inReview' => l10n.ticketStatusInReview,
+    'done' => l10n.ticketStatusDone,
+    'cancelled' => l10n.ticketStatusCancelled,
+    _ => _humanizeStatusName(status),
   };
+}
+
+/// Converts a raw status name (e.g. `needsRepro`, `needs_repro`) into a
+/// readable label (`Needs repro`) — inserts a space before each internal
+/// uppercase letter and each underscore, then capitalizes the first
+/// letter. Used only as [ticketStatusLabel]'s fallback for a status name
+/// outside the default baseline preset.
+String _humanizeStatusName(String status) {
+  final spaced = status
+      .replaceAllMapped(RegExp('([a-z0-9])([A-Z])'), (m) => '${m[1]} ${m[2]}')
+      .replaceAll('_', ' ');
+  if (spaced.isEmpty) return spaced;
+  return spaced[0].toUpperCase() + spaced.substring(1).toLowerCase();
 }
 
 /// Returns the display label for [priority] (e.g. `"Critical"`). Same
@@ -100,17 +134,17 @@ class TicketBoardView extends StatelessWidget {
   /// The tickets to render, already filtered to the desired ticket types.
   final List<Ticket> tickets;
 
-  /// Statuses whose column is currently hidden — see
+  /// Status names whose column is currently hidden — see
   /// `TicketsCubit.hiddenBoardColumns`. A display preference only: a
   /// ticket can still be moved into a hidden status via
   /// [MoveToStatusMenu], it simply won't be visible on the board until
   /// that column is shown again.
-  final Set<TicketStatus> hiddenStatuses;
+  final Set<String> hiddenStatuses;
 
   @override
   Widget build(BuildContext context) {
-    final grouped = <TicketStatus, List<Ticket>>{
-      for (final status in TicketStatus.values)
+    final grouped = <String, List<Ticket>>{
+      for (final status in _defaultStatusOrder)
         status: tickets.where((t) => t.status == status).toList(),
     };
     final pendingResumePrompt = context.select(
@@ -150,12 +184,12 @@ class TicketBoardView extends StatelessWidget {
 class _BoardColumns extends StatelessWidget {
   const _BoardColumns({required this.grouped, required this.hiddenStatuses});
 
-  final Map<TicketStatus, List<Ticket>> grouped;
-  final Set<TicketStatus> hiddenStatuses;
+  final Map<String, List<Ticket>> grouped;
+  final Set<String> hiddenStatuses;
 
   @override
   Widget build(BuildContext context) {
-    final visibleStatuses = TicketStatus.values
+    final visibleStatuses = _defaultStatusOrder
         .where((s) => !hiddenStatuses.contains(s))
         .toList();
     if (visibleStatuses.isEmpty) {
@@ -272,7 +306,7 @@ class BoardColumn extends StatelessWidget {
   const BoardColumn({super.key, required this.status, required this.tickets});
 
   /// The status this column represents.
-  final TicketStatus status;
+  final String status;
 
   /// The tickets currently in [status], in the Board's own primary sort
   /// order.
@@ -1022,7 +1056,7 @@ class _MoveToStatusMenuState extends State<MoveToStatusMenu> {
     final t = ThemeScope.of(context);
     final c = t.colors;
     final overlay = Overlay.of(context);
-    final otherStatuses = TicketStatus.values
+    final otherStatuses = _defaultStatusOrder
         .where((s) => s != widget.ticket.status)
         .toList();
 

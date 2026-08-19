@@ -3,7 +3,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/utils/sibling_cluster.dart';
 
@@ -12,7 +11,7 @@ Ticket _ticket(String id, {String? parentId}) => Ticket(
   ticketId: 'AIO-$id',
   type: TicketType.task,
   title: id,
-  status: TicketStatus.inProgress,
+  status: 'inProgress',
   parentId: parentId,
   createdAt: DateTime(2026),
   updatedAt: DateTime(2026),

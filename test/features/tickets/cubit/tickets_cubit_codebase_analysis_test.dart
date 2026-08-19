@@ -109,7 +109,7 @@ void main() {
         ticketId: '',
         type: TicketType.idea,
         title: '',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         createdAt: DateTime(2026),
         updatedAt: DateTime(2026),
       ),

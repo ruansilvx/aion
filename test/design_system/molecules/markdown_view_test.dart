@@ -5,7 +5,6 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
 /// Wraps [child] with the minimum ancestry [MarkdownView] needs:
@@ -158,7 +157,7 @@ void main() {
       ticketId: 'AIO-42',
       type: TicketType.page,
       title: 'Target Title',
-      status: TicketStatus.backlog,
+      status: 'backlog',
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
     );

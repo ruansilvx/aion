@@ -9,7 +9,6 @@ import 'package:aion/features/pages/presentation/cubit/pages_cubit.dart';
 import 'package:aion/features/pages/presentation/cubit/pages_state.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
 class MockPageTicketProvider extends Mock implements PageTicketProvider {}
@@ -23,7 +22,7 @@ void main() {
     ticketId: 'AIO-1',
     type: TicketType.page,
     title: 'A page',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     createdAt: now,
     updatedAt: now,
   );
@@ -37,7 +36,7 @@ void main() {
     ticketId: 'AIO-2',
     type: TicketType.task,
     title: 'A linked task',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     createdAt: now,
     updatedAt: now,
   );
@@ -267,7 +266,7 @@ void main() {
           ticketId: 'AIO-3',
           type: TicketType.resource,
           title: 'A resource',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           createdAt: now,
           updatedAt: now,
         );

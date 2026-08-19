@@ -11,7 +11,8 @@ abstract final class TicketMarkdownTemplate {
   /// Frontmatter key for [Ticket.type] (`TicketType.name`).
   static const type = 'type';
 
-  /// Frontmatter key for [Ticket.status] (`TicketStatus.name`).
+  /// Frontmatter key for [Ticket.status] (a project-defined
+  /// `WorkflowStatus.name`).
   static const status = 'status';
 
   /// Frontmatter key for [Ticket.priority] (`TicketPriority.name`).

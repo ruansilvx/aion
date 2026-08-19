@@ -21,7 +21,7 @@ void main() {
     type: TicketType.task,
     title: 'A task',
     description: 'Description.',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     createdAt: DateTime.utc(2026, 7, 18),
     updatedAt: DateTime.utc(2026, 7, 18),
   );
@@ -76,7 +76,7 @@ void main() {
       ticketId: 'AIO-43',
       type: TicketType.story,
       title: 'A story',
-      status: TicketStatus.backlog,
+      status: 'backlog',
       createdAt: DateTime.utc(2026, 7, 18),
       updatedAt: DateTime.utc(2026, 7, 18),
     );

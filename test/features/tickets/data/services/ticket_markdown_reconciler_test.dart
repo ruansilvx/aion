@@ -35,7 +35,7 @@ void main() {
     type: TicketType.resource,
     title: 'Original title',
     description: 'Original description.',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     createdAt: DateTime.utc(2026, 7, 18),
     updatedAt: DateTime.utc(2026, 7, 18),
   );
@@ -48,14 +48,14 @@ void main() {
     type: TicketType.page,
     title: 'Original title',
     description: 'Original description.',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     createdAt: DateTime.utc(2026, 7, 18),
     updatedAt: DateTime.utc(2026, 7, 18),
   );
 
   setUpAll(() {
     registerFallbackValue(TicketSyncStatus.synced);
-    registerFallbackValue(TicketStatus.backlog);
+    registerFallbackValue('backlog');
     registerFallbackValue(Uint8List(0));
     registerFallbackValue(
       Ticket(
@@ -63,7 +63,7 @@ void main() {
         ticketId: 'FB-1',
         type: TicketType.task,
         title: 'fallback',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         createdAt: DateTime.utc(2026),
         updatedAt: DateTime.utc(2026),
       ),
@@ -212,9 +212,13 @@ void main() {
         () => repository.getAllTickets(),
       ).thenAnswer((_) async => [resourceTicket]);
       final serializer = TicketMarkdownSerializer();
+      // `status` is now a project-defined name, not a fixed enum — any
+      // non-empty string is syntactically valid, so a blank value
+      // (parses as YAML `null`) is what's actually invalid for this
+      // field now, not an unrecognized-but-non-empty string.
       final content = serializer
           .serialize(resourceTicket)
-          .replaceFirst('status: backlog', 'status: not-a-status');
+          .replaceFirst('status: backlog', 'status: ');
       await writeFile(content);
 
       await reconciler.reconcile('AIO-42', tempDir.path);

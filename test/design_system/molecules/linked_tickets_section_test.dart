@@ -9,7 +9,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/l10n/generated/app_localizations.dart';
 
@@ -52,7 +51,7 @@ Ticket _buildTicket({
   ticketId: 'AIO-$id',
   type: type,
   title: title,
-  status: TicketStatus.backlog,
+  status: 'backlog',
   createdAt: DateTime(2026),
   updatedAt: DateTime(2026),
 );

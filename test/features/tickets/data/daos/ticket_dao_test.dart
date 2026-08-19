@@ -13,7 +13,6 @@ import 'package:aion/features/tickets/domain/entities/ticket_list_sort.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sort_direction.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sort_field.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
 /// The pre-existing default ordering (`createdAt` descending) — passed
@@ -261,7 +260,7 @@ void main() {
     Future<void> insertFiltered({
       required String id,
       required String title,
-      required TicketStatus status,
+      required String status,
       required TicketType type,
       required TicketPriority priority,
       int createdAtMs = 0,
@@ -272,7 +271,7 @@ void main() {
           ticketId: '',
           type: type.name,
           title: title,
-          status: status.name,
+          status: status,
           priority: Value(priority.name),
           createdAt: createdAtMs,
           updatedAt: createdAtMs,
@@ -288,14 +287,14 @@ void main() {
           await insertFiltered(
             id: 'a',
             title: 'A',
-            status: TicketStatus.backlog,
+            status: 'backlog',
             type: TicketType.task,
             priority: TicketPriority.none,
           );
           await insertFiltered(
             id: 'b',
             title: 'B',
-            status: TicketStatus.todo,
+            status: 'todo',
             type: TicketType.bug,
             priority: TicketPriority.high,
             createdAtMs: 1,
@@ -312,21 +311,21 @@ void main() {
         await insertFiltered(
           id: 'a',
           title: 'A',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           type: TicketType.task,
           priority: TicketPriority.none,
         );
         await insertFiltered(
           id: 'b',
           title: 'B',
-          status: TicketStatus.todo,
+          status: 'todo',
           type: TicketType.task,
           priority: TicketPriority.none,
           createdAtMs: 1,
         );
 
         final rows = await dao.searchTickets(
-          statuses: {TicketStatus.todo},
+          statuses: {'todo'},
           sort: _defaultSort,
           limit: 10,
         );
@@ -338,14 +337,14 @@ void main() {
         await insertFiltered(
           id: 'a',
           title: 'A',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           type: TicketType.task,
           priority: TicketPriority.none,
         );
         await insertFiltered(
           id: 'b',
           title: 'B',
-          status: TicketStatus.todo,
+          status: 'todo',
           type: TicketType.task,
           priority: TicketPriority.none,
           createdAtMs: 1,
@@ -353,14 +352,14 @@ void main() {
         await insertFiltered(
           id: 'c',
           title: 'C',
-          status: TicketStatus.done,
+          status: 'done',
           type: TicketType.task,
           priority: TicketPriority.none,
           createdAtMs: 2,
         );
 
         final rows = await dao.searchTickets(
-          statuses: {TicketStatus.backlog, TicketStatus.todo},
+          statuses: {'backlog', 'todo'},
           sort: _defaultSort,
           limit: 10,
         );
@@ -372,14 +371,14 @@ void main() {
         await insertFiltered(
           id: 'a',
           title: 'A',
-          status: TicketStatus.todo,
+          status: 'todo',
           type: TicketType.task,
           priority: TicketPriority.high,
         );
         await insertFiltered(
           id: 'b',
           title: 'B',
-          status: TicketStatus.todo,
+          status: 'todo',
           type: TicketType.bug,
           priority: TicketPriority.high,
           createdAtMs: 1,
@@ -387,14 +386,14 @@ void main() {
         await insertFiltered(
           id: 'c',
           title: 'C',
-          status: TicketStatus.done,
+          status: 'done',
           type: TicketType.task,
           priority: TicketPriority.high,
           createdAtMs: 2,
         );
 
         final rows = await dao.searchTickets(
-          statuses: {TicketStatus.todo},
+          statuses: {'todo'},
           types: {TicketType.task},
           sort: _defaultSort,
           limit: 10,
@@ -411,14 +410,14 @@ void main() {
           await insertFiltered(
             id: 'a',
             title: 'Fix bug alpha',
-            status: TicketStatus.backlog,
+            status: 'backlog',
             type: TicketType.task,
             priority: TicketPriority.none,
           );
           await insertFiltered(
             id: 'b',
             title: 'Fix bug beta',
-            status: TicketStatus.todo,
+            status: 'todo',
             type: TicketType.bug,
             priority: TicketPriority.high,
             createdAtMs: 1,
@@ -439,14 +438,14 @@ void main() {
         await insertFiltered(
           id: 'a',
           title: 'Fix bug alpha',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           type: TicketType.task,
           priority: TicketPriority.none,
         );
         await insertFiltered(
           id: 'b',
           title: 'Fix bug beta',
-          status: TicketStatus.todo,
+          status: 'todo',
           type: TicketType.task,
           priority: TicketPriority.none,
           createdAtMs: 1,
@@ -454,7 +453,7 @@ void main() {
 
         final rows = await dao.searchTickets(
           query: 'fix',
-          statuses: {TicketStatus.todo},
+          statuses: {'todo'},
           sort: _relevanceSort,
           limit: 10,
         );
@@ -466,14 +465,14 @@ void main() {
         await insertFiltered(
           id: 'a',
           title: 'Fix bug alpha',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           type: TicketType.task,
           priority: TicketPriority.none,
         );
         await insertFiltered(
           id: 'b',
           title: 'Fix bug beta',
-          status: TicketStatus.todo,
+          status: 'todo',
           type: TicketType.task,
           priority: TicketPriority.none,
           createdAtMs: 1,
@@ -481,7 +480,7 @@ void main() {
         await insertFiltered(
           id: 'c',
           title: 'Fix bug gamma',
-          status: TicketStatus.done,
+          status: 'done',
           type: TicketType.task,
           priority: TicketPriority.none,
           createdAtMs: 2,
@@ -489,7 +488,7 @@ void main() {
 
         final rows = await dao.searchTickets(
           query: 'fix',
-          statuses: {TicketStatus.backlog, TicketStatus.todo},
+          statuses: {'backlog', 'todo'},
           sort: _relevanceSort,
           limit: 10,
         );
@@ -501,14 +500,14 @@ void main() {
         await insertFiltered(
           id: 'a',
           title: 'Fix bug alpha',
-          status: TicketStatus.todo,
+          status: 'todo',
           type: TicketType.task,
           priority: TicketPriority.high,
         );
         await insertFiltered(
           id: 'b',
           title: 'Fix bug beta',
-          status: TicketStatus.todo,
+          status: 'todo',
           type: TicketType.bug,
           priority: TicketPriority.high,
           createdAtMs: 1,
@@ -516,7 +515,7 @@ void main() {
         await insertFiltered(
           id: 'c',
           title: 'Fix bug gamma',
-          status: TicketStatus.done,
+          status: 'done',
           type: TicketType.task,
           priority: TicketPriority.high,
           createdAtMs: 2,
@@ -524,7 +523,7 @@ void main() {
 
         final rows = await dao.searchTickets(
           query: 'fix',
-          statuses: {TicketStatus.todo},
+          statuses: {'todo'},
           types: {TicketType.task},
           sort: _relevanceSort,
           limit: 10,
@@ -552,7 +551,7 @@ void main() {
             ticketId: '',
             type: TicketType.epic.name,
             title: 'Fix bug low',
-            status: TicketStatus.backlog.name,
+            status: 'backlog',
             priority: const Value('low'),
             createdAt: 0,
             updatedAt: 2,
@@ -565,7 +564,7 @@ void main() {
             ticketId: '',
             type: TicketType.story.name,
             title: 'Fix bug medium',
-            status: TicketStatus.inProgress.name,
+            status: 'inProgress',
             priority: const Value('medium'),
             createdAt: 1,
             updatedAt: 1,
@@ -578,7 +577,7 @@ void main() {
             ticketId: '',
             type: TicketType.task.name,
             title: 'Fix bug critical',
-            status: TicketStatus.done.name,
+            status: 'done',
             priority: const Value('critical'),
             createdAt: 2,
             updatedAt: 0,
@@ -616,7 +615,22 @@ void main() {
           expect(rows.map((t) => t.id), ['low', 'medium', 'critical']);
         });
 
-        test('status ascending orders by declaration order', () async {
+        // Status ordinal position now comes from the caller-supplied
+        // `statusSortOrder` (a project's configured `WorkflowStatus`
+        // list), not a fixed enum's declaration order — see
+        // `TicketDao.searchTickets`'s dartdoc. These two tests pass the
+        // default baseline preset's own order, reproducing the exact
+        // ordering the old `TicketStatus.values` declaration order gave.
+        const defaultStatusOrder = [
+          'backlog',
+          'todo',
+          'inProgress',
+          'inReview',
+          'done',
+          'cancelled',
+        ];
+
+        test('status ascending orders by the given statusSortOrder', () async {
           await insertSortFixtures();
 
           final rows = await dao.searchTickets(
@@ -625,12 +639,13 @@ void main() {
               direction: TicketSortDirection.ascending,
             ),
             limit: 10,
+            statusSortOrder: defaultStatusOrder,
           );
 
           expect(rows.map((t) => t.id), ['low', 'medium', 'critical']);
         });
 
-        test('status descending reverses declaration order', () async {
+        test('status descending reverses the given statusSortOrder', () async {
           await insertSortFixtures();
 
           final rows = await dao.searchTickets(
@@ -639,10 +654,32 @@ void main() {
               direction: TicketSortDirection.descending,
             ),
             limit: 10,
+            statusSortOrder: defaultStatusOrder,
           );
 
           expect(rows.map((t) => t.id), ['critical', 'medium', 'low']);
         });
+
+        test(
+          'status with no statusSortOrder supplied leaves every row tied '
+          '(falls back to the createdAt tiebreaker)',
+          () async {
+            await insertSortFixtures();
+
+            final rows = await dao.searchTickets(
+              sort: const TicketListSort(
+                field: TicketSortField.status,
+                direction: TicketSortDirection.ascending,
+              ),
+              limit: 10,
+            );
+
+            // No statusSortOrder -> every row ties on status -> the
+            // always-on `created_at DESC` tiebreaker decides, same as
+            // this suite's plain createdAt-descending tests.
+            expect(rows.map((t) => t.id), ['critical', 'medium', 'low']);
+          },
+        );
 
         test('type ascending orders by declaration order', () async {
           await insertSortFixtures();
@@ -1063,13 +1100,13 @@ void main() {
         await insertTicket(id: 'a', title: 'A', createdAtMs: 0);
         await insertTicket(id: 'b', title: 'B', createdAtMs: 0);
 
-        await dao.updateStatusByIds(['a', 'b'], TicketStatus.inProgress, 999);
+        await dao.updateStatusByIds(['a', 'b'], 'inProgress', 999);
 
         final a = await dao.getTicketById('a');
         final b = await dao.getTicketById('b');
-        expect(a?.status, TicketStatus.inProgress.name);
+        expect(a?.status, 'inProgress');
         expect(a?.updatedAt, 999);
-        expect(b?.status, TicketStatus.inProgress.name);
+        expect(b?.status, 'inProgress');
         expect(b?.updatedAt, 999);
       },
     );
@@ -1078,10 +1115,10 @@ void main() {
       await insertTicket(id: 'a', title: 'A', createdAtMs: 0);
       await insertTicket(id: 'other', title: 'Other', createdAtMs: 0);
 
-      await dao.updateStatusByIds(['a'], TicketStatus.done, 500);
+      await dao.updateStatusByIds(['a'], 'done', 500);
 
       final other = await dao.getTicketById('other');
-      expect(other?.status, TicketStatus.backlog.name);
+      expect(other?.status, 'backlog');
       expect(other?.updatedAt, 0);
     });
   });

@@ -60,7 +60,7 @@ void main() {
     type: TicketType.task,
     title: 'Do the thing',
     description: 'Some description',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
     complexity: complexity,

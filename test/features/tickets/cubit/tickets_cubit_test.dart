@@ -27,12 +27,10 @@ import 'package:aion/features/providers/domain/repositories/execution_scheduling
 import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
 import 'package:aion/features/tickets/data/services/active_ticket_view_registry.dart';
 import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
-import 'package:aion/features/tickets/domain/entities/ticket_board_column_visibility.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_list_sort.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_list_view_mode.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sort_direction.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sort_field.dart';
-import 'package:aion/features/tickets/domain/repositories/ticket_board_column_visibility_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_list_sort_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_list_view_mode_repository.dart';
 import 'package:aion/features/tickets/tickets.dart';
@@ -210,7 +208,7 @@ void main() {
     ticketId: 'AIO-1',
     type: TicketType.task,
     title: 'Test ticket',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
   );
@@ -222,7 +220,7 @@ void main() {
     ticketId: 'AIO-2',
     type: TicketType.task,
     title: 'Child ticket',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     parentId: ticket.id,
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
@@ -232,7 +230,7 @@ void main() {
     ticketId: 'AIO-3',
     type: TicketType.task,
     title: 'Grandchild ticket',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     parentId: child.id,
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
@@ -245,7 +243,7 @@ void main() {
     ticketId: 'AIO-4',
     type: TicketType.story,
     title: 'Unrelated ticket',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
   );
@@ -273,7 +271,7 @@ void main() {
     ticketId: 'AIO-5',
     type: TicketType.epic,
     title: 'Epic ticket',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
   );
@@ -284,7 +282,7 @@ void main() {
     ticketId: 'AIO-6',
     type: TicketType.story,
     title: 'Story ticket',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
   );
@@ -293,7 +291,7 @@ void main() {
     ticketId: 'AIO-7',
     type: TicketType.resource,
     title: 'Resource ticket',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
   );
@@ -302,7 +300,7 @@ void main() {
     ticketId: 'AIO-8',
     type: TicketType.task,
     title: 'Another task ticket',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
   );
@@ -311,7 +309,7 @@ void main() {
     ticketId: 'AIO-9',
     type: TicketType.chat,
     title: 'Chat ticket',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
   );
@@ -330,7 +328,7 @@ void main() {
     ticketId: 'AIO-10',
     type: TicketType.idea,
     title: 'Idea ticket',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
   );
@@ -339,7 +337,7 @@ void main() {
     ticketId: 'AIO-11',
     type: TicketType.release,
     title: 'Release ticket',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
   );
@@ -350,7 +348,7 @@ void main() {
     ticketId: 'AIO-12',
     type: TicketType.story,
     title: 'Proposed story',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     sddStage: SddStage.proposed,
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
@@ -360,7 +358,7 @@ void main() {
     ticketId: 'AIO-13',
     type: TicketType.task,
     title: 'Done task child',
-    status: TicketStatus.done,
+    status: 'done',
     parentId: storyProposed.id,
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
@@ -370,7 +368,7 @@ void main() {
     ticketId: 'AIO-14',
     type: TicketType.task,
     title: 'In-progress task child',
-    status: TicketStatus.inProgress,
+    status: 'inProgress',
     parentId: storyProposed.id,
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
@@ -380,7 +378,7 @@ void main() {
     ticketId: 'AIO-99',
     type: TicketType.chat,
     title: 'Spawned chat',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
   );
@@ -391,7 +389,7 @@ void main() {
     ticketId: 'AIO-15',
     type: TicketType.task,
     title: 'Redesign the ticket filter widget',
-    status: TicketStatus.done,
+    status: 'done',
     parentId: storyProposed.id,
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
@@ -401,7 +399,7 @@ void main() {
     ticketId: 'AIO-16',
     type: TicketType.story,
     title: 'Design-briefed story',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     sddStage: SddStage.designBrief,
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
@@ -411,7 +409,7 @@ void main() {
     ticketId: 'AIO-17',
     type: TicketType.story,
     title: 'Design-synced story',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     sddStage: SddStage.designSync,
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
@@ -421,7 +419,7 @@ void main() {
     ticketId: 'AIO-18',
     type: TicketType.page,
     title: 'Design — Design-briefed story',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
   );
@@ -431,7 +429,7 @@ void main() {
     type: TicketType.page,
     title: 'Design — Design-synced story',
     description: 'Pasted Claude Design export.',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
   );
@@ -440,7 +438,7 @@ void main() {
     ticketId: 'AIO-20',
     type: TicketType.chat,
     title: 'Design Sync — Design-synced story',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     parentId: storyDesignSync.id,
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
@@ -452,7 +450,7 @@ void main() {
     ticketId: 'AIO-21',
     type: TicketType.task,
     title: 'Task with no governing Story',
-    status: TicketStatus.todo,
+    status: 'todo',
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
   );
@@ -461,7 +459,7 @@ void main() {
     ticketId: 'AIO-22',
     type: TicketType.story,
     title: 'Story governing a Task execution',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
   );
@@ -470,7 +468,7 @@ void main() {
     ticketId: 'AIO-23',
     type: TicketType.task,
     title: 'Redesign the ticket filter widget',
-    status: TicketStatus.todo,
+    status: 'todo',
     parentId: storyForExecution.id,
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
@@ -480,7 +478,7 @@ void main() {
     ticketId: 'AIO-24',
     type: TicketType.chat,
     title: 'Design Sync — Story governing a Task execution',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     parentId: storyForExecution.id,
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
@@ -490,7 +488,7 @@ void main() {
     ticketId: 'AIO-97',
     type: TicketType.chat,
     title: 'Coding Execution — ${taskUnderStory.title}',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     parentId: taskUnderStory.id,
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
@@ -503,7 +501,7 @@ void main() {
     ticketId: 'AIO-25',
     type: TicketType.story,
     title: 'Story with no UI-indicating Tasks',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
   );
@@ -512,7 +510,7 @@ void main() {
     ticketId: 'AIO-26',
     type: TicketType.task,
     title: 'Refactor the sync engine retry backoff',
-    status: TicketStatus.todo,
+    status: 'todo',
     parentId: storyNoDesignNeeded.id,
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
@@ -524,7 +522,7 @@ void main() {
     ticketId: 'AIO-27',
     type: TicketType.task,
     title: 'Ad hoc task filed straight under the Epic',
-    status: TicketStatus.todo,
+    status: 'todo',
     parentId: epic.id,
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
@@ -536,7 +534,7 @@ void main() {
     ticketId: 'AIO-28',
     type: TicketType.bug,
     title: 'Bug with no governing Story',
-    status: TicketStatus.todo,
+    status: 'todo',
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
   );
@@ -545,7 +543,7 @@ void main() {
     ticketId: 'AIO-29',
     type: TicketType.bug,
     title: 'Redesign the ticket filter widget',
-    status: TicketStatus.todo,
+    status: 'todo',
     parentId: storyForExecution.id,
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
@@ -553,7 +551,7 @@ void main() {
 
   setUpAll(() {
     registerFallbackValue(ticket);
-    registerFallbackValue(TicketStatus.backlog);
+    registerFallbackValue('backlog');
     registerFallbackValue(TicketPriority.none);
     registerFallbackValue(const TicketListFilters());
     registerFallbackValue(
@@ -614,7 +612,8 @@ void main() {
             sort: any(named: 'sort'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).thenAnswer(
           (_) async => TicketSearchPage(tickets: [ticket], hasMore: false),
         );
@@ -639,7 +638,8 @@ void main() {
             sort: any(named: 'sort'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).thenThrow(Exception('boom'));
       },
       build: () => TicketsCubit(repository),
@@ -660,7 +660,8 @@ void main() {
             sort: any(named: 'sort'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).thenAnswer(
           (_) async => TicketSearchPage(tickets: [ticket], hasMore: false),
         );
@@ -689,7 +690,8 @@ void main() {
             sort: any(named: 'sort'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).thenAnswer(
           (_) async => TicketSearchPage(tickets: [ticket], hasMore: false),
         );
@@ -730,7 +732,7 @@ void main() {
         ).thenAnswer((_) async {});
         when(
           () => repository.getTicketById(any()),
-        ).thenAnswer((_) async => ticket.copyWith(status: TicketStatus.done));
+        ).thenAnswer((_) async => ticket.copyWith(status: 'done'));
         when(
           () => repository.searchTickets(
             query: any(named: 'query'),
@@ -740,21 +742,22 @@ void main() {
             sort: any(named: 'sort'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).thenAnswer(
           (_) async => TicketSearchPage(
-            tickets: [ticket.copyWith(status: TicketStatus.done)],
+            tickets: [ticket.copyWith(status: 'done')],
             hasMore: false,
           ),
         );
       },
       build: () => TicketsCubit(repository),
       seed: () => TicketsLoaded([ticket], hasMore: false),
-      act: (cubit) => cubit.updateTicketStatus(ticket.id, TicketStatus.done),
+      act: (cubit) => cubit.updateTicketStatus(ticket.id, 'done'),
       expect: () => [
-        TicketStatusUpdating([ticket.copyWith(status: TicketStatus.done)]),
+        TicketStatusUpdating([ticket.copyWith(status: 'done')]),
         TicketStatusUpdated([
-          ticket.copyWith(status: TicketStatus.done),
+          ticket.copyWith(status: 'done'),
         ], hasMore: false),
       ],
     );
@@ -768,9 +771,9 @@ void main() {
       },
       build: () => TicketsCubit(repository),
       seed: () => TicketsLoaded([ticket], hasMore: false),
-      act: (cubit) => cubit.updateTicketStatus(ticket.id, TicketStatus.done),
+      act: (cubit) => cubit.updateTicketStatus(ticket.id, 'done'),
       expect: () => [
-        TicketStatusUpdating([ticket.copyWith(status: TicketStatus.done)]),
+        TicketStatusUpdating([ticket.copyWith(status: 'done')]),
         isA<TicketsError>(),
       ],
     );
@@ -899,7 +902,7 @@ void main() {
         ticketId: 'AIO-100',
         type: TicketType.page,
         title: 'Page A',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         createdAt: DateTime(2026, 1, 1),
         updatedAt: DateTime(2026, 1, 1),
       );
@@ -912,7 +915,7 @@ void main() {
         ticketId: 'AIO-101',
         type: TicketType.page,
         title: 'Page B',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         createdAt: DateTime(2026, 1, 2),
         updatedAt: DateTime(2026, 1, 2),
       );
@@ -921,7 +924,7 @@ void main() {
         ticketId: 'AIO-102',
         type: TicketType.page,
         title: 'Page B',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         createdAt: DateTime(2026, 1, 3),
         updatedAt: DateTime(2026, 1, 3),
       );
@@ -1044,7 +1047,7 @@ void main() {
             type: TicketType.page,
             title: 'Referrer',
             description: 'Links to [[Page A]] and [[AIO-100|alias]].',
-            status: TicketStatus.backlog,
+            status: 'backlog',
             createdAt: DateTime(2026, 1, 1),
             updatedAt: DateTime(2026, 1, 1),
           );
@@ -1113,7 +1116,7 @@ void main() {
             type: TicketType.page,
             title: 'Referrer',
             description: 'Links via [[AIO-100]] only.',
-            status: TicketStatus.backlog,
+            status: 'backlog',
             createdAt: DateTime(2026, 1, 1),
             updatedAt: DateTime(2026, 1, 1),
           );
@@ -1173,7 +1176,7 @@ void main() {
             type: TicketType.page,
             title: 'Referrer',
             description: 'Links to [[Page A]].',
-            status: TicketStatus.backlog,
+            status: 'backlog',
             createdAt: DateTime(2026, 1, 1),
             updatedAt: DateTime(2026, 1, 1),
           );
@@ -1276,16 +1279,16 @@ void main() {
       'changeTicketStatus emits [TicketDetailLoaded] with the refreshed ticket on success',
       setUp: () {
         when(
-          () => repository.updateTicketStatus(ticket.id, TicketStatus.done),
+          () => repository.updateTicketStatus(ticket.id, 'done'),
         ).thenAnswer((_) async {});
         when(
           () => repository.getTicketById(ticket.id),
-        ).thenAnswer((_) async => ticket.copyWith(status: TicketStatus.done));
+        ).thenAnswer((_) async => ticket.copyWith(status: 'done'));
       },
       build: () => TicketsCubit(repository),
-      act: (cubit) => cubit.changeTicketStatus(ticket, TicketStatus.done),
+      act: (cubit) => cubit.changeTicketStatus(ticket, 'done'),
       expect: () => [
-        TicketDetailLoaded(ticket.copyWith(status: TicketStatus.done)),
+        TicketDetailLoaded(ticket.copyWith(status: 'done')),
       ],
     );
 
@@ -1293,11 +1296,11 @@ void main() {
       'changeTicketStatus emits [TicketsError] when the repository throws',
       setUp: () {
         when(
-          () => repository.updateTicketStatus(ticket.id, TicketStatus.done),
+          () => repository.updateTicketStatus(ticket.id, 'done'),
         ).thenThrow(Exception('boom'));
       },
       build: () => TicketsCubit(repository),
-      act: (cubit) => cubit.changeTicketStatus(ticket, TicketStatus.done),
+      act: (cubit) => cubit.changeTicketStatus(ticket, 'done'),
       verify: (_) {
         verifyNever(() => repository.getTicketById(any()));
       },
@@ -1380,7 +1383,8 @@ void main() {
             sort: any(named: 'sort'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).thenAnswer(
           (_) async => const TicketSearchPage(tickets: [], hasMore: false),
         );
@@ -1413,7 +1417,8 @@ void main() {
             sort: any(named: 'sort'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).thenAnswer(
           (_) async => const TicketSearchPage(tickets: [], hasMore: false),
         );
@@ -1451,7 +1456,7 @@ void main() {
         ticketId: 'AIO-90',
         type: TicketType.task,
         title: 'Blocked bulk task',
-        status: TicketStatus.todo,
+        status: 'todo',
         createdAt: DateTime(2026),
         updatedAt: DateTime(2026),
       );
@@ -1460,7 +1465,7 @@ void main() {
         ticketId: 'AIO-91',
         type: TicketType.task,
         title: 'Blocker task',
-        status: TicketStatus.todo,
+        status: 'todo',
         createdAt: DateTime(2026),
         updatedAt: DateTime(2026),
       );
@@ -1474,7 +1479,7 @@ void main() {
         ticketId: 'AIO-92',
         type: TicketType.task,
         title: 'Clean bulk task',
-        status: TicketStatus.inProgress,
+        status: 'inProgress',
         createdAt: DateTime(2026),
         updatedAt: DateTime(2026),
       );
@@ -1502,7 +1507,8 @@ void main() {
             priorities: any(named: 'priorities'),
             sort: any(named: 'sort'),
             limit: any(named: 'limit'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).thenAnswer(
           (_) async => const TicketSearchPage(tickets: [], hasMore: false),
         );
@@ -1576,7 +1582,7 @@ void main() {
         when(
           () => repository.updateStatusForIds([
             bulkCleanTask.id,
-          ], TicketStatus.inProgress),
+          ], 'inProgress'),
         ).thenAnswer((_) async {});
         when(
           () => gitProjector.project(any(), any(), any()),
@@ -1595,12 +1601,12 @@ void main() {
           bulkBlockedTask.id,
           bulkCodingGatedTask.id,
           bulkCleanTask.id,
-        ], TicketStatus.inProgress),
+        ], 'inProgress'),
         verify: (_) {
           verify(
             () => repository.updateStatusForIds([
               bulkCleanTask.id,
-            ], TicketStatus.inProgress),
+            ], 'inProgress'),
           ).called(1);
         },
         expect: () => [
@@ -1618,7 +1624,7 @@ void main() {
           bulkBlockedTask.id,
           bulkCodingGatedTask.id,
           bulkCleanTask.id,
-        ], TicketStatus.inProgress),
+        ], 'inProgress'),
         verify: (_) {
           verify(
             () =>
@@ -1642,12 +1648,12 @@ void main() {
         'skippedCount is always 0 and no link data is queried',
         setUp: () {
           when(() => repository.getTicketById(bulkBlockedTask.id)).thenAnswer(
-            (_) async => bulkBlockedTask.copyWith(status: TicketStatus.done),
+            (_) async => bulkBlockedTask.copyWith(status: 'done'),
           );
           when(
             () => repository.updateStatusForIds([
               bulkBlockedTask.id,
-            ], TicketStatus.done),
+            ], 'done'),
           ).thenAnswer((_) async {});
           when(
             () => gitProjector.project(any(), any(), any()),
@@ -1657,13 +1663,13 @@ void main() {
         build: buildCubit,
         act: (cubit) => cubit.updateStatusForTickets([
           bulkBlockedTask.id,
-        ], TicketStatus.done),
+        ], 'done'),
         verify: (_) {
           verifyNever(() => linkRepository.getLinksForTicket(any()));
           verify(
             () => repository.updateStatusForIds([
               bulkBlockedTask.id,
-            ], TicketStatus.done),
+            ], 'done'),
           ).called(1);
         },
         expect: () => [
@@ -1682,7 +1688,7 @@ void main() {
         },
         build: () => TicketsCubit(repository),
         act: (cubit) =>
-            cubit.updateStatusForTickets([ticket.id], TicketStatus.done),
+            cubit.updateStatusForTickets([ticket.id], 'done'),
         expect: () => [const TicketsBatchStatusUpdating(), isA<TicketsError>()],
       );
 
@@ -1753,6 +1759,7 @@ void main() {
               sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).thenAnswer(
             (_) async => TicketSearchPage(tickets: [child], hasMore: false),
@@ -1774,6 +1781,7 @@ void main() {
               ),
               limit: 50,
               offset: 1,
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).called(1);
         },
@@ -1798,6 +1806,7 @@ void main() {
               sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           );
         },
@@ -1819,6 +1828,7 @@ void main() {
               sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           );
         },
@@ -1838,6 +1848,7 @@ void main() {
               sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).thenThrow(Exception('boom'));
         },
@@ -1863,6 +1874,7 @@ void main() {
               sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).thenAnswer(
             (_) async => TicketSearchPage(tickets: [ticket], hasMore: true),
@@ -1882,6 +1894,7 @@ void main() {
               sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).thenAnswer((_) => loadMoreCompleter.future);
 
@@ -1897,6 +1910,7 @@ void main() {
               sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).thenAnswer(
             (_) async => TicketSearchPage(tickets: [unrelated], hasMore: false),
@@ -1933,7 +1947,8 @@ void main() {
             priorities: any(named: 'priorities'),
             sort: any(named: 'sort'),
             limit: any(named: 'limit'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).thenAnswer(
           (_) async => const TicketSearchPage(tickets: [], hasMore: false),
         );
@@ -1944,10 +1959,10 @@ void main() {
         stubEmptySearch();
         final cubit = TicketsCubit(repository);
 
-        await cubit.toggleStatusFilter(TicketStatus.todo);
-        expect(cubit.selectedStatuses, {TicketStatus.todo});
+        await cubit.toggleStatusFilter('todo');
+        expect(cubit.selectedStatuses, {'todo'});
 
-        await cubit.toggleStatusFilter(TicketStatus.todo);
+        await cubit.toggleStatusFilter('todo');
         expect(cubit.selectedStatuses, isEmpty);
       });
 
@@ -1981,12 +1996,12 @@ void main() {
         final cubit = TicketsCubit(repository);
         await cubit.toggleTypeFilter(TicketType.bug);
 
-        await cubit.toggleStatusFilter(TicketStatus.todo);
+        await cubit.toggleStatusFilter('todo');
 
         verify(
           () => repository.searchTickets(
             query: any(named: 'query'),
-            statuses: {TicketStatus.todo},
+            statuses: {'todo'},
             types: {TicketType.bug},
             priorities: const {},
             sort: const TicketListSort(
@@ -1994,7 +2009,8 @@ void main() {
               direction: TicketSortDirection.descending,
             ),
             limit: any(named: 'limit'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).called(1);
       });
 
@@ -2010,12 +2026,12 @@ void main() {
           projectId: 'proj-1',
         );
 
-        await cubit.toggleStatusFilter(TicketStatus.todo);
+        await cubit.toggleStatusFilter('todo');
 
         verify(
           () => filterRepository.setFilters(
             'proj-1',
-            const TicketListFilters(statuses: {TicketStatus.todo}),
+            const TicketListFilters(statuses: {'todo'}),
           ),
         ).called(1);
       });
@@ -2026,9 +2042,9 @@ void main() {
 
         // No filterRepository supplied — nothing to verify a call
         // against; this only needs to complete without throwing.
-        await cubit.toggleStatusFilter(TicketStatus.todo);
+        await cubit.toggleStatusFilter('todo');
 
-        expect(cubit.selectedStatuses, {TicketStatus.todo});
+        expect(cubit.selectedStatuses, {'todo'});
       });
 
       test('a toggle does not persist when projectId is null', () async {
@@ -2038,7 +2054,7 @@ void main() {
           filterRepository: filterRepository,
         );
 
-        await cubit.toggleStatusFilter(TicketStatus.todo);
+        await cubit.toggleStatusFilter('todo');
 
         verifyNever(() => filterRepository.setFilters(any(), any()));
       });
@@ -2047,7 +2063,7 @@ void main() {
           'from the repository without emitting a state', () async {
         when(() => filterRepository.getFilters('proj-1')).thenAnswer(
           (_) async => const TicketListFilters(
-            statuses: {TicketStatus.todo},
+            statuses: {'todo'},
             types: {TicketType.bug},
             priorities: {TicketPriority.high},
           ),
@@ -2062,7 +2078,7 @@ void main() {
 
         await cubit.loadPersistedFilters();
 
-        expect(cubit.selectedStatuses, {TicketStatus.todo});
+        expect(cubit.selectedStatuses, {'todo'});
         expect(cubit.selectedTypes, {TicketType.bug});
         expect(cubit.selectedPriorities, {TicketPriority.high});
         expect(states, isEmpty);
@@ -2124,7 +2140,8 @@ void main() {
             sort: any(named: 'sort'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).thenAnswer(
           (_) async => TicketSearchPage(tickets: const [], hasMore: hasMore),
         );
@@ -2146,7 +2163,8 @@ void main() {
             sort: createdAtDesc,
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).called(1);
         expect(cubit.currentSort, createdAtDesc);
       });
@@ -2167,7 +2185,8 @@ void main() {
             sort: relevanceDesc,
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).called(1);
         expect(cubit.currentSort, relevanceDesc);
       });
@@ -2197,7 +2216,8 @@ void main() {
             sort: priorityAsc,
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).called(1);
       });
 
@@ -2291,7 +2311,8 @@ void main() {
             sort: priorityAsc,
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).called(3);
       });
 
@@ -2323,6 +2344,7 @@ void main() {
               sort: priorityAsc,
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).called(1);
         },
@@ -2348,7 +2370,7 @@ void main() {
           () => repository.getTicketById(any()),
         ).thenAnswer((_) async => ticket);
 
-        await cubit.updateTicketStatus(ticket.id, TicketStatus.done);
+        await cubit.updateTicketStatus(ticket.id, 'done');
 
         verify(
           () => repository.searchTickets(
@@ -2359,7 +2381,8 @@ void main() {
             sort: priorityAsc,
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).called(1);
       });
 
@@ -2395,6 +2418,7 @@ void main() {
               sort: priorityAsc,
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).called(1);
         },
@@ -2432,6 +2456,7 @@ void main() {
               sort: priorityAsc,
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).called(1);
         },
@@ -2457,7 +2482,7 @@ void main() {
           () => repository.getTicketById(any()),
         ).thenAnswer((_) async => ticket);
 
-        await cubit.updateStatusForTickets([ticket.id], TicketStatus.done);
+        await cubit.updateStatusForTickets([ticket.id], 'done');
 
         verify(
           () => repository.searchTickets(
@@ -2468,7 +2493,8 @@ void main() {
             sort: priorityAsc,
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).called(1);
       });
 
@@ -2497,7 +2523,8 @@ void main() {
             sort: priorityAsc,
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).called(1);
       });
     });
@@ -2649,17 +2676,17 @@ void main() {
         final states = <TicketsState>[];
         final subscription = cubit.stream.listen(states.add);
 
-        await cubit.toggleBoardColumnVisibility(TicketStatus.backlog);
+        await cubit.toggleBoardColumnVisibility('backlog');
 
         verify(
           () => boardColumnVisibilityRepository.setHiddenColumns(
             'proj-1',
             const TicketBoardColumnVisibility(
-              hiddenStatuses: {TicketStatus.backlog},
+              hiddenStatuses: {'backlog'},
             ),
           ),
         ).called(1);
-        expect(cubit.hiddenBoardColumns, {TicketStatus.backlog});
+        expect(cubit.hiddenBoardColumns, {'backlog'});
         expect(states, isEmpty);
         await subscription.cancel();
       });
@@ -2674,9 +2701,9 @@ void main() {
           boardColumnVisibilityRepository: boardColumnVisibilityRepository,
           projectId: 'proj-1',
         );
-        await cubit.toggleBoardColumnVisibility(TicketStatus.backlog);
+        await cubit.toggleBoardColumnVisibility('backlog');
 
-        await cubit.toggleBoardColumnVisibility(TicketStatus.backlog);
+        await cubit.toggleBoardColumnVisibility('backlog');
 
         expect(cubit.hiddenBoardColumns, isEmpty);
       });
@@ -2687,9 +2714,9 @@ void main() {
         () async {
           final cubit = TicketsCubit(repository, projectId: 'proj-1');
 
-          await cubit.toggleBoardColumnVisibility(TicketStatus.backlog);
+          await cubit.toggleBoardColumnVisibility('backlog');
 
-          expect(cubit.hiddenBoardColumns, {TicketStatus.backlog});
+          expect(cubit.hiddenBoardColumns, {'backlog'});
         },
       );
 
@@ -2702,7 +2729,7 @@ void main() {
             boardColumnVisibilityRepository: boardColumnVisibilityRepository,
           );
 
-          await cubit.toggleBoardColumnVisibility(TicketStatus.backlog);
+          await cubit.toggleBoardColumnVisibility('backlog');
 
           verifyNever(
             () => boardColumnVisibilityRepository.setHiddenColumns(
@@ -2710,7 +2737,7 @@ void main() {
               any(),
             ),
           );
-          expect(cubit.hiddenBoardColumns, {TicketStatus.backlog});
+          expect(cubit.hiddenBoardColumns, {'backlog'});
         },
       );
 
@@ -2720,7 +2747,7 @@ void main() {
           () => boardColumnVisibilityRepository.getHiddenColumns('proj-1'),
         ).thenAnswer(
           (_) async => const TicketBoardColumnVisibility(
-            hiddenStatuses: {TicketStatus.backlog, TicketStatus.cancelled},
+            hiddenStatuses: {'backlog', 'cancelled'},
           ),
         );
         final cubit = TicketsCubit(
@@ -2734,8 +2761,8 @@ void main() {
         await cubit.loadPersistedBoardColumnVisibility();
 
         expect(cubit.hiddenBoardColumns, {
-          TicketStatus.backlog,
-          TicketStatus.cancelled,
+          'backlog',
+          'cancelled',
         });
         expect(states, isEmpty);
         await subscription.cancel();
@@ -3160,6 +3187,7 @@ void main() {
               sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).thenAnswer(
             (_) async => TicketSearchPage(tickets: [ticket], hasMore: false),
@@ -3206,7 +3234,7 @@ void main() {
           ).thenAnswer((_) async {});
           when(
             () => repository.getTicketById(any()),
-          ).thenAnswer((_) async => ticket.copyWith(status: TicketStatus.done));
+          ).thenAnswer((_) async => ticket.copyWith(status: 'done'));
           when(
             () => repository.searchTickets(
               query: any(named: 'query'),
@@ -3216,31 +3244,32 @@ void main() {
               sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).thenAnswer(
             (_) async => TicketSearchPage(
-              tickets: [ticket.copyWith(status: TicketStatus.done)],
+              tickets: [ticket.copyWith(status: 'done')],
               hasMore: false,
             ),
           );
         },
         build: buildCubit,
         seed: () => TicketsLoaded([ticket], hasMore: false),
-        act: (cubit) => cubit.updateTicketStatus(ticket.id, TicketStatus.done),
+        act: (cubit) => cubit.updateTicketStatus(ticket.id, 'done'),
         verify: (_) {
           verifyNever(() => embeddingProvider.embed(any()));
           verify(
             () => gitProjector.project(
-              ticket.copyWith(status: TicketStatus.done),
+              ticket.copyWith(status: 'done'),
               rootPath,
               'status-changed',
             ),
           ).called(1);
         },
         expect: () => [
-          TicketStatusUpdating([ticket.copyWith(status: TicketStatus.done)]),
+          TicketStatusUpdating([ticket.copyWith(status: 'done')]),
           TicketStatusUpdated([
-            ticket.copyWith(status: TicketStatus.done),
+            ticket.copyWith(status: 'done'),
           ], hasMore: false),
         ],
       );
@@ -3282,6 +3311,7 @@ void main() {
               sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).thenAnswer(
             (_) async => TicketSearchPage(tickets: [ticket], hasMore: false),
@@ -3368,6 +3398,7 @@ void main() {
               sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).thenAnswer(
             (_) async => TicketSearchPage(tickets: [ticket], hasMore: false),
@@ -3512,7 +3543,7 @@ void main() {
         ticketId: 'AIO-other',
         type: TicketType.task,
         title: 'Other ticket',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         createdAt: DateTime(2026),
         updatedAt: DateTime(2026),
         embedding: Uint8List.fromList([1, 2, 3, 4]),
@@ -3570,6 +3601,7 @@ void main() {
               sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).thenAnswer(
             (_) async =>
@@ -3722,7 +3754,7 @@ void main() {
         ticketId: 'AIO-200',
         type: TicketType.epic,
         title: 'Rollup epic',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         createdAt: DateTime(2026),
         updatedAt: DateTime(2026),
       );
@@ -3731,7 +3763,7 @@ void main() {
         ticketId: 'AIO-201',
         type: TicketType.story,
         title: 'Rollup story',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         parentId: rollupEpic.id,
         createdAt: DateTime(2026),
         updatedAt: DateTime(2026),
@@ -3741,7 +3773,7 @@ void main() {
         ticketId: 'AIO-202',
         type: TicketType.task,
         title: 'Rollup task',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         parentId: rollupStory.id,
         createdAt: DateTime(2026),
         updatedAt: DateTime(2026),
@@ -3858,7 +3890,7 @@ void main() {
         ticketId: 'AIO-210',
         type: TicketType.story,
         title: 'Old parent',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         createdAt: DateTime(2026),
         updatedAt: DateTime(2026),
         // Stale — reflects the moved task's contribution, which needs
@@ -3870,7 +3902,7 @@ void main() {
         ticketId: 'AIO-211',
         type: TicketType.story,
         title: 'New parent',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         createdAt: DateTime(2026),
         updatedAt: DateTime(2026),
       );
@@ -3879,7 +3911,7 @@ void main() {
         ticketId: 'AIO-212',
         type: TicketType.task,
         title: 'Sibling task',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         parentId: reparentOldParent.id,
         estimate: 55,
         createdAt: DateTime(2026),
@@ -3890,7 +3922,7 @@ void main() {
         ticketId: 'AIO-213',
         type: TicketType.task,
         title: 'Moved task',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         parentId: reparentOldParent.id,
         estimate: 45,
         createdAt: DateTime(2026),
@@ -3959,7 +3991,7 @@ void main() {
         ticketId: 'AIO-220',
         type: TicketType.story,
         title: 'Trash parent',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         createdAt: DateTime(2026),
         updatedAt: DateTime(2026),
         estimateRollup: 45,
@@ -3969,7 +4001,7 @@ void main() {
         ticketId: 'AIO-221',
         type: TicketType.task,
         title: 'Trashed child',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         parentId: trashParent.id,
         estimate: 45,
         createdAt: DateTime(2026),
@@ -4012,7 +4044,7 @@ void main() {
         ticketId: 'AIO-230',
         type: TicketType.story,
         title: 'Bulk trash parent',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         createdAt: DateTime(2026),
         updatedAt: DateTime(2026),
         estimateRollup: 45,
@@ -4022,7 +4054,7 @@ void main() {
         ticketId: 'AIO-231',
         type: TicketType.task,
         title: 'Bulk trashed child',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         parentId: bulkTrashParent.id,
         estimate: 45,
         createdAt: DateTime(2026),
@@ -4050,6 +4082,7 @@ void main() {
               priorities: any(named: 'priorities'),
               sort: any(named: 'sort'),
               limit: any(named: 'limit'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).thenAnswer(
             (_) async => const TicketSearchPage(tickets: [], hasMore: false),
@@ -4077,7 +4110,7 @@ void main() {
         ticketId: 'AIO-240',
         type: TicketType.epic,
         title: 'No-change grandparent',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         createdAt: DateTime(2026),
         updatedAt: DateTime(2026),
         // Already the value a fresh computeRollups walk will produce —
@@ -4090,7 +4123,7 @@ void main() {
         ticketId: 'AIO-241',
         type: TicketType.story,
         title: 'No-change parent',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         parentId: noChangeGrandparent.id,
         createdAt: DateTime(2026),
         updatedAt: DateTime(2026),
@@ -4101,7 +4134,7 @@ void main() {
         ticketId: 'AIO-242',
         type: TicketType.task,
         title: 'Edited child',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         parentId: noChangeParent.id,
         estimate: 10,
         createdAt: DateTime(2026),
@@ -4173,7 +4206,7 @@ void main() {
             ticketId: 'AIO-250',
             type: TicketType.epic,
             title: 'Counts grandparent',
-            status: TicketStatus.backlog,
+            status: 'backlog',
             createdAt: DateTime(2026),
             updatedAt: DateTime(2026),
           );
@@ -4182,7 +4215,7 @@ void main() {
             ticketId: 'AIO-251',
             type: TicketType.story,
             title: 'Counts parent',
-            status: TicketStatus.backlog,
+            status: 'backlog',
             parentId: grandparent.id,
             estimate: 30,
             createdAt: DateTime(2026),
@@ -4193,7 +4226,7 @@ void main() {
             ticketId: 'AIO-252',
             type: TicketType.task,
             title: 'Counts child 1',
-            status: TicketStatus.backlog,
+            status: 'backlog',
             parentId: parent.id,
             estimate: 15,
             timeSpent: 5,
@@ -4205,7 +4238,7 @@ void main() {
             ticketId: 'AIO-253',
             type: TicketType.task,
             title: 'Counts child 2',
-            status: TicketStatus.backlog,
+            status: 'backlog',
             parentId: parent.id,
             createdAt: DateTime(2026),
             updatedAt: DateTime(2026),
@@ -4256,7 +4289,7 @@ void main() {
       ticketId: 'AIO-10',
       type: TicketType.page,
       title: 'Doc page',
-      status: TicketStatus.backlog,
+      status: 'backlog',
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
     );
@@ -4265,7 +4298,7 @@ void main() {
       ticketId: 'AIO-11',
       type: TicketType.page,
       title: 'Child page',
-      status: TicketStatus.backlog,
+      status: 'backlog',
       parentId: page.id,
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
@@ -4275,7 +4308,7 @@ void main() {
       ticketId: 'AIO-12',
       type: TicketType.task,
       title: 'Linked task',
-      status: TicketStatus.backlog,
+      status: 'backlog',
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
     );
@@ -4284,7 +4317,7 @@ void main() {
       ticketId: 'AIO-13',
       type: TicketType.page,
       title: 'Backlinking page',
-      status: TicketStatus.backlog,
+      status: 'backlog',
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
     );
@@ -4293,7 +4326,7 @@ void main() {
       ticketId: 'AIO-14',
       type: TicketType.resource,
       title: 'A resource',
-      status: TicketStatus.backlog,
+      status: 'backlog',
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
     );
@@ -4537,7 +4570,7 @@ void main() {
           ticketId: 'AIO-15',
           type: TicketType.bug,
           title: 'A bug',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           createdAt: DateTime(2026),
           updatedAt: DateTime(2026),
         );
@@ -4546,7 +4579,7 @@ void main() {
           ticketId: 'AIO-16',
           type: TicketType.release,
           title: 'v1.0',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           createdAt: DateTime(2026),
           updatedAt: DateTime(2026),
         );
@@ -4574,7 +4607,7 @@ void main() {
           ticketId: 'AIO-15',
           type: TicketType.bug,
           title: 'A bug',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           createdAt: DateTime(2026),
           updatedAt: DateTime(2026),
         ),
@@ -4629,7 +4662,7 @@ void main() {
           ticketId: 'AIO-30',
           type: TicketType.epic,
           title: 'Rollup epic',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           createdAt: DateTime(2026),
           updatedAt: DateTime(2026),
         );
@@ -4638,7 +4671,7 @@ void main() {
           ticketId: 'AIO-31',
           type: TicketType.story,
           title: 'Rollup story',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           parentId: rollupEpic.id,
           createdAt: DateTime(2026),
           updatedAt: DateTime(2026),
@@ -4648,7 +4681,7 @@ void main() {
           ticketId: 'AIO-32',
           type: TicketType.task,
           title: 'Rollup task',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           parentId: rollupStory.id,
           createdAt: DateTime(2026),
           updatedAt: DateTime(2026),
@@ -4658,7 +4691,7 @@ void main() {
           ticketId: 'AIO-33',
           type: TicketType.knownGap,
           title: 'Grandchild gap',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           createdAt: DateTime(2026),
           updatedAt: DateTime(2026),
         );
@@ -4667,7 +4700,7 @@ void main() {
           ticketId: 'AIO-34',
           type: TicketType.knownGap,
           title: 'Unrelated gap',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           createdAt: DateTime(2026),
           updatedAt: DateTime(2026),
         );
@@ -4679,7 +4712,7 @@ void main() {
           ticketId: 'AIO-35',
           type: TicketType.task,
           title: 'Outside ticket',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           createdAt: DateTime(2026),
           updatedAt: DateTime(2026),
         );
@@ -4726,7 +4759,7 @@ void main() {
           ticketId: 'AIO-30',
           type: TicketType.epic,
           title: 'Rollup epic',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           createdAt: DateTime(2026),
           updatedAt: DateTime(2026),
         ),
@@ -4757,7 +4790,7 @@ void main() {
           ticketId: 'AIO-36',
           type: TicketType.epic,
           title: 'Sort epic',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           createdAt: DateTime(2026),
           updatedAt: DateTime(2026),
         );
@@ -4766,7 +4799,7 @@ void main() {
           ticketId: 'AIO-37',
           type: TicketType.story,
           title: 'Sort story',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           parentId: sortEpic.id,
           createdAt: DateTime(2026),
           updatedAt: DateTime(2026),
@@ -4777,7 +4810,7 @@ void main() {
           ticketId: 'AIO-38',
           type: TicketType.knownGap,
           title: 'Direct old',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           createdAt: DateTime(2026, 1, 1),
           updatedAt: DateTime(2026, 1, 1),
         );
@@ -4786,7 +4819,7 @@ void main() {
           ticketId: 'AIO-39',
           type: TicketType.openQuestion,
           title: 'Direct new',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           createdAt: DateTime(2026, 6, 1),
           updatedAt: DateTime(2026, 6, 1),
         );
@@ -4796,7 +4829,7 @@ void main() {
           ticketId: 'AIO-40',
           type: TicketType.knownGap,
           title: 'Rolled up old',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           createdAt: DateTime(2026, 2, 1),
           updatedAt: DateTime(2026, 2, 1),
         );
@@ -4805,7 +4838,7 @@ void main() {
           ticketId: 'AIO-41',
           type: TicketType.openQuestion,
           title: 'Rolled up new',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           createdAt: DateTime(2026, 5, 1),
           updatedAt: DateTime(2026, 5, 1),
         );
@@ -4866,7 +4899,7 @@ void main() {
           ticketId: 'AIO-36',
           type: TicketType.epic,
           title: 'Sort epic',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           createdAt: DateTime(2026),
           updatedAt: DateTime(2026),
         ),
@@ -4890,7 +4923,7 @@ void main() {
       ticketId: 'AIO-20',
       type: TicketType.task,
       title: 'Source ticket',
-      status: TicketStatus.backlog,
+      status: 'backlog',
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
     );
@@ -4899,7 +4932,7 @@ void main() {
       ticketId: 'AIO-21',
       type: TicketType.task,
       title: 'Target ticket',
-      status: TicketStatus.backlog,
+      status: 'backlog',
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
     );
@@ -5529,7 +5562,7 @@ void main() {
           ticketId: 'AIO-98',
           type: TicketType.story,
           title: 'A related story',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           createdAt: DateTime(2026),
           updatedAt: DateTime(2026),
         );
@@ -5720,7 +5753,7 @@ void main() {
             types: any(named: 'types'),
           ),
         ).thenAnswer(
-          (_) async => [taskChildUi.copyWith(status: TicketStatus.todo)],
+          (_) async => [taskChildUi.copyWith(status: 'todo')],
         );
         when(
           () => repository.updateTicketSddStage(
@@ -6370,7 +6403,7 @@ void main() {
       ticketId: 'AIO-30',
       type: TicketType.chat,
       title: 'Root chat',
-      status: TicketStatus.backlog,
+      status: 'backlog',
       parentId: ticket.id,
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
@@ -6380,7 +6413,7 @@ void main() {
       ticketId: 'AIO-31',
       type: TicketType.chat,
       title: 'Branch chat',
-      status: TicketStatus.backlog,
+      status: 'backlog',
       parentId: rootChat.id,
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
@@ -6390,7 +6423,7 @@ void main() {
       ticketId: 'AIO-32',
       type: TicketType.chat,
       title: 'Parentless chat',
-      status: TicketStatus.backlog,
+      status: 'backlog',
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
     );
@@ -6651,7 +6684,7 @@ void main() {
             when(
               () => repository.updateTicketStatus(
                 branchChat.id,
-                TicketStatus.done,
+                'done',
               ),
             ).thenAnswer((_) async {});
             when(
@@ -6672,7 +6705,7 @@ void main() {
             verify(
               () => repository.updateTicketStatus(
                 branchChat.id,
-                TicketStatus.done,
+                'done',
               ),
             ).called(1);
             final posted = verify(
@@ -6699,7 +6732,7 @@ void main() {
             when(
               () => repository.updateTicketStatus(
                 branchChat.id,
-                TicketStatus.done,
+                'done',
               ),
             ).thenAnswer((_) async {});
             when(
@@ -6916,7 +6949,7 @@ void main() {
       },
       build: buildFullCubit,
       act: (cubit) =>
-          cubit.changeTicketStatus(taskUnderStory, TicketStatus.inProgress),
+          cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
       verify: (_) {
         verifyNever(() => repository.updateTicketStatus(any(), any()));
         verifyNever(() => repository.createTicket(any()));
@@ -6938,26 +6971,26 @@ void main() {
         when(
           () => repository.updateTicketStatus(
             taskNoStory.id,
-            TicketStatus.inProgress,
+            'inProgress',
           ),
         ).thenAnswer((_) async {});
         when(() => repository.getTicketById(taskNoStory.id)).thenAnswer(
-          (_) async => taskNoStory.copyWith(status: TicketStatus.inProgress),
+          (_) async => taskNoStory.copyWith(status: 'inProgress'),
         );
       },
       act: (cubit) =>
-          cubit.changeTicketStatus(taskNoStory, TicketStatus.inProgress),
+          cubit.changeTicketStatus(taskNoStory, 'inProgress'),
       verify: (_) {
         verify(
           () => repository.updateTicketStatus(
             taskNoStory.id,
-            TicketStatus.inProgress,
+            'inProgress',
           ),
         ).called(1);
       },
       expect: () => [
         TicketDetailLoaded(
-          taskNoStory.copyWith(status: TicketStatus.inProgress),
+          taskNoStory.copyWith(status: 'inProgress'),
         ),
         // Queued, then started, then cleared once _runCodingExecution's
         // no-providerRegistry early-return runs — _refreshTaskDetailIfShowing
@@ -6966,15 +6999,15 @@ void main() {
         // _refreshInFlightBoardState's own Board-side refresh. Added for
         // `aion-arch/changes/parallel-work` post-/verify.
         TicketDetailLoaded(
-          taskNoStory.copyWith(status: TicketStatus.inProgress),
+          taskNoStory.copyWith(status: 'inProgress'),
           executionQueuePosition: 1,
         ),
         TicketDetailLoaded(
-          taskNoStory.copyWith(status: TicketStatus.inProgress),
+          taskNoStory.copyWith(status: 'inProgress'),
           isExecuting: true,
         ),
         TicketDetailLoaded(
-          taskNoStory.copyWith(status: TicketStatus.inProgress),
+          taskNoStory.copyWith(status: 'inProgress'),
         ),
       ],
     );
@@ -7032,7 +7065,7 @@ void main() {
           final id = invocation.positionalArguments[0] as String;
           if (id == storyForExecution.id) return storyForExecution;
           if (id == taskUnderStory.id) {
-            return taskUnderStory.copyWith(status: TicketStatus.inProgress);
+            return taskUnderStory.copyWith(status: 'inProgress');
           }
           return dummyExecutionChatTicket;
         });
@@ -7055,13 +7088,13 @@ void main() {
         ).thenAnswer((_) async => AutomationConfidence.auto);
       },
       act: (cubit) =>
-          cubit.changeTicketStatus(taskUnderStory, TicketStatus.inProgress),
+          cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
       wait: const Duration(milliseconds: 50),
       verify: (_) {
         verify(
           () => repository.updateTicketStatus(
             taskUnderStory.id,
-            TicketStatus.inProgress,
+            'inProgress',
           ),
         ).called(1);
         verify(() => repository.createTicket(any())).called(1);
@@ -7070,7 +7103,7 @@ void main() {
         verify(
           () => repository.updateTicketStatus(
             taskUnderStory.id,
-            TicketStatus.inReview,
+            'inReview',
           ),
         ).called(1);
       },
@@ -7122,7 +7155,7 @@ void main() {
           final id = invocation.positionalArguments[0] as String;
           if (id == storyForExecution.id) return storyForExecution;
           if (id == taskUnderStory.id) {
-            return taskUnderStory.copyWith(status: TicketStatus.inProgress);
+            return taskUnderStory.copyWith(status: 'inProgress');
           }
           return dummyExecutionChatTicket;
         });
@@ -7143,7 +7176,7 @@ void main() {
         );
       },
       act: (cubit) =>
-          cubit.changeTicketStatus(taskUnderStory, TicketStatus.inProgress),
+          cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
       wait: const Duration(milliseconds: 50),
       verify: (_) {
         verify(
@@ -7207,7 +7240,7 @@ void main() {
           final id = invocation.positionalArguments[0] as String;
           if (id == storyForExecution.id) return storyForExecution;
           if (id == taskUnderStory.id) {
-            return taskUnderStory.copyWith(status: TicketStatus.inProgress);
+            return taskUnderStory.copyWith(status: 'inProgress');
           }
           return dummyExecutionChatTicket;
         });
@@ -7225,7 +7258,7 @@ void main() {
         );
       },
       act: (cubit) =>
-          cubit.changeTicketStatus(taskUnderStory, TicketStatus.inProgress),
+          cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
       wait: const Duration(milliseconds: 50),
       verify: (_) {
         // Distinguished from the verify turn's own prompt (also absent
@@ -7290,7 +7323,7 @@ void main() {
           final id = invocation.positionalArguments[0] as String;
           if (id == storyForExecution.id) return storyForExecution;
           if (id == taskUnderStory.id) {
-            return taskUnderStory.copyWith(status: TicketStatus.inProgress);
+            return taskUnderStory.copyWith(status: 'inProgress');
           }
           return dummyExecutionChatTicket;
         });
@@ -7311,13 +7344,13 @@ void main() {
         ).thenAnswer((_) async => AutomationConfidence.gated);
       },
       act: (cubit) =>
-          cubit.changeTicketStatus(taskUnderStory, TicketStatus.inProgress),
+          cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
       wait: const Duration(milliseconds: 50),
       verify: (_) {
         verifyNever(
           () => repository.updateTicketStatus(
             taskUnderStory.id,
-            TicketStatus.inReview,
+            'inReview',
           ),
         );
       },
@@ -7347,9 +7380,9 @@ void main() {
         ) async {
           final id = invocation.positionalArguments[0] as String;
           if (id == taskNoStory.id) {
-            return taskNoStory.copyWith(status: TicketStatus.inProgress);
+            return taskNoStory.copyWith(status: 'inProgress');
           }
-          return otherTask.copyWith(status: TicketStatus.inProgress);
+          return otherTask.copyWith(status: 'inProgress');
         });
         when(
           () => repository.updateTicketStatus(any(), any()),
@@ -7374,8 +7407,8 @@ void main() {
         });
       },
       act: (cubit) async {
-        await cubit.changeTicketStatus(taskNoStory, TicketStatus.inProgress);
-        await cubit.changeTicketStatus(otherTask, TicketStatus.inProgress);
+        await cubit.changeTicketStatus(taskNoStory, 'inProgress');
+        await cubit.changeTicketStatus(otherTask, 'inProgress');
       },
       verify: (_) {
         // Only the first Task's chat has been spawned — the second is
@@ -7401,25 +7434,25 @@ void main() {
         when(
           () => repository.updateTicketStatus(
             taskUnderStoryNoDesign.id,
-            TicketStatus.inProgress,
+            'inProgress',
           ),
         ).thenAnswer((_) async {});
         when(
           () => repository.getTicketById(taskUnderStoryNoDesign.id),
         ).thenAnswer(
           (_) async =>
-              taskUnderStoryNoDesign.copyWith(status: TicketStatus.inProgress),
+              taskUnderStoryNoDesign.copyWith(status: 'inProgress'),
         );
       },
       act: (cubit) => cubit.changeTicketStatus(
         taskUnderStoryNoDesign,
-        TicketStatus.inProgress,
+        'inProgress',
       ),
       verify: (_) {
         verify(
           () => repository.updateTicketStatus(
             taskUnderStoryNoDesign.id,
-            TicketStatus.inProgress,
+            'inProgress',
           ),
         ).called(1);
         // _designSyncApproved's own lookup (the Story's chat children) is
@@ -7433,21 +7466,21 @@ void main() {
       },
       expect: () => [
         TicketDetailLoaded(
-          taskUnderStoryNoDesign.copyWith(status: TicketStatus.inProgress),
+          taskUnderStoryNoDesign.copyWith(status: 'inProgress'),
         ),
         // See the "no governing Story" case above for why these two extra
         // emissions are expected — _refreshTaskDetailIfShowing, added for
         // `aion-arch/changes/parallel-work` post-/verify.
         TicketDetailLoaded(
-          taskUnderStoryNoDesign.copyWith(status: TicketStatus.inProgress),
+          taskUnderStoryNoDesign.copyWith(status: 'inProgress'),
           executionQueuePosition: 1,
         ),
         TicketDetailLoaded(
-          taskUnderStoryNoDesign.copyWith(status: TicketStatus.inProgress),
+          taskUnderStoryNoDesign.copyWith(status: 'inProgress'),
           isExecuting: true,
         ),
         TicketDetailLoaded(
-          taskUnderStoryNoDesign.copyWith(status: TicketStatus.inProgress),
+          taskUnderStoryNoDesign.copyWith(status: 'inProgress'),
         ),
       ],
     );
@@ -7463,20 +7496,20 @@ void main() {
         when(
           () => repository.updateTicketStatus(
             taskUnderEpic.id,
-            TicketStatus.inProgress,
+            'inProgress',
           ),
         ).thenAnswer((_) async {});
         when(() => repository.getTicketById(taskUnderEpic.id)).thenAnswer(
-          (_) async => taskUnderEpic.copyWith(status: TicketStatus.inProgress),
+          (_) async => taskUnderEpic.copyWith(status: 'inProgress'),
         );
       },
       act: (cubit) =>
-          cubit.changeTicketStatus(taskUnderEpic, TicketStatus.inProgress),
+          cubit.changeTicketStatus(taskUnderEpic, 'inProgress'),
       verify: (_) {
         verify(
           () => repository.updateTicketStatus(
             taskUnderEpic.id,
-            TicketStatus.inProgress,
+            'inProgress',
           ),
         ).called(1);
         // Never walks past the Epic looking for sibling Tasks/a Story.
@@ -7489,21 +7522,21 @@ void main() {
       },
       expect: () => [
         TicketDetailLoaded(
-          taskUnderEpic.copyWith(status: TicketStatus.inProgress),
+          taskUnderEpic.copyWith(status: 'inProgress'),
         ),
         // See the "no governing Story" case above for why these two extra
         // emissions are expected — _refreshTaskDetailIfShowing, added for
         // `aion-arch/changes/parallel-work` post-/verify.
         TicketDetailLoaded(
-          taskUnderEpic.copyWith(status: TicketStatus.inProgress),
+          taskUnderEpic.copyWith(status: 'inProgress'),
           executionQueuePosition: 1,
         ),
         TicketDetailLoaded(
-          taskUnderEpic.copyWith(status: TicketStatus.inProgress),
+          taskUnderEpic.copyWith(status: 'inProgress'),
           isExecuting: true,
         ),
         TicketDetailLoaded(
-          taskUnderEpic.copyWith(status: TicketStatus.inProgress),
+          taskUnderEpic.copyWith(status: 'inProgress'),
         ),
       ],
     );
@@ -7553,7 +7586,7 @@ void main() {
           final id = invocation.positionalArguments[0] as String;
           if (id == storyForExecution.id) return storyForExecution;
           if (id == taskUnderStory.id) {
-            return taskUnderStory.copyWith(status: TicketStatus.inProgress);
+            return taskUnderStory.copyWith(status: 'inProgress');
           }
           return dummyExecutionChatTicket;
         });
@@ -7582,13 +7615,13 @@ void main() {
         ).thenAnswer((_) async => AutomationConfidence.gated);
       },
       act: (cubit) =>
-          cubit.changeTicketStatus(taskUnderStory, TicketStatus.inProgress),
+          cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
       wait: const Duration(milliseconds: 50),
       verify: (_) {
         verifyNever(
           () => repository.updateTicketStatus(
             taskUnderStory.id,
-            TicketStatus.inReview,
+            'inReview',
           ),
         );
       },
@@ -7639,7 +7672,7 @@ void main() {
           final id = invocation.positionalArguments[0] as String;
           if (id == storyForExecution.id) return storyForExecution;
           if (id == taskUnderStory.id) {
-            return taskUnderStory.copyWith(status: TicketStatus.inProgress);
+            return taskUnderStory.copyWith(status: 'inProgress');
           }
           return dummyExecutionChatTicket;
         });
@@ -7665,29 +7698,29 @@ void main() {
         ).thenAnswer((_) async => AutomationConfidence.auto);
       },
       act: (cubit) =>
-          cubit.changeTicketStatus(taskUnderStory, TicketStatus.inProgress),
+          cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
       wait: const Duration(milliseconds: 50),
       verify: (_) {
         verifyNever(
           () => repository.updateTicketStatus(
             taskUnderStory.id,
-            TicketStatus.inReview,
+            'inReview',
           ),
         );
       },
       expect: () => [
         TicketDetailLoaded(
-          taskUnderStory.copyWith(status: TicketStatus.inProgress),
+          taskUnderStory.copyWith(status: 'inProgress'),
         ),
         // See the "no governing Story" case above for why these two extra
         // emissions are expected — _refreshTaskDetailIfShowing, added for
         // `aion-arch/changes/parallel-work` post-/verify.
         TicketDetailLoaded(
-          taskUnderStory.copyWith(status: TicketStatus.inProgress),
+          taskUnderStory.copyWith(status: 'inProgress'),
           executionQueuePosition: 1,
         ),
         TicketDetailLoaded(
-          taskUnderStory.copyWith(status: TicketStatus.inProgress),
+          taskUnderStory.copyWith(status: 'inProgress'),
           isExecuting: true,
         ),
         const TicketsError(
@@ -7702,7 +7735,7 @@ void main() {
         // (each with a bare AgentDoneEvent() reporting no usage) — the
         // running total starts at 0 the moment any turn completes.
         TicketDetailLoaded(
-          taskUnderStory.copyWith(status: TicketStatus.inProgress),
+          taskUnderStory.copyWith(status: 'inProgress'),
           executionAwaitingReview: true,
           executionTokenTotal: 0,
         ),
@@ -7728,10 +7761,10 @@ void main() {
         ) async {
           final id = invocation.positionalArguments[0] as String;
           if (id == taskNoStory.id) {
-            return taskNoStory.copyWith(status: TicketStatus.inProgress);
+            return taskNoStory.copyWith(status: 'inProgress');
           }
           if (id == otherTask.id) {
-            return otherTask.copyWith(status: TicketStatus.inProgress);
+            return otherTask.copyWith(status: 'inProgress');
           }
           return dummyExecutionChatTicket;
         });
@@ -7762,8 +7795,8 @@ void main() {
         );
       },
       act: (cubit) async {
-        await cubit.changeTicketStatus(taskNoStory, TicketStatus.inProgress);
-        await cubit.changeTicketStatus(otherTask, TicketStatus.inProgress);
+        await cubit.changeTicketStatus(taskNoStory, 'inProgress');
+        await cubit.changeTicketStatus(otherTask, 'inProgress');
         // Let the first run's fire-and-forget completion (which triggers
         // _dequeueNext) settle before asserting on the second run.
         await Future<void>.delayed(const Duration(milliseconds: 50));
@@ -7834,13 +7867,13 @@ void main() {
         when(
           () => repository.updateTicketStatus(
             taskNoStory.id,
-            TicketStatus.inProgress,
+            'inProgress',
           ),
         ).thenAnswer((_) async {});
         when(
           () => repository.updateTicketStatus(
             otherTask.id,
-            TicketStatus.inProgress,
+            'inProgress',
           ),
         ).thenAnswer((_) async {});
         // Each Task's own execution chat is distinguishable by which
@@ -7852,7 +7885,7 @@ void main() {
           ticketId: 'AIO-90',
           type: TicketType.chat,
           title: 'Coding Execution — ${taskNoStory.title}',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           parentId: taskNoStory.id,
           createdAt: DateTime(2026),
           updatedAt: DateTime(2026),
@@ -7862,7 +7895,7 @@ void main() {
           ticketId: 'AIO-91',
           type: TicketType.chat,
           title: 'Coding Execution — ${otherTask.title}',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           parentId: otherTask.id,
           createdAt: DateTime(2026),
           updatedAt: DateTime(2026),
@@ -7893,10 +7926,10 @@ void main() {
         ) async {
           final id = invocation.positionalArguments[0] as String;
           if (id == taskNoStory.id) {
-            return taskNoStory.copyWith(status: TicketStatus.inProgress);
+            return taskNoStory.copyWith(status: 'inProgress');
           }
           if (id == otherTask.id) {
-            return otherTask.copyWith(status: TicketStatus.inProgress);
+            return otherTask.copyWith(status: 'inProgress');
           }
           if (task1ChatCreated && !task2ChatCreated) return execChatTask1;
           return execChatTask2;
@@ -7909,7 +7942,8 @@ void main() {
             priorities: any(named: 'priorities'),
             sort: any(named: 'sort'),
             limit: any(named: 'limit'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).thenAnswer(
           (_) async => TicketSearchPage(
             tickets: [taskNoStory, otherTask],
@@ -7932,8 +7966,8 @@ void main() {
         // — it never re-emits TicketDetailLoaded, so _runCodingExecution's
         // own wasShowingTaskDetail re-check (which would otherwise clobber
         // the TicketsLoaded state established below) never fires here.
-        await cubit.updateTicketStatus(taskNoStory.id, TicketStatus.inProgress);
-        await cubit.updateTicketStatus(otherTask.id, TicketStatus.inProgress);
+        await cubit.updateTicketStatus(taskNoStory.id, 'inProgress');
+        await cubit.updateTicketStatus(otherTask.id, 'inProgress');
         await cubit.searchTickets();
 
         // Resolves taskNoStory's paused implement-turn call — the run
@@ -7984,30 +8018,30 @@ void main() {
           when(
             () => repository.updateTicketStatus(
               otherTask.id,
-              TicketStatus.inProgress,
+              'inProgress',
             ),
           ).thenAnswer((_) async {});
           when(() => repository.getTicketById(otherTask.id)).thenAnswer(
-            (_) async => otherTask.copyWith(status: TicketStatus.inProgress),
+            (_) async => otherTask.copyWith(status: 'inProgress'),
           );
         },
         act: (cubit) =>
-            cubit.changeTicketStatus(otherTask, TicketStatus.inProgress),
+            cubit.changeTicketStatus(otherTask, 'inProgress'),
         wait: const Duration(milliseconds: 50),
         expect: () => [
           TicketDetailLoaded(
-            otherTask.copyWith(status: TicketStatus.inProgress),
+            otherTask.copyWith(status: 'inProgress'),
           ),
           TicketDetailLoaded(
-            otherTask.copyWith(status: TicketStatus.inProgress),
+            otherTask.copyWith(status: 'inProgress'),
             executionQueuePosition: 1,
           ),
           TicketDetailLoaded(
-            otherTask.copyWith(status: TicketStatus.inProgress),
+            otherTask.copyWith(status: 'inProgress'),
             isExecuting: true,
           ),
           TicketDetailLoaded(
-            otherTask.copyWith(status: TicketStatus.inProgress),
+            otherTask.copyWith(status: 'inProgress'),
           ),
         ],
       );
@@ -8197,41 +8231,41 @@ void main() {
         when(
           () => repository.updateTicketStatus(
             bugNoStory.id,
-            TicketStatus.inProgress,
+            'inProgress',
           ),
         ).thenAnswer((_) async {});
         when(() => repository.getTicketById(bugNoStory.id)).thenAnswer(
-          (_) async => bugNoStory.copyWith(status: TicketStatus.inProgress),
+          (_) async => bugNoStory.copyWith(status: 'inProgress'),
         );
       },
       act: (cubit) =>
-          cubit.changeTicketStatus(bugNoStory, TicketStatus.inProgress),
+          cubit.changeTicketStatus(bugNoStory, 'inProgress'),
       verify: (_) {
         verify(
           () => repository.updateTicketStatus(
             bugNoStory.id,
-            TicketStatus.inProgress,
+            'inProgress',
           ),
         ).called(1);
       },
       expect: () => [
         TicketDetailLoaded(
-          bugNoStory.copyWith(status: TicketStatus.inProgress),
+          bugNoStory.copyWith(status: 'inProgress'),
         ),
         // See the Task-parity case in the coding-execution trigger group
         // above for why these two extra emissions are expected —
         // _refreshTaskDetailIfShowing, added for
         // `aion-arch/changes/parallel-work` post-/verify.
         TicketDetailLoaded(
-          bugNoStory.copyWith(status: TicketStatus.inProgress),
+          bugNoStory.copyWith(status: 'inProgress'),
           executionQueuePosition: 1,
         ),
         TicketDetailLoaded(
-          bugNoStory.copyWith(status: TicketStatus.inProgress),
+          bugNoStory.copyWith(status: 'inProgress'),
           isExecuting: true,
         ),
         TicketDetailLoaded(
-          bugNoStory.copyWith(status: TicketStatus.inProgress),
+          bugNoStory.copyWith(status: 'inProgress'),
         ),
       ],
     );
@@ -8277,7 +8311,7 @@ void main() {
         ).thenAnswer((_) async => [designSyncChatForExecution]);
       },
       act: (cubit) =>
-          cubit.changeTicketStatus(bugUnderStory, TicketStatus.inProgress),
+          cubit.changeTicketStatus(bugUnderStory, 'inProgress'),
       verify: (_) {
         verifyNever(() => repository.updateTicketStatus(any(), any()));
       },
@@ -8326,7 +8360,7 @@ void main() {
         ) async {
           final id = invocation.positionalArguments[0] as String;
           if (id == taskNoStory.id) {
-            return taskNoStory.copyWith(status: TicketStatus.inProgress);
+            return taskNoStory.copyWith(status: 'inProgress');
           }
           return dummyExecutionChatTicket;
         });
@@ -8402,7 +8436,7 @@ void main() {
           );
         },
         act: (cubit) =>
-            cubit.changeTicketStatus(taskNoStory, TicketStatus.inProgress),
+            cubit.changeTicketStatus(taskNoStory, 'inProgress'),
         wait: const Duration(milliseconds: 50),
         verify: (_) {
           verify(() => gitClient.createWorktree(any(), any(), any())).called(1);
@@ -8444,7 +8478,7 @@ void main() {
           });
         },
         act: (cubit) =>
-            cubit.changeTicketStatus(taskNoStory, TicketStatus.inProgress),
+            cubit.changeTicketStatus(taskNoStory, 'inProgress'),
         wait: const Duration(milliseconds: 50),
         verify: (bloc) {
           final state = bloc.state;
@@ -8464,7 +8498,7 @@ void main() {
           when(() => agentClient.run(any())).thenThrow(Exception('boom'));
         },
         act: (cubit) =>
-            cubit.changeTicketStatus(taskNoStory, TicketStatus.inProgress),
+            cubit.changeTicketStatus(taskNoStory, 'inProgress'),
         wait: const Duration(milliseconds: 50),
         verify: (_) {
           verify(() => gitClient.createWorktree(any(), any(), any())).called(1);
@@ -8498,7 +8532,7 @@ void main() {
           ).thenAnswer((_) async => AutomationConfidence.auto);
         },
         act: (cubit) =>
-            cubit.changeTicketStatus(taskNoStory, TicketStatus.inProgress),
+            cubit.changeTicketStatus(taskNoStory, 'inProgress'),
         wait: const Duration(milliseconds: 50),
         verify: (_) {
           // 1 initial attempt + 2 automatic retries (the cap) = 3
@@ -8535,7 +8569,7 @@ void main() {
           ).thenAnswer((_) async => AutomationConfidence.gated);
         },
         act: (cubit) =>
-            cubit.changeTicketStatus(taskNoStory, TicketStatus.inProgress),
+            cubit.changeTicketStatus(taskNoStory, 'inProgress'),
         wait: const Duration(milliseconds: 50),
         verify: (_) {
           // 2 model turns: implement, then agentic verify (which fails,
@@ -8554,17 +8588,17 @@ void main() {
         },
         expect: () => [
           TicketDetailLoaded(
-            taskNoStory.copyWith(status: TicketStatus.inProgress),
+            taskNoStory.copyWith(status: 'inProgress'),
           ),
           // See the "no governing Story" trigger case above for why these
           // two extra emissions are expected — _refreshTaskDetailIfShowing,
           // added for `aion-arch/changes/parallel-work` post-/verify.
           TicketDetailLoaded(
-            taskNoStory.copyWith(status: TicketStatus.inProgress),
+            taskNoStory.copyWith(status: 'inProgress'),
             executionQueuePosition: 1,
           ),
           TicketDetailLoaded(
-            taskNoStory.copyWith(status: TicketStatus.inProgress),
+            taskNoStory.copyWith(status: 'inProgress'),
             isExecuting: true,
           ),
           // The `gated` toast.
@@ -8581,7 +8615,7 @@ void main() {
           // reporting no usage) before the verify reply was found to
           // fail.
           TicketDetailLoaded(
-            taskNoStory.copyWith(status: TicketStatus.inProgress),
+            taskNoStory.copyWith(status: 'inProgress'),
             executionFailureReason: 'Execution failed verification:\n\nerror Y',
             executionCanRetry: true,
             executionTokenTotal: 0,
@@ -8607,7 +8641,7 @@ void main() {
           ).thenAnswer((_) async => AutomationConfidence.manual);
         },
         act: (cubit) =>
-            cubit.changeTicketStatus(taskNoStory, TicketStatus.inProgress),
+            cubit.changeTicketStatus(taskNoStory, 'inProgress'),
         wait: const Duration(milliseconds: 50),
         verify: (_) {
           // 2 model turns: implement, then agentic verify.
@@ -8625,17 +8659,17 @@ void main() {
         },
         expect: () => [
           TicketDetailLoaded(
-            taskNoStory.copyWith(status: TicketStatus.inProgress),
+            taskNoStory.copyWith(status: 'inProgress'),
           ),
           // See the "no governing Story" trigger case above for why these
           // two extra emissions are expected — _refreshTaskDetailIfShowing,
           // added for `aion-arch/changes/parallel-work` post-/verify.
           TicketDetailLoaded(
-            taskNoStory.copyWith(status: TicketStatus.inProgress),
+            taskNoStory.copyWith(status: 'inProgress'),
             executionQueuePosition: 1,
           ),
           TicketDetailLoaded(
-            taskNoStory.copyWith(status: TicketStatus.inProgress),
+            taskNoStory.copyWith(status: 'inProgress'),
             isExecuting: true,
           ),
           // Unlike the `gated` case above, nothing here interrupts state
@@ -8645,7 +8679,7 @@ void main() {
           // _refreshTaskDetailIfShowing emits once more for it before the
           // post-run refresh below.
           TicketDetailLoaded(
-            taskNoStory.copyWith(status: TicketStatus.inProgress),
+            taskNoStory.copyWith(status: 'inProgress'),
           ),
           // No toast for `manual` — straight to the post-run refresh. No
           // intervening TicketsLoading — getTicketById's same-id
@@ -8656,7 +8690,7 @@ void main() {
           // reporting no usage) before the verify reply was found to
           // fail.
           TicketDetailLoaded(
-            taskNoStory.copyWith(status: TicketStatus.inProgress),
+            taskNoStory.copyWith(status: 'inProgress'),
             executionFailureReason: 'Execution failed verification:\n\nerror Z',
             executionCanRetry: true,
             executionTokenTotal: 0,
@@ -8690,7 +8724,7 @@ void main() {
         expect: () => [
           const TicketsLoading(),
           TicketDetailLoaded(
-            taskNoStory.copyWith(status: TicketStatus.inProgress),
+            taskNoStory.copyWith(status: 'inProgress'),
             executionFailureReason:
                 'Execution failed verification:\n\nerror output',
             executionCanRetry: true,
@@ -8714,7 +8748,7 @@ void main() {
         expect: () => [
           const TicketsLoading(),
           TicketDetailLoaded(
-            taskNoStory.copyWith(status: TicketStatus.inProgress),
+            taskNoStory.copyWith(status: 'inProgress'),
             executionFailureReason:
                 'Execution ended without a clear result — retry to try again.',
             executionCanRetry: true,
@@ -8756,7 +8790,7 @@ void main() {
         expect: () => [
           const TicketsLoading(),
           TicketDetailLoaded(
-            taskNoStory.copyWith(status: TicketStatus.inProgress),
+            taskNoStory.copyWith(status: 'inProgress'),
             executionAwaitingReview: true,
           ),
         ],
@@ -8813,7 +8847,7 @@ void main() {
           );
         },
         act: (cubit) =>
-            cubit.changeTicketStatus(taskNoStory, TicketStatus.inProgress),
+            cubit.changeTicketStatus(taskNoStory, 'inProgress'),
         wait: const Duration(milliseconds: 50),
         verify: (_) {
           verify(() => repository.createTicket(any())).called(1);
@@ -8931,7 +8965,7 @@ void main() {
             ticketId: 'AIO-98',
             type: TicketType.chat,
             title: 'Coding Execution — ${taskUnderStory.title} (continued)',
-            status: TicketStatus.backlog,
+            status: 'backlog',
             parentId: taskUnderStory.id,
             createdAt: DateTime(2026, 1, 2),
             updatedAt: DateTime(2026, 1, 2),
@@ -8960,7 +8994,7 @@ void main() {
         expect: () => [
           const TicketsLoading(),
           TicketDetailLoaded(
-            taskNoStory.copyWith(status: TicketStatus.inProgress),
+            taskNoStory.copyWith(status: 'inProgress'),
             executionAwaitingReview: true,
           ),
         ],
@@ -9137,7 +9171,7 @@ void main() {
       ticketId: 'AIO-40',
       type: TicketType.story,
       title: 'Target story',
-      status: TicketStatus.backlog,
+      status: 'backlog',
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
     );
@@ -9274,7 +9308,7 @@ void main() {
       ticketId: 'AIO-41',
       type: TicketType.epic,
       title: 'Target epic',
-      status: TicketStatus.backlog,
+      status: 'backlog',
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
     );
@@ -9527,7 +9561,8 @@ void main() {
         sort: any(named: 'sort'),
         limit: any(named: 'limit'),
         offset: any(named: 'offset'),
-      );
+      statusSortOrder: any(named: 'statusSortOrder'),
+            );
 
       blocTest<TicketsCubit, TicketsState>(
         'updateTicketStatus live-refreshes an open Story detail screen '
@@ -9537,12 +9572,12 @@ void main() {
         '`state` by the time the refresh check runs',
         setUp: () {
           final taskChildNowDone = taskChildNotDone.copyWith(
-            status: TicketStatus.done,
+            status: 'done',
           );
           when(
             () => repository.updateTicketStatus(
               taskChildNotDone.id,
-              TicketStatus.done,
+              'done',
             ),
           ).thenAnswer((_) async {});
           when(
@@ -9564,7 +9599,7 @@ void main() {
         build: () => TicketsCubit(repository),
         seed: () => TicketDetailLoaded(storyProposed),
         act: (cubit) =>
-            cubit.updateTicketStatus(taskChildNotDone.id, TicketStatus.done),
+            cubit.updateTicketStatus(taskChildNotDone.id, 'done'),
         wait: const Duration(milliseconds: 10),
         expect: () => [
           const TicketStatusUpdating([]),
@@ -9582,9 +9617,9 @@ void main() {
         'updateTicketStatus live-refreshes the same ticket\'s own '
         'already-open detail screen',
         setUp: () {
-          final done = ticket.copyWith(status: TicketStatus.done);
+          final done = ticket.copyWith(status: 'done');
           when(
-            () => repository.updateTicketStatus(ticket.id, TicketStatus.done),
+            () => repository.updateTicketStatus(ticket.id, 'done'),
           ).thenAnswer((_) async {});
           when(
             () => repository.getTicketById(ticket.id),
@@ -9595,13 +9630,13 @@ void main() {
         },
         build: () => TicketsCubit(repository),
         seed: () => TicketDetailLoaded(ticket),
-        act: (cubit) => cubit.updateTicketStatus(ticket.id, TicketStatus.done),
+        act: (cubit) => cubit.updateTicketStatus(ticket.id, 'done'),
         wait: const Duration(milliseconds: 10),
         expect: () => [
           const TicketStatusUpdating([]),
           const TicketStatusUpdated([], hasMore: false),
           const TicketsLoading(),
-          TicketDetailLoaded(ticket.copyWith(status: TicketStatus.done)),
+          TicketDetailLoaded(ticket.copyWith(status: 'done')),
         ],
       );
 
@@ -9611,17 +9646,17 @@ void main() {
         setUp: () {
           when(
             () =>
-                repository.updateTicketStatus(otherTask.id, TicketStatus.done),
+                repository.updateTicketStatus(otherTask.id, 'done'),
           ).thenAnswer((_) async {});
           when(
             () => repository.getTicketById(otherTask.id),
-          ).thenAnswer((_) async => otherTask.copyWith(status: TicketStatus.done));
+          ).thenAnswer((_) async => otherTask.copyWith(status: 'done'));
           when(searchAnyArgs).thenAnswer(
             (_) async => TicketSearchPage(tickets: const [], hasMore: false),
           );
         },
         build: () => TicketsCubit(repository),
-        act: (cubit) => cubit.updateTicketStatus(otherTask.id, TicketStatus.done),
+        act: (cubit) => cubit.updateTicketStatus(otherTask.id, 'done'),
         wait: const Duration(milliseconds: 10),
         verify: (_) {
           verifyNever(
@@ -9644,11 +9679,11 @@ void main() {
         setUp: () {
           when(
             () =>
-                repository.updateTicketStatus(otherTask.id, TicketStatus.done),
+                repository.updateTicketStatus(otherTask.id, 'done'),
           ).thenAnswer((_) async {});
           when(
             () => repository.getTicketById(otherTask.id),
-          ).thenAnswer((_) async => otherTask.copyWith(status: TicketStatus.done));
+          ).thenAnswer((_) async => otherTask.copyWith(status: 'done'));
           when(searchAnyArgs).thenAnswer(
             (_) async => TicketSearchPage(tickets: const [], hasMore: false),
           );
@@ -9661,7 +9696,7 @@ void main() {
         },
         build: () => TicketsCubit(repository),
         seed: () => TicketDetailLoaded(storyProposed),
-        act: (cubit) => cubit.updateTicketStatus(otherTask.id, TicketStatus.done),
+        act: (cubit) => cubit.updateTicketStatus(otherTask.id, 'done'),
         wait: const Duration(milliseconds: 10),
         expect: () => [
           const TicketStatusUpdating([]),
@@ -9675,18 +9710,18 @@ void main() {
         setUp: () {
           when(
             () =>
-                repository.updateTicketStatus(otherTask.id, TicketStatus.done),
+                repository.updateTicketStatus(otherTask.id, 'done'),
           ).thenAnswer((_) async {});
           when(
             () => repository.getTicketById(otherTask.id),
-          ).thenAnswer((_) async => otherTask.copyWith(status: TicketStatus.done));
+          ).thenAnswer((_) async => otherTask.copyWith(status: 'done'));
           when(searchAnyArgs).thenAnswer(
             (_) async => TicketSearchPage(tickets: const [], hasMore: false),
           );
         },
         build: () => TicketsCubit(repository),
         seed: () => TicketDetailLoaded(ticket), // ticket.type == task
-        act: (cubit) => cubit.updateTicketStatus(otherTask.id, TicketStatus.done),
+        act: (cubit) => cubit.updateTicketStatus(otherTask.id, 'done'),
         wait: const Duration(milliseconds: 10),
         verify: (_) {
           verifyNever(
@@ -9974,7 +10009,7 @@ void main() {
           final id = invocation.positionalArguments[0] as String;
           if (id == storyForExecution.id) return storyForExecution;
           if (id == taskUnderStory.id) {
-            return taskUnderStory.copyWith(status: TicketStatus.inProgress);
+            return taskUnderStory.copyWith(status: 'inProgress');
           }
           return dummyExecutionChatTicket;
         });
@@ -9994,7 +10029,7 @@ void main() {
       },
       build: buildCubit,
       act: (cubit) =>
-          cubit.changeTicketStatus(taskUnderStory, TicketStatus.inProgress),
+          cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
       wait: const Duration(milliseconds: 50),
       verify: (_) {
         // Resolved three times: once by _resolveExecutionChat's cap check
@@ -10028,7 +10063,7 @@ void main() {
       ticketId: 'AIO-30',
       type: TicketType.task,
       title: 'Blocker task',
-      status: TicketStatus.todo,
+      status: 'todo',
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
     );
@@ -10037,7 +10072,7 @@ void main() {
       ticketId: 'AIO-31',
       type: TicketType.task,
       title: 'Blocked task',
-      status: TicketStatus.todo,
+      status: 'todo',
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
     );
@@ -10059,7 +10094,8 @@ void main() {
           sort: any(named: 'sort'),
           limit: any(named: 'limit'),
           offset: any(named: 'offset'),
-        ),
+        statusSortOrder: any(named: 'statusSortOrder'),
+            ),
       ).thenAnswer(
         (_) async => TicketSearchPage(tickets: tickets, hasMore: false),
       );
@@ -10103,7 +10139,7 @@ void main() {
       'blockedTicketIds',
       setUp: () {
         stubSearch([
-          blockerTicket.copyWith(status: TicketStatus.done),
+          blockerTicket.copyWith(status: 'done'),
           blockedTicket,
         ]);
         when(
@@ -10176,7 +10212,7 @@ void main() {
         // recomputed again until the next TicketsLoaded-producing call.
         // This mutable flag lets the searchTickets stub reflect the
         // persisted status change on that next call.
-        var blockerStatus = TicketStatus.todo;
+        var blockerStatus = 'todo';
         when(
           () => repository.searchTickets(
             query: any(named: 'query'),
@@ -10186,7 +10222,8 @@ void main() {
             sort: any(named: 'sort'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).thenAnswer(
           (_) async => TicketSearchPage(
             tickets: [
@@ -10214,10 +10251,10 @@ void main() {
         when(
           () => repository.updateTicketStatus(
             blockerTicket.id,
-            TicketStatus.done,
+            'done',
           ),
         ).thenAnswer((_) async {
-          blockerStatus = TicketStatus.done;
+          blockerStatus = 'done';
         });
         when(() => repository.getTicketById(blockerTicket.id)).thenAnswer(
           (_) async => blockerTicket.copyWith(status: blockerStatus),
@@ -10226,7 +10263,7 @@ void main() {
       build: buildCubit,
       act: (cubit) async {
         await cubit.searchTickets();
-        await cubit.updateTicketStatus(blockerTicket.id, TicketStatus.done);
+        await cubit.updateTicketStatus(blockerTicket.id, 'done');
         await cubit.searchTickets();
       },
       expect: () => [
@@ -10259,7 +10296,7 @@ void main() {
       ticketId: 'AIO-50',
       type: TicketType.epic,
       title: 'Blocked epic',
-      status: TicketStatus.todo,
+      status: 'todo',
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
     );
@@ -10268,7 +10305,7 @@ void main() {
       ticketId: 'AIO-51',
       type: TicketType.task,
       title: 'Gate blocker',
-      status: TicketStatus.todo,
+      status: 'todo',
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
     );
@@ -10289,7 +10326,8 @@ void main() {
           priorities: any(named: 'priorities'),
           sort: any(named: 'sort'),
           limit: any(named: 'limit'),
-        ),
+        statusSortOrder: any(named: 'statusSortOrder'),
+            ),
       ).thenAnswer(
         (_) async => const TicketSearchPage(tickets: [], hasMore: false),
       );
@@ -10318,7 +10356,7 @@ void main() {
       },
       build: buildCubit,
       act: (cubit) =>
-          cubit.updateTicketStatus(blockedEpic.id, TicketStatus.inProgress),
+          cubit.updateTicketStatus(blockedEpic.id, 'inProgress'),
       verify: (_) {
         verifyNever(() => repository.updateTicketStatus(any(), any()));
       },
@@ -10349,23 +10387,23 @@ void main() {
           ],
         );
         when(() => repository.getTicketById(gateBlocker.id)).thenAnswer(
-          (_) async => gateBlocker.copyWith(status: TicketStatus.done),
+          (_) async => gateBlocker.copyWith(status: 'done'),
         );
         when(
           () => repository.updateTicketStatus(
             blockedEpic.id,
-            TicketStatus.inProgress,
+            'inProgress',
           ),
         ).thenAnswer((_) async {});
       },
       build: buildCubit,
       act: (cubit) =>
-          cubit.updateTicketStatus(blockedEpic.id, TicketStatus.inProgress),
+          cubit.updateTicketStatus(blockedEpic.id, 'inProgress'),
       verify: (_) {
         verify(
           () => repository.updateTicketStatus(
             blockedEpic.id,
-            TicketStatus.inProgress,
+            'inProgress',
           ),
         ).called(1);
       },
@@ -10385,18 +10423,18 @@ void main() {
         when(
           () => repository.updateTicketStatus(
             blockedEpic.id,
-            TicketStatus.inProgress,
+            'inProgress',
           ),
         ).thenAnswer((_) async {});
       },
       build: buildCubit,
       act: (cubit) =>
-          cubit.updateTicketStatus(blockedEpic.id, TicketStatus.inProgress),
+          cubit.updateTicketStatus(blockedEpic.id, 'inProgress'),
       verify: (_) {
         verify(
           () => repository.updateTicketStatus(
             blockedEpic.id,
-            TicketStatus.inProgress,
+            'inProgress',
           ),
         ).called(1);
       },
@@ -10409,7 +10447,7 @@ void main() {
         stubEmptySearch();
         when(
           () =>
-              repository.updateTicketStatus(blockedEpic.id, TicketStatus.todo),
+              repository.updateTicketStatus(blockedEpic.id, 'todo'),
         ).thenAnswer((_) async {});
         when(
           () => repository.getTicketById(blockedEpic.id),
@@ -10417,7 +10455,7 @@ void main() {
       },
       build: buildCubit,
       act: (cubit) =>
-          cubit.updateTicketStatus(blockedEpic.id, TicketStatus.todo),
+          cubit.updateTicketStatus(blockedEpic.id, 'todo'),
       verify: (_) {
         verifyNever(() => linkRepository.getLinksForTicket(any()));
       },
@@ -10443,7 +10481,7 @@ void main() {
       },
       build: buildCubit,
       act: (cubit) =>
-          cubit.changeTicketStatus(blockedEpic, TicketStatus.inProgress),
+          cubit.changeTicketStatus(blockedEpic, 'inProgress'),
       verify: (_) {
         verifyNever(() => repository.updateTicketStatus(any(), any()));
       },
@@ -10470,32 +10508,32 @@ void main() {
           ],
         );
         when(() => repository.getTicketById(gateBlocker.id)).thenAnswer(
-          (_) async => gateBlocker.copyWith(status: TicketStatus.done),
+          (_) async => gateBlocker.copyWith(status: 'done'),
         );
         when(
           () => repository.updateTicketStatus(
             blockedEpic.id,
-            TicketStatus.inProgress,
+            'inProgress',
           ),
         ).thenAnswer((_) async {});
         when(() => repository.getTicketById(blockedEpic.id)).thenAnswer(
-          (_) async => blockedEpic.copyWith(status: TicketStatus.inProgress),
+          (_) async => blockedEpic.copyWith(status: 'inProgress'),
         );
       },
       build: buildCubit,
       act: (cubit) =>
-          cubit.changeTicketStatus(blockedEpic, TicketStatus.inProgress),
+          cubit.changeTicketStatus(blockedEpic, 'inProgress'),
       verify: (_) {
         verify(
           () => repository.updateTicketStatus(
             blockedEpic.id,
-            TicketStatus.inProgress,
+            'inProgress',
           ),
         ).called(1);
       },
       expect: () => [
         TicketDetailLoaded(
-          blockedEpic.copyWith(status: TicketStatus.inProgress),
+          blockedEpic.copyWith(status: 'inProgress'),
         ),
       ],
     );
@@ -10510,21 +10548,21 @@ void main() {
         when(
           () => repository.updateTicketStatus(
             blockedEpic.id,
-            TicketStatus.inProgress,
+            'inProgress',
           ),
         ).thenAnswer((_) async {});
         when(() => repository.getTicketById(blockedEpic.id)).thenAnswer(
-          (_) async => blockedEpic.copyWith(status: TicketStatus.inProgress),
+          (_) async => blockedEpic.copyWith(status: 'inProgress'),
         );
       },
       build: buildCubit,
       act: (cubit) =>
-          cubit.changeTicketStatus(blockedEpic, TicketStatus.inProgress),
+          cubit.changeTicketStatus(blockedEpic, 'inProgress'),
       verify: (_) {
         verify(
           () => repository.updateTicketStatus(
             blockedEpic.id,
-            TicketStatus.inProgress,
+            'inProgress',
           ),
         ).called(1);
       },
@@ -10536,14 +10574,14 @@ void main() {
       setUp: () {
         when(
           () =>
-              repository.updateTicketStatus(blockedEpic.id, TicketStatus.todo),
+              repository.updateTicketStatus(blockedEpic.id, 'todo'),
         ).thenAnswer((_) async {});
         when(() => repository.getTicketById(blockedEpic.id)).thenAnswer(
-          (_) async => blockedEpic.copyWith(status: TicketStatus.todo),
+          (_) async => blockedEpic.copyWith(status: 'todo'),
         );
       },
       build: buildCubit,
-      act: (cubit) => cubit.changeTicketStatus(blockedEpic, TicketStatus.todo),
+      act: (cubit) => cubit.changeTicketStatus(blockedEpic, 'todo'),
       verify: (_) {
         verifyNever(() => linkRepository.getLinksForTicket(any()));
       },
@@ -10595,7 +10633,7 @@ void main() {
       ticketId: 'AIO-40',
       type: TicketType.epic,
       title: 'Epic to decompose',
-      status: TicketStatus.backlog,
+      status: 'backlog',
       sddStage: SddStage.exploring,
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
@@ -10605,7 +10643,7 @@ void main() {
       ticketId: 'AIO-41',
       type: TicketType.chat,
       title: 'Exploring — Epic to decompose',
-      status: TicketStatus.backlog,
+      status: 'backlog',
       parentId: decompEpic.id,
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
@@ -10615,7 +10653,7 @@ void main() {
       ticketId: 'AIO-42',
       type: TicketType.chat,
       title: 'Proposed — Epic to decompose',
-      status: TicketStatus.backlog,
+      status: 'backlog',
       parentId: decompEpic.id,
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
@@ -10816,7 +10854,7 @@ void main() {
         ticketId: 'AIO-43',
         type: TicketType.epic,
         title: 'Fresh epic',
-        status: TicketStatus.backlog,
+        status: 'backlog',
         createdAt: DateTime(2026),
         updatedAt: DateTime(2026),
       );
@@ -10882,14 +10920,14 @@ void main() {
     // execution by pre-setting its live status to inProgress before
     // restoring) — see the outer setUp's `repository.getTicketById`/
     // `repository.updateTicketStatus` stubs, which both read/write it.
-    late Map<String, TicketStatus> liveStatus;
+    late Map<String, String> liveStatus;
 
     final parentEpic = Ticket(
       id: 'sched-parent-epic',
       ticketId: 'AIO-SCHED-EPIC',
       type: TicketType.epic,
       title: 'Parent epic',
-      status: TicketStatus.backlog,
+      status: 'backlog',
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
     );
@@ -10898,7 +10936,7 @@ void main() {
       ticketId: 'AIO-SCHED-A',
       type: TicketType.task,
       title: 'Sibling A',
-      status: TicketStatus.backlog,
+      status: 'backlog',
       parentId: parentEpic.id,
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
@@ -10908,7 +10946,7 @@ void main() {
       ticketId: 'AIO-SCHED-B',
       type: TicketType.task,
       title: 'Sibling B',
-      status: TicketStatus.backlog,
+      status: 'backlog',
       parentId: parentEpic.id,
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
@@ -10918,7 +10956,7 @@ void main() {
       ticketId: 'AIO-SCHED-C',
       type: TicketType.task,
       title: 'Unrelated task C',
-      status: TicketStatus.backlog,
+      status: 'backlog',
       createdAt: DateTime(2026),
       updatedAt: DateTime(2026),
     );
@@ -10945,7 +10983,7 @@ void main() {
       // So a pre-transition read (the one `_interceptTaskExecutionTrigger`
       // captures into `_preExecutionStatus`) sees the real prior status,
       // not `inProgress` from the very first lookup.
-      liveStatus = <String, TicketStatus>{
+      liveStatus = <String, String>{
         for (final entry in byId.entries) entry.key: entry.value.status,
       };
       when(() => repository.getTicketById(any())).thenAnswer((
@@ -10960,7 +10998,7 @@ void main() {
           ticketId: '',
           type: TicketType.chat,
           title: 'Coding Execution — synthetic',
-          status: TicketStatus.backlog,
+          status: 'backlog',
           createdAt: DateTime(2026),
           updatedAt: DateTime(2026),
         );
@@ -10969,7 +11007,7 @@ void main() {
         () => repository.updateTicketStatus(any(), any()),
       ).thenAnswer((invocation) async {
         final id = invocation.positionalArguments[0] as String;
-        final status = invocation.positionalArguments[1] as TicketStatus;
+        final status = invocation.positionalArguments[1] as String;
         if (liveStatus.containsKey(id)) liveStatus[id] = status;
       });
       when(
@@ -10984,7 +11022,8 @@ void main() {
           priorities: any(named: 'priorities'),
           sort: any(named: 'sort'),
           limit: any(named: 'limit'),
-        ),
+        statusSortOrder: any(named: 'statusSortOrder'),
+            ),
       ).thenAnswer((_) async => const TicketSearchPage(tickets: [], hasMore: false));
       when(() => commentRepository.addComment(any())).thenAnswer((_) async {});
       when(() => commentRepository.getCommentsForTicket(any())).thenAnswer(
@@ -11036,9 +11075,9 @@ void main() {
         );
         addTearDown(cubit.close);
 
-        await cubit.updateTicketStatus(siblingA.id, TicketStatus.inProgress);
+        await cubit.updateTicketStatus(siblingA.id, 'inProgress');
         await Future<void>.delayed(const Duration(milliseconds: 20));
-        await cubit.updateTicketStatus(unrelatedTaskC.id, TicketStatus.inProgress);
+        await cubit.updateTicketStatus(unrelatedTaskC.id, 'inProgress');
         await Future<void>.delayed(const Duration(milliseconds: 20));
 
         await cubit.getTicketById(siblingA.id);
@@ -11069,9 +11108,9 @@ void main() {
         );
         addTearDown(cubit.close);
 
-        await cubit.updateTicketStatus(siblingA.id, TicketStatus.inProgress);
+        await cubit.updateTicketStatus(siblingA.id, 'inProgress');
         await Future<void>.delayed(const Duration(milliseconds: 20));
-        await cubit.updateTicketStatus(unrelatedTaskC.id, TicketStatus.inProgress);
+        await cubit.updateTicketStatus(unrelatedTaskC.id, 'inProgress');
         await Future<void>.delayed(const Duration(milliseconds: 20));
 
         await cubit.getTicketById(siblingA.id);
@@ -11101,11 +11140,11 @@ void main() {
         );
         addTearDown(cubit.close);
 
-        await cubit.updateTicketStatus(siblingA.id, TicketStatus.inProgress);
+        await cubit.updateTicketStatus(siblingA.id, 'inProgress');
         await Future<void>.delayed(const Duration(milliseconds: 20));
-        await cubit.updateTicketStatus(siblingB.id, TicketStatus.inProgress);
+        await cubit.updateTicketStatus(siblingB.id, 'inProgress');
         await Future<void>.delayed(const Duration(milliseconds: 20));
-        await cubit.updateTicketStatus(unrelatedTaskC.id, TicketStatus.inProgress);
+        await cubit.updateTicketStatus(unrelatedTaskC.id, 'inProgress');
         await Future<void>.delayed(const Duration(milliseconds: 20));
 
         await cubit.getTicketById(siblingA.id);
@@ -11150,9 +11189,9 @@ void main() {
         );
         addTearDown(cubit.close);
 
-        await cubit.updateTicketStatus(siblingA.id, TicketStatus.inProgress);
+        await cubit.updateTicketStatus(siblingA.id, 'inProgress');
         await Future<void>.delayed(const Duration(milliseconds: 20));
-        await cubit.updateTicketStatus(unrelatedTaskC.id, TicketStatus.inProgress);
+        await cubit.updateTicketStatus(unrelatedTaskC.id, 'inProgress');
         await Future<void>.delayed(const Duration(milliseconds: 20));
 
         // Simulates navigating to (or back to) the Board — a fresh
@@ -11181,9 +11220,9 @@ void main() {
         );
         addTearDown(cubit.close);
 
-        await cubit.updateTicketStatus(siblingA.id, TicketStatus.inProgress);
+        await cubit.updateTicketStatus(siblingA.id, 'inProgress');
         await Future<void>.delayed(const Duration(milliseconds: 20));
-        await cubit.updateTicketStatus(unrelatedTaskC.id, TicketStatus.inProgress);
+        await cubit.updateTicketStatus(unrelatedTaskC.id, 'inProgress');
         await Future<void>.delayed(const Duration(milliseconds: 20));
         await cubit.getTicketById(unrelatedTaskC.id);
         expect(
@@ -11192,14 +11231,14 @@ void main() {
         );
 
         await cubit.cancelCodingExecution(
-          unrelatedTaskC.copyWith(status: TicketStatus.inProgress),
+          unrelatedTaskC.copyWith(status: 'inProgress'),
         );
         await Future<void>.delayed(const Duration(milliseconds: 20));
 
         verify(
           () => repository.updateTicketStatus(
             unrelatedTaskC.id,
-            TicketStatus.backlog,
+            'backlog',
           ),
         ).called(1);
         // Regression coverage for a /verify finding: this comment was
@@ -11240,13 +11279,13 @@ void main() {
         );
         addTearDown(cubit.close);
 
-        await cubit.updateTicketStatus(siblingA.id, TicketStatus.inProgress);
+        await cubit.updateTicketStatus(siblingA.id, 'inProgress');
         await Future<void>.delayed(const Duration(milliseconds: 20));
         await cubit.getTicketById(siblingA.id);
         expect((cubit.state as TicketDetailLoaded).isExecuting, isTrue);
 
         await cubit.cancelCodingExecution(
-          siblingA.copyWith(status: TicketStatus.inProgress),
+          siblingA.copyWith(status: 'inProgress'),
         );
         await Future<void>.delayed(const Duration(milliseconds: 20));
 
@@ -11263,7 +11302,7 @@ void main() {
       () async {
         // Simulates a Task the app left `inProgress` mid-execution before
         // an interrupting restart.
-        liveStatus[siblingA.id] = TicketStatus.inProgress;
+        liveStatus[siblingA.id] = 'inProgress';
         when(
           () => executionQueueRepository.getSnapshot(),
         ).thenAnswer(
@@ -11309,7 +11348,7 @@ void main() {
       () async {
         // Simulates a Task the app left `inProgress` mid-execution before
         // an interrupting restart.
-        liveStatus[siblingA.id] = TicketStatus.inProgress;
+        liveStatus[siblingA.id] = 'inProgress';
         when(
           () => executionQueueRepository.getSnapshot(),
         ).thenAnswer(
@@ -11346,7 +11385,7 @@ void main() {
       () async {
         // Simulates a Task the app left `inProgress` mid-execution before
         // an interrupting restart.
-        liveStatus[siblingA.id] = TicketStatus.inProgress;
+        liveStatus[siblingA.id] = 'inProgress';
         when(
           () => executionQueueRepository.getSnapshot(),
         ).thenAnswer(
@@ -11408,7 +11447,7 @@ void main() {
             ticketId: 'AIO-SCHED-STALE',
             type: TicketType.task,
             title: 'No longer running',
-            status: TicketStatus.done,
+            status: 'done',
             createdAt: DateTime(2026),
             updatedAt: DateTime(2026),
           ),

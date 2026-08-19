@@ -18,7 +18,6 @@ import 'package:aion/features/tickets/domain/enums/comment_author_type.dart';
 import 'package:aion/features/tickets/domain/enums/inbox_purpose.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/repositories/comment_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_link_repository.dart';
@@ -266,7 +265,11 @@ class InboxCubit extends Cubit<InboxState> {
       ticketId: '',
       type: TicketType.release,
       title: releaseName,
-      status: TicketStatus.backlog,
+      // InboxCubit has no WorkflowStatusRepository of its own (out of
+      // scope for `aion-arch/changes/configurable-ticket-workflow`) — the
+      // literal mirrors `defaultWorkflowStatuses`' lowest-sortOrder base
+      // status name, same as every unconfigured project's real default.
+      status: 'backlog',
       createdAt: now,
       updatedAt: now,
     );
@@ -364,7 +367,11 @@ class InboxCubit extends Cubit<InboxState> {
       ticketId: '',
       type: TicketType.chat,
       title: title,
-      status: TicketStatus.backlog,
+      // InboxCubit has no WorkflowStatusRepository of its own (out of
+      // scope for `aion-arch/changes/configurable-ticket-workflow`) — the
+      // literal mirrors `defaultWorkflowStatuses`' lowest-sortOrder base
+      // status name, same as every unconfigured project's real default.
+      status: 'backlog',
       inboxPurpose: purpose,
       createdAt: now,
       updatedAt: now,
@@ -511,7 +518,11 @@ class InboxCubit extends Cubit<InboxState> {
           type: TicketType.idea,
           title: block.title,
           description: block.description.isEmpty ? null : block.description,
-          status: TicketStatus.backlog,
+          // InboxCubit has no WorkflowStatusRepository of its own (out of
+      // scope for `aion-arch/changes/configurable-ticket-workflow`) — the
+      // literal mirrors `defaultWorkflowStatuses`' lowest-sortOrder base
+      // status name, same as every unconfigured project's real default.
+      status: 'backlog',
           suggestedType: block.suggestedType,
           createdAt: now,
           updatedAt: now,
@@ -642,7 +653,7 @@ class InboxCubit extends Cubit<InboxState> {
       ..writeln();
     for (final t in tickets) {
       buffer.writeln('- ${t.id} | ${t.title} | ${t.type.name} | '
-          '${t.status.name}');
+          '${t.status}');
     }
     buffer
       ..writeln()

@@ -9,7 +9,7 @@ void main() {
     type: TicketType.task,
     title: 'Original title',
     description: 'Original description',
-    status: TicketStatus.backlog,
+    status: 'backlog',
     priority: TicketPriority.low,
     estimate: 60,
     timeSpent: 30,
@@ -40,8 +40,8 @@ void main() {
     });
 
     test('replaces status independently', () {
-      final result = baseTicket.copyWith(status: TicketStatus.done);
-      expect(result.status, TicketStatus.done);
+      final result = baseTicket.copyWith(status: 'done');
+      expect(result.status, 'done');
       expect(result.title, baseTicket.title);
     });
 

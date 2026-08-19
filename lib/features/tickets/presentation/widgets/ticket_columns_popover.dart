@@ -4,9 +4,18 @@ import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter/widgets.dart';
 
 import 'package:aion/design_system/design_system.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_status.dart';
+import 'package:aion/features/tickets/domain/entities/default_workflow_statuses.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart'
     show ticketStatusLabel;
+
+/// The default baseline preset's status names, in
+/// `WorkflowStatus.sortOrder` order. See `tickets_board_view.dart`'s
+/// `_defaultStatusOrder` for the same "known limitation" note — this
+/// popover's rows don't yet follow a project's live reconfigured status
+/// set.
+final List<String> _defaultStatusOrder = [
+  for (final s in defaultWorkflowStatuses) s.name,
+];
 
 /// The Board header's "Columns" trigger's open overlay panel: a single
 /// checkbox group listing all 6 [TicketStatus] values, one row per
@@ -34,12 +43,12 @@ class TicketColumnsPopover extends StatefulWidget {
   /// The always-visible tappable widget (the "Columns" trigger button).
   final Widget trigger;
 
-  /// The [TicketStatus] values whose board column is currently hidden —
-  /// every other status renders its row checked (visible).
-  final Set<TicketStatus> hiddenStatuses;
+  /// The status names whose board column is currently hidden — every
+  /// other status renders its row checked (visible).
+  final Set<String> hiddenStatuses;
 
   /// Called with the tapped/activated row's status.
-  final ValueChanged<TicketStatus> onToggleColumn;
+  final ValueChanged<String> onToggleColumn;
 
   /// Called with `true` when the overlay opens and `false` when it
   /// closes — lets a stateful [trigger] render its own "open" look.
@@ -171,7 +180,7 @@ class _TicketColumnsPopoverState extends State<TicketColumnsPopover> {
                               mainAxisSize: MainAxisSize.min,
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                for (final status in TicketStatus.values)
+                                for (final status in _defaultStatusOrder)
                                   OverlayMenuItem(
                                     onTap: () =>
                                         widget.onToggleColumn(status),
@@ -179,7 +188,7 @@ class _TicketColumnsPopoverState extends State<TicketColumnsPopover> {
                                       context,
                                       status,
                                     ),
-                                    autofocus: status == TicketStatus.values.first,
+                                    autofocus: status == _defaultStatusOrder.first,
                                     child: _ColumnRow(
                                       checked: !widget.hiddenStatuses
                                           .contains(status),
@@ -269,23 +278,23 @@ class _ColumnRow extends StatelessWidget {
 }
 
 /// An 8×8 accent dot for a [_ColumnRow], mirroring `StatusIndicator`'s own
-/// color mapping (`tickets_board_view.dart`): [TicketStatus.backlog] →
-/// `c.textMuted`, [TicketStatus.inProgress] → `c.primary`,
-/// [TicketStatus.done] → `c.success`, every other status → `c.textMuted`.
-/// A private duplicate of `TicketFilterPopover`'s own `_StatusAccentDot`
-/// (that one is private to its own file and can't be imported/shared).
+/// color mapping (`tickets_board_view.dart`): `'backlog'` → `c.textMuted`,
+/// `'inProgress'` → `c.primary`, `'done'` → `c.success`, every other
+/// status → `c.textMuted`. A private duplicate of `TicketFilterPopover`'s
+/// own `_StatusAccentDot` (that one is private to its own file and can't
+/// be imported/shared).
 class _StatusAccentDot extends StatelessWidget {
   const _StatusAccentDot({required this.status});
 
-  final TicketStatus status;
+  final String status;
 
   @override
   Widget build(BuildContext context) {
     final c = ThemeScope.of(context).colors;
     final color = switch (status) {
-      TicketStatus.backlog => c.textMuted,
-      TicketStatus.inProgress => c.primary,
-      TicketStatus.done => c.success,
+      'backlog' => c.textMuted,
+      'inProgress' => c.primary,
+      'done' => c.success,
       _ => c.textMuted,
     };
     return DecoratedBox(
