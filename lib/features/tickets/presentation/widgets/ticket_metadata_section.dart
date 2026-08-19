@@ -19,6 +19,7 @@ import 'package:aion/features/tickets/domain/enums/ticket_complexity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_estimation_source.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
 import 'package:aion/features/tickets/domain/entities/default_workflow_statuses.dart';
+import 'package:aion/features/tickets/domain/enums/skill_attachment_kind.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sync_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
@@ -360,7 +361,16 @@ class TicketMetadataSection extends StatelessWidget {
                                   .updateTicket(ticket.copyWith(title: v)),
                             ),
                             const SizedBox(height: AionSpacing.sp12),
-                            Row(
+                            // `Wrap` (not `Row`) so `_RunAttachedSkillButton`
+                            // — Component Spec §7's placement "after the
+                            // type chip + status indicator" — falls to its
+                            // own line on narrow width instead of
+                            // overflowing. `aion-arch/changes/workflow-
+                            // skill-attachments` T37.
+                            Wrap(
+                              spacing: AionSpacing.sp8,
+                              runSpacing: AionSpacing.sp8,
+                              crossAxisAlignment: WrapCrossAlignment.center,
                               children: [
                                 SelectionMenu<TicketType>(
                                   trigger: TypeChip(
@@ -394,7 +404,6 @@ class TicketMetadataSection extends StatelessWidget {
                                   semanticsLabel:
                                       context.l10n.ticketDetailChangeType,
                                 ),
-                                const SizedBox(width: AionSpacing.sp8),
                                 SelectionMenu<String>(
                                   trigger: StatusIndicator(
                                     status: ticket.status,
@@ -412,6 +421,7 @@ class TicketMetadataSection extends StatelessWidget {
                                   semanticsLabel:
                                       context.l10n.ticketDetailChangeStatus,
                                 ),
+                                _RunAttachedSkillButton(ticket: ticket),
                               ],
                             ),
                             if (ticket.type == TicketType.knownGap ||
@@ -3207,6 +3217,185 @@ class _AutoAdvancedNote extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------
+// Skill attachments (Phase 2) — `_RunAttachedSkillButton`. See
+// `aion-arch/changes/workflow-skill-attachments/design.md`'s Component
+// Spec §7 ("on the meta line of the ticket detail header block, after
+// the type chip + status indicator"). Moved here from
+// `ticket_detail_screen.dart` (`aion-arch/changes/workflow-skill-
+// attachments` T37) to reach that exact placement — the meta line's
+// `Row` (type-chip `SelectionMenu` + status `SelectionMenu`, above)
+// became a `Wrap` so this can fall to its own line on narrow width
+// per spec, rather than overflowing.
+// `_PendingSkillAttachmentBanner` (Component Spec §6) stays in
+// `ticket_detail_screen.dart` — its own placement already matched
+// spec verbatim.
+// ---------------------------------------------------------------------
+
+/// A small, always-visible control shown only when [ticket]'s current
+/// status/stage has a `manual`-confidence `SkillAttachment` configured
+/// (via `TicketsCubit.resolveCurrentAttachment`). One tap fires it via
+/// `TicketsCubit.runAttachedSkillManually`. Component Spec §7.
+class _RunAttachedSkillButton extends StatefulWidget {
+  const _RunAttachedSkillButton({required this.ticket});
+
+  final Ticket ticket;
+
+  @override
+  State<_RunAttachedSkillButton> createState() =>
+      _RunAttachedSkillButtonState();
+}
+
+class _RunAttachedSkillButtonState extends State<_RunAttachedSkillButton> {
+  bool _isHovered = false;
+  bool _isFocused = false;
+  bool _isPressed = false;
+  bool _running = false;
+
+  Future<void> _run() async {
+    setState(() => _running = true);
+    await context.read<TicketsCubit>().runAttachedSkillManually(widget.ticket);
+    if (mounted) setState(() => _running = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final attachment = context
+        .read<TicketsCubit>()
+        .resolveCurrentAttachment(widget.ticket);
+    if (attachment == null ||
+        attachment.confidence != AutomationConfidence.manual) {
+      return const SizedBox.shrink();
+    }
+
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    final Color fill;
+    final Color border;
+    final Color content;
+    if (_running) {
+      fill = c.primaryWash(t.isDark);
+      border = c.primary.withValues(alpha: t.isDark ? 0.5 : 0.35);
+      content = c.primary;
+    } else if (_isHovered || _isPressed) {
+      fill = c.surfaceHover;
+      border = c.primary;
+      content = c.textPrimary;
+    } else if (_isFocused) {
+      fill = c.surface;
+      border = c.primary;
+      content = c.textPrimary;
+    } else {
+      fill = c.surface;
+      border = c.borderStrong;
+      content = c.textPrimary;
+    }
+
+    return FutureBuilder<String>(
+      future: context.read<TicketsCubit>().attachmentDisplayName(attachment),
+      builder: (context, snapshot) {
+        final name = snapshot.data;
+        final label = _running
+            ? context.l10n.ticketDetailRunningSkillLabel
+            : context.l10n.ticketDetailRunSkillLabel(name ?? '…');
+        return Semantics(
+          button: true,
+          label: label,
+          child: FocusableActionDetector(
+            enabled: !_running,
+            onShowFocusHighlight: (v) => setState(() => _isFocused = v),
+            actions: {
+              ActivateIntent: CallbackAction<ActivateIntent>(
+                onInvoke: (_) {
+                  if (!_running) _run();
+                  return null;
+                },
+              ),
+            },
+            child: MouseRegion(
+              cursor: _running
+                  ? MouseCursor.defer
+                  : SystemMouseCursors.click,
+              onEnter: (_) => setState(() => _isHovered = true),
+              onExit: (_) => setState(() => _isHovered = false),
+              child: GestureDetector(
+                onTap: _running ? null : _run,
+                onTapDown: (_) => setState(() => _isPressed = true),
+                onTapUp: (_) => setState(() => _isPressed = false),
+                onTapCancel: () => setState(() => _isPressed = false),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: fill,
+                    border: Border.all(color: border, width: 1),
+                    borderRadius: BorderRadius.all(AionRadius.md),
+                    boxShadow: _isFocused
+                        ? AionShadows.focus(c, t.isDark)
+                        : null,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(11, 8, 13, 8),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_running)
+                          const AppSpinner(size: 14)
+                        else
+                          _KindGlyphMini(kind: attachment.kind, color: c.primary),
+                        const SizedBox(width: 7),
+                        Text(
+                          label,
+                          style: AionText.bodySm.copyWith(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w700,
+                            color: content,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// A `9×9` kind glyph — a private duplicate of
+/// `workflow_status_settings_screen.dart`'s `_KindGlyph` and
+/// `ticket_detail_screen.dart`'s own `_KindGlyphMini` (each private to
+/// its own file — this codebase's established convention for a small
+/// shared-shape widget), used by [_RunAttachedSkillButton]'s leading
+/// mark.
+class _KindGlyphMini extends StatelessWidget {
+  const _KindGlyphMini({required this.kind, required this.color});
+
+  final SkillAttachmentKind kind;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    if (kind == SkillAttachmentKind.delegatedSkill) {
+      return Transform.rotate(
+        angle: 0.785,
+        child: Container(width: 7, height: 7, color: color),
+      );
+    }
+    return Container(
+      width: 9,
+      height: 11,
+      decoration: BoxDecoration(
+        border: Border.all(color: color, width: 1.2),
+        borderRadius: BorderRadius.circular(2),
       ),
     );
   }

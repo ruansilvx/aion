@@ -11800,6 +11800,154 @@ void main() {
           verifyNever(() => agentClient.run(any()));
         },
       );
+
+      // T32 regression coverage (workflow-skill-attachments T36): every
+      // case above only asserts on `pendingSkillAttachment` itself, which
+      // would still pass even if `_resolveAndFireAttachment`'s gated
+      // branch / `confirmPendingSkillAttachment` /
+      // `rejectPendingSkillAttachment` regressed back to constructing a
+      // bare `TicketDetailLoaded(ticket)` instead of routing through
+      // `TicketDetailLoaded.copyWith`. A field seeded directly on the
+      // initial `TicketDetailLoaded` isn't a usable differentiator here:
+      // `updateTicketStatus` always transitions live `state` through
+      // `TicketStatusUpdating`/`TicketStatusUpdated` (list-view states)
+      // before `_refreshDetailIfOpenAndAffected` re-derives a fresh
+      // `TicketDetailLoaded` via `getTicketById` — which finds no
+      // `previousDetail` (state is no longer `TicketDetailLoaded` at that
+      // point) and so legitimately resets `childDocs`/`isExecuting`/etc.
+      // to their defaults *before* any T32 call site ever runs, same with
+      // or without the fix. What *does* reach the T32 call sites as a
+      // genuinely non-default value is whatever `getTicketById` itself
+      // just freshly computed — e.g. `canAdvanceSddStage`, `true` for any
+      // stage-less epic/story per `_sddStageAdvanceCheck`'s `case null`
+      // branch (no repository mocking needed beyond what's already
+      // stubbed above). A bare-`TicketDetailLoaded(ticket)` regression at
+      // any of these three call sites would silently reset it back to
+      // `false`.
+      final epicForFieldPreservation = Ticket(
+        id: 'epic-gated-preserve',
+        ticketId: 'AIO-90',
+        type: TicketType.epic,
+        title: 'Epic with a gated attachment',
+        status: 'backlog',
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'gated firing preserves a freshly-recomputed field '
+        '(canAdvanceSddStage) alongside pendingSkillAttachment',
+        setUp: () {
+          final attachment = SkillAttachment(
+            id: 'attach-3b',
+            workflowStatusId: backlogStatusId,
+            kind: SkillAttachmentKind.delegatedSkill,
+            skillName: 'code-review',
+            confidence: AutomationConfidence.gated,
+          );
+          when(
+            () => attachmentRepository.getAll(),
+          ).thenAnswer((_) async => [attachment]);
+          when(
+            () => repository.getTicketById(epicForFieldPreservation.id),
+          ).thenAnswer((_) async => epicForFieldPreservation);
+        },
+        build: buildAttachmentCubit,
+        seed: () => TicketDetailLoaded(epicForFieldPreservation),
+        act: (cubit) async {
+          await Future<void>.delayed(Duration.zero);
+          await cubit.updateTicketStatus(
+            epicForFieldPreservation.id,
+            'backlog',
+          );
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        },
+        verify: (cubit) {
+          final loaded = cubit.state as TicketDetailLoaded;
+          expect(loaded.pendingSkillAttachment?.id, 'attach-3b');
+          expect(loaded.canAdvanceSddStage, isTrue);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'confirmPendingSkillAttachment preserves a freshly-recomputed '
+        'field (canAdvanceSddStage) set by the gated firing that preceded it',
+        setUp: () {
+          final attachment = SkillAttachment(
+            id: 'attach-4b',
+            workflowStatusId: backlogStatusId,
+            kind: SkillAttachmentKind.delegatedSkill,
+            skillName: 'code-review',
+            confidence: AutomationConfidence.gated,
+          );
+          when(
+            () => attachmentRepository.getAll(),
+          ).thenAnswer((_) async => [attachment]);
+          when(
+            () => repository.getTicketById(epicForFieldPreservation.id),
+          ).thenAnswer((_) async => epicForFieldPreservation);
+          when(() => agentClient.run(any())).thenAnswer(
+            (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+          );
+        },
+        build: buildAttachmentCubit,
+        seed: () => TicketDetailLoaded(epicForFieldPreservation),
+        act: (cubit) async {
+          await Future<void>.delayed(Duration.zero);
+          await cubit.updateTicketStatus(
+            epicForFieldPreservation.id,
+            'backlog',
+          );
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          await cubit.confirmPendingSkillAttachment(
+            epicForFieldPreservation.id,
+          );
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        },
+        verify: (cubit) {
+          final loaded = cubit.state as TicketDetailLoaded;
+          expect(loaded.pendingSkillAttachment, isNull);
+          expect(loaded.canAdvanceSddStage, isTrue);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'rejectPendingSkillAttachment preserves a freshly-recomputed '
+        'field (canAdvanceSddStage) set by the gated firing that preceded it',
+        setUp: () {
+          final attachment = SkillAttachment(
+            id: 'attach-5b',
+            workflowStatusId: backlogStatusId,
+            kind: SkillAttachmentKind.delegatedSkill,
+            skillName: 'code-review',
+            confidence: AutomationConfidence.gated,
+          );
+          when(
+            () => attachmentRepository.getAll(),
+          ).thenAnswer((_) async => [attachment]);
+          when(
+            () => repository.getTicketById(epicForFieldPreservation.id),
+          ).thenAnswer((_) async => epicForFieldPreservation);
+        },
+        build: buildAttachmentCubit,
+        seed: () => TicketDetailLoaded(epicForFieldPreservation),
+        act: (cubit) async {
+          await Future<void>.delayed(Duration.zero);
+          await cubit.updateTicketStatus(
+            epicForFieldPreservation.id,
+            'backlog',
+          );
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          await cubit.rejectPendingSkillAttachment(
+            epicForFieldPreservation.id,
+          );
+        },
+        verify: (cubit) {
+          final loaded = cubit.state as TicketDetailLoaded;
+          expect(loaded.pendingSkillAttachment, isNull);
+          expect(loaded.canAdvanceSddStage, isTrue);
+        },
+      );
     });
 
     group('manual confidence — WorkflowStatus entry', () {

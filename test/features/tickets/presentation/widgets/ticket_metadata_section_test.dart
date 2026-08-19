@@ -7,6 +7,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
+import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_link_picker.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_metadata_section.dart';
@@ -464,6 +465,88 @@ void main() {
           findsNothing,
         );
       });
+    },
+  );
+
+  group(
+    '_RunAttachedSkillButton on the type/status meta line '
+    '(workflow-skill-attachments T37)',
+    () {
+      final task = Ticket(
+        id: 'task-with-manual-attachment',
+        ticketId: 'AIO-50',
+        type: TicketType.task,
+        title: 'A task',
+        status: 'in_progress',
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+
+      final manualAttachment = SkillAttachment(
+        id: 'attachment-1',
+        workflowStatusId: 'in_progress',
+        kind: SkillAttachmentKind.delegatedSkill,
+        skillName: 'code-review',
+        confidence: AutomationConfidence.manual,
+      );
+
+      testWidgets(
+        'renders nothing on the meta line when no attachment resolves '
+        'for the ticket\'s current status',
+        (tester) async {
+          when(
+            () => ticketsCubit.resolveCurrentAttachment(any()),
+          ).thenReturn(null);
+
+          await tester.pumpWidget(_wrap(ticket: task, ticketsCubit: ticketsCubit));
+          await tester.pumpAndSettle();
+
+          expect(find.byType(SelectionMenu<TicketType>), findsOneWidget);
+          expect(find.byType(SelectionMenu<String>), findsOneWidget);
+        },
+      );
+
+      testWidgets(
+        'renders next to the type chip and status indicator when a '
+        'manual-confidence attachment resolves, and tapping it calls '
+        'runAttachedSkillManually',
+        (tester) async {
+          when(
+            () => ticketsCubit.resolveCurrentAttachment(any()),
+          ).thenReturn(manualAttachment);
+          when(
+            () => ticketsCubit.attachmentDisplayName(manualAttachment),
+          ).thenAnswer((_) async => 'code-review');
+          when(
+            () => ticketsCubit.runAttachedSkillManually(any()),
+          ).thenAnswer((_) async {});
+
+          await tester.pumpWidget(_wrap(ticket: task, ticketsCubit: ticketsCubit));
+          await tester.pumpAndSettle();
+
+          // Same `Wrap` as the type chip / status indicator — Component
+          // Spec §7's "on the meta line ... after the type chip + status
+          // indicator" placement.
+          expect(
+            find.ancestor(
+              of: find.byType(SelectionMenu<TicketType>),
+              matching: find.byType(Wrap),
+            ),
+            findsOneWidget,
+          );
+          final button = find.bySemanticsLabel(RegExp('Run code-review'));
+          expect(button, findsOneWidget);
+          expect(
+            find.ancestor(of: button, matching: find.byType(Wrap)),
+            findsOneWidget,
+          );
+
+          await tester.tap(button);
+          await tester.pumpAndSettle();
+
+          verify(() => ticketsCubit.runAttachedSkillManually(task)).called(1);
+        },
+      );
     },
   );
 }
