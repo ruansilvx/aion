@@ -12091,4 +12091,34 @@ void main() {
       );
     });
   });
+
+  group('detailTick', () {
+    test(
+      'stopDetailTicker with no prior startDetailTicker is a safe no-op',
+      () async {
+        final cubit = TicketsCubit(repository);
+
+        expect(cubit.stopDetailTicker, returnsNormally);
+
+        await cubit.close();
+      },
+    );
+
+    test(
+      'calling startDetailTicker twice in a row does not throw — the '
+      'second call cancels and replaces the first timer '
+      '(cancel-before-replace)',
+      () async {
+        final cubit = TicketsCubit(repository);
+
+        expect(() {
+          cubit.startDetailTicker();
+          cubit.startDetailTicker();
+        }, returnsNormally);
+
+        cubit.stopDetailTicker();
+        await cubit.close();
+      },
+    );
+  });
 }

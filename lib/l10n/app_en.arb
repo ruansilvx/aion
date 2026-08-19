@@ -217,6 +217,12 @@
       "date": { "type": "String" }
     }
   },
+  "ticketDetailLastUpdated": "Updated {relative}",
+  "@ticketDetailLastUpdated": {
+    "placeholders": {
+      "relative": { "type": "String" }
+    }
+  },
   "ticketDetailCommentsCount": "COMMENTS · {count}",
   "@ticketDetailCommentsCount": {
     "placeholders": {

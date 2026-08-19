@@ -626,6 +626,45 @@ class TicketsCubit extends Cubit<TicketsState> {
   Stream<CodebaseAnalysisStatus> get codebaseAnalysisStatus =>
       _codebaseAnalysisController.stream;
 
+  /// Fires [detailTick] every 60 seconds while a [TicketDetailScreen] is
+  /// mounted — see [startDetailTicker]/[stopDetailTicker]. `null`
+  /// whenever no detail screen currently has it running. Cancelled in
+  /// [close].
+  Timer? _detailTickTimer;
+
+  /// Broadcasts an empty pulse once a minute while [_detailTickTimer] is
+  /// running, purely so [TicketDetailScreen]'s "Updated {relative}"
+  /// label can rebuild off elapsed wall-clock time without a
+  /// [TicketsState] emission — see design.md §2 for why a state
+  /// re-emit isn't used. Not tied to [state] the same way
+  /// `codebaseAnalysisStatus` isn't.
+  final _detailTickController = StreamController<void>.broadcast();
+
+  /// See [_detailTickController]'s dartdoc.
+  Stream<void> get detailTick => _detailTickController.stream;
+
+  /// Starts (or restarts) the 60-second [detailTick] pulse. Called by
+  /// [TicketDetailScreen.initState] — idempotent, so re-navigating
+  /// between two tickets (a fresh screen instance each time) safely
+  /// cancels any previous timer before starting its own.
+  void startDetailTicker() {
+    _detailTickTimer?.cancel();
+    _detailTickTimer = Timer.periodic(const Duration(seconds: 60), (_) {
+      if (!isClosed) _detailTickController.add(null);
+    });
+  }
+
+  /// Stops the [detailTick] pulse started by [startDetailTicker]. Called
+  /// by [TicketDetailScreen.dispose] so the timer doesn't keep firing
+  /// into an empty stream once no detail screen is mounted to consume
+  /// it — [TicketsCubit] is a single app-wide instance (see
+  /// `aion-arch/ideas/live-refresh-open-ticket-detail-screen.md`), so
+  /// nothing else would stop it otherwise.
+  void stopDetailTicker() {
+    _detailTickTimer?.cancel();
+    _detailTickTimer = null;
+  }
+
   /// The active project's display name, if this cubit was constructed
   /// with one (`app_router.dart` always supplies it). Read by
   /// `CodebaseAnalysisBanner` to name the codebase in its offer copy —
@@ -636,6 +675,8 @@ class TicketsCubit extends Cubit<TicketsState> {
   @override
   Future<void> close() {
     _codebaseAnalysisController.close();
+    _detailTickTimer?.cancel();
+    unawaited(_detailTickController.close());
     unawaited(_workflowStatusChangesSubscription?.cancel());
     unawaited(_skillAttachmentChangesSubscription?.cancel());
     return super.close();

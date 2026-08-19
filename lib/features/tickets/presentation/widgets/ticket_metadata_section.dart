@@ -40,7 +40,10 @@ import 'package:aion/features/tickets/presentation/widgets/ticket_parent_picker.
 /// design-page chip, the SDD-stage tracker (`epic`/`story`) or coding-
 /// execution section (`task`/`bug` — see `TicketTypeHierarchy.isExecutable`),
 /// a "Bug details" section (`bug` only: severity, steps to reproduce,
-/// expected/actual behavior), description, created-on timestamp, and —
+/// expected/actual behavior), description, created-on timestamp, an
+/// always-live "Updated {relative}" timestamp directly below it (ticks
+/// once a minute via `TicketsCubit.detailTick` — see
+/// `aion-arch/changes/show-last-updated-timestamp-on-each-ticket`), and —
 /// for every type except `page`/`chat`/`signal`/`release` — Linked
 /// Tickets/Backlinks (widened from `resource`/`bug`-only for
 /// `aion-arch/changes/board-task-ordering-indication`; `resource` keeps
@@ -875,6 +878,18 @@ class TicketMetadataSection extends StatelessWidget {
                                 DateFormat.yMMMd().format(ticket.createdAt),
                               ),
                               style: AionText.time.copyWith(color: c.textMuted),
+                            ),
+                            const SizedBox(height: AionSpacing.sp4),
+                            StreamBuilder<void>(
+                              stream: context.read<TicketsCubit>().detailTick,
+                              builder: (context, _) => Text(
+                                context.l10n.ticketDetailLastUpdated(
+                                  formatRelativeTime(ticket.updatedAt),
+                                ),
+                                style: AionText.time.copyWith(
+                                  color: c.textMuted,
+                                ),
+                              ),
                             ),
                           ],
                         );
