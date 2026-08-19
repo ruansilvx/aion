@@ -2,6 +2,8 @@
 
 import 'package:equatable/equatable.dart';
 
+import 'package:aion/features/tickets/domain/entities/skill_attachment.dart';
+import 'package:aion/features/tickets/domain/entities/workflow_prompt_template.dart';
 import 'package:aion/features/tickets/domain/entities/workflow_status.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 
@@ -29,6 +31,8 @@ class WorkflowConfigLoaded extends WorkflowConfigState {
     required this.statuses,
     required this.designStagesEnabled,
     required this.stageDisplayNameOverrides,
+    required this.attachments,
+    required this.templates,
   });
 
   /// Every configured [WorkflowStatus] — base and every per-type
@@ -47,11 +51,24 @@ class WorkflowConfigLoaded extends WorkflowConfigState {
   /// name.
   final Map<SddStage, String> stageDisplayNameOverrides;
 
+  /// Every configured [SkillAttachment], unfiltered — at most one per
+  /// `WorkflowStatus.id`/[SddStage], enforced by
+  /// [WorkflowConfigCubit.createAttachment]/[WorkflowConfigCubit.updateAttachment].
+  /// Added for `aion-arch/changes/workflow-skill-attachments`.
+  final List<SkillAttachment> attachments;
+
+  /// Every configured [WorkflowPromptTemplate], unfiltered — a flat,
+  /// project-wide namespace by [WorkflowPromptTemplate.name]. Added for
+  /// `aion-arch/changes/workflow-skill-attachments`.
+  final List<WorkflowPromptTemplate> templates;
+
   @override
   List<Object?> get props => [
     statuses,
     designStagesEnabled,
     stageDisplayNameOverrides,
+    attachments,
+    templates,
   ];
 }
 

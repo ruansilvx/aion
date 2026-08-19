@@ -82,4 +82,56 @@ void main() {
       expect(statuses.map((s) => s.name), contains(ticket!.status));
     },
   );
+
+  group('schema 16 — WorkflowSkillAttachmentsTable/WorkflowPromptTemplatesTable', () {
+    // This codebase has no exported-schema/SchemaVerifier infrastructure
+    // (see the schema-15 coverage above), so rather than hand-author a
+    // byte-accurate schema-15 DDL snapshot, this test opens a
+    // `NativeDatabase.memory` whose `setup` callback stamps the raw
+    // sqlite3 `user_version` pragma to `15` *before* drift's own
+    // migration logic runs — drift then sees `from: 15 < schemaVersion:
+    // 16` on open and genuinely invokes `AppDatabase.migration.onUpgrade`'s
+    // real `from < 16` branch (not a re-implementation of it), same as
+    // it would for an actual upgrading install. The rest of schema 15's
+    // tables are never created by this test (nothing here needs them),
+    // so only `workflowSkillAttachmentDao`/`workflowPromptTemplateDao`
+    // are queried.
+    test(
+      'an install upgraded from schema 15 has both new tables, empty',
+      () async {
+        final database = AppDatabase(
+          _testProject,
+          NativeDatabase.memory(
+            setup: (db) => db.execute('PRAGMA user_version = 15'),
+          ),
+        );
+        addTearDown(database.close);
+
+        final attachments = await database.workflowSkillAttachmentDao
+            .getAll();
+        final templates = await database.workflowPromptTemplateDao.getAll();
+
+        expect(attachments, isEmpty);
+        expect(templates, isEmpty);
+      },
+    );
+
+    // Same scoping rationale as this file's schema-15 coverage above: the
+    // `from < 16` branch is a two-line `createTable` pair with no seed/
+    // backfill logic to get wrong (see `app_database.dart`'s version-16
+    // dartdoc). This test confirms the fresh-`onCreate` install path
+    // (which shares `createAll()`, the same table set `onUpgrade`
+    // incrementally builds towards) ends with both new tables present
+    // and empty too.
+    test('a fresh onCreate install has both new tables, empty', () async {
+      final database = AppDatabase(_testProject, NativeDatabase.memory());
+      addTearDown(database.close);
+
+      final attachments = await database.workflowSkillAttachmentDao.getAll();
+      final templates = await database.workflowPromptTemplateDao.getAll();
+
+      expect(attachments, isEmpty);
+      expect(templates, isEmpty);
+    });
+  });
 }

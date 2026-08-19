@@ -720,6 +720,82 @@
   "workflowSettingsRequireDesignReviewSubtitle": "Epics and Stories must clear the SDD stage cycle before execution.",
   "workflowSettingsDeleteStatus": "Delete status",
   "workflowSettingsChangeRole": "Change role",
+  "workflowSettingsAttachSkill": "Attach skill",
+  "workflowSettingsAttachSkillEyebrow": "ATTACH SKILL · {target}",
+  "@workflowSettingsAttachSkillEyebrow": {
+    "placeholders": {
+      "target": {"type": "String"}
+    }
+  },
+  "workflowSettingsEditSkillEyebrow": "EDIT SKILL · {name}",
+  "@workflowSettingsEditSkillEyebrow": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
+  "workflowSettingsKindLabel": "Kind",
+  "workflowSettingsKindTemplate": "Template",
+  "workflowSettingsKindDelegatedSkill": "Delegated skill",
+  "workflowSettingsKindSkillBadge": "SKILL",
+  "workflowSettingsTemplateFieldLabel": "Template",
+  "workflowSettingsSkillNameFieldLabel": "Skill name",
+  "workflowSettingsSkillNameHint": "e.g. code-review",
+  "workflowSettingsSelectTemplateHint": "Select a template",
+  "workflowSettingsManageTemplates": "Manage templates",
+  "workflowSettingsNewTemplate": "New template",
+  "workflowSettingsNoTemplatesTitle": "No templates yet",
+  "workflowSettingsNoTemplatesSubtitle": "Create one to attach it here.",
+  "workflowSettingsConfidenceLabel": "Confidence",
+  "workflowSettingsConfidenceAuto": "Auto",
+  "workflowSettingsConfidenceGated": "Gated",
+  "workflowSettingsConfidenceManual": "Manual",
+  "workflowSettingsConfidenceAutoHelp": "Fires automatically when a ticket enters this status.",
+  "workflowSettingsConfidenceGatedHelp": "Proposes the skill on the ticket; runs after you confirm.",
+  "workflowSettingsConfidenceManualHelp": "Adds a Run button to the ticket; never fires on its own.",
+  "workflowSettingsRemoveAttachment": "Remove",
+  "workflowSettingsSaveAttachment": "Save",
+  "workflowSettingsPickTemplateError": "Pick a template to attach.",
+  "workflowSettingsEnterSkillNameError": "Enter a skill name.",
+  "workflowTemplatesScreenTitle": "Prompt Templates",
+  "workflowTemplatesEyebrow": "TEMPLATES",
+  "workflowTemplatesDescription": "Reusable prompts you can attach to any workflow status or SDD stage.",
+  "workflowTemplatesEmptyTitle": "No templates yet",
+  "workflowTemplatesEmptySubtitle": "Create reusable prompts with variable placeholders to attach to your workflow.",
+  "workflowTemplatesNameLabel": "Name",
+  "workflowTemplatesBodyLabel": "Prompt body",
+  "workflowTemplatesBodyHint": "Variable placeholders allowed",
+  "workflowTemplatesNameRequiredError": "Name this template.",
+  "workflowTemplatesSaveTemplate": "Save template",
+  "workflowTemplatesNewEyebrow": "NEW TEMPLATE",
+  "workflowTemplatesEditEyebrow": "EDIT TEMPLATE",
+  "workflowTemplatesEditTemplate": "Edit template",
+  "workflowTemplatesDeleteTemplate": "Delete template",
+  "ticketDetailRunSkillLabel": "Run {name}",
+  "@ticketDetailRunSkillLabel": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
+  "ticketDetailRunningSkillLabel": "Running…",
+  "ticketDetailPendingSkillTitle": "Run this skill?",
+  "ticketDetailPendingSkillStatusWaiting": "Proposed — waiting for your decision",
+  "ticketDetailPendingSkillStatusRunning": "Running — {name}",
+  "@ticketDetailPendingSkillStatusRunning": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
+  "ticketDetailPendingSkillOrigin": "From the \"{target}\" status",
+  "@ticketDetailPendingSkillOrigin": {
+    "placeholders": {
+      "target": {"type": "String"}
+    }
+  },
+  "ticketDetailPendingSkillReject": "Reject",
+  "ticketDetailPendingSkillConfirm": "Confirm",
+  "ticketDetailPendingSkillRunningWell": "Running the skill…",
+  "ticketDetailPendingSkillKindTemplate": "TEMPLATE",
+  "ticketDetailPendingSkillKindDelegatedSkill": "DELEGATED SKILL",
   "settingsProviderCardTitle": "Claude Agent SDK",
   "settingsProviderEyebrow": "PROVIDER",
   "settingsProviderSubline": "Authenticated via your Claude plan",

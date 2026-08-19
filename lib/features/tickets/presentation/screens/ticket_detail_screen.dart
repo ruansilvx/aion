@@ -12,10 +12,12 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/data/services/active_ticket_view_registry.dart';
+import 'package:aion/features/tickets/domain/entities/skill_attachment.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
 import 'package:aion/features/tickets/domain/enums/comment_author_type.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
+import 'package:aion/features/tickets/domain/enums/skill_attachment_kind.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/presentation/cubit/chat_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/chat_state.dart';
@@ -398,6 +400,30 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                       _maybeAutoAdvanceSddStage(t, canAdvance),
                                   executionTokenTotal:
                                       state.executionTokenTotal,
+                                ),
+                                // `_PendingSkillAttachmentBanner` — placed
+                                // directly under the title/type/status
+                                // block (`TicketMetadataSection`), above
+                                // Description, mirroring the existing
+                                // retry-validation bar's placement
+                                // pattern — matches Component Spec §6
+                                // verbatim. (`_RunAttachedSkillButton`
+                                // itself lives inside
+                                // `TicketMetadataSection`'s own meta line,
+                                // per Component Spec §7 — see that
+                                // widget's doc comment.) Added for
+                                // `aion-arch/changes/workflow-skill-attachments`.
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    20,
+                                    4,
+                                    20,
+                                    0,
+                                  ),
+                                  child: _PendingSkillAttachmentBanner(
+                                    ticket: ticket,
+                                    pending: state.pendingSkillAttachment,
+                                  ),
                                 ),
                                 Padding(
                                   padding: const EdgeInsets.fromLTRB(
@@ -1670,5 +1696,231 @@ class _RejectButtonFace extends StatelessWidget {
       ),
     );
     return enabled ? content : Opacity(opacity: 0.45, child: content);
+  }
+}
+
+// ---------------------------------------------------------------------
+// Skill attachments (Phase 2) — `_PendingSkillAttachmentBanner`. See
+// `aion-arch/changes/workflow-skill-attachments/design.md`'s Component
+// Spec §6. (`_RunAttachedSkillButton`, Component Spec §7, lives in
+// `ticket_metadata_section.dart` instead — its meta line is where §7
+// places it.)
+// ---------------------------------------------------------------------
+
+/// A `9×9` kind glyph — a private duplicate of
+/// `workflow_status_settings_screen.dart`'s `_KindGlyph` and
+/// `ticket_metadata_section.dart`'s own `_KindGlyphMini` (each private to
+/// its own file — this codebase's established convention for a small
+/// shared-shape widget, per that file's own doc comment), used by
+/// [_PendingSkillAttachmentBanner]'s kind row.
+class _KindGlyphMini extends StatelessWidget {
+  const _KindGlyphMini({required this.kind, required this.color});
+
+  final SkillAttachmentKind kind;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    if (kind == SkillAttachmentKind.delegatedSkill) {
+      return Transform.rotate(
+        angle: 0.785,
+        child: Container(width: 7, height: 7, color: color),
+      );
+    }
+    return Container(
+      width: 9,
+      height: 11,
+      decoration: BoxDecoration(
+        border: Border.all(color: color, width: 1.2),
+        borderRadius: BorderRadius.circular(2),
+      ),
+    );
+  }
+}
+
+/// A ticket-detail-screen banner shown only while [pending] (a `gated`
+/// [SkillAttachment] awaiting confirmation) is non-`null` — mirrors
+/// `_ToolProposalBanner`'s exact `typeChat`-keyed shell (this feature's
+/// own confirmation surface, per design.md's Component Spec §6, which
+/// explicitly reuses that banner's identity palette rather than
+/// `danger`/`warning`). Confirm/Reject call
+/// [TicketsCubit.confirmPendingSkillAttachment]/
+/// [TicketsCubit.rejectPendingSkillAttachment]. One deliberate
+/// simplification from the pasted Component Spec, noted here rather than
+/// silently: §6.3's distinct post-Confirm "in-flight, skill running"
+/// visual state is omitted — [TicketsCubit] currently has no signal
+/// distinguishing "attachment fired, still running" from "no longer
+/// pending" (firing is `unawaited`), so this banner simply disappears
+/// once confirmed rather than switching to a running sub-state. Adding
+/// that signal is a reasonable follow-up, not attempted here.
+class _PendingSkillAttachmentBanner extends StatefulWidget {
+  const _PendingSkillAttachmentBanner({
+    required this.ticket,
+    required this.pending,
+  });
+
+  final Ticket ticket;
+  final SkillAttachment? pending;
+
+  @override
+  State<_PendingSkillAttachmentBanner> createState() =>
+      _PendingSkillAttachmentBannerState();
+}
+
+class _PendingSkillAttachmentBannerState
+    extends State<_PendingSkillAttachmentBanner> {
+  @override
+  Widget build(BuildContext context) {
+    final pending = widget.pending;
+    if (pending == null) return const SizedBox.shrink();
+
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    final tc = c.typeChat;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.chatTint(t.isDark),
+        border: Border.all(color: c.chatBorderTint(t.isDark), width: 1),
+        borderRadius: BorderRadius.all(AionRadius.lg),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: c.pressedAccentTint(tc, t.isDark),
+                    borderRadius: BorderRadius.all(AionRadius.iconBtn),
+                    boxShadow: [
+                      BoxShadow(color: c.chatGlow(t.isDark), blurRadius: 16),
+                    ],
+                  ),
+                  child: SizedBox(
+                    width: 32,
+                    height: 32,
+                    child: Center(
+                      child: Transform.rotate(
+                        angle: 0.785,
+                        child: Container(width: 12, height: 12, color: tc),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        context.l10n.ticketDetailPendingSkillTitle,
+                        style: AionText.dialogTitle.copyWith(
+                          color: c.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Row(
+                        children: [
+                          DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: tc,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const SizedBox(width: 6, height: 6),
+                          ),
+                          const SizedBox(width: 7),
+                          Expanded(
+                            child: Text(
+                              context.l10n.ticketDetailPendingSkillStatusWaiting,
+                              style: AionText.time.copyWith(
+                                fontSize: 12.5,
+                                color: c.textSecondary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: c.surface,
+                border: Border.all(color: c.border, width: 1),
+                borderRadius: BorderRadius.all(AionRadius.md),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(11, 10, 11, 11),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        _KindGlyphMini(kind: pending.kind, color: tc),
+                        const SizedBox(width: 7),
+                        Text(
+                          pending.kind == SkillAttachmentKind.delegatedSkill
+                              ? context
+                                    .l10n
+                                    .ticketDetailPendingSkillKindDelegatedSkill
+                              : context.l10n.ticketDetailPendingSkillKindTemplate,
+                          style: AionText.chip.copyWith(
+                            fontSize: 9.5,
+                            color: tc,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    FutureBuilder<String>(
+                      future: context
+                          .read<TicketsCubit>()
+                          .attachmentDisplayName(pending),
+                      builder: (context, snapshot) => Text(
+                        snapshot.data ?? '…',
+                        style: AionText.cardTitle.copyWith(
+                          color: c.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _ToolProposalButton(
+                    variant: _ToolProposalButtonVariant.reject,
+                    label: context.l10n.ticketDetailPendingSkillReject,
+                    onPressed: () => context
+                        .read<TicketsCubit>()
+                        .rejectPendingSkillAttachment(widget.ticket.id),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _ToolProposalButton(
+                    variant: _ToolProposalButtonVariant.confirm,
+                    label: context.l10n.ticketDetailPendingSkillConfirm,
+                    onPressed: () => context
+                        .read<TicketsCubit>()
+                        .confirmPendingSkillAttachment(widget.ticket.id),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
