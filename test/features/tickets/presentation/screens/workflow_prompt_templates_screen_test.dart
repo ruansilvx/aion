@@ -200,4 +200,57 @@ void main() {
       verify(() => templateRepository.delete(template.id)).called(1);
     },
   );
+
+  testWidgets(
+    'tapping a template row\'s Edit action opens the editor pre-filled; '
+    'saving persists the update via the repository — added for '
+    'aion-arch/changes/workflow-skill-attachments (post-/verify fix: T30 '
+    'previously covered create/delete only, never edit)',
+    (tester) async {
+      const template = WorkflowPromptTemplate(
+        id: 'template-1',
+        name: 'Repro Steps Request',
+        body: 'Please provide steps to reproduce.',
+      );
+      when(
+        () => templateRepository.getAll(),
+      ).thenAnswer((_) async => [template]);
+      when(
+        () => templateRepository.update(any()),
+      ).thenAnswer((_) async {});
+      final cubit = buildCubit()..load();
+
+      await tester.pumpWidget(_wrap(cubit));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.bySemanticsLabel('Edit template'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('EDIT TEMPLATE'), findsOneWidget);
+      final nameField = find.byWidgetPredicate(
+        (w) => w is TextField && w.maxLines == 1,
+      );
+      expect(
+        tester.widget<TextField>(nameField).controller?.text,
+        'Repro Steps Request',
+      );
+
+      await tester.enterText(nameField, 'Repro Steps Request v2');
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.text('Save template'));
+      await tester.tap(find.text('Save template'));
+      await tester.pumpAndSettle();
+
+      final captured = verify(
+        () => templateRepository.update(captureAny()),
+      ).captured;
+      expect(captured, hasLength(1));
+      final saved = captured.single as WorkflowPromptTemplate;
+      expect(saved.id, template.id);
+      expect(saved.name, 'Repro Steps Request v2');
+      expect(saved.body, template.body);
+      verifyNever(() => templateRepository.create(any()));
+    },
+  );
 }

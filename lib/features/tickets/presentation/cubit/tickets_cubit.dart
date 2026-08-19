@@ -1800,7 +1800,15 @@ class TicketsCubit extends Cubit<TicketsState> {
         // spinner (isAdvancingStage) rather than leave it stuck true.
         _inFlightStageAdvanceIds.remove(ticket.id);
         _refreshInFlightBoardState();
-        emit(TicketDetailLoaded(refreshed));
+        final currentDetail = state;
+        if (currentDetail is TicketDetailLoaded &&
+            currentDetail.ticket.id == refreshed.id) {
+          // copyWith, not a bare TicketDetailLoaded(refreshed) — see
+          // TicketDetailLoaded.copyWith's dartdoc.
+          emit(currentDetail.copyWith(isAdvancingStage: false));
+        } else {
+          emit(TicketDetailLoaded(refreshed));
+        }
         await _resolveAndFireAttachment(
           refreshed,
           attachment,
@@ -4239,8 +4247,14 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// .modelPhase], sets `toolsEnabled`/`workingDirectory` per
   /// [attachment.kind] instead of always text-only, and offers no
   /// app-defined `tools` (skips [_toolCallParamsFor] — see
-  /// proposal.md's Non-goals). Added for
-  /// `aion-arch/changes/workflow-skill-attachments`.
+  /// proposal.md's Non-goals). When `attachmentToolsEnabled`, runs
+  /// inside a fresh isolated `git worktree` (via
+  /// [GitRepositoryClient.createWorktree]/`.removeWorktree`) exactly
+  /// like [_runCodingExecution] — never [_projectRootPath] itself, so a
+  /// `delegatedSkill` attachment can't touch the developer's real
+  /// checkout. Throws (caught below, posting the usual failure comment)
+  /// if constructed without a [GitRepositoryClient]/`projectRootPath` in
+  /// that case. Added for `aion-arch/changes/workflow-skill-attachments`.
   Future<void> _runStageChatTurn(
     Ticket parent,
     SddStage stage,
@@ -4250,6 +4264,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     final commentRepo = _commentRepository;
     if (providerRegistry == null || commentRepo == null) return;
 
+    String? worktreePath;
     try {
       final attachment = _attachmentForStage(stage);
       final context = attachment != null
@@ -4272,6 +4287,24 @@ class TicketsCubit extends Cubit<TicketsState> {
       if (attachment == null) {
         (tools, onToolCall) = await _toolCallParamsFor(chatId);
       }
+      if (attachmentToolsEnabled) {
+        final gitClient = _gitClient;
+        final rootPath = _projectRootPath;
+        if (gitClient == null || rootPath == null) {
+          throw StateError(
+            'Delegated-skill attachments require a git client and '
+            'project checkout to run in an isolated worktree.',
+          );
+        }
+        worktreePath = Directory.systemTemp
+            .createTempSync('aion_skill_')
+            .path;
+        await gitClient.createWorktree(
+          rootPath,
+          worktreePath,
+          'aion/skill-${attachment!.id}-${_uuid.v4()}',
+        );
+      }
       final result = await ChatCubit.runChatTurn(
         client: provider.client,
         provider: provider,
@@ -4280,9 +4313,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         prompt: context,
         model: model,
         toolsEnabled: attachment == null ? false : attachmentToolsEnabled,
-        workingDirectory: attachment == null
-            ? null
-            : (attachmentToolsEnabled ? _projectRootPath : null),
+        workingDirectory: worktreePath,
         tools: tools,
         onToolCall: onToolCall,
       );
@@ -4321,6 +4352,19 @@ class TicketsCubit extends Cubit<TicketsState> {
         ),
       );
     } finally {
+      if (worktreePath != null) {
+        final gitClient = _gitClient;
+        final rootPath = _projectRootPath;
+        if (gitClient != null && rootPath != null) {
+          try {
+            await gitClient.removeWorktree(rootPath, worktreePath);
+          } catch (_) {
+            // Best-effort cleanup only, mirrors _runCodingExecution's
+            // own finally block — createWorktree may itself have
+            // failed, in which case there's nothing to remove.
+          }
+        }
+      }
       _inFlightStageAdvanceIds
         ..remove(parent.id)
         ..remove(chatId);
@@ -4384,7 +4428,15 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// | `kind` | `toolsEnabled` | `workingDirectory` |
   /// |---|---|---|
   /// | `aionNativeTemplate` | `false` | `null` |
-  /// | `delegatedSkill` | `true` | [_projectRootPath] |
+  /// | `delegatedSkill` | `true` | a fresh isolated `git worktree` |
+  ///
+  /// For `delegatedSkill`, the worktree is created via
+  /// [GitRepositoryClient.createWorktree] on a fresh
+  /// `aion/skill-<attachment.id>-<uuid>` branch and always removed in a
+  /// `finally` — mirrors [_runCodingExecution]'s own worktree-isolation
+  /// shape exactly, never running tool-enabled against [_projectRootPath]
+  /// itself, so the developer's real checkout is never touched by an
+  /// unattended (`auto`-confidence) attachment run.
   ///
   /// The model is resolved via [_resolveModelAndProvider] using
   /// [ModelPhase.capable] for `aionNativeTemplate` (comparatively
@@ -4394,9 +4446,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// being [ToolAccessTier.full] for both). No app-defined `tools` are
   /// offered (see proposal.md's Non-goals). No-ops if constructed without
   /// a [ProviderRegistry]/[CommentRepository] (see the constructor's
-  /// dartdoc). A hard error is caught and posted as a "Skill attachment
-  /// failed: `<e>`" [CommentAuthorType.system] comment, mirroring
-  /// [_runStageChatTurn]'s own catch-comment shape.
+  /// dartdoc). A hard error — including a `delegatedSkill` run
+  /// constructed without a [GitRepositoryClient]/`projectRootPath`, which
+  /// throws rather than silently falling back to [_projectRootPath] — is
+  /// caught and posted as a "Skill attachment failed: `<e>`"
+  /// [CommentAuthorType.system] comment, mirroring [_runStageChatTurn]'s
+  /// own catch-comment shape.
   Future<void> _fireSkillAttachment(
     Ticket parent,
     SkillAttachment attachment,
@@ -4433,7 +4488,26 @@ class TicketsCubit extends Cubit<TicketsState> {
 
     final toolsEnabled =
         attachment.kind == SkillAttachmentKind.delegatedSkill;
+    String? worktreePath;
     try {
+      if (toolsEnabled) {
+        final gitClient = _gitClient;
+        final rootPath = _projectRootPath;
+        if (gitClient == null || rootPath == null) {
+          throw StateError(
+            'Delegated-skill attachments require a git client and '
+            'project checkout to run in an isolated worktree.',
+          );
+        }
+        worktreePath = Directory.systemTemp
+            .createTempSync('aion_skill_')
+            .path;
+        await gitClient.createWorktree(
+          rootPath,
+          worktreePath,
+          'aion/skill-${attachment.id}-${_uuid.v4()}',
+        );
+      }
       final (model, provider) = await _resolveModelAndProvider(
         toolsEnabled ? ModelPhase.execution : ModelPhase.capable,
       );
@@ -4445,7 +4519,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         prompt: prompt,
         model: model,
         toolsEnabled: toolsEnabled,
-        workingDirectory: toolsEnabled ? _projectRootPath : null,
+        workingDirectory: worktreePath,
       );
     } catch (e) {
       await commentRepo.addComment(
@@ -4457,6 +4531,20 @@ class TicketsCubit extends Cubit<TicketsState> {
           createdAt: DateTime.now(),
         ),
       );
+    } finally {
+      if (worktreePath != null) {
+        final gitClient = _gitClient;
+        final rootPath = _projectRootPath;
+        if (gitClient != null && rootPath != null) {
+          try {
+            await gitClient.removeWorktree(rootPath, worktreePath);
+          } catch (_) {
+            // Best-effort cleanup only, mirrors _runCodingExecution's
+            // own finally block — createWorktree may itself have
+            // failed, in which case there's nothing to remove.
+          }
+        }
+      }
     }
   }
 
@@ -4512,7 +4600,17 @@ class TicketsCubit extends Cubit<TicketsState> {
         );
         final current = state;
         if (current is TicketDetailLoaded && current.ticket.id == parent.id) {
-          emit(TicketDetailLoaded(parent, pendingSkillAttachment: attachment));
+          // copyWith, not a bare TicketDetailLoaded(parent, ...) — the
+          // latter would silently reset every other computed field
+          // (childDocs, gapsAndOpenQuestions, canAdvanceSddStage,
+          // isExecuting, etc.) to its default. See TicketDetailLoaded
+          // .copyWith's dartdoc.
+          emit(
+            current.copyWith(
+              ticket: parent,
+              pendingSkillAttachment: () => attachment,
+            ),
+          );
         }
       case AutomationConfidence.manual:
         break;
@@ -4522,27 +4620,40 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// Confirms [ticketId]'s pending [SkillAttachment] (if any): removes it
   /// from [_pendingSkillAttachments] and runs its recorded fire action,
   /// `unawaited` (mirrors [_resolveAndFireAttachment]'s own `auto`
-  /// branch). Re-emits [TicketDetailLoaded] for [ticketId] (with no
-  /// `pendingSkillAttachment`). No-ops if [ticketId] has no pending
-  /// attachment. Mirrors [confirmPendingToolProposal]'s shape.
+  /// branch). If [ticketId]'s detail screen is currently open, re-emits
+  /// [TicketDetailLoaded] via [TicketDetailLoaded.copyWith] with
+  /// `pendingSkillAttachment` cleared — every other already-loaded field
+  /// (`childDocs`, `canAdvanceSddStage`, `isExecuting`, etc.) is carried
+  /// over unchanged, unlike the bare `TicketDetailLoaded(ticket)` this
+  /// used to construct, which silently reset them all. No-ops if
+  /// [ticketId] has no pending attachment. Mirrors
+  /// [confirmPendingToolProposal]'s shape.
   Future<void> confirmPendingSkillAttachment(String ticketId) async {
     final pending = _pendingSkillAttachments.remove(ticketId);
     if (pending == null) return;
     unawaited(pending.fire());
-    final ticket = await _repository.getTicketById(ticketId);
-    if (ticket != null) emit(TicketDetailLoaded(ticket));
+    final current = state;
+    if (current is TicketDetailLoaded && current.ticket.id == ticketId) {
+      emit(current.copyWith(pendingSkillAttachment: () => null));
+    }
   }
 
   /// Rejects [ticketId]'s pending [SkillAttachment]: removes it from
-  /// [_pendingSkillAttachments] without ever running its fire action.
-  /// Re-emits [TicketDetailLoaded] for [ticketId] (with no
-  /// `pendingSkillAttachment`). No-ops if [ticketId] has no pending
+  /// [_pendingSkillAttachments] without ever running its fire action. If
+  /// [ticketId]'s detail screen is currently open, re-emits
+  /// [TicketDetailLoaded] via [TicketDetailLoaded.copyWith] with
+  /// `pendingSkillAttachment` cleared, preserving every other
+  /// already-loaded field — see [confirmPendingSkillAttachment]'s
+  /// dartdoc for why this no longer constructs a bare
+  /// `TicketDetailLoaded(ticket)`. No-ops if [ticketId] has no pending
   /// attachment. Mirrors [rejectPendingToolProposal]'s shape.
   Future<void> rejectPendingSkillAttachment(String ticketId) async {
     final pending = _pendingSkillAttachments.remove(ticketId);
     if (pending == null) return;
-    final ticket = await _repository.getTicketById(ticketId);
-    if (ticket != null) emit(TicketDetailLoaded(ticket));
+    final current = state;
+    if (current is TicketDetailLoaded && current.ticket.id == ticketId) {
+      emit(current.copyWith(pendingSkillAttachment: () => null));
+    }
   }
 
   /// A human-readable name for [attachment] — the delegated skill's

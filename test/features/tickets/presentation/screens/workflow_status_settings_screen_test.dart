@@ -319,4 +319,67 @@ void main() {
       verify(() => attachmentRepository.delete(existing.id)).called(1);
     },
   );
+
+  testWidgets(
+    'tapping an existing attachment badge, changing its confidence, and '
+    'saving persists the update via the repository — added for '
+    'aion-arch/changes/workflow-skill-attachments (post-/verify fix: T30 '
+    'previously covered create/delete only, never edit)',
+    (tester) async {
+      final attachmentRepository = MockWorkflowSkillAttachmentRepository();
+      final existing = SkillAttachment(
+        id: 'attach-1',
+        workflowStatusId: backlog.id,
+        kind: SkillAttachmentKind.delegatedSkill,
+        skillName: 'code-review',
+        confidence: AutomationConfidence.auto,
+      );
+      when(
+        () => attachmentRepository.onChanged,
+      ).thenAnswer((_) => const Stream.empty());
+      when(
+        () => attachmentRepository.getAll(),
+      ).thenAnswer((_) async => [existing]);
+      when(
+        () => attachmentRepository.update(any()),
+      ).thenAnswer((_) async {});
+
+      final cubit = WorkflowConfigCubit(
+        statusRepository,
+        sddStageConfigRepository,
+        ticketRepository,
+        attachmentRepository,
+        templateRepository,
+      )..load();
+      await tester.pumpWidget(_wrap(cubit));
+      await tester.pumpAndSettle();
+
+      // The attached-state chip label — "SKILL · AUTO".
+      await tester.tap(find.textContaining('SKILL').first);
+      await tester.pumpAndSettle();
+
+      // Reopened pre-filled with the existing skill name.
+      final nameField = find.byWidgetPredicate(
+        (w) => w is TextField && w.controller?.text == 'code-review',
+      );
+      expect(nameField, findsOneWidget);
+
+      // Change confidence from Auto to Manual, then Save.
+      await tester.tap(find.text('Manual'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Save'));
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      final captured = verify(
+        () => attachmentRepository.update(captureAny()),
+      ).captured;
+      expect(captured, hasLength(1));
+      final saved = captured.single as SkillAttachment;
+      expect(saved.id, existing.id);
+      expect(saved.skillName, 'code-review');
+      expect(saved.confidence, AutomationConfidence.manual);
+      verifyNever(() => attachmentRepository.create(any()));
+    },
+  );
 }

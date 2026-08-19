@@ -11487,6 +11487,12 @@ void main() {
     late MockCommentRepository commentRepository;
     late MockWorkflowSkillAttachmentRepository attachmentRepository;
     late MockWorkflowPromptTemplateRepository templateRepository;
+    // A `delegatedSkill` run must go through an isolated `git worktree`
+    // — never `_projectRootPath` directly — mirroring
+    // `_runCodingExecution`'s own isolation. See the two
+    // `'aion_skill_'`-worktree assertions below. Added as part of the
+    // /verify CRITICAL-finding-1 fix.
+    late MockGitRepositoryClient gitClient;
 
     // `_workflowStatuses` defaults to `defaultWorkflowStatuses` when no
     // `WorkflowStatusRepository` is supplied (every existing construction
@@ -11503,10 +11509,17 @@ void main() {
       commentRepository = MockCommentRepository();
       attachmentRepository = MockWorkflowSkillAttachmentRepository();
       templateRepository = MockWorkflowPromptTemplateRepository();
+      gitClient = MockGitRepositoryClient();
       when(
         () => attachmentRepository.onChanged,
       ).thenAnswer((_) => const Stream.empty());
       when(() => templateRepository.getAll()).thenAnswer((_) async => []);
+      when(
+        () => gitClient.createWorktree(any(), any(), any()),
+      ).thenAnswer((_) async {});
+      when(
+        () => gitClient.removeWorktree(any(), any()),
+      ).thenAnswer((_) async {});
       when(
         () => repository.updateTicketStatus(any(), any()),
       ).thenAnswer((_) async {});
@@ -11554,6 +11567,7 @@ void main() {
       commentRepository: commentRepository,
       workflowSkillAttachmentRepository: attachmentRepository,
       workflowPromptTemplateRepository: templateRepository,
+      gitClient: gitClient,
       projectRootPath: '/project/root',
     );
 
@@ -11640,6 +11654,20 @@ void main() {
         },
         wait: const Duration(milliseconds: 50),
         verify: (_) {
+          // Never _projectRootPath directly — an isolated worktree, per
+          // the /verify CRITICAL-finding-1 fix (mirrors
+          // _runCodingExecution's own isolation).
+          final createArgs = verify(
+            () => gitClient.createWorktree(
+              captureAny(),
+              captureAny(),
+              captureAny(),
+            ),
+          ).captured;
+          expect(createArgs, hasLength(3));
+          expect(createArgs[0], '/project/root');
+          final worktreePath = createArgs[1] as String;
+          expect(worktreePath, isNot('/project/root'));
           verify(
             () => agentClient.run(
               any(
@@ -11647,10 +11675,13 @@ void main() {
                   (r) =>
                       r.prompt == '/code-review' &&
                       r.toolsEnabled == true &&
-                      r.workingDirectory == '/project/root',
+                      r.workingDirectory == worktreePath,
                 ),
               ),
             ),
+          ).called(1);
+          verify(
+            () => gitClient.removeWorktree('/project/root', worktreePath),
           ).called(1);
         },
       );
@@ -11833,6 +11864,7 @@ void main() {
         linkRepository: linkRepository,
         workflowSkillAttachmentRepository: attachmentRepository,
         workflowPromptTemplateRepository: templateRepository,
+        gitClient: gitClient,
         projectRootPath: '/project/root',
       );
 
@@ -11879,6 +11911,19 @@ void main() {
               ),
             ),
           ).called(1);
+          // Never _projectRootPath directly — an isolated worktree, per
+          // the /verify CRITICAL-finding-1 fix.
+          final createArgs = verify(
+            () => gitClient.createWorktree(
+              captureAny(),
+              captureAny(),
+              captureAny(),
+            ),
+          ).captured;
+          expect(createArgs, hasLength(3));
+          expect(createArgs[0], '/project/root');
+          final worktreePath = createArgs[1] as String;
+          expect(worktreePath, isNot('/project/root'));
           verify(
             () => agentClient.run(
               any(
@@ -11886,10 +11931,13 @@ void main() {
                   (r) =>
                       r.prompt == '/kickoff-skill' &&
                       r.toolsEnabled == true &&
-                      r.workingDirectory == '/project/root',
+                      r.workingDirectory == worktreePath,
                 ),
               ),
             ),
+          ).called(1);
+          verify(
+            () => gitClient.removeWorktree('/project/root', worktreePath),
           ).called(1);
         },
       );

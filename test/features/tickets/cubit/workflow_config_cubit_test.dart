@@ -345,6 +345,101 @@ void _mainBody() {
     );
 
     blocTest<WorkflowConfigCubit, WorkflowConfigState>(
+      'rejects creating an attachment with both workflowStatusId and '
+      'sddStage set — /verify CRITICAL finding 3: neither entity nor '
+      'either/or invariant is enforced anywhere',
+      seed: loadedState,
+      build: buildCubit,
+      act: (cubit) => cubit.createAttachment(
+        SkillAttachment(
+          id: 'attach-both-targets',
+          workflowStatusId: backlog.id,
+          sddStage: SddStage.exploring,
+          kind: SkillAttachmentKind.delegatedSkill,
+          skillName: 'code-review',
+          confidence: AutomationConfidence.gated,
+        ),
+      ),
+      expect: () => [isA<WorkflowConfigError>()],
+      verify: (_) {
+        verifyNever(() => attachmentRepository.create(any()));
+      },
+    );
+
+    blocTest<WorkflowConfigCubit, WorkflowConfigState>(
+      'rejects creating an attachment with neither workflowStatusId nor '
+      'sddStage set',
+      seed: loadedState,
+      build: buildCubit,
+      act: (cubit) => cubit.createAttachment(
+        const SkillAttachment(
+          id: 'attach-no-target',
+          kind: SkillAttachmentKind.delegatedSkill,
+          skillName: 'code-review',
+          confidence: AutomationConfidence.gated,
+        ),
+      ),
+      expect: () => [isA<WorkflowConfigError>()],
+      verify: (_) {
+        verifyNever(() => attachmentRepository.create(any()));
+      },
+    );
+
+    blocTest<WorkflowConfigCubit, WorkflowConfigState>(
+      'rejects creating an aionNativeTemplate attachment that sets '
+      'skillName instead of templateId',
+      seed: loadedState,
+      build: buildCubit,
+      act: (cubit) => cubit.createAttachment(
+        SkillAttachment(
+          id: 'attach-kind-mismatch',
+          workflowStatusId: backlog.id,
+          kind: SkillAttachmentKind.aionNativeTemplate,
+          skillName: 'code-review',
+          confidence: AutomationConfidence.gated,
+        ),
+      ),
+      expect: () => [isA<WorkflowConfigError>()],
+      verify: (_) {
+        verifyNever(() => attachmentRepository.create(any()));
+      },
+    );
+
+    blocTest<WorkflowConfigCubit, WorkflowConfigState>(
+      'rejects creating a delegatedSkill attachment that sets templateId '
+      'instead of skillName',
+      seed: loadedState,
+      build: buildCubit,
+      act: (cubit) => cubit.createAttachment(
+        SkillAttachment(
+          id: 'attach-kind-mismatch-2',
+          workflowStatusId: backlog.id,
+          kind: SkillAttachmentKind.delegatedSkill,
+          templateId: 'template-1',
+          confidence: AutomationConfidence.gated,
+        ),
+      ),
+      expect: () => [isA<WorkflowConfigError>()],
+      verify: (_) {
+        verifyNever(() => attachmentRepository.create(any()));
+      },
+    );
+
+    blocTest<WorkflowConfigCubit, WorkflowConfigState>(
+      'rejects updating an attachment into an either/or-invariant '
+      'violation, same as createAttachment',
+      seed: () => loadedState(attachments: [existing]),
+      build: buildCubit,
+      act: (cubit) => cubit.updateAttachment(
+        existing.copyWith(templateId: () => 'template-1'),
+      ),
+      expect: () => [isA<WorkflowConfigError>()],
+      verify: (_) {
+        verifyNever(() => attachmentRepository.update(any()));
+      },
+    );
+
+    blocTest<WorkflowConfigCubit, WorkflowConfigState>(
       'rejects creating a second attachment on a target that already has one',
       seed: () => loadedState(attachments: [existing]),
       build: buildCubit,

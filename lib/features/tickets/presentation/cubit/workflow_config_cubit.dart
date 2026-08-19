@@ -8,6 +8,7 @@ import 'package:aion/features/tickets/domain/entities/skill_attachment.dart';
 import 'package:aion/features/tickets/domain/entities/workflow_prompt_template.dart';
 import 'package:aion/features/tickets/domain/entities/workflow_status.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
+import 'package:aion/features/tickets/domain/enums/skill_attachment_kind.dart';
 import 'package:aion/features/tickets/domain/enums/workflow_status_role.dart';
 import 'package:aion/features/tickets/domain/repositories/sdd_stage_config_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
@@ -242,13 +243,21 @@ class WorkflowConfigCubit extends Cubit<WorkflowConfigState> {
   }
 
   /// Creates [attachment]. Rejects (emits [WorkflowConfigError], preserving
-  /// the current list) if [attachment]'s target
+  /// the current list) if [attachment] violates either of
+  /// [SkillAttachment]'s own either/or invariants (see
+  /// [_attachmentInvariantViolation]), or if its target
   /// ([SkillAttachment.workflowStatusId]/[SkillAttachment.sddStage])
   /// already holds a different attachment — at most one per target. See
   /// `aion-arch/changes/workflow-skill-attachments/design.md` §4.
   Future<void> createAttachment(SkillAttachment attachment) async {
     final loaded = _requireLoaded();
     if (loaded == null) return;
+
+    final invariantError = _attachmentInvariantViolation(attachment);
+    if (invariantError != null) {
+      _emit(WorkflowConfigError(message: invariantError, previous: loaded));
+      return;
+    }
 
     if (_attachmentTargetTaken(loaded.attachments, attachment)) {
       _emitAttachmentTargetTakenError(loaded);
@@ -260,11 +269,18 @@ class WorkflowConfigCubit extends Cubit<WorkflowConfigState> {
   }
 
   /// Updates [attachment] over its existing row (matched by
-  /// [SkillAttachment.id]). Rejects if [attachment]'s target now collides
-  /// with a *different* attachment already on that target.
+  /// [SkillAttachment.id]). Rejects on the same either/or-invariant
+  /// violation [createAttachment] checks, or if [attachment]'s target now
+  /// collides with a *different* attachment already on that target.
   Future<void> updateAttachment(SkillAttachment attachment) async {
     final loaded = _requireLoaded();
     if (loaded == null) return;
+
+    final invariantError = _attachmentInvariantViolation(attachment);
+    if (invariantError != null) {
+      _emit(WorkflowConfigError(message: invariantError, previous: loaded));
+      return;
+    }
 
     if (_attachmentTargetTaken(loaded.attachments, attachment)) {
       _emitAttachmentTargetTakenError(loaded);
@@ -437,6 +453,39 @@ class WorkflowConfigCubit extends Cubit<WorkflowConfigState> {
     WorkflowStatusRole.reviewReady => 'Review Ready',
     WorkflowStatusRole.done => 'Done',
   };
+
+  /// Checks [candidate] against [SkillAttachment]'s own two either/or
+  /// invariants — documented on that entity as enforced here, never by
+  /// the repository or the entity itself (see
+  /// `aion-arch/changes/workflow-skill-attachments/design.md` §1.2):
+  /// exactly one of [SkillAttachment.workflowStatusId]/
+  /// [SkillAttachment.sddStage] must be set (what it's *for*), and
+  /// exactly one of [SkillAttachment.templateId]/[SkillAttachment.skillName]
+  /// must be set, matching [SkillAttachment.kind] (what it *runs*).
+  /// Returns a human-readable rejection reason, or `null` if [candidate]
+  /// is valid. Checked by [createAttachment]/[updateAttachment] before
+  /// [_attachmentTargetTaken].
+  String? _attachmentInvariantViolation(SkillAttachment candidate) {
+    final targetCount =
+        (candidate.workflowStatusId != null ? 1 : 0) +
+        (candidate.sddStage != null ? 1 : 0);
+    if (targetCount != 1) {
+      return 'A skill attachment must target exactly one status or stage.';
+    }
+    switch (candidate.kind) {
+      case SkillAttachmentKind.aionNativeTemplate:
+        if (candidate.templateId == null || candidate.skillName != null) {
+          return 'A template attachment must set a template, and no skill '
+              'name.';
+        }
+      case SkillAttachmentKind.delegatedSkill:
+        if (candidate.skillName == null || candidate.templateId != null) {
+          return 'A delegated-skill attachment must set a skill name, and '
+              'no template.';
+        }
+    }
+    return null;
+  }
 
   /// Whether [candidate]'s target (its [SkillAttachment.workflowStatusId]
   /// or [SkillAttachment.sddStage]) is already held by a *different*

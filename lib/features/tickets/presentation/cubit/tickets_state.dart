@@ -560,6 +560,83 @@ class TicketDetailLoaded extends TicketsState {
     executionTokenTotal,
     pendingSkillAttachment,
   ];
+
+  /// Returns a copy of this state with the given fields replaced; every
+  /// omitted field is carried over unchanged. Used wherever a single
+  /// field (typically [isAdvancingStage] or [pendingSkillAttachment])
+  /// needs to change without discarding the rest of an already-loaded
+  /// detail screen's computed state — [TicketsCubit.advanceSddStage],
+  /// [TicketsCubit._resolveAndFireAttachment],
+  /// [TicketsCubit.confirmPendingSkillAttachment], and
+  /// [TicketsCubit.rejectPendingSkillAttachment] all previously
+  /// reconstructed a bare `TicketDetailLoaded(ticket)` instead, silently
+  /// resetting every other field (`childDocs`, `gapsAndOpenQuestions`,
+  /// `canAdvanceSddStage`, `isExecuting`, etc.) to its default the moment
+  /// a skill attachment fired or was confirmed/rejected — fixed by
+  /// routing those four call sites through this method instead. Every
+  /// field but [pendingSkillAttachment] follows the simple
+  /// "omit to leave unchanged" convention (a plain nullable parameter,
+  /// substituted via `??`) since no current caller needs to explicitly
+  /// clear any of them back to `null`. [pendingSkillAttachment] is the
+  /// one field callers genuinely need to clear (on confirm/reject), so
+  /// it alone takes a [TicketFieldSetter] — mirrors [Ticket.copyWith]'s
+  /// own convention for the same omitted-vs-explicitly-null distinction:
+  /// pass `() => null` to clear it, or omit the parameter to leave it
+  /// unchanged. Added for `aion-arch/changes/workflow-skill-attachments`.
+  TicketDetailLoaded copyWith({
+    Ticket? ticket,
+    List<Ticket>? childDocs,
+    List<LinkedTicketRef>? linkedTickets,
+    List<BacklinkRef>? backlinks,
+    List<GapOrQuestionRef>? gapsAndOpenQuestions,
+    bool? canAdvanceSddStage,
+    SddStageBlockReason? sddStageBlockReason,
+    bool? needsDesignReview,
+    Ticket? linkedDesignPage,
+    bool? isExecuting,
+    int? executionQueuePosition,
+    bool? executionAwaitingReview,
+    String? executionFailureReason,
+    bool? executionCanRetry,
+    String? executionLiveActivity,
+    bool? isAdvancingStage,
+    String? sddStageFailureReason,
+    bool? sddStageCanRetry,
+    PendingToolProposal? pendingToolProposal,
+    int? executionTokenTotal,
+    TicketFieldSetter<SkillAttachment?>? pendingSkillAttachment,
+  }) {
+    return TicketDetailLoaded(
+      ticket ?? this.ticket,
+      childDocs: childDocs ?? this.childDocs,
+      linkedTickets: linkedTickets ?? this.linkedTickets,
+      backlinks: backlinks ?? this.backlinks,
+      gapsAndOpenQuestions: gapsAndOpenQuestions ?? this.gapsAndOpenQuestions,
+      canAdvanceSddStage: canAdvanceSddStage ?? this.canAdvanceSddStage,
+      sddStageBlockReason: sddStageBlockReason ?? this.sddStageBlockReason,
+      needsDesignReview: needsDesignReview ?? this.needsDesignReview,
+      linkedDesignPage: linkedDesignPage ?? this.linkedDesignPage,
+      isExecuting: isExecuting ?? this.isExecuting,
+      executionQueuePosition:
+          executionQueuePosition ?? this.executionQueuePosition,
+      executionAwaitingReview:
+          executionAwaitingReview ?? this.executionAwaitingReview,
+      executionFailureReason:
+          executionFailureReason ?? this.executionFailureReason,
+      executionCanRetry: executionCanRetry ?? this.executionCanRetry,
+      executionLiveActivity:
+          executionLiveActivity ?? this.executionLiveActivity,
+      isAdvancingStage: isAdvancingStage ?? this.isAdvancingStage,
+      sddStageFailureReason:
+          sddStageFailureReason ?? this.sddStageFailureReason,
+      sddStageCanRetry: sddStageCanRetry ?? this.sddStageCanRetry,
+      pendingToolProposal: pendingToolProposal ?? this.pendingToolProposal,
+      executionTokenTotal: executionTokenTotal ?? this.executionTokenTotal,
+      pendingSkillAttachment: pendingSkillAttachment != null
+          ? pendingSkillAttachment()
+          : this.pendingSkillAttachment,
+    );
+  }
 }
 
 /// A [TicketsCubit.trashTicket] call is in flight (single ticket,
