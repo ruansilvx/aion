@@ -389,6 +389,30 @@ void main() {
     updatedAt: DateTime(2026),
   );
 
+  // generalized-live-refresh-for-all-ticket-writes fixtures: an Epic with
+  // a direct Story child, for the epic -> story sddStage live-refresh
+  // dependency (distinct from the storyProposed/taskChild* fixtures
+  // above, which cover the story -> task/bug dependency).
+  final openEpic = Ticket(
+    id: 'open-epic',
+    ticketId: 'AIO-90',
+    type: TicketType.epic,
+    title: 'Open epic',
+    status: 'backlog',
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+  final storyUnderEpic = Ticket(
+    id: 'story-under-epic',
+    ticketId: 'AIO-91',
+    type: TicketType.story,
+    title: 'Story under epic',
+    status: 'backlog',
+    parentId: openEpic.id,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+
   // sdd-design-gate fixtures.
   final taskChildUi = Ticket(
     id: '15',
@@ -9556,8 +9580,7 @@ void main() {
   });
 
   group(
-    'live-refresh an open ticket detail screen '
-    '(live-refresh-open-ticket-detail-screen)',
+    'live-refresh an open ticket detail screen',
     () {
       Future<TicketSearchPage> searchAnyArgs() => repository.searchTickets(
         query: any(named: 'query'),
@@ -9569,6 +9592,14 @@ void main() {
         offset: any(named: 'offset'),
       statusSortOrder: any(named: 'statusSortOrder'),
             );
+
+      // Only used by the advanceSddStage-related cases below, which need
+      // the full provider/comment/link stack to spawn a stage chat —
+      // mirrors the standalone 'advanceSddStage' group's own setup.
+      late MockAgentModelClient agentClient;
+      late MockProviderRegistry registry;
+      late MockCommentRepository commentRepository;
+      late MockTicketLinkRepository linkRepository;
 
       blocTest<TicketsCubit, TicketsState>(
         'updateTicketStatus live-refreshes an open Story detail screen '
@@ -9741,6 +9772,392 @@ void main() {
           const TicketStatusUpdating([]),
           const TicketStatusUpdated([], hasMore: false),
         ],
+      );
+
+      // Generalized coverage — aion-arch/changes/
+      // generalized-live-refresh-for-all-ticket-writes. The
+      // updateTicketStatus cases above cover the mechanism's original
+      // single-ticket path; these cover every write path newly wired to
+      // it: bulk status, advanceSddStage, trash (single + bulk),
+      // reparent (both directions), and create.
+
+      blocTest<TicketsCubit, TicketsState>(
+        'updateStatusForTickets live-refreshes an open Story detail '
+        'screen when a direct Task child is included in the bulk write',
+        setUp: () {
+          final taskChildNowDone = taskChildNotDone.copyWith(
+            status: 'done',
+          );
+          when(
+            () => repository.updateStatusForIds([taskChildNotDone.id], 'done'),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(taskChildNotDone.id),
+          ).thenAnswer((_) async => taskChildNowDone);
+          when(
+            () => repository.getTicketById(storyProposed.id),
+          ).thenAnswer((_) async => storyProposed);
+          when(
+            () => repository.getTicketsByParent(
+              storyProposed.id,
+              types: any(named: 'types'),
+            ),
+          ).thenAnswer((_) async => [taskChildDone, taskChildNowDone]);
+          when(searchAnyArgs).thenAnswer(
+            (_) async => TicketSearchPage(tickets: const [], hasMore: false),
+          );
+        },
+        build: () => TicketsCubit(repository),
+        seed: () => TicketDetailLoaded(storyProposed),
+        act: (cubit) =>
+            cubit.updateStatusForTickets([taskChildNotDone.id], 'done'),
+        wait: const Duration(milliseconds: 10),
+        verify: (_) {
+          verify(() => repository.getTicketById(storyProposed.id)).called(1);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'updateStatusForTickets does not refresh an open Story detail '
+        'screen when none of the bulk-written ids are its children',
+        setUp: () {
+          when(
+            () => repository.updateStatusForIds([otherTask.id], 'done'),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(otherTask.id),
+          ).thenAnswer((_) async => otherTask.copyWith(status: 'done'));
+          when(searchAnyArgs).thenAnswer(
+            (_) async => TicketSearchPage(tickets: const [], hasMore: false),
+          );
+        },
+        build: () => TicketsCubit(repository),
+        seed: () => TicketDetailLoaded(storyProposed),
+        act: (cubit) => cubit.updateStatusForTickets([otherTask.id], 'done'),
+        wait: const Duration(milliseconds: 10),
+        verify: (_) {
+          verifyNever(
+            () => repository.getTicketsByParent(
+              storyProposed.id,
+              types: any(named: 'types'),
+            ),
+          );
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'advanceSddStage live-refreshes an open Epic detail screen when '
+        'a direct child Story advances its own sddStage',
+        setUp: () {
+          agentClient = MockAgentModelClient();
+          registry = buildProviderStack(agentClient).registry;
+          commentRepository = MockCommentRepository();
+          linkRepository = MockTicketLinkRepository();
+          when(
+            () => linkRepository.getLinksForTicket(any()),
+          ).thenAnswer((_) async => []);
+          final advancedStory = Ticket(
+            id: storyUnderEpic.id,
+            ticketId: storyUnderEpic.ticketId,
+            type: storyUnderEpic.type,
+            title: storyUnderEpic.title,
+            status: storyUnderEpic.status,
+            parentId: storyUnderEpic.parentId,
+            sddStage: SddStage.exploring,
+            createdAt: storyUnderEpic.createdAt,
+            updatedAt: storyUnderEpic.updatedAt,
+          );
+          when(
+            () => repository.updateTicketSddStage(
+              storyUnderEpic.id,
+              SddStage.exploring,
+            ),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(any()),
+          ).thenAnswer((_) async => dummyChatTicket);
+          when(
+            () => repository.getTicketById(storyUnderEpic.id),
+          ).thenAnswer((_) async => advancedStory);
+          when(
+            () => repository.getTicketById(openEpic.id),
+          ).thenAnswer((_) async => openEpic);
+          when(() => repository.createTicket(any())).thenAnswer((_) async {});
+          when(
+            () => commentRepository.addComment(any()),
+          ).thenAnswer((_) async {});
+          when(() => agentClient.run(any())).thenAnswer(
+            (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+          );
+        },
+        build: () => TicketsCubit(
+          repository,
+          providerRegistry: registry,
+          commentRepository: commentRepository,
+          linkRepository: linkRepository,
+        ),
+        seed: () => TicketDetailLoaded(openEpic),
+        act: (cubit) => cubit.advanceSddStage(storyUnderEpic),
+        wait: const Duration(milliseconds: 50),
+        verify: (_) {
+          verify(() => repository.getTicketById(openEpic.id)).called(1);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'advanceSddStage does not refresh a Story\'s already-open detail '
+        'screen when an unrelated ticket advances its own sddStage',
+        setUp: () {
+          agentClient = MockAgentModelClient();
+          registry = buildProviderStack(agentClient).registry;
+          commentRepository = MockCommentRepository();
+          linkRepository = MockTicketLinkRepository();
+          when(
+            () => linkRepository.getLinksForTicket(any()),
+          ).thenAnswer((_) async => []);
+          final advancedEpic = Ticket(
+            id: epic.id,
+            ticketId: epic.ticketId,
+            type: epic.type,
+            title: epic.title,
+            status: epic.status,
+            sddStage: SddStage.exploring,
+            createdAt: epic.createdAt,
+            updatedAt: epic.updatedAt,
+          );
+          when(
+            () => repository.updateTicketSddStage(epic.id, SddStage.exploring),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(any()),
+          ).thenAnswer((_) async => dummyChatTicket);
+          when(
+            () => repository.getTicketById(epic.id),
+          ).thenAnswer((_) async => advancedEpic);
+          when(() => repository.createTicket(any())).thenAnswer((_) async {});
+          when(
+            () => commentRepository.addComment(any()),
+          ).thenAnswer((_) async {});
+          when(() => agentClient.run(any())).thenAnswer(
+            (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+          );
+        },
+        build: () => TicketsCubit(
+          repository,
+          providerRegistry: registry,
+          commentRepository: commentRepository,
+          linkRepository: linkRepository,
+        ),
+        seed: () => TicketDetailLoaded(storyProposed),
+        act: (cubit) => cubit.advanceSddStage(epic),
+        wait: const Duration(milliseconds: 50),
+        verify: (_) {
+          verifyNever(() => repository.getTicketById(storyProposed.id));
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'trashTicket live-refreshes a different, already-open Story '
+        'detail screen when one of its direct Task children is trashed',
+        setUp: () {
+          when(
+            () => repository.trashTicket(taskChildNotDone.id),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(taskChildNotDone.id),
+          ).thenAnswer((_) async => taskChildNotDone);
+          when(
+            () => repository.getTicketById(storyProposed.id),
+          ).thenAnswer((_) async => storyProposed);
+          when(
+            () => repository.getTicketsByParent(
+              storyProposed.id,
+              types: any(named: 'types'),
+            ),
+          ).thenAnswer((_) async => [taskChildDone]);
+        },
+        build: () => TicketsCubit(repository),
+        seed: () => TicketDetailLoaded(storyProposed),
+        act: (cubit) => cubit.trashTicket(taskChildNotDone.id),
+        wait: const Duration(milliseconds: 10),
+        verify: (_) {
+          verify(() => repository.getTicketById(storyProposed.id)).called(1);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'trashTicket does not fire an extra refresh when the trashed '
+        'ticket is itself the one open (navigates away instead)',
+        setUp: () {
+          when(
+            () => repository.trashTicket(ticket.id),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(ticket.id),
+          ).thenAnswer((_) async => ticket);
+        },
+        build: () => TicketsCubit(repository),
+        seed: () => TicketDetailLoaded(ticket),
+        act: (cubit) => cubit.trashTicket(ticket.id),
+        expect: () => [const TicketTrashing(), const TicketTrashed()],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'trashTickets live-refreshes an open Story detail screen when a '
+        'direct Task child is included in the bulk trash',
+        setUp: () {
+          when(
+            () => repository.trashTickets([taskChildNotDone.id]),
+          ).thenAnswer((_) async => 1);
+          when(
+            () => repository.getTicketById(taskChildNotDone.id),
+          ).thenAnswer((_) async => taskChildNotDone);
+          when(
+            () => repository.getTicketById(storyProposed.id),
+          ).thenAnswer((_) async => storyProposed);
+          when(
+            () => repository.getTicketsByParent(
+              storyProposed.id,
+              types: any(named: 'types'),
+            ),
+          ).thenAnswer((_) async => [taskChildDone]);
+          when(searchAnyArgs).thenAnswer(
+            (_) async => TicketSearchPage(tickets: const [], hasMore: false),
+          );
+        },
+        build: () => TicketsCubit(repository),
+        seed: () => TicketDetailLoaded(storyProposed),
+        act: (cubit) => cubit.trashTickets([taskChildNotDone.id]),
+        wait: const Duration(milliseconds: 10),
+        verify: (_) {
+          verify(() => repository.getTicketById(storyProposed.id)).called(1);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'updateTicketParent live-refreshes an open Epic detail screen '
+        'when a Story is reparented into it',
+        setUp: () {
+          final storyReparentedIntoEpic = Ticket(
+            id: storyProposed.id,
+            ticketId: storyProposed.ticketId,
+            type: storyProposed.type,
+            title: storyProposed.title,
+            status: storyProposed.status,
+            sddStage: storyProposed.sddStage,
+            parentId: openEpic.id,
+            createdAt: storyProposed.createdAt,
+            updatedAt: storyProposed.updatedAt,
+          );
+          when(
+            () => repository.getAllTickets(),
+          ).thenAnswer((_) async => [storyProposed, openEpic]);
+          when(
+            () => repository.updateTicketParent(storyProposed.id, openEpic.id),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(storyProposed.id),
+          ).thenAnswer((_) async => storyReparentedIntoEpic);
+          when(
+            () => repository.getTicketById(openEpic.id),
+          ).thenAnswer((_) async => openEpic);
+        },
+        build: () => TicketsCubit(repository),
+        seed: () => TicketDetailLoaded(openEpic),
+        act: (cubit) => cubit.updateTicketParent(storyProposed, openEpic.id),
+        wait: const Duration(milliseconds: 10),
+        verify: (_) {
+          // Also called once by TicketParentTrashService.changeParent's own
+          // new-parent validation — this only asserts the live-refresh
+          // mechanism additionally re-fetched it, not an exact total count.
+          verify(() => repository.getTicketById(openEpic.id)).called(greaterThan(0));
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'updateTicketParent live-refreshes the open Story detail screen '
+        'it just lost a Task child from, when that Task is reparented '
+        'elsewhere',
+        setUp: () {
+          final taskReparentedAway = Ticket(
+            id: taskChildNotDone.id,
+            ticketId: taskChildNotDone.ticketId,
+            type: taskChildNotDone.type,
+            title: taskChildNotDone.title,
+            status: taskChildNotDone.status,
+            parentId: unrelated.id,
+            createdAt: taskChildNotDone.createdAt,
+            updatedAt: taskChildNotDone.updatedAt,
+          );
+          when(
+            () => repository.getAllTickets(),
+          ).thenAnswer((_) async => [taskChildNotDone, storyProposed, unrelated]);
+          when(
+            () =>
+                repository.updateTicketParent(
+              taskChildNotDone.id,
+              unrelated.id,
+            ),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(taskChildNotDone.id),
+          ).thenAnswer((_) async => taskReparentedAway);
+          when(
+            () => repository.getTicketById(storyProposed.id),
+          ).thenAnswer((_) async => storyProposed);
+          when(
+            () => repository.getTicketById(unrelated.id),
+          ).thenAnswer((_) async => unrelated);
+          when(
+            () => repository.getTicketsByParent(
+              storyProposed.id,
+              types: any(named: 'types'),
+            ),
+          ).thenAnswer((_) async => []);
+        },
+        build: () => TicketsCubit(repository),
+        seed: () => TicketDetailLoaded(storyProposed),
+        act: (cubit) =>
+            cubit.updateTicketParent(taskChildNotDone, unrelated.id),
+        wait: const Duration(milliseconds: 10),
+        verify: (_) {
+          verify(() => repository.getTicketById(storyProposed.id)).called(1);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'createTicket live-refreshes an open Story detail screen the '
+        'moment a new Task child is created, independent of the '
+        'AI-suggestion chain',
+        setUp: () {
+          when(() => repository.createTicket(any())).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(any()),
+          ).thenAnswer((_) async => taskChildNotDone);
+          when(
+            () => repository.getTicketById(storyProposed.id),
+          ).thenAnswer((_) async => storyProposed);
+          when(
+            () => repository.getTicketsByParent(
+              storyProposed.id,
+              types: any(named: 'types'),
+            ),
+          ).thenAnswer((_) async => [taskChildNotDone]);
+          when(searchAnyArgs).thenAnswer(
+            (_) async => TicketSearchPage(tickets: const [], hasMore: false),
+          );
+        },
+        build: () => TicketsCubit(repository),
+        seed: () => TicketDetailLoaded(storyProposed),
+        act: (cubit) => cubit.createTicket(
+          type: TicketType.task,
+          title: 'New task',
+          parentId: storyProposed.id,
+        ),
+        wait: const Duration(milliseconds: 10),
+        verify: (_) {
+          verify(() => repository.getTicketById(storyProposed.id)).called(1);
+        },
       );
 
       blocTest<TicketsCubit, TicketsState>(

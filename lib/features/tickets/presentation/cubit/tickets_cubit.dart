@@ -1283,6 +1283,15 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// already open (e.g. the user navigated there right after creating it)
   /// live-refreshes instead of waiting for a manual reload. Added for
   /// `aion-arch/changes/live-refresh-open-ticket-detail-screen`.
+  ///
+  /// Independently of that chain, also fires
+  /// [_refreshDetailIfOpenAndAffected] immediately after the write (not
+  /// waiting on the suggester), so a parent Story's or Epic's
+  /// already-open detail screen live-refreshes the moment [parentId]
+  /// gains a new child — its `canAdvanceSddStage` precondition (e.g.
+  /// "at least one child exists") can flip right away, independent of
+  /// whether an AI suggestion ever lands for the new ticket. Added for
+  /// `aion-arch/changes/generalized-live-refresh-for-all-ticket-writes`.
   Future<Ticket> createTicket({
     required TicketType type,
     required String title,
@@ -1295,6 +1304,16 @@ class TicketsCubit extends Cubit<TicketsState> {
     String? expectedBehavior,
     String? actualBehavior,
   }) async {
+    // Captured before this call's own TicketCreating/TicketCreated
+    // emissions below overwrite `state` — see
+    // _refreshDetailIfOpenAndAffected's dartdoc for why a live `state`
+    // read after those emissions would never see a detail screen (e.g.
+    // the new ticket's parent) that was open when this call started.
+    // Only the new immediate refresh call below needs this — the
+    // existing _estimationSuggester-chained call further down correctly
+    // keeps reading live `state`, since it resolves well after this
+    // method's own emissions.
+    final stateBeforeThisWrite = state;
     _searchGeneration++;
     final currentTickets = switch (state) {
       TicketsLoaded(:final tickets) => tickets,
@@ -1336,10 +1355,16 @@ class TicketsCubit extends Cubit<TicketsState> {
         unawaited(
           _estimationSuggester
               .suggest(persisted)
-              .then((_) => _refreshDetailIfOpenAndAffected(persisted.id)),
+              .then((_) => _refreshDetailIfOpenAndAffected({persisted.id})),
         );
         unawaited(_tokenPredictor.suggest(persisted));
         unawaited(_triggerGitProjection(persisted, 'created'));
+        unawaited(
+          _refreshDetailIfOpenAndAffected(
+            {persisted.id},
+            fromState: stateBeforeThisWrite,
+          ),
+        );
       }
       final page = await _repository.searchTickets(
         query: _lastQuery,
@@ -1461,7 +1486,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       // `aion-arch/changes/workflow-skill-attachments`.
       unawaited(
         _refreshDetailIfOpenAndAffected(
-          id,
+          {id},
           fromState: stateBeforeThisWrite,
         ).then((_) {
           if (updated != null && attachment != null) {
@@ -1551,7 +1576,7 @@ class TicketsCubit extends Cubit<TicketsState> {
           unawaited(
             _estimationSuggester
                 .suggest(refreshed)
-                .then((_) => _refreshDetailIfOpenAndAffected(refreshed.id)),
+                .then((_) => _refreshDetailIfOpenAndAffected({refreshed.id})),
           );
           unawaited(_tokenPredictor.suggest(refreshed));
         }
@@ -1701,7 +1726,30 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// screen shows a toast rather than collapsing to the generic error
   /// view; [ParentChangeSuccess] emits the refreshed [TicketDetailLoaded]
   /// directly.
+  ///
+  /// On success, also fires a fire-and-forget
+  /// [_refreshDetailIfOpenAndAffected] call for [ticket]'s id — covers
+  /// the *new*-parent direction: if a Story's or Epic's already-open
+  /// detail screen is the ticket's new parent, that screen
+  /// live-refreshes. The *old*-parent direction (a Story's or Epic's
+  /// already-open detail screen loses a child) needs a second, separate
+  /// check: [_refreshDetailIfOpenAndAffected] infers a written ticket's
+  /// parent by re-fetching its *current* `parentId`, which after this
+  /// write is always the *new* parent — the old parent is structurally
+  /// undiscoverable that way, since nothing about the post-write ticket
+  /// still points at it. [ticket]'s `parentId` *before* this call is the
+  /// only place that information exists, so it's captured
+  /// (`oldParentId`) and checked directly against
+  /// [_liveRefreshDependents] and the state open when this call started.
+  /// Added for
+  /// `aion-arch/changes/generalized-live-refresh-for-all-ticket-writes`.
   Future<void> updateTicketParent(Ticket ticket, String? newParentId) async {
+    // Captured before this call's own emissions below overwrite `state`
+    // — see _refreshDetailIfOpenAndAffected's dartdoc for why a live
+    // `state` read after those emissions would never see a detail
+    // screen that was open when this call started.
+    final stateBeforeThisWrite = state;
+    final oldParentId = ticket.parentId;
     try {
       final result = await _parentTrashService.changeParent(
         ticket,
@@ -1712,6 +1760,21 @@ class TicketsCubit extends Cubit<TicketsState> {
           await _emitInvalidParent(ticket.id);
         case ParentChangeSuccess(:final ticket):
           emit(TicketDetailLoaded(ticket));
+          unawaited(
+            _refreshDetailIfOpenAndAffected({
+              ticket.id,
+            }, fromState: stateBeforeThisWrite),
+          );
+          if (oldParentId != null &&
+              oldParentId != ticket.parentId &&
+              stateBeforeThisWrite is TicketDetailLoaded &&
+              stateBeforeThisWrite.ticket.id == oldParentId) {
+            final childTypes =
+                _liveRefreshDependents[stateBeforeThisWrite.ticket.type];
+            if (childTypes != null && childTypes.contains(ticket.type)) {
+              unawaited(getTicketById(oldParentId));
+            }
+          }
       }
     } catch (e) {
       emit(TicketsError(e.toString()));
@@ -1780,7 +1843,20 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// again immediately, surfacing a pending-confirmation banner or a
   /// manual "Run" control instead. Added for
   /// `aion-arch/changes/workflow-skill-attachments`.
+  ///
+  /// Also fires a fire-and-forget [_refreshDetailIfOpenAndAffected] call
+  /// right after the write is confirmed, so a parent Epic's already-open
+  /// detail screen live-refreshes when [ticket] is one of its direct
+  /// Story children and this call just advanced that Story's `sddStage`.
+  /// Added for
+  /// `aion-arch/changes/generalized-live-refresh-for-all-ticket-writes`.
   Future<String?> advanceSddStage(Ticket ticket) async {
+    // Captured before this call's own emissions below (including the
+    // guard-clause emits from _emitSddStagePreconditionNotMet) overwrite
+    // `state` — see _refreshDetailIfOpenAndAffected's dartdoc for why a
+    // live `state` read after those emissions would never see a detail
+    // screen that was open when this call started.
+    final stateBeforeThisWrite = state;
     if (ticket.type != TicketType.epic && ticket.type != TicketType.story) {
       await _emitSddStagePreconditionNotMet(ticket.id);
       return null;
@@ -1803,6 +1879,18 @@ class TicketsCubit extends Cubit<TicketsState> {
       await _repository.updateTicketSddStage(ticket.id, nextStage);
       final refreshed = await _repository.getTicketById(ticket.id);
       if (refreshed == null) return null;
+      // Fired once, right after the persisted sddStage write is
+      // confirmed, rather than duplicated in every branch below — a
+      // parent Epic's precondition only cares that a child Story's
+      // sddStage has changed, not which branch this call subsequently
+      // takes. Added for
+      // `aion-arch/changes/generalized-live-refresh-for-all-ticket-writes`.
+      unawaited(
+        _refreshDetailIfOpenAndAffected(
+          {ticket.id},
+          fromState: stateBeforeThisWrite,
+        ),
+      );
       if (nextStage == SddStage.archived) {
         emit(TicketDetailLoaded(refreshed));
         return null;
@@ -5410,56 +5498,87 @@ class TicketsCubit extends Cubit<TicketsState> {
     return _rollupRecomputer.recompute(startIds, eventLabel);
   }
 
+  /// Declares which direct-child ticket types a parent's displayed detail
+  /// state (`TicketDetailLoaded.canAdvanceSddStage`/`sddStageBlockReason`,
+  /// computed from `getTicketsByParent` — see [getTicketById]'s dartdoc)
+  /// depends on. Checked by [_refreshDetailIfOpenAndAffected]: whenever a
+  /// write touches a ticket whose `(parent.type, ticket.type)` pair
+  /// appears here, the parent's open detail screen (if that's what's
+  /// currently shown) is silently re-fetched. Generalizes the single
+  /// hardcoded `story → task/bug` case from
+  /// `aion-arch/changes/live-refresh-open-ticket-detail-screen` — extend
+  /// this map, not the surrounding method, if a third dependency is ever
+  /// discovered. Added for
+  /// `aion-arch/changes/generalized-live-refresh-for-all-ticket-writes`.
+  static const Map<TicketType, Set<TicketType>> _liveRefreshDependents = {
+    TicketType.story: {TicketType.task, TicketType.bug},
+    TicketType.epic: {TicketType.story},
+  };
+
   /// Re-fetches and silently re-emits [TicketDetailLoaded] for the
   /// currently open ticket detail screen when a background write may have
-  /// changed data it depends on. Added for
-  /// `aion-arch/changes/live-refresh-open-ticket-detail-screen`.
+  /// changed data it depends on. Originally added for
+  /// `aion-arch/changes/live-refresh-open-ticket-detail-screen`;
+  /// generalized to a set of ids and a declarative dependency table
+  /// ([_liveRefreshDependents]) by
+  /// `aion-arch/changes/generalized-live-refresh-for-all-ticket-writes`.
   ///
-  /// Two cases trigger a refresh:
-  /// - [writtenTicketId] is the ticket currently shown
+  /// Two cases trigger a refresh, checked against every id in
+  /// [writtenTicketIds] until one matches (no-ops the rest — a refresh is
+  /// idempotent and only one screen can ever be open):
+  /// - one of [writtenTicketIds] is the ticket currently shown
   ///   ([TicketDetailLoaded.ticket]'s `id` matches) — e.g. a passive
   ///   AI-suggestion landed for it (see [createTicket]/[updateTicket]'s
   ///   [_estimationSuggester] trigger).
-  /// - The currently shown ticket is a `story` and [writtenTicketId] is
-  ///   one of its direct Task/Bug children (see
-  ///   [TicketTypeHierarchy.executableTypes]) — e.g. a sibling Task's
-  ///   status changed via [updateTicketStatus], which may flip
-  ///   [TicketDetailLoaded.canAdvanceSddStage].
+  /// - the currently shown ticket's `type` is a key in
+  ///   [_liveRefreshDependents], one of [writtenTicketIds]' tickets has a
+  ///   `type` in that key's value set, and that ticket's `parentId`
+  ///   matches the currently shown ticket's `id` — e.g. a sibling Task's
+  ///   status changed via [updateTicketStatus], which may flip a Story's
+  ///   [TicketDetailLoaded.canAdvanceSddStage]; or a Story's `sddStage`
+  ///   advanced via [advanceSddStage], which may flip its parent Epic's.
   ///
-  /// No-ops when no detail screen is open, or the open ticket is
-  /// unrelated to [writtenTicketId]. Delegates to [getTicketById], which
-  /// never flashes [TicketsLoading] and preserves the open ticket's
-  /// already-loaded Documentation-section relations when re-entering for
-  /// the same id — see that method's dartdoc.
+  /// No-ops when [writtenTicketIds] is empty, no detail screen is open,
+  /// or every written ticket is unrelated. Delegates to [getTicketById],
+  /// which never flashes [TicketsLoading] and preserves the open
+  /// ticket's already-loaded Documentation-section relations when
+  /// re-entering for the same id — see that method's dartdoc.
   ///
-  /// [fromState] defaults to a live read of [state] — correct for the
-  /// [createTicket]/[updateTicket] call sites, which chain this onto
-  /// [_estimationSuggester]'s completion sometime *after* their own
-  /// synchronous emission, so "is a detail screen open right now" is the
-  /// right question. [updateTicketStatus] instead passes the state it
-  /// captured *before* its own `TicketStatusUpdating`/`TicketStatusUpdated`
-  /// emissions, since those would otherwise have already overwritten
-  /// [state] by the time this runs — reading live [state] there would
-  /// never see the detail screen that was open when the call started.
+  /// [fromState] defaults to a live read of [state] — correct for call
+  /// sites that chain this onto some other async operation's completion
+  /// well after their own synchronous emission (e.g. [createTicket]'s
+  /// [_estimationSuggester] chain), so "is a detail screen open right
+  /// now" is the right question. Call sites whose own write emits an
+  /// intermediate state first ([updateTicketStatus],
+  /// [updateStatusForTickets], [trashTicket], [trashTickets],
+  /// [updateTicketParent], [advanceSddStage]) must instead pass the
+  /// state captured *before* that emission — those emissions would
+  /// otherwise have already overwritten [state] by the time this runs,
+  /// permanently hiding the detail screen that was open when the call
+  /// started.
   Future<void> _refreshDetailIfOpenAndAffected(
-    String writtenTicketId, {
+    Set<String> writtenTicketIds, {
     TicketsState? fromState,
   }) async {
+    if (writtenTicketIds.isEmpty) return;
     final current = fromState ?? state;
     if (current is! TicketDetailLoaded) return;
 
-    if (current.ticket.id == writtenTicketId) {
+    if (writtenTicketIds.contains(current.ticket.id)) {
       await getTicketById(current.ticket.id);
       return;
     }
 
-    if (current.ticket.type == TicketType.story) {
-      final children = await _repository.getTicketsByParent(
-        current.ticket.id,
-        types: TicketTypeHierarchy.executableTypes,
-      );
-      if (children.any((c) => c.id == writtenTicketId)) {
+    final childTypes = _liveRefreshDependents[current.ticket.type];
+    if (childTypes == null) return;
+
+    for (final id in writtenTicketIds) {
+      final written = await _repository.getTicketById(id);
+      if (written != null &&
+          childTypes.contains(written.type) &&
+          written.parentId == current.ticket.id) {
         await getTicketById(current.ticket.id);
+        return;
       }
     }
   }
@@ -5727,14 +5846,30 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// write plus the same git-projection/rollup-recompute side effects
   /// this method used to trigger inline — see [_parentTrashService]).
   /// Context-aware on the state active before the call: if it was
-  /// [TicketDetailLoaded] (the caller is `TicketDetailScreen`), emits
-  /// [TicketTrashed] on success; any other (list/board-shaped) previous
-  /// state re-fetches (re-applying the filters [searchTickets] was last
-  /// called with, requesting at least as many tickets as were already
-  /// loaded) and emits [TicketsLoaded] instead, so
-  /// `TicketsListScreen`/`TicketBoardView` never fall into a blank state.
-  /// Trash never fails except on a genuine unexpected repository error,
-  /// which emits [TicketsError].
+  /// [TicketDetailLoaded] **for [id] itself** (the caller is
+  /// `TicketDetailScreen` trashing the ticket it's showing), emits
+  /// [TicketTrashed] on success so the screen navigates away; any other
+  /// previous state — list/board-shaped, or [TicketDetailLoaded] for a
+  /// *different* ticket (e.g. an agent trashing a Task while a human has
+  /// some other ticket's detail screen open) — re-fetches (re-applying
+  /// the filters [searchTickets] was last called with, requesting at
+  /// least as many tickets as were already loaded) and emits
+  /// [TicketsLoaded] instead, so `TicketsListScreen`/`TicketBoardView`
+  /// never fall into a blank state. The id-equality check (not just "was
+  /// *a* detail screen open") was added by
+  /// `aion-arch/changes/generalized-live-refresh-for-all-ticket-writes`
+  /// — previously this branched on [TicketDetailLoaded] alone, which
+  /// mishandled the different-ticket case by navigating away from
+  /// whichever detail screen happened to be open regardless of which
+  /// ticket was actually trashed. Trash never fails except on a genuine
+  /// unexpected repository error, which emits [TicketsError].
+  ///
+  /// Whenever the trashed ticket is *not* the one currently open (the
+  /// list/board case, or the different-ticket-open case above), also
+  /// fires a fire-and-forget [_refreshDetailIfOpenAndAffected] call so a
+  /// different, already-open Story's or Epic's detail screen
+  /// live-refreshes when [id] is one of its direct children. Added for
+  /// `aion-arch/changes/generalized-live-refresh-for-all-ticket-writes`.
   Future<void> trashTicket(String id) async {
     _searchGeneration++;
     final previousState = state;
@@ -5752,19 +5887,27 @@ class TicketsCubit extends Cubit<TicketsState> {
     emit(const TicketTrashing());
     try {
       await _parentTrashService.trash(id);
-      if (previousState is TicketDetailLoaded) {
+      if (previousState is TicketDetailLoaded && previousState.ticket.id == id) {
         emit(const TicketTrashed());
       } else {
-        final page = await _repository.searchTickets(
-          query: _lastQuery,
-          statuses: _lastStatuses,
-          types: _lastTypes,
-          priorities: _lastPriorities,
-          sort: _lastSort,
-          limit: max(_pageSize, currentTickets.length),
-          statusSortOrder: _statusSortOrder,
+        if (previousState is! TicketDetailLoaded) {
+          final page = await _repository.searchTickets(
+            query: _lastQuery,
+            statuses: _lastStatuses,
+            types: _lastTypes,
+            priorities: _lastPriorities,
+            sort: _lastSort,
+            limit: max(_pageSize, currentTickets.length),
+            statusSortOrder: _statusSortOrder,
+          );
+          emit(TicketsLoaded(page.tickets, hasMore: page.hasMore));
+        }
+        unawaited(
+          _refreshDetailIfOpenAndAffected(
+            {id},
+            fromState: previousState,
+          ),
         );
-        emit(TicketsLoaded(page.tickets, hasMore: page.hasMore));
       }
     } catch (e) {
       emit(TicketsError(e.toString()));
@@ -5794,7 +5937,21 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [trashTicket]: concurrent unawaited git operations race the
   /// underlying git client's add/commit steps and can silently coalesce
   /// separate logical commits into one mislabeled commit.
+  ///
+  /// Also fires a fire-and-forget [_refreshDetailIfOpenAndAffected] call
+  /// for the explicitly-passed [ids] (not their cascaded descendants,
+  /// same documented scope simplification as the git-projection side
+  /// effect above), so a Story's or Epic's already-open detail screen
+  /// live-refreshes when this bulk trash touches one of its direct
+  /// children. Added for
+  /// `aion-arch/changes/generalized-live-refresh-for-all-ticket-writes`.
   Future<void> trashTickets(List<String> ids) async {
+    // Captured before this call's own TicketsBatchTrashing/
+    // TicketsBatchTrashed emissions below overwrite `state` — see
+    // _refreshDetailIfOpenAndAffected's dartdoc for why a live `state`
+    // read after those emissions would never see a detail screen that
+    // was open when this call started.
+    final stateBeforeThisWrite = state;
     _searchGeneration++;
     final currentTickets = switch (state) {
       TicketsLoaded(:final tickets) => tickets,
@@ -5826,6 +5983,12 @@ class TicketsCubit extends Cubit<TicketsState> {
       );
       emit(
         TicketsBatchTrashed(page.tickets, trashedCount, hasMore: page.hasMore),
+      );
+      unawaited(
+        _refreshDetailIfOpenAndAffected(
+          ids.toSet(),
+          fromState: stateBeforeThisWrite,
+        ),
       );
     } catch (e) {
       emit(TicketsError(e.toString()));
@@ -5859,10 +6022,23 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [status]'s configured [_attachmentForStatus] (if any) via
   /// [_resolveAndFireAttachment] — same hook [updateTicketStatus] gained.
   /// Added for `aion-arch/changes/workflow-skill-attachments`.
+  ///
+  /// Also fires a fire-and-forget [_refreshDetailIfOpenAndAffected] call,
+  /// passing every successfully-written id at once, so a Story's or
+  /// Epic's already-open detail screen live-refreshes when this bulk
+  /// write touches one of its direct children — the bulk counterpart of
+  /// [updateTicketStatus]'s own single-ticket live-refresh. Added for
+  /// `aion-arch/changes/generalized-live-refresh-for-all-ticket-writes`.
   Future<void> updateStatusForTickets(
     List<String> ids,
     String status,
   ) async {
+    // Captured before this call's own TicketsBatchStatusUpdating/
+    // TicketsBatchStatusUpdated emissions below overwrite `state` — see
+    // _refreshDetailIfOpenAndAffected's dartdoc for why a live `state`
+    // read after those emissions would never see a detail screen that
+    // was open when this call started.
+    final stateBeforeThisWrite = state;
     _searchGeneration++;
     final currentTickets = switch (state) {
       TicketsLoaded(:final tickets) => tickets,
@@ -5941,10 +6117,17 @@ class TicketsCubit extends Cubit<TicketsState> {
         ),
       );
       unawaited(_refreshBlockedBoardState());
-      // This method has no per-ticket _refreshDetailIfOpenAndAffected
-      // call to chain after (unlike updateTicketStatus) — the final emit
-      // above is already this method's last state change, so firing here
-      // (still after it) is enough to avoid the same clobbering risk.
+      // Fired after the final emit above (this method's last state
+      // change), same ordering [updateTicketStatus] uses, so a `gated`
+      // attachment's own pending-state emission below isn't clobbered by
+      // this one landing first. Added for
+      // `aion-arch/changes/generalized-live-refresh-for-all-ticket-writes`.
+      unawaited(
+        _refreshDetailIfOpenAndAffected(
+          writableIds.toSet(),
+          fromState: stateBeforeThisWrite,
+        ),
+      );
       for (final (updated, attachment) in pendingAttachmentFires) {
         unawaited(_resolveAndFireAttachment(updated, attachment));
       }
