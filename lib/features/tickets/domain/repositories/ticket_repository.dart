@@ -191,6 +191,16 @@ abstract interface class TicketRepository {
   /// not exist.
   Future<void> permanentlyDeleteTicket(String id);
 
+  /// Permanently deletes every ticket in [ids] — and each one's full
+  /// structural subtree — in one transaction. Mirrors [emptyTrash]'s
+  /// transaction shape (comments → ticket_links → page_wikilinks →
+  /// ticket rows), scoped to [ids]'s cascade instead of the entire
+  /// trashed set. Returns the total number of tickets actually deleted
+  /// (== [ids] plus every cascaded descendant, deduplicated), mirroring
+  /// [trashTickets]'s return-count convention. Ids that don't exist are
+  /// silently skipped. Irreversible.
+  Future<int> permanentlyDeleteTickets(List<String> ids);
+
   /// Permanently deletes every currently trashed ticket (and their
   /// comments/`ticket_links`). Irreversible. Used by the trash screen's
   /// "Empty trash" action. No-ops if trash is empty.

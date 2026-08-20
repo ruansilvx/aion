@@ -1,20 +1,33 @@
 // presentation/widgets/trashed_ticket_tile.dart — A single row in TrashScreen's list (presentation layer).
 
 import 'package:flutter/widgets.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
+import 'package:aion/features/tickets/presentation/cubit/ticket_selection_cubit.dart';
+
+/// Inset width of a selected row's leading accent bar — the
+/// `kRowSelectAccent` constant from design.md §0.4.
+const double _kRowSelectAccent = 3;
 
 /// A single row in [TrashScreen]'s list. Deliberately simpler than a live
 /// [TicketListTile] row — no status indicator and no priority badge,
 /// since trashed tickets carry no workflow context. Non-navigating (no
 /// detail screen for trashed tickets); offers Restore (neutral, no
-/// confirmation) and Permanently Delete (danger, confirmed) actions.
-/// Its second line also shows how long the ticket has been trashed via
+/// confirmation) and Permanently Delete (danger, confirmed) actions. Its
+/// second line also shows how long the ticket has been trashed via
 /// [formatTrashedAge], reflowing onto its own run when the row is
 /// crowded (see the `Wrap` around the type chip / subtasks / age labels).
+///
+/// While [TicketSelectionCubit]'s selection mode is active (read directly
+/// via `context.select`, mirroring `TicketListTile`'s identical self-
+/// contained pattern), the row instead shows a leading [AppCheckbox],
+/// tapping anywhere on the row toggles its selection, and the trailing
+/// Restore/Permanently-Delete buttons are hidden — bulk actions live only
+/// on `TrashSelectionBar` while selection mode is on.
 class TrashedTicketTile extends StatelessWidget {
   /// Creates a [TrashedTicketTile] for [ticket]. [descendantCount] is how
   /// many other trashed tickets are in its structural subtree — shown as
@@ -44,80 +57,118 @@ class TrashedTicketTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = ThemeScope.of(context);
     final c = t.colors;
+    final isSelectionActive = context.select(
+      (TicketSelectionCubit cubit) => cubit.state.isActive,
+    );
+    final isSelected = context.select(
+      (TicketSelectionCubit cubit) =>
+          cubit.state.selectedIds.contains(ticket.id),
+    );
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: c.border, width: 1)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 14, 16, 14),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: c.surfaceHover,
-                          borderRadius: BorderRadius.all(AionRadius.sm),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
+    void handleTap() {
+      if (isSelectionActive) {
+        context.read<TicketSelectionCubit>().toggle(ticket.id);
+      }
+    }
+
+    return GestureDetector(
+      onTap: isSelectionActive ? handleTap : null,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: isSelected ? c.primarySubtle : null,
+          border: Border(
+            left: isSelected
+                ? BorderSide(color: c.primary, width: _kRowSelectAccent)
+                : BorderSide.none,
+            bottom: BorderSide(color: c.border, width: 1),
+          ),
+        ),
+        child: Padding(
+          padding: isSelectionActive
+              ? const EdgeInsets.fromLTRB(16, 14, 20, 14)
+              : const EdgeInsets.fromLTRB(20, 14, 16, 14),
+          child: Row(
+            crossAxisAlignment: isSelectionActive
+                ? CrossAxisAlignment.start
+                : CrossAxisAlignment.center,
+            children: [
+              if (isSelectionActive) ...[
+                AppCheckbox(
+                  value: isSelected,
+                  onChanged: (_) =>
+                      context.read<TicketSelectionCubit>().toggle(ticket.id),
+                ),
+                const SizedBox(width: 12),
+              ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: c.surfaceHover,
+                            borderRadius: BorderRadius.all(AionRadius.sm),
                           ),
-                          child: Text(
-                            ticket.ticketId,
-                            style: AionText.key.copyWith(
-                              color: c.textSecondary,
-                              fontSize: 10.5,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            child: Text(
+                              ticket.ticketId,
+                              style: AionText.key.copyWith(
+                                color: c.textSecondary,
+                                fontSize: 10.5,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 9),
-                      Flexible(
-                        child: Text(
-                          ticket.title,
-                          style: AionText.cardTitle.copyWith(
-                            color: c.textSecondary,
+                        const SizedBox(width: 9),
+                        Flexible(
+                          child: Text(
+                            ticket.title,
+                            style: AionText.cardTitle.copyWith(
+                              color: isSelected
+                                  ? c.textPrimary
+                                  : c.textSecondary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AionSpacing.sp8),
-                  Wrap(
-                    spacing: 9,
-                    runSpacing: 6,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      TypeChip(type: ticket.type),
-                      if (descendantCount > 0)
+                      ],
+                    ),
+                    const SizedBox(height: AionSpacing.sp8),
+                    Wrap(
+                      spacing: 9,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        TypeChip(type: ticket.type),
+                        if (descendantCount > 0)
+                          Text(
+                            '+$descendantCount subtasks',
+                            style: AionText.time.copyWith(color: c.textMuted),
+                          ),
                         Text(
-                          '+$descendantCount subtasks',
+                          formatTrashedAge(ticket.deletedAt!),
                           style: AionText.time.copyWith(color: c.textMuted),
                         ),
-                      Text(
-                        formatTrashedAge(ticket.deletedAt!),
-                        style: AionText.time.copyWith(color: c.textMuted),
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(width: AionSpacing.sp12),
-            _RestoreAction(onTap: onRestore),
-            const SizedBox(width: AionSpacing.sp8),
-            _PermanentDeleteAction(onTap: onPermanentlyDelete),
-          ],
+              if (!isSelectionActive) ...[
+                const SizedBox(width: AionSpacing.sp12),
+                _RestoreAction(onTap: onRestore),
+                const SizedBox(width: AionSpacing.sp8),
+                _PermanentDeleteAction(onTap: onPermanentlyDelete),
+              ],
+            ],
+          ),
         ),
       ),
     );

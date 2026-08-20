@@ -164,6 +164,50 @@ class TrashCubit extends Cubit<TrashState> {
     }
   }
 
+  /// Restores every ticket in [ids] via [TicketParentTrashService.restore]
+  /// — looped once per id, not a batched repository call — then reloads
+  /// the trash list. Looping is correctness-equivalent to a real batch
+  /// call here: [TrashLoaded] only ever lists trashed *root* tickets (see
+  /// its own dartdoc), so every id in [ids] already has a fully-live
+  /// ancestor chain, meaning [restore]'s ancestor-revival step is always
+  /// a no-op for these calls, and two selected roots' subtrees can never
+  /// overlap. Restore is also non-destructive and safely retryable, so
+  /// there is no atomicity requirement pushing this toward a single
+  /// transaction the way [permanentlyDeleteTickets] needs one — see
+  /// proposal.md's "Implementation split" section for the full rationale.
+  /// Returns `true` on success, `false` (after emitting [TrashError]) on
+  /// failure.
+  Future<bool> restoreTickets(List<String> ids) async {
+    try {
+      for (final id in ids) {
+        await _parentTrashService.restore(id);
+      }
+      await load();
+      return true;
+    } catch (e) {
+      emit(TrashError(e.toString()));
+      return false;
+    }
+  }
+
+  /// Permanently deletes every ticket in [ids] — and each one's full
+  /// structural subtree — via [TicketRepository.permanentlyDeleteTickets]
+  /// (a single batched, transactional repository call — irreversible, so
+  /// unlike [restoreTickets] this needs all-or-nothing atomicity rather
+  /// than a loop over the single-ticket path), then reloads the trash
+  /// list. Returns `true` on success, `false` (after emitting
+  /// [TrashError]) on failure.
+  Future<bool> permanentlyDeleteTickets(List<String> ids) async {
+    try {
+      await _repository.permanentlyDeleteTickets(ids);
+      await load();
+      return true;
+    } catch (e) {
+      emit(TrashError(e.toString()));
+      return false;
+    }
+  }
+
   /// Permanently deletes every currently trashed ticket via
   /// [TicketRepository.emptyTrash], then reloads the trash list. Emits
   /// [TrashError] if the repository call throws.

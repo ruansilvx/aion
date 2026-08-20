@@ -852,6 +852,174 @@ void main() {
     });
   });
 
+  group('permanentlyDeleteTickets', () {
+    test('deletes a childless ticket cleanly', () async {
+      await repository.createTicket(buildTicket(id: 'lonely'));
+      await repository.trashTicket('lonely');
+
+      final deletedCount = await repository.permanentlyDeleteTickets([
+        'lonely',
+      ]);
+
+      expect(deletedCount, 1);
+      expect(await repository.getTicketById('lonely'), isNull);
+    });
+
+    test('deletes a multi-level subtree spanning several independently-'
+        'selected roots in one call', () async {
+      await repository.createTicket(buildTicket(id: 'root-a'));
+      await repository.createTicket(
+        buildTicket(id: 'root-a-child', parentId: 'root-a'),
+      );
+      await repository.createTicket(buildTicket(id: 'root-b'));
+      await repository.createTicket(
+        buildTicket(id: 'root-b-child', parentId: 'root-b'),
+      );
+      await repository.createTicket(
+        buildTicket(id: 'root-b-grandchild', parentId: 'root-b-child'),
+      );
+      await repository.createTicket(buildTicket(id: 'untouched'));
+      await repository.trashTicket('root-a');
+      await repository.trashTicket('root-b');
+
+      final deletedCount = await repository.permanentlyDeleteTickets([
+        'root-a',
+        'root-b',
+      ]);
+
+      expect(deletedCount, 5);
+      expect(await repository.getTicketById('root-a'), isNull);
+      expect(await repository.getTicketById('root-a-child'), isNull);
+      expect(await repository.getTicketById('root-b'), isNull);
+      expect(await repository.getTicketById('root-b-child'), isNull);
+      expect(await repository.getTicketById('root-b-grandchild'), isNull);
+      expect(await repository.getTicketById('untouched'), isNotNull);
+    });
+
+    test(
+      "a descendant already covered by another selected root's cascade "
+      "isn't double-counted in the returned total",
+      () async {
+        await repository.createTicket(buildTicket(id: 'root'));
+        await repository.createTicket(
+          buildTicket(id: 'shared-child', parentId: 'root'),
+        );
+        await repository.trashTicket('root');
+
+        // 'root' and its own child 'shared-child' are both passed in —
+        // the child's contribution to the cascade must not be counted
+        // twice (once as an explicit id, once as 'root''s descendant).
+        final deletedCount = await repository.permanentlyDeleteTickets([
+          'root',
+          'shared-child',
+        ]);
+
+        expect(deletedCount, 2);
+        expect(await repository.getTicketById('root'), isNull);
+        expect(await repository.getTicketById('shared-child'), isNull);
+      },
+    );
+
+    test('non-existent ids are silently skipped', () async {
+      await repository.createTicket(buildTicket(id: 'real'));
+      await repository.trashTicket('real');
+
+      final deletedCount = await repository.permanentlyDeleteTickets([
+        'real',
+        'missing',
+      ]);
+
+      expect(deletedCount, 1);
+      expect(await repository.getTicketById('real'), isNull);
+    });
+
+    test(
+      'comments/ticket_links/page_wikilinks cascade-delete alongside the '
+      'ticket rows',
+      () async {
+        await repository.createTicket(buildTicket(id: 'parent'));
+        await repository.createTicket(
+          buildTicket(id: 'child', parentId: 'parent'),
+        );
+        await repository.createTicket(buildTicket(id: 'other'));
+        await repository.createTicket(
+          buildSearchable(
+            id: 'wiki-source',
+            title: 'Wiki Source',
+            type: TicketType.page,
+          ),
+        );
+        await repository.createTicket(
+          buildSearchable(
+            id: 'wiki-target',
+            title: 'Wiki Target',
+            type: TicketType.page,
+          ),
+        );
+
+        final commentRepository = DriftCommentRepository(database);
+        await commentRepository.addComment(
+          TicketComment(
+            id: '',
+            ticketId: 'parent',
+            content: 'A comment',
+            authorType: CommentAuthorType.human,
+            createdAt: DateTime(2026, 1, 1),
+          ),
+        );
+        final linkRepository = DriftTicketLinkRepository(database);
+        await linkRepository.createLink(
+          sourceTicketId: 'parent',
+          targetTicketId: 'other',
+          linkType: TicketLinkType.relatesTo,
+        );
+        await database.pageWikilinkDao.replaceOutgoingLinks('wiki-source', {
+          'wiki-target',
+        });
+
+        await repository.trashTicket('parent');
+        await repository.trashTicket('wiki-source');
+        await repository.permanentlyDeleteTickets(['parent', 'wiki-source']);
+
+        expect(await repository.getTicketById('parent'), isNull);
+        expect(await repository.getTicketById('child'), isNull);
+        expect(await commentRepository.getCommentsForTicket('parent'), isEmpty);
+        expect(await linkRepository.getLinksForTicket('parent'), isEmpty);
+        expect(await repository.getTicketById('other'), isNotNull);
+        expect(
+          await database.pageWikilinkDao.getOutgoingLinks('wiki-source'),
+          isEmpty,
+        );
+        expect(
+          await database.pageWikilinkDao.getIncomingLinks('wiki-target'),
+          isEmpty,
+        );
+      },
+    );
+
+    test('returns 0 and performs no writes on an empty ids list', () async {
+      await repository.createTicket(buildTicket(id: 'live'));
+      final deletedCount = await repository.permanentlyDeleteTickets([]);
+
+      expect(deletedCount, 0);
+      expect(await repository.getTicketById('live'), isNotNull);
+    });
+
+    test(
+      'returns 0 and performs no writes when every id is nonexistent',
+      () async {
+        await repository.createTicket(buildTicket(id: 'live'));
+        final deletedCount = await repository.permanentlyDeleteTickets([
+          'missing-1',
+          'missing-2',
+        ]);
+
+        expect(deletedCount, 0);
+        expect(await repository.getTicketById('live'), isNotNull);
+      },
+    );
+  });
+
   group('purgeTrashOlderThan', () {
     test('purges only tickets older than the cutoff, leaving younger '
         'trashed tickets and live tickets untouched', () async {

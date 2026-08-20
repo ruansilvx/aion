@@ -332,7 +332,7 @@ class DriftTicketRepository implements TicketRepository {
 
   @override
   Future<int> trashTickets(List<String> ids) async {
-    final affected = await _resolveTrashCascade(ids);
+    final affected = await _resolveDescendantCascade(ids);
     if (affected.isEmpty) return 0;
     await _db.ticketDao.softDeleteByIds(
       affected.toList(),
@@ -343,18 +343,19 @@ class DriftTicketRepository implements TicketRepository {
 
   @override
   Future<int> previewTrashCount(List<String> ids) async {
-    return (await _resolveTrashCascade(ids)).length;
+    return (await _resolveDescendantCascade(ids)).length;
   }
 
-  /// Resolves the full set of ticket ids that trashing [ids] would touch:
-  /// every id in [ids] that actually exists, plus each one's full
+  /// Resolves the full set of ticket ids that an operation on [ids] would
+  /// touch: every id in [ids] that actually exists, plus each one's full
   /// structural descendant subtree (via [TicketDao.getDescendantIds],
-  /// which is not filtered by trash status). Shared by [trashTickets]
-  /// (which applies it) and [previewTrashCount] (which only reports its
-  /// size), so the cascade preview shown before a trash action always
-  /// matches exactly what the action itself will touch — including
-  /// descendants that are already trashed.
-  Future<Set<String>> _resolveTrashCascade(List<String> ids) async {
+  /// which is not filtered by trash status). Not trash-specific despite
+  /// the name history — a generic "id plus full descendant subtree,
+  /// deduplicated" resolver, shared by [trashTickets]/[previewTrashCount]
+  /// (trash cascade) and [permanentlyDeleteTickets] (delete cascade), so
+  /// every cascade-scoped operation and its preview always agree on
+  /// exactly what a given id set touches.
+  Future<Set<String>> _resolveDescendantCascade(List<String> ids) async {
     final existingIds = <String>[];
     for (final id in ids) {
       if (await _db.ticketDao.getTicketById(id) != null) {
@@ -399,6 +400,24 @@ class DriftTicketRepository implements TicketRepository {
       await _db.pageWikilinkDao.deleteLinksForTickets(ids);
       await _db.ticketDao.deleteTicketRows(ids);
     });
+  }
+
+  /// See [TicketRepository.permanentlyDeleteTickets] for the contract.
+  /// Identical transaction shape to [emptyTrash]/[purgeTrashOlderThan],
+  /// scoped to [_resolveDescendantCascade]'s resolution of [ids] instead
+  /// of the entire trashed set (or an age-filtered subset).
+  @override
+  Future<int> permanentlyDeleteTickets(List<String> ids) async {
+    final affected = await _resolveDescendantCascade(ids);
+    if (affected.isEmpty) return 0;
+    final affectedIds = affected.toList();
+    await _db.transaction(() async {
+      await _db.commentDao.deleteCommentsForTickets(affectedIds);
+      await _db.ticketLinkDao.deleteLinksForTickets(affectedIds);
+      await _db.pageWikilinkDao.deleteLinksForTickets(affectedIds);
+      await _db.ticketDao.deleteTicketRows(affectedIds);
+    });
+    return affected.length;
   }
 
   @override
