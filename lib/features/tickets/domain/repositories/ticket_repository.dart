@@ -21,6 +21,16 @@ abstract interface class TicketRepository {
   /// Returns the ticket with internal id [id], or `null` if none exists.
   Future<Ticket?> getTicketById(String id);
 
+  /// Returns the ticket whose human-readable [Ticket.ticketId] (e.g.
+  /// `"TASK-42"`) equals [ticketId], or `null` if none exists. Distinct
+  /// from [getTicketById], which resolves the internal uuid `id` instead
+  /// — this is what a model sees in projected ticket files/context, so
+  /// it's the lookup an app-defined tool call (e.g. `add_link`'s
+  /// `targetTicketId` argument) resolves against. No prior caller in this
+  /// codebase needed a `ticketId`-keyed lookup before this method was
+  /// added. Added for `aion-arch/changes/ticket-crud-tool-calls`.
+  Future<Ticket?> getTicketByTicketId(String ticketId);
+
   /// Persists [ticket]. Implementations generate the human-readable
   /// [Ticket.ticketId] (prefix + sequence) at insert time, so
   /// [ticket.ticketId] on the argument is ignored. For ordinary ticket
@@ -104,6 +114,18 @@ abstract interface class TicketRepository {
     bool complexityEdited = false,
     bool estimateEdited = false,
   });
+
+  /// Adds [minutesDelta] to the `timeSpent` of the ticket with id [id], as
+  /// an atomic SQL increment (`timeSpent = timeSpent + ?`) rather than a
+  /// [updateTicket]-style read-modify-write of the whole [Ticket] object.
+  /// [updateTicket] persists every one of `title`/`description`/
+  /// `priority`/`type`/`estimate`/`timeSpent`/`complexity` at once — a
+  /// caller that only means to log time (e.g. the `log_time` tool call)
+  /// would otherwise risk clobbering a concurrent edit to one of those
+  /// other fields made elsewhere (the UI) between its own read and write.
+  /// No-ops if [id] does not exist. Added for
+  /// `aion-arch/changes/ticket-crud-tool-calls`.
+  Future<void> addTimeSpent(String id, int minutesDelta);
 
   /// Writes an AI-generated complexity/estimate suggestion for the ticket
   /// with id [id]. Each parameter, when non-null, overwrites that field's

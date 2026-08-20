@@ -315,6 +315,21 @@
   "ticketDetailToolProposalRejectButton": "Reject",
   "ticketDetailToolProposalNewChatEyebrow": "NEW CHAT",
   "ticketDetailToolProposalResolutionEyebrow": "RESOLUTION",
+  "ticketDetailToolProposalCreateTicketTitle": "Create {type}: {title}",
+  "@ticketDetailToolProposalCreateTicketTitle": {
+    "placeholders": {
+      "type": { "type": "String" },
+      "title": { "type": "String" }
+    }
+  },
+  "ticketDetailToolProposalAddLinkTitle": "{verb} {targetKey}: {targetTitle}",
+  "@ticketDetailToolProposalAddLinkTitle": {
+    "placeholders": {
+      "verb": { "type": "String" },
+      "targetKey": { "type": "String" },
+      "targetTitle": { "type": "String" }
+    }
+  },
   "ticketDetailBoardBadgeRunning": "Running",
   "ticketDetailBoardBadgeQueuedNth": "Queued #{n}",
   "@ticketDetailBoardBadgeQueuedNth": {
@@ -891,6 +906,16 @@
   "settingsAutomationChatBranchingAutoSubLabel": "Branches and folds back on its own",
   "settingsAutomationChatBranchingGatedSubLabel": "Asks before each branch or fold",
   "settingsAutomationChatBranchingManualSubLabel": "You branch and fold manually",
+  "settingsAutomationTicketCreationLabel": "Ticket creation",
+  "settingsAutomationTicketCreationDescription": "When the agent wants to create a new story, task, or bug, create it automatically, ask first, or always wait for you.",
+  "settingsAutomationTicketCreationAutoSubLabel": "Creates tickets on its own",
+  "settingsAutomationTicketCreationGatedSubLabel": "Asks before creating a ticket",
+  "settingsAutomationTicketCreationManualSubLabel": "You create tickets yourself",
+  "settingsAutomationTicketLinkingLabel": "Ticket linking",
+  "settingsAutomationTicketLinkingDescription": "When the agent wants to link this ticket to another — blocks, blocked by, relates to, or duplicates — apply the link automatically, ask first, or always wait for you.",
+  "settingsAutomationTicketLinkingAutoSubLabel": "Links tickets on its own",
+  "settingsAutomationTicketLinkingGatedSubLabel": "Asks before each link",
+  "settingsAutomationTicketLinkingManualSubLabel": "You link tickets yourself",
 
   "settingsAutomationCodingExecutionResumeLabel": "Resume After Restart",
   "settingsAutomationCodingExecutionResumeDescription": "When a coding-execution run was interrupted by an app restart, resume it automatically, ask first, or leave it for a manual retry.",

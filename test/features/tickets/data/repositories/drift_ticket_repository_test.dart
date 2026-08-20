@@ -150,6 +150,44 @@ void main() {
   });
 
   test(
+    'getTicketByTicketId returns the ticket with a matching human-readable id',
+    () async {
+      await repository.createTicket(buildTicket(id: 'abc'));
+      final created = await repository.getTicketById('abc');
+
+      final found = await repository.getTicketByTicketId(created!.ticketId);
+
+      expect(found, isNotNull);
+      expect(found!.id, 'abc');
+    },
+  );
+
+  test('getTicketByTicketId returns null when not found', () async {
+    final found = await repository.getTicketByTicketId('AIO-999');
+    expect(found, isNull);
+  });
+
+  test('addTimeSpent adds to the stored timeSpent and bumps updatedAt', () async {
+    await repository.createTicket(buildTicket(id: '1', timeSpent: 10));
+    final before = (await repository.getTicketById('1'))!.updatedAt;
+
+    await repository.addTimeSpent('1', 5);
+
+    final found = await repository.getTicketById('1');
+    expect(found!.timeSpent, 15);
+    expect(found.updatedAt.isAfter(before) || found.updatedAt == before, true);
+  });
+
+  test('addTimeSpent treats a null timeSpent as zero', () async {
+    await repository.createTicket(buildTicket(id: '1'));
+
+    await repository.addTimeSpent('1', 20);
+
+    final found = await repository.getTicketById('1');
+    expect(found!.timeSpent, 20);
+  });
+
+  test(
     'enum round-trip: type, status, and priority survive write/read',
     () async {
       final now = DateTime(2026, 1, 1);

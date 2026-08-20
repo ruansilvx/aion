@@ -10463,17 +10463,32 @@ void main() {
         verify(
           () => modelRoutingRepository.getModelForPhase(ModelPhase.execution),
         ).called(3);
-        verify(
-          () => agentClient.run(
-            any(
-              that: predicate<AgentRequest>(
-                (request) =>
-                    request.model == _sonnet.modelId &&
-                    request.toolsEnabled == true,
-              ),
-            ),
-          ),
-        ).called(2);
+        // Single capture (mocktail's `verify()` only matches calls an
+        // earlier `verify()` in the same test hasn't already consumed —
+        // a second separate `verify()` on the same invocations finds
+        // nothing left to match) covering both the pre-existing model/
+        // toolsEnabled assertion and the new _toolsFor (ticket-crud-tool-
+        // calls) assertion: create_ticket/add_link/log_time are appended
+        // unconditionally alongside whichever branch_ticket/close_branch
+        // tool is already resolved.
+        final requests = verify(
+          () => agentClient.run(captureAny()),
+        ).captured.cast<AgentRequest>();
+        expect(requests, hasLength(2));
+        for (final request in requests) {
+          expect(request.model, _sonnet.modelId);
+          expect(request.toolsEnabled, true);
+          final toolNames = request.tools.map((t) => t.name).toSet();
+          expect(
+            toolNames,
+            containsAll(['create_ticket', 'add_link', 'log_time']),
+          );
+          expect(
+            toolNames.contains('branch_ticket') ||
+                toolNames.contains('close_branch'),
+            true,
+          );
+        }
       },
     );
   });

@@ -85,6 +85,7 @@ import 'package:aion/features/tickets/presentation/cubit/codebase_analysis_statu
 import 'package:aion/features/tickets/presentation/cubit/in_flight_execution_run.dart';
 import 'package:aion/features/tickets/presentation/cubit/pending_tool_proposal.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_context_enricher.dart';
+import 'package:aion/features/tickets/presentation/cubit/ticket_crud_tool_definitions.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_estimation_suggester.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_token_predictor.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_rollup_counts.dart';
@@ -4865,18 +4866,31 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Tools offered on [chatTicketId]'s next turn — this cubit's own copy of
   /// [ChatCubit._toolsFor], mirroring its shape independently rather than
-  /// sharing an implementation across cubits (see that method's dartdoc
-  /// for the underlying "exactly one of the two" rule). Added for
+  /// sharing an implementation across cubits. The `branch_ticket`/
+  /// `close_branch` choice is still exactly one of the two (mutually
+  /// exclusive on its own, per [ChatCubit._toolsFor]'s dartdoc), but
+  /// [createTicketToolDefinition]/[addLinkToolDefinition]/
+  /// [logTimeToolDefinition] are appended unconditionally on top of it —
+  /// every chat this method serves offers all three regardless of branch
+  /// depth or structural position. Added for
   /// `aion-arch/changes/mid-task-chat-branching`; see that change's
-  /// design.md §6.
+  /// design.md §6. Extended for `aion-arch/changes/ticket-crud-tool-calls`;
+  /// see that change's design.md §3.1.
   Future<List<AgentToolDefinition>> _toolsFor(String chatTicketId) async {
     final chat = await _repository.getTicketById(chatTicketId);
     final parentId = chat?.parentId;
-    if (parentId == null) return [branchTicketToolDefinition];
-    final parent = await _repository.getTicketById(parentId);
-    return parent?.type == TicketType.chat
-        ? [closeBranchToolDefinition]
-        : [branchTicketToolDefinition];
+    final branchOrCloseTool = parentId == null
+        ? branchTicketToolDefinition
+        : (await _repository.getTicketById(parentId))?.type ==
+              TicketType.chat
+        ? closeBranchToolDefinition
+        : branchTicketToolDefinition;
+    return [
+      branchOrCloseTool,
+      createTicketToolDefinition,
+      addLinkToolDefinition,
+      logTimeToolDefinition,
+    ];
   }
 
   /// Resolves [ChatCubit.runChatTurn]'s `tools`/`onToolCall` for
@@ -4910,22 +4924,46 @@ class TicketsCubit extends Cubit<TicketsState> {
     return (await _toolsFor(chatTicketId), _onToolCallFor(chat));
   }
 
-  /// Builds the `onToolCall` handler for [chat]'s next turn: dispatches a
-  /// `close_branch` call to [_handleCloseBranchToolCall] and everything
-  /// else (i.e. `branch_ticket`, the only other tool [_toolsFor] ever
-  /// offers) to [_handleBranchToolCall] — both bound to [chat], the same
-  /// ticket [_toolsFor] resolved tools for at this call site. Added for
-  /// `aion-arch/changes/mid-task-chat-branching`.
+  /// Builds the `onToolCall` handler for [chat]'s next turn: a name-keyed
+  /// dispatch over every tool [_toolsFor] can offer, each bound to [chat],
+  /// the same ticket [_toolsFor] resolved tools for at this call site.
+  /// `branch_ticket` stays the unnamed `_` default case — [_toolsFor]
+  /// never offers both `branch_ticket` and `close_branch` at once, so
+  /// "not `close_branch`/`create_ticket`/`add_link`/`log_time`" still
+  /// means `branch_ticket` unambiguously, exactly as before this method
+  /// grew from a binary ternary into a real `switch`. Added for
+  /// `aion-arch/changes/mid-task-chat-branching`. Extended for
+  /// `aion-arch/changes/ticket-crud-tool-calls`; see that change's
+  /// design.md §3.2.
   Future<Map<String, dynamic>> Function(
     String toolCallId,
     String toolName,
     Map<String, dynamic> arguments,
   )
   _onToolCallFor(Ticket chat) {
-    return (toolCallId, toolName, arguments) =>
-        toolName == closeBranchToolDefinition.name
-        ? _handleCloseBranchToolCall(chat, arguments)
-        : _handleBranchToolCall(chat, arguments);
+    // Dart's constant-pattern evaluator can't fold a `const` object's field
+    // access (`someToolDefinition.name`) here — [AgentToolDefinition]'s
+    // `inputSchema` (a `Map<String, dynamic>`) blocks it even though the
+    // object itself is a valid `const`. Matching on the literal string each
+    // tool definition's `name` is declared with instead — these must stay
+    // in sync with `chat_branch_tool_definitions.dart`/
+    // `ticket_crud_tool_definitions.dart`, which is why every case below is
+    // commented with the constant it mirrors.
+    return (toolCallId, toolName, arguments) => switch (toolName) {
+      'close_branch' /* closeBranchToolDefinition.name */ =>
+        _handleCloseBranchToolCall(chat, arguments),
+      'create_ticket' /* createTicketToolDefinition.name */ =>
+        _handleCreateTicketToolCall(chat, arguments),
+      'add_link' /* addLinkToolDefinition.name */ => _handleAddLinkToolCall(
+        chat,
+        arguments,
+      ),
+      'log_time' /* logTimeToolDefinition.name */ => _handleLogTimeToolCall(
+        chat,
+        arguments,
+      ),
+      _ => _handleBranchToolCall(chat, arguments),
+    };
   }
 
   /// Public entry point for a `chat` ticket's `branch_ticket`/
@@ -5130,6 +5168,187 @@ class TicketsCubit extends Cubit<TicketsState> {
           },
         );
     }
+  }
+
+  /// The `create_ticket` tool's [AgentRequest.onToolCall] implementation:
+  /// validates `title`/`type` (declining with a reason string on invalid
+  /// input, the same defensive style as [_handleBranchToolCall]), resolves
+  /// [AutomationContext.ticketCreation]'s confidence, and switches on it —
+  /// `manual` declines outright, `auto` creates the ticket immediately,
+  /// `gated` surfaces a [CreateTicketProposal] via
+  /// [_awaitProposalConfirmation] and waits. The created ticket is always
+  /// top-level (`parentId: null`) — this tool never accepts a
+  /// model-supplied parent; see proposal.md's Non-goals. Added for
+  /// `aion-arch/changes/ticket-crud-tool-calls`; see that change's
+  /// design.md §3.3.
+  Future<Map<String, dynamic>> _handleCreateTicketToolCall(
+    Ticket chat,
+    Map<String, dynamic> arguments,
+  ) async {
+    final title = arguments['title'] as String?;
+    final typeArg = arguments['type'] as String?;
+    final type = TicketType.values
+        .where((t) => t.name == typeArg)
+        .firstOrNull;
+    if (title == null || title.isEmpty) {
+      return {'accepted': false, 'reason': 'Missing title.'};
+    }
+    const creatableTypes = {
+      TicketType.story,
+      TicketType.task,
+      TicketType.bug,
+    };
+    if (type == null || !creatableTypes.contains(type)) {
+      return {'accepted': false, 'reason': 'type must be story, task, or bug.'};
+    }
+    final description = arguments['description'] as String?;
+
+    final automationRepo = _automationSettingsRepository;
+    final confidence = automationRepo == null
+        ? AutomationConfidence.gated
+        : await automationRepo.getConfidence(AutomationContext.ticketCreation);
+
+    Future<Map<String, dynamic>> create() async {
+      final now = DateTime.now();
+      final ticket = Ticket(
+        id: _uuid.v4(),
+        ticketId: '',
+        type: type,
+        title: title,
+        description: description,
+        status: _defaultCreationStatus,
+        parentId: null,
+        createdAt: now,
+        updatedAt: now,
+      );
+      await _repository.createTicket(ticket);
+      return {'accepted': true, 'createdTicketId': ticket.id};
+    }
+
+    switch (confidence) {
+      case AutomationConfidence.manual:
+        return {'accepted': false, 'reason': 'Ticket creation set to manual.'};
+      case AutomationConfidence.auto:
+        return create();
+      case AutomationConfidence.gated:
+        return _awaitProposalConfirmation(
+          chat,
+          PendingToolProposal.createTicket(
+            title: title,
+            type: type,
+            description: description,
+          ),
+          onConfirm: create,
+        );
+    }
+  }
+
+  /// The `add_link` tool's [AgentRequest.onToolCall] implementation:
+  /// resolves `targetTicketId` via [TicketRepository.getTicketByTicketId]
+  /// (declining with a reason string if it doesn't resolve), validates
+  /// `linkType`, resolves [AutomationContext.ticketLinking]'s confidence,
+  /// and switches on it — `manual` declines outright, `auto` creates the
+  /// link immediately via [TicketLinkRepository.createLink] (source is
+  /// always [chat]'s own parent — the ticket the current chat is attached
+  /// to — never a model-supplied source), `gated` surfaces an
+  /// [AddLinkProposal] via [_awaitProposalConfirmation] and waits. This is
+  /// also how duplicate-flagging works — `linkType: 'duplicates'` is an
+  /// ordinary call, not a separate tool. Added for
+  /// `aion-arch/changes/ticket-crud-tool-calls`; see that change's
+  /// design.md §3.3.
+  Future<Map<String, dynamic>> _handleAddLinkToolCall(
+    Ticket chat,
+    Map<String, dynamic> arguments,
+  ) async {
+    final sourceId = chat.parentId;
+    if (sourceId == null) {
+      return {'accepted': false, 'reason': 'No ticket to link from.'};
+    }
+
+    final targetTicketId = arguments['targetTicketId'] as String?;
+    if (targetTicketId == null || targetTicketId.isEmpty) {
+      return {'accepted': false, 'reason': 'Missing targetTicketId.'};
+    }
+    final target = await _repository.getTicketByTicketId(targetTicketId);
+    if (target == null) {
+      return {
+        'accepted': false,
+        'reason': 'No ticket found with id "$targetTicketId".',
+      };
+    }
+
+    final linkTypeArg = arguments['linkType'] as String?;
+    final linkType = TicketLinkType.values
+        .where((t) => t.name == linkTypeArg)
+        .firstOrNull;
+    if (linkType == null) {
+      return {
+        'accepted': false,
+        'reason': 'linkType must be blocks, blockedBy, relatesTo, or duplicates.',
+      };
+    }
+
+    final linkRepo = _linkRepository;
+    if (linkRepo == null) {
+      return {'accepted': false, 'reason': 'Linking is unavailable.'};
+    }
+
+    final automationRepo = _automationSettingsRepository;
+    final confidence = automationRepo == null
+        ? AutomationConfidence.gated
+        : await automationRepo.getConfidence(AutomationContext.ticketLinking);
+
+    Future<Map<String, dynamic>> addLink() async {
+      await linkRepo.createLink(
+        sourceTicketId: sourceId,
+        targetTicketId: target.id,
+        linkType: linkType,
+      );
+      return {'accepted': true};
+    }
+
+    switch (confidence) {
+      case AutomationConfidence.manual:
+        return {'accepted': false, 'reason': 'Ticket linking set to manual.'};
+      case AutomationConfidence.auto:
+        return addLink();
+      case AutomationConfidence.gated:
+        return _awaitProposalConfirmation(
+          chat,
+          PendingToolProposal.addLink(
+            targetTicketId: targetTicketId,
+            targetTicketTitle: target.title,
+            linkType: linkType,
+          ),
+          onConfirm: addLink,
+        );
+    }
+  }
+
+  /// The `log_time` tool's [AgentRequest.onToolCall] implementation:
+  /// validates `minutes` (declining with a reason string on a
+  /// missing/non-positive value), then calls
+  /// [TicketRepository.addTimeSpent] on [chat]'s own parent — the ticket
+  /// the current chat is attached to — unconditionally. Unlike
+  /// [_handleCreateTicketToolCall]/[_handleAddLinkToolCall], this has no
+  /// [AutomationConfidence] branch at all: logging time always applies
+  /// immediately, never surfacing a confirmation banner. Added for
+  /// `aion-arch/changes/ticket-crud-tool-calls`; see that change's
+  /// design.md §3.3.
+  Future<Map<String, dynamic>> _handleLogTimeToolCall(
+    Ticket chat,
+    Map<String, dynamic> arguments,
+  ) async {
+    final sourceId = chat.parentId;
+    if (sourceId == null) {
+      return {'accepted': false, 'reason': 'No ticket to log time against.'};
+    }
+    final minutes = arguments['minutes'] as int?;
+    if (minutes == null || minutes <= 0) {
+      return {'accepted': false, 'reason': 'minutes must be a positive integer.'};
+    }
+    await _repository.addTimeSpent(sourceId, minutes);
+    return {'accepted': true};
   }
 
   /// Confirms [chatId]'s pending proposal (if any): runs its `onConfirm`

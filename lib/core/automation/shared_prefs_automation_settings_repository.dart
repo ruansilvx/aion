@@ -37,6 +37,16 @@ class SharedPrefsAutomationSettingsRepository
   static const _codingExecutionResumeAutomationKey =
       'automation_settings.coding_execution_resume_automation';
 
+  /// [AutomationContext.ticketCreation]'s key. Added for
+  /// `aion-arch/changes/ticket-crud-tool-calls`.
+  static const _ticketCreationAutomationKey =
+      'automation_settings.ticket_creation_automation';
+
+  /// [AutomationContext.ticketLinking]'s key. Added for
+  /// `aion-arch/changes/ticket-crud-tool-calls`.
+  static const _ticketLinkingAutomationKey =
+      'automation_settings.ticket_linking_automation';
+
   String _keyFor(AutomationContext context) => switch (context) {
     AutomationContext.sddStage => _sddStageAutomationKey,
     AutomationContext.codingExecution => _codingExecutionAutomationKey,
@@ -45,6 +55,8 @@ class SharedPrefsAutomationSettingsRepository
     AutomationContext.chatBranching => _chatBranchingAutomationKey,
     AutomationContext.codingExecutionResume =>
       _codingExecutionResumeAutomationKey,
+    AutomationContext.ticketCreation => _ticketCreationAutomationKey,
+    AutomationContext.ticketLinking => _ticketLinkingAutomationKey,
   };
 
   @override
