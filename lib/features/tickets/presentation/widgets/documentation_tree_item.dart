@@ -31,6 +31,9 @@ class DocumentationTreeItem extends StatefulWidget {
 
   /// Nesting depth in the tree (`0` for root docs). Ignored (`leftPad` is
   /// fixed) when [showChevron] is `false` (the flat/sub-pages variants).
+  /// Values past the tree-mode indent clamp (`_maxIndentDepth`) render at
+  /// the same indent as the clamp depth itself, rather than continuing to
+  /// grow.
   final int depth;
 
   /// Whether this row's children are currently expanded (`page` rows
@@ -62,6 +65,11 @@ class DocumentationTreeItem extends StatefulWidget {
 }
 
 class _DocumentationTreeItemState extends State<DocumentationTreeItem> {
+  /// Deepest nesting level [DocumentationTreeItem] still visually indents
+  /// past. Rows nested beyond this render flush with rows at this depth —
+  /// see `aion-arch/changes/page-nesting-depth-limit/`.
+  static const int _maxIndentDepth = 6;
+
   bool _isHovered = false;
   bool _isPressed = false;
 
@@ -78,7 +86,10 @@ class _DocumentationTreeItemState extends State<DocumentationTreeItem> {
     final fill = _isHovered || _isPressed
         ? c.surfaceHover
         : const Color(0x00000000);
-    final leftPad = widget.showChevron ? 12 + widget.depth * 20 : 14;
+    final effectiveDepth = widget.depth > _maxIndentDepth
+        ? _maxIndentDepth
+        : widget.depth;
+    final leftPad = widget.showChevron ? 12 + effectiveDepth * 20 : 14;
 
     return Semantics(
       button: true,
