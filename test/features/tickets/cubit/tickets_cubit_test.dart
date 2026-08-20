@@ -12365,6 +12365,59 @@ void main() {
           expect(loaded.canAdvanceSddStage, isTrue);
         },
       );
+
+      // Regression coverage for a /verify-found CRITICAL finding on
+      // `aion-arch/changes/generalized-live-refresh-for-all-ticket-writes`:
+      // updateStatusForTickets originally fired its
+      // _refreshDetailIfOpenAndAffected call un-chained (statement-ordered
+      // before the pendingAttachmentFires loop, not `.then()`-chained onto
+      // it like updateTicketStatus). Because getTicketById captures its
+      // own `previousDetail` synchronously — before this method's for-loop
+      // ever runs — that un-chained refresh's *later* re-emission carried
+      // forward the *stale*, pre-attachment `pendingSkillAttachment` and
+      // silently clobbered the gated banner the loop had just set, for
+      // the case where the bulk-written ids include the ticket whose own
+      // detail screen is open. Fixed by chaining the loop onto the
+      // refresh call's completion, mirroring updateTicketStatus.
+      blocTest<TicketsCubit, TicketsState>(
+        'updateStatusForTickets does not clobber pendingSkillAttachment '
+        'when the bulk-written ids include the currently-open ticket',
+        setUp: () {
+          final attachment = SkillAttachment(
+            id: 'attach-3c',
+            workflowStatusId: backlogStatusId,
+            kind: SkillAttachmentKind.delegatedSkill,
+            skillName: 'code-review',
+            confidence: AutomationConfidence.gated,
+          );
+          when(
+            () => attachmentRepository.getAll(),
+          ).thenAnswer((_) async => [attachment]);
+          when(
+            () => repository.updateStatusForIds(
+              [epicForFieldPreservation.id],
+              'backlog',
+            ),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(epicForFieldPreservation.id),
+          ).thenAnswer((_) async => epicForFieldPreservation);
+        },
+        build: buildAttachmentCubit,
+        seed: () => TicketDetailLoaded(epicForFieldPreservation),
+        act: (cubit) async {
+          await Future<void>.delayed(Duration.zero);
+          await cubit.updateStatusForTickets(
+            [epicForFieldPreservation.id],
+            'backlog',
+          );
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        },
+        verify: (cubit) {
+          final loaded = cubit.state as TicketDetailLoaded;
+          expect(loaded.pendingSkillAttachment?.id, 'attach-3c');
+        },
+      );
     });
 
     group('manual confidence — WorkflowStatus entry', () {

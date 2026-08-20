@@ -6027,8 +6027,16 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// passing every successfully-written id at once, so a Story's or
   /// Epic's already-open detail screen live-refreshes when this bulk
   /// write touches one of its direct children — the bulk counterpart of
-  /// [updateTicketStatus]'s own single-ticket live-refresh. Added for
-  /// `aion-arch/changes/generalized-live-refresh-for-all-ticket-writes`.
+  /// [updateTicketStatus]'s own single-ticket live-refresh. The
+  /// per-ticket [_attachmentForStatus] loop above is chained onto this
+  /// call's completion (`.then()`, mirroring [updateTicketStatus]'s own
+  /// chaining), not run alongside it, so a `gated` attachment's
+  /// [TicketDetailLoaded.pendingSkillAttachment] emission is guaranteed
+  /// to land after — and not be silently overwritten by —
+  /// [_refreshDetailIfOpenAndAffected]'s own re-emission. Added for
+  /// `aion-arch/changes/generalized-live-refresh-for-all-ticket-writes`;
+  /// the chaining was a `/verify`-time fix — see that change's `tasks.md`
+  /// task 3 correction note.
   Future<void> updateStatusForTickets(
     List<String> ids,
     String status,
@@ -6117,20 +6125,34 @@ class TicketsCubit extends Cubit<TicketsState> {
         ),
       );
       unawaited(_refreshBlockedBoardState());
-      // Fired after the final emit above (this method's last state
-      // change), same ordering [updateTicketStatus] uses, so a `gated`
-      // attachment's own pending-state emission below isn't clobbered by
-      // this one landing first. Added for
-      // `aion-arch/changes/generalized-live-refresh-for-all-ticket-writes`.
+      // The attachment-firing loop is chained *after*
+      // _refreshDetailIfOpenAndAffected resolves, not run alongside it —
+      // mirrors updateTicketStatus's own .then() chaining, for the same
+      // reason: both are otherwise-unawaited, but a `gated` attachment's
+      // own TicketDetailLoaded(pendingSkillAttachment: ...) emission must
+      // be the truly final one for this write. A same-statement-order
+      // "refresh call, then loop below it" is NOT equivalent to that —
+      // getTicketById captures its own `previousDetail` synchronously,
+      // before this method ever yields control to the loop (calling an
+      // async function runs synchronously up to its own first internal
+      // `await`), so an un-chained loop still races: attachment's
+      // synchronous gated-branch emission (no internal `await`) lands
+      // first, then refresh's later re-emission carries forward the
+      // *stale*, pre-attachment `previousDetail?.pendingSkillAttachment`,
+      // silently clobbering the banner the loop just set. Found during
+      // `/verify` on `aion-arch/changes/generalized-live-refresh-for-all-ticket-writes`
+      // — the original un-chained placement (still visible in tasks.md's
+      // task 3) looked ordered correctly by statement position but wasn't.
       unawaited(
         _refreshDetailIfOpenAndAffected(
           writableIds.toSet(),
           fromState: stateBeforeThisWrite,
-        ),
+        ).then((_) {
+          for (final (updated, attachment) in pendingAttachmentFires) {
+            unawaited(_resolveAndFireAttachment(updated, attachment));
+          }
+        }),
       );
-      for (final (updated, attachment) in pendingAttachmentFires) {
-        unawaited(_resolveAndFireAttachment(updated, attachment));
-      }
     } catch (e) {
       emit(TicketsError(e.toString()));
     }
