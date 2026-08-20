@@ -478,6 +478,24 @@
       "days": { "type": "int" }
     }
   },
+  "ticketTrashBulkRestoreSummaryToast": "{count, plural, one{Restored 1 ticket.} other{Restored {count} tickets.}}",
+  "@ticketTrashBulkRestoreSummaryToast": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "ticketTrashBulkPermanentDeleteConfirmMessage": "{total, plural, one{1 ticket} other{{total} tickets}} will be permanently deleted. This cannot be undone.",
+  "@ticketTrashBulkPermanentDeleteConfirmMessage": {
+    "placeholders": {
+      "total": { "type": "int" }
+    }
+  },
+  "ticketTrashBulkPermanentDeleteSummaryToast": "{count, plural, one{Permanently deleted 1 ticket.} other{Permanently deleted {count} tickets.}}",
+  "@ticketTrashBulkPermanentDeleteSummaryToast": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
 
   "ticketSelectionToggleLabel": "Select tickets",
   "ticketSelectionExitLabel": "Cancel selection",

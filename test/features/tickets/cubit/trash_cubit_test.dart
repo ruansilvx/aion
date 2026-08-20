@@ -405,6 +405,109 @@ void main() {
     );
 
     blocTest<TrashCubit, TrashState>(
+      'restoreTickets calls TicketParentTrashService.restore once per id '
+      '(not a batched repository call), reloads, and returns true',
+      setUp: () {
+        when(() => repository.restoreTicket(any())).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => buildTrashed(id: '1', deletedAt: null));
+        when(() => repository.getTrashedTickets()).thenAnswer((_) async => []);
+      },
+      build: () => TrashCubit(repository),
+      act: (cubit) => cubit.restoreTickets(['1', '2']),
+      verify: (_) {
+        verify(() => repository.restoreTicket('1')).called(1);
+        verify(() => repository.restoreTicket('2')).called(1);
+      },
+      expect: () => [const TrashLoading(), const TrashLoaded([], {}, 0)],
+    );
+
+    test('restoreTickets returns true on success', () async {
+      when(() => repository.restoreTicket(any())).thenAnswer((_) async {});
+      when(
+        () => repository.getTicketById(any()),
+      ).thenAnswer((_) async => buildTrashed(id: '1', deletedAt: null));
+      when(() => repository.getTrashedTickets()).thenAnswer((_) async => []);
+
+      final cubit = TrashCubit(repository);
+      expect(await cubit.restoreTickets(['1']), isTrue);
+      await cubit.close();
+    });
+
+    blocTest<TrashCubit, TrashState>(
+      'restoreTickets emits TrashError when the repository throws',
+      setUp: () {
+        when(() => repository.restoreTicket(any())).thenThrow(Exception('boom'));
+      },
+      build: () => TrashCubit(repository),
+      act: (cubit) => cubit.restoreTickets(['1']),
+      expect: () => [isA<TrashError>()],
+    );
+
+    test('restoreTickets returns false when the repository throws', () async {
+      when(() => repository.restoreTicket(any())).thenThrow(Exception('boom'));
+
+      final cubit = TrashCubit(repository);
+      expect(await cubit.restoreTickets(['1']), isFalse);
+      await cubit.close();
+    });
+
+    blocTest<TrashCubit, TrashState>(
+      'permanentlyDeleteTickets calls the repository once with the full '
+      'id list, reloads, and returns true',
+      setUp: () {
+        when(
+          () => repository.permanentlyDeleteTickets(['1', '2']),
+        ).thenAnswer((_) async => 2);
+        when(() => repository.getTrashedTickets()).thenAnswer((_) async => []);
+      },
+      build: () => TrashCubit(repository),
+      act: (cubit) => cubit.permanentlyDeleteTickets(['1', '2']),
+      verify: (_) {
+        verify(() => repository.permanentlyDeleteTickets(['1', '2'])).called(1);
+      },
+      expect: () => [const TrashLoading(), const TrashLoaded([], {}, 0)],
+    );
+
+    test('permanentlyDeleteTickets returns true on success', () async {
+      when(
+        () => repository.permanentlyDeleteTickets(any()),
+      ).thenAnswer((_) async => 1);
+      when(() => repository.getTrashedTickets()).thenAnswer((_) async => []);
+
+      final cubit = TrashCubit(repository);
+      expect(await cubit.permanentlyDeleteTickets(['1']), isTrue);
+      await cubit.close();
+    });
+
+    blocTest<TrashCubit, TrashState>(
+      'permanentlyDeleteTickets emits TrashError when the repository '
+      'throws',
+      setUp: () {
+        when(
+          () => repository.permanentlyDeleteTickets(any()),
+        ).thenThrow(Exception('boom'));
+      },
+      build: () => TrashCubit(repository),
+      act: (cubit) => cubit.permanentlyDeleteTickets(['1']),
+      expect: () => [isA<TrashError>()],
+    );
+
+    test(
+      'permanentlyDeleteTickets returns false when the repository throws',
+      () async {
+        when(
+          () => repository.permanentlyDeleteTickets(any()),
+        ).thenThrow(Exception('boom'));
+
+        final cubit = TrashCubit(repository);
+        expect(await cubit.permanentlyDeleteTickets(['1']), isFalse);
+        await cubit.close();
+      },
+    );
+
+    blocTest<TrashCubit, TrashState>(
       'permanentlyDelete calls the repository then reloads',
       setUp: () {
         when(

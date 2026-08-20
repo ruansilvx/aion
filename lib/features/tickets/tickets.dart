@@ -81,4 +81,5 @@ export 'presentation/widgets/inbox_history_item.dart';
 export 'presentation/widgets/ticket_needs_repair_banner.dart';
 export 'presentation/widgets/ticket_overflow_menu.dart';
 export 'presentation/widgets/ticket_selection_bar.dart';
+export 'presentation/widgets/trash_selection_bar.dart';
 export 'presentation/widgets/trashed_ticket_tile.dart';

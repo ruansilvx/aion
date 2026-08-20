@@ -154,16 +154,23 @@ final appRouter = GoRouter(
         // greedily match the literal `trash` segment.
         GoRoute(
           path: '/workspace/tickets/trash',
-          builder: (context, state) => BlocProvider<TrashCubit>(
-            create: (context) => TrashCubit(
-              context.read<TicketRepository>(),
-              gitProjector: _activeProject(context).rootPath != null
-                  ? context.read<TicketGitProjector>()
-                  : null,
-              projectRootPath: _activeProject(context).rootPath,
-              sortRepository: context.read<TicketListSortRepository>(),
-              projectId: _activeProject(context).id,
-            )..load(),
+          builder: (context, state) => MultiBlocProvider(
+            providers: [
+              BlocProvider<TrashCubit>(
+                create: (context) => TrashCubit(
+                  context.read<TicketRepository>(),
+                  gitProjector: _activeProject(context).rootPath != null
+                      ? context.read<TicketGitProjector>()
+                      : null,
+                  projectRootPath: _activeProject(context).rootPath,
+                  sortRepository: context.read<TicketListSortRepository>(),
+                  projectId: _activeProject(context).id,
+                )..load(),
+              ),
+              BlocProvider<TicketSelectionCubit>(
+                create: (_) => TicketSelectionCubit(),
+              ),
+            ],
             child: const TrashScreen(),
           ),
         ),
