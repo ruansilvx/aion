@@ -297,10 +297,14 @@ class _NoColumnsVisibleHint extends StatelessWidget {
 /// ticket count) and a [DragTarget] accepting dropped [Ticket]s, moving
 /// them to [status] via [TicketsCubit.updateTicketStatus]. Under
 /// [ExecutionSchedulingMode.hybrid], applies [clusterSiblingsAdjacently]
-/// to [tickets] so the sibling serialization that mode enforces is
-/// visible on the Board, not just inferred from behavior — every other
-/// mode renders [tickets] in its given order unchanged. Added for
-/// `aion-arch/changes/parallel-work`; see that change's design.md §9.
+/// to [tickets] — passing [TicketsCubit]'s precomputed
+/// [TicketsLoaded.topmostAncestorId] as its grouping key — so the sibling
+/// serialization that mode enforces is visible on the Board, not just
+/// inferred from behavior; every other mode renders [tickets] in its given
+/// order unchanged. Added for `aion-arch/changes/parallel-work`; see that
+/// change's design.md §9. Generalized from direct `parentId` clustering to
+/// shared-topmost-ancestor clustering for
+/// `aion-arch/changes/dependency-caching-and-ancestor-sibling-conflict`.
 class BoardColumn extends StatelessWidget {
   /// Creates a [BoardColumn] for [status], rendering [tickets].
   const BoardColumn({super.key, required this.status, required this.tickets});
@@ -322,8 +326,14 @@ class BoardColumn extends StatelessWidget {
           (cubit.state as ExecutionSchedulingReady).mode ==
               ExecutionSchedulingMode.hybrid,
     );
+    final topmostAncestorId = context.select(
+      (TicketsCubit cubit) => switch (cubit.state) {
+        TicketsLoaded(:final topmostAncestorId) => topmostAncestorId,
+        _ => const <String, String>{},
+      },
+    );
     final displayedTickets = isHybrid
-        ? clusterSiblingsAdjacently(tickets)
+        ? clusterSiblingsAdjacently(tickets, topmostAncestorId)
         : tickets;
 
     return Column(

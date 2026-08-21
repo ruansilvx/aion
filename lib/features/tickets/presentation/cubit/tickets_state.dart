@@ -42,6 +42,7 @@ class TicketsLoaded extends TicketsState {
     this.blockedTicketIds = const {},
     this.pendingResumePrompt = const [],
     this.executionTokenTotals = const {},
+    this.topmostAncestorId = const {},
   });
 
   /// The tickets loaded so far, most recently created first (or by
@@ -107,6 +108,26 @@ class TicketsLoaded extends TicketsState {
   /// `aion-arch/changes/token-cost-prediction`.
   final Map<String, int> executionTokenTotals;
 
+  /// Ticket id → topmost ancestor id (the root of its `parentId` chain —
+  /// an Epic, for a well-formed Task/Bug/Story; the ticket's own id if it
+  /// has no parent at all), mirroring
+  /// [TicketsCubit.topmostAncestorIds]. Only ever non-empty under
+  /// [ExecutionSchedulingMode](../../../providers/domain/enums/execution_scheduling_mode.dart)
+  /// `.hybrid` — every other scheduling mode leaves this at its default
+  /// `{}`, since `BoardColumn` is the only reader and only consults it
+  /// under Hybrid. Used by `BoardColumn` to pass a precomputed grouping
+  /// key to `clusterSiblingsAdjacently`, replacing that function's former
+  /// direct `ticket.parentId` comparison so two Tasks under different
+  /// Stories of the same Epic cluster together too. Recomputed by
+  /// [TicketsCubit.searchTickets]/[TicketsCubit.loadMoreTickets] on every
+  /// fresh/appended load (carried forward unchanged by
+  /// [TicketsCubit._refreshInFlightBoardState], the same way
+  /// [blockedTicketIds] is) — see [TicketsCubit.searchTickets]'s dartdoc
+  /// for why a live cross-cubit listener for an in-session scheduling-mode
+  /// switch isn't needed on top of that. Added for
+  /// `aion-arch/changes/dependency-caching-and-ancestor-sibling-conflict`.
+  final Map<String, String> topmostAncestorId;
+
   @override
   List<Object?> get props => [
     tickets,
@@ -117,6 +138,7 @@ class TicketsLoaded extends TicketsState {
     blockedTicketIds,
     pendingResumePrompt,
     executionTokenTotals,
+    topmostAncestorId,
   ];
 }
 

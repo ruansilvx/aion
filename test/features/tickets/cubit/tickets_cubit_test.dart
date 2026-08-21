@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:bloc_test/bloc_test.dart';
@@ -10,6 +11,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:aion/core/automation/automation_confidence.dart';
 import 'package:aion/core/automation/automation_context.dart';
 import 'package:aion/core/automation/automation_settings_repository.dart';
+import 'package:aion/core/build/dependency_cache_service.dart';
 import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/core/contracts/agent_model_descriptor.dart';
 import 'package:aion/core/contracts/agent_provider.dart';
@@ -63,6 +65,9 @@ class MockGitRepositoryClient extends Mock implements GitRepositoryClient {}
 class MockGitHubCliClient extends Mock implements GitHubCliClient {}
 
 class MockBaselineRepository extends Mock implements BaselineRepository {}
+
+class MockDependencyCacheService extends Mock
+    implements DependencyCacheService {}
 
 class MockTicketListFilterRepository extends Mock
     implements TicketListFilterRepository {}
@@ -8361,6 +8366,191 @@ void main() {
         verify(() => agentClient.run(any())).called(4);
       },
     );
+
+    group(
+      'Node.js dependency caching '
+      '(dependency-caching-and-ancestor-sibling-conflict)',
+      () {
+        late MockDependencyCacheService dependencyCache;
+        late Directory nodeProjectDir;
+        late Directory nonNodeProjectDir;
+
+        setUp(() async {
+          dependencyCache = MockDependencyCacheService();
+          nodeProjectDir = await Directory.systemTemp.createTemp(
+            'dep_cache_node_project_',
+          );
+          File(
+            '${nodeProjectDir.path}${Platform.pathSeparator}package.json',
+          ).writeAsStringSync('{}');
+          nonNodeProjectDir = await Directory.systemTemp.createTemp(
+            'dep_cache_non_node_project_',
+          );
+          when(
+            () => dependencyCache.cacheDirFor(any(), any()),
+          ).thenReturn('/fake/cache/node_modules');
+          when(
+            () => dependencyCache.seed(any(), any()),
+          ).thenAnswer((_) async {});
+          when(
+            () => dependencyCache.writeBack(any(), any()),
+          ).thenAnswer((_) async {});
+          when(
+            () => dependencyCache.installDependencies(any()),
+          ).thenAnswer((_) async => true);
+        });
+
+        tearDown(() async {
+          if (nodeProjectDir.existsSync()) {
+            await nodeProjectDir.delete(recursive: true);
+          }
+          if (nonNodeProjectDir.existsSync()) {
+            await nonNodeProjectDir.delete(recursive: true);
+          }
+        });
+
+        TicketsCubit buildCubitWithRoot(String rootPath) => TicketsCubit(
+          repository,
+          providerRegistry: registry,
+          commentRepository: commentRepository,
+          automationSettingsRepository: automationSettingsRepository,
+          projectRootPath: rootPath,
+          gitClient: gitClient,
+          gitHubClient: gitHubClient,
+          baselineRepository: baselineRepository,
+          projectId: 'project-1',
+          baselineVersion: '0.1.0',
+          dependencyCacheService: dependencyCache,
+        );
+
+        // Same happy-path wiring as "runs the coding-execution chat on an
+        // approved Task..." above — reused here since these tests only
+        // care about the new dependency-caching side effect, not the
+        // execution flow itself.
+        void wireHappyPathStubs() {
+          when(
+            () => repository.getTicketsByParent(
+              storyForExecution.id,
+              types: TicketTypeHierarchy.executableTypes,
+            ),
+          ).thenAnswer((_) async => [taskUnderStory]);
+          when(
+            () => repository.getTicketsByParent(
+              storyForExecution.id,
+              types: const [TicketType.chat],
+            ),
+          ).thenAnswer((_) async => [designSyncChatForExecution]);
+          when(
+            () => commentRepository.getCommentsForTicket(
+              designSyncChatForExecution.id,
+            ),
+          ).thenAnswer(
+            (_) async => [
+              TicketComment(
+                id: 'c-dep-cache',
+                ticketId: designSyncChatForExecution.id,
+                content: 'No issues found.\n\nDESIGN GATE: APPROVED',
+                authorType: CommentAuthorType.ai,
+                createdAt: DateTime(2026),
+              ),
+            ],
+          );
+          var executionChatCreated = false;
+          when(
+            () => repository.getTicketsByParent(
+              taskUnderStory.id,
+              types: const [TicketType.chat],
+            ),
+          ).thenAnswer(
+            (_) async =>
+                executionChatCreated ? [dummyExecutionChatTicket] : [],
+          );
+          stubStatefulComments(commentRepository, dummyExecutionChatTicket.id);
+          when(() => repository.getTicketById(any())).thenAnswer((
+            invocation,
+          ) async {
+            final id = invocation.positionalArguments[0] as String;
+            if (id == storyForExecution.id) return storyForExecution;
+            if (id == taskUnderStory.id) {
+              return taskUnderStory.copyWith(status: 'inProgress');
+            }
+            return dummyExecutionChatTicket;
+          });
+          when(
+            () => repository.updateTicketStatus(any(), any()),
+          ).thenAnswer((_) async {});
+          when(() => repository.createTicket(any())).thenAnswer((_) async {
+            executionChatCreated = true;
+          });
+          when(() => agentClient.run(any())).thenAnswer(
+            (_) async => Stream.fromIterable(const [
+              AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+              AgentDoneEvent(),
+            ]),
+          );
+          when(
+            () => automationSettingsRepository.getConfidence(
+              AutomationContext.codingExecution,
+            ),
+          ).thenAnswer((_) async => AutomationConfidence.auto);
+        }
+
+        blocTest<TicketsCubit, TicketsState>(
+          'a Node.js-marker fixture project seeds, installs, and writes '
+          'back the dependency cache',
+          build: () => buildCubitWithRoot(nodeProjectDir.path),
+          setUp: wireHappyPathStubs,
+          act: (cubit) => cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
+          wait: const Duration(milliseconds: 50),
+          verify: (_) {
+            verify(() => dependencyCache.seed(any(), any())).called(1);
+            verify(() => dependencyCache.installDependencies(any())).called(1);
+            verify(() => dependencyCache.writeBack(any(), any())).called(1);
+          },
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          'a non-Node.js fixture project skips the dependency step '
+          'entirely',
+          build: () => buildCubitWithRoot(nonNodeProjectDir.path),
+          setUp: wireHappyPathStubs,
+          act: (cubit) => cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
+          wait: const Duration(milliseconds: 50),
+          verify: (_) {
+            verifyNever(() => dependencyCache.seed(any(), any()));
+            verifyNever(() => dependencyCache.installDependencies(any()));
+            verifyNever(() => dependencyCache.writeBack(any(), any()));
+          },
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          "a failed npm install doesn't abort the run",
+          build: () => buildCubitWithRoot(nodeProjectDir.path),
+          setUp: () {
+            wireHappyPathStubs();
+            when(
+              () => dependencyCache.installDependencies(any()),
+            ).thenAnswer((_) async => false);
+          },
+          act: (cubit) => cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
+          wait: const Duration(milliseconds: 50),
+          verify: (_) {
+            verify(() => dependencyCache.installDependencies(any())).called(1);
+            // A failed install is never written back to the cache.
+            verifyNever(() => dependencyCache.writeBack(any(), any()));
+            // The run itself still completes and flips status, exactly
+            // like the happy path — a cache miss for the model's own
+            // troubleshooting, not an aborted run.
+            verify(
+              () => repository.updateTicketStatus(
+                taskUnderStory.id,
+                'inReview',
+              ),
+            ).called(1);
+          },
+        );
+      },
+    );
   });
 
   group(
@@ -12121,6 +12311,159 @@ void main() {
     );
 
     test(
+      'ExecutionSchedulingMode.hybrid: two Tasks under different Stories '
+      'of the same Epic serialize too, an unrelated Task still starts '
+      'immediately, and two Tasks under unrelated Epics never conflict '
+      '(ancestor-generalized, dependency-caching-and-ancestor-sibling-'
+      'conflict)',
+      () async {
+        // cousinX/cousinY are not direct siblings (different Story
+        // parents) but share parentEpic as a grandparent — the case
+        // direct-parentId comparison alone couldn't catch pre-change.
+        final storyX = Ticket(
+          id: 'sched-story-x',
+          ticketId: 'AIO-SCHED-SX',
+          type: TicketType.story,
+          title: 'Story X',
+          status: 'backlog',
+          parentId: parentEpic.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final storyY = Ticket(
+          id: 'sched-story-y',
+          ticketId: 'AIO-SCHED-SY',
+          type: TicketType.story,
+          title: 'Story Y',
+          status: 'backlog',
+          parentId: parentEpic.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final cousinX = Ticket(
+          id: 'sched-cousin-x',
+          ticketId: 'AIO-SCHED-CX',
+          type: TicketType.task,
+          title: 'Cousin X',
+          status: 'backlog',
+          parentId: storyX.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final cousinY = Ticket(
+          id: 'sched-cousin-y',
+          ticketId: 'AIO-SCHED-CY',
+          type: TicketType.task,
+          title: 'Cousin Y',
+          status: 'backlog',
+          parentId: storyY.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        // unrelatedTaskC (no parent at all) plays the "unrelated Epic"
+        // role too — it shares no ancestor with cousinX/cousinY either
+        // way, exercising both "an unrelated queued Task still starts
+        // immediately" and "two Tasks under unrelated Epics don't
+        // conflict" in one fixture.
+        final extraById = {
+          storyX.id: storyX,
+          storyY.id: storyY,
+          cousinX.id: cousinX,
+          cousinY.id: cousinY,
+        };
+        final baseById = {
+          parentEpic.id: parentEpic,
+          siblingA.id: siblingA,
+          siblingB.id: siblingB,
+          unrelatedTaskC.id: unrelatedTaskC,
+        };
+        when(() => repository.getTicketById(any())).thenAnswer((
+          invocation,
+        ) async {
+          final id = invocation.positionalArguments[0] as String;
+          final extra = extraById[id];
+          if (extra != null) return extra;
+          final base = baseById[id];
+          if (base != null) return base.copyWith(status: liveStatus[id]);
+          return Ticket(
+            id: id,
+            ticketId: '',
+            type: TicketType.chat,
+            title: 'Coding Execution — synthetic',
+            status: 'backlog',
+            createdAt: DateTime(2026),
+            updatedAt: DateTime(2026),
+          );
+        });
+        // _codingExecutionGateCheck's design-review-gate walk: cousinX/
+        // cousinY are each governed by a Story (storyX/storyY), unlike
+        // siblingA/siblingB/unrelatedTaskC above (governed directly by
+        // an Epic, or parentless) — so this test is the first in this
+        // group to actually reach _governingStory/_storyNeedsDesignReview.
+        // Neither title contains a UI keyword, so _storyNeedsDesignReview
+        // resolves false and no design-sync chat lookup is needed.
+        when(
+          () => repository.getTicketsByParent(
+            storyX.id,
+            types: TicketTypeHierarchy.executableTypes,
+          ),
+        ).thenAnswer((_) async => [cousinX]);
+        when(
+          () => repository.getTicketsByParent(
+            storyY.id,
+            types: TicketTypeHierarchy.executableTypes,
+          ),
+        ).thenAnswer((_) async => [cousinY]);
+
+        when(
+          () => schedulingRepository.getMode(),
+        ).thenAnswer((_) async => ExecutionSchedulingMode.hybrid);
+        when(
+          () => schedulingRepository.getConcurrencyCeiling(),
+        ).thenAnswer((_) async => 2);
+
+        final cubit = buildSchedulingCubit(
+          executionSchedulingRepository: schedulingRepository,
+        );
+        addTearDown(cubit.close);
+
+        await cubit.updateTicketStatus(cousinX.id, 'inProgress');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.updateTicketStatus(cousinY.id, 'inProgress');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.updateTicketStatus(unrelatedTaskC.id, 'inProgress');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        await cubit.getTicketById(cousinX.id);
+        expect((cubit.state as TicketDetailLoaded).isExecuting, isTrue);
+
+        await cubit.getTicketById(cousinY.id);
+        final cousinYState = cubit.state as TicketDetailLoaded;
+        expect(
+          cousinYState.isExecuting,
+          isFalse,
+          reason:
+              'Cousin Y shares no direct parent with Cousin X, but both '
+              'roll up to the same Epic, so Hybrid should still '
+              'serialize it behind Cousin X',
+        );
+        expect(cousinYState.executionQueuePosition, 1);
+
+        await cubit.getTicketById(unrelatedTaskC.id);
+        expect(
+          (cubit.state as TicketDetailLoaded).isExecuting,
+          isTrue,
+          reason:
+              'unrelatedTaskC has no parent at all, so it shares no '
+              'ancestor with Cousin X and should start immediately '
+              '(skip-ahead), not queue behind Cousin Y',
+        );
+
+        verify(() => agentClient.run(any())).called(2);
+      },
+    );
+
+    test(
       'searchTickets seeds TicketsLoaded.inFlightExecutionIds/'
       'executionQueuePositions from already-in-flight/queued state — a '
       'fresh Board load reflects runs that started before it, not just '
@@ -12319,6 +12662,13 @@ void main() {
             AutomationContext.codingExecutionResume,
           ),
         ).thenAnswer((_) async => AutomationConfidence.gated);
+        // searchTickets (called below) now also resolves the scheduling
+        // mode for TicketsLoaded.topmostAncestorId — see
+        // TicketsCubit._topmostAncestorIdIfHybrid. Added for
+        // aion-arch/changes/dependency-caching-and-ancestor-sibling-conflict.
+        when(
+          () => schedulingRepository.getMode(),
+        ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
 
         final cubit = buildSchedulingCubit(
           executionSchedulingRepository: schedulingRepository,
@@ -12359,6 +12709,13 @@ void main() {
             AutomationContext.codingExecutionResume,
           ),
         ).thenAnswer((_) async => AutomationConfidence.manual);
+        // searchTickets (called below) now also resolves the scheduling
+        // mode for TicketsLoaded.topmostAncestorId — see
+        // TicketsCubit._topmostAncestorIdIfHybrid. Added for
+        // aion-arch/changes/dependency-caching-and-ancestor-sibling-conflict.
+        when(
+          () => schedulingRepository.getMode(),
+        ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
 
         final cubit = buildSchedulingCubit(
           executionSchedulingRepository: schedulingRepository,
@@ -12410,6 +12767,13 @@ void main() {
             updatedAt: DateTime(2026),
           ),
         );
+        // searchTickets (called below) now also resolves the scheduling
+        // mode for TicketsLoaded.topmostAncestorId — see
+        // TicketsCubit._topmostAncestorIdIfHybrid. Added for
+        // aion-arch/changes/dependency-caching-and-ancestor-sibling-conflict.
+        when(
+          () => schedulingRepository.getMode(),
+        ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
 
         final cubit = buildSchedulingCubit(
           executionSchedulingRepository: schedulingRepository,

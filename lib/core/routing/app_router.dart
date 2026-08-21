@@ -13,6 +13,7 @@ import 'package:aion/core/contracts/embedding_provider.dart';
 import 'package:aion/core/contracts/page_ticket_provider.dart';
 import 'package:aion/core/contracts/provider_registry.dart';
 import 'package:aion/core/database/app_database.dart';
+import 'package:aion/core/build/dependency_cache_service.dart';
 import 'package:aion/core/build/project_stack_detector.dart';
 import 'package:aion/core/git/git_repository_client.dart';
 import 'package:aion/core/git/github_cli_client.dart';
@@ -738,6 +739,7 @@ class _WorkspaceShellState extends State<WorkspaceShell>
               workflowPromptTemplateRepository: context
                   .read<WorkflowPromptTemplateRepository>(),
               notificationRepository: context.read<NotificationRepository>(),
+              dependencyCacheService: const DependencyCacheService(),
             )..restoreExecutionQueue()
               ..loadUnreadNotificationCount(),
             child: Builder(

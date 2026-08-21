@@ -460,15 +460,32 @@ void main() {
             status: 'inProgress',
           );
 
+          // t1/t2 share a topmost ancestor (their direct parent, in this
+          // flat single-level fixture); t3/t4 map to their own id (no
+          // parent) — same shape `TicketsCubit.topmostAncestorIds` would
+          // build, precomputed here since these states are hand-crafted
+          // directly rather than emitted by a real cubit.
+          final topmostAncestorId = {
+            t1.id: 'story-1',
+            t2.id: 'story-1',
+            t3.id: t3.id,
+            t4.id: t4.id,
+          };
+
           final states = [
             // s0: [t1, t3, t2] todo, [t4] inProgress — Hybrid clusters
             // t1/t2 adjacent in the rendered todo column.
-            TicketsLoaded([t1, t3, t2, t4], hasMore: false),
+            TicketsLoaded(
+              [t1, t3, t2, t4],
+              hasMore: false,
+              topmostAncestorId: topmostAncestorId,
+            ),
             // s1: t1 moves to inProgress — removed from the front of
             // todo, appended to inProgress.
             TicketsLoaded(
               [t1.copyWith(status: 'inProgress'), t3, t2, t4],
               hasMore: false,
+              topmostAncestorId: topmostAncestorId,
             ),
             // s2: t2 joins t1 in inProgress too.
             TicketsLoaded(
@@ -479,11 +496,13 @@ void main() {
                 t4,
               ],
               hasMore: false,
+              topmostAncestorId: topmostAncestorId,
             ),
             // s3: t1 reverts to todo — rapid back-and-forth.
             TicketsLoaded(
               [t1, t3, t2.copyWith(status: 'inProgress'), t4],
               hasMore: false,
+              topmostAncestorId: topmostAncestorId,
             ),
             // s4: t4 moves to todo too — a second column's churn on top
             // of the first.
@@ -495,6 +514,7 @@ void main() {
                 t4.copyWith(status: 'todo'),
               ],
               hasMore: false,
+              topmostAncestorId: topmostAncestorId,
             ),
           ];
 
@@ -586,11 +606,21 @@ void main() {
             ),
           );
 
-          final initial = TicketsLoaded([
-            siblingA,
-            ...loose,
-            siblingB,
-          ], hasMore: false, inFlightExecutionIds: {loose[0].id});
+          // siblingA/siblingB share a topmost ancestor; each loose ticket
+          // maps to its own id (no parent) — same shape
+          // `TicketsCubit.topmostAncestorIds` would build.
+          final topmostAncestorId = {
+            siblingA.id: 'story-1',
+            siblingB.id: 'story-1',
+            for (final t in loose) t.id: t.id,
+          };
+
+          final initial = TicketsLoaded(
+            [siblingA, ...loose, siblingB],
+            hasMore: false,
+            inFlightExecutionIds: {loose[0].id},
+            topmostAncestorId: topmostAncestorId,
+          );
 
           // Every ticket's status shuffled at once (not a gradual
           // one-at-a-time drift), plus the in-flight/running badge moves
@@ -611,6 +641,7 @@ void main() {
             ],
             hasMore: false,
             inFlightExecutionIds: {siblingA.id},
+            topmostAncestorId: topmostAncestorId,
           );
 
           final cubit = MockTicketsCubit();
@@ -654,6 +685,68 @@ void main() {
                   'collapsed jump',
             );
           }
+        },
+      );
+
+      testWidgets(
+        'Hybrid clustering pulls two Tasks under different Stories of the '
+        'same Epic adjacent (dependency-caching-and-ancestor-sibling-'
+        'conflict tasks.md T15)',
+        (tester) async {
+          final taskA = ticket(
+            id: 'task-a',
+            title: 'Task A',
+            status: 'todo',
+            parentId: 'story-1',
+          );
+          final other = ticket(id: 'unrelated', title: 'Unrelated', status: 'todo');
+          final taskB = ticket(
+            id: 'task-b',
+            title: 'Task B',
+            status: 'todo',
+            parentId: 'story-2',
+          );
+
+          // task-a/task-b sit under different Stories but roll up to the
+          // same Epic; `other` has no parent at all.
+          final state = TicketsLoaded(
+            [taskA, other, taskB],
+            hasMore: false,
+            topmostAncestorId: {
+              taskA.id: 'epic-1',
+              taskB.id: 'epic-1',
+              other.id: other.id,
+            },
+          );
+
+          final cubit = MockTicketsCubit();
+          whenListen(cubit, Stream.value(state), initialState: state);
+
+          await tester.pumpWidget(wrapBoard(cubit));
+          await tester.pump();
+          await tester.pump();
+
+          final taskACenter = tester.getCenter(find.text('Task A'));
+          final taskBCenter = tester.getCenter(find.text('Task B'));
+          final otherCenter = tester.getCenter(find.text('Unrelated'));
+
+          // Rendered order is [Task A, Task B, Unrelated] — Hybrid's
+          // clustering pulled Task B (a different-Story, same-Epic
+          // "cousin") up next to Task A, ahead of Unrelated even though
+          // Unrelated appeared between them in the input order.
+          expect(
+            taskACenter.dy,
+            lessThan(taskBCenter.dy),
+            reason: 'Task A should render above Task B',
+          );
+          expect(
+            taskBCenter.dy,
+            lessThan(otherCenter.dy),
+            reason:
+                'Task B (same-Epic cousin of Task A) should render above '
+                'Unrelated, i.e. adjacent to Task A rather than left in '
+                'its original position',
+          );
         },
       );
     },
