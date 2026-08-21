@@ -884,8 +884,35 @@ void main() {
   });
 
   group('runChatTurn usage capture', () {
+    // A chat with a resolvable parent, so `_logElapsedTime`'s automatic
+    // time-logging step (added for
+    // `aion-arch/changes/automatic-time-tracking-for-tickets`) doesn't
+    // no-op — these tests aren't about time logging itself (see the
+    // 'automatic time logging' group below for that), just kept
+    // unaffected by its new side-effecting call.
+    final chatWithParent = Ticket(
+      id: 'chat-1',
+      ticketId: 'AIO-chat-1',
+      type: TicketType.chat,
+      title: 'Chat',
+      status: 'backlog',
+      parentId: 'parent-1',
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    void stubTicketRepositoryForTimeLogging() {
+      when(
+        () => ticketRepository.getTicketById('chat-1'),
+      ).thenAnswer((_) async => chatWithParent);
+      when(
+        () => ticketRepository.addTimeSpent(any(), any()),
+      ).thenAnswer((_) async {});
+    }
+
     test('persists inputTokens/outputTokens from a terminal AgentDoneEvent '
         'that carries them', () async {
+      stubTicketRepositoryForTimeLogging();
       TicketComment? persisted;
       when(() => repository.addComment(any())).thenAnswer((invocation) async {
         persisted = invocation.positionalArguments.first as TicketComment;
@@ -901,6 +928,7 @@ void main() {
         client: client,
         provider: provider,
         commentRepo: repository,
+        ticketRepository: ticketRepository,
         chatTicketId: 'chat-1',
         prompt: 'Hello',
         model: _sonnet,
@@ -913,6 +941,7 @@ void main() {
 
     test('persists null/null usage when the terminal event is an '
         'AgentErrorEvent (no done event ever seen)', () async {
+      stubTicketRepositoryForTimeLogging();
       TicketComment? persisted;
       when(() => repository.addComment(any())).thenAnswer((invocation) async {
         persisted = invocation.positionalArguments.first as TicketComment;
@@ -926,6 +955,7 @@ void main() {
         client: client,
         provider: provider,
         commentRepo: repository,
+        ticketRepository: ticketRepository,
         chatTicketId: 'chat-1',
         prompt: 'Hello',
         model: _sonnet,
@@ -938,6 +968,7 @@ void main() {
 
     test('an AgentOverageDetectedEvent reaches onConsumptionSignal as a '
         'UsageWindowConsumption, via provider.describeOverage', () async {
+      stubTicketRepositoryForTimeLogging();
       when(() => repository.addComment(any())).thenAnswer((_) async {});
       when(() => client.run(any())).thenAnswer(
         (_) async => Stream.fromIterable(const [
@@ -951,6 +982,7 @@ void main() {
         client: client,
         provider: provider,
         commentRepo: repository,
+        ticketRepository: ticketRepository,
         chatTicketId: 'chat-1',
         prompt: 'Hello',
         model: _sonnet,
@@ -966,6 +998,7 @@ void main() {
       'reports an AgentToolCallEvent via onToolUse (not by invoking '
       'onToolCall itself — that is the client implementation\'s job)',
       () async {
+        stubTicketRepositoryForTimeLogging();
         when(() => repository.addComment(any())).thenAnswer((_) async {});
 
         AgentRequest? capturedRequest;
@@ -998,6 +1031,7 @@ void main() {
           client: client,
           provider: provider,
           commentRepo: repository,
+          ticketRepository: ticketRepository,
           chatTicketId: 'chat-1',
           prompt: 'Hello',
           model: _sonnet,
@@ -1013,5 +1047,178 @@ void main() {
         expect(onToolCallInvoked, isFalse);
       },
     );
+  });
+
+  group('automatic time logging', () {
+    // A chat with a resolvable parent — `_logElapsedTime` logs against
+    // this ticket. Added for
+    // `aion-arch/changes/automatic-time-tracking-for-tickets`.
+    final chatWithParent = Ticket(
+      id: 'chat-1',
+      ticketId: 'AIO-chat-1',
+      type: TicketType.chat,
+      title: 'Chat',
+      status: 'backlog',
+      parentId: 'parent-1',
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    test('logs at least 1 minute against the parent ticket on '
+        'ChatTurnSuccess', () async {
+      when(
+        () => ticketRepository.getTicketById('chat-1'),
+      ).thenAnswer((_) async => chatWithParent);
+      when(
+        () => ticketRepository.addTimeSpent(any(), any()),
+      ).thenAnswer((_) async {});
+      when(() => repository.addComment(any())).thenAnswer((_) async {});
+      when(() => client.run(any())).thenAnswer(
+        (_) async => Stream.fromIterable(const [
+          AgentTextEvent('Hi there'),
+          AgentDoneEvent(),
+        ]),
+      );
+
+      final result = await ChatCubit.runChatTurn(
+        client: client,
+        provider: provider,
+        commentRepo: repository,
+        ticketRepository: ticketRepository,
+        chatTicketId: 'chat-1',
+        prompt: 'Hello',
+        model: _sonnet,
+      );
+
+      expect(result, isA<ChatTurnSuccess>());
+      final captured =
+          verify(
+            () => ticketRepository.addTimeSpent('parent-1', captureAny()),
+          ).captured.single as int;
+      expect(captured, greaterThanOrEqualTo(1));
+    });
+
+    test('logs at least 1 minute against the parent ticket on '
+        'ChatTurnFailure', () async {
+      when(
+        () => ticketRepository.getTicketById('chat-1'),
+      ).thenAnswer((_) async => chatWithParent);
+      when(
+        () => ticketRepository.addTimeSpent(any(), any()),
+      ).thenAnswer((_) async {});
+      when(() => repository.addComment(any())).thenAnswer((_) async {});
+      when(() => client.run(any())).thenAnswer(
+        (_) async =>
+            Stream.fromIterable(const [AgentErrorEvent('model unavailable')]),
+      );
+
+      final result = await ChatCubit.runChatTurn(
+        client: client,
+        provider: provider,
+        commentRepo: repository,
+        ticketRepository: ticketRepository,
+        chatTicketId: 'chat-1',
+        prompt: 'Hello',
+        model: _sonnet,
+      );
+
+      expect(result, isA<ChatTurnFailure>());
+      final captured =
+          verify(
+            () => ticketRepository.addTimeSpent('parent-1', captureAny()),
+          ).captured.single as int;
+      expect(captured, greaterThanOrEqualTo(1));
+    });
+
+    test('logs at least 1 minute against the parent ticket on '
+        'ChatTurnCancelled', () async {
+      when(
+        () => ticketRepository.getTicketById('chat-1'),
+      ).thenAnswer((_) async => chatWithParent);
+      when(
+        () => ticketRepository.addTimeSpent(any(), any()),
+      ).thenAnswer((_) async {});
+      when(() => client.run(any())).thenAnswer(
+        (_) async => Stream.fromIterable(const [AgentCancelledEvent()]),
+      );
+
+      final result = await ChatCubit.runChatTurn(
+        client: client,
+        provider: provider,
+        commentRepo: repository,
+        ticketRepository: ticketRepository,
+        chatTicketId: 'chat-1',
+        prompt: 'Hello',
+        model: _sonnet,
+      );
+
+      expect(result, isA<ChatTurnCancelled>());
+      final captured =
+          verify(
+            () => ticketRepository.addTimeSpent('parent-1', captureAny()),
+          ).captured.single as int;
+      expect(captured, greaterThanOrEqualTo(1));
+    });
+
+    test('never logs time when the chat has no resolvable parent (e.g. an '
+        'Inbox-spawned chat)', () async {
+      final orphanChat = Ticket(
+        id: 'chat-orphan',
+        ticketId: 'AIO-chat-orphan',
+        type: TicketType.chat,
+        title: 'Orphan chat',
+        status: 'backlog',
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+      when(
+        () => ticketRepository.getTicketById('chat-orphan'),
+      ).thenAnswer((_) async => orphanChat);
+      when(() => repository.addComment(any())).thenAnswer((_) async {});
+      when(() => client.run(any())).thenAnswer(
+        (_) async => Stream.fromIterable(const [
+          AgentTextEvent('Hi there'),
+          AgentDoneEvent(),
+        ]),
+      );
+
+      await ChatCubit.runChatTurn(
+        client: client,
+        provider: provider,
+        commentRepo: repository,
+        ticketRepository: ticketRepository,
+        chatTicketId: 'chat-orphan',
+        prompt: 'Hello',
+        model: _sonnet,
+      );
+
+      verifyNever(() => ticketRepository.addTimeSpent(any(), any()));
+    });
+
+    test('never logs time when getTicketById resolves null entirely',
+        () async {
+      when(
+        () => ticketRepository.getTicketById('chat-missing'),
+      ).thenAnswer((_) async => null);
+      when(() => repository.addComment(any())).thenAnswer((_) async {});
+      when(() => client.run(any())).thenAnswer(
+        (_) async => Stream.fromIterable(const [
+          AgentTextEvent('Hi there'),
+          AgentDoneEvent(),
+        ]),
+      );
+
+      await ChatCubit.runChatTurn(
+        client: client,
+        provider: provider,
+        commentRepo: repository,
+        ticketRepository: ticketRepository,
+        chatTicketId: 'chat-missing',
+        prompt: 'Hello',
+        model: _sonnet,
+      );
+
+      verifyNever(() => ticketRepository.addTimeSpent(any(), any()));
+    });
   });
 }

@@ -1,5 +1,5 @@
 // test/features/tickets/cubit/tickets_cubit_ticket_crud_test.dart —
-// TicketsCubit.create_ticket/add_link/log_time tool-call handler tests
+// TicketsCubit.create_ticket/add_link tool-call handler tests
 // (aion-arch/changes/ticket-crud-tool-calls).
 //
 // Split into its own file (mirroring the existing
@@ -40,8 +40,8 @@ void main() {
   late MockTicketLinkRepository linkRepository;
   Map<String, dynamic>? result;
 
-  // The ticket a `create_ticket`/`add_link`/`log_time` tool call is
-  // "working on" — resolved via `chat.parentId`.
+  // The ticket a `create_ticket`/`add_link` tool call is "working on" —
+  // resolved via `chat.parentId`.
   final ticket = Ticket(
     id: '1',
     ticketId: 'AIO-1',
@@ -57,13 +57,10 @@ void main() {
     // Needed for `repository.createTicket(any()/captureAny())` — mocktail
     // requires a fallback for any custom type used with those matchers.
     registerFallbackValue(ticket);
-    // Needed for `automationSettingsRepository.getConfidence(any())` in
-    // the log_time "no confidence lookup at all" assertion.
-    registerFallbackValue(AutomationContext.sddStage);
   });
 
-  // A chat parented by `ticket` — the shape every create_ticket/add_link/
-  // log_time handler expects: chat.parentId is "the ticket being worked."
+  // A chat parented by `ticket` — the shape every create_ticket/add_link
+  // handler expects: chat.parentId is "the ticket being worked."
   final crudChat = Ticket(
     id: 'crud-chat',
     ticketId: 'AIO-40',
@@ -161,29 +158,6 @@ void main() {
             linkType: TicketLinkType.relatesTo,
           ),
         ).called(1);
-      },
-      expect: () => <TicketsState>[],
-    );
-
-    blocTest<TicketsCubit, TicketsState>(
-      'log_time dispatches to _handleLogTimeToolCall',
-      setUp: () {
-        when(
-          () => repository.addTimeSpent(ticket.id, 15),
-        ).thenAnswer((_) async {});
-      },
-      build: buildCubit,
-      act: (cubit) async {
-        result = await cubit.handleChatToolCall(
-          crudChat,
-          'call-1',
-          'log_time',
-          {'minutes': 15},
-        );
-      },
-      verify: (_) {
-        expect(result, {'accepted': true});
-        verify(() => repository.addTimeSpent(ticket.id, 15)).called(1);
       },
       expect: () => <TicketsState>[],
     );
@@ -531,53 +505,6 @@ void main() {
             .having((s) => s.ticket.id, 'ticket.id', crudChat.id)
             .having((s) => s.pendingToolProposal, 'pendingToolProposal', isNull),
       ],
-    );
-  });
-
-  group('log_time — no AutomationConfidence gate', () {
-    blocTest<TicketsCubit, TicketsState>(
-      'applies immediately without checking any confidence',
-      setUp: () {
-        when(
-          () => repository.addTimeSpent(ticket.id, 30),
-        ).thenAnswer((_) async {});
-      },
-      build: buildCubit,
-      act: (cubit) async {
-        result = await cubit.handleChatToolCall(
-          crudChat,
-          'call-1',
-          'log_time',
-          {'minutes': 30},
-        );
-      },
-      verify: (_) {
-        expect(result, {'accepted': true});
-        verify(() => repository.addTimeSpent(ticket.id, 30)).called(1);
-        verifyNever(() => automationSettingsRepository.getConfidence(any()));
-      },
-      expect: () => <TicketsState>[],
-    );
-
-    blocTest<TicketsCubit, TicketsState>(
-      'declines a missing/non-positive minutes value',
-      build: buildCubit,
-      act: (cubit) async {
-        result = await cubit.handleChatToolCall(
-          crudChat,
-          'call-1',
-          'log_time',
-          {'minutes': 0},
-        );
-      },
-      verify: (_) {
-        expect(result, {
-          'accepted': false,
-          'reason': 'minutes must be a positive integer.',
-        });
-        verifyNever(() => repository.addTimeSpent(any(), any()));
-      },
-      expect: () => <TicketsState>[],
     );
   });
 

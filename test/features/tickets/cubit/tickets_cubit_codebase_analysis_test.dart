@@ -143,6 +143,17 @@ void main() {
         linkType: any(named: 'linkType'),
       ),
     ).thenAnswer((_) async {});
+    // Default for `ChatCubit.runChatTurn`'s automatic time-logging step
+    // (`_logElapsedTime`, added for
+    // `aion-arch/changes/automatic-time-tracking-for-tickets`), which
+    // `_runFullSummarization`'s `runChatTurn` call now triggers on every
+    // turn — the analysis chat `stubStatefulTickets` resolves has a real
+    // parentId (the run-record ticket), so `addTimeSpent` needs a stub
+    // here rather than resolving to a no-op like an unresolvable chat
+    // would.
+    when(
+      () => repository.addTimeSpent(any(), any()),
+    ).thenAnswer((_) async {});
   });
 
   group('runCodebaseSummarization — shallow', () {

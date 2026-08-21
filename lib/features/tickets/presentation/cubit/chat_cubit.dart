@@ -1,5 +1,7 @@
 // presentation/cubit/chat_cubit.dart — ChatCubit business logic (presentation layer).
 
+import 'dart:math' show max;
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 
@@ -134,6 +136,7 @@ class ChatCubit extends Cubit<ChatState> {
         client: provider.client,
         provider: provider,
         commentRepo: _repository,
+        ticketRepository: _ticketRepository,
         chatTicketId: chatTicketId,
         prompt: content,
         model: model,
@@ -338,6 +341,14 @@ class ChatCubit extends Cubit<ChatState> {
   /// [sendMessage]/`TicketsCubit._runCodingExecution`). Added for
   /// `aion-arch/changes/parallel-work`; see that change's design.md §3.
   ///
+  /// [ticketRepository] is used to automatically log this turn's elapsed
+  /// wall-clock time against [chatTicketId]'s parent ticket, via
+  /// [_logElapsedTime] — called unconditionally as the last step before
+  /// returning, regardless of terminal outcome (success, failure, or
+  /// cancellation). This replaces the model-self-reported `log_time` tool
+  /// call as `timeSpent`'s source of truth. Added for
+  /// `aion-arch/changes/automatic-time-tracking-for-tickets`.
+  ///
   /// @returns a [ChatTurnResult]: [ChatTurnSuccess] or [ChatTurnFailure]
   /// once this method has already persisted the matching comment itself,
   /// or [ChatTurnCancelled] with nothing persisted.
@@ -345,6 +356,7 @@ class ChatCubit extends Cubit<ChatState> {
     required AgentModelClient client,
     required AgentProvider provider,
     required CommentRepository commentRepo,
+    required TicketRepository ticketRepository,
     required String chatTicketId,
     required String prompt,
     required AgentModelDescriptor model,
@@ -362,6 +374,7 @@ class ChatCubit extends Cubit<ChatState> {
     )?
     onToolCall,
   }) async {
+    final startedAt = DateTime.now();
     final buffer = StringBuffer();
     var succeeded = true;
     var cancelled = false;
@@ -407,9 +420,10 @@ class ChatCubit extends Cubit<ChatState> {
       failureMessage = e.toString();
     }
 
-    if (cancelled) return ChatTurnCancelled(buffer.toString());
-
-    if (succeeded && buffer.isNotEmpty) {
+    final ChatTurnResult result;
+    if (cancelled) {
+      result = ChatTurnCancelled(buffer.toString());
+    } else if (succeeded && buffer.isNotEmpty) {
       await commentRepo.addComment(
         TicketComment(
           id: '',
@@ -422,6 +436,7 @@ class ChatCubit extends Cubit<ChatState> {
           createdAt: DateTime.now(),
         ),
       );
+      result = const ChatTurnSuccess();
     } else if (!succeeded) {
       await commentRepo.addComment(
         TicketComment(
@@ -435,7 +450,39 @@ class ChatCubit extends Cubit<ChatState> {
           createdAt: DateTime.now(),
         ),
       );
+      result = const ChatTurnFailure();
+    } else {
+      // succeeded but buffer empty — a turn with only tool calls, no
+      // text: no comment persisted, ChatTurnSuccess() returned, exactly
+      // as before this method had a single trailing return.
+      result = const ChatTurnSuccess();
     }
-    return succeeded ? const ChatTurnSuccess() : const ChatTurnFailure();
+
+    await _logElapsedTime(ticketRepository, chatTicketId, startedAt);
+    return result;
+  }
+
+  /// Logs [chatTicketId]'s parent ticket's elapsed time for a turn that
+  /// started at [startedAt], via [TicketRepository.addTimeSpent]. No-ops
+  /// silently if [chatTicketId] has no resolvable parent (e.g. an
+  /// Inbox-spawned chat) — mirrors the removed `log_time` tool's former
+  /// "No ticket to log time against" guard. Always logs at least 1
+  /// minute (ceiling-rounded) for any turn that reaches this point,
+  /// regardless of terminal outcome — a failed or cancelled turn still
+  /// consumed real wall-clock time. Added for
+  /// `aion-arch/changes/automatic-time-tracking-for-tickets`; replaces
+  /// the model-self-reported `log_time` tool call as `timeSpent`'s
+  /// source of truth — see that change's proposal.md for why.
+  static Future<void> _logElapsedTime(
+    TicketRepository ticketRepository,
+    String chatTicketId,
+    DateTime startedAt,
+  ) async {
+    final chat = await ticketRepository.getTicketById(chatTicketId);
+    final parentId = chat?.parentId;
+    if (parentId == null) return;
+    final elapsedSeconds = DateTime.now().difference(startedAt).inSeconds;
+    final minutes = max(1, (elapsedSeconds / 60).ceil());
+    await ticketRepository.addTimeSpent(parentId, minutes);
   }
 }
