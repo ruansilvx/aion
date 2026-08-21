@@ -194,4 +194,17 @@ abstract final class AionText {
     fontWeight: FontWeight.w600,
     height: 1.0,
   );
+
+  /// The tiny numeric label inside `_NotificationBellTrigger`'s
+  /// unread-count badge — snug, untracked, high-weight. Distinct from
+  /// [chip] (too tracked) and [badgeLabel] (too large) for a 16px count
+  /// disc. Added for `aion-arch/changes/pr-metadata-and-notification-center`;
+  /// see that change's design.md Component Spec §0.1.
+  static const countBadge = TextStyle(
+    fontFamily: _ui,
+    fontSize: 10,
+    fontWeight: FontWeight.w700,
+    letterSpacing: 0,
+    height: 1.0,
+  );
 }

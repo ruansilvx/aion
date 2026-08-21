@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:bloc_test/bloc_test.dart';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/widgets.dart' hide Notification;
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -90,6 +90,9 @@ class MockWorkflowSkillAttachmentRepository extends Mock
 class MockWorkflowPromptTemplateRepository extends Mock
     implements WorkflowPromptTemplateRepository {}
 
+class MockNotificationRepository extends Mock
+    implements NotificationRepository {}
+
 /// Stubs [gitClient]/[gitHubClient] for a coding-execution run that
 /// isolates cleanly, pushes, and opens a PR — the happy path most
 /// `_runCodingExecution` tests exercise. Whether the run actually
@@ -106,6 +109,10 @@ void stubSuccessfulCodingExecutionInfra(
   when(
     () => gitClient.createWorktree(any(), any(), any()),
   ).thenAnswer((_) async {});
+  when(() => gitClient.defaultBranch(any())).thenAnswer((_) async => 'main');
+  when(
+    () => gitClient.changedFileCount(any(), any(), any()),
+  ).thenAnswer((_) async => 1);
   when(() => gitClient.push(any(), any())).thenAnswer((_) async {});
   when(
     () => gitHubClient.openPullRequest(
@@ -114,7 +121,7 @@ void stubSuccessfulCodingExecutionInfra(
       title: any(named: 'title'),
       body: any(named: 'body'),
     ),
-  ).thenAnswer((_) async => 'https://example/pr/mock');
+  ).thenAnswer((_) async => (url: 'https://example/pr/mock', number: 1));
   when(() => gitClient.removeWorktree(any(), any())).thenAnswer((_) async {});
 }
 
@@ -597,6 +604,16 @@ void main() {
     registerFallbackValue(SddStage.exploring);
     registerFallbackValue(<TicketType>[]);
     registerFallbackValue(<String>{});
+    registerFallbackValue(
+      Notification(
+        id: '',
+        ticketId: '',
+        ticketTitle: '',
+        kind: NotificationKind.executionPrOpened,
+        message: '',
+        createdAt: DateTime(2026),
+      ),
+    );
     registerFallbackValue(
       TicketComment(
         id: '',
@@ -6355,6 +6372,240 @@ void main() {
         ),
       ],
     );
+  });
+
+  // Added for `aion-arch/changes/pr-metadata-and-notification-center`.
+  group('notifications', () {
+    group('without a NotificationRepository', () {
+      test('unreadNotificationCount stays 0 and loadUnreadNotificationCount no-ops', () async {
+        final cubit = TicketsCubit(repository);
+        addTearDown(cubit.close);
+
+        expect(cubit.unreadNotificationCount.value, 0);
+        await cubit.loadUnreadNotificationCount();
+        expect(cubit.unreadNotificationCount.value, 0);
+      });
+
+      test('getRecentNotifications returns an empty list', () async {
+        final cubit = TicketsCubit(repository);
+        addTearDown(cubit.close);
+
+        expect(await cubit.getRecentNotifications(), isEmpty);
+      });
+
+      test('markNotificationRead/markAllNotificationsRead no-op cleanly', () async {
+        final cubit = TicketsCubit(repository);
+        addTearDown(cubit.close);
+
+        await cubit.markNotificationRead('some-id');
+        await cubit.markAllNotificationsRead();
+        expect(cubit.unreadNotificationCount.value, 0);
+      });
+    });
+
+    group('with a NotificationRepository', () {
+      late MockNotificationRepository notificationRepository;
+
+      setUp(() {
+        notificationRepository = MockNotificationRepository();
+      });
+
+      TicketsCubit buildCubit() => TicketsCubit(
+        repository,
+        notificationRepository: notificationRepository,
+      );
+
+      test('loadUnreadNotificationCount populates from the repository', () async {
+        when(
+          () => notificationRepository.getUnreadCount(),
+        ).thenAnswer((_) async => 4);
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+
+        await cubit.loadUnreadNotificationCount();
+
+        expect(cubit.unreadNotificationCount.value, 4);
+      });
+
+      test('getRecentNotifications delegates to the repository', () async {
+        final rows = [
+          Notification(
+            id: 'n1',
+            ticketId: taskUnderStory.id,
+            ticketTitle: taskUnderStory.title,
+            kind: NotificationKind.executionPrOpened,
+            message: 'PR #42 opened · 5 files changed',
+            createdAt: DateTime(2026, 1, 1),
+          ),
+        ];
+        when(
+          () => notificationRepository.getRecent(limit: 20),
+        ).thenAnswer((_) async => rows);
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+
+        expect(await cubit.getRecentNotifications(), rows);
+      });
+
+      test('markNotificationRead delegates and refreshes the unread count', () async {
+        when(
+          () => notificationRepository.markRead('n1'),
+        ).thenAnswer((_) async {});
+        when(
+          () => notificationRepository.getUnreadCount(),
+        ).thenAnswer((_) async => 2);
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+
+        await cubit.markNotificationRead('n1');
+
+        verify(() => notificationRepository.markRead('n1')).called(1);
+        expect(cubit.unreadNotificationCount.value, 2);
+      });
+
+      test('markAllNotificationsRead delegates and zeroes the unread count', () async {
+        when(
+          () => notificationRepository.markAllRead(),
+        ).thenAnswer((_) async {});
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+        cubit.unreadNotificationCount.value = 5;
+
+        await cubit.markAllNotificationsRead();
+
+        verify(() => notificationRepository.markAllRead()).called(1);
+        expect(cubit.unreadNotificationCount.value, 0);
+      });
+    });
+
+    group('_recordNotification call sites', () {
+      late MockAgentModelClient agentClient;
+      late MockProviderRegistry registry;
+      late MockCommentRepository commentRepository;
+      late MockAutomationSettingsRepository automationSettingsRepository;
+      late MockGitRepositoryClient gitClient;
+      late MockGitHubCliClient gitHubClient;
+      late MockBaselineRepository baselineRepository;
+      late MockNotificationRepository notificationRepository;
+
+      setUp(() {
+        agentClient = MockAgentModelClient();
+        registry = buildProviderStack(agentClient).registry;
+        commentRepository = MockCommentRepository();
+        automationSettingsRepository = MockAutomationSettingsRepository();
+        gitClient = MockGitRepositoryClient();
+        gitHubClient = MockGitHubCliClient();
+        baselineRepository = MockBaselineRepository();
+        notificationRepository = MockNotificationRepository();
+        stubSuccessfulCodingExecutionInfra(gitClient, gitHubClient);
+        stubEmptyBaseline(baselineRepository);
+        when(
+          () => notificationRepository.addNotification(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => notificationRepository.getUnreadCount(),
+        ).thenAnswer((_) async => 0);
+      });
+
+      TicketsCubit buildFullCubit() => TicketsCubit(
+        repository,
+        providerRegistry: registry,
+        commentRepository: commentRepository,
+        automationSettingsRepository: automationSettingsRepository,
+        projectRootPath: '/fake/project/root',
+        gitClient: gitClient,
+        gitHubClient: gitHubClient,
+        baselineRepository: baselineRepository,
+        projectId: 'project-1',
+        baselineVersion: '0.1.0',
+        notificationRepository: notificationRepository,
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'fires executionPrOpened when a coding-execution run confirms a PR',
+        build: buildFullCubit,
+        setUp: () {
+          when(
+            () => repository.getTicketsByParent(
+              storyForExecution.id,
+              types: TicketTypeHierarchy.executableTypes,
+            ),
+          ).thenAnswer((_) async => [taskUnderStory]);
+          when(
+            () => repository.getTicketsByParent(
+              storyForExecution.id,
+              types: const [TicketType.chat],
+            ),
+          ).thenAnswer((_) async => [designSyncChatForExecution]);
+          when(
+            () => commentRepository.getCommentsForTicket(
+              designSyncChatForExecution.id,
+            ),
+          ).thenAnswer(
+            (_) async => [
+              TicketComment(
+                id: 'c-notif',
+                ticketId: designSyncChatForExecution.id,
+                content: 'No issues found.\n\nDESIGN GATE: APPROVED',
+                authorType: CommentAuthorType.ai,
+                createdAt: DateTime(2026),
+              ),
+            ],
+          );
+          var executionChatCreated = false;
+          when(
+            () => repository.getTicketsByParent(
+              taskUnderStory.id,
+              types: const [TicketType.chat],
+            ),
+          ).thenAnswer(
+            (_) async =>
+                executionChatCreated ? [dummyExecutionChatTicket] : [],
+          );
+          stubStatefulComments(commentRepository, dummyExecutionChatTicket.id);
+          when(() => repository.getTicketById(any())).thenAnswer((
+            invocation,
+          ) async {
+            final id = invocation.positionalArguments[0] as String;
+            if (id == storyForExecution.id) return storyForExecution;
+            if (id == taskUnderStory.id) {
+              return taskUnderStory.copyWith(status: 'inProgress');
+            }
+            return dummyExecutionChatTicket;
+          });
+          when(
+            () => repository.updateTicketStatus(any(), any()),
+          ).thenAnswer((_) async {});
+          when(() => repository.createTicket(any())).thenAnswer((_) async {
+            executionChatCreated = true;
+          });
+          when(() => agentClient.run(any())).thenAnswer(
+            (_) async => Stream.fromIterable(const [
+              AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+              AgentDoneEvent(),
+            ]),
+          );
+          when(
+            () => automationSettingsRepository.getConfidence(
+              AutomationContext.codingExecution,
+            ),
+          ).thenAnswer((_) async => AutomationConfidence.auto);
+        },
+        act: (cubit) =>
+            cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
+        wait: const Duration(milliseconds: 50),
+        verify: (_) {
+          final captured = verify(
+            () => notificationRepository.addNotification(captureAny()),
+          ).captured;
+          expect(captured, hasLength(1));
+          final notification = captured.single as Notification;
+          expect(notification.kind, NotificationKind.executionPrOpened);
+          expect(notification.ticketId, taskUnderStory.id);
+          expect(notification.message, contains('PR #1'));
+        },
+      );
+    });
   });
 
   group('retryDesignSync', () {

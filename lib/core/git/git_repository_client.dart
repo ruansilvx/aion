@@ -92,6 +92,46 @@ class GitRepositoryClient {
     await _runChecked(['push', '-u', 'origin', branchName], worktreePath);
   }
 
+  /// Runs `git diff --name-only <baseBranch>...<branch>` in [worktreePath]
+  /// and returns the count of changed files. Computed locally rather than
+  /// via `gh pr view --json files` (a second network call, with a risk of
+  /// eventual-consistency lag immediately after `gh pr create` returns) —
+  /// the worktree already has everything needed on disk. Called just
+  /// before `push` in `TicketsCubit._runCodingExecution`, from inside the
+  /// worktree `push` itself already runs from. Added for
+  /// `aion-arch/changes/pr-metadata-and-notification-center`.
+  Future<int> changedFileCount(
+    String worktreePath,
+    String baseBranch,
+    String branch,
+  ) async {
+    final result = await _runChecked(
+      ['diff', '--name-only', '$baseBranch...$branch'],
+      worktreePath,
+    );
+    final output = result.stdout.toString().trim();
+    return output.isEmpty ? 0 : output.split('\n').length;
+  }
+
+  /// Runs `git rev-parse --abbrev-ref origin/HEAD` in [rootPath] (the
+  /// *original* checkout, not the worktree — `origin/HEAD` is a
+  /// repository-wide ref, identical either place, but `rootPath` is
+  /// already resolved and doesn't require the worktree to exist yet) and
+  /// strips the `origin/` prefix, returning e.g. `'main'`. Falls back to
+  /// `'main'` if the command fails (a shallow clone or a repo with no
+  /// `origin/HEAD` set) — matching `gh pr create`'s own base-branch
+  /// resolution fallback (repository's configured default branch). Added
+  /// for `aion-arch/changes/pr-metadata-and-notification-center`.
+  Future<String> defaultBranch(String rootPath) async {
+    final result = await _run(
+      ['rev-parse', '--abbrev-ref', 'origin/HEAD'],
+      rootPath,
+    );
+    if (result.exitCode != 0) return 'main';
+    final ref = result.stdout.toString().trim();
+    return ref.startsWith('origin/') ? ref.substring('origin/'.length) : ref;
+  }
+
   Future<ProcessResult> _run(List<String> args, String rootPath) {
     return Process.run('git', args, workingDirectory: rootPath);
   }

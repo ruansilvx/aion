@@ -25,10 +25,17 @@ class MockTicketsCubit extends MockCubit<TicketsState> implements TicketsCubit {
 Widget _wrap({
   required StreamController<TicketsState> controller,
   required TicketsState initialState,
+  int unreadCount = 0,
 }) {
   final ticketsCubit = MockTicketsCubit();
   when(() => ticketsCubit.state).thenReturn(initialState);
   when(() => ticketsCubit.stream).thenAnswer((_) => controller.stream);
+  when(
+    () => ticketsCubit.unreadNotificationCount,
+  ).thenReturn(ValueNotifier<int>(unreadCount));
+  when(
+    () => ticketsCubit.getRecentNotifications(),
+  ).thenAnswer((_) async => const []);
 
   return MediaQuery(
     data: const MediaQueryData(size: Size(1200, 800)),
@@ -72,6 +79,9 @@ Widget _wrapRouted({required double width}) {
   when(
     () => ticketsCubit.stream,
   ).thenAnswer((_) => const Stream<TicketsState>.empty());
+  when(
+    () => ticketsCubit.unreadNotificationCount,
+  ).thenReturn(ValueNotifier<int>(0));
 
   Widget shellFor(GoRouterState state, String label) => BlocProvider<TicketsCubit>.value(
     value: ticketsCubit,
@@ -235,5 +245,51 @@ void main() {
         },
       );
     }
+  });
+
+  // Added for `aion-arch/changes/pr-metadata-and-notification-center`.
+  group('_NotificationBellTrigger (pr-metadata-and-notification-center)', () {
+    testWidgets(
+      'shows the unread-count badge when unreadNotificationCount > 0',
+      (tester) async {
+        final controller = StreamController<TicketsState>.broadcast();
+        addTearDown(controller.close);
+
+        await tester.pumpWidget(
+          _wrap(
+            controller: controller,
+            initialState: const TicketsInitial(),
+            unreadCount: 3,
+          ),
+        );
+        await tester.pump();
+
+        expect(find.text('3'), findsOneWidget);
+        expect(
+          find.bySemanticsLabel(RegExp('Notifications, 3 unread')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets('tapping the bell opens the notification dropdown', (
+      tester,
+    ) async {
+      final controller = StreamController<TicketsState>.broadcast();
+      addTearDown(controller.close);
+
+      await tester.pumpWidget(
+        _wrap(controller: controller, initialState: const TicketsInitial()),
+      );
+      await tester.pump();
+
+      final bell = find.bySemanticsLabel(RegExp('Notifications, 0 unread'));
+      expect(bell, findsOneWidget);
+      await tester.tap(bell);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Notifications'), findsOneWidget);
+      expect(find.text('No notifications yet'), findsOneWidget);
+    });
   });
 }

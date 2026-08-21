@@ -14,11 +14,19 @@ class GitHubCliClient {
   /// [rootPath] (the worktree the branch's commits live in — `gh` resolves
   /// the remote/base branch from the local repo config the same way it
   /// does for a human running the command by hand). Returns the created
-  /// PR's URL, parsed from `gh pr create`'s stdout (its last non-empty
-  /// line). Throws a [ProcessException] on failure (`gh` not installed/
-  /// authenticated) — the caller (`TicketsCubit._runCodingExecution`)
-  /// surfaces this as a normal execution failure, not a special case.
-  Future<String> openPullRequest({
+  /// PR's URL (parsed from `gh pr create`'s stdout, its last non-empty
+  /// line, as before) plus its number, parsed from that same URL's last
+  /// path segment — `gh pr create` never prints the number on its own
+  /// (`gh pr create --help` documents it as printing only the URL; unlike
+  /// `gh pr view`/`gh pr list`, `pr create` has no `--json` flag). Throws a
+  /// [ProcessException] on failure (`gh` not installed/authenticated) —
+  /// the caller (`TicketsCubit._runCodingExecution`) surfaces this as a
+  /// normal execution failure, not a special case. `int.parse` on the
+  /// number is intentionally unguarded — if `gh`'s URL format ever changes
+  /// shape, this should fail loudly (caught by that same surrounding
+  /// `catch`) rather than silently produce a wrong number. Added for
+  /// `aion-arch/changes/pr-metadata-and-notification-center`.
+  Future<({String url, int number})> openPullRequest({
     required String rootPath,
     required String branch,
     required String title,
@@ -40,6 +48,8 @@ class GitHubCliClient {
         'create',
       ], result.stderr.toString());
     }
-    return result.stdout.toString().trim().split('\n').last;
+    final url = result.stdout.toString().trim().split('\n').last;
+    final number = int.parse(url.split('/').last);
+    return (url: url, number: number);
   }
 }
