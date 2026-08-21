@@ -35,4 +35,19 @@ enum AutomationContext {
   /// `aion-arch/changes/parallel-work`; see
   /// `TicketsCubit.restoreExecutionQueue`.
   codingExecutionResume,
+
+  /// Model-initiated ticket creation via the `create_ticket` tool call —
+  /// whether a new top-level `story`/`task`/`bug` is created immediately,
+  /// asks for confirmation first, or is declined outright. Added for
+  /// `aion-arch/changes/ticket-crud-tool-calls`; see
+  /// `TicketsCubit._handleCreateTicketToolCall`.
+  ticketCreation,
+
+  /// Model-initiated ticket linking via the `add_link` tool call
+  /// (including duplicate-flagging, expressed as `linkType: duplicates`)
+  /// — whether the link is created immediately, asks for confirmation
+  /// first, or is declined outright. Added for
+  /// `aion-arch/changes/ticket-crud-tool-calls`; see
+  /// `TicketsCubit._handleAddLinkToolCall`.
+  ticketLinking,
 }

@@ -18,6 +18,7 @@ import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
 import 'package:aion/features/tickets/domain/enums/comment_author_type.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 import 'package:aion/features/tickets/domain/enums/skill_attachment_kind.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/presentation/cubit/chat_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/chat_state.dart';
@@ -584,6 +585,41 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                     .read<TicketsCubit>()
                                     .rejectPendingToolProposal(chatId),
                               ),
+                            CreateTicketProposal(
+                              :final title,
+                              :final type,
+                              :final description,
+                            ) =>
+                              _ToolProposalBanner(
+                                kind: ToolProposalKind.createTicket,
+                                newTicketType: type,
+                                proposedTitle: title,
+                                description: description,
+                                onConfirm: () => context
+                                    .read<TicketsCubit>()
+                                    .confirmPendingToolProposal(chatId),
+                                onReject: () => context
+                                    .read<TicketsCubit>()
+                                    .rejectPendingToolProposal(chatId),
+                              ),
+                            AddLinkProposal(
+                              :final targetTicketId,
+                              :final targetTicketTitle,
+                              :final linkType,
+                            ) =>
+                              _ToolProposalBanner(
+                                kind: ToolProposalKind.addLink,
+                                currentTicketKey: ticketsState.ticket.ticketId,
+                                linkType: linkType,
+                                targetTicketKey: targetTicketId,
+                                targetTicketTitle: targetTicketTitle,
+                                onConfirm: () => context
+                                    .read<TicketsCubit>()
+                                    .confirmPendingToolProposal(chatId),
+                                onReject: () => context
+                                    .read<TicketsCubit>()
+                                    .rejectPendingToolProposal(chatId),
+                              ),
                           },
                         );
                       },
@@ -968,6 +1004,16 @@ enum ToolProposalKind {
 
   /// `close_branch` awaiting confirm — the resolution-summary well (§3.2).
   close,
+
+  /// `create_ticket` awaiting confirm — the new-ticket preview well.
+  /// Added for `aion-arch/changes/ticket-crud-tool-calls`; see that
+  /// change's design.md §1/§3.1.
+  createTicket,
+
+  /// `add_link` awaiting confirm — the directional relationship well.
+  /// Added for `aion-arch/changes/ticket-crud-tool-calls`; see that
+  /// change's design.md §1/§3.2.
+  addLink,
 }
 
 /// A turn-blocking Confirm/Reject surface pinned above the compose field
@@ -983,14 +1029,21 @@ enum ToolProposalKind {
 /// design.md's Component Spec §1–§4.
 class _ToolProposalBanner extends StatefulWidget {
   /// Creates a [_ToolProposalBanner] for [kind], with
-  /// [proposedTitle]/[description] ([ToolProposalKind.branch]) or
-  /// [summary] ([ToolProposalKind.close]) content, wired to [onConfirm]/
-  /// [onReject].
+  /// [proposedTitle]/[description] ([ToolProposalKind.branch] or
+  /// [ToolProposalKind.createTicket], the latter also using [newTicketType]),
+  /// [summary] ([ToolProposalKind.close]), or [currentTicketKey]/[linkType]/
+  /// [targetTicketKey]/[targetTicketTitle] ([ToolProposalKind.addLink])
+  /// content, wired to [onConfirm]/[onReject].
   const _ToolProposalBanner({
     required this.kind,
     this.proposedTitle,
     this.description,
     this.summary,
+    this.newTicketType,
+    this.currentTicketKey,
+    this.linkType,
+    this.targetTicketKey,
+    this.targetTicketTitle,
     required this.onConfirm,
     required this.onReject,
   });
@@ -998,15 +1051,39 @@ class _ToolProposalBanner extends StatefulWidget {
   /// Which content variant this banner renders.
   final ToolProposalKind kind;
 
-  /// The proposed child chat's title — [ToolProposalKind.branch] only.
+  /// The proposed child chat's title ([ToolProposalKind.branch]) or the
+  /// proposed new ticket's title ([ToolProposalKind.createTicket]).
   final String? proposedTitle;
 
-  /// The AI's optional rationale for the branch — [ToolProposalKind.branch]
-  /// only; the description node is omitted entirely when `null`.
+  /// The AI's optional rationale — [ToolProposalKind.branch]/
+  /// [ToolProposalKind.createTicket] only; the description node is
+  /// omitted entirely when `null`.
   final String? description;
 
   /// The AI's resolution summary — [ToolProposalKind.close] only.
   final String? summary;
+
+  /// The proposed new ticket's type — [ToolProposalKind.createTicket]
+  /// only. Added for `aion-arch/changes/ticket-crud-tool-calls`.
+  final TicketType? newTicketType;
+
+  /// The current chat's own ticket key (e.g. `"AIO-88"`) —
+  /// [ToolProposalKind.addLink] only. Added for
+  /// `aion-arch/changes/ticket-crud-tool-calls`.
+  final String? currentTicketKey;
+
+  /// How the current ticket would relate to the target —
+  /// [ToolProposalKind.addLink] only. Added for
+  /// `aion-arch/changes/ticket-crud-tool-calls`.
+  final TicketLinkType? linkType;
+
+  /// The target ticket's key (e.g. `"AIO-42"`) — [ToolProposalKind.addLink]
+  /// only. Added for `aion-arch/changes/ticket-crud-tool-calls`.
+  final String? targetTicketKey;
+
+  /// The target ticket's title — [ToolProposalKind.addLink] only. Added
+  /// for `aion-arch/changes/ticket-crud-tool-calls`.
+  final String? targetTicketTitle;
 
   /// Called on a Confirm tap. `null` disables the Confirm button (a
   /// confirm/reject request is already posting).
@@ -1076,14 +1153,33 @@ class _ToolProposalBannerState extends State<_ToolProposalBanner>
               haloController: _haloController,
               dotController: _dotController,
               reducedMotion: reducedMotion,
+              newTicketType: widget.newTicketType,
+              proposedTitle: widget.proposedTitle,
+              linkType: widget.linkType,
+              targetTicketKey: widget.targetTicketKey,
+              targetTicketTitle: widget.targetTicketTitle,
             ),
             const SizedBox(height: 12),
-            widget.kind == ToolProposalKind.branch
-                ? _BranchProposalWell(
-                    title: widget.proposedTitle ?? '',
-                    description: widget.description,
-                  )
-                : _CloseProposalWell(summary: widget.summary ?? ''),
+            switch (widget.kind) {
+              ToolProposalKind.branch => _BranchProposalWell(
+                title: widget.proposedTitle ?? '',
+                description: widget.description,
+              ),
+              ToolProposalKind.close => _CloseProposalWell(
+                summary: widget.summary ?? '',
+              ),
+              ToolProposalKind.createTicket => _CreateTicketProposalWell(
+                type: widget.newTicketType ?? TicketType.task,
+                title: widget.proposedTitle ?? '',
+                description: widget.description,
+              ),
+              ToolProposalKind.addLink => _AddLinkProposalWell(
+                currentTicketKey: widget.currentTicketKey ?? '',
+                linkType: widget.linkType ?? TicketLinkType.relatesTo,
+                targetTicketKey: widget.targetTicketKey ?? '',
+                targetTicketTitle: widget.targetTicketTitle ?? '',
+              ),
+            },
             const SizedBox(height: 12),
             _ToolProposalActionRow(
               onConfirm: widget.onConfirm,
@@ -1108,6 +1204,11 @@ class _ToolProposalHeader extends StatelessWidget {
     required this.haloController,
     required this.dotController,
     required this.reducedMotion,
+    this.newTicketType,
+    this.proposedTitle,
+    this.linkType,
+    this.targetTicketKey,
+    this.targetTicketTitle,
   });
 
   final ToolProposalKind kind;
@@ -1115,11 +1216,46 @@ class _ToolProposalHeader extends StatelessWidget {
   final AnimationController dotController;
   final bool reducedMotion;
 
+  /// [ToolProposalKind.createTicket]'s headline data — see
+  /// `_ToolProposalBanner`'s matching fields. Added for
+  /// `aion-arch/changes/ticket-crud-tool-calls`.
+  final TicketType? newTicketType;
+  final String? proposedTitle;
+
+  /// [ToolProposalKind.addLink]'s headline data — see
+  /// `_ToolProposalBanner`'s matching fields. Added for
+  /// `aion-arch/changes/ticket-crud-tool-calls`.
+  final TicketLinkType? linkType;
+  final String? targetTicketKey;
+  final String? targetTicketTitle;
+
   @override
   Widget build(BuildContext context) {
     final t = ThemeScope.of(context);
     final c = t.colors;
-    final isBranch = kind == ToolProposalKind.branch;
+    final glyph = switch (kind) {
+      ToolProposalKind.branch => PhosphorIcons.arrowBendDownRightLight,
+      ToolProposalKind.close => PhosphorIcons.arrowBendUpLeftLight,
+      ToolProposalKind.createTicket => PhosphorIcons.filePlusLight,
+      ToolProposalKind.addLink => PhosphorIcons.linkLight,
+    };
+    final title = switch (kind) {
+      ToolProposalKind.branch => context.l10n.ticketDetailToolProposalBranchTitle,
+      ToolProposalKind.close => context.l10n.ticketDetailToolProposalCloseTitle,
+      ToolProposalKind.createTicket =>
+        context.l10n.ticketDetailToolProposalCreateTicketTitle(
+          ticketTypeLabel(
+            context,
+            newTicketType ?? TicketType.task,
+          ).toLowerCase(),
+          proposedTitle ?? '',
+        ),
+      ToolProposalKind.addLink => context.l10n.ticketDetailToolProposalAddLinkTitle(
+        (linkType ?? TicketLinkType.relatesTo).label(context),
+        targetTicketKey ?? '',
+        targetTicketTitle ?? '',
+      ),
+    };
     final haloAnimation = Tween<double>(
       begin: 0.35,
       end: 0.85,
@@ -1152,13 +1288,7 @@ class _ToolProposalHeader extends StatelessWidget {
             width: 32,
             height: 32,
             child: Center(
-              child: PhosphorIcon(
-                isBranch
-                    ? PhosphorIcons.arrowBendDownRightLight
-                    : PhosphorIcons.arrowBendUpLeftLight,
-                size: 18,
-                color: c.typeChat,
-              ),
+              child: PhosphorIcon(glyph, size: 18, color: c.typeChat),
             ),
           ),
         ),
@@ -1168,9 +1298,7 @@ class _ToolProposalHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                isBranch
-                    ? context.l10n.ticketDetailToolProposalBranchTitle
-                    : context.l10n.ticketDetailToolProposalCloseTitle,
+                title,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: AionText.dialogTitle.copyWith(
@@ -1389,6 +1517,175 @@ class _CloseProposalWell extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// [ToolProposalKind.createTicket]'s content well — a recessed preview of
+/// the ticket about to be created (a [TypeChip] + a title + optional
+/// description), echoing an Aion ticket row. Per design.md §3.1. Added
+/// for `aion-arch/changes/ticket-crud-tool-calls`.
+class _CreateTicketProposalWell extends StatelessWidget {
+  const _CreateTicketProposalWell({
+    required this.type,
+    required this.title,
+    this.description,
+  });
+
+  /// The proposed new ticket's type — always `story`, `task`, or `bug`.
+  final TicketType type;
+
+  /// The proposed new ticket's title.
+  final String title;
+
+  /// The AI's optional 1–3 sentence rationale/body — the node is omitted
+  /// entirely when `null`.
+  final String? description;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border.all(color: c.border, width: 1),
+        borderRadius: BorderRadius.all(AionRadius.md),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(11, 10, 11, 11),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [TypeChip(type: type, isRow: false)]),
+            const SizedBox(height: 8),
+            Text(
+              title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: AionText.cardTitle.copyWith(color: c.textPrimary),
+            ),
+            if (description != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                description!,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: AionText.bodySm.copyWith(
+                  color: c.textSecondary,
+                  height: 1.55,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// [ToolProposalKind.addLink]'s content well — a directional relationship
+/// diagram (source ticket key → relationship glyph → target ticket key),
+/// so the relationship reads at a glance without repeating the target
+/// title (already in the headline). Per design.md §3.2. Added for
+/// `aion-arch/changes/ticket-crud-tool-calls`.
+class _AddLinkProposalWell extends StatelessWidget {
+  const _AddLinkProposalWell({
+    required this.currentTicketKey,
+    required this.linkType,
+    required this.targetTicketKey,
+    required this.targetTicketTitle,
+  });
+
+  /// The current chat's own ticket key (e.g. `"AIO-88"`).
+  final String currentTicketKey;
+
+  /// How the current ticket would relate to the target.
+  final TicketLinkType linkType;
+
+  /// The target ticket's key (e.g. `"AIO-42"`).
+  final String targetTicketKey;
+
+  /// The target ticket's title.
+  final String targetTicketTitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    Widget keyChip(String key, {required bool emphasized}) => DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.surfaceHover,
+        border: emphasized
+            ? Border.all(color: c.borderStrong, width: 1)
+            : null,
+        borderRadius: BorderRadius.all(AionRadius.sm),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+        child: Text(
+          key,
+          style: AionText.key.copyWith(
+            color: emphasized ? c.textPrimary : c.textSecondary,
+          ),
+        ),
+      ),
+    );
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border.all(color: c.border, width: 1),
+        borderRadius: BorderRadius.all(AionRadius.md),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(11, 10, 11, 11),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: c.typeChat,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                  child: const SizedBox(width: 9, height: 9),
+                ),
+                const SizedBox(width: 7),
+                Text(
+                  linkType.label(context).toUpperCase(),
+                  style: AionText.caption.copyWith(
+                    fontSize: 9.5,
+                    color: c.typeChat,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 9),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                keyChip(currentTicketKey, emphasized: false),
+                const SizedBox(width: 10),
+                PhosphorIcon(
+                  linkType.glyph,
+                  size: 18,
+                  color: c.textSecondary,
+                ),
+                const SizedBox(width: 10),
+                keyChip(targetTicketKey, emphasized: true),
+              ],
+            ),
+            const SizedBox(height: 2),
+            Text(
+              targetTicketTitle,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: AionText.bodySm.copyWith(color: c.textSecondary),
+            ),
+          ],
         ),
       ),
     );

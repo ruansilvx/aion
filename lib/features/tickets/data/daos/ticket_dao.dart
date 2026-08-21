@@ -43,6 +43,17 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
     )..where((t) => t.id.equals(id))).getSingleOrNull();
   }
 
+  /// Returns the ticket row whose human-readable `ticket_id` column (a
+  /// `.unique()` column, so at most one row can ever match) equals
+  /// [ticketId], or `null` if none exists. Distinct from [getTicketById],
+  /// which looks up the primary-key `id` instead. Added for
+  /// `aion-arch/changes/ticket-crud-tool-calls`.
+  Future<TicketData?> getTicketByTicketId(String ticketId) {
+    return (select(
+      ticketsTable,
+    )..where((t) => t.ticketId.equals(ticketId))).getSingleOrNull();
+  }
+
   /// Inserts [entry] with a freshly generated human-readable ticket ID.
   ///
   /// Runs in a single transaction: reads the current sequence value,
@@ -107,6 +118,30 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
         TicketIdSequenceTableCompanion(id: const Value(1), seq: Value(suffix)),
       );
     });
+  }
+
+  /// Adds [minutesDelta] to the `time_spent` column of the ticket row with
+  /// primary key [id] — treating a `NULL` `time_spent` as `0` — and bumps
+  /// `updated_at` to [updatedAtMs], both in a single atomic `UPDATE`
+  /// statement rather than a separate read-then-write round trip. This is
+  /// what makes [addTimeSpent] race-free against a concurrent
+  /// [updateFields] write to the same row's other columns (e.g. a human
+  /// editing the ticket's title in the UI at the same moment a `log_time`
+  /// tool call lands) — a read-modify-write through [updateFields] would
+  /// silently clobber whichever side lost the race. No-ops if [id] does
+  /// not exist (the `WHERE` clause simply matches zero rows). Added for
+  /// `aion-arch/changes/ticket-crud-tool-calls`.
+  Future<void> addTimeSpent(String id, int minutesDelta, int updatedAtMs) {
+    return customUpdate(
+      'UPDATE tickets SET time_spent = COALESCE(time_spent, 0) + ?, '
+      'updated_at = ? WHERE id = ?',
+      variables: [
+        Variable<int>(minutesDelta),
+        Variable<int>(updatedAtMs),
+        Variable<String>(id),
+      ],
+      updates: {ticketsTable},
+    );
   }
 
   /// Applies [companion] to the ticket row with primary key [id]. Generic —

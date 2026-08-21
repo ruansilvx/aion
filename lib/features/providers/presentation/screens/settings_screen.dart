@@ -166,6 +166,26 @@ class SettingsScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 20),
                         _AutomationSection(
+                          automationContext: AutomationContext.ticketCreation,
+                          label: context
+                              .l10n
+                              .settingsAutomationTicketCreationLabel,
+                          description: context
+                              .l10n
+                              .settingsAutomationTicketCreationDescription,
+                        ),
+                        const SizedBox(height: 20),
+                        _AutomationSection(
+                          automationContext: AutomationContext.ticketLinking,
+                          label: context
+                              .l10n
+                              .settingsAutomationTicketLinkingLabel,
+                          description: context
+                              .l10n
+                              .settingsAutomationTicketLinkingDescription,
+                        ),
+                        const SizedBox(height: 20),
+                        _AutomationSection(
                           automationContext:
                               AutomationContext.codingExecutionResume,
                           label: context
@@ -285,6 +305,22 @@ String _confidenceSubLabel(
       context.l10n.settingsAutomationCodingExecutionResumeGatedSubLabel,
     AutomationConfidence.manual =>
       context.l10n.settingsAutomationCodingExecutionResumeManualSubLabel,
+  },
+  AutomationContext.ticketCreation => switch (confidence) {
+    AutomationConfidence.auto =>
+      context.l10n.settingsAutomationTicketCreationAutoSubLabel,
+    AutomationConfidence.gated =>
+      context.l10n.settingsAutomationTicketCreationGatedSubLabel,
+    AutomationConfidence.manual =>
+      context.l10n.settingsAutomationTicketCreationManualSubLabel,
+  },
+  AutomationContext.ticketLinking => switch (confidence) {
+    AutomationConfidence.auto =>
+      context.l10n.settingsAutomationTicketLinkingAutoSubLabel,
+    AutomationConfidence.gated =>
+      context.l10n.settingsAutomationTicketLinkingGatedSubLabel,
+    AutomationConfidence.manual =>
+      context.l10n.settingsAutomationTicketLinkingManualSubLabel,
   },
 };
 

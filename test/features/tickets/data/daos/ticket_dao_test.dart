@@ -1152,4 +1152,74 @@ void main() {
       expect(other?.updatedAt, 0);
     });
   });
+
+  group('getTicketByTicketId', () {
+    test('finds a row by its human-readable ticket id', () async {
+      await insertTicketReturningId(id: 'a', title: 'A');
+      final row = await dao.getTicketById('a');
+      final ticketId = row!.ticketId;
+
+      final found = await dao.getTicketByTicketId(ticketId);
+
+      expect(found?.id, 'a');
+    });
+
+    test('returns null when no ticket has that ticket id', () async {
+      final found = await dao.getTicketByTicketId('AIO-999');
+
+      expect(found, isNull);
+    });
+  });
+
+  group('addTimeSpent', () {
+    test('adds to an existing time_spent value', () async {
+      await dao.insertTicket(
+        TicketsTableCompanion.insert(
+          id: 'a',
+          ticketId: '',
+          type: 'task',
+          title: 'A',
+          status: 'backlog',
+          timeSpent: const Value(30),
+          createdAt: 0,
+          updatedAt: 0,
+        ),
+        'AIO',
+      );
+
+      await dao.addTimeSpent('a', 15, 999);
+
+      final row = await dao.getTicketById('a');
+      expect(row?.timeSpent, 45);
+      expect(row?.updatedAt, 999);
+    });
+
+    test('treats a null time_spent as zero', () async {
+      await insertTicket(id: 'a', title: 'A', createdAtMs: 0);
+
+      await dao.addTimeSpent('a', 20, 999);
+
+      final row = await dao.getTicketById('a');
+      expect(row?.timeSpent, 20);
+    });
+
+    test(
+      'two sequential increments both land — no read-modify-write race',
+      () async {
+        await insertTicket(id: 'a', title: 'A', createdAtMs: 0);
+
+        await dao.addTimeSpent('a', 10, 100);
+        await dao.addTimeSpent('a', 5, 200);
+
+        final row = await dao.getTicketById('a');
+        expect(row?.timeSpent, 15);
+        expect(row?.updatedAt, 200);
+      },
+    );
+
+    test('no-ops when the ticket does not exist', () async {
+      // Should not throw.
+      await dao.addTimeSpent('missing', 10, 999);
+    });
+  });
 }

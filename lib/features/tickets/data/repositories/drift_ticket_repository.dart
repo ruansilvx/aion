@@ -44,6 +44,14 @@ class DriftTicketRepository implements TicketRepository {
     return row == null ? null : _toEntity(row);
   }
 
+  /// Thin passthrough to [TicketDao.getTicketByTicketId] — see
+  /// [TicketRepository.getTicketByTicketId] for the contract.
+  @override
+  Future<Ticket?> getTicketByTicketId(String ticketId) async {
+    final row = await _db.ticketDao.getTicketByTicketId(ticketId);
+    return row == null ? null : _toEntity(row);
+  }
+
   @override
   Future<void> createTicket(Ticket ticket) async {
     final prefs = await SharedPreferences.getInstance();
@@ -179,6 +187,20 @@ class DriftTicketRepository implements TicketRepository {
           edited: estimateEdited,
         ),
       ),
+    );
+  }
+
+  /// Thin passthrough to [TicketDao.addTimeSpent] — see
+  /// [TicketRepository.addTimeSpent] for the contract. Resolves
+  /// `updatedAtMs` here (mirroring [updateTicketStatus]'s
+  /// `DateTime.now().millisecondsSinceEpoch` pattern) so the interface
+  /// itself stays timestamp-free.
+  @override
+  Future<void> addTimeSpent(String id, int minutesDelta) {
+    return _db.ticketDao.addTimeSpent(
+      id,
+      minutesDelta,
+      DateTime.now().millisecondsSinceEpoch,
     );
   }
 
