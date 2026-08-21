@@ -13,6 +13,7 @@ import 'package:uuid/uuid.dart';
 import 'package:aion/core/automation/automation_confidence.dart';
 import 'package:aion/core/automation/automation_context.dart';
 import 'package:aion/core/automation/automation_settings_repository.dart';
+import 'package:aion/core/build/dependency_cache_service.dart';
 import 'package:aion/core/build/project_stack_detector.dart';
 import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/core/contracts/agent_model_descriptor.dart';
@@ -215,6 +216,14 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// mirroring [_commentRepository]'s exact guard shape. Real usage
   /// (`app_router.dart`) always supplies one. Added for
   /// `aion-arch/changes/pr-metadata-and-notification-center`.
+  /// [dependencyCacheService] follows the same optional-dependency pattern
+  /// once more, mirroring [_gitClient]/[_gitHubClient] exactly — `null`
+  /// (every existing construction site except `app_router.dart`) makes
+  /// [_runCodingExecution]'s Node.js dependency-caching step a no-op
+  /// (today's unchanged behavior: a worktree starts with zero installed
+  /// dependencies); real usage (`app_router.dart`) always supplies one.
+  /// Added for
+  /// `aion-arch/changes/dependency-caching-and-ancestor-sibling-conflict`.
   // The public param names below (embeddingProvider/gitProjector/
   // projectRootPath/providerRegistry/commentRepository/
   // automationSettingsRepository/modelRoutingRepository/gitClient/
@@ -223,7 +232,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   // boardColumnVisibilityRepository/pageWikilinkRepository/
   // activeTicketViewRegistry/executionSchedulingRepository/
   // executionQueueRepository/workflowSkillAttachmentRepository/
-  // workflowPromptTemplateRepository) intentionally differ from their private
+  // workflowPromptTemplateRepository/dependencyCacheService) intentionally differ from their private
   // backing fields; a private identifier can't be used as an external
   // named-parameter label from another library, so `this._foo` shorthand
   // isn't usable here.
@@ -257,6 +266,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     WorkflowSkillAttachmentRepository? workflowSkillAttachmentRepository,
     WorkflowPromptTemplateRepository? workflowPromptTemplateRepository,
     NotificationRepository? notificationRepository,
+    DependencyCacheService? dependencyCacheService,
   }) : super(const TicketsInitial()) {
     _embeddingProvider = embeddingProvider;
     _gitProjector = gitProjector;
@@ -285,6 +295,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     _workflowSkillAttachmentRepository = workflowSkillAttachmentRepository;
     _workflowPromptTemplateRepository = workflowPromptTemplateRepository;
     _notificationRepository = notificationRepository;
+    _dependencyCache = dependencyCacheService;
     _workflowStatusChangesSubscription = workflowStatusRepository?.onChanged
         .listen((_) => _loadWorkflowStatuses());
     unawaited(_loadWorkflowStatuses());
@@ -468,6 +479,15 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// exact optional-dependency guard shape. Added for
   /// `aion-arch/changes/pr-metadata-and-notification-center`.
   late final NotificationRepository? _notificationRepository;
+
+  /// Seeds/writes-back a Node.js worktree's `node_modules` cache — see
+  /// [DependencyCacheService] and [_runCodingExecution]. `null` (every
+  /// existing construction site except `app_router.dart`) makes the
+  /// dependency-caching step of [_runCodingExecution] a no-op, mirroring
+  /// [_gitClient]/[_gitHubClient]'s exact optional-dependency guard shape.
+  /// Added for
+  /// `aion-arch/changes/dependency-caching-and-ancestor-sibling-conflict`.
+  late final DependencyCacheService? _dependencyCache;
 
   /// English-only [AppLocalizationsEn] instance used to build
   /// [_recordNotification]'s persisted `message` strings and
@@ -1236,8 +1256,13 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// re-searching/re-filtering doesn't flash a spinner over the existing
   /// list on every keystroke. Emits [TicketsLoaded] on success (with
   /// [TicketsLoaded.blockedTicketIds] freshly computed via
-  /// [_computeBlockedTicketIds]), [TicketsError] if the repository call
-  /// throws.
+  /// [_computeBlockedTicketIds] and [TicketsLoaded.topmostAncestorId]
+  /// freshly computed via [_topmostAncestorIdIfHybrid] — this is also the
+  /// call that makes a scheduling-mode switch into Hybrid, made elsewhere
+  /// while the Board wasn't showing, resolve correctly the next time it's
+  /// shown, with no dedicated cross-cubit listener needed; see
+  /// [_topmostAncestorIdIfHybrid]'s own dartdoc), [TicketsError] if the
+  /// repository call throws.
   Future<void> searchTickets({
     String? query,
     Set<String> statuses = const {},
@@ -1279,6 +1304,8 @@ class TicketsCubit extends Cubit<TicketsState> {
       if (generation != _searchGeneration) return;
       await _seedExecutionTokenTotals(page.tickets.map((t) => t.id));
       if (generation != _searchGeneration) return;
+      final topmostAncestorId = await _topmostAncestorIdIfHybrid(page.tickets);
+      if (generation != _searchGeneration) return;
       emit(
         TicketsLoaded(
           page.tickets,
@@ -1308,6 +1335,7 @@ class TicketsCubit extends Cubit<TicketsState> {
           // spend would show no token label until an unrelated mutation
           // happened to call _refreshInFlightBoardState.
           executionTokenTotals: Map.unmodifiable(_executionTokenTotals),
+          topmostAncestorId: topmostAncestorId,
         ),
       );
     } catch (e) {
@@ -1328,7 +1356,9 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [TicketsLoadingMore] (carrying the tickets loaded so far)
   /// immediately, then [TicketsLoaded] (carrying the combined list, with
   /// [TicketsLoaded.blockedTicketIds] freshly computed via
-  /// [_computeBlockedTicketIds]) on success, or [TicketsLoadMoreFailed]
+  /// [_computeBlockedTicketIds] and [TicketsLoaded.topmostAncestorId]
+  /// freshly computed via [_topmostAncestorIdIfHybrid], both against the
+  /// combined list) on success, or [TicketsLoadMoreFailed]
   /// (carrying the tickets loaded so far, unchanged) if the repository
   /// call throws — the existing rows are never discarded by a failed
   /// load-more.
@@ -1357,6 +1387,8 @@ class TicketsCubit extends Cubit<TicketsState> {
       if (generation != _searchGeneration) return;
       await _seedExecutionTokenTotals(page.tickets.map((t) => t.id));
       if (generation != _searchGeneration) return;
+      final topmostAncestorId = await _topmostAncestorIdIfHybrid(combined);
+      if (generation != _searchGeneration) return;
       emit(
         TicketsLoaded(
           combined,
@@ -1373,6 +1405,7 @@ class TicketsCubit extends Cubit<TicketsState> {
           inFlightAdvanceIds: Set.unmodifiable(_inFlightStageAdvanceIds),
           pendingResumePrompt: _pendingResumeTickets ?? const [],
           executionTokenTotals: Map.unmodifiable(_executionTokenTotals),
+          topmostAncestorId: topmostAncestorId,
         ),
       );
     } catch (e) {
@@ -2733,7 +2766,13 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// Also re-mirrors [TicketsLoaded.executionTokenTotals] from
   /// [_executionTokenTotals]'s current contents — a mirror, not a
   /// mutation; this method never writes to that cache itself. Added for
-  /// `aion-arch/changes/token-cost-prediction`.
+  /// `aion-arch/changes/token-cost-prediction`. Carries
+  /// [TicketsLoaded.topmostAncestorId] forward unchanged — like
+  /// [TicketsLoaded.blockedTicketIds], it's derived from persisted
+  /// data (an ancestor-chain walk, not in-memory scheduling state), so
+  /// this synchronous method never recomputes it; only [searchTickets]/
+  /// [loadMoreTickets] do. Added for `aion-arch/changes/dependency-
+  /// caching-and-ancestor-sibling-conflict`.
   void _refreshInFlightBoardState() {
     final current = state;
     if (current is! TicketsLoaded) return;
@@ -2750,6 +2789,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         blockedTicketIds: current.blockedTicketIds,
         pendingResumePrompt: _pendingResumeTickets ?? const [],
         executionTokenTotals: Map.unmodifiable(_executionTokenTotals),
+        topmostAncestorId: current.topmostAncestorId,
       ),
     );
   }
@@ -2927,6 +2967,10 @@ class TicketsCubit extends Cubit<TicketsState> {
         inFlightAdvanceIds: current.inFlightAdvanceIds,
         blockedTicketIds: blockedTicketIds,
         pendingResumePrompt: current.pendingResumePrompt,
+        // Carried forward unchanged, same rationale as
+        // _refreshInFlightBoardState's own carry-forward — this method
+        // only recomputes blockedTicketIds.
+        topmostAncestorId: current.topmostAncestorId,
       ),
     );
   }
@@ -3258,6 +3302,20 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// see `TicketsLoaded.executionTokenTotals`'s dartdoc for how that
   /// running total then surfaces. Added for
   /// `aion-arch/changes/token-cost-prediction`.
+  ///
+  /// Right after the worktree is created and before the implement turn's
+  /// prompt is assembled, detects the project's stack via
+  /// [ProjectStackDetector.detect] (called fresh at execution time, not
+  /// the onboarding-time advisory text `BaselineTailoringService` writes)
+  /// and, for a Node.js project (and only when constructed with a
+  /// [_dependencyCache]), mechanically seeds the worktree's
+  /// `node_modules` from [DependencyCacheService.cacheDirFor]'s per-project
+  /// cache directory, runs `npm install` via
+  /// [DependencyCacheService.installDependencies], and writes the result
+  /// back to the cache on a successful install — so the next run against
+  /// the same project starts warm. A failed install is not fatal to the
+  /// run; see the inline comment at that call site. Added for
+  /// `aion-arch/changes/dependency-caching-and-ancestor-sibling-conflict`.
   Future<void> _runCodingExecution(Ticket task) async {
     final providerRegistry = _providerRegistry;
     final commentRepo = _commentRepository;
@@ -3310,6 +3368,33 @@ class TicketsCubit extends Cubit<TicketsState> {
 
     try {
       await gitClient.createWorktree(rootPath, worktreePath, branchName);
+
+      final dependencyCache = _dependencyCache;
+      if (dependencyCache != null) {
+        final detected = ProjectStackDetector().detect(rootPath);
+        if (detected?.language == 'Node.js') {
+          final nodeModulesDir = p.join(worktreePath, 'node_modules');
+          final cacheDir = dependencyCache.cacheDirFor(
+            projectId,
+            'node_modules',
+          );
+          await dependencyCache.seed(cacheDir, nodeModulesDir);
+          final installSucceeded = await dependencyCache.installDependencies(
+            worktreePath,
+          );
+          // A failed install is deliberately not fatal to the run — the
+          // model's own implement turn can still attempt its own
+          // install/fix (unchanged fallback behavior for a project whose
+          // setup genuinely needs judgment `npm install` alone can't
+          // provide), it just starts from a cache miss for its own
+          // troubleshooting rather than Aion silently absorbing the
+          // failure. Only a successful install is written back, so the
+          // cache never holds a broken/partial `node_modules`.
+          if (installSucceeded) {
+            await dependencyCache.writeBack(nodeModulesDir, cacheDir);
+          }
+        }
+      }
 
       var prompt = await _assembleExecutionContext(
         task,
@@ -3789,32 +3874,109 @@ class TicketsCubit extends Cubit<TicketsState> {
     return repo.getConcurrencyCeiling();
   }
 
+  /// Walks [ticketId]'s `parentId` chain via [_repository]'s
+  /// [TicketRepository.getTicketById] until reaching a ticket with no
+  /// parent, returning every ancestor id encountered (not including
+  /// [ticketId] itself). Bounded naturally by Aion's Epic→Story→Task/Bug
+  /// hierarchy — a Task/Bug's parent may be a Story *or* an Epic directly
+  /// (`TicketTypeHierarchy.canParent` allows any strictly-higher-rank
+  /// parent, not only the immediately-next rank), so this is not always
+  /// exactly two hops, but always terminates the first time `parentId` is
+  /// `null`. Shared by [_nextEligibleForHybrid] and [topmostAncestorIds] so
+  /// both use one identical chain-walking definition. Added for
+  /// `aion-arch/changes/dependency-caching-and-ancestor-sibling-conflict`.
+  Future<List<String>> _ancestorIds(String ticketId) async {
+    final ancestors = <String>[];
+    var current = await _repository.getTicketById(ticketId);
+    while (current?.parentId != null) {
+      final parentId = current!.parentId!;
+      ancestors.add(parentId);
+      current = await _repository.getTicketById(parentId);
+    }
+    return ancestors;
+  }
+
   /// Under [ExecutionSchedulingMode.hybrid], returns the first still-
-  /// queued Task/Bug id (FIFO order) whose parent isn't already
-  /// represented among [_inFlightExecutionIds]'s own tickets — same-parent
-  /// siblings never run concurrently, but an unrelated queued ticket may
-  /// start ahead of one that's blocked this way. Returns the id of a
-  /// queued ticket that no longer resolves (stale — defensive, not
-  /// expected in practice) immediately, so the caller can skip and retry
-  /// rather than stalling the whole queue behind it. Returns `null` only
-  /// when every remaining queued id's parent already has an in-flight
-  /// sibling — nothing eligible to start right now. Added for
-  /// `aion-arch/changes/parallel-work`; see that change's design.md §5.2.
+  /// queued Task/Bug id (FIFO order) that shares no ancestor with any
+  /// ticket already represented among [_inFlightExecutionIds]'s own
+  /// tickets — generalized (via [_ancestorIds]) from direct `parentId`
+  /// equality to "shares any ancestor," so two Tasks under different
+  /// Stories of the same Epic conflict just as much as direct same-parent
+  /// siblings do, matching `parallel-work.md`'s own Hybrid-mode rationale
+  /// ("siblings likely touch overlapping code") one level up. Each
+  /// candidate's own id is included in its ancestor-comparison set
+  /// alongside its ancestors, so direct same-parent siblings (the
+  /// pre-existing case) still conflict exactly as before — the shared
+  /// element is the common parent id, found in both sets' ancestor
+  /// portions. An unrelated queued ticket may still start ahead of one
+  /// that's blocked this way. Returns the id of a queued ticket that no
+  /// longer resolves (stale — defensive, not expected in practice)
+  /// immediately, so the caller can skip and retry rather than stalling
+  /// the whole queue behind it. Returns `null` only when every remaining
+  /// queued id shares an ancestor with an in-flight ticket — nothing
+  /// eligible to start right now. Added for `aion-arch/changes/parallel-
+  /// work`; generalized for `aion-arch/changes/dependency-caching-and-
+  /// ancestor-sibling-conflict`; see that change's design.md §2.2.
   Future<String?> _nextEligibleForHybrid() async {
-    final inFlightParentIds = <String?>{};
+    final inFlightAncestorSets = <String, Set<String>>{};
     for (final id in _inFlightExecutionIds) {
-      final ticket = await _repository.getTicketById(id);
-      inFlightParentIds.add(ticket?.parentId);
+      inFlightAncestorSets[id] = {id, ...await _ancestorIds(id)};
     }
     for (final queuedId in _executionQueue) {
       final ticket = await _repository.getTicketById(queuedId);
       if (ticket == null) return queuedId;
-      if (ticket.parentId == null ||
-          !inFlightParentIds.contains(ticket.parentId)) {
-        return queuedId;
-      }
+      final queuedAncestors = {queuedId, ...await _ancestorIds(queuedId)};
+      final conflicts = inFlightAncestorSets.values.any(
+        (inFlightSet) => inFlightSet.intersection(queuedAncestors).isNotEmpty,
+      );
+      if (!conflicts) return queuedId;
     }
-    return null;
+    return null; // every queued ticket is sibling-blocked.
+  }
+
+  /// Returns a map from each of [ticketIds] to its topmost ancestor id
+  /// (the root of its `parentId` chain — an Epic, for a well-formed
+  /// Task/Bug/Story; the ticket's own id if it has no parent at all). Used
+  /// by `BoardColumn` to precompute `clusterSiblingsAdjacently`'s grouping
+  /// key — a batch method rather than N individual `getTicketById` calls
+  /// from the widget layer, and async (unlike `clusterSiblingsAdjacently`
+  /// itself) because the Board is paginated: a Task/Bug column's own
+  /// [TicketsLoaded.tickets] very often does not already include the
+  /// Story/Epic tickets needed to resolve full ancestor chains. Added for
+  /// `aion-arch/changes/dependency-caching-and-ancestor-sibling-conflict`;
+  /// see that change's design.md §2.3.
+  Future<Map<String, String>> topmostAncestorIds(List<String> ticketIds) async {
+    final result = <String, String>{};
+    for (final id in ticketIds) {
+      final ancestors = await _ancestorIds(id);
+      result[id] = ancestors.isEmpty ? id : ancestors.last;
+    }
+    return result;
+  }
+
+  /// [topmostAncestorIds] for [tickets], gated to
+  /// [ExecutionSchedulingMode.hybrid] — every other mode returns `{}`
+  /// without walking a single ancestor chain, since `BoardColumn` is the
+  /// only reader and only consults [TicketsLoaded.topmostAncestorId] under
+  /// Hybrid (mirroring `BoardColumn`'s own existing Hybrid-only gate on
+  /// calling `clusterSiblingsAdjacently` at all). Called from
+  /// [searchTickets]/[loadMoreTickets] on every fresh/appended load — the
+  /// same "recomputed on every load" lifecycle [_computeBlockedTicketIds]
+  /// already has, which is also what makes an in-session scheduling-mode
+  /// switch into Hybrid resolve correctly without a dedicated cross-cubit
+  /// listener: `TicketsListScreen` re-`searchTickets`es on every
+  /// navigation back to the Board (see its own `initState` dartdoc), the
+  /// same navigation that already gives `BoardColumn`'s `context.select`
+  /// on `ExecutionSchedulingCubit` a freshly reloaded mode — so both halves
+  /// of the Hybrid-clustering signal (the mode flag and this map) become
+  /// current at the same moment, with no separate listener needed. Added
+  /// for `aion-arch/changes/dependency-caching-and-ancestor-sibling-conflict`.
+  Future<Map<String, String>> _topmostAncestorIdIfHybrid(
+    List<Ticket> tickets,
+  ) async {
+    final mode = await _effectiveSchedulingMode();
+    if (mode != ExecutionSchedulingMode.hybrid) return const {};
+    return topmostAncestorIds([for (final t in tickets) t.id]);
   }
 
   /// Starts as many queued Task/Bug runs as [_effectiveConcurrencyCeiling]
