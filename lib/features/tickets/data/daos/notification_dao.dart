@@ -21,6 +21,7 @@ class NotificationDao extends DatabaseAccessor<AppDatabase>
   /// Inserts a new, unread row. [id] is generated internally (UUID v4).
   Future<void> insert({
     required String ticketId,
+    required String ticketKey,
     required String ticketTitle,
     required String kind,
     required String message,
@@ -30,6 +31,7 @@ class NotificationDao extends DatabaseAccessor<AppDatabase>
       NotificationsTableCompanion.insert(
         id: _uuid.v4(),
         ticketId: ticketId,
+        ticketKey: ticketKey,
         ticketTitle: ticketTitle,
         kind: kind,
         message: message,

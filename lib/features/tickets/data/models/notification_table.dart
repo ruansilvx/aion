@@ -17,6 +17,12 @@ class NotificationsTable extends Table {
   /// The Task/Bug/Epic/Story ticket this notification concerns.
   TextColumn get ticketId => text().named('ticket_id')();
 
+  /// [ticketId]'s human-readable key (e.g. `"AIO-42"`), snapshotted at
+  /// write time — `Ticket.ticketId`, not to be confused with this
+  /// column's own [ticketId] (the internal UUID). Feeds the dropdown
+  /// row's leading mono key segment (Component Spec §6.4).
+  TextColumn get ticketKey => text().named('ticket_key')();
+
   /// [ticketId]'s title, snapshotted at write time.
   TextColumn get ticketTitle => text().named('ticket_title')();
 

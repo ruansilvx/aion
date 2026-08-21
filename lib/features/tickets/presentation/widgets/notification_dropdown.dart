@@ -2,6 +2,7 @@
 
 import 'dart:async';
 
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter/widgets.dart' hide Notification;
 import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
@@ -52,10 +53,64 @@ class _NotificationDropdownPanelState
   /// `null` while the initial load is in flight.
   List<Notification>? _notifications;
 
+  /// One [FocusNode] per row in [_notifications], indexed the same way —
+  /// lets [_moveRowFocus] move keyboard focus explicitly between rows
+  /// (design.md Component Spec §9: "arrow keys move row focus"), rather
+  /// than relying on default 2D directional-focus heuristics across an
+  /// `Overlay` boundary. Kept in sync with [_notifications]'s length by
+  /// [_syncRowFocusNodes], called once per [build].
+  final List<FocusNode> _rowFocusNodes = [];
+
+  /// The index of [_rowFocusNodes] that currently holds focus, if any —
+  /// updated by each node's own focus listener (added in
+  /// [_syncRowFocusNodes]) so [_moveRowFocus] knows where to move from
+  /// even when focus arrived via Tab rather than an arrow key.
+  int? _focusedRowIndex;
+
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    for (final node in _rowFocusNodes) {
+      node.dispose();
+    }
+    super.dispose();
+  }
+
+  /// Grows/shrinks [_rowFocusNodes] to match [count], disposing any
+  /// removed nodes. Idempotent — safe to call on every [build].
+  void _syncRowFocusNodes(int count) {
+    while (_rowFocusNodes.length < count) {
+      final index = _rowFocusNodes.length;
+      final node = FocusNode(debugLabel: 'notification-row-$index');
+      node.addListener(() {
+        if (node.hasFocus) setState(() => _focusedRowIndex = index);
+      });
+      _rowFocusNodes.add(node);
+    }
+    while (_rowFocusNodes.length > count) {
+      _rowFocusNodes.removeLast().dispose();
+      if (_focusedRowIndex != null && _focusedRowIndex! >= count) {
+        _focusedRowIndex = null;
+      }
+    }
+  }
+
+  /// Moves keyboard focus by [delta] rows (`1` down, `-1` up), clamped
+  /// to the list bounds rather than wrapping — entering from no focus at
+  /// all lands on the first row for a downward move, the last row for
+  /// an upward one.
+  void _moveRowFocus(int delta) {
+    if (_rowFocusNodes.isEmpty) return;
+    final current = _focusedRowIndex;
+    final next = current == null
+        ? (delta > 0 ? 0 : _rowFocusNodes.length - 1)
+        : (current + delta).clamp(0, _rowFocusNodes.length - 1);
+    _rowFocusNodes[next].requestFocus();
   }
 
   Future<void> _load() async {
@@ -77,6 +132,7 @@ class _NotificationDropdownPanelState
             Notification(
               id: n.id,
               ticketId: n.ticketId,
+              ticketKey: n.ticketKey,
               ticketTitle: n.ticketTitle,
               kind: n.kind,
               message: n.message,
@@ -100,6 +156,7 @@ class _NotificationDropdownPanelState
           Notification(
             id: n.id,
             ticketId: n.ticketId,
+            ticketKey: n.ticketKey,
             ticketTitle: n.ticketTitle,
             kind: n.kind,
             message: n.message,
@@ -123,51 +180,75 @@ class _NotificationDropdownPanelState
     final c = t.colors;
     final notifications = _notifications;
     final hasUnread = notifications?.any((n) => n.isUnread) ?? false;
+    _syncRowFocusNodes(notifications?.length ?? 0);
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: c.surface,
-        border: Border.all(color: c.borderStrong, width: 1),
-        borderRadius: BorderRadius.all(AionRadius.lg),
-        boxShadow: AionShadows.card(c, t.isDark),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.all(AionRadius.lg),
-        child: SizedBox(
-          width: 360,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 440),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _NotificationDropdownHeader(
-                  hasUnread: hasUnread,
-                  onMarkAllRead: _markAllReadLocally,
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
+            _moveRowFocus(1),
+        const SingleActivator(LogicalKeyboardKey.arrowUp): () =>
+            _moveRowFocus(-1),
+        const SingleActivator(LogicalKeyboardKey.escape): widget.onDismiss,
+      },
+      child: Focus(
+        autofocus: true,
+        // Focusable but not itself an activation target — arrow
+        // keys/Escape need somewhere to land on open, before any row
+        // has been explicitly focused.
+        skipTraversal: true,
+        canRequestFocus: true,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: c.surface,
+            border: Border.all(color: c.borderStrong, width: 1),
+            borderRadius: BorderRadius.all(AionRadius.lg),
+            boxShadow: AionShadows.card(c, t.isDark),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.all(AionRadius.lg),
+            child: SizedBox(
+              width: 360,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 440),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _NotificationDropdownHeader(
+                      hasUnread: hasUnread,
+                      onMarkAllRead: _markAllReadLocally,
+                    ),
+                    Flexible(
+                      child: notifications == null
+                          ? const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 32),
+                              child: Center(child: AppSpinner()),
+                            )
+                          : notifications.isEmpty
+                          ? const _NotificationDropdownEmptyState()
+                          : SingleChildScrollView(
+                              primary: false,
+                              physics: const ClampingScrollPhysics(),
+                              child: Column(
+                                children: [
+                                  for (
+                                    var i = 0;
+                                    i < notifications.length;
+                                    i++
+                                  )
+                                    _NotificationDropdownRow(
+                                      notification: notifications[i],
+                                      showDivider:
+                                          i < notifications.length - 1,
+                                      focusNode: _rowFocusNodes[i],
+                                      onTap: () => _onRowTap(notifications[i]),
+                                    ),
+                                ],
+                              ),
+                            ),
+                    ),
+                  ],
                 ),
-                Flexible(
-                  child: notifications == null
-                      ? const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 32),
-                          child: Center(child: AppSpinner()),
-                        )
-                      : notifications.isEmpty
-                      ? const _NotificationDropdownEmptyState()
-                      : SingleChildScrollView(
-                          primary: false,
-                          physics: const ClampingScrollPhysics(),
-                          child: Column(
-                            children: [
-                              for (var i = 0; i < notifications.length; i++)
-                                _NotificationDropdownRow(
-                                  notification: notifications[i],
-                                  showDivider: i < notifications.length - 1,
-                                  onTap: () => _onRowTap(notifications[i]),
-                                ),
-                            ],
-                          ),
-                        ),
-                ),
-              ],
+              ),
             ),
           ),
         ),
@@ -322,6 +403,7 @@ class _NotificationDropdownRow extends StatefulWidget {
   const _NotificationDropdownRow({
     required this.notification,
     required this.showDivider,
+    required this.focusNode,
     required this.onTap,
   });
 
@@ -330,6 +412,12 @@ class _NotificationDropdownRow extends StatefulWidget {
   /// Whether to render the bottom hairline separator — `false` for the
   /// last row in the list.
   final bool showDivider;
+
+  /// Owned by [_NotificationDropdownPanelState] (one per row, indexed to
+  /// match), so [_NotificationDropdownPanelState._moveRowFocus] can move
+  /// keyboard focus onto this row explicitly, per design.md Component
+  /// Spec §9's arrow-key row navigation.
+  final FocusNode focusNode;
 
   final VoidCallback onTap;
 
@@ -394,6 +482,7 @@ class _NotificationDropdownRowState extends State<_NotificationDropdownRow> {
         onEnter: (_) => setState(() => _isHovered = true),
         onExit: (_) => setState(() => _isHovered = false),
         child: FocusableActionDetector(
+          focusNode: widget.focusNode,
           actions: {
             ActivateIntent: CallbackAction<ActivateIntent>(
               onInvoke: (_) {
@@ -454,6 +543,21 @@ class _NotificationDropdownRowState extends State<_NotificationDropdownRow> {
                           Text.rich(
                             TextSpan(
                               children: [
+                                if (n.ticketKey.isNotEmpty) ...[
+                                  TextSpan(
+                                    text: n.ticketKey,
+                                    style: AionText.key.copyWith(
+                                      color: c.textSecondary,
+                                    ),
+                                  ),
+                                  TextSpan(
+                                    text: ' · ',
+                                    style: AionText.breadcrumb.copyWith(
+                                      color: c.textMuted,
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ],
                                 TextSpan(
                                   text: n.message,
                                   style: AionText.breadcrumb.copyWith(

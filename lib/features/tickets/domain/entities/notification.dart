@@ -37,13 +37,16 @@ enum NotificationKind {
 /// §2.1's exact naming. This collides with `package:flutter/widgets.dart`'s
 /// own `Notification` class, so any file importing both must `hide
 /// Notification` on the Flutter import (see `notification_dropdown.dart`,
-/// `notification_bell_trigger.dart`, and any other widget file that
-/// imports this entity alongside Flutter widgets).
+/// and any other widget file that imports this entity alongside Flutter
+/// widgets — the bell trigger itself lives inline in
+/// `workspace_nav_shell.dart`, which doesn't import this entity, so it
+/// needs no such `hide`).
 class Notification extends Equatable {
   /// Creates a [Notification].
   const Notification({
     required this.id,
     required this.ticketId,
+    required this.ticketKey,
     required this.ticketTitle,
     required this.kind,
     required this.message,
@@ -58,6 +61,13 @@ class Notification extends Equatable {
   /// the spawned chat ticket, so tapping a row always navigates to the
   /// ticket a human would actually want to act on.
   final String ticketId;
+
+  /// [ticketId]'s human-readable key (`Ticket.ticketId`, e.g.
+  /// `"AIO-42"` — not to be confused with this field's own [ticketId],
+  /// the internal UUID), snapshotted at write time. Rendered as the
+  /// dropdown row's leading mono key segment (design.md Component Spec
+  /// §6.4).
+  final String ticketKey;
 
   /// [ticketId]'s title, snapshotted at write time. Deliberately
   /// denormalized: the dropdown can open from any `/workspace/*` route,
@@ -92,5 +102,5 @@ class Notification extends Equatable {
 
   @override
   List<Object?> get props =>
-      [id, ticketId, ticketTitle, kind, message, createdAt, readAt];
+      [id, ticketId, ticketKey, ticketTitle, kind, message, createdAt, readAt];
 }

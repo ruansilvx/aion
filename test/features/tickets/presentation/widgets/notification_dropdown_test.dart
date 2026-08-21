@@ -1,6 +1,7 @@
 // test/features/tickets/presentation/widgets/notification_dropdown_test.dart — NotificationDropdownPanel widget tests.
 
 import 'package:bloc_test/bloc_test.dart';
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter/widgets.dart' hide Notification;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -90,6 +91,7 @@ void main() {
       final notification = Notification(
         id: 'n1',
         ticketId: 'task-42',
+        ticketKey: 'AIO-42',
         ticketTitle: 'Fix the thing',
         kind: NotificationKind.executionPrOpened,
         message: 'Opened PR #42 · 5 files changed',
@@ -111,6 +113,11 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Fix the thing'), findsOneWidget);
+      // The leading mono ticket-key segment (design.md Component Spec
+      // §6.4) is rendered as part of the same rich-text block as the
+      // message, so it's found via textContaining rather than a
+      // standalone Text widget.
+      expect(find.textContaining('AIO-42'), findsOneWidget);
 
       await tester.tap(find.text('Fix the thing'));
       await tester.pumpAndSettle();
@@ -127,6 +134,7 @@ void main() {
       final unreadA = Notification(
         id: 'n1',
         ticketId: 'task-1',
+        ticketKey: 'AIO-1',
         ticketTitle: 'First',
         kind: NotificationKind.executionPrOpened,
         message: 'Opened PR #1',
@@ -135,6 +143,7 @@ void main() {
       final unreadB = Notification(
         id: 'n2',
         ticketId: 'task-2',
+        ticketKey: 'AIO-2',
         ticketTitle: 'Second',
         kind: NotificationKind.stageAdvanceCompleted,
         message: 'Advanced to Design',
@@ -162,4 +171,107 @@ void main() {
       expect(find.text('Second'), findsOneWidget);
     },
   );
+
+  // Keyboard row navigation — design.md Component Spec §9 ("inside the
+  // panel, arrow keys move row focus, Enter opens the ticket, Escape
+  // closes"). Closes the /verify-flagged gap in tasks.md T25.
+  testWidgets(
+    'ArrowDown moves focus row by row, Enter activates the focused row',
+    (tester) async {
+      final first = Notification(
+        id: 'n1',
+        ticketId: 'task-1',
+        ticketKey: 'AIO-1',
+        ticketTitle: 'First',
+        kind: NotificationKind.executionPrOpened,
+        message: 'Opened PR #1',
+        createdAt: DateTime(2026, 1, 1),
+      );
+      final second = Notification(
+        id: 'n2',
+        ticketId: 'task-2',
+        ticketKey: 'AIO-2',
+        ticketTitle: 'Second',
+        kind: NotificationKind.stageAdvanceCompleted,
+        message: 'Advanced to Design',
+        createdAt: DateTime(2026, 1, 2),
+      );
+      when(
+        () => ticketsCubit.getRecentNotifications(),
+      ).thenAnswer((_) async => [first, second]);
+      when(
+        () => ticketsCubit.markNotificationRead(any()),
+      ).thenAnswer((_) async {});
+
+      await tester.pumpWidget(_wrap(ticketsCubit: ticketsCubit, onDismiss: () {}));
+      await tester.pumpAndSettle();
+
+      // First ArrowDown (from no row focused) lands on row 0 ("First");
+      // the second moves to row 1 ("Second").
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      verify(() => ticketsCubit.markNotificationRead('n2')).called(1);
+      expect(find.text('Ticket detail: task-2'), findsOneWidget);
+    },
+  );
+
+  testWidgets('ArrowUp from no focus lands on the last row', (tester) async {
+    final first = Notification(
+      id: 'n1',
+      ticketId: 'task-1',
+      ticketKey: 'AIO-1',
+      ticketTitle: 'First',
+      kind: NotificationKind.executionPrOpened,
+      message: 'Opened PR #1',
+      createdAt: DateTime(2026, 1, 1),
+    );
+    final second = Notification(
+      id: 'n2',
+      ticketId: 'task-2',
+      ticketKey: 'AIO-2',
+      ticketTitle: 'Second',
+      kind: NotificationKind.stageAdvanceCompleted,
+      message: 'Advanced to Design',
+      createdAt: DateTime(2026, 1, 2),
+    );
+    when(
+      () => ticketsCubit.getRecentNotifications(),
+    ).thenAnswer((_) async => [first, second]);
+    when(
+      () => ticketsCubit.markNotificationRead(any()),
+    ).thenAnswer((_) async {});
+
+    await tester.pumpWidget(_wrap(ticketsCubit: ticketsCubit, onDismiss: () {}));
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+
+    verify(() => ticketsCubit.markNotificationRead('n2')).called(1);
+    expect(find.text('Ticket detail: task-2'), findsOneWidget);
+  });
+
+  testWidgets('Escape dismisses the panel', (tester) async {
+    when(
+      () => ticketsCubit.getRecentNotifications(),
+    ).thenAnswer((_) async => const []);
+    var dismissed = false;
+
+    await tester.pumpWidget(
+      _wrap(ticketsCubit: ticketsCubit, onDismiss: () => dismissed = true),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+
+    expect(dismissed, isTrue);
+  });
 }

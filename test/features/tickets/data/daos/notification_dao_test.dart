@@ -41,6 +41,7 @@ void main() {
     test('round-trips an inserted row', () async {
       await dao.insert(
         ticketId: 'task-1',
+        ticketKey: 'AIO-1',
         ticketTitle: 'Fix the thing',
         kind: 'executionPrOpened',
         message: 'PR #42 opened · 5 files changed',
@@ -50,6 +51,7 @@ void main() {
       final rows = await dao.getRecent(20);
       expect(rows, hasLength(1));
       expect(rows.single.ticketId, 'task-1');
+      expect(rows.single.ticketKey, 'AIO-1');
       expect(rows.single.ticketTitle, 'Fix the thing');
       expect(rows.single.kind, 'executionPrOpened');
       expect(rows.single.message, 'PR #42 opened · 5 files changed');
@@ -60,6 +62,7 @@ void main() {
     test('orders newest first', () async {
       await dao.insert(
         ticketId: 'task-1',
+        ticketKey: 'AIO-1',
         ticketTitle: 'Older',
         kind: 'executionPrOpened',
         message: 'older',
@@ -67,6 +70,7 @@ void main() {
       );
       await dao.insert(
         ticketId: 'task-2',
+        ticketKey: 'AIO-2',
         ticketTitle: 'Newer',
         kind: 'executionPrOpened',
         message: 'newer',
@@ -81,6 +85,7 @@ void main() {
       for (var i = 0; i < 5; i++) {
         await dao.insert(
           ticketId: 'task-$i',
+          ticketKey: 'AIO-$i',
           ticketTitle: 'Ticket $i',
           kind: 'executionPrOpened',
           message: 'msg',
@@ -97,6 +102,7 @@ void main() {
     test('counts only rows with readAt == null', () async {
       await dao.insert(
         ticketId: 'task-1',
+        ticketKey: 'AIO-1',
         ticketTitle: 'A',
         kind: 'executionPrOpened',
         message: 'a',
@@ -104,6 +110,7 @@ void main() {
       );
       await dao.insert(
         ticketId: 'task-2',
+        ticketKey: 'AIO-2',
         ticketTitle: 'B',
         kind: 'executionPrOpened',
         message: 'b',
@@ -127,6 +134,7 @@ void main() {
     test('sets readAt on the matching row only', () async {
       await dao.insert(
         ticketId: 'task-1',
+        ticketKey: 'AIO-1',
         ticketTitle: 'A',
         kind: 'executionPrOpened',
         message: 'a',
@@ -134,6 +142,7 @@ void main() {
       );
       await dao.insert(
         ticketId: 'task-2',
+        ticketKey: 'AIO-2',
         ticketTitle: 'B',
         kind: 'executionPrOpened',
         message: 'b',
@@ -157,6 +166,7 @@ void main() {
       for (var i = 0; i < 3; i++) {
         await dao.insert(
           ticketId: 'task-$i',
+          ticketKey: 'AIO-$i',
           ticketTitle: 'Ticket $i',
           kind: 'executionPrOpened',
           message: 'msg',
@@ -176,6 +186,7 @@ void main() {
     test('returns the newest row matching ticketId and kind', () async {
       await dao.insert(
         ticketId: 'task-1',
+        ticketKey: 'AIO-1',
         ticketTitle: 'A',
         kind: 'executionPrOpened',
         message: 'first',
@@ -183,6 +194,7 @@ void main() {
       );
       await dao.insert(
         ticketId: 'task-1',
+        ticketKey: 'AIO-1',
         ticketTitle: 'A',
         kind: 'executionPrOpened',
         message: 'second',
@@ -190,6 +202,7 @@ void main() {
       );
       await dao.insert(
         ticketId: 'task-1',
+        ticketKey: 'AIO-1',
         ticketTitle: 'A',
         kind: 'executionFailed',
         message: 'wrong kind',

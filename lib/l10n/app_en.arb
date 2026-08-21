@@ -987,12 +987,5 @@
     "placeholders": {
       "count": { "type": "int" }
     }
-  },
-  "ticketDetailCodingExecutionPrSubLine": "PR #{number} · {fileCount, plural, one{1 file} other{{fileCount} files}} changed",
-  "@ticketDetailCodingExecutionPrSubLine": {
-    "placeholders": {
-      "number": { "type": "int" },
-      "fileCount": { "type": "int" }
-    }
   }
 }

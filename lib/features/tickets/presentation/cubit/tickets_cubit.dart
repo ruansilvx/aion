@@ -776,6 +776,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       Notification(
         id: '',
         ticketId: ticketId,
+        ticketKey: ticket?.ticketId ?? '',
         ticketTitle: ticket?.title ?? '',
         kind: kind,
         message: message,

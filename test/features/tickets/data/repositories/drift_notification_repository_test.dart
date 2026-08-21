@@ -25,6 +25,7 @@ void main() {
   final unreadRow = NotificationData(
     id: 'row-1',
     ticketId: 'task-1',
+    ticketKey: 'AIO-1',
     ticketTitle: 'Fix the thing',
     kind: 'executionPrOpened',
     message: 'PR #42 opened · 5 files changed',
@@ -35,6 +36,7 @@ void main() {
   final readRow = NotificationData(
     id: 'row-2',
     ticketId: 'task-2',
+    ticketKey: 'AIO-2',
     ticketTitle: 'Stage advanced',
     kind: 'stageAdvanceCompleted',
     message: 'Advanced to Design',
@@ -54,6 +56,7 @@ void main() {
       when(
         () => dao.insert(
           ticketId: any(named: 'ticketId'),
+          ticketKey: any(named: 'ticketKey'),
           ticketTitle: any(named: 'ticketTitle'),
           kind: any(named: 'kind'),
           message: any(named: 'message'),
@@ -65,6 +68,7 @@ void main() {
         Notification(
           id: '',
           ticketId: 'task-1',
+          ticketKey: 'AIO-1',
           ticketTitle: 'Fix the thing',
           kind: NotificationKind.executionPrOpened,
           message: 'PR #42 opened · 5 files changed',
@@ -75,6 +79,7 @@ void main() {
       verify(
         () => dao.insert(
           ticketId: 'task-1',
+          ticketKey: 'AIO-1',
           ticketTitle: 'Fix the thing',
           kind: 'executionPrOpened',
           message: 'PR #42 opened · 5 files changed',
@@ -92,6 +97,7 @@ void main() {
 
       expect(result, hasLength(2));
       expect(result[0].id, 'row-1');
+      expect(result[0].ticketKey, 'AIO-1');
       expect(result[0].kind, NotificationKind.executionPrOpened);
       expect(result[0].readAt, isNull);
       expect(result[0].isUnread, isTrue);

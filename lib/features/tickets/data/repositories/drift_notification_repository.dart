@@ -19,6 +19,7 @@ class DriftNotificationRepository implements NotificationRepository {
   Future<void> addNotification(Notification notification) {
     return _db.notificationDao.insert(
       ticketId: notification.ticketId,
+      ticketKey: notification.ticketKey,
       ticketTitle: notification.ticketTitle,
       kind: notification.kind.name,
       message: notification.message,
@@ -58,6 +59,7 @@ class DriftNotificationRepository implements NotificationRepository {
   Notification _toEntity(NotificationData row) => Notification(
     id: row.id,
     ticketId: row.ticketId,
+    ticketKey: row.ticketKey,
     ticketTitle: row.ticketTitle,
     kind: NotificationKind.values.byName(row.kind),
     message: row.message,

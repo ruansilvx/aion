@@ -2,14 +2,48 @@
 
 import 'dart:io';
 
-/// Thin wrapper around the `gh` CLI, invoked via [Process.run]. Mirrors
-/// [GitRepositoryClient]'s shape — one implementation, no
-/// `core/contracts/` interface, since it has no feature-specific logic to
-/// invert. Desktop-only, same scope as [GitRepositoryClient]. Added for
+/// Signature matching [Process.run] (widened to only the parts this class
+/// uses) — the seam [GitHubCliClient] takes an optional implementation of
+/// for testing. Unlike [GitRepositoryClient]'s `git` subprocess calls
+/// (safe and fast to run for real against a throwaway temp repo in
+/// tests — see `git_repository_client_test.dart`), `gh pr create` has a
+/// real, non-idempotent side effect — creating a live pull request
+/// against a real GitHub remote — so it can't be exercised the same way;
+/// tests inject a fake [ProcessRunner] instead. Added for
+/// `aion-arch/changes/pr-metadata-and-notification-center`.
+typedef ProcessRunner =
+    Future<ProcessResult> Function(
+      String executable,
+      List<String> arguments, {
+      String? workingDirectory,
+    });
+
+/// Thin wrapper around the `gh` CLI, invoked via [ProcessRunner] (real
+/// [Process.run] in production, an injectable fake in tests — see that
+/// typedef's dartdoc). Mirrors [GitRepositoryClient]'s shape — one
+/// implementation, no `core/contracts/` interface, since it has no
+/// feature-specific logic to invert. Desktop-only, same scope as
+/// [GitRepositoryClient]. Added for
 /// `aion-arch/changes/coding-execution-reliability-and-safety` so a
 /// coding-execution run's PR is opened by Aion itself, only after its
 /// verification gate passes — never by the model's own tool calls.
 class GitHubCliClient {
+  /// Creates a [GitHubCliClient]. [processRunner] defaults to
+  /// [Process.run] — pass a fake in tests (see [ProcessRunner]'s
+  /// dartdoc for why this class needs that seam at all, unlike
+  /// [GitRepositoryClient]). Added for
+  /// `aion-arch/changes/pr-metadata-and-notification-center`.
+  GitHubCliClient({ProcessRunner? processRunner})
+    : _processRunner =
+          processRunner ??
+          ((executable, arguments, {workingDirectory}) => Process.run(
+            executable,
+            arguments,
+            workingDirectory: workingDirectory,
+          ));
+
+  final ProcessRunner _processRunner;
+
   /// Runs `gh pr create --title <title> --body <body> --head <branch>` in
   /// [rootPath] (the worktree the branch's commits live in — `gh` resolves
   /// the remote/base branch from the local repo config the same way it
@@ -32,7 +66,7 @@ class GitHubCliClient {
     required String title,
     required String body,
   }) async {
-    final result = await Process.run('gh', [
+    final result = await _processRunner('gh', [
       'pr',
       'create',
       '--title',

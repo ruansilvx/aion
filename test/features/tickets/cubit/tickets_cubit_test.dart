@@ -608,6 +608,7 @@ void main() {
       Notification(
         id: '',
         ticketId: '',
+        ticketKey: '',
         ticketTitle: '',
         kind: NotificationKind.executionPrOpened,
         message: '',
@@ -6432,6 +6433,7 @@ void main() {
           Notification(
             id: 'n1',
             ticketId: taskUnderStory.id,
+            ticketKey: taskUnderStory.ticketId,
             ticketTitle: taskUnderStory.title,
             kind: NotificationKind.executionPrOpened,
             message: 'PR #42 opened · 5 files changed',
@@ -6603,6 +6605,251 @@ void main() {
           expect(notification.kind, NotificationKind.executionPrOpened);
           expect(notification.ticketId, taskUnderStory.id);
           expect(notification.message, contains('PR #1'));
+        },
+      );
+
+      // The remaining four terminal branches — closing the coverage gap
+      // flagged in tasks.md T30 (`/verify` follow-up). Each uses
+      // `taskNoStory`/`epic` (no governing Story/design-sync scaffolding
+      // needed) to keep the setup minimal, mirroring the equivalent
+      // taskNoStory-based tests in the "coding-execution reliability"
+      // group and the epic-based tests in the "advanceSddStage —
+      // backgrounded stage-chat turn" group.
+      blocTest<TicketsCubit, TicketsState>(
+        'fires executionVerificationFailed when the verify gate fails and '
+        'no retry is left',
+        build: buildFullCubit,
+        setUp: () {
+          when(
+            () => repository.updateTicketStatus(any(), any()),
+          ).thenAnswer((_) async {});
+          when(() => repository.createTicket(any())).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketsByParent(
+              taskNoStory.id,
+              types: const [TicketType.chat],
+            ),
+          ).thenAnswer((_) async => [dummyExecutionChatTicket]);
+          stubStatefulComments(commentRepository, dummyExecutionChatTicket.id);
+          when(() => repository.getTicketById(any())).thenAnswer((
+            invocation,
+          ) async {
+            final id = invocation.positionalArguments[0] as String;
+            if (id == taskNoStory.id) {
+              return taskNoStory.copyWith(status: 'inProgress');
+            }
+            return dummyExecutionChatTicket;
+          });
+          when(() => agentClient.run(any())).thenAnswer(
+            (_) async => Stream.fromIterable(const [
+              AgentTextEvent('VERIFICATION: FAILED — lint errors'),
+              AgentDoneEvent(),
+            ]),
+          );
+          // getTicketById's post-run refresh always consults the
+          // completion-flip confidence, regardless of what this test
+          // exercises — see the "coding-execution reliability" group's
+          // identical top-level stub.
+          when(
+            () => automationSettingsRepository.getConfidence(
+              AutomationContext.codingExecution,
+            ),
+          ).thenAnswer((_) async => AutomationConfidence.gated);
+          when(
+            () => automationSettingsRepository.getConfidence(
+              AutomationContext.codingExecutionRetry,
+            ),
+          ).thenAnswer((_) async => AutomationConfidence.gated);
+        },
+        act: (cubit) => cubit.changeTicketStatus(taskNoStory, 'inProgress'),
+        wait: const Duration(milliseconds: 50),
+        verify: (_) {
+          final captured = verify(
+            () => notificationRepository.addNotification(captureAny()),
+          ).captured;
+          expect(captured, hasLength(1));
+          final notification = captured.single as Notification;
+          expect(
+            notification.kind,
+            NotificationKind.executionVerificationFailed,
+          );
+          expect(notification.ticketId, taskNoStory.id);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'fires executionFailed when a git/GitHub infra step throws — an '
+        // A ChatCubit.runChatTurn *agent* hard-failure (implement or
+        // verify turn) instead just `break`s the retry loop with
+        // `verified == false` (tickets_cubit.dart:3389-3394/3428-3432)
+        // and posts no notification at all — `_recordNotification(
+        // executionFailed)` only lives in the outer `catch`, reached
+        // solely by createWorktree/push/openPullRequest throwing. See
+        // design.md §4.4's "Hard catch (infra failure)" wording.
+        'implement/verify-turn agent failure never reaches this branch',
+        build: buildFullCubit,
+        setUp: () {
+          when(
+            () => repository.updateTicketStatus(any(), any()),
+          ).thenAnswer((_) async {});
+          when(() => repository.createTicket(any())).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketsByParent(
+              taskNoStory.id,
+              types: const [TicketType.chat],
+            ),
+          ).thenAnswer((_) async => [dummyExecutionChatTicket]);
+          stubStatefulComments(commentRepository, dummyExecutionChatTicket.id);
+          when(() => repository.getTicketById(any())).thenAnswer((
+            invocation,
+          ) async {
+            final id = invocation.positionalArguments[0] as String;
+            if (id == taskNoStory.id) {
+              return taskNoStory.copyWith(status: 'inProgress');
+            }
+            return dummyExecutionChatTicket;
+          });
+          // Overrides the group-level stubSuccessfulCodingExecutionInfra
+          // stub — this run never reaches the implement turn at all.
+          when(
+            () => gitClient.createWorktree(any(), any(), any()),
+          ).thenThrow(Exception('worktree creation failed'));
+          when(
+            () => automationSettingsRepository.getConfidence(
+              AutomationContext.codingExecution,
+            ),
+          ).thenAnswer((_) async => AutomationConfidence.gated);
+        },
+        act: (cubit) => cubit.changeTicketStatus(taskNoStory, 'inProgress'),
+        wait: const Duration(milliseconds: 50),
+        verify: (_) {
+          verifyNever(() => agentClient.run(any()));
+          final captured = verify(
+            () => notificationRepository.addNotification(captureAny()),
+          ).captured;
+          expect(captured, hasLength(1));
+          final notification = captured.single as Notification;
+          expect(notification.kind, NotificationKind.executionFailed);
+          expect(notification.ticketId, taskNoStory.id);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'fires stageAdvanceCompleted when a stage-chat turn finishes '
+        'cleanly',
+        build: buildFullCubit,
+        setUp: () {
+          final advancedEpic = Ticket(
+            id: epic.id,
+            ticketId: epic.ticketId,
+            type: epic.type,
+            title: epic.title,
+            status: epic.status,
+            sddStage: SddStage.exploring,
+            createdAt: epic.createdAt,
+            updatedAt: epic.updatedAt,
+          );
+          when(
+            () => repository.updateTicketSddStage(epic.id, SddStage.exploring),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(any()),
+          ).thenAnswer((_) async => dummyChatTicket);
+          when(
+            () => repository.getTicketById(epic.id),
+          ).thenAnswer((_) async => advancedEpic);
+          when(() => repository.createTicket(any())).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketsByParent(
+              epic.id,
+              types: const [TicketType.chat],
+            ),
+          ).thenAnswer((_) async => <Ticket>[]);
+          when(
+            () => commentRepository.addComment(any()),
+          ).thenAnswer((_) async {});
+          when(() => agentClient.run(any())).thenAnswer(
+            (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+          );
+        },
+        act: (cubit) async {
+          await cubit.advanceSddStage(epic);
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        },
+        verify: (_) {
+          final captured = verify(
+            () => notificationRepository.addNotification(captureAny()),
+          ).captured;
+          expect(captured, hasLength(1));
+          final notification = captured.single as Notification;
+          expect(notification.kind, NotificationKind.stageAdvanceCompleted);
+          expect(notification.ticketId, epic.id);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'fires stageAdvanceFailed when a stage-chat turn hard-fails',
+        build: buildFullCubit,
+        setUp: () {
+          final advancedEpic = Ticket(
+            id: epic.id,
+            ticketId: epic.ticketId,
+            type: epic.type,
+            title: epic.title,
+            status: epic.status,
+            sddStage: SddStage.exploring,
+            createdAt: epic.createdAt,
+            updatedAt: epic.updatedAt,
+          );
+          when(
+            () => repository.updateTicketSddStage(epic.id, SddStage.exploring),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(any()),
+          ).thenAnswer((_) async => dummyChatTicket);
+          when(
+            () => repository.getTicketById(epic.id),
+          ).thenAnswer((_) async => advancedEpic);
+          when(() => repository.createTicket(any())).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketsByParent(
+              epic.id,
+              types: const [TicketType.chat],
+            ),
+          ).thenAnswer((_) async => [dummyChatTicket]);
+          when(() => agentClient.run(any())).thenAnswer(
+            (_) async => Stream.fromIterable(const [
+              AgentTextEvent('Reply text'),
+              AgentDoneEvent(),
+            ]),
+          );
+          // The agent turn itself succeeds — _runStageChatTurn's own
+          // catch fires only for a failure outside ChatCubit's scope,
+          // here the ai-reply comment write itself throwing (mirrors the
+          // "hard-failure path posts a 'Stage advance failed: '"
+          // comment" test above).
+          var addCommentCallCount = 0;
+          when(() => commentRepository.addComment(any())).thenAnswer((
+            _,
+          ) async {
+            addCommentCallCount++;
+            if (addCommentCallCount == 2) {
+              throw Exception('boom');
+            }
+          });
+        },
+        act: (cubit) async {
+          await cubit.advanceSddStage(epic);
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        },
+        verify: (_) {
+          final captured = verify(
+            () => notificationRepository.addNotification(captureAny()),
+          ).captured;
+          expect(captured, hasLength(1));
+          final notification = captured.single as Notification;
+          expect(notification.kind, NotificationKind.stageAdvanceFailed);
+          expect(notification.ticketId, epic.id);
         },
       );
     });

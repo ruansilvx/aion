@@ -853,6 +853,7 @@ class _NotificationBellTriggerState extends State<_NotificationBellTrigger> {
                   ? c.surfaceHover
                   : const Color(0x00000000),
               borderRadius: BorderRadius.all(AionRadius.md),
+              boxShadow: boxShadow,
             ),
             child: Center(child: glyph),
           )
