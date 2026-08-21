@@ -2217,6 +2217,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       client: provider.client,
       provider: provider,
       commentRepo: commentRepo,
+      ticketRepository: _repository,
       chatTicketId: designSyncChat.id,
       prompt: context,
       model: model,
@@ -2974,6 +2975,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       client: provider.client,
       provider: provider,
       commentRepo: commentRepo,
+      ticketRepository: _repository,
       chatTicketId: oldChat.id,
       prompt: _assembleHandoffContext(transcript),
       model: model,
@@ -3228,6 +3230,7 @@ class TicketsCubit extends Cubit<TicketsState> {
           client: implementProvider.client,
           provider: implementProvider,
           commentRepo: commentRepo,
+          ticketRepository: _repository,
           chatTicketId: chat.id,
           prompt: prompt,
           model: implementModel,
@@ -3266,6 +3269,7 @@ class TicketsCubit extends Cubit<TicketsState> {
           client: verifyProvider.client,
           provider: verifyProvider,
           commentRepo: commentRepo,
+          ticketRepository: _repository,
           chatTicketId: chat.id,
           prompt: verifyPrompt,
           model: verifyModel,
@@ -4439,6 +4443,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         client: provider.client,
         provider: provider,
         commentRepo: commentRepo,
+        ticketRepository: _repository,
         chatTicketId: chatId,
         prompt: context,
         model: model,
@@ -4645,6 +4650,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         client: provider.client,
         provider: provider,
         commentRepo: commentRepo,
+        ticketRepository: _repository,
         chatTicketId: persistedChat.id,
         prompt: prompt,
         model: model,
@@ -4869,10 +4875,9 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// sharing an implementation across cubits. The `branch_ticket`/
   /// `close_branch` choice is still exactly one of the two (mutually
   /// exclusive on its own, per [ChatCubit._toolsFor]'s dartdoc), but
-  /// [createTicketToolDefinition]/[addLinkToolDefinition]/
-  /// [logTimeToolDefinition] are appended unconditionally on top of it —
-  /// every chat this method serves offers all three regardless of branch
-  /// depth or structural position. Added for
+  /// [createTicketToolDefinition]/[addLinkToolDefinition] are appended
+  /// unconditionally on top of it — every chat this method serves offers
+  /// both regardless of branch depth or structural position. Added for
   /// `aion-arch/changes/mid-task-chat-branching`; see that change's
   /// design.md §6. Extended for `aion-arch/changes/ticket-crud-tool-calls`;
   /// see that change's design.md §3.1.
@@ -4889,7 +4894,6 @@ class TicketsCubit extends Cubit<TicketsState> {
       branchOrCloseTool,
       createTicketToolDefinition,
       addLinkToolDefinition,
-      logTimeToolDefinition,
     ];
   }
 
@@ -4929,9 +4933,9 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// the same ticket [_toolsFor] resolved tools for at this call site.
   /// `branch_ticket` stays the unnamed `_` default case — [_toolsFor]
   /// never offers both `branch_ticket` and `close_branch` at once, so
-  /// "not `close_branch`/`create_ticket`/`add_link`/`log_time`" still
-  /// means `branch_ticket` unambiguously, exactly as before this method
-  /// grew from a binary ternary into a real `switch`. Added for
+  /// "not `close_branch`/`create_ticket`/`add_link`" still means
+  /// `branch_ticket` unambiguously, exactly as before this method grew
+  /// from a binary ternary into a real `switch`. Added for
   /// `aion-arch/changes/mid-task-chat-branching`. Extended for
   /// `aion-arch/changes/ticket-crud-tool-calls`; see that change's
   /// design.md §3.2.
@@ -4955,10 +4959,6 @@ class TicketsCubit extends Cubit<TicketsState> {
       'create_ticket' /* createTicketToolDefinition.name */ =>
         _handleCreateTicketToolCall(chat, arguments),
       'add_link' /* addLinkToolDefinition.name */ => _handleAddLinkToolCall(
-        chat,
-        arguments,
-      ),
-      'log_time' /* logTimeToolDefinition.name */ => _handleLogTimeToolCall(
         chat,
         arguments,
       ),
@@ -5323,32 +5323,6 @@ class TicketsCubit extends Cubit<TicketsState> {
           onConfirm: addLink,
         );
     }
-  }
-
-  /// The `log_time` tool's [AgentRequest.onToolCall] implementation:
-  /// validates `minutes` (declining with a reason string on a
-  /// missing/non-positive value), then calls
-  /// [TicketRepository.addTimeSpent] on [chat]'s own parent — the ticket
-  /// the current chat is attached to — unconditionally. Unlike
-  /// [_handleCreateTicketToolCall]/[_handleAddLinkToolCall], this has no
-  /// [AutomationConfidence] branch at all: logging time always applies
-  /// immediately, never surfacing a confirmation banner. Added for
-  /// `aion-arch/changes/ticket-crud-tool-calls`; see that change's
-  /// design.md §3.3.
-  Future<Map<String, dynamic>> _handleLogTimeToolCall(
-    Ticket chat,
-    Map<String, dynamic> arguments,
-  ) async {
-    final sourceId = chat.parentId;
-    if (sourceId == null) {
-      return {'accepted': false, 'reason': 'No ticket to log time against.'};
-    }
-    final minutes = arguments['minutes'] as int?;
-    if (minutes == null || minutes <= 0) {
-      return {'accepted': false, 'reason': 'minutes must be a positive integer.'};
-    }
-    await _repository.addTimeSpent(sourceId, minutes);
-    return {'accepted': true};
   }
 
   /// Confirms [chatId]'s pending proposal (if any): runs its `onConfirm`
@@ -6931,6 +6905,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         client: provider.client,
         provider: provider,
         commentRepo: commentRepo,
+        ticketRepository: _repository,
         chatTicketId: persistedChat.id,
         prompt: prompt,
         model: model,

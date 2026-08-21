@@ -1,4 +1,4 @@
-// presentation/cubit/ticket_crud_tool_definitions.dart — create_ticket/add_link/log_time AgentToolDefinitions (presentation layer).
+// presentation/cubit/ticket_crud_tool_definitions.dart — create_ticket/add_link AgentToolDefinitions (presentation layer).
 
 import 'package:aion/core/contracts/agent_tool_definition.dart';
 
@@ -67,31 +67,5 @@ const addLinkToolDefinition = AgentToolDefinition(
       },
     },
     'required': ['targetTicketId', 'linkType'],
-  },
-);
-
-/// The `log_time` app-defined tool: callable the same places as
-/// [createTicketToolDefinition], to add minutes to the time spent on the
-/// ticket the current chat is attached to. Unlike
-/// [createTicketToolDefinition]/[addLinkToolDefinition], this tool has no
-/// `AutomationConfidence` gate — it always applies immediately. Handled by
-/// `TicketsCubit._handleLogTimeToolCall`. Added for
-/// `aion-arch/changes/ticket-crud-tool-calls`; see that change's
-/// design.md §2.
-const logTimeToolDefinition = AgentToolDefinition(
-  name: 'log_time',
-  description:
-      'Log time spent (in minutes) against the ticket you\'re currently '
-      'working on.',
-  inputSchema: {
-    'type': 'object',
-    'properties': {
-      'minutes': {
-        'type': 'integer',
-        'minimum': 1,
-        'description': 'Minutes to add to the ticket\'s time spent.',
-      },
-    },
-    'required': ['minutes'],
   },
 );

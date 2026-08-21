@@ -627,6 +627,22 @@ void main() {
     when(
       () => repository.getExecutionTokenTotals(any()),
     ).thenAnswer((_) async => {});
+    // Default for `ChatCubit.runChatTurn`'s automatic time-logging step
+    // (`_logElapsedTime`, added for
+    // `aion-arch/changes/automatic-time-tracking-for-tickets`), which
+    // this cubit's `runChatTurn` call sites now trigger on every turn.
+    // `getTicketById(any())` returning `null` by default means the
+    // chat has no resolvable parent, so `_logElapsedTime` no-ops for
+    // any test that doesn't already stub `getTicketById` itself —
+    // tests that do (to drive their own chat-resolution behavior)
+    // simply override this default, exactly as with
+    // `getExecutionTokenTotals` above. `addTimeSpent` is stubbed
+    // separately so a test whose own `getTicketById` override resolves
+    // a real parent doesn't throw against an otherwise-unstubbed call.
+    when(() => repository.getTicketById(any())).thenAnswer((_) async => null);
+    when(
+      () => repository.addTimeSpent(any(), any()),
+    ).thenAnswer((_) async {});
   });
 
   group('TicketsCubit', () {
@@ -1386,6 +1402,15 @@ void main() {
     blocTest<TicketsCubit, TicketsState>(
       'trashTicket emits [TicketTrashing, TicketsError] on a generic failure',
       setUp: () {
+        // Resolves the pre-trash lookup `TicketParentTrashService.trash`
+        // makes before calling `trashTicket` (needed since the outer
+        // `setUp`'s new blanket `getTicketById(any()) => null` default,
+        // added for `aion-arch/changes/automatic-time-tracking-for-
+        // tickets`, would otherwise make `trash` short-circuit to
+        // `null` before ever reaching `repository.trashTicket` below).
+        when(
+          () => repository.getTicketById(ticket.id),
+        ).thenAnswer((_) async => ticket);
         when(
           () => repository.trashTicket(ticket.id),
         ).thenThrow(Exception('boom'));
@@ -10468,7 +10493,7 @@ void main() {
         // a second separate `verify()` on the same invocations finds
         // nothing left to match) covering both the pre-existing model/
         // toolsEnabled assertion and the new _toolsFor (ticket-crud-tool-
-        // calls) assertion: create_ticket/add_link/log_time are appended
+        // calls) assertion: create_ticket/add_link are appended
         // unconditionally alongside whichever branch_ticket/close_branch
         // tool is already resolved.
         final requests = verify(
@@ -10479,10 +10504,7 @@ void main() {
           expect(request.model, _sonnet.modelId);
           expect(request.toolsEnabled, true);
           final toolNames = request.tools.map((t) => t.name).toSet();
-          expect(
-            toolNames,
-            containsAll(['create_ticket', 'add_link', 'log_time']),
-          );
+          expect(toolNames, containsAll(['create_ticket', 'add_link']));
           expect(
             toolNames.contains('branch_ticket') ||
                 toolNames.contains('close_branch'),
