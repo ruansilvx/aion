@@ -34,12 +34,16 @@ Widget _wrap({
   required Ticket ticket,
   required MockTicketsCubit ticketsCubit,
   List<LinkedTicketRef> linkedTickets = const [],
+  bool executionAwaitingReview = false,
+  String? executionPrSubLine,
 }) {
-  whenListen(
-    ticketsCubit,
-    Stream.value(TicketDetailLoaded(ticket, linkedTickets: linkedTickets)),
-    initialState: TicketDetailLoaded(ticket, linkedTickets: linkedTickets),
+  final state = TicketDetailLoaded(
+    ticket,
+    linkedTickets: linkedTickets,
+    executionAwaitingReview: executionAwaitingReview,
+    executionPrSubLine: executionPrSubLine,
   );
+  whenListen(ticketsCubit, Stream.value(state), initialState: state);
   when(
     () => ticketsCubit.detailTick,
   ).thenAnswer((_) => const Stream<void>.empty());
@@ -577,6 +581,64 @@ void main() {
       expect(
         find.text('Updated ${formatRelativeTime(task.updatedAt)}'),
         findsOneWidget,
+      );
+    },
+  );
+
+  group(
+    '_ExecutionActionBanner subLine '
+    '(pr-metadata-and-notification-center)',
+    () {
+      final executableTask = Ticket(
+        id: 'task-pr-subline',
+        ticketId: 'AIO-60',
+        type: TicketType.task,
+        title: 'A Task',
+        status: 'inReview',
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+
+      testWidgets(
+        'renders the subLine text below the ready title when '
+        'executionPrSubLine is non-null',
+        (tester) async {
+          await tester.pumpWidget(
+            _wrap(
+              ticket: executableTask,
+              ticketsCubit: ticketsCubit,
+              executionAwaitingReview: true,
+              executionPrSubLine: 'PR #42 · 5 files changed',
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          expect(
+            find.text('Coding run finished — PR opened'),
+            findsOneWidget,
+          );
+          expect(find.text('PR #42 · 5 files changed'), findsOneWidget);
+        },
+      );
+
+      testWidgets(
+        'omits the subLine entirely when executionPrSubLine is null',
+        (tester) async {
+          await tester.pumpWidget(
+            _wrap(
+              ticket: executableTask,
+              ticketsCubit: ticketsCubit,
+              executionAwaitingReview: true,
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          expect(
+            find.text('Coding run finished — PR opened'),
+            findsOneWidget,
+          );
+          expect(find.text('PR #42 · 5 files changed'), findsNothing);
+        },
       );
     },
   );

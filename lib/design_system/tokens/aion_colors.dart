@@ -625,4 +625,20 @@ extension AionColorsHubTokens on AionColors {
   /// button's shadow glow — both use this identical typeChat-keyed value.
   Color chatGlow(bool isDark) =>
       typeChat.withValues(alpha: isDark ? 0.55 : 0.40);
+
+  // Generic accent tint, parameterized on an explicit accent — the
+  // notification dropdown's leading outcome-icon tile fill needs the
+  // standard chip alpha applied to whichever accent (success/danger/
+  // warning/primary) a given `NotificationKind` maps to (Component Spec
+  // §0.4, §6.3), the same "parameterized on `accent`" shape [accentTint]
+  // already established, but at the stronger chip-fill alpha
+  // ([fillAlphaArctic]/[fillAlphaObsidian]) rather than [accentTint]'s
+  // fainter "whisper" alpha. Added for
+  // `aion-arch/changes/pr-metadata-and-notification-center`; see that
+  // change's design.md Component Spec §0.1.
+  /// The notification dropdown row's leading outcome-icon tile fill —
+  /// [accent] at the standard chip alpha ([fillAlphaArctic]/
+  /// [fillAlphaObsidian]).
+  Color outcomeTileFill(Color accent, bool isDark) =>
+      accent.withValues(alpha: isDark ? fillAlphaObsidian : fillAlphaArctic);
 }

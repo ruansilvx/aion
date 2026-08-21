@@ -28,6 +28,7 @@ import 'package:aion/features/providers/providers.dart';
 import 'package:aion/features/tickets/data/page_ticket_provider_impl.dart';
 import 'package:aion/features/tickets/data/repositories/drift_comment_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_execution_queue_repository.dart';
+import 'package:aion/features/tickets/data/repositories/drift_notification_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_page_wikilink_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_link_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_repository.dart';
@@ -566,6 +567,12 @@ class _WorkspaceShellState extends State<WorkspaceShell>
         RepositoryProvider<ExecutionQueueRepository>(
           create: (_) => DriftExecutionQueueRepository(_database),
         ),
+        // Persisted coding-execution/SDD-stage-chat outcome notifications —
+        // same plain Drift-backed shape as ExecutionQueueRepository above.
+        // See aion-arch/changes/pr-metadata-and-notification-center/design.md §5.
+        RepositoryProvider<NotificationRepository>(
+          create: (_) => DriftNotificationRepository(_database),
+        ),
         // Per-project ticket-list filter persistence — see
         // aion-arch/changes/multi-select-ticket-list-filters/design.md
         // §1.4/§4. No dependencies of its own; scoped alongside the other
@@ -730,7 +737,9 @@ class _WorkspaceShellState extends State<WorkspaceShell>
                   .read<WorkflowSkillAttachmentRepository>(),
               workflowPromptTemplateRepository: context
                   .read<WorkflowPromptTemplateRepository>(),
-            )..restoreExecutionQueue(),
+              notificationRepository: context.read<NotificationRepository>(),
+            )..restoreExecutionQueue()
+              ..loadUnreadNotificationCount(),
             child: Builder(
               builder: (context) => RepositoryProvider<PageTicketProvider>(
                 create: (context) => PageTicketProviderImpl(

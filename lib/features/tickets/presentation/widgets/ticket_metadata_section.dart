@@ -199,6 +199,7 @@ class TicketMetadataSection extends StatelessWidget {
                   :final executionQueuePosition,
                   :final executionAwaitingReview,
                   :final executionFailureReason,
+                  :final executionPrSubLine,
                   :final executionLiveActivity,
                   :final isAdvancingStage,
                   :final sddStageFailureReason,
@@ -695,6 +696,7 @@ class TicketMetadataSection extends StatelessWidget {
                                 executionAwaitingReview:
                                     executionAwaitingReview,
                                 executionFailureReason: executionFailureReason,
+                                executionPrSubLine: executionPrSubLine,
                                 executionLiveActivity: executionLiveActivity,
                                 executionTokenTotal: executionTokenTotal,
                                 onMarkReadyForReview: () => context
@@ -2400,6 +2402,7 @@ class _CodingExecutionSection extends StatelessWidget {
     required this.executionQueuePosition,
     required this.executionAwaitingReview,
     required this.executionFailureReason,
+    required this.executionPrSubLine,
     required this.executionLiveActivity,
     required this.executionTokenTotal,
     required this.onMarkReadyForReview,
@@ -2411,6 +2414,13 @@ class _CodingExecutionSection extends StatelessWidget {
   final int? executionQueuePosition;
   final bool executionAwaitingReview;
   final String? executionFailureReason;
+
+  /// A short, pre-formatted PR-metadata detail (e.g. "PR #42 · 5 files
+  /// changed") shown as `_ExecutionActionBanner`'s success-tone
+  /// `subLine` — see `TicketDetailLoaded.executionPrSubLine`. `null`
+  /// omits the sub-line. Added for
+  /// `aion-arch/changes/pr-metadata-and-notification-center`.
+  final String? executionPrSubLine;
   final String? executionLiveActivity;
 
   /// This Task's total coding-execution token spend recorded so far.
@@ -2491,6 +2501,7 @@ class _CodingExecutionSection extends StatelessWidget {
           _ExecutionActionBanner(
             tone: _BannerTone.success,
             title: context.l10n.ticketDetailCodingExecutionReadyTitle,
+            subLine: executionPrSubLine,
             actionLabel:
                 context.l10n.ticketDetailCodingExecutionMarkReadyButton,
             onAction: onMarkReadyForReview,
@@ -2860,6 +2871,7 @@ class _ExecutionActionBanner extends StatelessWidget {
   const _ExecutionActionBanner({
     required this.tone,
     required this.title,
+    this.subLine,
     this.errorDetail,
     required this.actionLabel,
     required this.onAction,
@@ -2872,12 +2884,21 @@ class _ExecutionActionBanner extends StatelessWidget {
   /// "Verification failed — PR not opened").
   final String title;
 
+  /// A short, single-line, pre-formatted PR-metadata detail shown under
+  /// [title] — `tone: .success` only (e.g. "PR #42 · 5 files changed").
+  /// `null` renders nothing, preserving the original title-only layout
+  /// when no matching notification exists yet (see
+  /// `TicketDetailLoaded.executionPrSubLine`). Distinct from
+  /// [errorDetail]'s scrollable well: this is always short (a formatted
+  /// count), never raw agentic output. Added for
+  /// `aion-arch/changes/pr-metadata-and-notification-center`; see that
+  /// change's design.md Component Spec §1.
+  final String? subLine;
+
   /// The raw agentic verify-turn failure reason/error output, shown in a
   /// scrollable well below the title — `tone: .failure` only. `null` for
-  /// `tone: .success`
-  /// (no PR metadata is parsed from the run's reply today, so per the
-  /// original design's fallback rule the sub-line/detail is omitted
-  /// rather than showing placeholder copy).
+  /// `tone: .success` (see [subLine] for that tone's own optional
+  /// detail line instead).
   final String? errorDetail;
 
   /// The action button's label ("Mark ready for review" / "Retry").
@@ -2924,9 +2945,28 @@ class _ExecutionActionBanner extends StatelessWidget {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text(
-                    title,
-                    style: AionText.cardTitle.copyWith(color: c.textPrimary),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: AionText.cardTitle.copyWith(
+                          color: c.textPrimary,
+                        ),
+                      ),
+                      if (!isFailure && subLine != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          subLine!,
+                          style: AionText.time.copyWith(
+                            color: c.textSecondary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          softWrap: false,
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ],

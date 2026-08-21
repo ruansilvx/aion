@@ -5,6 +5,7 @@ import 'dart:math' show max;
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
@@ -40,6 +41,7 @@ import 'package:aion/features/tickets/domain/entities/chat_turn_result.dart';
 import 'package:aion/features/tickets/domain/entities/execution_queue_entry.dart';
 import 'package:aion/features/tickets/domain/entities/gap_or_question_ref.dart';
 import 'package:aion/features/tickets/domain/entities/linked_ticket_ref.dart';
+import 'package:aion/features/tickets/domain/entities/notification.dart';
 import 'package:aion/features/tickets/domain/entities/skill_attachment.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/entities/workflow_prompt_template.dart';
@@ -65,6 +67,7 @@ import 'package:aion/features/tickets/domain/entities/default_workflow_statuses.
 import 'package:aion/features/tickets/domain/entities/workflow_status.dart';
 import 'package:aion/features/tickets/domain/repositories/comment_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/execution_queue_repository.dart';
+import 'package:aion/features/tickets/domain/repositories/notification_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/page_wikilink_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/sdd_stage_config_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_board_column_visibility_repository.dart';
@@ -91,6 +94,7 @@ import 'package:aion/features/tickets/presentation/cubit/ticket_token_predictor.
 import 'package:aion/features/tickets/presentation/cubit/ticket_rollup_counts.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_rollup_recomputer.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
+import 'package:aion/l10n/generated/app_localizations_en.dart';
 
 /// Loads, lists, and creates tickets via [TicketRepository]. Root-scoped —
 /// provided once at the app root, not per-screen. Every list-shaped
@@ -202,6 +206,15 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// and no attachment ever fires — exactly Phase 1's behavior, byte for
   /// byte. Real usage (`app_router.dart`) always supplies both. Added for
   /// `aion-arch/changes/workflow-skill-attachments`.
+  /// [notificationRepository] follows the same optional-dependency
+  /// pattern once more — `null` (every existing construction site except
+  /// `app_router.dart`) makes [_recordNotification]/
+  /// [loadUnreadNotificationCount] no-op and
+  /// [getRecentNotifications]/[markNotificationRead]/
+  /// [markAllNotificationsRead] all no-op or return empty/zero defaults,
+  /// mirroring [_commentRepository]'s exact guard shape. Real usage
+  /// (`app_router.dart`) always supplies one. Added for
+  /// `aion-arch/changes/pr-metadata-and-notification-center`.
   // The public param names below (embeddingProvider/gitProjector/
   // projectRootPath/providerRegistry/commentRepository/
   // automationSettingsRepository/modelRoutingRepository/gitClient/
@@ -243,6 +256,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     SddStageConfigRepository? sddStageConfigRepository,
     WorkflowSkillAttachmentRepository? workflowSkillAttachmentRepository,
     WorkflowPromptTemplateRepository? workflowPromptTemplateRepository,
+    NotificationRepository? notificationRepository,
   }) : super(const TicketsInitial()) {
     _embeddingProvider = embeddingProvider;
     _gitProjector = gitProjector;
@@ -270,6 +284,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     _sddStageConfigRepository = sddStageConfigRepository;
     _workflowSkillAttachmentRepository = workflowSkillAttachmentRepository;
     _workflowPromptTemplateRepository = workflowPromptTemplateRepository;
+    _notificationRepository = notificationRepository;
     _workflowStatusChangesSubscription = workflowStatusRepository?.onChanged
         .listen((_) => _loadWorkflowStatuses());
     unawaited(_loadWorkflowStatuses());
@@ -445,6 +460,31 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// defensive placeholder for that kind (see its own dartdoc). Added for
   /// `aion-arch/changes/workflow-skill-attachments`.
   late final WorkflowPromptTemplateRepository? _workflowPromptTemplateRepository;
+
+  /// Persists coding-execution/SDD-stage-chat outcome notifications —
+  /// see [_recordNotification]. `null` (every existing construction site
+  /// except `app_router.dart`) makes notification-writing/-reading no-op
+  /// or return empty/zero defaults, mirroring [_commentRepository]'s
+  /// exact optional-dependency guard shape. Added for
+  /// `aion-arch/changes/pr-metadata-and-notification-center`.
+  late final NotificationRepository? _notificationRepository;
+
+  /// English-only [AppLocalizationsEn] instance used to build
+  /// [_recordNotification]'s persisted `message` strings and
+  /// [_runCodingExecution]/[_runStageChatTurn]'s notification copy —
+  /// both constructed outside any widget `BuildContext`, so
+  /// `context.l10n`'s usual resolution path isn't available here.
+  /// `TicketsCubit` had no pre-existing non-widget localization
+  /// mechanism (confirmed during `/apply` — no other method in this
+  /// cubit resolves `AppLocalizations` at all); since English is
+  /// currently this app's only generated locale
+  /// (`lib/l10n/app_en.arb`/`lib/l10n/generated/app_localizations_en.dart`),
+  /// constructing [AppLocalizationsEn] directly here is a real
+  /// localization resolution, not a hardcoded-string fallback — it will
+  /// need to become locale-aware (e.g. threading a `Locale` through the
+  /// constructor) if a second locale is ever added. Added for
+  /// `aion-arch/changes/pr-metadata-and-notification-center`.
+  final AppLocalizationsEn _l10n = AppLocalizationsEn();
 
   /// The project's currently-configured [WorkflowStatus] set — every
   /// scope, shared base and every per-type extension together. Loaded
@@ -680,7 +720,101 @@ class TicketsCubit extends Cubit<TicketsState> {
     unawaited(_detailTickController.close());
     unawaited(_workflowStatusChangesSubscription?.cancel());
     unawaited(_skillAttachmentChangesSubscription?.cancel());
+    unreadNotificationCount.dispose();
     return super.close();
+  }
+
+  /// Live unread-notification count, exposed outside the Bloc `state`
+  /// machinery so `WorkspaceNavShell`'s bell badge can render from every
+  /// `/workspace/*` route regardless of which [TicketsState] variant is
+  /// currently active — retrofitting this onto every existing state
+  /// subclass ([TicketsLoaded], [TicketDetailLoaded], [TicketsError], …)
+  /// would touch far more surface than the badge's own scope justifies.
+  /// Loaded via [loadUnreadNotificationCount] (chained onto construction
+  /// in `app_router.dart`, mirroring `..restoreExecutionQueue()`'s
+  /// existing precedent) and refreshed at every [_recordNotification]
+  /// call and every [markNotificationRead]/[markAllNotificationsRead]
+  /// call. `0` if constructed without a [NotificationRepository].
+  /// Disposed in [close]. Added for
+  /// `aion-arch/changes/pr-metadata-and-notification-center`.
+  final ValueNotifier<int> unreadNotificationCount = ValueNotifier(0);
+
+  /// Loads the current unread count from [_notificationRepository] into
+  /// [unreadNotificationCount]. No-ops if constructed without one. Call
+  /// once after construction (see `app_router.dart`).
+  Future<void> loadUnreadNotificationCount() async {
+    final repo = _notificationRepository;
+    if (repo == null) return;
+    unreadNotificationCount.value = await repo.getUnreadCount();
+  }
+
+  /// Writes one [Notification] for [ticketId] and refreshes
+  /// [unreadNotificationCount]. The single call site every terminal
+  /// branch of [_runCodingExecution]/[_runStageChatTurn] goes through,
+  /// rather than each duplicating insert-plus-refresh logic — mirrors
+  /// `board-execution-indicators-and-notifications`'s own precedent of
+  /// "one background-execution pattern serves both" consumers, applied
+  /// here to notification-writing. No-ops if constructed without a
+  /// [NotificationRepository] (mirrors [_commentRepository]'s guard
+  /// shape) — a coding-execution/stage-advance run's own outcome is
+  /// still fully surfaced via its existing system comment either way,
+  /// so a missing repository degrades gracefully rather than breaking
+  /// the run itself. [message] is expected to already be fully formatted
+  /// (built by the caller via [_l10n] — see that field's dartdoc for why
+  /// [TicketsCubit] resolves localization this way outside a widget
+  /// `BuildContext`). Added for
+  /// `aion-arch/changes/pr-metadata-and-notification-center`.
+  Future<void> _recordNotification({
+    required String ticketId,
+    required NotificationKind kind,
+    required String message,
+  }) async {
+    final repo = _notificationRepository;
+    if (repo == null) return;
+    final ticket = await _repository.getTicketById(ticketId);
+    await repo.addNotification(
+      Notification(
+        id: '',
+        ticketId: ticketId,
+        ticketKey: ticket?.ticketId ?? '',
+        ticketTitle: ticket?.title ?? '',
+        kind: kind,
+        message: message,
+        createdAt: DateTime.now(),
+      ),
+    );
+    unreadNotificationCount.value = await repo.getUnreadCount();
+  }
+
+  /// Returns the most recent notifications for the dropdown. Empty list
+  /// if constructed without a [NotificationRepository]. Added for
+  /// `aion-arch/changes/pr-metadata-and-notification-center`.
+  Future<List<Notification>> getRecentNotifications({int limit = 20}) async {
+    final repo = _notificationRepository;
+    if (repo == null) return const [];
+    return repo.getRecent(limit: limit);
+  }
+
+  /// Marks [id] read and refreshes [unreadNotificationCount]. No-op
+  /// without a [NotificationRepository]. Added for
+  /// `aion-arch/changes/pr-metadata-and-notification-center`.
+  Future<void> markNotificationRead(String id) async {
+    final repo = _notificationRepository;
+    if (repo == null) return;
+    await repo.markRead(id);
+    unreadNotificationCount.value = await repo.getUnreadCount();
+  }
+
+  /// Marks every unread notification read and refreshes
+  /// [unreadNotificationCount] (sets it to `0` directly rather than
+  /// re-querying — cheaper, and correct since `markAllRead` is
+  /// unconditional). No-op without a [NotificationRepository]. Added for
+  /// `aion-arch/changes/pr-metadata-and-notification-center`.
+  Future<void> markAllNotificationsRead() async {
+    final repo = _notificationRepository;
+    if (repo == null) return;
+    await repo.markAllRead();
+    unreadNotificationCount.value = 0;
   }
 
   /// Cap on automatic corrective turns (verification fails → feed the
@@ -3053,10 +3187,11 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// check its own work using whatever tooling fits this codebase and
   /// end with a `VERIFICATION: PASSED`/`FAILED` terminal line — parsed
   /// by [_verificationFailureReason] (fail-closed: only an explicit
-  /// `PASSED` line counts). On a pass, pushes the branch
-  /// ([GitRepositoryClient.push]) and opens the PR itself
-  /// ([GitHubCliClient.openPullRequest], no model call), posting a
-  /// system comment ending `EXECUTION: PR_OPENED <url>` (the same
+  /// `PASSED` line counts). On a pass, resolves the changed-file count
+  /// ([GitRepositoryClient.defaultBranch]/[GitRepositoryClient.changedFileCount])
+  /// before pushing the branch ([GitRepositoryClient.push]) and opening
+  /// the PR itself ([GitHubCliClient.openPullRequest], no model call),
+  /// posting a system comment ending `EXECUTION: PR_OPENED <url>` (the same
   /// terminal-signal convention [_executionSucceededWithPr] already
   /// looks for). If either `runChatTurn` call reports a hard failure
   /// (already persisting its own `"Execution failed: ..."` comment), the
@@ -3079,7 +3214,11 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [_inFlightExecutionIds]. The worktree (never the branch) is
   /// always removed in a `finally`, success or failure — itself wrapped
   /// in its own try/catch, since a worktree that was never actually
-  /// created has nothing to remove.
+  /// created has nothing to remove. Each of these three terminal
+  /// branches (PR opened, verification failed, hard infra failure) also
+  /// calls [_recordNotification] alongside its own system comment — see
+  /// `aion-arch/changes/pr-metadata-and-notification-center/design.md`
+  /// §4.4.
   ///
   /// If a PR was confirmed (see [_executionSucceededWithPr]) and
   /// [_automationSettingsRepository] is configured, flips [task] straight
@@ -3331,12 +3470,23 @@ class TicketsCubit extends Cubit<TicketsState> {
             ),
           );
         }
+        await _recordNotification(
+          ticketId: task.id,
+          kind: NotificationKind.executionVerificationFailed,
+          message: _l10n.notificationExecutionVerificationFailed,
+        );
         break;
       }
 
       if (verified) {
+        final baseBranch = await gitClient.defaultBranch(rootPath);
+        final fileCount = await gitClient.changedFileCount(
+          worktreePath,
+          baseBranch,
+          branchName,
+        );
         await gitClient.push(worktreePath, branchName);
-        final prUrl = await gitHubClient.openPullRequest(
+        final pr = await gitHubClient.openPullRequest(
           rootPath: worktreePath,
           branch: branchName,
           title: task.title,
@@ -3346,10 +3496,15 @@ class TicketsCubit extends Cubit<TicketsState> {
           TicketComment(
             id: '',
             ticketId: chat.id,
-            content: 'EXECUTION: PR_OPENED $prUrl',
+            content: 'EXECUTION: PR_OPENED ${pr.url}',
             authorType: CommentAuthorType.system,
             createdAt: DateTime.now(),
           ),
+        );
+        await _recordNotification(
+          ticketId: task.id,
+          kind: NotificationKind.executionPrOpened,
+          message: _l10n.notificationExecutionPrOpened(pr.number, fileCount),
         );
       }
     } catch (e) {
@@ -3371,6 +3526,11 @@ class TicketsCubit extends Cubit<TicketsState> {
           authorType: CommentAuthorType.system,
           createdAt: DateTime.now(),
         ),
+      );
+      await _recordNotification(
+        ticketId: task.id,
+        kind: NotificationKind.executionFailed,
+        message: _l10n.notificationExecutionFailed,
       );
     } finally {
       try {
@@ -4389,6 +4549,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// checkout. Throws (caught below, posting the usual failure comment)
   /// if constructed without a [GitRepositoryClient]/`projectRootPath` in
   /// that case. Added for `aion-arch/changes/workflow-skill-attachments`.
+  /// Also calls [_recordNotification] exactly once, from the `finally`
+  /// block (after worktree cleanup and the [_inFlightStageAdvanceIds]
+  /// removal below, so it fires regardless of which path was taken) —
+  /// [NotificationKind.stageAdvanceCompleted] or `.stageAdvanceFailed`
+  /// depending on whether the `catch` block ran. Added for
+  /// `aion-arch/changes/pr-metadata-and-notification-center`.
   Future<void> _runStageChatTurn(
     Ticket parent,
     SddStage stage,
@@ -4399,6 +4565,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     if (providerRegistry == null || commentRepo == null) return;
 
     String? worktreePath;
+    var failed = false;
     try {
       final attachment = _attachmentForStage(stage);
       final context = attachment != null
@@ -4471,6 +4638,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         }
       }
     } catch (e) {
+      failed = true;
       await commentRepo.addComment(
         TicketComment(
           id: '',
@@ -4504,6 +4672,21 @@ class TicketsCubit extends Cubit<TicketsState> {
         ..remove(parent.id)
         ..remove(chatId);
       _refreshInFlightBoardState();
+      if (failed) {
+        await _recordNotification(
+          ticketId: parent.id,
+          kind: NotificationKind.stageAdvanceFailed,
+          message: _l10n.notificationStageAdvanceFailed,
+        );
+      } else {
+        await _recordNotification(
+          ticketId: parent.id,
+          kind: NotificationKind.stageAdvanceCompleted,
+          message: _l10n.notificationStageAdvanceCompleted(
+            await _stagePresentName(stage),
+          ),
+        );
+      }
     }
   }
 
@@ -5913,7 +6096,14 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// — this method never recomputes it, only
   /// [_resolveAndFireAttachment]/[confirmPendingSkillAttachment]/
   /// [rejectPendingSkillAttachment] do. Added for
-  /// `aion-arch/changes/workflow-skill-attachments`.
+  /// `aion-arch/changes/workflow-skill-attachments`. When
+  /// [TicketDetailLoaded.executionAwaitingReview] is `true`, also
+  /// computes [TicketDetailLoaded.executionPrSubLine] from this ticket's
+  /// most recent [NotificationKind.executionPrOpened] notification (via
+  /// [_notificationRepository] — `null` when constructed without one, or
+  /// when no matching notification exists yet) rather than re-parsing
+  /// the comment thread a second time. Added for
+  /// `aion-arch/changes/pr-metadata-and-notification-center`.
   Future<void> getTicketById(String id) async {
     final current = state;
     final previousDetail = current is TicketDetailLoaded && current.ticket.id == id
@@ -5950,6 +6140,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       var executionAwaitingReview = false;
       String? executionFailureReason;
       var executionCanRetry = false;
+      String? executionPrSubLine;
       if (ticket.type.isExecutable) {
         isExecuting = _inFlightExecutionIds.contains(ticket.id);
         final queueIndex = _executionQueue.indexOf(ticket.id);
@@ -5975,6 +6166,14 @@ class TicketsCubit extends Cubit<TicketsState> {
             executionFailureReason = reason;
             executionCanRetry = canRetry;
           }
+        }
+        if (executionAwaitingReview) {
+          final notification = await _notificationRepository
+              ?.getMostRecentForTicket(
+                ticket.id,
+                NotificationKind.executionPrOpened,
+              );
+          executionPrSubLine = notification?.message;
         }
       }
 
@@ -6010,6 +6209,7 @@ class TicketsCubit extends Cubit<TicketsState> {
           executionAwaitingReview: executionAwaitingReview,
           executionFailureReason: executionFailureReason,
           executionCanRetry: executionCanRetry,
+          executionPrSubLine: executionPrSubLine,
           isAdvancingStage: isAdvancingStage,
           sddStageFailureReason: sddStageFailureReason,
           sddStageCanRetry: sddStageCanRetry,

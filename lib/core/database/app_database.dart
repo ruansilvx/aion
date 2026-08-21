@@ -11,6 +11,7 @@ import 'package:aion/core/markdown/wikilink_extractor.dart';
 import 'package:aion/features/projects/domain/entities/project.dart';
 import 'package:aion/features/tickets/data/daos/comment_dao.dart';
 import 'package:aion/features/tickets/data/daos/execution_queue_dao.dart';
+import 'package:aion/features/tickets/data/daos/notification_dao.dart';
 import 'package:aion/features/tickets/data/daos/page_wikilink_dao.dart';
 import 'package:aion/features/tickets/data/daos/ticket_dao.dart';
 import 'package:aion/features/tickets/data/daos/ticket_link_dao.dart';
@@ -18,6 +19,7 @@ import 'package:aion/features/tickets/data/daos/workflow_prompt_template_dao.dar
 import 'package:aion/features/tickets/data/daos/workflow_skill_attachment_dao.dart';
 import 'package:aion/features/tickets/data/daos/workflow_status_dao.dart';
 import 'package:aion/features/tickets/data/models/execution_queue_table.dart';
+import 'package:aion/features/tickets/data/models/notification_table.dart';
 import 'package:aion/features/tickets/data/models/page_wikilink_model.dart';
 import 'package:aion/features/tickets/data/models/ticket_comment_model.dart';
 import 'package:aion/features/tickets/data/models/ticket_link_model.dart';
@@ -136,6 +138,10 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
 /// fresh install and a pre-existing project, since nothing fires
 /// automatically today outside the already-unconditional SDD-stage flow.
 /// See `aion-arch/changes/workflow-skill-attachments/design.md` §2.3.
+/// Version 17 adds [NotificationsTable], with no backfill — a pre-17
+/// database has no notification history to migrate; the center simply
+/// starts empty on first launch after upgrade. See
+/// `aion-arch/changes/pr-metadata-and-notification-center/design.md` §3.
 @DriftDatabase(
   tables: [
     TicketsTable,
@@ -147,6 +153,7 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
     WorkflowStatusesTable,
     WorkflowSkillAttachmentsTable,
     WorkflowPromptTemplatesTable,
+    NotificationsTable,
   ],
   daos: [
     TicketDao,
@@ -157,6 +164,7 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
     WorkflowStatusDao,
     WorkflowSkillAttachmentDao,
     WorkflowPromptTemplateDao,
+    NotificationDao,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -169,7 +177,7 @@ class AppDatabase extends _$AppDatabase {
     : super(executor ?? _openConnection(project));
 
   @override
-  int get schemaVersion => 16;
+  int get schemaVersion => 17;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -270,6 +278,9 @@ class AppDatabase extends _$AppDatabase {
       if (from < 16) {
         await m.createTable(workflowSkillAttachmentsTable);
         await m.createTable(workflowPromptTemplatesTable);
+      }
+      if (from < 17) {
+        await m.createTable(notificationsTable);
       }
     },
   );

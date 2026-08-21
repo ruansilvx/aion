@@ -960,5 +960,32 @@
   "settingsAnthropicApiKeyFieldLabel": "API Key",
   "settingsAnthropicApiKeyHint": "sk-ant-…",
   "settingsAnthropicApiKeySaveButton": "Save",
-  "settingsAnthropicApiKeyFormatError": "That doesn't look like an Anthropic key — it should start with sk-ant-."
+  "settingsAnthropicApiKeyFormatError": "That doesn't look like an Anthropic key — it should start with sk-ant-.",
+
+  "notificationExecutionPrOpened": "PR #{number} opened · {fileCount, plural, one{1 file} other{{fileCount} files}} changed",
+  "@notificationExecutionPrOpened": {
+    "placeholders": {
+      "number": { "type": "int" },
+      "fileCount": { "type": "int" }
+    }
+  },
+  "notificationExecutionVerificationFailed": "Verification failed — PR not opened",
+  "notificationExecutionFailed": "Coding execution failed",
+  "notificationStageAdvanceCompleted": "Advanced to {stage}",
+  "@notificationStageAdvanceCompleted": {
+    "placeholders": {
+      "stage": { "type": "String" }
+    }
+  },
+  "notificationStageAdvanceFailed": "Stage advance failed",
+  "notificationCenterTitle": "Notifications",
+  "notificationCenterMarkAllRead": "Mark all read",
+  "notificationCenterEmptyState": "No notifications yet",
+  "notificationCenterEmptyStateSubtitle": "Run outcomes and stage updates will show up here.",
+  "notificationBellSemantics": "Notifications, {count} unread",
+  "@notificationBellSemantics": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  }
 }

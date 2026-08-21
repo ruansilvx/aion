@@ -11,6 +11,7 @@ import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart'
     show ticketsErrorMessage;
+import 'package:aion/features/tickets/presentation/widgets/notification_dropdown.dart';
 
 /// Persistent navigation chrome wrapping every `/workspace/*` route's
 /// content: a left sidebar on wide layouts, a bottom tab bar on narrow
@@ -206,7 +207,11 @@ class _BrandHeader extends StatelessWidget {
 
 /// The fixed-width (244px) left sidebar rendered by [_WideShell]: the
 /// brand header, then the three [_NavItem] destinations, then flexible
-/// space, then the [_SecondaryActionsTrigger] anchored to the bottom.
+/// space, then [_NotificationBellTrigger] beside [_SecondaryActionsTrigger],
+/// both anchored to the bottom. Added
+/// [_NotificationBellTrigger] for
+/// `aion-arch/changes/pr-metadata-and-notification-center`; see that
+/// change's design.md Component Spec §2.
 class _Sidebar extends StatelessWidget {
   /// Creates a [_Sidebar].
   const _Sidebar({
@@ -275,9 +280,16 @@ class _Sidebar extends StatelessWidget {
                 ],
               ),
               const Spacer(),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 4),
-                child: _SecondaryActionsTrigger(),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    _NotificationBellTrigger(compact: false),
+                    SizedBox(width: AionSpacing.sp8),
+                    _SecondaryActionsTrigger(),
+                  ],
+                ),
               ),
             ],
           ),
@@ -333,13 +345,16 @@ class _CompactShell extends StatelessWidget {
 
 /// The fixed-height (72px + bottom safe area) bottom tab bar rendered by
 /// [_CompactShell]: the three [_NavItem] destinations plus the
-/// [_SecondaryActionsTrigger]. Per
+/// [_NotificationBellTrigger] and [_SecondaryActionsTrigger]. Per
 /// `aion-arch/changes/new-project-onboarding-inbox/design.md` §1.3, the
 /// trigger cell is a fixed 56px [SizedBox] (not `Expanded`) — the three
 /// destinations stay equal `Expanded` thirds of the remaining space,
-/// rather than all four cells splitting evenly, since a destination must
-/// stay tappable/legible while the trigger is just a fixed 38px avatar
-/// that never needed a full share.
+/// rather than all cells splitting evenly, since a destination must
+/// stay tappable/legible while the trailing triggers are just fixed
+/// 56px cells that never needed a full share. [_NotificationBellTrigger]
+/// gets its own fixed 56px cell, placed before
+/// [_SecondaryActionsTrigger]'s — see design.md Component Spec §3.1.
+/// Added for `aion-arch/changes/pr-metadata-and-notification-center`.
 class _BottomTabBar extends StatelessWidget {
   /// Creates a [_BottomTabBar].
   const _BottomTabBar({
@@ -417,6 +432,10 @@ class _BottomTabBar extends StatelessWidget {
                       label: context.l10n.inboxScreenTitle,
                       onTap: onSelectInbox,
                     ),
+                  ),
+                  const SizedBox(
+                    width: 56,
+                    child: Center(child: _NotificationBellTrigger(compact: true)),
                   ),
                   const SizedBox(
                     width: 56,
@@ -694,6 +713,296 @@ class _SecondaryActionsTriggerState extends State<_SecondaryActionsTrigger> {
         }
       },
       semanticsLabel: context.l10n.navShellSecondaryMenuLabel,
+    );
+  }
+}
+
+/// The notification-center bell trigger, rendered beside
+/// [_SecondaryActionsTrigger] in both [_Sidebar] (wide) and
+/// [_BottomTabBar] (compact) — one widget, two geometry variants keyed
+/// by [compact], per design.md Component Spec §2/§3. Shows
+/// `TicketsCubit.unreadNotificationCount`'s live badge and opens
+/// [NotificationDropdownPanel] in an `Overlay`, built on the same
+/// `LayerLink`/`CompositedTransformFollower`/`mounted`-guard mechanics
+/// `TicketOverflowMenu` already uses — a fourth instance of that
+/// pattern (an action list, not a `SelectionMenu` value picker). Added
+/// for `aion-arch/changes/pr-metadata-and-notification-center`.
+class _NotificationBellTrigger extends StatefulWidget {
+  /// Creates a [_NotificationBellTrigger]. Set [compact] `true` for the
+  /// bottom-tab-bar's 56px-cell/22px-glyph variant, `false` (default) for
+  /// the sidebar's 38×38 variant.
+  const _NotificationBellTrigger({required this.compact});
+
+  /// Whether to render the compact bottom-tab-bar geometry instead of
+  /// the wide sidebar geometry.
+  final bool compact;
+
+  @override
+  State<_NotificationBellTrigger> createState() =>
+      _NotificationBellTriggerState();
+}
+
+class _NotificationBellTriggerState extends State<_NotificationBellTrigger> {
+  final LayerLink _layerLink = LayerLink();
+  OverlayEntry? _overlayEntry;
+  bool _isOpen = false;
+  bool _isHovered = false;
+  bool _isFocused = false;
+  bool _isPressed = false;
+
+  @override
+  void dispose() {
+    _overlayEntry?.remove();
+    _overlayEntry = null;
+    super.dispose();
+  }
+
+  void _toggleOverlay() {
+    if (_isOpen) {
+      _removeOverlay();
+    } else {
+      _showOverlay();
+    }
+  }
+
+  void _showOverlay() {
+    final overlay = Overlay.of(context);
+    // Resolved from this State's own context — not the OverlayEntry's,
+    // which renders outside the route's provider scope — mirrors
+    // TicketOverflowMenu's identical precaution.
+    final ticketsCubit = context.read<TicketsCubit>();
+
+    _overlayEntry = OverlayEntry(
+      builder: (overlayContext) {
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: _removeOverlay,
+              ),
+            ),
+            CompositedTransformFollower(
+              link: _layerLink,
+              showWhenUnlinked: false,
+              offset: const Offset(0, -8),
+              targetAnchor: widget.compact
+                  ? Alignment.topRight
+                  : Alignment.topLeft,
+              followerAnchor: widget.compact
+                  ? Alignment.bottomRight
+                  : Alignment.bottomLeft,
+              child: _AnimatedDropdownEntrance(
+                child: NotificationDropdownPanel(
+                  ticketsCubit: ticketsCubit,
+                  onDismiss: _removeOverlay,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    overlay.insert(_overlayEntry!);
+    setState(() => _isOpen = true);
+  }
+
+  void _removeOverlay() {
+    _overlayEntry?.remove();
+    _overlayEntry = null;
+    // Guards against setState-after-dispose — same precaution
+    // TicketOverflowMenu takes.
+    if (mounted) {
+      setState(() => _isOpen = false);
+    } else {
+      _isOpen = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    final ticketsCubit = context.read<TicketsCubit>();
+
+    final borderColor = _isOpen || _isHovered || _isFocused
+        ? c.borderStrong
+        : c.border;
+    // Default textSecondary, hover textPrimary, menu-open primary — per
+    // design.md Component Spec §2.2/§3.2's interactive-state tables
+    // (menu-open takes precedence over hover).
+    final glyphColor = _isOpen
+        ? c.primary
+        : (_isHovered ? c.textPrimary : c.textSecondary);
+    final boxShadow = (_isFocused || _isOpen)
+        ? AionShadows.focus(c, t.isDark)
+        : const <BoxShadow>[];
+
+    final glyph = PhosphorIcon(
+      PhosphorIcons.bellSimpleLight,
+      size: widget.compact ? 22 : 20,
+      color: glyphColor,
+    );
+
+    final tile = widget.compact
+        ? AnimatedContainer(
+            duration: const Duration(milliseconds: 100),
+            decoration: BoxDecoration(
+              color: (_isHovered || _isPressed)
+                  ? c.surfaceHover
+                  : const Color(0x00000000),
+              borderRadius: BorderRadius.all(AionRadius.md),
+              boxShadow: boxShadow,
+            ),
+            child: Center(child: glyph),
+          )
+        : AnimatedContainer(
+            duration: const Duration(milliseconds: 100),
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: c.surfaceHover,
+              border: Border.all(color: borderColor, width: 1),
+              borderRadius: BorderRadius.all(AionRadius.iconBtn),
+              boxShadow: boxShadow,
+            ),
+            child: Center(child: glyph),
+          );
+
+    return CompositedTransformTarget(
+      link: _layerLink,
+      child: ValueListenableBuilder<int>(
+        valueListenable: ticketsCubit.unreadNotificationCount,
+        builder: (context, count, _) {
+          return Semantics(
+            button: true,
+            label: context.l10n.notificationBellSemantics(count),
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              onEnter: (_) => setState(() => _isHovered = true),
+              onExit: (_) => setState(() => _isHovered = false),
+              child: FocusableActionDetector(
+                actions: {
+                  ActivateIntent: CallbackAction<ActivateIntent>(
+                    onInvoke: (_) {
+                      _toggleOverlay();
+                      return null;
+                    },
+                  ),
+                },
+                onShowFocusHighlight: (value) =>
+                    setState(() => _isFocused = value),
+                child: GestureDetector(
+                  onTap: _toggleOverlay,
+                  onTapDown: (_) => setState(() => _isPressed = true),
+                  onTapUp: (_) => setState(() => _isPressed = false),
+                  onTapCancel: () => setState(() => _isPressed = false),
+                  child: AnimatedScale(
+                    scale: _isPressed ? 0.96 : 1.0,
+                    duration: const Duration(milliseconds: 90),
+                    curve: Curves.easeOut,
+                    child: SizedBox(
+                      width: widget.compact ? 56 : 38,
+                      height: widget.compact ? 56 : 38,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        alignment: Alignment.center,
+                        children: [
+                          tile,
+                          if (count > 0)
+                            Positioned(
+                              top: widget.compact ? 14 : -5,
+                              right: widget.compact ? 12 : -5,
+                              child: _UnreadCountBadge(count: count),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Wraps [child] (the [NotificationDropdownPanel]) with the fade + 4px
+/// rise entrance motion per design.md Component Spec §4.3 — 120ms
+/// `Curves.easeOut`, opacity 0→1 and a `Transform.translate` from
+/// `Offset(0, 4)` to `Offset.zero`. Runs once on mount; no exit
+/// animation (the overlay is removed immediately on dismiss, matching
+/// `TicketOverflowMenu`'s existing immediate-removal precedent).
+class _AnimatedDropdownEntrance extends StatelessWidget {
+  const _AnimatedDropdownEntrance({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOut,
+      builder: (context, value, child) {
+        return Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, (1 - value) * 4),
+            child: child,
+          ),
+        );
+      },
+      child: child,
+    );
+  }
+}
+
+/// The unread-count disc anchored to [_NotificationBellTrigger]'s
+/// top-right corner. Per design.md Component Spec §2.4: `1-9` → a
+/// single digit in a 16×16 circle; `10-99` → two digits in a pill;
+/// `> 99` → a capped `"99+"` pill. A 1.5px stroke in the host surface
+/// color makes the disc read as lifted off the glyph.
+class _UnreadCountBadge extends StatelessWidget {
+  const _UnreadCountBadge({required this.count});
+
+  /// The unread count to render — always `> 0` (the caller only
+  /// mounts this widget when `count > 0`).
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    final label = count > 99 ? '99+' : '$count';
+    final isSingleDigit = count < 10;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.primary,
+        shape: isSingleDigit ? BoxShape.circle : BoxShape.rectangle,
+        borderRadius: isSingleDigit
+            ? null
+            : const BorderRadius.all(Radius.circular(8)),
+        border: Border.all(color: c.surface, width: 1.5),
+      ),
+      child: Container(
+        constraints: BoxConstraints(
+          minWidth: isSingleDigit ? 16 : 20,
+          minHeight: 16,
+        ),
+        padding: isSingleDigit
+            ? EdgeInsets.zero
+            : const EdgeInsets.symmetric(horizontal: 5),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: AionText.countBadge.copyWith(color: const Color(0xFFFFFFFF)),
+        ),
+      ),
     );
   }
 }

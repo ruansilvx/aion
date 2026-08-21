@@ -365,6 +365,7 @@ class TicketDetailLoaded extends TicketsState {
     this.executionAwaitingReview = false,
     this.executionFailureReason,
     this.executionCanRetry = false,
+    this.executionPrSubLine,
     this.executionLiveActivity,
     this.isAdvancingStage = false,
     this.sddStageFailureReason,
@@ -476,6 +477,18 @@ class TicketDetailLoaded extends TicketsState {
   /// Added for `aion-arch/changes/coding-execution-reliability-and-safety`.
   final bool executionCanRetry;
 
+  /// A short, pre-formatted PR-metadata detail for [ticket] (a `task`)
+  /// while [executionAwaitingReview] is `true` — e.g. "PR #42 · 5 files
+  /// changed" — surfaced as `_ExecutionActionBanner`'s success-tone
+  /// `subLine`. `null` when no matching notification exists yet (e.g. a
+  /// pre-upgrade ticket, or a cubit constructed without a
+  /// `NotificationRepository`), in which case the banner simply omits
+  /// the sub-line. Computed by [TicketsCubit.getTicketById] from this
+  /// ticket's most recent `NotificationKind.executionPrOpened`
+  /// notification. Added for
+  /// `aion-arch/changes/pr-metadata-and-notification-center`.
+  final String? executionPrSubLine;
+
   /// A live "Running `<tool>`..."-style status string for [ticket] (a
   /// `task`) while [isExecuting] is `true`, re-emitted by
   /// [TicketsCubit._runCodingExecution] on every tool call/text chunk of
@@ -552,6 +565,7 @@ class TicketDetailLoaded extends TicketsState {
     executionAwaitingReview,
     executionFailureReason,
     executionCanRetry,
+    executionPrSubLine,
     executionLiveActivity,
     isAdvancingStage,
     sddStageFailureReason,
@@ -598,6 +612,7 @@ class TicketDetailLoaded extends TicketsState {
     bool? executionAwaitingReview,
     String? executionFailureReason,
     bool? executionCanRetry,
+    String? executionPrSubLine,
     String? executionLiveActivity,
     bool? isAdvancingStage,
     String? sddStageFailureReason,
@@ -624,6 +639,7 @@ class TicketDetailLoaded extends TicketsState {
       executionFailureReason:
           executionFailureReason ?? this.executionFailureReason,
       executionCanRetry: executionCanRetry ?? this.executionCanRetry,
+      executionPrSubLine: executionPrSubLine ?? this.executionPrSubLine,
       executionLiveActivity:
           executionLiveActivity ?? this.executionLiveActivity,
       isAdvancingStage: isAdvancingStage ?? this.isAdvancingStage,
