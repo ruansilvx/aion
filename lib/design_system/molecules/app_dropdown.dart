@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:aion/core/core.dart';
+import 'package:aion/design_system/molecules/overlay_menu_item.dart';
 import 'package:aion/design_system/tokens/aion_radius.dart';
 import 'package:aion/design_system/tokens/aion_shadows.dart';
 import 'package:aion/design_system/tokens/aion_text.dart';
@@ -146,13 +147,21 @@ class _AppDropdownState<T> extends State<AppDropdown<T>> {
                   mainAxisSize: MainAxisSize.min,
                   children: widget.items.map((item) {
                     final selected = item == widget.value;
-                    return GestureDetector(
+                    return OverlayMenuItem(
                       onTap: () {
                         widget.onChanged(item);
                         _removeOverlay();
                       },
-                      child: Container(
-                        color: selected ? c.primarySubtle : null,
+                      semanticsLabel: widget.itemLabel(item),
+                      accent: c.primary,
+                      restingTinted: selected,
+                      // Lands keyboard focus on the currently selected row
+                      // rather than always the first row — unlike
+                      // SelectionMenu, AppDropdown doesn't exclude the
+                      // current value from its list, so this row is
+                      // "where the user already is."
+                      autofocus: selected,
+                      child: Padding(
                         padding: const EdgeInsets.symmetric(
                           vertical: 12,
                           horizontal: 14,
