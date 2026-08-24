@@ -2,10 +2,12 @@
 
 import 'package:equatable/equatable.dart';
 
+import 'package:aion/features/tickets/domain/entities/default_workflow_statuses.dart';
 import 'package:aion/features/tickets/domain/entities/skill_attachment.dart';
 import 'package:aion/features/tickets/domain/entities/workflow_prompt_template.dart';
 import 'package:aion/features/tickets/domain/entities/workflow_status.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
 /// The state emitted by
 /// [WorkflowConfigCubit](workflow_config_cubit.dart).
@@ -62,6 +64,26 @@ class WorkflowConfigLoaded extends WorkflowConfigState {
   /// `aion-arch/changes/workflow-skill-attachments`.
   final List<WorkflowPromptTemplate> templates;
 
+  /// The shared-base statuses only (no per-type extensions), sorted by
+  /// [WorkflowStatus.sortOrder] — the scope a cross-type surface (Board,
+  /// Filters, Columns, bulk status menu) renders, since a status
+  /// extension only makes sense for tickets of its own [TicketType].
+  List<WorkflowStatus> get sharedBaseStatuses =>
+      [for (final s in statuses.where((s) => s.ticketType == null)) s]
+        ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+  /// The effective status set for a single ticket of [type]: the
+  /// shared-base set plus [type]'s own extensions, sorted by
+  /// [WorkflowStatus.sortOrder] — the scope a single ticket's own status
+  /// picker renders. Mirrors [WorkflowConfigCubit]'s own
+  /// `_isNameUniqueInScope` scope definition.
+  List<WorkflowStatus> effectiveStatusesForType(TicketType type) =>
+      [
+          for (final s in statuses)
+            if (s.ticketType == null || s.ticketType == type) s,
+        ]
+        ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
   @override
   List<Object?> get props => [
     statuses,
@@ -91,3 +113,32 @@ class WorkflowConfigError extends WorkflowConfigState {
   @override
   List<Object?> get props => [message, previous];
 }
+
+/// The shared-base status names, in sortOrder — from [state] if loaded,
+/// falling back to [defaultWorkflowStatuses]' own order otherwise (the
+/// brief window before `WorkflowConfigCubit.load` resolves; every real
+/// project seeds these exact rows, so this is never a stale value for a
+/// customized project, only a momentary loading placeholder). Used by
+/// every cross-type status surface — Board, Filters, Columns, the bulk
+/// status menu.
+List<String> resolveSharedStatusOrder(WorkflowConfigState state) =>
+    switch (state) {
+      WorkflowConfigLoaded(:final sharedBaseStatuses) => [
+        for (final s in sharedBaseStatuses) s.name,
+      ],
+      _ => [for (final s in defaultWorkflowStatuses) s.name],
+    };
+
+/// The effective per-[type] status names, in sortOrder — same
+/// loaded/fallback split as [resolveSharedStatusOrder]. Used by a single
+/// ticket's own status picker (`ticket_metadata_section.dart`), where a
+/// type-specific extension status is meaningful.
+List<String> resolveStatusOrderForType(
+  WorkflowConfigState state,
+  TicketType type,
+) => switch (state) {
+  WorkflowConfigLoaded() => [
+    for (final s in state.effectiveStatusesForType(type)) s.name,
+  ],
+  _ => [for (final s in defaultWorkflowStatuses) s.name],
+};

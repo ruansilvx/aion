@@ -10,37 +10,25 @@ import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/providers/domain/enums/execution_scheduling_mode.dart';
 import 'package:aion/features/providers/presentation/cubit/execution_scheduling_cubit.dart';
 import 'package:aion/features/providers/presentation/cubit/execution_scheduling_state.dart';
-import 'package:aion/features/tickets/domain/entities/default_workflow_statuses.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
+import 'package:aion/features/tickets/domain/entities/workflow_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/utils/sibling_cluster.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_selection_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
+import 'package:aion/features/tickets/presentation/cubit/workflow_config_cubit.dart';
+import 'package:aion/features/tickets/presentation/cubit/workflow_config_state.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_list_screen.dart';
 import 'package:aion/features/tickets/presentation/widgets/execution_cancel_control.dart';
 import 'package:aion/features/tickets/presentation/widgets/resume_runs_prompt.dart';
+import 'package:aion/features/tickets/presentation/widgets/status_dot.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_overflow_menu.dart';
 import 'package:aion/features/tickets/presentation/widgets/token_count_label.dart';
 
 /// Fixed width of a single [BoardColumn].
 const double _kColumnWidth = 280.0;
-
-/// The default baseline preset's status names, in
-/// [WorkflowStatus.sortOrder] order — the fixed column order every board
-/// still renders in. Board/list column ordering does not yet follow a
-/// project's live reconfigured status set (see
-/// `aion-arch/changes/configurable-ticket-workflow`'s "Known limitation"
-/// note in `proposal.md`); a project that reorders/renames/adds statuses
-/// via the new Workflow settings screen changes what `Ticket.status`
-/// itself is written as, and every gate/trigger honors that, but the
-/// Board/List/Filters/Columns UI in this file still assumes this fixed
-/// default set until a follow-up change threads `WorkflowConfigCubit`
-/// through it.
-final List<String> _defaultStatusOrder = [
-  for (final s in defaultWorkflowStatuses) s.name,
-];
 
 /// Returns the display label for [status] (e.g. `"In progress"`). Shared by
 /// [StatusIndicator] (`tickets_list_screen.dart`) and [BoardColumn]'s
@@ -111,17 +99,20 @@ String ticketsErrorMessage(BuildContext context, TicketsErrorReason reason) {
   };
 }
 
-/// The `/tickets` board view: tickets grouped into one column per
-/// [TicketStatus], in declaration order — every column not in
-/// [hiddenStatuses] renders, including when a visible status has no
-/// tickets; column *order* is unaffected by [hiddenStatuses], only which
-/// columns appear at all. [tickets] must already be filtered by the
-/// caller (e.g. to task/story types); this widget only groups by status
-/// and applies visibility, it does not filter by type. Pins
-/// [ResumeRunsPrompt] above the columns whenever
-/// `TicketsLoaded.pendingResumePrompt` is non-empty. Added for
-/// `aion-arch/changes/parallel-work`; [hiddenStatuses] added for
-/// `aion-arch/changes/list-board-view-and-column-visibility`.
+/// The `/tickets` board view: tickets grouped into one column per status,
+/// in [WorkflowConfigCubit]'s live, per-project shared-base status order
+/// (`resolveSharedStatusOrder`) — every column not in [hiddenStatuses]
+/// renders, including when a visible status has no tickets; column
+/// *order* is unaffected by [hiddenStatuses], only which columns appear
+/// at all. [tickets] must already be filtered by the caller (e.g. to
+/// task/story types); this widget only groups by status and applies
+/// visibility, it does not filter by type. Pins [ResumeRunsPrompt] above
+/// the columns whenever `TicketsLoaded.pendingResumePrompt` is
+/// non-empty. Added for `aion-arch/changes/parallel-work`;
+/// [hiddenStatuses] added for
+/// `aion-arch/changes/list-board-view-and-column-visibility`; status
+/// order threaded through `WorkflowConfigCubit` (in place of the
+/// hardcoded default set) for `aion-arch/changes/v1-release-readiness`.
 class TicketBoardView extends StatelessWidget {
   /// Creates a [TicketBoardView] rendering [tickets] grouped by status,
   /// skipping every status in [hiddenStatuses].
@@ -143,8 +134,11 @@ class TicketBoardView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final statusOrder = resolveSharedStatusOrder(
+      context.watch<WorkflowConfigCubit>().state,
+    );
     final grouped = <String, List<Ticket>>{
-      for (final status in _defaultStatusOrder)
+      for (final status in statusOrder)
         status: tickets.where((t) => t.status == status).toList(),
     };
     final pendingResumePrompt = context.select(
@@ -189,7 +183,11 @@ class _BoardColumns extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final visibleStatuses = _defaultStatusOrder
+    // `grouped`'s keys are already in `TicketBoardView.build`'s resolved
+    // status order (a `Map` preserves insertion order) — reused here
+    // rather than re-resolving `WorkflowConfigCubit` a second time for
+    // the same order.
+    final visibleStatuses = grouped.keys
         .where((s) => !hiddenStatuses.contains(s))
         .toList();
     if (visibleStatuses.isEmpty) {
@@ -335,6 +333,11 @@ class BoardColumn extends StatelessWidget {
     final displayedTickets = isHybrid
         ? clusterSiblingsAdjacently(tickets, topmostAncestorId)
         : tickets;
+    final workflowState = context.watch<WorkflowConfigCubit>().state;
+    final statusScope = workflowState is WorkflowConfigLoaded
+        ? workflowState.sharedBaseStatuses
+        : const <WorkflowStatus>[];
+    final dotColor = statusDotColorForName(c, statusScope, status);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -346,9 +349,18 @@ class BoardColumn extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Text(
-                ticketStatusLabel(context, status).toUpperCase(),
-                style: AionText.caption.copyWith(color: c.textMuted),
+              // Role-keyed status dot — design.md §2.2/§3.1. BoardColumn
+              // had no status indicator before this change.
+              StatusDot(color: dotColor, size: 7),
+              const SizedBox(width: AionSpacing.sp8),
+              Expanded(
+                child: Text(
+                  ticketStatusLabel(context, status).toUpperCase(),
+                  style: AionText.caption.copyWith(color: c.textMuted),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  softWrap: false,
+                ),
               ),
               const SizedBox(width: AionSpacing.sp8),
               DecoratedBox(
@@ -1066,12 +1078,22 @@ class _MoveToStatusMenuState extends State<MoveToStatusMenu> {
     final t = ThemeScope.of(context);
     final c = t.colors;
     final overlay = Overlay.of(context);
-    final otherStatuses = _defaultStatusOrder
-        .where((s) => s != widget.ticket.status)
-        .toList();
 
     _overlayEntry = OverlayEntry(
       builder: (context) {
+        // `context.watch`, not `.read` — this builder re-runs on every
+        // `OverlayEntry.markNeedsBuild()`/ancestor rebuild, the same
+        // "inside build" context `ticket_columns_popover.dart`/
+        // `ticket_filter_popover.dart` already call `.watch` from, so the
+        // open menu picks up a live status-set change instead of only
+        // reflecting whatever was current at the moment it opened.
+        final workflowState = context.watch<WorkflowConfigCubit>().state;
+        final statusScope = workflowState is WorkflowConfigLoaded
+            ? workflowState.sharedBaseStatuses
+            : const <WorkflowStatus>[];
+        final otherStatuses = resolveSharedStatusOrder(workflowState)
+            .where((s) => s != widget.ticket.status)
+            .toList();
         return Stack(
           children: [
             Positioned.fill(
@@ -1115,9 +1137,31 @@ class _MoveToStatusMenuState extends State<MoveToStatusMenu> {
                           vertical: 10,
                           horizontal: 14,
                         ),
-                        child: Text(
-                          ticketStatusLabel(context, status),
-                          style: AionText.bodySm.copyWith(color: c.textPrimary),
+                        child: Row(
+                          children: [
+                            // Role-keyed status dot — design.md §2.2/§4.2.
+                            // MoveToStatusMenu had no status indicator
+                            // before this change.
+                            StatusDot(
+                              color: statusDotColorForName(
+                                c,
+                                statusScope,
+                                status,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                ticketStatusLabel(context, status),
+                                style: AionText.bodySm.copyWith(
+                                  color: c.textPrimary,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                softWrap: false,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     );

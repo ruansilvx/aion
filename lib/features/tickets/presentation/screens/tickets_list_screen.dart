@@ -17,6 +17,8 @@ import 'package:aion/features/tickets/domain/repositories/ticket_link_repository
 import 'package:aion/features/tickets/presentation/cubit/ticket_selection_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
+import 'package:aion/features/tickets/presentation/cubit/workflow_config_cubit.dart';
+import 'package:aion/features/tickets/presentation/cubit/workflow_config_state.dart';
 import 'package:aion/features/projects/domain/repositories/baseline_repository.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart';
 import 'package:aion/features/tickets/presentation/widgets/baseline_upgrade_banner.dart';
@@ -1105,6 +1107,14 @@ class _TicketFilterAndSortSectionState
     final selectedStatuses = cubit.selectedStatuses;
     final selectedTypes = cubit.selectedTypes;
     final selectedPriorities = cubit.selectedPriorities;
+    // Live, per-project status order — feeds the TicketFilterPopover/
+    // TicketColumnsPopover triggers below and orders the active-filter
+    // status chips (design.md §5/§6 — the popovers each derive their own
+    // copy of this same order internally via
+    // `resolveSharedStatusOrder`).
+    final statusOrder = resolveSharedStatusOrder(
+      context.watch<WorkflowConfigCubit>().state,
+    );
     final activeCount =
         selectedStatuses.length +
         selectedTypes.length +
@@ -1177,7 +1187,14 @@ class _TicketFilterAndSortSectionState
             spacing: 8,
             runSpacing: 8,
             children: [
-              for (final s in selectedStatuses)
+              // Known statuses first, in workflow order; any selected
+              // status no longer in the live set (e.g. renamed/removed
+              // since it was filtered on) still renders, appended after —
+              // never silently dropped from the active-filter chip row.
+              for (final s in [
+                ...statusOrder.where(selectedStatuses.contains),
+                ...selectedStatuses.where((s) => !statusOrder.contains(s)),
+              ])
                 AppFilterChip(
                   label: ticketStatusLabel(context, s),
                   onRemove: () =>

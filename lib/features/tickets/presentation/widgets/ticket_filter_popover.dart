@@ -2,21 +2,18 @@
 
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter/widgets.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
-import 'package:aion/features/tickets/domain/entities/default_workflow_statuses.dart';
+import 'package:aion/features/tickets/domain/entities/workflow_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
+import 'package:aion/features/tickets/presentation/cubit/workflow_config_cubit.dart';
+import 'package:aion/features/tickets/presentation/cubit/workflow_config_state.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart'
     show ticketPriorityLabel, ticketStatusLabel;
-
-/// The default baseline preset's status names, in
-/// `WorkflowStatus.sortOrder` order. See `tickets_board_view.dart`'s
-/// `_defaultStatusOrder` for the same "known limitation" note.
-final List<String> _defaultStatusOrder = [
-  for (final s in defaultWorkflowStatuses) s.name,
-];
+import 'package:aion/features/tickets/presentation/widgets/status_dot.dart';
 
 /// The `TicketsListScreen` filters trigger's open overlay panel: three
 /// independently-toggleable checkbox groups (Status, Type, Priority).
@@ -174,6 +171,15 @@ class _TicketFilterPopoverState extends State<TicketFilterPopover> {
 
     _overlayEntry = OverlayEntry(
       builder: (context) {
+        // `context.watch` — this builder re-runs on every
+        // `OverlayEntry.markNeedsBuild()`/ancestor rebuild, so the open
+        // panel picks up a live status-set change rather than only
+        // reflecting whatever was current when it opened.
+        final workflowState = context.watch<WorkflowConfigCubit>().state;
+        final statusOrder = resolveSharedStatusOrder(workflowState);
+        final statusScope = workflowState is WorkflowConfigLoaded
+            ? workflowState.sharedBaseStatuses
+            : const <WorkflowStatus>[];
         return Stack(
           children: [
             Positioned.fill(
@@ -221,7 +227,7 @@ class _TicketFilterPopoverState extends State<TicketFilterPopover> {
                                 _GroupHeader(
                                   context.l10n.ticketsListFilterStatusLabel,
                                 ),
-                                for (final status in _defaultStatusOrder)
+                                for (final status in statusOrder)
                                   OverlayMenuItem(
                                     onTap: () =>
                                         widget.onToggleStatus(status),
@@ -229,7 +235,7 @@ class _TicketFilterPopoverState extends State<TicketFilterPopover> {
                                       context,
                                       status,
                                     ),
-                                    autofocus: status == _defaultStatusOrder.first,
+                                    autofocus: status == statusOrder.first,
                                     child: _CheckRow(
                                       checked: widget.selectedStatuses
                                           .contains(status),
@@ -237,7 +243,13 @@ class _TicketFilterPopoverState extends State<TicketFilterPopover> {
                                         context,
                                         status,
                                       ),
-                                      accent: _StatusAccentDot(status: status),
+                                      accent: StatusDot(
+                                        color: statusDotColorForName(
+                                          c,
+                                          statusScope,
+                                          status,
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 const _GroupDivider(),
@@ -347,8 +359,9 @@ class _GroupHeader extends StatelessWidget {
 /// One checkbox row's content: an [AppCheckbox] (presentational — the
 /// enclosing [OverlayMenuItem] owns the tap target) plus [label] and an
 /// [accent] swatch echoing the value's color elsewhere in the app
-/// (design.md §4.5's "Optional leading accent" —
-/// [_StatusAccentDot]/[_TypeAccentSquare]/[_PriorityAccentDot]).
+/// (design.md §4.5's "Optional leading accent" — a `StatusDot`
+/// (`status_dot.dart`) for the Status group, [_TypeAccentSquare]/
+/// [_PriorityAccentDot] for Type/Priority).
 class _CheckRow extends StatelessWidget {
   const _CheckRow({required this.checked, required this.label, this.accent});
 
@@ -380,31 +393,6 @@ class _CheckRow extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// An 8×8 accent dot for a `_CheckRow`'s Status group, mirroring
-/// `StatusIndicator`'s own color mapping (`tickets_list_screen.dart`):
-/// `'backlog'` → `c.textMuted`, `'inProgress'` → `c.primary`, `'done'` →
-/// `c.success`, every other status → `c.textMuted`.
-class _StatusAccentDot extends StatelessWidget {
-  const _StatusAccentDot({required this.status});
-
-  final String status;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = ThemeScope.of(context).colors;
-    final color = switch (status) {
-      'backlog' => c.textMuted,
-      'inProgress' => c.primary,
-      'done' => c.success,
-      _ => c.textMuted,
-    };
-    return DecoratedBox(
-      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-      child: const SizedBox(width: 8, height: 8),
     );
   }
 }

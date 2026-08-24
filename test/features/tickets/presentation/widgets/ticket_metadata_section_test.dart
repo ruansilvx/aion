@@ -17,7 +17,25 @@ import 'package:aion/l10n/generated/app_localizations.dart';
 class MockTicketsCubit extends MockCubit<TicketsState>
     implements TicketsCubit {}
 
+class MockWorkflowConfigCubit extends MockCubit<WorkflowConfigState>
+    implements WorkflowConfigCubit {}
+
 class MockTicketLinkRepository extends Mock implements TicketLinkRepository {}
+
+/// A [WorkflowConfigLoaded] fixture built from [defaultWorkflowStatuses] —
+/// the default status set [_wrap] uses unless a test case needs a
+/// custom/reconfigured status set. Added for
+/// `aion-arch/changes/v1-release-readiness` (T12), so
+/// `TicketMetadataSection`'s status `SelectionMenu`'s new
+/// `context.watch<WorkflowConfigCubit>()` call doesn't throw
+/// `ProviderNotFoundException` against this harness.
+final WorkflowConfigLoaded _defaultWorkflowConfigLoaded = WorkflowConfigLoaded(
+  statuses: defaultWorkflowStatuses,
+  designStagesEnabled: false,
+  stageDisplayNameOverrides: const {},
+  attachments: const [],
+  templates: const [],
+);
 
 /// Wraps [ticket] in a [TicketMetadataSection], backed by a
 /// [MockTicketsCubit] fixed to a [TicketDetailLoaded] state for [ticket]
@@ -47,6 +65,12 @@ Widget _wrap({
   when(
     () => ticketsCubit.detailTick,
   ).thenAnswer((_) => const Stream<void>.empty());
+  final workflowConfigCubit = MockWorkflowConfigCubit();
+  whenListen(
+    workflowConfigCubit,
+    Stream.value(_defaultWorkflowConfigLoaded),
+    initialState: _defaultWorkflowConfigLoaded,
+  );
 
   return MediaQuery(
     data: const MediaQueryData(),
@@ -71,8 +95,13 @@ Widget _wrap({
           alignment: Alignment.topLeft,
           child: SizedBox(
             width: 700,
-            child: BlocProvider<TicketsCubit>.value(
-              value: ticketsCubit,
+            child: MultiBlocProvider(
+              providers: [
+                BlocProvider<TicketsCubit>.value(value: ticketsCubit),
+                BlocProvider<WorkflowConfigCubit>.value(
+                  value: workflowConfigCubit,
+                ),
+              ],
               child: SingleChildScrollView(
                 child: TicketMetadataSection(
                   ticket: ticket,

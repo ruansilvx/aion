@@ -694,65 +694,90 @@ class _WorkspaceShellState extends State<WorkspaceShell>
               rootPath,
             )..start();
           }
-          return BlocProvider<TicketsCubit>(
-            create: (context) => TicketsCubit(
+          // Shell-wide `WorkflowConfigCubit` — additive, not a replacement
+          // for the two per-route instances at `/workspace/settings/
+          // workflow` and `/workspace/settings/workflow/templates` above.
+          // Those routes are reached via a `go_router` page push that
+          // doesn't inherit this `WorkspaceShell` subtree (same reasoning
+          // already documented on the templates route), so they still
+          // need — and keep — their own instances. This one exists so
+          // every status-rendering widget under `WorkspaceShell` (Board,
+          // List, filters/columns popovers, selection bar, ticket detail)
+          // can read the project's live, per-project status list instead
+          // of falling back to the hardcoded `defaultWorkflowStatuses`
+          // set. See
+          // aion-arch/changes/v1-release-readiness/design.md §3a.
+          return BlocProvider<WorkflowConfigCubit>(
+            create: (context) => WorkflowConfigCubit(
+              context.read<WorkflowStatusRepository>(),
+              context.read<SddStageConfigRepository>(),
               context.read<TicketRepository>(),
-              embeddingProvider: context.read<EmbeddingProvider>(),
-              gitProjector: rootPath != null
-                  ? context.read<TicketGitProjector>()
-                  : null,
-              projectRootPath: rootPath,
-              linkRepository: context.read<TicketLinkRepository>(),
-              providerRegistry: context.read<ProviderRegistry>(),
-              commentRepository: context.read<CommentRepository>(),
-              automationSettingsRepository: context
-                  .read<AutomationSettingsRepository>(),
-              modelRoutingRepository: context.read<ModelRoutingRepository>(),
-              gitClient: GitRepositoryClient(),
-              gitHubClient: GitHubCliClient(),
-              baselineRepository: context.read<BaselineRepository>(),
-              projectId: widget.project.id,
-              baselineVersion: widget.project.baselineVersion,
-              projectName: widget.project.name,
-              executionContextCapRepository: context
-                  .read<ExecutionContextCapRepository>(),
-              filterRepository: context.read<TicketListFilterRepository>(),
-              sortRepository: context.read<TicketListSortRepository>(),
-              viewModeRepository: context
-                  .read<TicketListViewModeRepository>(),
-              boardColumnVisibilityRepository: context
-                  .read<TicketBoardColumnVisibilityRepository>(),
-              pageWikilinkRepository: context.read<PageWikilinkRepository>(),
-              activeTicketViewRegistry: rootPath != null
-                  ? context.read<ActiveTicketViewRegistry>()
-                  : null,
-              executionSchedulingRepository: context
-                  .read<ExecutionSchedulingRepository>(),
-              executionQueueRepository: context
-                  .read<ExecutionQueueRepository>(),
-              workflowStatusRepository: context
-                  .read<WorkflowStatusRepository>(),
-              sddStageConfigRepository: context
-                  .read<SddStageConfigRepository>(),
-              workflowSkillAttachmentRepository: context
-                  .read<WorkflowSkillAttachmentRepository>(),
-              workflowPromptTemplateRepository: context
-                  .read<WorkflowPromptTemplateRepository>(),
-              notificationRepository: context.read<NotificationRepository>(),
-              dependencyCacheService: const DependencyCacheService(),
-            )..restoreExecutionQueue()
-              ..loadUnreadNotificationCount(),
-            child: Builder(
-              builder: (context) => RepositoryProvider<PageTicketProvider>(
-                create: (context) => PageTicketProviderImpl(
-                  context.read<TicketsCubit>(),
-                  context.read<TicketRepository>(),
-                  context.read<TicketLinkRepository>(),
-                  context.read<PageWikilinkRepository>(),
-                ),
-                child: WorkspaceNavShell(
-                  currentLocation: widget.currentLocation,
-                  child: widget.child,
+              context.read<WorkflowSkillAttachmentRepository>(),
+              context.read<WorkflowPromptTemplateRepository>(),
+            )..load(),
+            child: BlocProvider<TicketsCubit>(
+              create: (context) => TicketsCubit(
+                context.read<TicketRepository>(),
+                embeddingProvider: context.read<EmbeddingProvider>(),
+                gitProjector: rootPath != null
+                    ? context.read<TicketGitProjector>()
+                    : null,
+                projectRootPath: rootPath,
+                linkRepository: context.read<TicketLinkRepository>(),
+                providerRegistry: context.read<ProviderRegistry>(),
+                commentRepository: context.read<CommentRepository>(),
+                automationSettingsRepository: context
+                    .read<AutomationSettingsRepository>(),
+                modelRoutingRepository: context
+                    .read<ModelRoutingRepository>(),
+                gitClient: GitRepositoryClient(),
+                gitHubClient: GitHubCliClient(),
+                baselineRepository: context.read<BaselineRepository>(),
+                projectId: widget.project.id,
+                baselineVersion: widget.project.baselineVersion,
+                projectName: widget.project.name,
+                executionContextCapRepository: context
+                    .read<ExecutionContextCapRepository>(),
+                filterRepository: context.read<TicketListFilterRepository>(),
+                sortRepository: context.read<TicketListSortRepository>(),
+                viewModeRepository: context
+                    .read<TicketListViewModeRepository>(),
+                boardColumnVisibilityRepository: context
+                    .read<TicketBoardColumnVisibilityRepository>(),
+                pageWikilinkRepository: context
+                    .read<PageWikilinkRepository>(),
+                activeTicketViewRegistry: rootPath != null
+                    ? context.read<ActiveTicketViewRegistry>()
+                    : null,
+                executionSchedulingRepository: context
+                    .read<ExecutionSchedulingRepository>(),
+                executionQueueRepository: context
+                    .read<ExecutionQueueRepository>(),
+                workflowStatusRepository: context
+                    .read<WorkflowStatusRepository>(),
+                sddStageConfigRepository: context
+                    .read<SddStageConfigRepository>(),
+                workflowSkillAttachmentRepository: context
+                    .read<WorkflowSkillAttachmentRepository>(),
+                workflowPromptTemplateRepository: context
+                    .read<WorkflowPromptTemplateRepository>(),
+                notificationRepository: context
+                    .read<NotificationRepository>(),
+                dependencyCacheService: const DependencyCacheService(),
+              )..restoreExecutionQueue()
+                ..loadUnreadNotificationCount(),
+              child: Builder(
+                builder: (context) => RepositoryProvider<PageTicketProvider>(
+                  create: (context) => PageTicketProviderImpl(
+                    context.read<TicketsCubit>(),
+                    context.read<TicketRepository>(),
+                    context.read<TicketLinkRepository>(),
+                    context.read<PageWikilinkRepository>(),
+                  ),
+                  child: WorkspaceNavShell(
+                    currentLocation: widget.currentLocation,
+                    child: widget.child,
+                  ),
                 ),
               ),
             ),
