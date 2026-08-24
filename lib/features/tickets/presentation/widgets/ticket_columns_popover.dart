@@ -2,33 +2,32 @@
 
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter/widgets.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:aion/design_system/design_system.dart';
-import 'package:aion/features/tickets/domain/entities/default_workflow_statuses.dart';
+import 'package:aion/features/tickets/domain/entities/workflow_status.dart';
+import 'package:aion/features/tickets/presentation/cubit/workflow_config_cubit.dart';
+import 'package:aion/features/tickets/presentation/cubit/workflow_config_state.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart'
     show ticketStatusLabel;
-
-/// The default baseline preset's status names, in
-/// `WorkflowStatus.sortOrder` order. See `tickets_board_view.dart`'s
-/// `_defaultStatusOrder` for the same "known limitation" note — this
-/// popover's rows don't yet follow a project's live reconfigured status
-/// set.
-final List<String> _defaultStatusOrder = [
-  for (final s in defaultWorkflowStatuses) s.name,
-];
+import 'package:aion/features/tickets/presentation/widgets/status_dot.dart';
 
 /// The Board header's "Columns" trigger's open overlay panel: a single
-/// checkbox group listing all 6 [TicketStatus] values, one row per
-/// status, **checked meaning the column is currently visible** — the
-/// inverse of `TicketFilterPopover`'s "checked means selected/included in
-/// the filter." Structurally a straight copy of `TicketFilterPopover`'s
-/// `Overlay`/`OverlayEntry`/`CompositedTransformFollower`/`LayerLink`/
-/// `Escape`-to-dismiss mechanics, reduced to one flat group (no
-/// `_GroupHeader`, no `_GroupDivider` — a single group needs neither).
-/// Like `TicketFilterPopover`, toggling a row never closes the panel —
-/// only tapping outside or pressing `Escape` dismisses it. See
+/// checkbox group listing every live, per-project status
+/// ([WorkflowConfigCubit]'s shared-base set — `resolveSharedStatusOrder`),
+/// one row per status, **checked meaning the column is currently
+/// visible** — the inverse of `TicketFilterPopover`'s "checked means
+/// selected/included in the filter." Structurally a straight copy of
+/// `TicketFilterPopover`'s `Overlay`/`OverlayEntry`/
+/// `CompositedTransformFollower`/`LayerLink`/`Escape`-to-dismiss
+/// mechanics, reduced to one flat group (no `_GroupHeader`, no
+/// `_GroupDivider` — a single group needs neither). Like
+/// `TicketFilterPopover`, toggling a row never closes the panel — only
+/// tapping outside or pressing `Escape` dismisses it. See
 /// `aion-arch/changes/list-board-view-and-column-visibility/design.md`
-/// §7.1 and that change's Component Spec §3.
+/// §7.1 and that change's Component Spec §3; status order/dot color
+/// threaded through `WorkflowConfigCubit` (in place of the hardcoded
+/// 6-status default) for `aion-arch/changes/v1-release-readiness`.
 class TicketColumnsPopover extends StatefulWidget {
   /// Creates a [TicketColumnsPopover] wrapping [trigger].
   const TicketColumnsPopover({
@@ -136,6 +135,15 @@ class _TicketColumnsPopoverState extends State<TicketColumnsPopover> {
 
     _overlayEntry = OverlayEntry(
       builder: (context) {
+        // `context.watch` — this builder re-runs on every
+        // `OverlayEntry.markNeedsBuild()`/ancestor rebuild, so the open
+        // panel picks up a live status-set change rather than only
+        // reflecting whatever was current when it opened.
+        final workflowState = context.watch<WorkflowConfigCubit>().state;
+        final statusOrder = resolveSharedStatusOrder(workflowState);
+        final statusScope = workflowState is WorkflowConfigLoaded
+            ? workflowState.sharedBaseStatuses
+            : const <WorkflowStatus>[];
         return Stack(
           children: [
             Positioned.fill(
@@ -180,7 +188,7 @@ class _TicketColumnsPopoverState extends State<TicketColumnsPopover> {
                               mainAxisSize: MainAxisSize.min,
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                for (final status in _defaultStatusOrder)
+                                for (final status in statusOrder)
                                   OverlayMenuItem(
                                     onTap: () =>
                                         widget.onToggleColumn(status),
@@ -188,7 +196,7 @@ class _TicketColumnsPopoverState extends State<TicketColumnsPopover> {
                                       context,
                                       status,
                                     ),
-                                    autofocus: status == _defaultStatusOrder.first,
+                                    autofocus: status == statusOrder.first,
                                     child: _ColumnRow(
                                       checked: !widget.hiddenStatuses
                                           .contains(status),
@@ -196,7 +204,13 @@ class _TicketColumnsPopoverState extends State<TicketColumnsPopover> {
                                         context,
                                         status,
                                       ),
-                                      accent: _StatusAccentDot(status: status),
+                                      accent: StatusDot(
+                                        color: statusDotColorForName(
+                                          c,
+                                          statusScope,
+                                          status,
+                                        ),
+                                      ),
                                     ),
                                   ),
                               ],
@@ -273,33 +287,6 @@ class _ColumnRow extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// An 8×8 accent dot for a [_ColumnRow], mirroring `StatusIndicator`'s own
-/// color mapping (`tickets_board_view.dart`): `'backlog'` → `c.textMuted`,
-/// `'inProgress'` → `c.primary`, `'done'` → `c.success`, every other
-/// status → `c.textMuted`. A private duplicate of `TicketFilterPopover`'s
-/// own `_StatusAccentDot` (that one is private to its own file and can't
-/// be imported/shared).
-class _StatusAccentDot extends StatelessWidget {
-  const _StatusAccentDot({required this.status});
-
-  final String status;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = ThemeScope.of(context).colors;
-    final color = switch (status) {
-      'backlog' => c.textMuted,
-      'inProgress' => c.primary,
-      'done' => c.success,
-      _ => c.textMuted,
-    };
-    return DecoratedBox(
-      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-      child: const SizedBox(width: 8, height: 8),
     );
   }
 }

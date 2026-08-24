@@ -20,13 +20,31 @@ import 'package:aion/l10n/generated/app_localizations.dart';
 class MockTicketsCubit extends MockCubit<TicketsState>
     implements TicketsCubit {}
 
+class MockWorkflowConfigCubit extends MockCubit<WorkflowConfigState>
+    implements WorkflowConfigCubit {}
+
 class MockExecutionSchedulingRepository extends Mock
     implements ExecutionSchedulingRepository {}
 
+/// A [WorkflowConfigLoaded] fixture built from [defaultWorkflowStatuses] —
+/// the default status set every harness in this file uses unless a test
+/// case needs a custom/reconfigured status set. Added for
+/// `aion-arch/changes/v1-release-readiness` (T12), so `BoardColumn`'s and
+/// `MoveToStatusMenu`'s new `context.watch<WorkflowConfigCubit>()` calls
+/// don't throw `ProviderNotFoundException` against these harnesses.
+final WorkflowConfigLoaded _defaultWorkflowConfigLoaded = WorkflowConfigLoaded(
+  statuses: defaultWorkflowStatuses,
+  designStagesEnabled: false,
+  stageDisplayNameOverrides: const {},
+  attachments: const [],
+  templates: const [],
+);
+
 /// Wraps [card] with the providers/localization/theme scaffolding
 /// `TicketBoardCard` needs to build: a [MockTicketsCubit] fixed to
-/// [ticketsState], a real (inactive) [TicketSelectionCubit], and
-/// [ThemeScope]/[AppLocalizations] for [ticketStatusLabel]'s `l10n`
+/// [ticketsState], a [MockWorkflowConfigCubit] fixed to
+/// [_defaultWorkflowConfigLoaded], a real (inactive) [TicketSelectionCubit],
+/// and [ThemeScope]/[AppLocalizations] for [ticketStatusLabel]'s `l10n`
 /// lookups. No `GoRouter` — none of these cases tap the card, so
 /// `context.go` is never reached.
 Widget _wrap({required TicketsState ticketsState, required Widget card}) {
@@ -35,6 +53,12 @@ Widget _wrap({required TicketsState ticketsState, required Widget card}) {
     ticketsCubit,
     Stream.value(ticketsState),
     initialState: ticketsState,
+  );
+  final workflowConfigCubit = MockWorkflowConfigCubit();
+  whenListen(
+    workflowConfigCubit,
+    Stream.value(_defaultWorkflowConfigLoaded),
+    initialState: _defaultWorkflowConfigLoaded,
   );
 
   return MediaQuery(
@@ -59,6 +83,9 @@ Widget _wrap({required TicketsState ticketsState, required Widget card}) {
         home: MultiBlocProvider(
           providers: [
             BlocProvider<TicketsCubit>.value(value: ticketsCubit),
+            BlocProvider<WorkflowConfigCubit>.value(
+              value: workflowConfigCubit,
+            ),
             BlocProvider<TicketSelectionCubit>(
               create: (_) => TicketSelectionCubit(),
             ),
@@ -387,6 +414,17 @@ void main() {
               home: MultiBlocProvider(
                 providers: [
                   BlocProvider<TicketsCubit>.value(value: ticketsCubit),
+                  BlocProvider<WorkflowConfigCubit>(
+                    create: (_) {
+                      final workflowConfigCubit = MockWorkflowConfigCubit();
+                      whenListen(
+                        workflowConfigCubit,
+                        Stream.value(_defaultWorkflowConfigLoaded),
+                        initialState: _defaultWorkflowConfigLoaded,
+                      );
+                      return workflowConfigCubit;
+                    },
+                  ),
                   BlocProvider<TicketSelectionCubit>(
                     create: (_) => TicketSelectionCubit(),
                   ),

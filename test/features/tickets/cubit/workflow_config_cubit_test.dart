@@ -125,6 +125,101 @@ void _mainBody() {
     templateRepository,
   );
 
+  // WorkflowConfigLoaded.sharedBaseStatuses/effectiveStatusesForType and
+  // the resolveSharedStatusOrder/resolveStatusOrderForType top-level
+  // functions (workflow_config_state.dart) — added for
+  // `aion-arch/changes/v1-release-readiness` T4. Plain `test()`, not
+  // `blocTest`: these are pure derivations of an already-built state, not
+  // cubit behavior under test elsewhere in this file.
+  group('sharedBaseStatuses / effectiveStatusesForType', () {
+    final bugOnlyStatus = WorkflowStatus(
+      id: 'id-needs-repro',
+      name: 'needsRepro',
+      displayName: 'Needs Repro',
+      sortOrder: 3,
+      ticketType: TicketType.bug,
+    );
+    final mixedState = loadedState(statuses: [...baseStatuses, bugOnlyStatus]);
+
+    test('sharedBaseStatuses excludes per-type extensions, sorted by sortOrder', () {
+      expect(mixedState.sharedBaseStatuses, [backlog, inProgress, done]);
+    });
+
+    test(
+      "effectiveStatusesForType includes only the matching type's extension, "
+      'merged in sortOrder',
+      () {
+        expect(mixedState.effectiveStatusesForType(TicketType.bug), [
+          backlog,
+          inProgress,
+          done,
+          bugOnlyStatus,
+        ]);
+        expect(mixedState.effectiveStatusesForType(TicketType.task), [
+          backlog,
+          inProgress,
+          done,
+        ]);
+      },
+    );
+  });
+
+  group('resolveSharedStatusOrder / resolveStatusOrderForType', () {
+    test("resolveSharedStatusOrder returns the loaded state's shared-base names, in order", () {
+      expect(resolveSharedStatusOrder(loadedState()), [
+        'backlog',
+        'inProgress',
+        'done',
+      ]);
+    });
+
+    test(
+      'resolveSharedStatusOrder falls back to defaultWorkflowStatuses '
+      'when the state is not yet loaded',
+      () {
+        expect(resolveSharedStatusOrder(const WorkflowConfigInitial()), [
+          for (final s in defaultWorkflowStatuses) s.name,
+        ]);
+      },
+    );
+
+    test("resolveStatusOrderForType returns the type's effective names, in order", () {
+      final bugOnlyStatus = WorkflowStatus(
+        id: 'id-needs-repro',
+        name: 'needsRepro',
+        displayName: 'Needs Repro',
+        sortOrder: 3,
+        ticketType: TicketType.bug,
+      );
+      final state = loadedState(statuses: [...baseStatuses, bugOnlyStatus]);
+      expect(resolveStatusOrderForType(state, TicketType.bug), [
+        'backlog',
+        'inProgress',
+        'done',
+        'needsRepro',
+      ]);
+      expect(resolveStatusOrderForType(state, TicketType.task), [
+        'backlog',
+        'inProgress',
+        'done',
+      ]);
+    });
+
+    test(
+      'resolveStatusOrderForType falls back to defaultWorkflowStatuses '
+      'when the state is not yet loaded',
+      () {
+        expect(
+          resolveStatusOrderForType(
+            const WorkflowConfigInitial(),
+            TicketType.task,
+          ),
+          [for (final s in defaultWorkflowStatuses) s.name],
+        );
+      },
+    );
+  });
+
   group('load', () {
     blocTest<WorkflowConfigCubit, WorkflowConfigState>(
       'emits WorkflowConfigLoaded with every configured status plus SDD settings',

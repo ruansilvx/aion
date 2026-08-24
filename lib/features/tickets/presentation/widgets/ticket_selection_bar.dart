@@ -2,14 +2,18 @@
 
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter/widgets.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
-import 'package:aion/features/tickets/domain/entities/default_workflow_statuses.dart';
+import 'package:aion/features/tickets/domain/entities/workflow_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
+import 'package:aion/features/tickets/presentation/cubit/workflow_config_cubit.dart';
+import 'package:aion/features/tickets/presentation/cubit/workflow_config_state.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart'
     show ticketPriorityLabel, ticketStatusLabel;
+import 'package:aion/features/tickets/presentation/widgets/status_dot.dart';
 
 /// Width below which [TicketSelectionBar]'s available space is
 /// considered "compact" (phone-native) — the Status and Priority
@@ -746,18 +750,6 @@ class _BulkOverlayRowState extends State<BulkOverlayRow> {
   }
 }
 
-/// Returns the status-dot color for [status]'s [BulkOverlayRow] leading
-/// indicator, per design.md §2.2's fixed table.
-Color _statusDotColor(AionColors c, String status) => switch (status) {
-  'backlog' => c.textMuted,
-  'todo' => c.secondary,
-  'inProgress' => c.primary,
-  'inReview' => c.warning,
-  'done' => c.success,
-  'cancelled' => c.danger,
-  _ => c.textMuted,
-};
-
 /// Returns the priority-square leading indicator for [priority], per
 /// design.md §3.1's fixed table — a filled 10×10 rounded square in the
 /// priority's foreground accent, or a hollow (border-only) square for
@@ -905,18 +897,21 @@ class BulkStatusMenu extends StatelessWidget {
   /// Whether the panel opens above the trigger (default) or below it.
   final bool openUpward;
 
-  /// Fixed row order — Backlog · To Do · In Progress · In Review · Done ·
-  /// Cancelled, per design.md §2.2. The default baseline preset's own
-  /// order; see `tickets_board_view.dart`'s `_defaultStatusOrder` for the
-  /// same "known limitation" note.
-  static final List<String> order = [
-    for (final s in defaultWorkflowStatuses) s.name,
-  ];
-
   @override
   Widget build(BuildContext context) {
     final t = ThemeScope.of(context);
     final c = t.colors;
+    // Live, per-project row order (in place of the former hardcoded
+    // Backlog · To Do · In Progress · In Review · Done · Cancelled
+    // constant) — `context.watch`, safe here since this widget is
+    // inserted directly as an `OverlayEntry`'s child and therefore has
+    // its own tracked `BuildContext`/`Element`, not a discarded builder
+    // parameter.
+    final workflowState = context.watch<WorkflowConfigCubit>().state;
+    final order = resolveSharedStatusOrder(workflowState);
+    final statusScope = workflowState is WorkflowConfigLoaded
+        ? workflowState.sharedBaseStatuses
+        : const <WorkflowStatus>[];
 
     return _BulkOverlayPanel(
       layerLink: layerLink,
@@ -925,12 +920,8 @@ class BulkStatusMenu extends StatelessWidget {
       rows: [
         for (final entry in order.asMap().entries)
           BulkOverlayRow(
-            leading: DecoratedBox(
-              decoration: BoxDecoration(
-                color: _statusDotColor(c, entry.value),
-                shape: BoxShape.circle,
-              ),
-              child: const SizedBox(width: 8, height: 8),
+            leading: StatusDot(
+              color: statusDotColorForName(c, statusScope, entry.value),
             ),
             label: ticketStatusLabel(context, entry.value),
             semanticsLabel: ticketStatusLabel(context, entry.value),

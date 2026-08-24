@@ -44,6 +44,11 @@ jobs:
 
   build-linux:
     runs-on: ubuntu-latest
+    # A Linux-side failure must never block a Windows-only release — see
+    # aion-arch/changes/v1-release-readiness/design.md Section 2. Still
+    # shows red in the Actions UI; just doesn't fail `publish-release`'s
+    # `needs:` gate downstream.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -76,7 +81,18 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          name: windows-installer
+          path: artifacts/windows-installer
+
+      # A missing Linux artifact (build-linux failed upstream, see its
+      # continue-on-error above) must not fail this job — a Windows-only
+      # release is the accepted degraded outcome for this release. Kept
+      # as its own step so only this download is allowed to fail.
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: linux-appimage
+          path: artifacts/linux-appimage
 
       - name: Extract changelog section for this version
         run: |
@@ -96,8 +112,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          assets=(artifacts/windows-installer/*.exe)
+          shopt -s nullglob
+          linux_assets=(artifacts/linux-appimage/*.AppImage)
+          shopt -u nullglob
+          if [ ${#linux_assets[@]} -gt 0 ]; then
+            assets+=("${linux_assets[@]}")
+          fi
           gh release create "${{ github.ref_name }}" \
             --title "${{ github.ref_name }}" \
             --notes-file release_notes.md \
-            artifacts/windows-installer/*.exe \
-            artifacts/linux-appimage/*.AppImage
+            "${assets[@]}"

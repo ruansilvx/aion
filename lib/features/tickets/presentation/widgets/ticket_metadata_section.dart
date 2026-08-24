@@ -18,7 +18,7 @@ import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_complexity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_estimation_source.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
-import 'package:aion/features/tickets/domain/entities/default_workflow_statuses.dart';
+import 'package:aion/features/tickets/domain/entities/workflow_status.dart';
 import 'package:aion/features/tickets/domain/enums/skill_attachment_kind.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sync_status.dart';
@@ -27,10 +27,13 @@ import 'package:aion/features/tickets/presentation/cubit/ticket_repair_cubit.dar
 import 'package:aion/features/tickets/presentation/cubit/ticket_rollup_counts.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
+import 'package:aion/features/tickets/presentation/cubit/workflow_config_cubit.dart';
+import 'package:aion/features/tickets/presentation/cubit/workflow_config_state.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_list_screen.dart';
 import 'package:aion/features/tickets/presentation/widgets/token_count_label.dart';
 import 'package:aion/features/tickets/presentation/widgets/execution_cancel_control.dart';
+import 'package:aion/features/tickets/presentation/widgets/status_dot.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_link_picker.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_needs_repair_banner.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_parent_picker.dart';
@@ -408,22 +411,75 @@ class TicketMetadataSection extends StatelessWidget {
                                   semanticsLabel:
                                       context.l10n.ticketDetailChangeType,
                                 ),
-                                SelectionMenu<String>(
-                                  trigger: StatusIndicator(
-                                    status: ticket.status,
-                                  ),
-                                  items: [
-                                    for (final s in defaultWorkflowStatuses)
-                                      s.name,
-                                  ],
-                                  itemLabel: (s) =>
-                                      ticketStatusLabel(context, s),
-                                  currentValue: ticket.status,
-                                  onSelected: (s) => context
-                                      .read<TicketsCubit>()
-                                      .changeTicketStatus(ticket, s),
-                                  semanticsLabel:
-                                      context.l10n.ticketDetailChangeStatus,
+                                Builder(
+                                  builder: (context) {
+                                    // Live, per-type status set (base +
+                                    // this ticket's own type extensions)
+                                    // — design.md §8.1/§8.3. In its own
+                                    // `Builder` so `context.watch` scopes
+                                    // its rebuild to just this menu, not
+                                    // the whole metadata section.
+                                    final workflowState = context
+                                        .watch<WorkflowConfigCubit>()
+                                        .state;
+                                    final statusScope =
+                                        workflowState is WorkflowConfigLoaded
+                                        ? workflowState.effectiveStatusesForType(
+                                            ticket.type,
+                                          )
+                                        : const <WorkflowStatus>[];
+                                    return SelectionMenu<String>(
+                                      trigger: StatusIndicator(
+                                        status: ticket.status,
+                                      ),
+                                      items: resolveStatusOrderForType(
+                                        workflowState,
+                                        ticket.type,
+                                      ),
+                                      itemLabel: (s) =>
+                                          ticketStatusLabel(context, s),
+                                      // Role-keyed status dot per row —
+                                      // design.md §2.2/§8.2/§8.3.
+                                      // `ticket_metadata_section.dart`'s
+                                      // status picker had no per-row dot
+                                      // before this change (only its
+                                      // `StatusIndicator` trigger did).
+                                      itemBuilder: (context, c, item) => Row(
+                                        children: [
+                                          StatusDot(
+                                            color: statusDotColorForName(
+                                              c,
+                                              statusScope,
+                                              item,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: Text(
+                                              ticketStatusLabel(
+                                                context,
+                                                item,
+                                              ),
+                                              style: AionText.bodySm.copyWith(
+                                                color: c.textPrimary,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              softWrap: false,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      currentValue: ticket.status,
+                                      onSelected: (s) => context
+                                          .read<TicketsCubit>()
+                                          .changeTicketStatus(ticket, s),
+                                      semanticsLabel: context
+                                          .l10n
+                                          .ticketDetailChangeStatus,
+                                    );
+                                  },
                                 ),
                                 _RunAttachedSkillButton(ticket: ticket),
                               ],

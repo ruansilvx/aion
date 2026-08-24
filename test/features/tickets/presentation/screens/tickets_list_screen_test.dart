@@ -1,5 +1,6 @@
 // test/features/tickets/presentation/screens/tickets_list_screen_test.dart — TicketsListScreen widget tests.
 
+import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -43,6 +44,24 @@ class MockBaselineRepository extends Mock implements BaselineRepository {}
 class MockExecutionSchedulingRepository extends Mock
     implements ExecutionSchedulingRepository {}
 
+class MockWorkflowConfigCubit extends MockCubit<WorkflowConfigState>
+    implements WorkflowConfigCubit {}
+
+/// A [WorkflowConfigLoaded] fixture built from [defaultWorkflowStatuses] —
+/// the default status set [_wrap] uses unless a test case needs a
+/// custom/reconfigured status set. Added for
+/// `aion-arch/changes/v1-release-readiness` (T12), so
+/// `_TicketFilterAndSortSection`'s (and every widget it constructs) new
+/// `context.watch<WorkflowConfigCubit>()` calls don't throw
+/// `ProviderNotFoundException` against this harness.
+final WorkflowConfigLoaded _defaultWorkflowConfigLoaded = WorkflowConfigLoaded(
+  statuses: defaultWorkflowStatuses,
+  designStagesEnabled: false,
+  stageDisplayNameOverrides: const {},
+  attachments: const [],
+  templates: const [],
+);
+
 Widget _wrap({
   required TicketsCubit ticketsCubit,
   required ActiveProjectProvider activeProjectProvider,
@@ -70,6 +89,17 @@ Widget _wrap({
           child: MultiBlocProvider(
             providers: [
               BlocProvider<TicketsCubit>.value(value: ticketsCubit),
+              BlocProvider<WorkflowConfigCubit>(
+                create: (_) {
+                  final workflowConfigCubit = MockWorkflowConfigCubit();
+                  whenListen(
+                    workflowConfigCubit,
+                    Stream.value(_defaultWorkflowConfigLoaded),
+                    initialState: _defaultWorkflowConfigLoaded,
+                  );
+                  return workflowConfigCubit;
+                },
+              ),
               BlocProvider<TicketSelectionCubit>(
                 create: (_) => TicketSelectionCubit(),
               ),
