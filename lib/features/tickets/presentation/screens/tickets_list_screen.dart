@@ -11,6 +11,7 @@ import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_list_view_mode.dart';
+import 'package:aion/features/tickets/domain/entities/workflow_status.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_priority.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_link_repository.dart';
@@ -26,6 +27,7 @@ import 'package:aion/features/tickets/presentation/widgets/codebase_analysis_ban
 import 'package:aion/features/tickets/domain/entities/ticket_list_sort.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sort_direction.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sort_field.dart';
+import 'package:aion/features/tickets/presentation/widgets/status_dot.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_columns_popover.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_filter_popover.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_overflow_menu.dart';
@@ -2155,7 +2157,16 @@ class PriorityBadge extends StatelessWidget {
 /// label. Color is derived from [type] via [AionColors.typeTask]/
 /// [AionColors.typeStory]/[AionColors.typeEpic]/[AionColors.typeResource]/
 /// [AionColors.typePage].
-/// A dot + label showing a ticket's workflow status.
+/// A dot + label showing a ticket's workflow status. The dot follows the
+/// live, role-keyed [statusDotColor] rule (`status_dot.dart`) against
+/// [WorkflowConfigCubit]'s shared-base status scope — this widget is used
+/// across ticket rows/headers of mixed [TicketType], so it never resolves
+/// a per-type extension status (matching `tickets_board_view.dart`'s own
+/// cross-type surfaces). Migrated off its former hardcoded
+/// `'backlog'`/`'inProgress'`/`'done'` name-matching for
+/// `aion-arch/changes/v1-release-readiness`'s post-`/verify` fix (T18) —
+/// the fourth duplicate the change's own design gate note missed when it
+/// counted "three."
 class StatusIndicator extends StatelessWidget {
   /// Creates a [StatusIndicator] for [status].
   const StatusIndicator({super.key, required this.status});
@@ -2167,20 +2178,16 @@ class StatusIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = ThemeScope.of(context);
     final c = t.colors;
-    final dotColor = switch (status) {
-      'backlog' => c.textMuted,
-      'inProgress' => c.primary,
-      'done' => c.success,
-      _ => c.textMuted,
-    };
+    final workflowState = context.watch<WorkflowConfigCubit>().state;
+    final statusScope = workflowState is WorkflowConfigLoaded
+        ? workflowState.sharedBaseStatuses
+        : const <WorkflowStatus>[];
+    final dotColor = statusDotColorForName(c, statusScope, status);
 
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        DecoratedBox(
-          decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
-          child: const SizedBox(width: 7, height: 7),
-        ),
+        StatusDot(color: dotColor, size: 7),
         const SizedBox(width: 7),
         Text(
           ticketStatusLabel(context, status),
