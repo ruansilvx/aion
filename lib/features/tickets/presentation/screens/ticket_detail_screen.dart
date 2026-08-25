@@ -48,9 +48,11 @@ import 'package:aion/features/tickets/presentation/widgets/ticket_overflow_menu.
 ///   `epic`/`story` an SDD-stage section, for `task` a coding-execution
 ///   section) inside a `SingleChildScrollView`, a plain [CommentTile]
 ///   thread via [CommentsCubit], and a single-line pill compose row.
-///   For `resource`/`bug` tickets specifically, also renders two
-///   Documentation-section sections — Linked Tickets and Backlinks —
-///   populated via [TicketsCubit.loadDocumentRelations].
+///   For `epic`/`story`/`task`/`resource`/`bug` tickets, also renders
+///   two Documentation-section sections — Linked Tickets and Backlinks
+///   (widened from `resource`/`bug`-only for
+///   `aion-arch/changes/board-task-ordering-indication`) — populated
+///   via [TicketsCubit.loadDocumentRelations].
 /// `page` tickets never reach either layout: since
 /// `page-content-markdown-editor`, a loaded `page` ticket immediately
 /// redirects to `PageDetailScreen` via `/workspace/pages/:id` (see the
@@ -148,9 +150,23 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     }
   }
 
+  /// Captured once in [initState] so [dispose] can call
+  /// [TicketsCubit.stopDetailTicker] on the resolved instance directly,
+  /// rather than a fresh `context.read<TicketsCubit>()` — an ancestor
+  /// lookup from `dispose()` is unsafe once the element tree starts
+  /// tearing down (Flutter's own `Element._debugCheckStateIsActiveFor
+  /// AncestorLookup` throws "Looking up a deactivated widget's ancestor
+  /// is unsafe" if `TicketsCubit`'s provider happens to be torn down in
+  /// the same pass as this screen, e.g. a project switch while a ticket
+  /// detail screen is open). Found via a widget test that wraps this
+  /// screen in its own short-lived provider tree, which hits this
+  /// ordering on every test's teardown.
+  late final TicketsCubit _ticketsCubit;
+
   @override
   void initState() {
     super.initState();
+    _ticketsCubit = context.read<TicketsCubit>();
     context.read<TicketsCubit>().getTicketById(widget.ticketId);
     context.read<CommentsCubit>().loadComments(widget.ticketId);
     context.read<ChatCubit>().loadMessages(widget.ticketId);
@@ -211,7 +227,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
         registry!.activeTicketId.value = null;
       }
     }
-    context.read<TicketsCubit>().stopDetailTicker();
+    _ticketsCubit.stopDetailTicker();
     _commentController.dispose();
     super.dispose();
   }
@@ -314,8 +330,21 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
               ticket.type == TicketType.chat && state.isAdvancingStage;
           _currentTicket = ticket;
           _registerActiveTicket(ticket.ticketId);
+          // This type set must stay in sync with two other gates that
+          // independently decide the same thing: TicketsCubit.
+          // loadDocumentRelations's own type check (tickets_cubit.dart)
+          // and TicketMetadataSection's Linked Tickets/Backlinks render
+          // gate (ticket_metadata_section.dart) — `board-task-ordering-
+          // indication` widened both of those from resource/bug-only to
+          // also cover epic/story/task, but missed this trigger, so the
+          // section rendered (per the widget's gate) but never had data
+          // loaded for it (per this now-stale gate) for those three
+          // types. Confirmed live during a QA sweep.
           if ((ticket.type == TicketType.resource ||
-                  ticket.type == TicketType.bug) &&
+                  ticket.type == TicketType.bug ||
+                  ticket.type == TicketType.epic ||
+                  ticket.type == TicketType.story ||
+                  ticket.type == TicketType.task) &&
               _relationsLoadedForId != ticket.id) {
             _relationsLoadedForId = ticket.id;
             context.read<TicketsCubit>().loadDocumentRelations(ticket.id);
