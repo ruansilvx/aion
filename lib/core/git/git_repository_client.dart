@@ -84,6 +84,24 @@ class GitRepositoryClient {
     await _runChecked(['worktree', 'remove', worktreePath, '--force'], rootPath);
   }
 
+  /// Runs `git branch -D <branchName>` in [rootPath] — force-deletes a
+  /// local branch regardless of merge status, since a branch this deletes
+  /// is by definition never going anywhere (an abandoned coding-execution
+  /// attempt that never reached a real push). Callers must ensure no
+  /// worktree still has [branchName] checked out first ([removeWorktree]
+  /// before this) — `git branch -D` refuses otherwise. Added for
+  /// `aion-arch/changes/coding-execution-reliability-and-safety`'s branch-
+  /// naming scheme (`aion/task-<id>`, stable per task, never per attempt)
+  /// combined with [removeWorktree] deliberately not deleting the branch
+  /// itself: without this, a failed attempt's branch survived forever,
+  /// and — since `TicketsCubit._runCodingExecution` reuses the exact same
+  /// branch name on every retry of the same task — every subsequent
+  /// retry's `createWorktree` call failed identically with "a branch
+  /// named '...' already exists", confirmed via live reproduction.
+  Future<void> deleteBranch(String rootPath, String branchName) async {
+    await _runChecked(['branch', '-D', branchName], rootPath);
+  }
+
   /// Runs `git push -u origin <branchName>` in [worktreePath] — pushes the
   /// branch created by [createWorktree] from inside the worktree itself
   /// (not [rootPath]), since that's where the branch's commits actually

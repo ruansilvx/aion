@@ -3255,12 +3255,25 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [GitRepositoryClient.createWorktree]/[GitHubCliClient.openPullRequest]/
   /// etc. throwing — so the exception can't propagate out of this
   /// `unawaited`-run method and permanently wedge
-  /// [_inFlightExecutionIds]. The worktree (never the branch) is
-  /// always removed in a `finally`, success or failure — itself wrapped
-  /// in its own try/catch, since a worktree that was never actually
-  /// created has nothing to remove. Each of these three terminal
-  /// branches (PR opened, verification failed, hard infra failure) also
-  /// calls [_recordNotification] alongside its own system comment — see
+  /// [_inFlightExecutionIds]. The worktree is always removed in a
+  /// `finally`, success or failure — itself wrapped in its own
+  /// try/catch, since a worktree that was never actually created has
+  /// nothing to remove. The branch itself is also deleted in that same
+  /// `finally`, **unless** the run was cancelled (see
+  /// [_handleExecutionCancelled] — its work is deliberately preserved
+  /// for possible inspection/resume) or the branch was already pushed
+  /// (`push` succeeding, even if a later step like [GitHubCliClient.
+  /// openPullRequest] then throws) — a genuine hard/verification
+  /// failure's never-pushed branch is otherwise simply abandoned, and
+  /// since [branchName] is stable per task (not per attempt), every
+  /// subsequent retry of the same task — [retryCodingExecution] or an
+  /// `auto`/`gated` [AutomationContext.codingExecutionResume] — would
+  /// otherwise fail identically forever with `git worktree add -b`'s "a
+  /// branch already exists" error, confirmed via live reproduction; see
+  /// [GitRepositoryClient.deleteBranch]'s dartdoc. Each of these three
+  /// terminal branches (PR opened, verification failed, hard infra
+  /// failure) also calls [_recordNotification] alongside its own system
+  /// comment — see
   /// `aion-arch/changes/pr-metadata-and-notification-center/design.md`
   /// §4.4.
   ///
@@ -3354,6 +3367,15 @@ class TicketsCubit extends Cubit<TicketsState> {
 
     final worktreePath = Directory.systemTemp.createTempSync('aion_exec_').path;
     final branchName = 'aion/task-${task.id}';
+
+    // Set once the branch has earned the right to survive this run's
+    // cleanup — either it was actually pushed (real work worth keeping,
+    // regardless of what happens after, e.g. openPullRequest itself
+    // throwing) or the run was cancelled (its work is deliberately
+    // preserved — see _handleExecutionCancelled). Read in the `finally`
+    // below; see this method's own dartdoc for why leaving it `false`
+    // on every other exit path matters.
+    var branchShouldSurvive = false;
 
     final (chat, handoffSummary) = await _resolveExecutionChat(task);
     if (chat == null) {
@@ -3468,6 +3490,7 @@ class TicketsCubit extends Cubit<TicketsState> {
           onToolCall: executionOnToolCall,
         );
         if (implementResult is ChatTurnCancelled) {
+          branchShouldSurvive = true;
           await _handleExecutionCancelled(task, chat, implementResult);
           break;
         }
@@ -3507,6 +3530,7 @@ class TicketsCubit extends Cubit<TicketsState> {
           onToolCall: executionOnToolCall,
         );
         if (verifyResult is ChatTurnCancelled) {
+          branchShouldSurvive = true;
           await _handleExecutionCancelled(task, chat, verifyResult);
           break;
         }
@@ -3571,6 +3595,9 @@ class TicketsCubit extends Cubit<TicketsState> {
           branchName,
         );
         await gitClient.push(worktreePath, branchName);
+        // Real, pushed work — survives cleanup even if openPullRequest
+        // itself throws next.
+        branchShouldSurvive = true;
         final pr = await gitHubClient.openPullRequest(
           rootPath: worktreePath,
           branch: branchName,
@@ -3625,6 +3652,21 @@ class TicketsCubit extends Cubit<TicketsState> {
         // failed (caught above), in which case there's nothing to
         // remove. Swallowed so it never masks whichever failure (if
         // any) the catch above already recorded.
+      }
+      if (!branchShouldSurvive) {
+        try {
+          await gitClient.deleteBranch(rootPath, branchName);
+        } catch (_) {
+          // Best-effort, same rationale as the worktree removal above —
+          // createWorktree may never have actually created this branch
+          // (caught above), or the branch may already be gone for some
+          // other reason. Without this, a genuinely abandoned branch
+          // survives forever, and since branchName is stable per task
+          // (not per attempt), every subsequent retry's createWorktree
+          // call would fail identically with "a branch already exists"
+          // — see this method's own dartdoc and
+          // GitRepositoryClient.deleteBranch's.
+        }
       }
     }
 

@@ -128,6 +128,9 @@ void stubSuccessfulCodingExecutionInfra(
     ),
   ).thenAnswer((_) async => (url: 'https://example/pr/mock', number: 1));
   when(() => gitClient.removeWorktree(any(), any())).thenAnswer((_) async {});
+  when(
+    () => gitClient.deleteBranch(any(), any()),
+  ).thenAnswer((_) async {});
 }
 
 /// Stubs [baselineRepository] with an empty manifest for [baselineVersion]
@@ -7664,6 +7667,12 @@ void main() {
             'inReview',
           ),
         ).called(1);
+        // A successfully pushed branch survives cleanup — it's what the
+        // opened PR is based on. Regression guard for the retry-branch-
+        // collision bug: deleteBranch must never fire on the success
+        // path, only on a genuine failure (see the dedicated
+        // 'coding-execution branch cleanup' group below).
+        verifyNever(() => gitClient.deleteBranch(any(), any()));
       },
     );
 
@@ -9195,6 +9204,11 @@ void main() {
             ),
           ).called(1);
           verify(() => gitClient.removeWorktree(any(), any())).called(1);
+          // A successfully pushed branch survives cleanup — see the
+          // hard-implement-failure test below for the collision bug
+          // this (and its counterpart deleteBranch verifications) guard
+          // against.
+          verifyNever(() => gitClient.deleteBranch(any(), any()));
         },
       );
 
@@ -9250,6 +9264,36 @@ void main() {
           // a hard implement failure.
           verify(() => agentClient.run(any())).called(1);
           verifyNever(() => gitClient.push(any(), any()));
+          // Regression guard for the retry-branch-collision bug: a hard
+          // failure's never-pushed branch must be deleted, or every
+          // subsequent retry of this same task (retryCodingExecution, or
+          // an auto/gated codingExecutionResume) would fail identically
+          // with "a branch already exists" — confirmed via live
+          // reproduction.
+          verify(() => gitClient.deleteBranch(any(), any())).called(1);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'preserves the branch when the implementation turn is cancelled — '
+        'unlike a genuine failure, a cancelled run\'s work is deliberately '
+        'kept for possible inspection/resume',
+        build: buildCubit,
+        setUp: () {
+          when(
+            () => agentClient.run(any()),
+          ).thenAnswer((_) async => Stream.fromIterable(const [
+            AgentCancelledEvent(),
+          ]));
+        },
+        act: (cubit) =>
+            cubit.changeTicketStatus(taskNoStory, 'inProgress'),
+        wait: const Duration(milliseconds: 50),
+        verify: (_) {
+          verify(() => gitClient.createWorktree(any(), any(), any())).called(1);
+          verify(() => gitClient.removeWorktree(any(), any())).called(1);
+          verifyNever(() => gitClient.push(any(), any()));
+          verifyNever(() => gitClient.deleteBranch(any(), any()));
         },
       );
 
@@ -9291,6 +9335,11 @@ void main() {
               ),
             ),
           ).called(1);
+          // Regression guard for the retry-branch-collision bug — see
+          // the hard-implement-failure test above for the full
+          // rationale. Exhausting every auto-retry still ends in a
+          // genuine, non-pushed failure, so the branch must go too.
+          verify(() => gitClient.deleteBranch(any(), any())).called(1);
         },
       );
 
@@ -9328,6 +9377,9 @@ void main() {
               ),
             ),
           ).called(1);
+          // Regression guard for the retry-branch-collision bug — see
+          // the hard-implement-failure test above for the full rationale.
+          verify(() => gitClient.deleteBranch(any(), any())).called(1);
         },
         expect: () => [
           TicketDetailLoaded(
@@ -9399,6 +9451,9 @@ void main() {
               ),
             ),
           ).called(1);
+          // Regression guard for the retry-branch-collision bug — see
+          // the hard-implement-failure test above for the full rationale.
+          verify(() => gitClient.deleteBranch(any(), any())).called(1);
         },
         expect: () => [
           TicketDetailLoaded(
