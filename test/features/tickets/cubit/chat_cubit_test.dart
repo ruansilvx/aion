@@ -14,6 +14,7 @@ import 'package:aion/core/contracts/provider_registry.dart';
 import 'package:aion/features/providers/domain/enums/model_phase.dart';
 import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
 import 'package:aion/features/tickets/presentation/cubit/chat_branch_tool_definitions.dart';
+import 'package:aion/features/tickets/presentation/cubit/ticket_crud_tool_definitions.dart';
 import 'package:aion/features/tickets/tickets.dart';
 
 class MockCommentRepository extends Mock implements CommentRepository {}
@@ -471,9 +472,10 @@ void main() {
     ) async => {'accepted': false};
 
     blocTest<ChatCubit, ChatState>(
-      'offers branchTicketToolDefinition and threads the caller-supplied '
-      "onToolCall through to the AgentRequest when the chat's own parent "
-      'is not a chat',
+      'offers branchTicketToolDefinition plus createTicketToolDefinition/'
+      'addLinkToolDefinition, and threads the caller-supplied onToolCall '
+      "through to the AgentRequest, when the chat's own parent is not a "
+      'chat',
       setUp: () {
         when(
           () => ticketRepository.getTicketById(branchEligibleChat.id),
@@ -502,14 +504,19 @@ void main() {
         final captured =
             verify(() => client.run(captureAny())).captured.single
                 as AgentRequest;
-        expect(captured.tools, [branchTicketToolDefinition]);
+        expect(captured.tools, [
+          branchTicketToolDefinition,
+          createTicketToolDefinition,
+          addLinkToolDefinition,
+        ]);
         expect(captured.onToolCall, noopOnToolCall);
       },
     );
 
     blocTest<ChatCubit, ChatState>(
-      "offers closeBranchToolDefinition when the chat's own parent is "
-      'itself a chat (a branch chat)',
+      'offers closeBranchToolDefinition plus createTicketToolDefinition/'
+      "addLinkToolDefinition when the chat's own parent is itself a chat "
+      '(a branch chat)',
       setUp: () {
         when(
           () => ticketRepository.getTicketById(branchChat.id),
@@ -538,7 +545,11 @@ void main() {
         final captured =
             verify(() => client.run(captureAny())).captured.single
                 as AgentRequest;
-        expect(captured.tools, [closeBranchToolDefinition]);
+        expect(captured.tools, [
+          closeBranchToolDefinition,
+          createTicketToolDefinition,
+          addLinkToolDefinition,
+        ]);
         expect(captured.onToolCall, noopOnToolCall);
       },
     );

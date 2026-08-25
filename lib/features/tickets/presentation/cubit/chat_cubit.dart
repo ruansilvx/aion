@@ -23,6 +23,7 @@ import 'package:aion/features/tickets/domain/repositories/comment_repository.dar
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
 import 'package:aion/features/tickets/presentation/cubit/chat_branch_tool_definitions.dart';
 import 'package:aion/features/tickets/presentation/cubit/chat_state.dart';
+import 'package:aion/features/tickets/presentation/cubit/ticket_crud_tool_definitions.dart';
 
 /// Loads and drives a single `chat`-type ticket's live conversation, via
 /// [CommentRepository] (the same append-only store `CommentsCubit` uses
@@ -264,18 +265,31 @@ class ChatCubit extends Cubit<ChatState> {
   /// `TicketsCubit._canBranch`'s depth-cap check, which this mirrors at
   /// registration time so the model is never even offered a tool it would
   /// immediately have declined), [closeBranchToolDefinition] whenever it
-  /// *is* parented by a chat. A chat offers exactly one of the two —
-  /// never both, never neither (every chat is either a branch or isn't).
-  /// Added for `aion-arch/changes/mid-task-chat-branching`; see that
-  /// change's design.md §6.
+  /// *is* parented by a chat, plus [createTicketToolDefinition]/
+  /// [addLinkToolDefinition] unconditionally — mirrors
+  /// `TicketsCubit._toolsFor`'s combined-list shape (tickets_cubit.dart)
+  /// exactly, so create_ticket/add_link work identically from an ordinary
+  /// human-initiated chat turn as they already did from SDD-stage and
+  /// coding-execution chat turns. `aion-arch/changes/ticket-crud-tool-calls`
+  /// extended `TicketsCubit._toolsFor` with these two tools but missed
+  /// this separate same-named method — chat_cubit.dart never picked up
+  /// that change (confirmed via `git log`) — so an ordinary chat compose
+  /// turn silently never offered them, and a request to create/link a
+  /// ticket produced a model-fabricated "done" reply instead of ever
+  /// calling a real tool. Fixed as an ad hoc bug fix, found during a live
+  /// `AutomationConfidence` QA sweep. Added for
+  /// `aion-arch/changes/mid-task-chat-branching`; see that change's
+  /// design.md §6.
   Future<List<AgentToolDefinition>> _toolsFor(String chatTicketId) async {
     final chat = await _ticketRepository.getTicketById(chatTicketId);
     final parentId = chat?.parentId;
-    if (parentId == null) return [branchTicketToolDefinition];
-    final parent = await _ticketRepository.getTicketById(parentId);
-    return parent?.type == TicketType.chat
-        ? [closeBranchToolDefinition]
-        : [branchTicketToolDefinition];
+    final branchOrCloseTool = parentId == null
+        ? branchTicketToolDefinition
+        : (await _ticketRepository.getTicketById(parentId))?.type ==
+              TicketType.chat
+        ? closeBranchToolDefinition
+        : branchTicketToolDefinition;
+    return [branchOrCloseTool, createTicketToolDefinition, addLinkToolDefinition];
   }
 
   /// Maps an Inbox-spawned chat's [InboxPurpose] to the [ModelPhase] its
