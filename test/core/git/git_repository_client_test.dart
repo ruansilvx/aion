@@ -137,4 +137,63 @@ void main() {
       expect(branch, 'trunk');
     });
   });
+
+  group('createWorktree / removeWorktree / deleteBranch', () {
+    Future<String> initRepoWithCommit() async {
+      await runGit(['init', '-b', 'main']);
+      await runGit(['config', 'user.email', 'test@example.com']);
+      await runGit(['config', 'user.name', 'Test']);
+      File(
+        '${tempDir.path}${Platform.pathSeparator}a.txt',
+      ).writeAsStringSync('a');
+      await runGit(['add', 'a.txt']);
+      await runGit(['commit', '-m', 'base']);
+      return tempDir.path;
+    }
+
+    test(
+      'removeWorktree does not delete the branch — reproduces the retry '
+      'collision found live: recreating a worktree on the same branch '
+      "name fails with 'already exists' until deleteBranch runs first",
+      () async {
+        final rootPath = await initRepoWithCommit();
+        final worktreeDir = await Directory.systemTemp.createTemp(
+          'git_client_worktree_',
+        );
+        addTearDown(() async {
+          if (worktreeDir.existsSync()) {
+            await worktreeDir.delete(recursive: true);
+          }
+        });
+
+        await client.createWorktree(
+          rootPath,
+          worktreeDir.path,
+          'aion/task-fixture',
+        );
+        await client.removeWorktree(rootPath, worktreeDir.path);
+
+        // The exact collision: TicketsCubit._runCodingExecution reuses
+        // this same branch name on every retry of the same task.
+        await expectLater(
+          client.createWorktree(
+            rootPath,
+            worktreeDir.path,
+            'aion/task-fixture',
+          ),
+          throwsA(isA<ProcessException>()),
+        );
+
+        // The fix: deleting the abandoned branch first lets the next
+        // attempt recreate it cleanly, exactly as a first attempt would.
+        await client.deleteBranch(rootPath, 'aion/task-fixture');
+        await client.createWorktree(
+          rootPath,
+          worktreeDir.path,
+          'aion/task-fixture',
+        );
+        expect(await Directory(worktreeDir.path).exists(), isTrue);
+      },
+    );
+  });
 }
