@@ -760,6 +760,7 @@ Color _typeAccent(AionColors c, TicketType type) => switch (type) {
   TicketType.chat => c.typeChat,
   TicketType.bug => c.typeBug,
   TicketType.task => c.typeTask,
+  TicketType.spec => c.typeSpec,
 };
 
 /// A compact role badge/selector for a Base-scope [_StatusRow] — built on

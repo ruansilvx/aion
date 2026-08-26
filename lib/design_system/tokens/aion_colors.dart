@@ -188,6 +188,14 @@ class AionColors {
   /// `aion-arch/changes/bug-ticket-type`.
   final Color typeBug;
 
+  /// Base accent color for [TicketType.spec] chips/badges. NOTE:
+  /// intentionally hue-shifts between themes — amethyst in [arctic], azure
+  /// in [obsidian] — because [typeTask] follows [primary] from blue to
+  /// violet in the dark theme, swapping which hue band sits free for a
+  /// tenth type accent. Do not "correct" one theme's value to match the
+  /// other's hue. Added for `aion-arch/changes/spec-ticket-type`.
+  final Color typeSpec;
+
   /// The four-level severity badge palette for this theme, for
   /// [TicketType.bug] tickets. Added for
   /// `aion-arch/changes/bug-ticket-type`.
@@ -222,6 +230,7 @@ class AionColors {
     required this.typeRelease,
     required this.typeChat,
     required this.typeBug,
+    required this.typeSpec,
     required this.severity,
   });
 }
@@ -303,6 +312,7 @@ const AionColors arctic = AionColors(
   typeRelease: Color(0xFFD8402C),
   typeChat: Color(0xFF4C6FDE),
   typeBug: Color(0xFF5E8C1E),
+  typeSpec: Color(0xFF8A3FB0),
   severity: arcticSeverity,
 );
 
@@ -335,6 +345,7 @@ const AionColors obsidian = AionColors(
   typeRelease: Color(0xFFF26A4B),
   typeChat: Color(0xFF7C93FF),
   typeBug: Color(0xFF98D13C),
+  typeSpec: Color(0xFF3FA9F5),
   severity: obsidianSeverity,
 );
 

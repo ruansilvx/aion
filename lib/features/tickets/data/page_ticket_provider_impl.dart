@@ -24,6 +24,9 @@ import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 /// invariant logic every other ticket type's screens already trigger —
 /// no duplicated write path. See
 /// `aion-arch/changes/page-content-markdown-editor/design.md`.
+/// [getPage] also accepts [TicketType.spec] tickets (added for
+/// `aion-arch/changes/spec-ticket-type`) — this is the one place that
+/// decides "is this ticket a `PagesCubit`/`PageDetailScreen` document."
 class PageTicketProviderImpl implements PageTicketProvider {
   /// Creates a [PageTicketProviderImpl] backed by [_ticketsCubit] (writes)
   /// and [_ticketRepository]/[_ticketLinkRepository]/
@@ -43,7 +46,14 @@ class PageTicketProviderImpl implements PageTicketProvider {
   @override
   Future<Ticket?> getPage(String id) async {
     final ticket = await _ticketRepository.getTicketById(id);
-    if (ticket == null || ticket.type != TicketType.page) return null;
+    // Widened to also accept TicketType.spec for
+    // aion-arch/changes/spec-ticket-type — a spec ticket is an ordinary
+    // editable document once created (see TicketType.spec's dartdoc),
+    // reusing this exact same read/write path a `page` already has.
+    if (ticket == null ||
+        (ticket.type != TicketType.page && ticket.type != TicketType.spec)) {
+      return null;
+    }
     return ticket;
   }
 
@@ -75,8 +85,8 @@ class PageTicketProviderImpl implements PageTicketProvider {
         ));
       }
     }
-    // `pageId` is always a `page` ticket here (see [getPage]'s type
-    // gate), so no `resource`-gating check is needed — unlike
+    // `pageId` is always a `page` or `spec` ticket here (see [getPage]'s
+    // type gate), so no `resource`-gating check is needed — unlike
     // `TicketsCubit.loadDocumentRelations`'s widened merge, which also
     // serves `resource` tickets via `TicketDetailScreen`.
     final incoming = await _pageWikilinkRepository.getIncomingLinks(pageId);

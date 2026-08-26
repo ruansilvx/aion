@@ -24,13 +24,14 @@ String ticketTypeLabel(BuildContext context, TicketType type) {
     TicketType.openQuestion => l10n.ticketTypeOpenQuestion,
     TicketType.release => l10n.ticketTypeRelease,
     TicketType.bug => l10n.ticketTypeBug,
+    TicketType.spec => l10n.ticketTypeSpec,
   };
 }
 
 /// A small square swatch + uppercase label showing a ticket's [type],
 /// colored by that type's `AionColors` accent (`typeTask`/`typeStory`/
 /// `typeEpic`/`typeResource`/`typePage`/`typeIdea`/`typeKnownGap`/
-/// `typeOpenQuestion`/`typeRelease`/`typeChat`/`typeBug`).
+/// `typeOpenQuestion`/`typeRelease`/`typeChat`/`typeBug`/`typeSpec`).
 /// Promoted from `tickets_list_screen
 /// .dart` (per `project.md`'s Pattern 2) so `features/pages/` can render the
 /// same "PAGE" chip `TicketDetailScreen` renders for other types, without a
@@ -62,6 +63,7 @@ class TypeChip extends StatelessWidget {
       TicketType.release => c.typeRelease,
       TicketType.chat => c.typeChat,
       TicketType.bug => c.typeBug,
+      TicketType.spec => c.typeSpec,
       _ => c.typeTask,
     };
 

@@ -457,6 +457,25 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                     pending: state.pendingSkillAttachment,
                                   ),
                                 ),
+                                // `_PendingSpecLinkBanner` — same placement
+                                // pattern as `_PendingSkillAttachmentBanner`
+                                // directly above (both render nothing when
+                                // their own pending value is `null`, so
+                                // stacking the two Paddings costs nothing
+                                // when neither is pending). Added for
+                                // `aion-arch/changes/spec-ticket-type`.
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    20,
+                                    4,
+                                    20,
+                                    0,
+                                  ),
+                                  child: _PendingSpecLinkBanner(
+                                    ticket: ticket,
+                                    pending: state.pendingSpecLinkSuggestion,
+                                  ),
+                                ),
                                 Padding(
                                   padding: const EdgeInsets.fromLTRB(
                                     20,
@@ -2242,6 +2261,169 @@ class _PendingSkillAttachmentBannerState
                     onPressed: () => context
                         .read<TicketsCubit>()
                         .confirmPendingSkillAttachment(widget.ticket.id),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------
+// Spec auto-linking — `_PendingSpecLinkBanner`. Gated by
+// `AutomationContext.specAutoLink`. See
+// `aion-arch/changes/spec-ticket-type/design.md`'s design-gate notes —
+// this banner mirrors `_PendingSkillAttachmentBanner`'s exact shell
+// (itself a reuse of `_ToolProposalBanner`'s identity palette), swapping
+// its `typeChat` accent for `typeSpec` and dropping the kind-glyph/
+// `FutureBuilder` display-name lookup that banner needs but this one
+// doesn't — `PendingSpecLinkSuggestion.specTicketTitle` is already
+// resolved by the time it reaches this widget.
+// ---------------------------------------------------------------------
+
+/// A ticket-detail-screen banner shown only while [pending] (a `gated`
+/// [PendingSpecLinkSuggestion] awaiting confirmation) is non-`null`.
+/// Confirm/Reject call
+/// [TicketsCubit.confirmPendingSpecLinkSuggestion]/
+/// [TicketsCubit.rejectPendingSpecLinkSuggestion]. Added for
+/// `aion-arch/changes/spec-ticket-type`.
+class _PendingSpecLinkBanner extends StatelessWidget {
+  const _PendingSpecLinkBanner({required this.ticket, required this.pending});
+
+  final Ticket ticket;
+  final PendingSpecLinkSuggestion? pending;
+
+  @override
+  Widget build(BuildContext context) {
+    final pending = this.pending;
+    if (pending == null) return const SizedBox.shrink();
+
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    final sc = c.typeSpec;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: sc.withValues(alpha: t.isDark ? 0.10 : 0.07),
+        border: Border.all(
+          color: sc.withValues(alpha: t.isDark ? 0.28 : 0.20),
+          width: 1,
+        ),
+        borderRadius: BorderRadius.all(AionRadius.lg),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: c.pressedAccentTint(sc, t.isDark),
+                    borderRadius: BorderRadius.all(AionRadius.iconBtn),
+                  ),
+                  child: SizedBox(
+                    width: 32,
+                    height: 32,
+                    child: Center(
+                      child: PhosphorIcon(
+                        PhosphorIcons.checkSquareLight,
+                        size: 16,
+                        color: sc,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        context.l10n.ticketDetailPendingSpecLinkTitle,
+                        style: AionText.dialogTitle.copyWith(
+                          color: c.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Row(
+                        children: [
+                          DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: sc,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const SizedBox(width: 6, height: 6),
+                          ),
+                          const SizedBox(width: 7),
+                          Expanded(
+                            child: Text(
+                              context
+                                  .l10n
+                                  .ticketDetailPendingSpecLinkStatusWaiting,
+                              style: AionText.time.copyWith(
+                                fontSize: 12.5,
+                                color: c.textSecondary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: c.surface,
+                border: Border.all(color: c.border, width: 1),
+                borderRadius: BorderRadius.all(AionRadius.md),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(11, 10, 11, 11),
+                child: Row(
+                  children: [
+                    TypeChip(type: TicketType.spec, isRow: true),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        pending.specTicketTitle,
+                        style: AionText.cardTitle.copyWith(
+                          color: c.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _ToolProposalButton(
+                    variant: _ToolProposalButtonVariant.reject,
+                    label: context.l10n.ticketDetailPendingSpecLinkReject,
+                    onPressed: () => context
+                        .read<TicketsCubit>()
+                        .rejectPendingSpecLinkSuggestion(ticket.id),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _ToolProposalButton(
+                    variant: _ToolProposalButtonVariant.confirm,
+                    label: context.l10n.ticketDetailPendingSpecLinkConfirm,
+                    onPressed: () => context
+                        .read<TicketsCubit>()
+                        .confirmPendingSpecLinkSuggestion(ticket.id),
                   ),
                 ),
               ],

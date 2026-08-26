@@ -47,6 +47,11 @@ class SharedPrefsAutomationSettingsRepository
   static const _ticketLinkingAutomationKey =
       'automation_settings.ticket_linking_automation';
 
+  /// [AutomationContext.specAutoLink]'s key. Added for
+  /// `aion-arch/changes/spec-ticket-type`.
+  static const _specAutoLinkAutomationKey =
+      'automation_settings.spec_auto_link_automation';
+
   String _keyFor(AutomationContext context) => switch (context) {
     AutomationContext.sddStage => _sddStageAutomationKey,
     AutomationContext.codingExecution => _codingExecutionAutomationKey,
@@ -57,6 +62,7 @@ class SharedPrefsAutomationSettingsRepository
       _codingExecutionResumeAutomationKey,
     AutomationContext.ticketCreation => _ticketCreationAutomationKey,
     AutomationContext.ticketLinking => _ticketLinkingAutomationKey,
+    AutomationContext.specAutoLink => _specAutoLinkAutomationKey,
   };
 
   @override

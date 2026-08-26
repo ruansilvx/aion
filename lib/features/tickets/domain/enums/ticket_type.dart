@@ -84,6 +84,21 @@ enum TicketType {
   /// link to a [release] ticket, not a dedicated field — the same
   /// mechanism [release] already has with [epic]/[story]/[task].
   bug,
+
+  /// Aion's own record of a capability's current-state behavior — the
+  /// ticket-native replacement for `aion-arch/specs/*.md`. Created
+  /// automatically, once, when an [epic]'s `SddStage` reaches
+  /// `SddStage.archived` (`TicketsCubit._createEpicSpec`, called from
+  /// `TicketsCubit.advanceSddStage`), or manually via the ordinary New
+  /// Ticket flow (used for the one-off "architecture spec" ticket that
+  /// plays `project.md`'s role — see
+  /// `aion-arch/ideas/spec-ticket-type.md`). Parentless; may parent a
+  /// [chat] for discussion, nothing else. Once created, its content is an
+  /// ordinary editable document — see `PagesCubit`, which also serves
+  /// this type — with no cycle of its own; corrections and resolved-bug
+  /// links are plain edits. See [TicketTypeHierarchy.isAlwaysRoot]. Added
+  /// for `aion-arch/changes/spec-ticket-type`.
+  spec,
 }
 
 /// Structural parent/child rules between [TicketType] values. A ticket's
@@ -95,12 +110,13 @@ extension TicketTypeHierarchy on TicketType {
   /// chain, or `null` for a type ([TicketType.resource],
   /// [TicketType.page], [TicketType.chat], [TicketType.idea],
   /// [TicketType.knownGap], [TicketType.openQuestion],
-  /// [TicketType.release]) with no rank in that chain. Note that `page`,
-  /// `idea`/`knownGap`/`openQuestion`, and `release` each still have
-  /// their own nesting rule — see [canParent] — despite having no rank
-  /// here. [TicketType.task] and [TicketType.bug] share the same literal
-  /// rank value, which is what makes them siblings: neither can parent
-  /// the other, exactly like every other same-rank pair.
+  /// [TicketType.release], [TicketType.spec]) with no rank in that chain.
+  /// Note that `page`, `idea`/`knownGap`/`openQuestion`/`release`/`spec`,
+  /// each still have their own nesting rule — see [canParent] — despite
+  /// having no rank here. [TicketType.task] and [TicketType.bug] share
+  /// the same literal rank value, which is what makes them siblings:
+  /// neither can parent the other, exactly like every other same-rank
+  /// pair.
   int? get _rank => switch (this) {
     TicketType.epic => 0,
     TicketType.story => 1,
@@ -111,7 +127,8 @@ extension TicketTypeHierarchy on TicketType {
     TicketType.idea ||
     TicketType.knownGap ||
     TicketType.openQuestion ||
-    TicketType.release => null,
+    TicketType.release ||
+    TicketType.spec => null,
   };
 
   /// Whether a ticket of this type may structurally parent a ticket of
@@ -122,11 +139,11 @@ extension TicketTypeHierarchy on TicketType {
   ///   documentation tickets nest only under other documentation tickets,
   ///   never under a work item.
   /// - [TicketType.idea], [TicketType.knownGap], [TicketType.openQuestion],
-  ///   and [TicketType.release] may each parent a [TicketType.chat]
-  ///   only — none is part of the epic→story→task decomposition chain
-  ///   (an `idea` is promoted *into* an `epic`/`bug` by a separate
-  ///   mechanism, not parented by one; `knownGap`/`openQuestion` are
-  ///   never promoted at all).
+  ///   [TicketType.release], and [TicketType.spec] may each parent a
+  ///   [TicketType.chat] only — none is part of the epic→story→task
+  ///   decomposition chain (an `idea` is promoted *into* an `epic`/`bug`
+  ///   by a separate mechanism, not parented by one; `knownGap`/
+  ///   `openQuestion`/`spec` are never promoted at all).
   /// - A work type (epic/story/task/bug) may parent another work type
   ///   only if strictly higher in the chain (epic > story > task/bug,
   ///   e.g. task cannot parent story), and may still parent
@@ -156,7 +173,8 @@ extension TicketTypeHierarchy on TicketType {
     if (this == TicketType.idea ||
         this == TicketType.knownGap ||
         this == TicketType.openQuestion ||
-        this == TicketType.release) {
+        this == TicketType.release ||
+        this == TicketType.spec) {
       return child == TicketType.chat;
     }
     if (this == TicketType.chat) {
@@ -172,18 +190,19 @@ extension TicketTypeHierarchy on TicketType {
 
   /// Whether a ticket of this type can never receive a parent — always a
   /// subtree root. `true` for [TicketType.epic], [TicketType.idea],
-  /// [TicketType.knownGap], [TicketType.openQuestion], and
-  /// [TicketType.release]; `false` for every other type. The "always
-  /// root" property is about *structural* parentage (`parentId`) —
-  /// `knownGap`/`openQuestion`'s mandatory target relationship is a
-  /// `TicketLink`, a completely separate mechanism, so this stays `true`
-  /// for both exactly as it was for `signal`.
+  /// [TicketType.knownGap], [TicketType.openQuestion],
+  /// [TicketType.release], and [TicketType.spec]; `false` for every other
+  /// type. The "always root" property is about *structural* parentage
+  /// (`parentId`) — `knownGap`/`openQuestion`'s mandatory target
+  /// relationship is a `TicketLink`, a completely separate mechanism, so
+  /// this stays `true` for both exactly as it was for `signal`.
   bool get isAlwaysRoot =>
       this == TicketType.epic ||
       this == TicketType.idea ||
       this == TicketType.knownGap ||
       this == TicketType.openQuestion ||
-      this == TicketType.release;
+      this == TicketType.release ||
+      this == TicketType.spec;
 
   /// The [TicketType] values whose move to `TicketStatus.inProgress`
   /// triggers a real coding-execution run — see

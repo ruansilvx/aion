@@ -237,6 +237,15 @@ enum TicketsErrorReason {
   /// `ticketsErrorMessage` / `AppToast`. Added for
   /// `aion-arch/changes/blocked-ticket-transition-gate`.
   blockedByOpenDependency,
+
+  /// `TicketsCubit._createEpicSpec` failed while synthesizing an Epic's
+  /// `TicketType.spec` ticket at `SddStage.archived` — the Epic itself
+  /// stays `archived` regardless (see `advanceSddStage`'s dartdoc); the
+  /// fallback is manually creating the missing spec ticket via the
+  /// ordinary New Ticket flow. The widget layer reads this via
+  /// `ticketsErrorMessage` / `AppToast`. Added for
+  /// `aion-arch/changes/spec-ticket-type`.
+  specWriteFailed,
 }
 
 /// Why a Task ticket's coding-execution run was blocked from starting —
@@ -279,6 +288,37 @@ enum SddStageBlockReason {
   /// APPROVED"` reply yet — either no reply exists, or the most recent
   /// one says `PENDING`. Added for `aion-arch/changes/sdd-design-gate`.
   awaitingDesignApproval,
+}
+
+/// A deterministic, code-computed embedding-similarity match from a ticket
+/// to the single most relevant live `TicketType.spec` ticket, surfaced on
+/// that ticket's own [TicketDetailLoaded.pendingSpecLinkSuggestion] while
+/// `AutomationContext.specAutoLink` is `AutomationConfidence.gated` —
+/// mirrors [SkillAttachment]/[PendingToolProposal]'s own confirm-banner
+/// shape, one level simpler (no kind/variant, since every suggestion is
+/// the same `relatesTo`-link proposal). Confirm/reject via
+/// `TicketsCubit.confirmPendingSpecLinkSuggestion`/
+/// `rejectPendingSpecLinkSuggestion`. Added for
+/// `aion-arch/changes/spec-ticket-type`; see
+/// `TicketsCubit._maybeAutoLinkToSpec`.
+class PendingSpecLinkSuggestion extends Equatable {
+  /// Creates a [PendingSpecLinkSuggestion] proposing a link to the spec
+  /// ticket identified by [specTicketId], titled [specTicketTitle]
+  /// (resolved once when the match was found, so the banner never needs
+  /// its own follow-up fetch).
+  const PendingSpecLinkSuggestion({
+    required this.specTicketId,
+    required this.specTicketTitle,
+  });
+
+  /// The matched spec ticket's internal id.
+  final String specTicketId;
+
+  /// The matched spec ticket's title, resolved once up front.
+  final String specTicketTitle;
+
+  @override
+  List<Object?> get props => [specTicketId, specTicketTitle];
 }
 
 /// A list, detail, or create operation failed. Carries either a classified
@@ -395,6 +435,7 @@ class TicketDetailLoaded extends TicketsState {
     this.pendingToolProposal,
     this.executionTokenTotal,
     this.pendingSkillAttachment,
+    this.pendingSpecLinkSuggestion,
   });
 
   /// The loaded ticket.
@@ -571,6 +612,14 @@ class TicketDetailLoaded extends TicketsState {
   /// `aion-arch/changes/workflow-skill-attachments`.
   final SkillAttachment? pendingSkillAttachment;
 
+  /// A [PendingSpecLinkSuggestion] (confidence `gated`) awaiting user
+  /// confirmation on [ticket] — a deterministic embedding-similarity
+  /// match to the most relevant live `TicketType.spec` ticket. `null`
+  /// whenever no such suggestion is pending. Drives
+  /// `_PendingSpecLinkBanner`. Mirrors [pendingSkillAttachment]'s exact
+  /// shape. Added for `aion-arch/changes/spec-ticket-type`.
+  final PendingSpecLinkSuggestion? pendingSpecLinkSuggestion;
+
   @override
   List<Object?> get props => [
     ticket,
@@ -595,6 +644,7 @@ class TicketDetailLoaded extends TicketsState {
     pendingToolProposal,
     executionTokenTotal,
     pendingSkillAttachment,
+    pendingSpecLinkSuggestion,
   ];
 
   /// Returns a copy of this state with the given fields replaced; every
@@ -642,6 +692,7 @@ class TicketDetailLoaded extends TicketsState {
     PendingToolProposal? pendingToolProposal,
     int? executionTokenTotal,
     TicketFieldSetter<SkillAttachment?>? pendingSkillAttachment,
+    TicketFieldSetter<PendingSpecLinkSuggestion?>? pendingSpecLinkSuggestion,
   }) {
     return TicketDetailLoaded(
       ticket ?? this.ticket,
@@ -673,6 +724,9 @@ class TicketDetailLoaded extends TicketsState {
       pendingSkillAttachment: pendingSkillAttachment != null
           ? pendingSkillAttachment()
           : this.pendingSkillAttachment,
+      pendingSpecLinkSuggestion: pendingSpecLinkSuggestion != null
+          ? pendingSpecLinkSuggestion()
+          : this.pendingSpecLinkSuggestion,
     );
   }
 }

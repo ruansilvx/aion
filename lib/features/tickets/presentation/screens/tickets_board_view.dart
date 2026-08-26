@@ -96,6 +96,7 @@ String ticketsErrorMessage(BuildContext context, TicketsErrorReason reason) {
     TicketsErrorReason.sddStageAdvanceFailed => l10n.sddStageAdvanceFailedToast,
     TicketsErrorReason.blockedByOpenDependency =>
       l10n.ticketBlockedByOpenDependencyError,
+    TicketsErrorReason.specWriteFailed => l10n.specWriteFailedToast,
   };
 }
 

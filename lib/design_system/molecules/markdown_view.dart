@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:markdown/markdown.dart' as md;
 
 import 'package:aion/core/markdown/wikilink_extractor.dart';
+import 'package:aion/design_system/molecules/interactive_link_span.dart';
 import 'package:aion/design_system/tokens/aion_colors.dart';
 import 'package:aion/design_system/tokens/aion_radius.dart';
 import 'package:aion/design_system/tokens/aion_text.dart';
@@ -250,7 +251,9 @@ List<InlineSpan> _buildInlineSpans(
   final spans = <InlineSpan>[];
   for (final node in nodes) {
     if (node is md.Text) {
-      spans.addAll(_buildWikilinkAwareTextSpans(node.text, c, wikilink));
+      spans.addAll(
+        _buildWikilinkAwareTextSpans(node.text, style, c, wikilink),
+      );
       continue;
     }
     if (node is! md.Element) continue;
@@ -325,14 +328,22 @@ List<InlineSpan> _buildInlineSpans(
 /// Splits [text] on every `[[Target]]`/`[[Target|Alias]]` occurrence
 /// (via [WikilinkExtractor.extractReferences]) into a mix of plain
 /// [TextSpan]s and wikilink spans — resolved (design.md §5: brackets
-/// dropped, `typePage`-colored, underlined, tappable) or unresolved
-/// (§6: brackets kept, muted `neutralTint` chip, tappable-to-create only
-/// when eligible). Returns `[TextSpan(text: text)]` unchanged when
+/// dropped, `typePage`-colored, underlined, tappable — see [style]'s
+/// dartdoc for the interactive-states caveat) or unresolved (§6: brackets
+/// kept, muted `neutralTint` chip, tappable-to-create only when
+/// eligible). Returns `[TextSpan(text: text)]` unchanged when
 /// [_WikilinkContext.resolve] is `null` or [text] has no `[[...]]`
 /// occurrence — the exact behavior every other `MarkdownView` consumer
 /// had before this extension existed.
 List<InlineSpan> _buildWikilinkAwareTextSpans(
   String text,
+  // The ambient paragraph/list-item style a resolved wikilink's
+  // `InteractiveLinkSpan` needs explicitly — unlike a plain `TextSpan`,
+  // a `WidgetSpan`'s child doesn't inherit style from its `TextSpan`
+  // ancestors, so it can't rely on `Text.rich`'s usual style-merge the
+  // way every other span in this file does. Added for
+  // `aion-arch/changes/spec-ticket-type`'s `/verify` fix-up.
+  TextStyle style,
   AionColors c,
   _WikilinkContext wikilink,
 ) {
@@ -351,20 +362,43 @@ List<InlineSpan> _buildWikilinkAwareTextSpans(
     final resolved = resolve(match.target);
     if (resolved != null) {
       final onTap = wikilink.onTap;
-      spans.add(
-        TextSpan(
-          text: match.alias ?? resolved.title,
-          style: TextStyle(
-            color: c.typePage,
-            decoration: TextDecoration.underline,
-            decorationColor: c.typePage.withValues(alpha: 0.4),
+      final label = match.alias ?? resolved.title;
+      if (onTap == null) {
+        // No tap handler wired — stays fully inert, same as before this
+        // widget existed (see this function's own dartoc): no cursor, no
+        // recognizer, no `InteractiveLinkSpan` (which requires a
+        // non-null callback).
+        spans.add(
+          TextSpan(
+            text: label,
+            style: TextStyle(
+              color: c.typePage,
+              decoration: TextDecoration.underline,
+              decorationColor: c.typePage.withValues(alpha: 0.4),
+            ),
           ),
-          mouseCursor: SystemMouseCursors.click,
-          recognizer: onTap == null
-              ? null
-              : (TapGestureRecognizer()..onTap = () => onTap(resolved)),
-        ),
-      );
+        );
+      } else {
+        spans.add(
+          WidgetSpan(
+            alignment: PlaceholderAlignment.baseline,
+            baseline: TextBaseline.alphabetic,
+            child: InteractiveLinkSpan(
+              text: label,
+              style: style,
+              color: c.typePage,
+              // No dedicated `typePage`-hover token exists (unlike
+              // `primary`/`primaryHover`) — inventing one is out of
+              // scope for a `/verify` fix-up, so hover here still gets
+              // the custom-offset underline, click cursor, focus ring,
+              // and pressed dimming; only the hue itself doesn't shift.
+              hoverColor: c.typePage,
+              onTap: () => onTap(resolved),
+              semanticsLabel: label,
+            ),
+          ),
+        );
+      }
     } else {
       final onCreate = wikilink.onCreate;
       final canCreate =
