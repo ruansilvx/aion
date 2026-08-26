@@ -2,7 +2,6 @@
 
 import 'dart:async';
 
-import 'package:flutter/gestures.dart' show TapGestureRecognizer;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -479,14 +478,17 @@ class _PageDetailHeader extends StatelessWidget {
 /// left to render a distinct third variant for. Noted here rather than
 /// silently, per this codebase's convention for a deliberate
 /// simplification (see `_PendingSkillAttachmentBanner`'s own dartdoc for
-/// the same pattern). The Epic link itself is a plain [TextSpan] +
-/// [TapGestureRecognizer] with a static underline (no separate hover/
-/// focus animation) — matching `MarkdownView`'s existing wikilink-span
-/// precedent, the only other tappable inline text in this codebase,
-/// rather than design.md §2.4.1's fuller hover/focus/pressed state
-/// table, which has no other precedent here. Renders nothing (not even
-/// a zero-height box) unless [ticket.type] is [TicketType.spec] — see
-/// design.md §3.3. Added for `aion-arch/changes/spec-ticket-type`.
+/// the same pattern). The Epic link itself is an `InteractiveLinkSpan`
+/// (`design_system/molecules/interactive_link_span.dart`), implementing
+/// design.md §2.4.1's full hover/focused/pressed state table — a `/verify`
+/// fix-up: the first `/apply` pass used a plain `TextSpan` +
+/// `TapGestureRecognizer` here instead, citing `MarkdownView`'s wikilink
+/// span as precedent for skipping the interaction states, but that span
+/// had the identical gap, so `MarkdownView` was retrofitted onto the same
+/// widget in the same fix-up rather than left as false precedent. Renders
+/// nothing (not even a zero-height box) unless [ticket.type] is
+/// [TicketType.spec] — see design.md §3.3. Added for
+/// `aion-arch/changes/spec-ticket-type`.
 class _SpecOriginBadge extends StatelessWidget {
   /// Creates a [_SpecOriginBadge] for [ticket], resolving its origin from
   /// [relations].
@@ -571,20 +573,27 @@ class _SpecOriginBadge extends StatelessWidget {
                                 color: c.textMuted,
                               ),
                             ),
-                            TextSpan(
-                              text: sourceEpic.title,
-                              style: AionText.breadcrumb.copyWith(
-                                color: c.primary,
-                                fontWeight: FontWeight.w600,
-                                decoration: TextDecoration.underline,
-                                decorationColor: c.primary.withValues(
-                                  alpha: 0.4,
+                            // Real hover/focused/pressed states (design.md
+                            // §2.4.1), via the shared `InteractiveLinkSpan`
+                            // precedent — see that widget's own dartdoc.
+                            // Added for
+                            // `aion-arch/changes/spec-ticket-type`'s
+                            // `/verify` fix-up (previously a plain static-
+                            // underline `TextSpan`).
+                            WidgetSpan(
+                              alignment: PlaceholderAlignment.baseline,
+                              baseline: TextBaseline.alphabetic,
+                              child: InteractiveLinkSpan(
+                                text: sourceEpic.title,
+                                style: AionText.breadcrumb.copyWith(
+                                  fontWeight: FontWeight.w600,
                                 ),
-                              ),
-                              mouseCursor: SystemMouseCursors.click,
-                              recognizer: TapGestureRecognizer()
-                                ..onTap = () =>
+                                color: c.primary,
+                                hoverColor: c.primaryHover,
+                                onTap: () =>
                                     context.go(ticketDetailRoute(sourceEpic)),
+                                semanticsLabel: sourceEpic.title,
+                              ),
                             ),
                           ],
                         ),

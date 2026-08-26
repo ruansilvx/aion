@@ -34,6 +34,37 @@ class CreateTicketRouteExtra {
   final String? initialParentId;
 }
 
+/// The types offered by [CreateTicketScreen]'s type dropdown, in display
+/// order. Excludes [TicketType.page]/[TicketType.knownGap]/
+/// [TicketType.openQuestion] (never directly creatable — see the class
+/// dartdoc), and moves [TicketType.spec] out of its raw
+/// `TicketType.values` position (last, after [TicketType.bug] — enum
+/// declaration order, since [TicketType.spec] was appended after `bug`)
+/// to immediately follow [TicketType.resource], per
+/// `aion-arch/changes/spec-ticket-type/design.md` §4.1 ("after Page,
+/// before Idea," grouped with the other document-like kinds — `page`
+/// itself sat directly after `resource` before it was excluded from this
+/// list, so `spec` takes that same slot). Every other type keeps its
+/// natural enum-declaration position, so a future addition still appears
+/// without this list needing an update — only `spec`'s placement is
+/// special-cased. A `/verify` fix-up for
+/// `aion-arch/changes/spec-ticket-type`: the first `/apply` pass used a
+/// bare `TicketType.values.where(...)`, which put `spec` last instead.
+List<TicketType> _dropdownTypes() {
+  final types = <TicketType>[];
+  for (final type in TicketType.values) {
+    if (type == TicketType.page ||
+        type == TicketType.knownGap ||
+        type == TicketType.openQuestion ||
+        type == TicketType.spec) {
+      continue;
+    }
+    types.add(type);
+    if (type == TicketType.resource) types.add(TicketType.spec);
+  }
+  return types;
+}
+
 /// The `/tickets/new` route: title, type, parent, priority, complexity,
 /// and description fields followed by a full-width submit button. The parent
 /// field is hidden whenever the selected type is always a subtree root
@@ -199,14 +230,7 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                       AppDropdown<TicketType>(
                         labelText: context.l10n.createTicketTypeLabel,
                         value: _selectedType,
-                        items: TicketType.values
-                            .where(
-                              (type) =>
-                                  type != TicketType.page &&
-                                  type != TicketType.knownGap &&
-                                  type != TicketType.openQuestion,
-                            )
-                            .toList(),
+                        items: _dropdownTypes(),
                         onChanged: (v) => setState(() {
                           _selectedType = v;
                           _selectedParentId = null;
