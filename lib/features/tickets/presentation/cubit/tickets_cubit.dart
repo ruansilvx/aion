@@ -6956,9 +6956,21 @@ class TicketsCubit extends Cubit<TicketsState> {
     if (current is! TicketDetailLoaded || current.ticket.id != ticket.id) {
       return;
     }
+    // copyWith, not a bare TicketDetailLoaded(ticket, ...) — see
+    // TicketDetailLoaded.copyWith's dartdoc. A bare reconstruction here
+    // silently reset canAdvanceSddStage/executionFailureReason/etc. to
+    // their defaults immediately after getTicketById computed them
+    // correctly, since ticket_detail_screen.dart calls this right after
+    // its own initial getTicketById for every epic/story/task/bug/
+    // resource ticket — invisible while this method's type-gate covered
+    // only resource/bug (neither has SDD-stage or coding-execution UI),
+    // but silently broke both the SDD-stage advance control and the
+    // orphaned-execution retry banner once `board-task-ordering-
+    // indication` widened the gate to also cover epic/story/task.
+    // Confirmed live during a QA sweep.
     emit(
-      TicketDetailLoaded(
-        ticket,
+      current.copyWith(
+        ticket: ticket,
         childDocs: childDocs,
         linkedTickets: linkedTickets,
         backlinks: backlinks,
