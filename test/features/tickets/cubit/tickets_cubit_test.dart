@@ -4994,6 +4994,89 @@ void main() {
         ),
       ],
     );
+
+    // Regression coverage for a bug confirmed live during a manual QA
+    // sweep: this method used to emit a bare `TicketDetailLoaded(ticket,
+    // ...)` reconstruction, silently resetting every field getTicketById
+    // had just freshly computed (canAdvanceSddStage,
+    // executionFailureReason, etc.) back to its constructor default —
+    // invisible while this method's type-gate covered only resource/bug
+    // (neither has SDD-stage or coding-execution UI), but broke both the
+    // SDD-stage advance control and the orphaned-execution retry banner
+    // once `board-task-ordering-indication` widened the gate to also
+    // cover epic/story/task. Fixed by routing through `copyWith` instead
+    // — see `TicketDetailLoaded.copyWith`'s dartdoc.
+    final storyForFieldPreservation = Ticket(
+      id: 'story-preserve-1',
+      ticketId: 'AIO-20',
+      type: TicketType.story,
+      title: 'A story mid SDD-stage advance',
+      status: 'backlog',
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'preserves canAdvanceSddStage/sddStageBlockReason — freshly '
+      'computed by getTicketById — for a story ticket',
+      setUp: () {
+        when(
+          () => repository.getTicketById(storyForFieldPreservation.id),
+        ).thenAnswer((_) async => storyForFieldPreservation);
+        when(
+          () => linkRepository.getLinksForTicket(storyForFieldPreservation.id),
+        ).thenAnswer((_) async => []);
+      },
+      build: buildCubit,
+      seed: () => TicketDetailLoaded(
+        storyForFieldPreservation,
+        canAdvanceSddStage: true,
+      ),
+      act: (cubit) => cubit.loadDocumentRelations(storyForFieldPreservation.id),
+      verify: (cubit) {
+        final loaded = cubit.state as TicketDetailLoaded;
+        expect(loaded.canAdvanceSddStage, isTrue);
+      },
+    );
+
+    final taskForFieldPreservation = Ticket(
+      id: 'task-preserve-1',
+      ticketId: 'AIO-21',
+      type: TicketType.task,
+      title: 'A task with an orphaned coding-execution run',
+      status: 'inProgress',
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'preserves executionFailureReason/executionCanRetry — freshly '
+      'computed by getTicketById — for a task ticket',
+      setUp: () {
+        when(
+          () => repository.getTicketById(taskForFieldPreservation.id),
+        ).thenAnswer((_) async => taskForFieldPreservation);
+        when(
+          () => linkRepository.getLinksForTicket(taskForFieldPreservation.id),
+        ).thenAnswer((_) async => []);
+      },
+      build: buildCubit,
+      seed: () => TicketDetailLoaded(
+        taskForFieldPreservation,
+        executionFailureReason: 'Execution ended without a clear result — '
+            'retry to try again.',
+        executionCanRetry: true,
+      ),
+      act: (cubit) => cubit.loadDocumentRelations(taskForFieldPreservation.id),
+      verify: (cubit) {
+        final loaded = cubit.state as TicketDetailLoaded;
+        expect(
+          loaded.executionFailureReason,
+          'Execution ended without a clear result — retry to try again.',
+        );
+        expect(loaded.executionCanRetry, isTrue);
+      },
+    );
   });
 
   group('createTicketLink / deleteTicketLink / updateTicketLinkType', () {
