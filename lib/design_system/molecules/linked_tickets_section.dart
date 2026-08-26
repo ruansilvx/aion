@@ -149,11 +149,15 @@ class LinkedTicketsSection extends StatelessWidget {
   }
 }
 
-// All eight non-task types resolve to their own dedicated token; only
+// All nine non-task types resolve to their own dedicated token; only
 // `task` itself falls through to the `typeTask` catch-all — mirrors
-// `TypeChip`'s own switch. Kept as a top-level function (rather than
-// `_LinkRowState`-private) so `_LinkTypeEditor`'s use elsewhere in this
-// file doesn't need a second copy.
+// `TypeChip`'s own switch. `spec` is listed proactively (not left to the
+// catch-all) so it never silently falls through to `typeTask` the way
+// `signal`/`release`/`chat` initially did — see
+// `aion-arch/changes/sdd-ticket-execution`'s bug-fix note. Kept as a
+// top-level function (rather than `_LinkRowState`-private) so
+// `_LinkTypeEditor`'s use elsewhere in this file doesn't need a second
+// copy.
 Color _typeColor(AionColors c, TicketType type) => switch (type) {
   TicketType.story => c.typeStory,
   TicketType.epic => c.typeEpic,
@@ -165,6 +169,7 @@ Color _typeColor(AionColors c, TicketType type) => switch (type) {
   TicketType.release => c.typeRelease,
   TicketType.chat => c.typeChat,
   TicketType.bug => c.typeBug,
+  TicketType.spec => c.typeSpec,
   _ => c.typeTask,
 };
 

@@ -75,6 +75,21 @@ void main() {
       expect(result, page);
     });
 
+    test(
+      'getPage also returns the ticket when it is a spec '
+      '(spec-ticket-type)',
+      () async {
+        final spec = buildTicket(id: 's1', type: TicketType.spec);
+        when(
+          () => ticketRepository.getTicketById('s1'),
+        ).thenAnswer((_) async => spec);
+
+        final result = await provider.getPage('s1');
+
+        expect(result, spec);
+      },
+    );
+
     test('getPage returns null when the ticket is not a page', () async {
       final task = buildTicket(id: 't1', type: TicketType.task);
       when(

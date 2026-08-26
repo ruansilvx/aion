@@ -2,6 +2,7 @@
 
 import 'dart:async';
 
+import 'package:flutter/gestures.dart' show TapGestureRecognizer;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -19,14 +20,18 @@ import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_parent_picker.dart'
     show ancestorBreadcrumb;
 
-/// The `/workspace/pages/:id` route: a `page` ticket's title, Markdown
-/// content editor, sub-pages, linked tickets, backlinks, and gaps/open
-/// questions — no priority/estimate/time-spent/status fields, no comment
-/// thread (those are work-item-only, see proposal.md's scope
+/// The `/workspace/pages/:id` route: a `page`/`spec` ticket's title,
+/// Markdown content editor, sub-pages, linked tickets, backlinks, and
+/// gaps/open questions — no priority/estimate/time-spent/status fields,
+/// no comment thread (those are work-item-only, see proposal.md's scope
 /// boundaries). Builds its
 /// own [PagesCubit], backed by the workspace-scoped [PageTicketProvider]
 /// read from context. Per
-/// `aion-arch/changes/page-content-markdown-editor/design.md` §3.
+/// `aion-arch/changes/page-content-markdown-editor/design.md` §3. Widened
+/// to also serve [TicketType.spec] for
+/// `aion-arch/changes/spec-ticket-type` — a spec ticket is edited exactly
+/// like a page, plus one spec-only addition: [_SpecOriginBadge] at the
+/// top of the scroll body.
 class PageDetailScreen extends StatefulWidget {
   /// Creates a [PageDetailScreen] for the page with internal id [pageId].
   const PageDetailScreen({super.key, required this.pageId});
@@ -234,6 +239,17 @@ class _PageDetailContent extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // `_SpecOriginBadge` — spec-only, first child of the
+                  // scroll body, per design.md §3.2. Not built at all for
+                  // a `page` ticket (no stray gap left behind) — the
+                  // `if` below skips both the badge and its own sp16
+                  // spacer together, rather than leaving a zero-height
+                  // widget inside this spaced Column. Added for
+                  // `aion-arch/changes/spec-ticket-type`.
+                  if (page.type == TicketType.spec) ...[
+                    _SpecOriginBadge(ticket: page, relations: relations),
+                    const SizedBox(height: AionSpacing.sp16),
+                  ],
                   MarkdownEditor(
                     initialValue: page.description ?? '',
                     placeholder: context.l10n.pageDetailContentPlaceholder,
@@ -384,7 +400,10 @@ class _PageDetailHeader extends StatelessWidget {
             ),
             const SizedBox(width: AionSpacing.sp12),
             if (page != null) ...[
-              const TypeChip(type: TicketType.page, isRow: false),
+              // `page.type` (not the hardcoded `TicketType.page`) so a
+              // TicketType.spec ticket renders its own "SPEC" chip here —
+              // added for `aion-arch/changes/spec-ticket-type`.
+              TypeChip(type: page.type, isRow: false),
               const SizedBox(width: AionSpacing.sp12),
             ],
             Expanded(
@@ -437,6 +456,144 @@ class _PageDetailHeader extends StatelessWidget {
               ),
             ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A small, single-line identity strip shown only when [ticket.type] is
+/// [TicketType.spec] — answers one question: did Aion write this, and
+/// from what? Per design.md §2.1, resolves two variants from [relations]
+/// (rather than a persisted `sourceEpicId` field, which this change's
+/// `tasks.md` never adds one for): **auto**, when [relations.linkedTickets]
+/// carries a `relatesTo` link to a live [TicketType.epic] ticket —
+/// created by `TicketsCubit._createEpicSpec` — rendered as a tappable
+/// link to that Epic; **manual**, when no such link is found. This
+/// collapses design.md §2.1's third ("orphaned — auto-generated from a
+/// deleted Epic") variant into the manual one: trashing an Epic cascades
+/// its `TicketLink` rows (`DriftTicketRepository.trashTickets`), so a
+/// spec whose Epic was later trashed loses the link entirely rather than
+/// keeping a now-dangling reference — the two states are genuinely
+/// indistinguishable under a link-based lookup, so there is nothing
+/// left to render a distinct third variant for. Noted here rather than
+/// silently, per this codebase's convention for a deliberate
+/// simplification (see `_PendingSkillAttachmentBanner`'s own dartdoc for
+/// the same pattern). The Epic link itself is a plain [TextSpan] +
+/// [TapGestureRecognizer] with a static underline (no separate hover/
+/// focus animation) — matching `MarkdownView`'s existing wikilink-span
+/// precedent, the only other tappable inline text in this codebase,
+/// rather than design.md §2.4.1's fuller hover/focus/pressed state
+/// table, which has no other precedent here. Renders nothing (not even
+/// a zero-height box) unless [ticket.type] is [TicketType.spec] — see
+/// design.md §3.3. Added for `aion-arch/changes/spec-ticket-type`.
+class _SpecOriginBadge extends StatelessWidget {
+  /// Creates a [_SpecOriginBadge] for [ticket], resolving its origin from
+  /// [relations].
+  const _SpecOriginBadge({required this.ticket, required this.relations});
+
+  /// The loaded ticket — the badge is inert unless this is a
+  /// [TicketType.spec] ticket.
+  final Ticket ticket;
+
+  /// [ticket]'s already-loaded Documentation-section relations, reused
+  /// here to find the `relatesTo`-linked Epic without a second query.
+  final PageRelations relations;
+
+  @override
+  Widget build(BuildContext context) {
+    if (ticket.type != TicketType.spec) return const SizedBox.shrink();
+
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    final sc = c.typeSpec;
+
+    final sourceEpic = relations.linkedTickets
+        .where(
+          (link) =>
+              link.relativeType == TicketLinkType.relatesTo &&
+              link.ticket.type == TicketType.epic,
+        )
+        .map((link) => link.ticket)
+        .firstOrNull;
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: sc.withValues(alpha: t.isDark ? 0.10 : 0.07),
+          border: Border.all(
+            color: sc.withValues(alpha: t.isDark ? 0.28 : 0.20),
+            width: 1,
+          ),
+          borderRadius: BorderRadius.all(AionRadius.md),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(7, 5, 12, 5),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: sc.withValues(alpha: t.isDark ? 0.22 : 0.15),
+                  borderRadius: BorderRadius.all(AionRadius.sm),
+                ),
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: Center(
+                    child: PhosphorIcon(
+                      PhosphorIcons.checkSquareLight,
+                      size: 12,
+                      color: sc,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: AionSpacing.sp8),
+              Flexible(
+                child: sourceEpic == null
+                    ? Text(
+                        context.l10n.specOriginBadgeManual,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AionText.breadcrumb.copyWith(
+                          color: c.textMuted,
+                        ),
+                      )
+                    : Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text: context.l10n.specOriginBadgeAutoPrefix,
+                              style: AionText.breadcrumb.copyWith(
+                                color: c.textMuted,
+                              ),
+                            ),
+                            TextSpan(
+                              text: sourceEpic.title,
+                              style: AionText.breadcrumb.copyWith(
+                                color: c.primary,
+                                fontWeight: FontWeight.w600,
+                                decoration: TextDecoration.underline,
+                                decorationColor: c.primary.withValues(
+                                  alpha: 0.4,
+                                ),
+                              ),
+                              mouseCursor: SystemMouseCursors.click,
+                              recognizer: TapGestureRecognizer()
+                                ..onTap = () =>
+                                    context.go(ticketDetailRoute(sourceEpic)),
+                            ),
+                          ],
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );

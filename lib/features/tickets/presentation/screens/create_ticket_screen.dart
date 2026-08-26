@@ -42,8 +42,12 @@ class CreateTicketRouteExtra {
 /// [TicketType.bug], an additional field block (severity — required —
 /// plus optional steps-to-reproduce/expected-behavior/actual-behavior
 /// text fields) slides in between the Priority/Complexity row and the
-/// Description field. Reads [TicketsCubit] from the root-level provider
-/// and navigates back to `/tickets` on success.
+/// Description field. When the selected type is [TicketType.spec], the
+/// Priority/Complexity row itself is hidden instead — a spec shows the
+/// same field set as a `page` (Title, Type, optional Parent,
+/// Description), since neither is a work item. Added for
+/// `aion-arch/changes/spec-ticket-type`. Reads [TicketsCubit] from the
+/// root-level provider and navigates back to `/tickets` on success.
 class CreateTicketScreen extends StatefulWidget {
   /// Creates a [CreateTicketScreen]. [initialType]/[initialParentId] seed
   /// the type/parent fields — used when opened from `DocumentationScreen`'s
@@ -257,37 +261,63 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                                 ],
                               ),
                       ),
-                      const SizedBox(height: AionSpacing.sp20),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: AppDropdown<TicketPriority>(
-                              labelText:
-                                  context.l10n.createTicketPriorityLabel,
-                              value: _selectedPriority,
-                              items: TicketPriority.values,
-                              onChanged: (v) =>
-                                  setState(() => _selectedPriority = v),
-                              itemLabel: (v) =>
-                                  ticketPriorityLabel(context, v),
-                              focusNode: _priorityFocus,
-                            ),
-                          ),
-                          const SizedBox(width: AionSpacing.sp12),
-                          Expanded(
-                            child: ComplexityPicker(
-                              labelText:
-                                  context.l10n.createTicketComplexityLabel,
-                              value: _selectedComplexity,
-                              onSelected: (v) =>
-                                  setState(() => _selectedComplexity = v),
-                              semanticsLabel:
-                                  context.l10n.createTicketComplexityLabel,
-                              focusNode: _complexityFocus,
-                            ),
-                          ),
-                        ],
+                      // Priority/Complexity — hidden for `spec` (per
+                      // design.md §4.4: a spec shows the same field set
+                      // as `page` — Title, Type, optional Parent,
+                      // content — no Priority/Complexity/Severity/
+                      // Estimate). Added for
+                      // `aion-arch/changes/spec-ticket-type`.
+                      AnimatedSize(
+                        duration: const Duration(milliseconds: 150),
+                        curve: Curves.easeOut,
+                        alignment: Alignment.topCenter,
+                        child: _selectedType == TicketType.spec
+                            ? const SizedBox.shrink()
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const SizedBox(height: AionSpacing.sp20),
+                                  Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Expanded(
+                                        child: AppDropdown<TicketPriority>(
+                                          labelText: context
+                                              .l10n
+                                              .createTicketPriorityLabel,
+                                          value: _selectedPriority,
+                                          items: TicketPriority.values,
+                                          onChanged: (v) => setState(
+                                            () => _selectedPriority = v,
+                                          ),
+                                          itemLabel: (v) =>
+                                              ticketPriorityLabel(context, v),
+                                          focusNode: _priorityFocus,
+                                        ),
+                                      ),
+                                      const SizedBox(
+                                        width: AionSpacing.sp12,
+                                      ),
+                                      Expanded(
+                                        child: ComplexityPicker(
+                                          labelText: context
+                                              .l10n
+                                              .createTicketComplexityLabel,
+                                          value: _selectedComplexity,
+                                          onSelected: (v) => setState(
+                                            () => _selectedComplexity = v,
+                                          ),
+                                          semanticsLabel: context
+                                              .l10n
+                                              .createTicketComplexityLabel,
+                                          focusNode: _complexityFocus,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
                       ),
                       AnimatedSize(
                         duration: const Duration(milliseconds: 150),

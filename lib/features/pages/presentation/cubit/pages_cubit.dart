@@ -9,10 +9,18 @@ import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
 /// UI-orchestration Cubit for the `pages` feature. Mirrors the shape of
-/// `TicketsCubit`'s detail/create flows, but scoped to `page` tickets only
-/// and built entirely on [PageTicketProvider] — never on `TicketsCubit`
-/// or `TicketRepository` directly. Per
-/// `aion-arch/changes/page-content-markdown-editor/design.md`.
+/// `TicketsCubit`'s detail/create flows, but scoped to `page`/`spec`
+/// tickets only and built entirely on [PageTicketProvider] — never on
+/// `TicketsCubit` or `TicketRepository` directly. Per
+/// `aion-arch/changes/page-content-markdown-editor/design.md`. This
+/// cubit itself has no `ticket.type` branch of its own — every method
+/// here just forwards to [PageTicketProvider], whose concrete
+/// implementation (`PageTicketProviderImpl`) is where "is this ticket
+/// mine to render" is actually decided (see [PageTicketProvider.getPage]).
+/// Widened to also serve [TicketType.spec] for
+/// `aion-arch/changes/spec-ticket-type` — a spec ticket is an ordinary
+/// editable document once created, with the same content-editing shape
+/// a `page` already has.
 class PagesCubit extends Cubit<PagesState> {
   /// Creates a [PagesCubit] backed by [_provider].
   PagesCubit(this._provider) : super(const PagesInitial());

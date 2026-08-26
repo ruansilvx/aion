@@ -4,14 +4,17 @@ import 'package:aion/features/tickets/tickets.dart';
 
 void main() {
   group('TicketTypeHierarchy.canParent', () {
-    // Full 11x11 matrix (including same-type pairs), per
+    // Full 12x12 matrix (including same-type pairs), per
     // aion-arch/changes/sdd-ticket-foundation/design.md (MODIFIED from
     // documentation-section), aion-arch/changes/bug-ticket-type/design.md
     // (ADDED `bug`), aion-arch/changes/mid-task-chat-branching/design.md
-    // (MODIFIED chat.canParent(chat)), and
+    // (MODIFIED chat.canParent(chat)),
     // aion-arch/changes/idea-gap-question-ticket-types/design.md (`signal`
     // split into `idea`/`knownGap`/`openQuestion`, each inheriting
-    // `signal`'s exact prior row): epic(0) > story(1) > task/bug(2) in a
+    // `signal`'s exact prior row), and
+    // aion-arch/changes/spec-ticket-type/design.md (ADDED `spec`, inheriting
+    // `idea`/`knownGap`/`openQuestion`/`release`'s exact row): epic(0) >
+    // story(1) > task/bug(2) in a
     // strict rank chain, and still parent `chat` unconditionally, but can no
     // longer parent `resource`/`page` — those relocated to the Documentation
     // section, where `page` alone can parent `page`/`resource`
@@ -20,7 +23,8 @@ void main() {
     // type but may now parent exactly one further `chat` — a mid-task/issue
     // branch (the depth cap beyond that one level is an instance-level
     // invariant enforced by `TicketsCubit._canBranch`, not by this
-    // type-level rule). `idea`/`knownGap`/`openQuestion`/`release` are each
+    // type-level rule). `idea`/`knownGap`/`openQuestion`/`release`/`spec`
+    // are each
     // a third kind of special case: parentless like `epic` (see
     // `isAlwaysRoot`) and can parent `chat` only, never a work type or each
     // other. `bug` shares `task`'s literal rank, so neither can parent the
@@ -37,6 +41,7 @@ void main() {
       (TicketType.epic, TicketType.openQuestion): false,
       (TicketType.epic, TicketType.release): false,
       (TicketType.epic, TicketType.bug): true,
+      (TicketType.epic, TicketType.spec): false,
 
       (TicketType.story, TicketType.epic): false,
       (TicketType.story, TicketType.story): false,
@@ -49,6 +54,7 @@ void main() {
       (TicketType.story, TicketType.openQuestion): false,
       (TicketType.story, TicketType.release): false,
       (TicketType.story, TicketType.bug): true,
+      (TicketType.story, TicketType.spec): false,
 
       (TicketType.task, TicketType.epic): false,
       (TicketType.task, TicketType.story): false,
@@ -61,6 +67,7 @@ void main() {
       (TicketType.task, TicketType.openQuestion): false,
       (TicketType.task, TicketType.release): false,
       (TicketType.task, TicketType.bug): false,
+      (TicketType.task, TicketType.spec): false,
 
       (TicketType.resource, TicketType.epic): false,
       (TicketType.resource, TicketType.story): false,
@@ -73,6 +80,7 @@ void main() {
       (TicketType.resource, TicketType.openQuestion): false,
       (TicketType.resource, TicketType.release): false,
       (TicketType.resource, TicketType.bug): false,
+      (TicketType.resource, TicketType.spec): false,
 
       (TicketType.page, TicketType.epic): false,
       (TicketType.page, TicketType.story): false,
@@ -85,6 +93,7 @@ void main() {
       (TicketType.page, TicketType.openQuestion): false,
       (TicketType.page, TicketType.release): false,
       (TicketType.page, TicketType.bug): false,
+      (TicketType.page, TicketType.spec): false,
 
       (TicketType.chat, TicketType.epic): false,
       (TicketType.chat, TicketType.story): false,
@@ -97,6 +106,7 @@ void main() {
       (TicketType.chat, TicketType.openQuestion): false,
       (TicketType.chat, TicketType.release): false,
       (TicketType.chat, TicketType.bug): false,
+      (TicketType.chat, TicketType.spec): false,
 
       (TicketType.idea, TicketType.epic): false,
       (TicketType.idea, TicketType.story): false,
@@ -109,6 +119,7 @@ void main() {
       (TicketType.idea, TicketType.openQuestion): false,
       (TicketType.idea, TicketType.release): false,
       (TicketType.idea, TicketType.bug): false,
+      (TicketType.idea, TicketType.spec): false,
 
       (TicketType.knownGap, TicketType.epic): false,
       (TicketType.knownGap, TicketType.story): false,
@@ -121,6 +132,7 @@ void main() {
       (TicketType.knownGap, TicketType.openQuestion): false,
       (TicketType.knownGap, TicketType.release): false,
       (TicketType.knownGap, TicketType.bug): false,
+      (TicketType.knownGap, TicketType.spec): false,
 
       (TicketType.openQuestion, TicketType.epic): false,
       (TicketType.openQuestion, TicketType.story): false,
@@ -133,6 +145,7 @@ void main() {
       (TicketType.openQuestion, TicketType.openQuestion): false,
       (TicketType.openQuestion, TicketType.release): false,
       (TicketType.openQuestion, TicketType.bug): false,
+      (TicketType.openQuestion, TicketType.spec): false,
 
       (TicketType.release, TicketType.epic): false,
       (TicketType.release, TicketType.story): false,
@@ -145,6 +158,7 @@ void main() {
       (TicketType.release, TicketType.openQuestion): false,
       (TicketType.release, TicketType.release): false,
       (TicketType.release, TicketType.bug): false,
+      (TicketType.release, TicketType.spec): false,
 
       (TicketType.bug, TicketType.epic): false,
       (TicketType.bug, TicketType.story): false,
@@ -157,6 +171,20 @@ void main() {
       (TicketType.bug, TicketType.openQuestion): false,
       (TicketType.bug, TicketType.release): false,
       (TicketType.bug, TicketType.bug): false,
+      (TicketType.bug, TicketType.spec): false,
+
+      (TicketType.spec, TicketType.epic): false,
+      (TicketType.spec, TicketType.story): false,
+      (TicketType.spec, TicketType.task): false,
+      (TicketType.spec, TicketType.resource): false,
+      (TicketType.spec, TicketType.page): false,
+      (TicketType.spec, TicketType.chat): true,
+      (TicketType.spec, TicketType.idea): false,
+      (TicketType.spec, TicketType.knownGap): false,
+      (TicketType.spec, TicketType.openQuestion): false,
+      (TicketType.spec, TicketType.release): false,
+      (TicketType.spec, TicketType.bug): false,
+      (TicketType.spec, TicketType.spec): false,
     };
 
     for (final entry in expected.entries) {
@@ -177,17 +205,19 @@ void main() {
   });
 
   group('TicketTypeHierarchy.isAlwaysRoot', () {
-    // epic/idea/knownGap/openQuestion/release are always a subtree root;
-    // every other type is not. Per
+    // epic/idea/knownGap/openQuestion/release/spec are always a subtree
+    // root; every other type is not. Per
     // aion-arch/changes/idea-gap-question-ticket-types/design.md §1.1 —
     // `idea`/`knownGap`/`openQuestion` all inherit `signal`'s exact prior
-    // `isAlwaysRoot` treatment.
+    // `isAlwaysRoot` treatment. `spec` added for
+    // aion-arch/changes/spec-ticket-type.
     const alwaysRoot = {
       TicketType.epic,
       TicketType.idea,
       TicketType.knownGap,
       TicketType.openQuestion,
       TicketType.release,
+      TicketType.spec,
     };
 
     for (final type in TicketType.values) {

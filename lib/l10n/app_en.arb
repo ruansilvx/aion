@@ -164,6 +164,9 @@
   "ticketTypeOpenQuestion": "Open Question",
   "ticketTypeRelease": "Release",
   "ticketTypeBug": "Bug",
+  "ticketTypeSpec": "Spec",
+  "specOriginBadgeAutoPrefix": "Auto-generated from ",
+  "specOriginBadgeManual": "Manually created spec",
 
   "ticketDetailAddPriority": "+ PRIORITY",
   "ticketDetailChangePriority": "Change priority",
@@ -436,6 +439,7 @@
 
   "executionVerificationFailedToast": "Coding run failed verification — see the Task for details.",
   "sddStageAdvanceFailedToast": "Stage advance failed — see the ticket for details.",
+  "specWriteFailedToast": "Couldn't write the spec ticket — you can create it by hand from the Epic instead.",
 
   "ticketTrashConfirmMessage": "{total, plural, one{This ticket will move to Trash.} other{These {total} tickets will move to Trash.}} You can restore it from Trash later.",
   "@ticketTrashConfirmMessage": {
@@ -835,6 +839,10 @@
   "ticketDetailPendingSkillRunningWell": "Running the skill…",
   "ticketDetailPendingSkillKindTemplate": "TEMPLATE",
   "ticketDetailPendingSkillKindDelegatedSkill": "DELEGATED SKILL",
+  "ticketDetailPendingSpecLinkTitle": "Link to this spec?",
+  "ticketDetailPendingSpecLinkStatusWaiting": "Suggested — waiting for your decision",
+  "ticketDetailPendingSpecLinkReject": "Reject",
+  "ticketDetailPendingSpecLinkConfirm": "Link",
   "settingsProviderCardTitle": "Claude Agent SDK",
   "settingsProviderEyebrow": "PROVIDER",
   "settingsProviderSubline": "Authenticated via your Claude plan",
@@ -916,6 +924,9 @@
   "settingsAutomationTicketLinkingAutoSubLabel": "Links tickets on its own",
   "settingsAutomationTicketLinkingGatedSubLabel": "Asks before each link",
   "settingsAutomationTicketLinkingManualSubLabel": "You link tickets yourself",
+  "settingsAutomationSpecAutoLinkAutoSubLabel": "Links to the nearest spec on its own",
+  "settingsAutomationSpecAutoLinkGatedSubLabel": "Asks before linking to a spec",
+  "settingsAutomationSpecAutoLinkManualSubLabel": "You link specs yourself",
 
   "settingsAutomationCodingExecutionResumeLabel": "Resume After Restart",
   "settingsAutomationCodingExecutionResumeDescription": "When a coding-execution run was interrupted by an app restart, resume it automatically, ask first, or leave it for a manual retry.",

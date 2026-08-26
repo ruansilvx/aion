@@ -322,6 +322,19 @@ String _confidenceSubLabel(
     AutomationConfidence.manual =>
       context.l10n.settingsAutomationTicketLinkingManualSubLabel,
   },
+  // No `_AutomationSection` instance renders this context yet — a
+  // dedicated Settings row is a reasonable follow-up, not required for
+  // `aion-arch/changes/spec-ticket-type` to be useful — but this switch
+  // must stay exhaustive over every `AutomationContext` value regardless
+  // of which ones are currently surfaced in the UI.
+  AutomationContext.specAutoLink => switch (confidence) {
+    AutomationConfidence.auto =>
+      context.l10n.settingsAutomationSpecAutoLinkAutoSubLabel,
+    AutomationConfidence.gated =>
+      context.l10n.settingsAutomationSpecAutoLinkGatedSubLabel,
+    AutomationConfidence.manual =>
+      context.l10n.settingsAutomationSpecAutoLinkManualSubLabel,
+  },
 };
 
 /// The mode dot's color, encoding [confidence] per design.md §7's

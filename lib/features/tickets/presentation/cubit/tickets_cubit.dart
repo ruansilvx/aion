@@ -80,6 +80,7 @@ import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart
 import 'package:aion/features/tickets/domain/repositories/workflow_prompt_template_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/workflow_skill_attachment_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/workflow_status_repository.dart';
+import 'package:aion/features/tickets/domain/utils/embedding_similarity.dart';
 import 'package:aion/features/tickets/domain/utils/render_workflow_prompt_template.dart';
 import 'package:aion/features/tickets/domain/utils/ticket_link_direction.dart';
 import 'package:aion/features/tickets/domain/utils/ticket_rollup_calculator.dart';
@@ -1580,6 +1581,15 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// found, fires it via [_resolveAndFireAttachment] — symmetric to, and
   /// independent of, the `executionTrigger`-role check above. Added for
   /// `aion-arch/changes/workflow-skill-attachments`.
+  ///
+  /// Also fires a fire-and-forget [_maybeAutoLinkToSpec] call whenever
+  /// [id] is a [TicketType.bug] and [status] resolves to a
+  /// [WorkflowStatusRole.done] role — a Task's completion is already
+  /// structurally traceable to its Epic's spec via its `parentId` chain,
+  /// so only a Bug (which may be filed and resolved with no structural
+  /// relationship to the Epic whose spec it actually invalidates) needs
+  /// this similarity-based path. Added for
+  /// `aion-arch/changes/spec-ticket-type`.
   Future<void> updateTicketStatus(String id, String status) async {
     // Only fetch the ticket up front when the status holds the
     // executionTrigger role — every other transition returns true
@@ -1629,6 +1639,10 @@ class TicketsCubit extends Cubit<TicketsState> {
         if (updated.type.isExecutable &&
             _roleOf(status) == WorkflowStatusRole.executionTrigger) {
           unawaited(_triggerOrQueueCodingExecution(updated));
+        }
+        if (updated.type == TicketType.bug &&
+            _roleOf(status) == WorkflowStatusRole.done) {
+          unawaited(_maybeAutoLinkToSpec(updated));
         }
         final statusId = _resolveStatus(status)?.id;
         attachment = statusId != null ? _attachmentForStatus(statusId) : null;
@@ -2018,6 +2032,14 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// Story children and this call just advanced that Story's `sddStage`.
   /// Added for
   /// `aion-arch/changes/generalized-live-refresh-for-all-ticket-writes`.
+  ///
+  /// When [nextStage] is [SddStage.archived] and [ticket.type] is
+  /// [TicketType.epic] specifically (not [TicketType.story] — a Story
+  /// reaching `archived` is the routine precondition for its own parent
+  /// Epic's `proposed → verifying` transition, and does not itself get a
+  /// spec), also fires a fire-and-forget [_createEpicSpec] call to
+  /// synthesize and create the Epic's `TicketType.spec` ticket. Added for
+  /// `aion-arch/changes/spec-ticket-type`.
   Future<String?> advanceSddStage(Ticket ticket) async {
     // Captured before this call's own emissions below (including the
     // guard-clause emits from _emitSddStagePreconditionNotMet) overwrite
@@ -2060,6 +2082,9 @@ class TicketsCubit extends Cubit<TicketsState> {
         ),
       );
       if (nextStage == SddStage.archived) {
+        if (ticket.type == TicketType.epic) {
+          unawaited(_createEpicSpec(refreshed));
+        }
         emit(TicketDetailLoaded(refreshed));
         return null;
       }
@@ -2117,6 +2142,115 @@ class TicketsCubit extends Cubit<TicketsState> {
       _inFlightStageAdvanceIds.remove(ticket.id);
       emit(TicketsError(e.toString()));
       return null;
+    }
+  }
+
+  /// Synthesizes and creates [epic]'s spec ticket — see [TicketType.spec]'s
+  /// dartdoc. Fetches [epic]'s direct Story children (via
+  /// [TicketRepository.getTicketsByParent]) and assembles the same kind of
+  /// context [_assembleStageContext] already builds for the `verifying`/
+  /// `archived` transitions (epic title/description + each child Story's
+  /// title/status), then resolves the model via
+  /// [_resolveModelAndProvider] using [ModelPhase.capable] — matching
+  /// `SddStageModelPhase.archived`'s existing tier, since writing up a
+  /// finished Epic is comparatively mechanical work, not a fresh judgment
+  /// call. Runs a single text-only [AgentModelClient.run] call (mirrors
+  /// [TicketEstimationSuggester]'s own one-shot, non-chat call shape,
+  /// accumulating [AgentTextEvent]s into the spec body) — no `chat`-type
+  /// ticket is spawned for this, consistent with the pre-existing
+  /// "nothing to spawn after Archival" behavior [advanceSddStage]'s
+  /// `archived` branch already had before this change. Creates a
+  /// [TicketType.spec] ticket titled `"Spec — <epic.title>"` with the
+  /// model's reply as its content, then links it to [epic] via
+  /// [TicketLinkRepository.createLink] ([TicketLinkType.relatesTo]). A
+  /// failure anywhere in this call — including an [AgentErrorEvent] —
+  /// is caught and emits `TicketsError(reason:
+  /// TicketsErrorReason.specWriteFailed)`; the Epic itself stays
+  /// `archived` regardless (that write already persisted several lines
+  /// before this call starts — see [advanceSddStage]). The fallback for a
+  /// failed write is manually creating the missing spec ticket via the
+  /// ordinary New Ticket flow, since [TicketType.spec] is generically
+  /// creatable there. No-ops silently (no ticket created, no error
+  /// emitted) if this cubit was constructed without a [ProviderRegistry]
+  /// or [TicketLinkRepository]. Added for
+  /// `aion-arch/changes/spec-ticket-type`.
+  Future<void> _createEpicSpec(Ticket epic) async {
+    final providerRegistry = _providerRegistry;
+    final linkRepo = _linkRepository;
+    if (providerRegistry == null || linkRepo == null) return;
+
+    try {
+      final stories = await _repository.getTicketsByParent(
+        epic.id,
+        types: const [TicketType.story],
+      );
+
+      final buffer = StringBuffer()..writeln('# ${epic.title}');
+      final description = epic.description;
+      if (description != null && description.isNotEmpty) {
+        buffer
+          ..writeln()
+          ..writeln(description);
+      }
+      if (stories.isNotEmpty) {
+        buffer
+          ..writeln()
+          ..writeln('## Stories');
+        for (final story in stories) {
+          buffer.writeln('- ${story.title} (${story.status})');
+        }
+      }
+      buffer
+        ..writeln()
+        ..writeln(
+          'Write a spec documenting this capability\'s current-state '
+          'behavior — what it does today, for someone who was not part '
+          'of building it. Respond with the spec body only, in Markdown, '
+          'starting with a top-level heading.',
+        );
+
+      final (model, provider) = await _resolveModelAndProvider(
+        ModelPhase.capable,
+      );
+      final replyBuffer = StringBuffer();
+      final events = await provider.client.run(
+        AgentRequest(prompt: buffer.toString().trim(), model: model.modelId),
+      );
+      await for (final event in events) {
+        switch (event) {
+          case AgentTextEvent(:final text):
+            replyBuffer.write(text);
+          case AgentDoneEvent():
+          case AgentOverageDetectedEvent():
+          case AgentToolUseEvent():
+          case AgentToolCallEvent(): // never emitted — this call sends no tools
+            break;
+          case AgentErrorEvent(:final message):
+            throw StateError(message);
+          case AgentCancelledEvent(): // never emitted — this call sets no runId
+            throw StateError('Spec write cancelled.');
+        }
+      }
+
+      final now = DateTime.now();
+      final spec = Ticket(
+        id: _uuid.v4(),
+        ticketId: '',
+        type: TicketType.spec,
+        title: 'Spec — ${epic.title}',
+        description: replyBuffer.toString().trim(),
+        status: _defaultCreationStatus,
+        createdAt: now,
+        updatedAt: now,
+      );
+      await _repository.createTicket(spec);
+      await linkRepo.createLink(
+        sourceTicketId: spec.id,
+        targetTicketId: epic.id,
+        linkType: TicketLinkType.relatesTo,
+      );
+    } catch (e) {
+      emit(TicketsError(e.toString(), reason: TicketsErrorReason.specWriteFailed));
     }
   }
 
@@ -2236,6 +2370,14 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// emitting if constructed without a [TicketLinkRepository]. Added for
   /// `aion-arch/changes/idea-gap-question-ticket-types`; see that
   /// change's design.md §3.2.
+  ///
+  /// Also fires a fire-and-forget [_maybeAutoLinkToSpec] call on the
+  /// newly created ticket, right after its mandatory target link
+  /// succeeds — additive, not a replacement: the created ticket can end
+  /// up with two `relatesTo` links, one to [targetTicketId] (mandatory)
+  /// and one to whatever spec it's most semantically relevant to
+  /// (auto-discovered, best-effort). Added for
+  /// `aion-arch/changes/spec-ticket-type`.
   Future<bool> createGapOrQuestion(
     TicketType type, {
     required String title,
@@ -2277,6 +2419,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         targetTicketId: targetTicketId,
         linkType: TicketLinkType.relatesTo,
       );
+      unawaited(_maybeAutoLinkToSpec(raised));
       await loadDocumentRelations(targetTicketId);
       return true;
     } catch (e) {
@@ -5176,6 +5319,150 @@ class TicketsCubit extends Cubit<TicketsState> {
     final current = state;
     if (current is TicketDetailLoaded && current.ticket.id == ticketId) {
       emit(current.copyWith(pendingSkillAttachment: () => null));
+    }
+  }
+
+  /// Minimum cosine similarity for [_maybeAutoLinkToSpec] to treat a
+  /// `TicketType.spec` ticket as a match — same bar
+  /// `TicketContextEnricher`/`TicketEstimationSuggester` already use for
+  /// their own embedding-similarity passes. Added for
+  /// `aion-arch/changes/spec-ticket-type`.
+  static const _specAutoLinkThreshold = 0.75;
+
+  /// Pending [PendingSpecLinkSuggestion]s (confidence `gated`) awaiting
+  /// user confirmation, keyed by the ticket id the suggested link would
+  /// attach to. Mirrors [_pendingSkillAttachments]'s shape, one level
+  /// simpler (no fire action to record — confirming always means
+  /// "create this exact `relatesTo` link"). Cleared by
+  /// [confirmPendingSpecLinkSuggestion]/[rejectPendingSpecLinkSuggestion].
+  /// Added for `aion-arch/changes/spec-ticket-type`.
+  final Map<String, PendingSpecLinkSuggestion> _pendingSpecLinkSuggestions =
+      {};
+
+  /// Best-effort auto-link from [ticket] to the single most similar live
+  /// `TicketType.spec` ticket, gated by
+  /// [AutomationSettingsRepository.getConfidence] on
+  /// [AutomationContext.specAutoLink]. Reuses
+  /// `domain/utils/embedding_similarity.dart`'s [cosineSimilarity] the
+  /// same way [TicketContextEnricher]'s embedding-similarity pass does
+  /// (`ticket.title`+`ticket.description` as the query,
+  /// [_specAutoLinkThreshold], unchanged) but takes only the single best
+  /// match above threshold rather than a top-K list — this creates a
+  /// real `relatesTo` link, not enrichment prose, so a lower bar for
+  /// "worth mentioning" doesn't apply. `auto`: creates the link
+  /// immediately via [TicketLinkRepository.createLink]. `gated`: creates
+  /// no link yet; records the match in [_pendingSpecLinkSuggestions] and,
+  /// if [ticket]'s detail screen is currently open, re-emits
+  /// [TicketDetailLoaded] via [TicketDetailLoaded.copyWith] carrying
+  /// [TicketDetailLoaded.pendingSpecLinkSuggestion] — mirrors
+  /// [_resolveAndFireAttachment]'s own `gated` branch. `manual`: no
+  /// proactive surfacing (this method is the only trigger currently
+  /// wired; a standalone manual "Link to spec" action is a reasonable
+  /// follow-up, not attempted here). No-ops silently (no link, no
+  /// banner, no error) if [ticket] is itself a [TicketType.spec], if
+  /// nothing clears [_specAutoLinkThreshold], or if this cubit was
+  /// constructed without an [EmbeddingProvider]/[TicketLinkRepository].
+  /// Added for `aion-arch/changes/spec-ticket-type`.
+  Future<void> _maybeAutoLinkToSpec(Ticket ticket) async {
+    if (ticket.type == TicketType.spec) return;
+    final embeddingProvider = _embeddingProvider;
+    final linkRepo = _linkRepository;
+    if (embeddingProvider == null || linkRepo == null) return;
+
+    try {
+      final specs = await _repository.getAllTicketsByType([
+        TicketType.spec,
+      ]);
+      if (specs.isEmpty) return;
+
+      final queryVector = await embeddingProvider.embed(
+        '${ticket.title}\n\n${ticket.description ?? ''}',
+      );
+      final scored = <(Ticket, double)>[
+        for (final spec in specs)
+          if (spec.embedding != null)
+            (spec, cosineSimilarity(queryVector, spec.embedding!)),
+      ]..sort((a, b) => b.$2.compareTo(a.$2));
+      if (scored.isEmpty || scored.first.$2 < _specAutoLinkThreshold) return;
+      final match = scored.first.$1;
+
+      final automationRepo = _automationSettingsRepository;
+      final confidence = automationRepo == null
+          ? AutomationConfidence.gated
+          : await automationRepo.getConfidence(
+              AutomationContext.specAutoLink,
+            );
+
+      switch (confidence) {
+        case AutomationConfidence.auto:
+          await linkRepo.createLink(
+            sourceTicketId: ticket.id,
+            targetTicketId: match.id,
+            linkType: TicketLinkType.relatesTo,
+          );
+        case AutomationConfidence.gated:
+          final suggestion = PendingSpecLinkSuggestion(
+            specTicketId: match.id,
+            specTicketTitle: match.title,
+          );
+          _pendingSpecLinkSuggestions[ticket.id] = suggestion;
+          final current = state;
+          if (current is TicketDetailLoaded &&
+              current.ticket.id == ticket.id) {
+            emit(
+              current.copyWith(pendingSpecLinkSuggestion: () => suggestion),
+            );
+          }
+        case AutomationConfidence.manual:
+          break;
+      }
+    } catch (_) {
+      // Best-effort enrichment — never surface as TicketsError, mirrors
+      // TicketEstimationSuggester._run's own catch-and-swallow.
+    }
+  }
+
+  /// Confirms [ticketId]'s pending [PendingSpecLinkSuggestion] (if any):
+  /// removes it from [_pendingSpecLinkSuggestions] and creates the
+  /// suggested `relatesTo` link, `unawaited` (mirrors
+  /// [_maybeAutoLinkToSpec]'s own `auto` branch). If [ticketId]'s detail
+  /// screen is currently open, re-emits [TicketDetailLoaded] via
+  /// [TicketDetailLoaded.copyWith] with
+  /// [TicketDetailLoaded.pendingSpecLinkSuggestion] cleared. No-ops if
+  /// [ticketId] has no pending suggestion, or if constructed without a
+  /// [TicketLinkRepository]. Mirrors [confirmPendingSkillAttachment]'s
+  /// shape. Added for `aion-arch/changes/spec-ticket-type`.
+  Future<void> confirmPendingSpecLinkSuggestion(String ticketId) async {
+    final pending = _pendingSpecLinkSuggestions.remove(ticketId);
+    final linkRepo = _linkRepository;
+    if (pending == null || linkRepo == null) return;
+    unawaited(
+      linkRepo.createLink(
+        sourceTicketId: ticketId,
+        targetTicketId: pending.specTicketId,
+        linkType: TicketLinkType.relatesTo,
+      ),
+    );
+    final current = state;
+    if (current is TicketDetailLoaded && current.ticket.id == ticketId) {
+      emit(current.copyWith(pendingSpecLinkSuggestion: () => null));
+    }
+  }
+
+  /// Rejects [ticketId]'s pending [PendingSpecLinkSuggestion]: removes it
+  /// from [_pendingSpecLinkSuggestions] without ever creating the link.
+  /// If [ticketId]'s detail screen is currently open, re-emits
+  /// [TicketDetailLoaded] via [TicketDetailLoaded.copyWith] with
+  /// [TicketDetailLoaded.pendingSpecLinkSuggestion] cleared. No-ops if
+  /// [ticketId] has no pending suggestion. Mirrors
+  /// [rejectPendingSkillAttachment]'s shape. Added for
+  /// `aion-arch/changes/spec-ticket-type`.
+  Future<void> rejectPendingSpecLinkSuggestion(String ticketId) async {
+    final pending = _pendingSpecLinkSuggestions.remove(ticketId);
+    if (pending == null) return;
+    final current = state;
+    if (current is TicketDetailLoaded && current.ticket.id == ticketId) {
+      emit(current.copyWith(pendingSpecLinkSuggestion: () => null));
     }
   }
 

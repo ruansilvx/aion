@@ -48,6 +48,11 @@ void main() {
         when(
           () => repository.getConfidence(AutomationContext.ticketLinking),
         ).thenAnswer((_) async => AutomationConfidence.gated);
+        // AutomationContext.specAutoLink — added for
+        // aion-arch/changes/spec-ticket-type.
+        when(
+          () => repository.getConfidence(AutomationContext.specAutoLink),
+        ).thenAnswer((_) async => AutomationConfidence.gated);
       },
       build: () => AutomationSettingsCubit(repository),
       act: (cubit) => cubit.load(),
@@ -60,6 +65,7 @@ void main() {
           AutomationContext.codingExecutionResume: AutomationConfidence.gated,
           AutomationContext.ticketCreation: AutomationConfidence.gated,
           AutomationContext.ticketLinking: AutomationConfidence.gated,
+          AutomationContext.specAutoLink: AutomationConfidence.gated,
         }),
       ],
     );

@@ -50,4 +50,13 @@ enum AutomationContext {
   /// `aion-arch/changes/ticket-crud-tool-calls`; see
   /// `TicketsCubit._handleAddLinkToolCall`.
   ticketLinking,
+
+  /// Auto-linking a fresh `knownGap`/`openQuestion` or a `bug` reaching a
+  /// `done`-role status to the most similar existing `TicketType.spec`
+  /// ticket — whether the link is created immediately, asks for
+  /// confirmation first, or is declined outright (a manual "Link to
+  /// spec" action remains available regardless). Added for
+  /// `aion-arch/changes/spec-ticket-type`; see
+  /// `TicketsCubit._maybeAutoLinkToSpec`.
+  specAutoLink,
 }

@@ -5819,6 +5819,182 @@ void main() {
     );
   });
 
+  group('advanceSddStage — archived / _createEpicSpec (spec-ticket-type)', () {
+    late MockAgentModelClient agentClient;
+    late MockProviderRegistry registry;
+    late MockCommentRepository commentRepository;
+    late MockTicketLinkRepository linkRepository;
+
+    final epicVerifying = Ticket(
+      id: 'spec-epic',
+      ticketId: 'AIO-70',
+      type: TicketType.epic,
+      title: 'Board Filtering & Saved Views',
+      status: 'backlog',
+      sddStage: SddStage.verifying,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final storyVerifying = Ticket(
+      id: 'spec-story',
+      ticketId: 'AIO-71',
+      type: TicketType.story,
+      title: 'A story',
+      status: 'backlog',
+      sddStage: SddStage.verifying,
+      parentId: epicVerifying.id,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final terminalChat = Ticket(
+      id: 'spec-terminal-chat',
+      ticketId: 'AIO-72',
+      type: TicketType.chat,
+      title: 'Verifying — Board Filtering & Saved Views',
+      status: 'backlog',
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    setUp(() {
+      agentClient = MockAgentModelClient();
+      registry = buildProviderStack(agentClient).registry;
+      commentRepository = MockCommentRepository();
+      linkRepository = MockTicketLinkRepository();
+      // Shared "the current stage's chat already has an AI reply" stub —
+      // satisfies _mostRecentChatHasTerminalReply for both fixtures'
+      // `verifying` precondition.
+      when(
+        () => repository.getTicketsByParent(
+          epicVerifying.id,
+          types: const [TicketType.chat],
+        ),
+      ).thenAnswer((_) async => [terminalChat]);
+      when(
+        () => repository.getTicketsByParent(
+          storyVerifying.id,
+          types: const [TicketType.chat],
+        ),
+      ).thenAnswer((_) async => [terminalChat]);
+      when(
+        () => commentRepository.getCommentsForTicket(terminalChat.id),
+      ).thenAnswer(
+        (_) async => [
+          TicketComment(
+            id: 'c1',
+            ticketId: terminalChat.id,
+            content: 'Looks good.',
+            authorType: CommentAuthorType.ai,
+            createdAt: DateTime(2026),
+          ),
+        ],
+      );
+      when(
+        () => repository.updateTicketSddStage(any(), SddStage.archived),
+      ).thenAnswer((_) async {});
+    });
+
+    TicketsCubit buildCubit() => TicketsCubit(
+      repository,
+      providerRegistry: registry,
+      commentRepository: commentRepository,
+      linkRepository: linkRepository,
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'an Epic reaching archived creates a titled, linked spec ticket',
+      setUp: () {
+        final archivedEpic = Ticket(
+          id: epicVerifying.id,
+          ticketId: epicVerifying.ticketId,
+          type: epicVerifying.type,
+          title: epicVerifying.title,
+          status: epicVerifying.status,
+          sddStage: SddStage.archived,
+          createdAt: epicVerifying.createdAt,
+          updatedAt: epicVerifying.updatedAt,
+        );
+        when(
+          () => repository.getTicketById(epicVerifying.id),
+        ).thenAnswer((_) async => archivedEpic);
+        when(
+          () => repository.getTicketsByParent(
+            epicVerifying.id,
+            types: const [TicketType.story],
+          ),
+        ).thenAnswer((_) async => [storyVerifying]);
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('# Board Filtering & Saved Views\n\nDoes X.'),
+            AgentDoneEvent(),
+          ]),
+        );
+        when(
+          () => linkRepository.createLink(
+            sourceTicketId: any(named: 'sourceTicketId'),
+            targetTicketId: epicVerifying.id,
+            linkType: TicketLinkType.relatesTo,
+          ),
+        ).thenAnswer((_) async {});
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.advanceSddStage(epicVerifying),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        final created = verify(
+          () => repository.createTicket(captureAny()),
+        ).captured.cast<Ticket>();
+        expect(created, hasLength(1));
+        expect(created.single.type, TicketType.spec);
+        expect(
+          created.single.title,
+          'Spec — Board Filtering & Saved Views',
+        );
+        verify(
+          () => linkRepository.createLink(
+            sourceTicketId: created.single.id,
+            targetTicketId: epicVerifying.id,
+            linkType: TicketLinkType.relatesTo,
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'a Story reaching archived does not create a spec ticket',
+      setUp: () {
+        final archivedStory = Ticket(
+          id: storyVerifying.id,
+          ticketId: storyVerifying.ticketId,
+          type: storyVerifying.type,
+          title: storyVerifying.title,
+          status: storyVerifying.status,
+          sddStage: SddStage.archived,
+          parentId: storyVerifying.parentId,
+          createdAt: storyVerifying.createdAt,
+          updatedAt: storyVerifying.updatedAt,
+        );
+        when(
+          () => repository.getTicketById(storyVerifying.id),
+        ).thenAnswer((_) async => archivedStory);
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.advanceSddStage(storyVerifying),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verifyNever(() => repository.createTicket(any()));
+        verifyNever(
+          () => linkRepository.createLink(
+            sourceTicketId: any(named: 'sourceTicketId'),
+            targetTicketId: any(named: 'targetTicketId'),
+            linkType: any(named: 'linkType'),
+          ),
+        );
+      },
+    );
+  });
+
   group('advanceSddStage — design gate (designBrief/designSync)', () {
     late MockAgentModelClient agentClient;
     late MockProviderRegistry registry;
@@ -10177,6 +10353,384 @@ void main() {
             linkType: TicketLinkType.relatesTo,
           ),
         ).called(1);
+      },
+    );
+  });
+
+  group('_maybeAutoLinkToSpec (spec-ticket-type)', () {
+    late MockTicketLinkRepository linkRepository;
+    late MockEmbeddingProvider embeddingProvider;
+    late MockAutomationSettingsRepository automationSettingsRepository;
+
+    // Identical unit vectors → cosine similarity 1.0 (above the 0.75
+    // threshold); orthogonal vectors → 0.0 (below it). Raw Float32
+    // bytes, matching `EmbeddingProvider.embed`'s real return shape —
+    // `Uint8List.fromList([1, 2, 3])`-style filler (as the pre-existing
+    // "estimation-suggestion triggers" group uses) would resolve to a
+    // zero-length Float32 view and always score 0.0, which doesn't
+    // exercise the above-threshold branches this group needs.
+    Uint8List vec(List<double> values) =>
+        Float32List.fromList(values).buffer.asUint8List();
+
+    final matchingSpec = Ticket(
+      id: 'spec-match',
+      ticketId: 'AIO-80',
+      type: TicketType.spec,
+      title: 'Spec — Board Filtering & Saved Views',
+      status: 'backlog',
+      embedding: vec([1, 0, 0]),
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    final gapTarget = Ticket(
+      id: 'gq-target-spec',
+      ticketId: 'AIO-81',
+      type: TicketType.story,
+      title: 'Target story',
+      status: 'backlog',
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    setUp(() {
+      linkRepository = MockTicketLinkRepository();
+      embeddingProvider = MockEmbeddingProvider();
+      automationSettingsRepository = MockAutomationSettingsRepository();
+      when(() => repository.getAllTickets()).thenAnswer((_) async => []);
+      when(
+        () => repository.getTicketById(gapTarget.id),
+      ).thenAnswer((_) async => gapTarget);
+      when(
+        () => linkRepository.getLinksByTypes(any()),
+      ).thenAnswer((_) async => []);
+      when(
+        () => linkRepository.getLinksForTicket(any()),
+      ).thenAnswer((_) async => []);
+      // The mandatory target link every createGapOrQuestion call makes,
+      // distinct from the auto-link this group is actually testing.
+      when(
+        () => linkRepository.createLink(
+          sourceTicketId: any(named: 'sourceTicketId'),
+          targetTicketId: gapTarget.id,
+          linkType: TicketLinkType.relatesTo,
+        ),
+      ).thenAnswer((_) async {});
+      when(
+        () => repository.getAllTicketsByType([TicketType.spec]),
+      ).thenAnswer((_) async => [matchingSpec]);
+    });
+
+    TicketsCubit buildCubit() => TicketsCubit(
+      repository,
+      linkRepository: linkRepository,
+      embeddingProvider: embeddingProvider,
+      automationSettingsRepository: automationSettingsRepository,
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'auto confidence creates the relatesTo link to the best-matching '
+      'spec immediately',
+      setUp: () {
+        when(
+          () => embeddingProvider.embed(any()),
+        ).thenAnswer((_) async => vec([1, 0, 0]));
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.specAutoLink,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.auto);
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        when(
+          () => linkRepository.createLink(
+            sourceTicketId: any(named: 'sourceTicketId'),
+            targetTicketId: matchingSpec.id,
+            linkType: TicketLinkType.relatesTo,
+          ),
+        ).thenAnswer((_) async {});
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.createGapOrQuestion(
+        TicketType.knownGap,
+        title: 'A gap',
+        targetTicketId: gapTarget.id,
+      ),
+      wait: const Duration(milliseconds: 20),
+      verify: (_) {
+        final created = verify(
+          () => repository.createTicket(captureAny()),
+        ).captured.cast<Ticket>().single;
+        verify(
+          () => linkRepository.createLink(
+            sourceTicketId: created.id,
+            targetTicketId: matchingSpec.id,
+            linkType: TicketLinkType.relatesTo,
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'gated confidence creates no link immediately, but confirming the '
+      'recorded suggestion afterward does',
+      setUp: () {
+        when(
+          () => embeddingProvider.embed(any()),
+        ).thenAnswer((_) async => vec([1, 0, 0]));
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.specAutoLink,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.gated);
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.createGapOrQuestion(
+        TicketType.knownGap,
+        title: 'A gap',
+        targetTicketId: gapTarget.id,
+      ),
+      wait: const Duration(milliseconds: 20),
+      verify: (cubit) async {
+        final created = verify(
+          () => repository.createTicket(captureAny()),
+        ).captured.cast<Ticket>().single;
+        verifyNever(
+          () => linkRepository.createLink(
+            sourceTicketId: created.id,
+            targetTicketId: matchingSpec.id,
+            linkType: TicketLinkType.relatesTo,
+          ),
+        );
+        when(
+          () => linkRepository.createLink(
+            sourceTicketId: created.id,
+            targetTicketId: matchingSpec.id,
+            linkType: TicketLinkType.relatesTo,
+          ),
+        ).thenAnswer((_) async {});
+        await cubit.confirmPendingSpecLinkSuggestion(created.id);
+        verify(
+          () => linkRepository.createLink(
+            sourceTicketId: created.id,
+            targetTicketId: matchingSpec.id,
+            linkType: TicketLinkType.relatesTo,
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'manual confidence does not proactively create a link',
+      setUp: () {
+        when(
+          () => embeddingProvider.embed(any()),
+        ).thenAnswer((_) async => vec([1, 0, 0]));
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.specAutoLink,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.manual);
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.createGapOrQuestion(
+        TicketType.knownGap,
+        title: 'A gap',
+        targetTicketId: gapTarget.id,
+      ),
+      wait: const Duration(milliseconds: 20),
+      verify: (_) {
+        verifyNever(
+          () => linkRepository.createLink(
+            sourceTicketId: any(named: 'sourceTicketId'),
+            targetTicketId: matchingSpec.id,
+            linkType: TicketLinkType.relatesTo,
+          ),
+        );
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'below-threshold similarity creates no link and surfaces no error',
+      setUp: () {
+        // Orthogonal to matchingSpec's [1, 0, 0] → cosine 0.0.
+        when(
+          () => embeddingProvider.embed(any()),
+        ).thenAnswer((_) async => vec([0, 1, 0]));
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.createGapOrQuestion(
+        TicketType.knownGap,
+        title: 'A gap',
+        targetTicketId: gapTarget.id,
+      ),
+      wait: const Duration(milliseconds: 20),
+      verify: (_) {
+        verifyNever(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.specAutoLink,
+          ),
+        );
+        verifyNever(
+          () => linkRepository.createLink(
+            sourceTicketId: any(named: 'sourceTicketId'),
+            targetTicketId: matchingSpec.id,
+            linkType: TicketLinkType.relatesTo,
+          ),
+        );
+      },
+    );
+  });
+
+  group('updateTicketStatus spec auto-link wiring (spec-ticket-type)', () {
+    late MockTicketLinkRepository linkRepository;
+    late MockEmbeddingProvider embeddingProvider;
+    late MockAutomationSettingsRepository automationSettingsRepository;
+
+    Uint8List vec(List<double> values) =>
+        Float32List.fromList(values).buffer.asUint8List();
+
+    final matchingSpec = Ticket(
+      id: 'spec-match-2',
+      ticketId: 'AIO-82',
+      type: TicketType.spec,
+      title: 'Spec — Bug tracking',
+      status: 'backlog',
+      embedding: vec([1, 0, 0]),
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    final resolvedBug = Ticket(
+      id: 'bug-resolved',
+      ticketId: 'AIO-83',
+      type: TicketType.bug,
+      title: 'A resolved bug',
+      status: 'backlog',
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    setUp(() {
+      linkRepository = MockTicketLinkRepository();
+      embeddingProvider = MockEmbeddingProvider();
+      automationSettingsRepository = MockAutomationSettingsRepository();
+      when(
+        () => repository.updateTicketStatus(any(), any()),
+      ).thenAnswer((_) async {});
+      when(
+        () => repository.searchTickets(
+          query: any(named: 'query'),
+          statuses: any(named: 'statuses'),
+          types: any(named: 'types'),
+          priorities: any(named: 'priorities'),
+          sort: any(named: 'sort'),
+          limit: any(named: 'limit'),
+          offset: any(named: 'offset'),
+          statusSortOrder: any(named: 'statusSortOrder'),
+        ),
+      ).thenAnswer(
+        (_) async => const TicketSearchPage(tickets: [], hasMore: false),
+      );
+      when(() => repository.getAllTicketsByType([TicketType.spec]))
+          .thenAnswer((_) async => [matchingSpec]);
+      when(
+        () => embeddingProvider.embed(any()),
+      ).thenAnswer((_) async => vec([1, 0, 0]));
+      when(
+        () => automationSettingsRepository.getConfidence(
+          AutomationContext.specAutoLink,
+        ),
+      ).thenAnswer((_) async => AutomationConfidence.auto);
+    });
+
+    TicketsCubit buildCubit() => TicketsCubit(
+      repository,
+      linkRepository: linkRepository,
+      embeddingProvider: embeddingProvider,
+      automationSettingsRepository: automationSettingsRepository,
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'a bug reaching a done-role status fires the auto-link',
+      setUp: () {
+        when(
+          () => repository.getTicketById(resolvedBug.id),
+        ).thenAnswer((_) async => resolvedBug.copyWith(status: 'done'));
+        when(
+          () => linkRepository.createLink(
+            sourceTicketId: resolvedBug.id,
+            targetTicketId: matchingSpec.id,
+            linkType: TicketLinkType.relatesTo,
+          ),
+        ).thenAnswer((_) async {});
+      },
+      build: buildCubit,
+      seed: () => TicketsLoaded([resolvedBug], hasMore: false),
+      act: (cubit) => cubit.updateTicketStatus(resolvedBug.id, 'done'),
+      wait: const Duration(milliseconds: 20),
+      verify: (_) {
+        verify(
+          () => linkRepository.createLink(
+            sourceTicketId: resolvedBug.id,
+            targetTicketId: matchingSpec.id,
+            linkType: TicketLinkType.relatesTo,
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'a task reaching a done-role status does not fire the auto-link',
+      setUp: () {
+        final resolvedTask = Ticket(
+          id: 'task-resolved',
+          ticketId: 'AIO-84',
+          type: TicketType.task,
+          title: 'A resolved task',
+          status: 'backlog',
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        when(
+          () => repository.getTicketById(resolvedTask.id),
+        ).thenAnswer((_) async => resolvedTask.copyWith(status: 'done'));
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.updateTicketStatus('task-resolved', 'done'),
+      wait: const Duration(milliseconds: 20),
+      verify: (_) {
+        verifyNever(
+          () => linkRepository.createLink(
+            sourceTicketId: any(named: 'sourceTicketId'),
+            targetTicketId: matchingSpec.id,
+            linkType: TicketLinkType.relatesTo,
+          ),
+        );
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'a bug moving to a non-done-role status does not fire the '
+      'auto-link',
+      setUp: () {
+        when(
+          () => repository.getTicketById(resolvedBug.id),
+        ).thenAnswer((_) async => resolvedBug.copyWith(status: 'backlog'));
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.updateTicketStatus(resolvedBug.id, 'backlog'),
+      wait: const Duration(milliseconds: 20),
+      verify: (_) {
+        verifyNever(
+          () => linkRepository.createLink(
+            sourceTicketId: any(named: 'sourceTicketId'),
+            targetTicketId: matchingSpec.id,
+            linkType: TicketLinkType.relatesTo,
+          ),
+        );
       },
     );
   });
