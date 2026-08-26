@@ -16,7 +16,13 @@ const branchTicketToolDefinition = AgentToolDefinition(
       'child chat ticket, so this conversation can keep moving on its own '
       'thread while the sub-issue is worked separately. Only call this for '
       'a genuinely blocking sub-issue that deserves its own thread — not '
-      'for routine clarifying questions.',
+      'for routine clarifying questions. The result always has an '
+      '"accepted" field: true means the branch was really created — '
+      'false means it was declined (e.g. the user\'s automation setting '
+      'requires manual approval or outright forbids it) and nothing '
+      'happened. Never tell the user a branch was created unless '
+      'accepted is true; on false, relay the "reason" to them honestly '
+      'instead.',
   inputSchema: {
     'type': 'object',
     'properties': {
@@ -49,7 +55,12 @@ const closeBranchToolDefinition = AgentToolDefinition(
       'Fold this branch chat\'s resolved sub-issue back into its parent '
       'chat, posting a summary of how it was resolved onto the parent\'s '
       'transcript and closing this branch. Only call this once the '
-      'sub-issue this branch was created for is actually resolved.',
+      'sub-issue this branch was created for is actually resolved. The '
+      'result always has an "accepted" field: true means the branch was '
+      'really closed and folded back — false means it was declined and '
+      'nothing happened. Never tell the user this branch was closed '
+      'unless accepted is true; on false, relay the "reason" to them '
+      'honestly instead.',
   inputSchema: {
     'type': 'object',
     'properties': {

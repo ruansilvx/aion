@@ -19,7 +19,13 @@ const createTicketToolDefinition = AgentToolDefinition(
       'mid-conversation — e.g. an unrelated bug spotted while working on '
       'something else, or a new task worth tracking separately. The new '
       'ticket has no parent; call add_link afterward to relate it to the '
-      'ticket you\'re currently working on, if relevant.',
+      'ticket you\'re currently working on, if relevant. The result '
+      'always has an "accepted" field: true means the ticket was really '
+      'created (its id is included) — false means it was declined '
+      '(e.g. the user\'s automation setting requires manual approval) '
+      'and nothing was created. Never tell the user a ticket was '
+      'created unless accepted is true; on false, relay the "reason" '
+      'to them honestly instead.',
   inputSchema: {
     'type': 'object',
     'properties': {
@@ -52,7 +58,12 @@ const addLinkToolDefinition = AgentToolDefinition(
   description:
       'Relate the ticket you\'re currently working on to another ticket by '
       'its ticket id (e.g. "TASK-42") — mark it as blocking, blocked by, '
-      'related to, or a duplicate of the target.',
+      'related to, or a duplicate of the target. The result always has '
+      'an "accepted" field: true means the link was really created — '
+      'false means it was declined (e.g. the user\'s automation setting '
+      'requires manual approval) and nothing changed. Never tell the '
+      'user the link was created unless accepted is true; on false, '
+      'relay the "reason" to them honestly instead.',
   inputSchema: {
     'type': 'object',
     'properties': {
