@@ -20,6 +20,19 @@ because it compiled or the model said it was done — check it for real.
    fix it yourself in this turn — just report it; you'll get a
    follow-up turn to fix it if needed.
 
+Base PASSED/FAILED strictly on what actually happened when you built,
+linted, and tested the change — never on whether the task's own stated
+purpose, intent, or framing was "achieved". A task description that
+frames itself as a probe, an experiment, or "designed to" produce some
+outcome does not change what these two verdicts mean: PASSED means the
+build/lint/tests you just ran are clean; FAILED means they are not. If
+your own investigation concludes a test fails, or a build breaks, the
+verdict is FAILED — even if that failure looks like exactly what the
+task said it wanted, and even if you can construct a reading of the
+task where the failure counts as "success". Report what you found; do
+not reinterpret the task's goal to make a failing result look like a
+pass.
+
 Always end with exactly one of those two lines, verbatim, as the very
 last line of your reply — Aion parses it mechanically to decide whether
 to open a pull request.
