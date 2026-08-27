@@ -7,7 +7,10 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:aion/core/automation/automation_context.dart';
 import 'package:aion/core/automation/automation_settings_repository.dart';
+import 'package:aion/core/automation/data/drift_decision_graph_repository.dart';
+import 'package:aion/core/automation/decision_graph_repository.dart';
 import 'package:aion/core/contracts/active_project_provider.dart';
 import 'package:aion/core/contracts/embedding_provider.dart';
 import 'package:aion/core/contracts/page_ticket_provider.dart';
@@ -377,6 +380,25 @@ final appRouter = GoRouter(
             child: const WorkflowPromptTemplatesScreen(),
           ),
         ),
+        // Reached from `SettingsScreen`'s `_AutomationSection` "Configure
+        // decision graph" affordance. See
+        // aion-arch/changes/automation-decision-graphs/design.md §4.
+        GoRoute(
+          path: '/workspace/settings/automation/:context/graph',
+          builder: (context, state) {
+            final automationContext = AutomationContext.values.firstWhere(
+              (c) => c.name == state.pathParameters['context'],
+            );
+            return BlocProvider<DecisionGraphConfigCubit>(
+              create: (context) => DecisionGraphConfigCubit(
+                context.read<DecisionGraphRepository>(),
+              ),
+              child: DecisionGraphEditorScreen(
+                automationContext: automationContext,
+              ),
+            );
+          },
+        ),
       ],
     ),
   ],
@@ -627,6 +649,12 @@ class _WorkspaceShellState extends State<WorkspaceShell>
         RepositoryProvider<WorkflowPromptTemplateRepository>(
           create: (_) => DriftWorkflowPromptTemplateRepository(_database),
         ),
+        // Project-scoped decision-graph configuration — same Drift-backed
+        // shape as WorkflowStatusRepository above. See
+        // aion-arch/changes/automation-decision-graphs/design.md §2.
+        RepositoryProvider<DecisionGraphRepository>(
+          create: (_) => DriftDecisionGraphRepository(_database),
+        ),
         // Desktop-only project-scoped services below — git projection,
         // bidirectional resource/page reconcile, and repair. Absent
         // entirely on mobile/web (no rootPath to address git commands
@@ -716,56 +744,61 @@ class _WorkspaceShellState extends State<WorkspaceShell>
               context.read<WorkflowPromptTemplateRepository>(),
             )..load(),
             child: BlocProvider<TicketsCubit>(
-              create: (context) => TicketsCubit(
-                context.read<TicketRepository>(),
-                embeddingProvider: context.read<EmbeddingProvider>(),
-                gitProjector: rootPath != null
-                    ? context.read<TicketGitProjector>()
-                    : null,
-                projectRootPath: rootPath,
-                linkRepository: context.read<TicketLinkRepository>(),
-                providerRegistry: context.read<ProviderRegistry>(),
-                commentRepository: context.read<CommentRepository>(),
-                automationSettingsRepository: context
-                    .read<AutomationSettingsRepository>(),
-                modelRoutingRepository: context
-                    .read<ModelRoutingRepository>(),
-                gitClient: GitRepositoryClient(),
-                gitHubClient: GitHubCliClient(),
-                baselineRepository: context.read<BaselineRepository>(),
-                projectId: widget.project.id,
-                baselineVersion: widget.project.baselineVersion,
-                projectName: widget.project.name,
-                executionContextCapRepository: context
-                    .read<ExecutionContextCapRepository>(),
-                filterRepository: context.read<TicketListFilterRepository>(),
-                sortRepository: context.read<TicketListSortRepository>(),
-                viewModeRepository: context
-                    .read<TicketListViewModeRepository>(),
-                boardColumnVisibilityRepository: context
-                    .read<TicketBoardColumnVisibilityRepository>(),
-                pageWikilinkRepository: context
-                    .read<PageWikilinkRepository>(),
-                activeTicketViewRegistry: rootPath != null
-                    ? context.read<ActiveTicketViewRegistry>()
-                    : null,
-                executionSchedulingRepository: context
-                    .read<ExecutionSchedulingRepository>(),
-                executionQueueRepository: context
-                    .read<ExecutionQueueRepository>(),
-                workflowStatusRepository: context
-                    .read<WorkflowStatusRepository>(),
-                sddStageConfigRepository: context
-                    .read<SddStageConfigRepository>(),
-                workflowSkillAttachmentRepository: context
-                    .read<WorkflowSkillAttachmentRepository>(),
-                workflowPromptTemplateRepository: context
-                    .read<WorkflowPromptTemplateRepository>(),
-                notificationRepository: context
-                    .read<NotificationRepository>(),
-                dependencyCacheService: const DependencyCacheService(),
-              )..restoreExecutionQueue()
-                ..loadUnreadNotificationCount(),
+              create: (context) =>
+                  TicketsCubit(
+                      context.read<TicketRepository>(),
+                      embeddingProvider: context.read<EmbeddingProvider>(),
+                      gitProjector: rootPath != null
+                          ? context.read<TicketGitProjector>()
+                          : null,
+                      projectRootPath: rootPath,
+                      linkRepository: context.read<TicketLinkRepository>(),
+                      providerRegistry: context.read<ProviderRegistry>(),
+                      commentRepository: context.read<CommentRepository>(),
+                      automationSettingsRepository: context
+                          .read<AutomationSettingsRepository>(),
+                      modelRoutingRepository: context
+                          .read<ModelRoutingRepository>(),
+                      gitClient: GitRepositoryClient(),
+                      gitHubClient: GitHubCliClient(),
+                      baselineRepository: context.read<BaselineRepository>(),
+                      projectId: widget.project.id,
+                      baselineVersion: widget.project.baselineVersion,
+                      projectName: widget.project.name,
+                      executionContextCapRepository: context
+                          .read<ExecutionContextCapRepository>(),
+                      filterRepository: context
+                          .read<TicketListFilterRepository>(),
+                      sortRepository: context.read<TicketListSortRepository>(),
+                      viewModeRepository: context
+                          .read<TicketListViewModeRepository>(),
+                      boardColumnVisibilityRepository: context
+                          .read<TicketBoardColumnVisibilityRepository>(),
+                      pageWikilinkRepository: context
+                          .read<PageWikilinkRepository>(),
+                      activeTicketViewRegistry: rootPath != null
+                          ? context.read<ActiveTicketViewRegistry>()
+                          : null,
+                      executionSchedulingRepository: context
+                          .read<ExecutionSchedulingRepository>(),
+                      executionQueueRepository: context
+                          .read<ExecutionQueueRepository>(),
+                      workflowStatusRepository: context
+                          .read<WorkflowStatusRepository>(),
+                      sddStageConfigRepository: context
+                          .read<SddStageConfigRepository>(),
+                      workflowSkillAttachmentRepository: context
+                          .read<WorkflowSkillAttachmentRepository>(),
+                      workflowPromptTemplateRepository: context
+                          .read<WorkflowPromptTemplateRepository>(),
+                      notificationRepository: context
+                          .read<NotificationRepository>(),
+                      dependencyCacheService: const DependencyCacheService(),
+                      decisionGraphRepository: context
+                          .read<DecisionGraphRepository>(),
+                    )
+                    ..restoreExecutionQueue()
+                    ..loadUnreadNotificationCount(),
               child: Builder(
                 builder: (context) => RepositoryProvider<PageTicketProvider>(
                   create: (context) => PageTicketProviderImpl(

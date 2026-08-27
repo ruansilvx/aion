@@ -7,6 +7,9 @@ import 'package:drift_flutter/drift_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
+import 'package:aion/core/automation/data/automation_decision_dao.dart';
+import 'package:aion/core/automation/data/automation_decision_graphs_table.dart';
+import 'package:aion/core/automation/data/automation_decision_nodes_table.dart';
 import 'package:aion/core/markdown/wikilink_extractor.dart';
 import 'package:aion/features/projects/domain/entities/project.dart';
 import 'package:aion/features/tickets/data/daos/comment_dao.dart';
@@ -142,6 +145,15 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
 /// database has no notification history to migrate; the center simply
 /// starts empty on first launch after upgrade. See
 /// `aion-arch/changes/pr-metadata-and-notification-center/design.md` §3.
+/// Version 18 adds [AutomationDecisionGraphsTable]/
+/// [AutomationDecisionNodesTable], seeded with a baseline
+/// `DecisionGraph`/`DecisionNode` row per `AutomationContext` (via
+/// [AutomationDecisionDao.seedDefaultsIfEmpty]) for both a fresh install
+/// and a backfill of every pre-existing project — reproducing the exact
+/// hardcoded `_effectiveCodingExecutionRetryConfidence`/
+/// `_effectiveCodingExecutionConfidence` ad hoc checks a pre-18 database
+/// already behaved with. See
+/// `aion-arch/changes/automation-decision-graphs/design.md` §2.
 @DriftDatabase(
   tables: [
     TicketsTable,
@@ -154,6 +166,8 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
     WorkflowSkillAttachmentsTable,
     WorkflowPromptTemplatesTable,
     NotificationsTable,
+    AutomationDecisionGraphsTable,
+    AutomationDecisionNodesTable,
   ],
   daos: [
     TicketDao,
@@ -165,6 +179,7 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
     WorkflowSkillAttachmentDao,
     WorkflowPromptTemplateDao,
     NotificationDao,
+    AutomationDecisionDao,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -177,7 +192,7 @@ class AppDatabase extends _$AppDatabase {
     : super(executor ?? _openConnection(project));
 
   @override
-  int get schemaVersion => 17;
+  int get schemaVersion => 18;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -188,6 +203,7 @@ class AppDatabase extends _$AppDatabase {
       );
       await _createSearchInfrastructure(m);
       await workflowStatusDao.seedDefaultsIfEmpty();
+      await automationDecisionDao.seedDefaultsIfEmpty();
     },
     onUpgrade: (Migrator m, int from, int to) async {
       if (from < 2) {
@@ -210,10 +226,7 @@ class AppDatabase extends _$AppDatabase {
         await m.addColumn(ticketsTable, ticketsTable.actualBehavior);
       }
       if (from < 7) {
-        await m.addColumn(
-          ticketCommentsTable,
-          ticketCommentsTable.inputTokens,
-        );
+        await m.addColumn(ticketCommentsTable, ticketCommentsTable.inputTokens);
         await m.addColumn(
           ticketCommentsTable,
           ticketCommentsTable.outputTokens,
@@ -281,6 +294,11 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 17) {
         await m.createTable(notificationsTable);
+      }
+      if (from < 18) {
+        await m.createTable(automationDecisionGraphsTable);
+        await m.createTable(automationDecisionNodesTable);
+        await automationDecisionDao.seedDefaultsIfEmpty();
       }
     },
   );
@@ -410,7 +428,10 @@ class AppDatabase extends _$AppDatabase {
     for (final row in candidateRows) {
       final id = row.read<String>('id');
       idByTicketId[row.read<String>('ticket_id')] = id;
-      idByTitleLower.putIfAbsent(row.read<String>('title').toLowerCase(), () => id);
+      idByTitleLower.putIfAbsent(
+        row.read<String>('title').toLowerCase(),
+        () => id,
+      );
     }
 
     final pageRows = await m.database

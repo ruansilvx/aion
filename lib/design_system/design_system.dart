@@ -25,6 +25,7 @@ export 'molecules/complexity_meter.dart';
 export 'molecules/complexity_picker.dart';
 export 'molecules/delete_action_button.dart';
 export 'molecules/gaps_and_open_questions_section.dart';
+export 'molecules/graph_canvas.dart';
 export 'molecules/interactive_link_span.dart';
 export 'molecules/linked_tickets_section.dart';
 export 'molecules/markdown_editor.dart';

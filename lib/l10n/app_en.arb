@@ -933,6 +933,58 @@
   "settingsAutomationCodingExecutionResumeAutoSubLabel": "Resumes interrupted runs on launch",
   "settingsAutomationCodingExecutionResumeGatedSubLabel": "Asks before resuming interrupted runs",
   "settingsAutomationCodingExecutionResumeManualSubLabel": "You retry interrupted runs yourself",
+
+  "decisionGraphAffordanceLabel": "Decision graph",
+  "decisionGraphAffordanceTooltip": "Only Auto confidence consults a decision graph.",
+  "decisionGraphAffordanceConfiguredSemantics": "Decision graph, {count} conditions configured",
+  "@decisionGraphAffordanceConfiguredSemantics": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "decisionGraphContextTitleSddStage": "SDD Stage",
+  "decisionGraphContextTitleCodingExecution": "Coding Execution",
+  "decisionGraphContextTitleCodingExecutionRetry": "Coding Execution Retry",
+  "decisionGraphContextTitleChatBranching": "Chat Branching",
+  "decisionGraphContextTitleCodingExecutionResume": "Resume After Restart",
+  "decisionGraphContextTitleTicketCreation": "Ticket Creation",
+  "decisionGraphContextTitleTicketLinking": "Ticket Linking",
+  "decisionGraphContextTitleSpecAutoLink": "Spec Auto-Link",
+  "decisionGraphOutlineHeader": "OUTLINE · {count} CONDITIONS",
+  "@decisionGraphOutlineHeader": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "decisionGraphAddCondition": "Add condition",
+  "decisionGraphMaxDepthReached": "Max depth reached",
+  "decisionGraphConditionPickerPlaceholder": "Choose a condition",
+  "decisionGraphConditionPickerLabel": "Condition",
+  "decisionGraphParameterLabel": "Value",
+  "decisionGraphMatchedLabel": "Matched",
+  "decisionGraphUnmatchedLabel": "Unmatched",
+  "decisionGraphEndHereOption": "End here",
+  "decisionGraphContinueOption": "Continue to condition",
+  "decisionGraphThenCheck": "THEN CHECK",
+  "decisionGraphOtherwiseCheck": "OTHERWISE CHECK",
+  "decisionGraphOutcomeProceedLabel": "Proceed",
+  "decisionGraphOutcomeGatedLabel": "Ask first",
+  "decisionGraphOutcomeDeclineLabel": "Decline",
+  "decisionGraphOutcomeModelJudgmentLabel": "Model decides",
+  "decisionGraphDeleteButton": "Delete",
+  "decisionGraphDeleteConfirmTitle": "Delete this condition?",
+  "decisionGraphDeleteConfirmMessage": "This also removes every condition beneath it.",
+  "decisionGraphRootMarker": "ROOT",
+  "decisionGraphResetButton": "Reset to always proceed",
+  "decisionGraphEmptyStateEyebrow": "NO GRAPH CONFIGURED",
+  "decisionGraphEmptyStateHeadline": "Every run proceeds",
+  "decisionGraphEmptyStateBody": "Auto-confidence acts without asking. Add a condition to gate, decline, or hand specific cases back to model judgment.",
+  "decisionGraphEmptyStateButton": "Add first condition",
+  "decisionGraphErrorNodeNotFound": "That condition no longer exists.",
+  "decisionGraphErrorDanglingBranchTarget": "That branch points to a condition that no longer exists.",
+  "decisionGraphErrorDuplicateChildReference": "That condition is already used elsewhere in this graph — a condition can only have one parent branch.",
+  "decisionGraphErrorCycleDetected": "That edit would create a cycle in the graph.",
+
   "settingsOverridesEyebrow": "OVERRIDES",
   "settingsOverridesSummary": "Browse every baseline skill and convention for this project and edit a plain-text local override for any one of them.",
   "settingsOverridesManageButton": "Manage Overrides",
