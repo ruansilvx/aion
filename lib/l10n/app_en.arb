@@ -936,6 +936,13 @@
 
   "decisionGraphAffordanceLabel": "Decision graph",
   "decisionGraphAffordanceTooltip": "Only Auto confidence consults a decision graph.",
+  "decisionGraphNodeEyebrow": "IF · {conditionName}",
+  "@decisionGraphNodeEyebrow": {
+    "placeholders": {
+      "conditionName": { "type": "String" }
+    }
+  },
+  "decisionGraphNodeIncompleteEyebrow": "IF · INCOMPLETE",
   "decisionGraphAffordanceConfiguredSemantics": "Decision graph, {count} conditions configured",
   "@decisionGraphAffordanceConfiguredSemantics": {
     "placeholders": {

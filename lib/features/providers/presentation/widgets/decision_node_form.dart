@@ -3,7 +3,11 @@
 import 'dart:async' show unawaited;
 
 import 'package:flutter/services.dart'
-    show FilteringTextInputFormatter, TextInputType;
+    show
+        FilteringTextInputFormatter,
+        KeyDownEvent,
+        LogicalKeyboardKey,
+        TextInputType;
 import 'package:flutter/widgets.dart';
 
 import 'package:aion/core/core.dart';
@@ -102,6 +106,14 @@ class DecisionNodeForm extends StatefulWidget {
   /// corresponding initial branch is a [DecisionBranch.toNode] — the form
   /// has no repository access of its own to resolve one. [onDelete] is
   /// omitted entirely for a not-yet-saved new node — see design.md §3.5.
+  /// [forceMatchedContinue]/[forceUnmatchedContinue] start that branch's
+  /// mode in [DecisionBranchMode.continueToCondition] even though
+  /// [initialMatchedBranch]/[initialUnmatchedBranch] is still a
+  /// [DecisionBranch.terminal] — used by `DecisionOutlineList`'s
+  /// per-branch "+ Add condition" shortcut (design.md §2.3) so tapping it
+  /// opens this form with that branch already on the "continue to
+  /// condition" segment, rather than requiring the user to find and
+  /// toggle it themselves.
   const DecisionNodeForm({
     super.key,
     required this.automationContext,
@@ -115,6 +127,8 @@ class DecisionNodeForm extends StatefulWidget {
     ),
     this.matchedChildConditionLabel,
     this.unmatchedChildConditionLabel,
+    this.forceMatchedContinue = false,
+    this.forceUnmatchedContinue = false,
     required this.onSave,
     required this.onCreateChainedChild,
     required this.onCancel,
@@ -144,6 +158,14 @@ class DecisionNodeForm extends StatefulWidget {
 
   /// Same as [matchedChildConditionLabel], for the unmatched branch.
   final String? unmatchedChildConditionLabel;
+
+  /// Starts the matched branch's mode in
+  /// [DecisionBranchMode.continueToCondition] regardless of
+  /// [initialMatchedBranch] — see this constructor's own dartdoc.
+  final bool forceMatchedContinue;
+
+  /// Same as [forceMatchedContinue], for the unmatched branch.
+  final bool forceUnmatchedContinue;
 
   /// Called with the form's committed values when Save is pressed (only
   /// enabled once a condition is chosen, every required parameter is
@@ -208,63 +230,73 @@ class DecisionNodeForm extends StatefulWidget {
       required DecisionBranch unmatchedBranch,
     })
     onSave,
-    required Future<String?> Function(String conditionId)
-    onCreateChainedChild,
+    required Future<String?> Function(String conditionId) onCreateChainedChild,
     VoidCallback? onDelete,
   }) {
     late OverlayEntry entry;
     void dismiss() => entry.remove();
     entry = OverlayEntry(
-      builder: (context) => Stack(
-        children: [
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onTap: dismiss,
-            ),
-          ),
-          CompositedTransformFollower(
-            link: link,
-            showWhenUnlinked: false,
-            offset: const Offset(12, 0),
-            targetAnchor: Alignment.centerRight,
-            followerAnchor: Alignment.centerLeft,
-            child: _PopoverChrome(
-              child: DecisionNodeForm(
-                automationContext: automationContext,
-                initialConditionId: initialConditionId,
-                initialConditionParams: initialConditionParams,
-                initialMatchedBranch: initialMatchedBranch,
-                initialUnmatchedBranch: initialUnmatchedBranch,
-                matchedChildConditionLabel: matchedChildConditionLabel,
-                unmatchedChildConditionLabel: unmatchedChildConditionLabel,
-                onSave:
-                    ({
-                      required conditionId,
-                      required conditionParams,
-                      required matchedBranch,
-                      required unmatchedBranch,
-                    }) {
-                      onSave(
-                        conditionId: conditionId,
-                        conditionParams: conditionParams,
-                        matchedBranch: matchedBranch,
-                        unmatchedBranch: unmatchedBranch,
-                      );
-                      dismiss();
-                    },
-                onCreateChainedChild: onCreateChainedChild,
-                onCancel: dismiss,
-                onDelete: onDelete == null
-                    ? null
-                    : () {
-                        onDelete();
-                        dismiss();
-                      },
+      builder: (context) => Focus(
+        autofocus: true,
+        onKeyEvent: (node, event) {
+          if (event is KeyDownEvent &&
+              event.logicalKey == LogicalKeyboardKey.escape) {
+            dismiss();
+            return KeyEventResult.handled;
+          }
+          return KeyEventResult.ignored;
+        },
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: dismiss,
               ),
             ),
-          ),
-        ],
+            CompositedTransformFollower(
+              link: link,
+              showWhenUnlinked: false,
+              offset: const Offset(12, 0),
+              targetAnchor: Alignment.centerRight,
+              followerAnchor: Alignment.centerLeft,
+              child: _PopoverChrome(
+                child: DecisionNodeForm(
+                  automationContext: automationContext,
+                  initialConditionId: initialConditionId,
+                  initialConditionParams: initialConditionParams,
+                  initialMatchedBranch: initialMatchedBranch,
+                  initialUnmatchedBranch: initialUnmatchedBranch,
+                  matchedChildConditionLabel: matchedChildConditionLabel,
+                  unmatchedChildConditionLabel: unmatchedChildConditionLabel,
+                  onSave:
+                      ({
+                        required conditionId,
+                        required conditionParams,
+                        required matchedBranch,
+                        required unmatchedBranch,
+                      }) {
+                        onSave(
+                          conditionId: conditionId,
+                          conditionParams: conditionParams,
+                          matchedBranch: matchedBranch,
+                          unmatchedBranch: unmatchedBranch,
+                        );
+                        dismiss();
+                      },
+                  onCreateChainedChild: onCreateChainedChild,
+                  onCancel: dismiss,
+                  onDelete: onDelete == null
+                      ? null
+                      : () {
+                          onDelete();
+                          dismiss();
+                        },
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
     Overlay.of(context).insert(entry);
@@ -301,7 +333,9 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
 
     switch (widget.initialMatchedBranch) {
       case TerminalBranch(:final outcome):
-        _matchedMode = DecisionBranchMode.endHere;
+        _matchedMode = widget.forceMatchedContinue
+            ? DecisionBranchMode.continueToCondition
+            : DecisionBranchMode.endHere;
         _matchedOutcome = outcome;
       case ToNodeBranch(:final nodeId):
         _matchedMode = DecisionBranchMode.continueToCondition;
@@ -310,7 +344,9 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
     }
     switch (widget.initialUnmatchedBranch) {
       case TerminalBranch(:final outcome):
-        _unmatchedMode = DecisionBranchMode.endHere;
+        _unmatchedMode = widget.forceUnmatchedContinue
+            ? DecisionBranchMode.continueToCondition
+            : DecisionBranchMode.endHere;
         _unmatchedOutcome = outcome;
       case ToNodeBranch(:final nodeId):
         _unmatchedMode = DecisionBranchMode.continueToCondition;
@@ -327,6 +363,16 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
     super.dispose();
   }
 
+  /// (Re)builds [_paramControllers] for [_condition]'s current
+  /// `parameterSpecs`, disposing whatever controllers existed before.
+  /// Each new controller gets [_onParamChanged] as a listener — without
+  /// it, typing into a parameter field never rebuilds this form (a
+  /// `TextEditingController`'s own listeners only drive the `TextField`'s
+  /// own internal redraw, not an ancestor's), so `_isValid`/Save's
+  /// enabled state and the field's `isError` highlight would silently go
+  /// stale until some unrelated state change (e.g. switching the
+  /// condition) happened to force a rebuild. Fixed in `/verify` fix
+  /// pass 2 — found via this file's first widget test.
   void _seedParamControllers() {
     for (final controller in _paramControllers.values) {
       controller.dispose();
@@ -339,8 +385,16 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
           widget.initialConditionParams[spec.name] ?? spec.defaultValue;
       _paramControllers[spec.name] = TextEditingController(
         text: initial.toString(),
-      );
+      )..addListener(_onParamChanged);
     }
+  }
+
+  /// Rebuilds this form so `_isValid`/Save's enabled state and each
+  /// parameter field's `isError` highlight reflect the just-typed text —
+  /// see [_seedParamControllers]'s own dartdoc for why this is needed at
+  /// all.
+  void _onParamChanged() {
+    if (mounted) setState(() {});
   }
 
   /// A branch in [DecisionBranchMode.continueToCondition] is valid once
@@ -564,6 +618,21 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
   }
 }
 
+/// A `DecisionConditionSpec` never equal (by identity — the class has no
+/// overridden `==`) to any real [decisionConditionCatalog] entry,
+/// deliberately constructed with `DecisionConditionSpec(...)` rather than
+/// `const DecisionConditionSpec(...)` so it can never be canonicalized
+/// into the same instance as a real spec. Used as [_ConditionPicker]'s
+/// `SelectionMenu.currentValue` when nothing is chosen yet — see that
+/// picker's own comment for why. Added for
+/// `aion-arch/changes/automation-decision-graphs` (`/verify` fix pass 2).
+final _unselectedConditionSentinel = DecisionConditionSpec(
+  id: '__unselected__',
+  displayName: '',
+  contexts: const [],
+  parameterSpecs: const [],
+);
+
 /// The condition-picker trigger + [SelectionMenu] for [DecisionNodeForm].
 class _ConditionPicker extends StatelessWidget {
   const _ConditionPicker({
@@ -618,7 +687,16 @@ class _ConditionPicker extends StatelessWidget {
       semanticsLabel: context.l10n.decisionGraphConditionPickerLabel,
       items: items,
       itemLabel: (spec) => spec.displayName,
-      currentValue: current ?? items.first,
+      // `SelectionMenu` excludes `currentValue` from its offered list —
+      // when nothing is chosen yet, `_unselectedConditionSentinel` (never
+      // `==` a real catalog entry, since `DecisionConditionSpec` has no
+      // overridden equality) is passed instead of e.g. `items.first`, so
+      // every item stays selectable. Passing `items.first` here used to
+      // silently hide the picker's first (often *only*) item whenever no
+      // condition was yet selected — a real lockout for
+      // `codingExecutionRetry`/`codingExecution`, whose catalog has
+      // exactly one entry each. Fixed in `/verify` fix pass 2.
+      currentValue: current ?? _unselectedConditionSentinel,
       onSelected: onSelected,
       trigger: trigger,
     );
@@ -704,28 +782,29 @@ class _BranchSection extends StatelessWidget {
             itemBuilder: (context, c, item) => _OutcomeMenuRow(outcome: item),
             trigger: _OutcomeChip(outcome: outcome),
           ),
-          DecisionBranchMode.continueToCondition => existingChildConditionLabel != null
-              ? Text(
-                  context.l10n.decisionGraphContinuesToLabel(
-                    existingChildConditionLabel!,
+          DecisionBranchMode.continueToCondition =>
+            existingChildConditionLabel != null
+                ? Text(
+                    context.l10n.decisionGraphContinuesToLabel(
+                      existingChildConditionLabel!,
+                    ),
+                    style: AionText.bodySm.copyWith(color: c.textSecondary),
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        chainEyebrow,
+                        style: AionText.caption.copyWith(color: c.textMuted),
+                      ),
+                      const SizedBox(height: 7),
+                      _ConditionPicker(
+                        items: catalog,
+                        value: chainCondition,
+                        onSelected: onChainConditionSelected,
+                      ),
+                    ],
                   ),
-                  style: AionText.bodySm.copyWith(color: c.textSecondary),
-                )
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      chainEyebrow,
-                      style: AionText.caption.copyWith(color: c.textMuted),
-                    ),
-                    const SizedBox(height: 7),
-                    _ConditionPicker(
-                      items: catalog,
-                      value: chainCondition,
-                      onSelected: onChainConditionSelected,
-                    ),
-                  ],
-                ),
         },
       ],
     );
@@ -754,15 +833,19 @@ class _BranchModeToggle extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _BranchModeSegment(
-              label: context.l10n.decisionGraphEndHereOption,
-              selected: mode == DecisionBranchMode.endHere,
-              onTap: () => onChanged(DecisionBranchMode.endHere),
+            Flexible(
+              child: _BranchModeSegment(
+                label: context.l10n.decisionGraphEndHereOption,
+                selected: mode == DecisionBranchMode.endHere,
+                onTap: () => onChanged(DecisionBranchMode.endHere),
+              ),
             ),
-            _BranchModeSegment(
-              label: context.l10n.decisionGraphContinueOption,
-              selected: mode == DecisionBranchMode.continueToCondition,
-              onTap: () => onChanged(DecisionBranchMode.continueToCondition),
+            Flexible(
+              child: _BranchModeSegment(
+                label: context.l10n.decisionGraphContinueOption,
+                selected: mode == DecisionBranchMode.continueToCondition,
+                onTap: () => onChanged(DecisionBranchMode.continueToCondition),
+              ),
             ),
           ],
         ),
@@ -804,6 +887,9 @@ class _BranchModeSegment extends StatelessWidget {
                 color: selected ? c.textPrimary : c.textSecondary,
                 fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
               ),
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         ),

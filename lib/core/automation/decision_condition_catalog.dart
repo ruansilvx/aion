@@ -141,3 +141,31 @@ DecisionConditionSpec? decisionConditionSpecById(String conditionId) {
   }
   return null;
 }
+
+/// A short display summary of [conditionParams] for [spec] — e.g. `> 3`
+/// for [attemptExceedsMaxCondition]'s `maxAttempts` — shown as the
+/// parameter chip on both `GraphCanvas`'s condition-node chrome
+/// (`aion-arch/changes/automation-decision-graphs/design.md` §1.2) and
+/// `DecisionOutlineList`'s row chrome (§2.1), so a project author can see
+/// a condition's actual threshold without opening its form. `null` for a
+/// flag-only condition ([DecisionConditionSpec.parameterSpecs] empty) —
+/// the parameter chip is hidden entirely in that case, per both specs.
+/// Every parameter shipped in [decisionConditionCatalog] today is an
+/// "exceeds" threshold ([DecisionConditionParameterType.integer]), hence
+/// the shared `>` prefix; a condition with a different comparison
+/// semantic (e.g. "below") added later should extend this switch rather
+/// than have every call site reimplement its own summary. Only the first
+/// parameter is summarized — every condition this catalog ships takes at
+/// most one. Added for `aion-arch/changes/automation-decision-graphs`
+/// (`/verify` fix pass 2).
+String? conditionParameterSummary(
+  DecisionConditionSpec spec,
+  Map<String, dynamic> conditionParams,
+) {
+  if (spec.parameterSpecs.isEmpty) return null;
+  final param = spec.parameterSpecs.first;
+  final value = conditionParams[param.name] ?? param.defaultValue;
+  return switch (param.type) {
+    DecisionConditionParameterType.integer => '> $value',
+  };
+}

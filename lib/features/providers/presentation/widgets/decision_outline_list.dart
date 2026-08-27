@@ -2,6 +2,7 @@
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
@@ -77,89 +78,108 @@ class _DecisionOutlineListState extends State<DecisionOutlineList> {
               ),
             ),
             const SizedBox(height: AionSpacing.sp8),
-            if (state is DecisionGraphConfigError)
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AionSpacing.sp12,
-                ),
-                child: Text(
-                  _errorMessage(context, state.reason),
-                  style: AionText.bodySm.copyWith(color: c.danger),
-                ),
-              ),
-            if (rootNode != null)
-              _NodeRow(
-                node: rootNode,
-                depth: 0,
-                nodesById: loaded.nodesById,
-                onDelete: () => context
-                    .read<DecisionGraphConfigCubit>()
-                    .deleteNode(rootNode.id),
-                onSave:
-                    ({
-                      required conditionId,
-                      required conditionParams,
-                      required matchedBranch,
-                      required unmatchedBranch,
-                    }) {
-                      context.read<DecisionGraphConfigCubit>().updateNode(
-                        rootNode.copyWith(
-                          conditionId: conditionId,
-                          conditionParams: conditionParams,
-                          matchedBranch: matchedBranch,
-                          unmatchedBranch: unmatchedBranch,
+            // The header above stays pinned; only the tree body scrolls —
+            // design.md §2's "Column inside a scroll view" (this pane has
+            // no fixed row height/lazy-building need, so a
+            // `SingleChildScrollView` is a plain equivalent to the spec's
+            // `CustomScrollView` + `SliverList`). Missing entirely before
+            // `/verify` fix pass 2 — a graph tall enough to exceed the
+            // pane's height had no way to see the rest of the tree.
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (state is DecisionGraphConfigError)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AionSpacing.sp12,
                         ),
-                      );
-                    },
-                onCreateChainedChild: _createChainedChild,
-                automationContext: widget.automationContext,
-              )
-            else if (_formExpanded)
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AionSpacing.sp12,
-                ),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: c.surface,
-                    border: Border.all(color: c.border, width: 1),
-                    borderRadius: BorderRadius.all(AionRadius.lg),
-                  ),
-                  child: DecisionNodeForm(
-                    automationContext: widget.automationContext,
-                    onSave:
-                        ({
-                          required conditionId,
-                          required conditionParams,
-                          required matchedBranch,
-                          required unmatchedBranch,
-                        }) async {
-                          final cubit = context
-                              .read<DecisionGraphConfigCubit>();
-                          final newNodeId = await cubit.createNode(
-                            conditionId: conditionId,
-                            conditionParams: conditionParams,
-                            matchedBranch: matchedBranch,
-                            unmatchedBranch: unmatchedBranch,
-                          );
-                          if (newNodeId != null) {
-                            await cubit.setRoot(newNodeId);
-                          }
-                        },
-                    onCreateChainedChild: _createChainedChild,
-                    onCancel: () => setState(() => _formExpanded = false),
-                  ),
-                ),
-              )
-            else
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AionSpacing.sp12,
-                ),
-                child: _AddConditionAffordance(
-                  onTap: () => setState(() => _formExpanded = true),
+                        child: Text(
+                          _errorMessage(context, state.reason),
+                          style: AionText.bodySm.copyWith(color: c.danger),
+                        ),
+                      ),
+                    if (rootNode != null)
+                      _NodeRow(
+                        node: rootNode,
+                        depth: 0,
+                        nodesById: loaded.nodesById,
+                        onDelete: () => context
+                            .read<DecisionGraphConfigCubit>()
+                            .deleteNode(rootNode.id),
+                        onSave:
+                            ({
+                              required conditionId,
+                              required conditionParams,
+                              required matchedBranch,
+                              required unmatchedBranch,
+                            }) {
+                              context
+                                  .read<DecisionGraphConfigCubit>()
+                                  .updateNode(
+                                    rootNode.copyWith(
+                                      conditionId: conditionId,
+                                      conditionParams: conditionParams,
+                                      matchedBranch: matchedBranch,
+                                      unmatchedBranch: unmatchedBranch,
+                                    ),
+                                  );
+                            },
+                        onCreateChainedChild: _createChainedChild,
+                        automationContext: widget.automationContext,
+                      )
+                    else if (_formExpanded)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AionSpacing.sp12,
+                        ),
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: c.surface,
+                            border: Border.all(color: c.border, width: 1),
+                            borderRadius: BorderRadius.all(AionRadius.lg),
+                          ),
+                          child: DecisionNodeForm(
+                            automationContext: widget.automationContext,
+                            onSave:
+                                ({
+                                  required conditionId,
+                                  required conditionParams,
+                                  required matchedBranch,
+                                  required unmatchedBranch,
+                                }) async {
+                                  final cubit = context
+                                      .read<DecisionGraphConfigCubit>();
+                                  final newNodeId = await cubit.createNode(
+                                    conditionId: conditionId,
+                                    conditionParams: conditionParams,
+                                    matchedBranch: matchedBranch,
+                                    unmatchedBranch: unmatchedBranch,
+                                  );
+                                  if (newNodeId != null) {
+                                    await cubit.setRoot(newNodeId);
+                                  }
+                                },
+                            onCreateChainedChild: _createChainedChild,
+                            onCancel: () =>
+                                setState(() => _formExpanded = false),
+                          ),
+                        ),
+                      )
+                    else
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AionSpacing.sp12,
+                        ),
+                        child: _AddConditionAffordance(
+                          onTap: () => setState(() => _formExpanded = true),
+                        ),
+                      ),
+                  ],
                 ),
               ),
+            ),
           ],
         );
       },
@@ -190,9 +210,7 @@ class _DecisionOutlineListState extends State<DecisionOutlineList> {
     final spec = decisionConditionSpecById(conditionId);
     return context.read<DecisionGraphConfigCubit>().createNode(
       conditionId: conditionId,
-      conditionParams: spec == null
-          ? const {}
-          : defaultConditionParams(spec),
+      conditionParams: spec == null ? const {} : defaultConditionParams(spec),
     );
   }
 }
@@ -240,11 +258,32 @@ class _NodeRow extends StatefulWidget {
 
 class _NodeRowState extends State<_NodeRow> {
   bool _expanded = false;
+  bool _hovered = false;
+
+  /// Set (and consumed once) when a per-branch "+ Add condition"
+  /// affordance (design.md §2.3) is tapped, forcing that branch's mode
+  /// straight to "Continue to condition" when the form expands — see
+  /// [DecisionNodeForm.forceMatchedContinue]/`.forceUnmatchedContinue`.
+  /// Added for `aion-arch/changes/automation-decision-graphs` (`/verify`
+  /// fix pass 2).
+  bool _forceMatchedContinue = false;
+  bool _forceUnmatchedContinue = false;
+
+  void _expandFor({bool forceMatched = false, bool forceUnmatched = false}) {
+    setState(() {
+      _expanded = true;
+      _forceMatchedContinue = forceMatched;
+      _forceUnmatchedContinue = forceUnmatched;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final c = ThemeScope.of(context).colors;
     final spec = decisionConditionSpecById(widget.node.conditionId);
+    final parameterSummary = spec == null
+        ? null
+        : conditionParameterSummary(spec, widget.node.conditionParams);
     final matchedOutcome = _outcomeOf(widget.node.matchedBranch);
     final unmatchedOutcome = _outcomeOf(widget.node.unmatchedBranch);
     final matchedChild = _childOf(widget.node.matchedBranch);
@@ -253,44 +292,71 @@ class _NodeRowState extends State<_NodeRow> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: EdgeInsets.only(left: 24.0 * widget.depth),
+        _GuideRailIndent(
+          depth: widget.depth,
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: _expanded ? c.primarySubtle : const Color(0x00000000),
+              color: _expanded
+                  ? c.primarySubtle
+                  : _hovered
+                  ? c.surfaceHover
+                  : const Color(0x00000000),
               borderRadius: BorderRadius.all(AionRadius.md),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => setState(() => _expanded = !_expanded),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      AionSpacing.sp12,
-                      AionSpacing.sp8,
-                      AionSpacing.sp12,
-                      AionSpacing.sp8,
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            spec?.displayName ?? widget.node.conditionId,
-                            style: AionText.cardTitle.copyWith(
-                              color: c.textPrimary,
+                MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  onEnter: (_) => setState(() => _hovered = true),
+                  onExit: (_) => setState(() => _hovered = false),
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => _expanded
+                        ? setState(() => _expanded = false)
+                        : _expandFor(),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AionSpacing.sp12,
+                        AionSpacing.sp8,
+                        AionSpacing.sp12,
+                        AionSpacing.sp8,
+                      ),
+                      child: Row(
+                        children: [
+                          AnimatedRotation(
+                            turns: _expanded ? 0.25 : 0,
+                            duration: const Duration(milliseconds: 140),
+                            curve: Curves.easeOut,
+                            child: PhosphorIcon(
+                              PhosphorIcons.caretRightLight,
+                              size: 14,
+                              color: _hovered ? c.textSecondary : c.textMuted,
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
                           ),
-                        ),
-                        if (matchedOutcome != null)
-                          _OutcomeBadge(outcome: matchedOutcome),
-                        const SizedBox(width: AionSpacing.sp8),
-                        if (unmatchedOutcome != null)
-                          _OutcomeBadge(outcome: unmatchedOutcome),
-                      ],
+                          const SizedBox(width: AionSpacing.sp8),
+                          Flexible(
+                            child: Text(
+                              spec?.displayName ?? widget.node.conditionId,
+                              style: AionText.cardTitle.copyWith(
+                                color: c.textPrimary,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (parameterSummary != null) ...[
+                            const SizedBox(width: AionSpacing.sp8),
+                            _ParameterChip(text: parameterSummary),
+                          ],
+                          const Spacer(),
+                          if (matchedOutcome != null)
+                            _OutcomeBadge(outcome: matchedOutcome),
+                          const SizedBox(width: AionSpacing.sp8),
+                          if (unmatchedOutcome != null)
+                            _OutcomeBadge(outcome: unmatchedOutcome),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -309,6 +375,8 @@ class _NodeRowState extends State<_NodeRow> {
                       widget.node.unmatchedBranch,
                       widget.nodesById,
                     ),
+                    forceMatchedContinue: _forceMatchedContinue,
+                    forceUnmatchedContinue: _forceUnmatchedContinue,
                     onSave: widget.onSave,
                     onCreateChainedChild: widget.onCreateChainedChild,
                     onCancel: () => setState(() => _expanded = false),
@@ -326,6 +394,13 @@ class _NodeRowState extends State<_NodeRow> {
             nodesById: widget.nodesById,
             automationContext: widget.automationContext,
             onCreateChainedChild: widget.onCreateChainedChild,
+          )
+        else if (widget.node.matchedBranch is TerminalBranch)
+          _GuideRailIndent(
+            depth: widget.depth + 1,
+            child: _AddConditionAffordance(
+              onTap: () => _expandFor(forceMatched: true),
+            ),
           ),
         if (unmatchedChild != null)
           _BranchChild(
@@ -335,6 +410,13 @@ class _NodeRowState extends State<_NodeRow> {
             nodesById: widget.nodesById,
             automationContext: widget.automationContext,
             onCreateChainedChild: widget.onCreateChainedChild,
+          )
+        else if (widget.node.unmatchedBranch is TerminalBranch)
+          _GuideRailIndent(
+            depth: widget.depth + 1,
+            child: _AddConditionAffordance(
+              onTap: () => _expandFor(forceUnmatched: true),
+            ),
           ),
       ],
     );
@@ -382,14 +464,17 @@ class _BranchChild extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: EdgeInsets.only(left: 24.0 * depth, top: 2, bottom: 2),
-          child: Text(
-            matched
-                ? context.l10n.decisionGraphMatchedLabel.toUpperCase()
-                : context.l10n.decisionGraphUnmatchedLabel.toUpperCase(),
-            style: AionText.caption.copyWith(
-              color: matched ? c.primary : c.textMuted,
+        _GuideRailIndent(
+          depth: depth,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Text(
+              matched
+                  ? context.l10n.decisionGraphMatchedLabel.toUpperCase()
+                  : context.l10n.decisionGraphUnmatchedLabel.toUpperCase(),
+              style: AionText.caption.copyWith(
+                color: matched ? c.primary : c.textMuted,
+              ),
             ),
           ),
         ),
@@ -502,6 +587,71 @@ class _AddConditionAffordance extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Indents [child] by `24 * depth` (design.md §2.1's per-level indent) and
+/// paints a 1px ancestor guide-rail line at each intervening depth —
+/// `x = 24 * d + 19` relative to this row's own left edge, full row
+/// height. Shared by [_NodeRow] and [_BranchChild] so the rail lines up
+/// identically for a row's own content and its `MATCHED`/`UNMATCHED`
+/// label. Added for `aion-arch/changes/automation-decision-graphs`
+/// (`/verify` fix pass 2).
+class _GuideRailIndent extends StatelessWidget {
+  const _GuideRailIndent({required this.depth, required this.child});
+
+  final int depth;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (depth == 0) return child;
+    final c = ThemeScope.of(context).colors;
+    // `CrossAxisAlignment.stretch` needs a bounded height to stretch the
+    // rail lines into — this row sits inside an unconstrained-height
+    // `Column`, so without `IntrinsicHeight` the incoming height
+    // constraint is infinite and `stretch` throws
+    // ("BoxConstraints forces an infinite height").
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var d = 0; d < depth; d++)
+            SizedBox(
+              width: 24,
+              child: Center(child: Container(width: 1, color: c.border)),
+            ),
+          Expanded(child: child),
+        ],
+      ),
+    );
+  }
+}
+
+/// The row chrome's parameter-summary chip (design.md §1.2/§2.1
+/// "Parameter chip") — e.g. `> 3`. Mirrors
+/// `DecisionGraphEditorScreen`'s own private `_ParameterChip` (not
+/// shared across files, consistent with this codebase's existing
+/// per-file small-private-widget convention). Added for
+/// `aion-arch/changes/automation-decision-graphs` (`/verify` fix pass 2).
+class _ParameterChip extends StatelessWidget {
+  const _ParameterChip({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.surfaceHover,
+        borderRadius: BorderRadius.all(AionRadius.sm),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(6, 2, 6, 2),
+        child: Text(text, style: AionText.key.copyWith(color: c.textSecondary)),
       ),
     );
   }

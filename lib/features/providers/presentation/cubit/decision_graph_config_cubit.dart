@@ -4,7 +4,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:aion/core/automation/automation_context.dart';
-import 'package:aion/core/automation/decision_graph.dart';
 import 'package:aion/core/automation/decision_graph_repository.dart';
 import 'package:aion/core/automation/decision_node.dart';
 import 'package:aion/core/automation/decision_outcome.dart';
@@ -83,7 +82,7 @@ class DecisionGraphConfigCubit extends Cubit<DecisionGraphConfigState> {
       unmatchedBranch: unmatchedBranch,
     );
     final candidate = {...loaded.nodesById, node.id: node};
-    final violation = _validateTree(loaded.graph, candidate);
+    final violation = _validateTree(candidate);
     if (violation != null) {
       _emitInvariantError(loaded, violation);
       return null;
@@ -108,7 +107,7 @@ class DecisionGraphConfigCubit extends Cubit<DecisionGraphConfigState> {
     }
 
     final candidate = {...loaded.nodesById, node.id: node};
-    final violation = _validateTree(loaded.graph, candidate);
+    final violation = _validateTree(candidate);
     if (violation != null) {
       _emitInvariantError(loaded, violation);
       return;
@@ -177,14 +176,14 @@ class DecisionGraphConfigCubit extends Cubit<DecisionGraphConfigState> {
 
   /// Validates the strict-tree invariant against the hypothetical full
   /// node set [nodesById] (the currently-loaded set plus one create/
-  /// update edit already merged in) for [graph]: every node id is
-  /// referenced as a `DecisionBranch.toNode` target from at most one
-  /// branch anywhere in [nodesById], every such target actually exists in
-  /// [nodesById], and walking from [graph]'s root never revisits a node.
-  /// Returns the classified rejection reason, or `null` if the tree is
-  /// valid.
+  /// update edit already merged in): every node id is referenced as a
+  /// `DecisionBranch.toNode` target from at most one branch anywhere in
+  /// [nodesById], every such target actually exists in [nodesById], and
+  /// no cycle exists anywhere in [nodesById] — checked across the whole
+  /// node set (see [_detectCycle]'s own dartdoc for why this isn't scoped
+  /// to the graph's current root). Returns the classified rejection
+  /// reason, or `null` if the tree is valid.
   DecisionGraphConfigErrorReason? _validateTree(
-    DecisionGraph graph,
     Map<String, DecisionNode> nodesById,
   ) {
     final childReferenceCount = <String, int>{};
@@ -202,23 +201,60 @@ class DecisionGraphConfigCubit extends Cubit<DecisionGraphConfigState> {
       }
     }
 
-    final rootId = graph.rootNodeId;
-    if (rootId != null && nodesById.containsKey(rootId)) {
-      final visited = <String>{};
-      final stack = [rootId];
-      while (stack.isNotEmpty) {
-        final id = stack.removeLast();
-        if (!visited.add(id)) {
-          return DecisionGraphConfigErrorReason.cycleDetected;
-        }
-        final node = nodesById[id];
-        if (node == null) continue;
-        for (final branch in [node.matchedBranch, node.unmatchedBranch]) {
-          if (branch is ToNodeBranch) stack.add(branch.nodeId);
-        }
-      }
+    if (_detectCycle(nodesById)) {
+      return DecisionGraphConfigErrorReason.cycleDetected;
     }
 
     return null;
+  }
+
+  /// Whether [nodesById] contains a cycle anywhere in its
+  /// `DecisionBranch.toNode` edges — an iterative depth-first search from
+  /// every node (not just `DecisionGraph.rootNodeId`), marking each node
+  /// on the current path (`onPath`) versus fully explored (`visited`),
+  /// the standard three-color cycle check. Scoped to the whole node set
+  /// rather than a root-reachability walk so a cycle among nodes not yet
+  /// attached to the live tree — e.g. two freshly [createNode]-d nodes
+  /// wired into a mutual loop before either is attached as anyone's
+  /// branch target or set as the root — is rejected too, not just a
+  /// cycle already reachable from the root. Added for
+  /// `aion-arch/changes/automation-decision-graphs` (`/verify` fix
+  /// pass 2 — the previous root-only walk missed exactly this case).
+  bool _detectCycle(Map<String, DecisionNode> nodesById) {
+    final visited = <String>{};
+
+    for (final startId in nodesById.keys) {
+      if (visited.contains(startId)) continue;
+
+      final onPath = <String>{startId};
+      final stack = <String>[startId];
+      final nextBranchIndex = <String, int>{};
+
+      while (stack.isNotEmpty) {
+        final currentId = stack.last;
+        final node = nodesById[currentId];
+        final branches = node == null
+            ? const <DecisionBranch>[]
+            : [node.matchedBranch, node.unmatchedBranch];
+        final index = nextBranchIndex[currentId] ?? 0;
+
+        if (index >= branches.length) {
+          stack.removeLast();
+          onPath.remove(currentId);
+          visited.add(currentId);
+          continue;
+        }
+        nextBranchIndex[currentId] = index + 1;
+
+        final branch = branches[index];
+        if (branch is! ToNodeBranch) continue;
+        if (onPath.contains(branch.nodeId)) return true;
+        if (visited.contains(branch.nodeId)) continue;
+        stack.add(branch.nodeId);
+        onPath.add(branch.nodeId);
+      }
+    }
+
+    return false;
   }
 }

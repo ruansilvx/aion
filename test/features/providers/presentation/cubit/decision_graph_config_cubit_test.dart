@@ -176,6 +176,54 @@ void main() {
 
       verify(() => repository.upsertNode(any())).called(1);
     });
+
+    test('rejects with cycleDetected for a cycle among nodes not reachable '
+        'from the graph root — /verify fix pass 2 regression: the previous '
+        'root-only reachability walk missed this case entirely', () async {
+      // A separate fixture: root's branches are both terminal (nothing
+      // reachable from it), plus two orphan nodes — orphanA already
+      // points at orphanB, neither attached to root or referenced by
+      // anyone. This loads validly.
+      const detachedRoot = DecisionNode(
+        id: 'root',
+        conditionId: 'attemptExceedsMax',
+        conditionParams: {'maxAttempts': 2},
+        matchedBranch: DecisionBranch.terminal(DecisionOutcome.proceed),
+        unmatchedBranch: DecisionBranch.terminal(DecisionOutcome.gated),
+      );
+      const orphanA = DecisionNode(
+        id: 'orphanA',
+        conditionId: 'attemptExceedsMax',
+        conditionParams: {'maxAttempts': 4},
+        matchedBranch: DecisionBranch.toNode('orphanB'),
+        unmatchedBranch: DecisionBranch.terminal(DecisionOutcome.proceed),
+      );
+      const orphanB = DecisionNode(
+        id: 'orphanB',
+        conditionId: 'attemptExceedsMax',
+        conditionParams: {'maxAttempts': 6},
+        matchedBranch: DecisionBranch.terminal(DecisionOutcome.proceed),
+        unmatchedBranch: DecisionBranch.terminal(DecisionOutcome.gated),
+      );
+      when(
+        () => repository.getAllNodes(automationContext),
+      ).thenAnswer((_) async => const [detachedRoot, orphanA, orphanB]);
+
+      await cubit.load(automationContext);
+
+      // orphanB's unmatched branch now points back at orphanA, closing
+      // a cycle (orphanA -> orphanB -> orphanA) entirely disconnected
+      // from the graph's actual root.
+      await cubit.updateNode(
+        orphanB.copyWith(
+          unmatchedBranch: const DecisionBranch.toNode('orphanA'),
+        ),
+      );
+
+      final state = cubit.state as DecisionGraphConfigError;
+      expect(state.reason, DecisionGraphConfigErrorReason.cycleDetected);
+      verifyNever(() => repository.upsertNode(any()));
+    });
   });
 
   group('deleteNode', () {
