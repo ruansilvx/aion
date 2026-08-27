@@ -299,22 +299,110 @@ void main() {
   });
 
   group('deleteNode', () {
-    test('clears the graph root when deleting the root node', () async {
-      await cubit.load(automationContext);
+    test(
+      'clears the graph root and cascades to every descendant when '
+      'deleting the root node — regression for a real bug found via '
+      'manual QA of aion-arch/changes/automation-decision-graphs: the '
+      'delete-confirm dialog promises "removes every condition beneath '
+      'it" but the previous implementation only ever deleted the single '
+      'tapped node, leaking every descendant as permanently-orphaned rows',
+      () async {
+        await cubit.load(automationContext);
 
-      await cubit.deleteNode('root');
+        await cubit.deleteNode('root');
 
-      verify(() => repository.deleteNode('root')).called(1);
-      verify(() => repository.setRoot(automationContext, null)).called(1);
-    });
+        verify(() => repository.deleteNode('root')).called(1);
+        verify(() => repository.deleteNode('child')).called(1);
+        verify(() => repository.setRoot(automationContext, null)).called(1);
+      },
+    );
 
-    test('does not clear the root when deleting a non-root node', () async {
+    test('does not clear the root when deleting a non-root leaf node', () async {
       await cubit.load(automationContext);
 
       await cubit.deleteNode('child');
 
       verify(() => repository.deleteNode('child')).called(1);
+      verifyNever(() => repository.deleteNode('root'));
       verifyNever(() => repository.setRoot(automationContext, any()));
+    });
+
+    test(
+      'cascades through a multi-level chain, not just direct children',
+      () async {
+        const grandchild = DecisionNode(
+          id: 'grandchild',
+          conditionId: 'attemptExceedsMax',
+          conditionParams: {'maxAttempts': 9},
+          matchedBranch: DecisionBranch.terminal(DecisionOutcome.decline),
+          unmatchedBranch: DecisionBranch.terminal(DecisionOutcome.proceed),
+        );
+        const chainedChild = DecisionNode(
+          id: 'child',
+          conditionId: 'attemptExceedsMax',
+          conditionParams: {'maxAttempts': 5},
+          matchedBranch: DecisionBranch.toNode('grandchild'),
+          unmatchedBranch: DecisionBranch.terminal(DecisionOutcome.gated),
+        );
+        when(() => repository.getAllNodes(automationContext)).thenAnswer(
+          (_) async => const [rootNode, chainedChild, grandchild],
+        );
+        await cubit.load(automationContext);
+
+        await cubit.deleteNode('root');
+
+        verify(() => repository.deleteNode('root')).called(1);
+        verify(() => repository.deleteNode('child')).called(1);
+        verify(() => repository.deleteNode('grandchild')).called(1);
+      },
+    );
+  });
+
+  group('descendantIdsOf', () {
+    test('returns just the node itself for a leaf', () {
+      expect(
+        descendantIdsOf('child', {'root': rootNode, 'child': childNode}),
+        {'child'},
+      );
+    });
+
+    test('walks both branches transitively', () {
+      const grandchild = DecisionNode(
+        id: 'grandchild',
+        conditionId: 'attemptExceedsMax',
+        conditionParams: {},
+        matchedBranch: DecisionBranch.terminal(DecisionOutcome.proceed),
+        unmatchedBranch: DecisionBranch.terminal(DecisionOutcome.proceed),
+      );
+      const chainedChild = DecisionNode(
+        id: 'child',
+        conditionId: 'attemptExceedsMax',
+        conditionParams: {},
+        matchedBranch: DecisionBranch.toNode('grandchild'),
+        unmatchedBranch: DecisionBranch.terminal(DecisionOutcome.proceed),
+      );
+      expect(
+        descendantIdsOf('root', {
+          'root': rootNode,
+          'child': chainedChild,
+          'grandchild': grandchild,
+        }),
+        {'root', 'child', 'grandchild'},
+      );
+    });
+
+    test('does not loop forever on a self-referencing branch', () {
+      const cyclic = DecisionNode(
+        id: 'cyclic',
+        conditionId: 'attemptExceedsMax',
+        conditionParams: {},
+        matchedBranch: DecisionBranch.toNode('cyclic'),
+        unmatchedBranch: DecisionBranch.terminal(DecisionOutcome.proceed),
+      );
+      expect(
+        descendantIdsOf('cyclic', {'cyclic': cyclic}),
+        {'cyclic'},
+      );
     });
   });
 

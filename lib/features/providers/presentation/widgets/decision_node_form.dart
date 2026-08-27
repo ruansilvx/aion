@@ -113,7 +113,11 @@ class DecisionNodeForm extends StatefulWidget {
   /// per-branch "+ Add condition" shortcut (design.md §2.3) so tapping it
   /// opens this form with that branch already on the "continue to
   /// condition" segment, rather than requiring the user to find and
-  /// toggle it themselves.
+  /// toggle it themselves. [descendantCount] is the number of nodes
+  /// [onDelete] would cascade-delete along with this one — the form has
+  /// no repository access of its own to compute it, so callers pass it
+  /// via `descendantIdsOf` (`DecisionGraphConfigCubit`'s own helper,
+  /// `.length - 1` to exclude this node itself).
   const DecisionNodeForm({
     super.key,
     required this.automationContext,
@@ -129,6 +133,7 @@ class DecisionNodeForm extends StatefulWidget {
     this.unmatchedChildConditionLabel,
     this.forceMatchedContinue = false,
     this.forceUnmatchedContinue = false,
+    this.descendantCount = 0,
     required this.onSave,
     required this.onCreateChainedChild,
     required this.onCancel,
@@ -166,6 +171,13 @@ class DecisionNodeForm extends StatefulWidget {
 
   /// Same as [forceMatchedContinue], for the unmatched branch.
   final bool forceUnmatchedContinue;
+
+  /// The number of descendant nodes [onDelete] would cascade-delete along
+  /// with this one — shown in the delete-confirm dialog per design.md
+  /// §3.5 ("Delete this condition and its 2 descendants?"). `0` for a
+  /// leaf node (or a not-yet-saved new node, which hides [onDelete]
+  /// entirely).
+  final int descendantCount;
 
   /// Called with the form's committed values when Save is pressed (only
   /// enabled once a condition is chosen, every required parameter is
@@ -223,6 +235,7 @@ class DecisionNodeForm extends StatefulWidget {
     ),
     String? matchedChildConditionLabel,
     String? unmatchedChildConditionLabel,
+    int descendantCount = 0,
     required void Function({
       required String conditionId,
       required Map<String, dynamic> conditionParams,
@@ -269,6 +282,7 @@ class DecisionNodeForm extends StatefulWidget {
                   initialUnmatchedBranch: initialUnmatchedBranch,
                   matchedChildConditionLabel: matchedChildConditionLabel,
                   unmatchedChildConditionLabel: unmatchedChildConditionLabel,
+                  descendantCount: descendantCount,
                   onSave:
                       ({
                         required conditionId,
@@ -578,9 +592,15 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
                       label: context.l10n.decisionGraphDeleteButton,
                       variant: AppButtonVariant.destructive,
                       onPressed: () async {
+                        final descendantCount = widget.descendantCount;
                         final confirmed = await showAppConfirmDialog(
                           context,
-                          title: context.l10n.decisionGraphDeleteConfirmTitle,
+                          title: descendantCount > 0
+                              ? context.l10n
+                                    .decisionGraphDeleteConfirmTitleWithDescendants(
+                                      descendantCount,
+                                    )
+                              : context.l10n.decisionGraphDeleteConfirmTitle,
                           message:
                               context.l10n.decisionGraphDeleteConfirmMessage,
                           confirmLabel: context.l10n.decisionGraphDeleteButton,

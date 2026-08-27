@@ -377,6 +377,12 @@ class _NodeRowState extends State<_NodeRow> {
                     ),
                     forceMatchedContinue: _forceMatchedContinue,
                     forceUnmatchedContinue: _forceUnmatchedContinue,
+                    descendantCount:
+                        descendantIdsOf(
+                          widget.node.id,
+                          widget.nodesById,
+                        ).length -
+                        1,
                     onSave: widget.onSave,
                     onCreateChainedChild: widget.onCreateChainedChild,
                     onCancel: () => setState(() => _expanded = false),

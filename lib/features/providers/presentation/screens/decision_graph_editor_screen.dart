@@ -348,6 +348,8 @@ class _CanvasPaneState extends State<_CanvasPane> {
         node.unmatchedBranch,
         widget.loaded.nodesById,
       ),
+      descendantCount:
+          descendantIdsOf(node.id, widget.loaded.nodesById).length - 1,
       onSave:
           ({
             required conditionId,

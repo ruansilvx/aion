@@ -450,10 +450,24 @@ class _DecisionGraphAffordance extends StatefulWidget {
 class _DecisionGraphAffordanceState extends State<_DecisionGraphAffordance> {
   int? _configuredCount;
 
+  /// Reloads [_configuredCount] whenever the repository's node/graph data
+  /// changes anywhere — not just on this widget's own initial mount —
+  /// so the count stays live when the user edits the graph via
+  /// `DecisionGraphEditorScreen` and comes back to this screen (that
+  /// screen owns its own `DecisionGraphConfigCubit` instance, so this
+  /// widget's [initState]-only load previously never re-ran on return
+  /// navigation, leaving a stale count on screen). Found via manual QA of
+  /// `aion-arch/changes/automation-decision-graphs`.
+  StreamSubscription<void>? _changesSubscription;
+
   @override
   void initState() {
     super.initState();
     unawaited(_loadCount());
+    _changesSubscription = context
+        .read<DecisionGraphRepository>()
+        .onChanged
+        .listen((_) => unawaited(_loadCount()));
   }
 
   @override
@@ -462,6 +476,12 @@ class _DecisionGraphAffordanceState extends State<_DecisionGraphAffordance> {
     if (oldWidget.automationContext != widget.automationContext) {
       unawaited(_loadCount());
     }
+  }
+
+  @override
+  void dispose() {
+    _changesSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadCount() async {

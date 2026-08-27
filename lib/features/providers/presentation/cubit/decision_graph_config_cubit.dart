@@ -143,20 +143,27 @@ class DecisionGraphConfigCubit extends Cubit<DecisionGraphConfigState> {
     await load(loaded.context);
   }
 
-  /// Deletes the node with id [id], clearing the graph root first if [id]
-  /// was the root. Never rejected — deleting a node can only ever shrink
-  /// the tree, so it can't violate the strict-tree invariant. Deleting a
-  /// node still referenced by another node's branch leaves that branch
-  /// dangling; `evaluateDecisionGraph` treats a dangling reference
-  /// defensively as `DecisionOutcome.proceed`, and the editor UI is
-  /// responsible for repointing or cascading the delete before the user
-  /// leaves the screen.
+  /// Deletes the node with id [id] and every node transitively reachable
+  /// from it via a matched/unmatched [ToNodeBranch] (its descendants),
+  /// clearing the graph root first if [id] was the root. Never rejected —
+  /// deleting a node can only ever shrink the tree, so it can't violate
+  /// the strict-tree invariant. Matches design.md §3.5's "Deleting a node
+  /// with children asks first ... `Delete this condition and its 2
+  /// descendants?`" — the confirm dialog promises cascading deletion, so
+  /// this actually performs it rather than leaving descendants orphaned
+  /// in the repository (unreachable from the root, but never actually
+  /// removed). Fixed via manual QA of
+  /// `aion-arch/changes/automation-decision-graphs` — the previous
+  /// single-node delete left every descendant as leaked, permanently
+  /// unreachable rows.
   Future<void> deleteNode(String id) async {
     final loaded = _requireLoaded();
     if (loaded == null) return;
     if (!loaded.nodesById.containsKey(id)) return;
 
-    await _repository.deleteNode(id);
+    for (final nodeId in descendantIdsOf(id, loaded.nodesById)) {
+      await _repository.deleteNode(nodeId);
+    }
     if (loaded.graph.rootNodeId == id) {
       await _repository.setRoot(loaded.context, null);
     }
@@ -283,4 +290,28 @@ class DecisionGraphConfigCubit extends Cubit<DecisionGraphConfigState> {
 
     return false;
   }
+}
+
+/// [id] itself plus every node transitively reachable from it via a
+/// matched/unmatched [ToNodeBranch] edge (its descendants), looked up in
+/// [nodesById] — the full set of ids [DecisionGraphConfigCubit.deleteNode]
+/// removes for [id]. Shared with the editor UI (`DecisionNodeForm`'s
+/// delete-confirm dialog) so the descendant count it displays always
+/// matches what the cascading delete actually removes. A [ToNodeBranch]
+/// target missing from [nodesById] (a dangling reference) is simply not
+/// walked further, the same defensive treatment
+/// `decision_graph_evaluator.dart` gives it at evaluation time.
+Set<String> descendantIdsOf(String id, Map<String, DecisionNode> nodesById) {
+  final result = <String>{};
+  final stack = [id];
+  while (stack.isNotEmpty) {
+    final current = stack.removeLast();
+    if (!result.add(current)) continue;
+    final node = nodesById[current];
+    if (node == null) continue;
+    for (final branch in [node.matchedBranch, node.unmatchedBranch]) {
+      if (branch is ToNodeBranch) stack.add(branch.nodeId);
+    }
+  }
+  return result;
 }
