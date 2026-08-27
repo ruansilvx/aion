@@ -118,3 +118,26 @@ List<DecisionConditionSpec> decisionConditionsFor(AutomationContext context) {
       .where((spec) => spec.contexts.contains(context))
       .toList();
 }
+
+/// [spec]'s parameters seeded to their [DecisionConditionParameterSpec
+/// .defaultValue] — the `conditionParams` a freshly created [DecisionNode]
+/// for [spec] starts with, whether authored as a graph's root or chained
+/// onto an existing node's branch via `DecisionNodeForm`'s "continue to
+/// condition" mode. Added for
+/// `aion-arch/changes/automation-decision-graphs` (`/verify` fix pass).
+Map<String, dynamic> defaultConditionParams(DecisionConditionSpec spec) => {
+  for (final param in spec.parameterSpecs) param.name: param.defaultValue,
+};
+
+/// Looks up [decisionConditionCatalog] by [conditionId], or `null` if
+/// [conditionId] doesn't match any shipped condition — a small shared
+/// lookup so `DecisionNodeForm`/`DecisionOutlineList`/
+/// `DecisionGraphEditorScreen` don't each repeat their own
+/// `decisionConditionCatalog.where(...).firstOrNull`. Added for
+/// `aion-arch/changes/automation-decision-graphs` (`/verify` fix pass).
+DecisionConditionSpec? decisionConditionSpecById(String conditionId) {
+  for (final spec in decisionConditionCatalog) {
+    if (spec.id == conditionId) return spec;
+  }
+  return null;
+}

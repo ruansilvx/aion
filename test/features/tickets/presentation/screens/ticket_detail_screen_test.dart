@@ -26,6 +26,9 @@ class MockWorkflowConfigCubit extends MockCubit<WorkflowConfigState>
 class MockAutomationSettingsRepository extends Mock
     implements AutomationSettingsRepository {}
 
+class MockDecisionGraphRepository extends Mock
+    implements DecisionGraphRepository {}
+
 final WorkflowConfigLoaded _defaultWorkflowConfigLoaded = WorkflowConfigLoaded(
   statuses: defaultWorkflowStatuses,
   designStagesEnabled: false,
@@ -61,6 +64,8 @@ Widget _wrap({
   required Ticket ticket,
   required MockTicketsCubit ticketsCubit,
   required MockAutomationSettingsRepository automationRepo,
+  MockDecisionGraphRepository? decisionGraphRepository,
+  AutomationConfidence sddStageConfidence = AutomationConfidence.gated,
 }) {
   whenListen(
     ticketsCubit,
@@ -70,6 +75,26 @@ Widget _wrap({
   when(
     () => ticketsCubit.detailTick,
   ).thenAnswer((_) => const Stream<void>.empty());
+
+  // Every `TicketDetailScreen` reach in the real app has this provided at
+  // the project shell level (`app_router.dart`, alongside
+  // `WorkflowStatusRepository`) — `initState` reads it unconditionally
+  // once `AutomationContext.sddStage`'s confidence resolves `auto` (see
+  // `aion-arch/changes/automation-decision-graphs/design.md` §4). Callers
+  // that care about its stubbed responses pass their own mock; everyone
+  // else gets a default null-root graph, matching the seeded baseline.
+  final resolvedDecisionGraphRepository =
+      decisionGraphRepository ?? MockDecisionGraphRepository();
+  if (decisionGraphRepository == null) {
+    when(
+      () => resolvedDecisionGraphRepository.getGraph(any()),
+    ).thenAnswer(
+      (invocation) async => DecisionGraph(
+        context: invocation.positionalArguments.single as AutomationContext,
+        rootNodeId: null,
+      ),
+    );
+  }
 
   final chatCubit = MockChatCubit();
   whenListen(
@@ -94,16 +119,26 @@ Widget _wrap({
     initialState: _defaultWorkflowConfigLoaded,
   );
 
-  when(
-    () => automationRepo.getConfidence(any()),
-  ).thenAnswer((_) async => AutomationConfidence.gated);
+  when(() => automationRepo.getConfidence(any())).thenAnswer((invocation) async {
+    final context = invocation.positionalArguments.single as AutomationContext;
+    return context == AutomationContext.sddStage
+        ? sddStageConfidence
+        : AutomationConfidence.gated;
+  });
 
   return MediaQuery(
     data: const MediaQueryData(),
     child: ThemeScope(
       theme: aionThemeArctic,
-      child: RepositoryProvider<AutomationSettingsRepository>.value(
-        value: automationRepo,
+      child: MultiRepositoryProvider(
+        providers: [
+          RepositoryProvider<AutomationSettingsRepository>.value(
+            value: automationRepo,
+          ),
+          RepositoryProvider<DecisionGraphRepository>.value(
+            value: resolvedDecisionGraphRepository,
+          ),
+        ],
         child: MultiBlocProvider(
           providers: [
             BlocProvider<TicketsCubit>.value(value: ticketsCubit),
@@ -222,4 +257,141 @@ void main() {
       );
     }
   });
+
+  group(
+    'TicketDetailScreen — AutomationContext.sddStage decision-graph '
+    'consultation (aion-arch/changes/automation-decision-graphs)',
+    () {
+      testWidgets(
+        'auto confidence + null-root graph: reads the graph but never '
+        'walks it (getAllNodes not called) — the seeded baseline, no '
+        'behavior change from before this proposal',
+        (tester) async {
+          final ticket = _ticketOf(TicketType.task);
+          final ticketsCubit = MockTicketsCubit();
+          final automationRepo = MockAutomationSettingsRepository();
+          final decisionGraphRepository = MockDecisionGraphRepository();
+          _stubTicketsCubit(ticketsCubit);
+          when(
+            () => decisionGraphRepository.getGraph(AutomationContext.sddStage),
+          ).thenAnswer(
+            (_) async => const DecisionGraph(
+              context: AutomationContext.sddStage,
+              rootNodeId: null,
+            ),
+          );
+
+          await tester.pumpWidget(
+            _wrap(
+              ticket: ticket,
+              ticketsCubit: ticketsCubit,
+              automationRepo: automationRepo,
+              decisionGraphRepository: decisionGraphRepository,
+              sddStageConfidence: AutomationConfidence.auto,
+            ),
+          );
+          await tester.pump();
+          await tester.pump();
+
+          verify(
+            () => decisionGraphRepository.getGraph(AutomationContext.sddStage),
+          ).called(1);
+          verifyNever(
+            () => decisionGraphRepository.getAllNodes(any()),
+          );
+        },
+      );
+
+      testWidgets(
+        'auto confidence + configured graph resolving gated: walks the '
+        'graph via getAllNodes, without throwing',
+        (tester) async {
+          final ticket = _ticketOf(TicketType.task);
+          final ticketsCubit = MockTicketsCubit();
+          final automationRepo = MockAutomationSettingsRepository();
+          final decisionGraphRepository = MockDecisionGraphRepository();
+          _stubTicketsCubit(ticketsCubit);
+          when(
+            () => decisionGraphRepository.getGraph(AutomationContext.sddStage),
+          ).thenAnswer(
+            (_) async => const DecisionGraph(
+              context: AutomationContext.sddStage,
+              rootNodeId: 'sdd-node-1',
+            ),
+          );
+          when(
+            () =>
+                decisionGraphRepository.getAllNodes(AutomationContext.sddStage),
+          ).thenAnswer(
+            (_) async => [
+              DecisionNode(
+                id: 'sdd-node-1',
+                conditionId: 'sessionOverageDetected',
+                conditionParams: const {},
+                matchedBranch: const DecisionBranch.terminal(
+                  DecisionOutcome.proceed,
+                ),
+                // A plain `DecisionEvalContext()` always takes the
+                // unmatched branch — `sessionOverageDetected` defaults
+                // `false` — so this is how the fixture pins `gated`.
+                unmatchedBranch: const DecisionBranch.terminal(
+                  DecisionOutcome.gated,
+                ),
+              ),
+            ],
+          );
+
+          await tester.pumpWidget(
+            _wrap(
+              ticket: ticket,
+              ticketsCubit: ticketsCubit,
+              automationRepo: automationRepo,
+              decisionGraphRepository: decisionGraphRepository,
+              sddStageConfidence: AutomationConfidence.auto,
+            ),
+          );
+          await tester.pump();
+          await tester.pump();
+
+          verify(
+            () =>
+                decisionGraphRepository.getAllNodes(AutomationContext.sddStage),
+          ).called(1);
+          // The screen builds and settles without error even once the
+          // graph resolves a non-`proceed` outcome — `tester.pump()`
+          // above would surface a widget-test failure on any uncaught
+          // exception from `initState`'s decision-graph read.
+        },
+      );
+
+      testWidgets(
+        'gated confidence: never reads the decision graph at all — only '
+        'ever consulted once sddStage confidence has already resolved '
+        'auto',
+        (tester) async {
+          final ticket = _ticketOf(TicketType.task);
+          final ticketsCubit = MockTicketsCubit();
+          final automationRepo = MockAutomationSettingsRepository();
+          final decisionGraphRepository = MockDecisionGraphRepository();
+          _stubTicketsCubit(ticketsCubit);
+
+          await tester.pumpWidget(
+            _wrap(
+              ticket: ticket,
+              ticketsCubit: ticketsCubit,
+              automationRepo: automationRepo,
+              decisionGraphRepository: decisionGraphRepository,
+            ),
+          );
+          // `_wrap`'s own blanket stub already resolves every context to
+          // `gated` — left as-is here, matching this test's intent.
+          await tester.pump();
+          await tester.pump();
+
+          verifyNever(() => decisionGraphRepository.getGraph(any()));
+          verifyNever(() => decisionGraphRepository.getAllNodes(any()));
+        },
+      );
+    },
+  );
 }

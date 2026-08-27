@@ -56,21 +56,15 @@ class _TerminalCanvasNode extends _CanvasNode {
 
 /// Route `/workspace/settings/automation/:context/graph` — the dual-pane
 /// decision-graph editor for one [AutomationContext]: `GraphCanvas`
-/// (default/left, read-only visualization in this slice — see this
-/// file's own limitations note below) and [DecisionOutlineList]
-/// (right, does all authoring), both bound to the same
-/// [DecisionGraphConfigCubit]. Reached from `SettingsScreen`'s
-/// `_AutomationSection` "Configure decision graph" affordance.
-///
-/// **Known limitation of this slice:** `GraphCanvas`'s node-tap
-/// interaction only highlights a node (no popover edit form yet) — every
-/// authoring action (add/edit/delete a condition, set the root) happens
-/// through [DecisionOutlineList]. The two panes still can't diverge, since
-/// both render from the one [DecisionGraphConfigCubit] state; canvas-side
-/// editing is a reasonable follow-up once `DecisionNodeForm.showAsPopover`
-/// is wired to a per-node `LayerLink`. Added for
+/// (default/left) and [DecisionOutlineList] (right), both bound to the
+/// same [DecisionGraphConfigCubit] so a selection or edit in either pane
+/// is reflected in the other. Reached from `SettingsScreen`'s
+/// `_AutomationSection` "Configure decision graph" affordance. Added for
 /// `aion-arch/changes/automation-decision-graphs`; see that change's
-/// design.md §4/§5.
+/// design.md §4/§5. (`/verify` fix pass — the canvas pane previously only
+/// ever rendered the root node plus its two direct terminal branches, and
+/// node-tap only selected rather than opening `DecisionNodeForm
+/// .showAsPopover`; see `_CanvasPane`'s own dartdoc.)
 class DecisionGraphEditorScreen extends StatefulWidget {
   /// Creates a [DecisionGraphEditorScreen] for [automationContext].
   const DecisionGraphEditorScreen({super.key, required this.automationContext});
@@ -118,6 +112,7 @@ class _DecisionGraphEditorScreenState extends State<DecisionGraphEditorScreen> {
                           child: loaded == null
                               ? const Center(child: AppSpinner())
                               : _CanvasPane(
+                                  automationContext: widget.automationContext,
                                   loaded: loaded,
                                   selectedId: _selectedCanvasId,
                                   onSelect: (id) =>
@@ -228,24 +223,48 @@ class _Header extends StatelessWidget {
   }
 }
 
-/// The canvas pane's content: converts [loaded]'s graph into
-/// [GraphCanvas] nodes/edges (a condition node plus its two terminal
-/// outcome pills, or [GraphCanvas.emptyState] when there's no root yet).
-class _CanvasPane extends StatelessWidget {
+/// The canvas pane's content: converts [loaded]'s whole reachable graph
+/// (not just its root) into [GraphCanvas] nodes/edges — recursively
+/// walking every [ToNodeBranch], auto-laid-out per design.md §1.1
+/// (depth → y, in-order index → x) — or [GraphCanvas.emptyState] when
+/// there's no root yet. Tapping a condition node opens it for editing via
+/// [DecisionNodeForm.showAsPopover], anchored to a per-node [LayerLink]
+/// this widget owns (so the link survives rebuilds while a popover is
+/// open) and bound to [DecisionGraphConfigCubit] at tap time, from a
+/// context that's still safely inside the route's `BlocProvider` — the
+/// popover's own [OverlayEntry] renders from the app's root `Overlay`,
+/// outside that subtree, so it can't safely `context.read` the cubit
+/// itself (see [DecisionNodeForm.showAsPopover]'s own dartdoc). Added for
+/// `aion-arch/changes/automation-decision-graphs`; `/verify` fix pass —
+/// previously this only ever positioned the root node plus its two direct
+/// terminal branches, and node-tap only selected rather than editing.
+class _CanvasPane extends StatefulWidget {
   const _CanvasPane({
+    required this.automationContext,
     required this.loaded,
     required this.selectedId,
     required this.onSelect,
   });
 
+  final AutomationContext automationContext;
   final DecisionGraphConfigLoaded loaded;
   final String? selectedId;
   final ValueChanged<String> onSelect;
 
   @override
+  State<_CanvasPane> createState() => _CanvasPaneState();
+}
+
+class _CanvasPaneState extends State<_CanvasPane> {
+  final Map<String, LayerLink> _links = {};
+
+  LayerLink _linkFor(String nodeId) =>
+      _links.putIfAbsent(nodeId, LayerLink.new);
+
+  @override
   Widget build(BuildContext context) {
-    final rootId = loaded.graph.rootNodeId;
-    final rootNode = rootId == null ? null : loaded.nodesById[rootId];
+    final rootId = widget.loaded.graph.rootNodeId;
+    final rootNode = rootId == null ? null : widget.loaded.nodesById[rootId];
 
     if (rootNode == null) {
       return GraphCanvas<_CanvasNode>(
@@ -256,57 +275,200 @@ class _CanvasPane extends StatelessWidget {
       );
     }
 
-    final spec = decisionConditionCatalog
-        .where((s) => s.id == rootNode.conditionId)
-        .firstOrNull;
-    final matchedOutcome = rootNode.matchedBranch is TerminalBranch
-        ? (rootNode.matchedBranch as TerminalBranch).outcome
-        : null;
-    final unmatchedOutcome = rootNode.unmatchedBranch is TerminalBranch
-        ? (rootNode.unmatchedBranch as TerminalBranch).outcome
-        : null;
-
-    final nodes = <GraphCanvasNode<_CanvasNode>>[
-      GraphCanvasNode(
-        id: rootNode.id,
-        position: const Offset(120, 80),
-        data: _ConditionCanvasNode(rootNode, spec),
-      ),
-      if (matchedOutcome != null)
-        GraphCanvasNode(
-          id: '${rootNode.id}-matched',
-          position: const Offset(48, 240),
-          size: const Size(150, 36),
-          data: _TerminalCanvasNode(matchedOutcome),
-        ),
-      if (unmatchedOutcome != null)
-        GraphCanvasNode(
-          id: '${rootNode.id}-unmatched',
-          position: const Offset(320, 240),
-          size: const Size(150, 36),
-          data: _TerminalCanvasNode(unmatchedOutcome),
-        ),
-    ];
-    final edges = <GraphCanvasEdge>[
-      if (matchedOutcome != null)
-        GraphCanvasEdge(fromId: rootNode.id, toId: '${rootNode.id}-matched'),
-      if (unmatchedOutcome != null)
-        GraphCanvasEdge(
-          fromId: rootNode.id,
-          toId: '${rootNode.id}-unmatched',
-          dashed: true,
-          muted: true,
-        ),
-    ];
+    final layout = _TreeLayout(widget.loaded.nodesById)
+      ..layout(rootNode, 0);
 
     return GraphCanvas<_CanvasNode>(
-      nodes: nodes,
-      edges: edges,
-      selectedId: selectedId,
-      onNodeTap: onSelect,
-      nodeBuilder: (context, data, selected) =>
-          _CanvasNodeContent(data: data, selected: selected),
+      nodes: layout.nodes,
+      edges: layout.edges,
+      selectedId: widget.selectedId,
+      onNodeTap: (id) => _handleTap(context, id),
+      nodeBuilder: (context, data, selected) => switch (data) {
+        _ConditionCanvasNode(:final node) => CompositedTransformTarget(
+          link: _linkFor(node.id),
+          child: _CanvasNodeContent(data: data, selected: selected),
+        ),
+        _TerminalCanvasNode() => _CanvasNodeContent(
+          data: data,
+          selected: selected,
+        ),
+      },
     );
+  }
+
+  /// Selects [id]; additionally opens [DecisionNodeForm.showAsPopover]
+  /// when [id] resolves to a condition node (a terminal pill tap only
+  /// selects — the owning condition node's own row/canvas box is still
+  /// reachable to edit that branch).
+  void _handleTap(BuildContext context, String id) {
+    widget.onSelect(id);
+    final node = widget.loaded.nodesById[id];
+    if (node == null) return;
+
+    final cubit = context.read<DecisionGraphConfigCubit>();
+    DecisionNodeForm.showAsPopover(
+      context,
+      link: _linkFor(id),
+      automationContext: widget.automationContext,
+      initialConditionId: node.conditionId,
+      initialConditionParams: node.conditionParams,
+      initialMatchedBranch: node.matchedBranch,
+      initialUnmatchedBranch: node.unmatchedBranch,
+      matchedChildConditionLabel: chainedChildConditionLabel(
+        node.matchedBranch,
+        widget.loaded.nodesById,
+      ),
+      unmatchedChildConditionLabel: chainedChildConditionLabel(
+        node.unmatchedBranch,
+        widget.loaded.nodesById,
+      ),
+      onSave:
+          ({
+            required conditionId,
+            required conditionParams,
+            required matchedBranch,
+            required unmatchedBranch,
+          }) {
+            cubit.updateNode(
+              node.copyWith(
+                conditionId: conditionId,
+                conditionParams: conditionParams,
+                matchedBranch: matchedBranch,
+                unmatchedBranch: unmatchedBranch,
+              ),
+            );
+          },
+      onCreateChainedChild: (conditionId) {
+        final spec = decisionConditionSpecById(conditionId);
+        return cubit.createNode(
+          conditionId: conditionId,
+          conditionParams: spec == null
+              ? const {}
+              : defaultConditionParams(spec),
+        );
+      },
+      onDelete: () => cubit.deleteNode(node.id),
+    );
+  }
+}
+
+/// Lays out one [DecisionGraphConfigLoaded] graph's whole reachable tree
+/// for [GraphCanvas], per design.md §1.1: depth → y (152px per level),
+/// an in-order traversal (matched subtree, self, unmatched subtree) → x
+/// (296px per slot) for condition nodes. A branch's terminal pill (when
+/// it doesn't continue to another condition) is positioned directly
+/// beneath its parent's own anchor rather than consuming its own
+/// in-order slot, per design.md §1.3 ("terminals are positioned by their
+/// parent's branch anchor"). A dangling [ToNodeBranch] (target missing
+/// from `nodesById`) renders nothing for that branch — the same
+/// defensive treatment `decision_graph_evaluator.dart` gives it at
+/// evaluation time. Added for `aion-arch/changes/automation-decision-graphs`
+/// (`/verify` fix pass).
+class _TreeLayout {
+  _TreeLayout(this._nodesById);
+
+  final Map<String, DecisionNode> _nodesById;
+  final List<GraphCanvasNode<_CanvasNode>> nodes = [];
+  final List<GraphCanvasEdge> edges = [];
+  int _slot = 0;
+
+  static const double _slotWidth = 296;
+  static const double _levelHeight = 152;
+  static const double _terminalWidth = 150;
+
+  /// Lays out [node] and its whole reachable subtree rooted at [depth],
+  /// returning the x-coordinate [node] itself was placed at (so a caller
+  /// one level up can route an edge into it).
+  double layout(DecisionNode node, int depth) {
+    double? matchedChildX;
+    if (node.matchedBranch case ToNodeBranch(:final nodeId)) {
+      final child = _nodesById[nodeId];
+      if (child != null) matchedChildX = layout(child, depth + 1);
+    }
+
+    final x = (_slot * _slotWidth) + 40;
+    _slot++;
+    final y = (depth * _levelHeight) + 40;
+    final spec = decisionConditionSpecById(node.conditionId);
+    nodes.add(
+      GraphCanvasNode(
+        id: node.id,
+        position: Offset(x, y),
+        data: _ConditionCanvasNode(node, spec),
+      ),
+    );
+
+    _layoutBranch(
+      matched: true,
+      parentId: node.id,
+      parentX: x,
+      parentY: y,
+      branch: node.matchedBranch,
+      childX: matchedChildX,
+    );
+
+    double? unmatchedChildX;
+    if (node.unmatchedBranch case ToNodeBranch(:final nodeId)) {
+      final child = _nodesById[nodeId];
+      if (child != null) unmatchedChildX = layout(child, depth + 1);
+    }
+    _layoutBranch(
+      matched: false,
+      parentId: node.id,
+      parentX: x,
+      parentY: y,
+      branch: node.unmatchedBranch,
+      childX: unmatchedChildX,
+    );
+
+    return x;
+  }
+
+  void _layoutBranch({
+    required bool matched,
+    required String parentId,
+    required double parentX,
+    required double parentY,
+    required DecisionBranch branch,
+    required double? childX,
+  }) {
+    switch (branch) {
+      case ToNodeBranch(:final nodeId):
+        // Only route the edge if the child actually got laid out —
+        // `childX` is null for a dangling reference (target missing
+        // from `_nodesById`), which this defensively renders as nothing.
+        if (childX != null) {
+          edges.add(
+            GraphCanvasEdge(
+              fromId: parentId,
+              toId: nodeId,
+              dashed: !matched,
+              muted: !matched,
+            ),
+          );
+        }
+      case TerminalBranch(:final outcome):
+        final terminalId = '$parentId-${matched ? 'matched' : 'unmatched'}';
+        nodes.add(
+          GraphCanvasNode(
+            id: terminalId,
+            position: Offset(
+              matched ? parentX - 72 : parentX + 132,
+              parentY + 152,
+            ),
+            size: const Size(_terminalWidth, 36),
+            data: _TerminalCanvasNode(outcome),
+          ),
+        );
+        edges.add(
+          GraphCanvasEdge(
+            fromId: parentId,
+            toId: terminalId,
+            dashed: !matched,
+            muted: !matched,
+          ),
+        );
+    }
   }
 }
 

@@ -11,22 +11,16 @@ import 'package:aion/features/providers/presentation/widgets/decision_node_form.
 
 /// The outline pane of `DecisionGraphEditorScreen`: one row per
 /// `DecisionNode` (condition name, parameter chip, and its two branches'
-/// outcome badges), plus a dashed "+ Add condition" affordance when the
-/// graph has no root yet. Reads/writes through
-/// [DecisionGraphConfigCubit] — the same source of truth `GraphCanvas`
-/// renders from, so a selection or edit in either pane is reflected in
-/// the other via the same [DecisionGraphConfigState].
-///
-/// This slice's shipped condition catalog has exactly one entry per
-/// applicable [AutomationContext] and this form only ever authors
-/// terminal outcomes (see [DecisionNodeForm]'s own dartdoc), so the tree
-/// this pane renders is at most one level deep — the "nested, nested
-/// outline" indentation design.md §2 describes for a multi-level tree
-/// has no case to exercise yet in this shipped slice, but the row/indent
-/// plumbing below is written generically so a future catalog with
-/// chainable conditions doesn't need this file rewritten. Added for
-/// `aion-arch/changes/automation-decision-graphs`; see that change's
-/// design.md §2.
+/// outcome badges), children of a chained branch rendered as their own
+/// indented row beneath it (recursively, no depth cap), plus a dashed
+/// "+ Add condition" affordance when the graph has no root yet.
+/// Reads/writes through [DecisionGraphConfigCubit] — the same source of
+/// truth `GraphCanvas` renders from, so a selection or edit in either
+/// pane is reflected in the other via the same [DecisionGraphConfigState].
+/// Added for `aion-arch/changes/automation-decision-graphs`; see that
+/// change's design.md §2. (`/verify` fix pass — this pane previously only
+/// ever rendered the graph's root node, since `DecisionNodeForm` had no
+/// way to author a chained branch; see that form's own dartdoc.)
 class DecisionOutlineList extends StatefulWidget {
   /// Creates a [DecisionOutlineList] for [automationContext].
   const DecisionOutlineList({super.key, required this.automationContext});
@@ -97,6 +91,7 @@ class _DecisionOutlineListState extends State<DecisionOutlineList> {
               _NodeRow(
                 node: rootNode,
                 depth: 0,
+                nodesById: loaded.nodesById,
                 onDelete: () => context
                     .read<DecisionGraphConfigCubit>()
                     .deleteNode(rootNode.id),
@@ -104,22 +99,19 @@ class _DecisionOutlineListState extends State<DecisionOutlineList> {
                     ({
                       required conditionId,
                       required conditionParams,
-                      required matchedOutcome,
-                      required unmatchedOutcome,
+                      required matchedBranch,
+                      required unmatchedBranch,
                     }) {
                       context.read<DecisionGraphConfigCubit>().updateNode(
                         rootNode.copyWith(
                           conditionId: conditionId,
                           conditionParams: conditionParams,
-                          matchedBranch: DecisionBranch.terminal(
-                            matchedOutcome,
-                          ),
-                          unmatchedBranch: DecisionBranch.terminal(
-                            unmatchedOutcome,
-                          ),
+                          matchedBranch: matchedBranch,
+                          unmatchedBranch: unmatchedBranch,
                         ),
                       );
                     },
+                onCreateChainedChild: _createChainedChild,
                 automationContext: widget.automationContext,
               )
             else if (_formExpanded)
@@ -139,25 +131,22 @@ class _DecisionOutlineListState extends State<DecisionOutlineList> {
                         ({
                           required conditionId,
                           required conditionParams,
-                          required matchedOutcome,
-                          required unmatchedOutcome,
+                          required matchedBranch,
+                          required unmatchedBranch,
                         }) async {
                           final cubit = context
                               .read<DecisionGraphConfigCubit>();
                           final newNodeId = await cubit.createNode(
                             conditionId: conditionId,
                             conditionParams: conditionParams,
-                            matchedBranch: DecisionBranch.terminal(
-                              matchedOutcome,
-                            ),
-                            unmatchedBranch: DecisionBranch.terminal(
-                              unmatchedOutcome,
-                            ),
+                            matchedBranch: matchedBranch,
+                            unmatchedBranch: unmatchedBranch,
                           );
                           if (newNodeId != null) {
                             await cubit.setRoot(newNodeId);
                           }
                         },
+                    onCreateChainedChild: _createChainedChild,
                     onCancel: () => setState(() => _formExpanded = false),
                   ),
                 ),
@@ -190,32 +179,60 @@ class _DecisionOutlineListState extends State<DecisionOutlineList> {
     DecisionGraphConfigErrorReason.cycleDetected =>
       context.l10n.decisionGraphErrorCycleDetected,
   };
+
+  /// [DecisionNodeForm.onCreateChainedChild]'s implementation for this
+  /// pane: creates a fresh [DecisionNode] for [conditionId], its
+  /// parameters seeded via `defaultConditionParams`, and its own two
+  /// branches defaulting to terminal `gated`/`proceed` — the same shape
+  /// [DecisionGraphConfigCubit.createNode] already defaults a brand-new
+  /// node to.
+  Future<String?> _createChainedChild(String conditionId) {
+    final spec = decisionConditionSpecById(conditionId);
+    return context.read<DecisionGraphConfigCubit>().createNode(
+      conditionId: conditionId,
+      conditionParams: spec == null
+          ? const {}
+          : defaultConditionParams(spec),
+    );
+  }
 }
 
 /// One row: condition title + parameter chip, trailing matched/unmatched
-/// outcome badges, expand-in-place to a [DecisionNodeForm] on tap —
-/// mirrors `WorkflowStatusSettingsScreen`'s `_AddStatusControl`
-/// interaction shape.
+/// outcome badges (for whichever branches currently terminate),
+/// expand-in-place to a [DecisionNodeForm] on tap — mirrors
+/// `WorkflowStatusSettingsScreen`'s `_AddStatusControl` interaction
+/// shape. A branch that instead continues to a chained child node
+/// renders that child as its own indented [_NodeRow] beneath this one
+/// (recursively, via [_BranchChild]) — no depth cap, matching design.md
+/// §2's nested-outline shape.
 class _NodeRow extends StatefulWidget {
   const _NodeRow({
     required this.node,
     required this.depth,
+    required this.nodesById,
     required this.automationContext,
     required this.onSave,
     required this.onDelete,
+    required this.onCreateChainedChild,
   });
 
   final DecisionNode node;
   final int depth;
+
+  /// Every node reachable from the graph's root — used to resolve a
+  /// chained branch's child (for the recursive [_BranchChild] rows and
+  /// [DecisionNodeForm]'s `...ChildConditionLabel`).
+  final Map<String, DecisionNode> nodesById;
   final AutomationContext automationContext;
   final void Function({
     required String conditionId,
     required Map<String, dynamic> conditionParams,
-    required DecisionOutcome matchedOutcome,
-    required DecisionOutcome unmatchedOutcome,
+    required DecisionBranch matchedBranch,
+    required DecisionBranch unmatchedBranch,
   })
   onSave;
   final VoidCallback onDelete;
+  final Future<String?> Function(String conditionId) onCreateChainedChild;
 
   @override
   State<_NodeRow> createState() => _NodeRowState();
@@ -227,73 +244,183 @@ class _NodeRowState extends State<_NodeRow> {
   @override
   Widget build(BuildContext context) {
     final c = ThemeScope.of(context).colors;
-    final spec = decisionConditionCatalog
-        .where((s) => s.id == widget.node.conditionId)
-        .firstOrNull;
+    final spec = decisionConditionSpecById(widget.node.conditionId);
     final matchedOutcome = _outcomeOf(widget.node.matchedBranch);
     final unmatchedOutcome = _outcomeOf(widget.node.unmatchedBranch);
+    final matchedChild = _childOf(widget.node.matchedBranch);
+    final unmatchedChild = _childOf(widget.node.unmatchedBranch);
 
-    return Padding(
-      padding: EdgeInsets.only(left: 24.0 * widget.depth),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: _expanded ? c.primarySubtle : const Color(0x00000000),
-          borderRadius: BorderRadius.all(AionRadius.md),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => setState(() => _expanded = !_expanded),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AionSpacing.sp12,
-                  AionSpacing.sp8,
-                  AionSpacing.sp12,
-                  AionSpacing.sp8,
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        spec?.displayName ?? widget.node.conditionId,
-                        style: AionText.cardTitle.copyWith(
-                          color: c.textPrimary,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (matchedOutcome != null)
-                      _OutcomeBadge(outcome: matchedOutcome),
-                    const SizedBox(width: AionSpacing.sp8),
-                    if (unmatchedOutcome != null)
-                      _OutcomeBadge(outcome: unmatchedOutcome),
-                  ],
-                ),
-              ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: EdgeInsets.only(left: 24.0 * widget.depth),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: _expanded ? c.primarySubtle : const Color(0x00000000),
+              borderRadius: BorderRadius.all(AionRadius.md),
             ),
-            if (_expanded)
-              DecisionNodeForm(
-                automationContext: widget.automationContext,
-                initialConditionId: widget.node.conditionId,
-                initialConditionParams: widget.node.conditionParams,
-                initialMatchedOutcome: matchedOutcome ?? DecisionOutcome.gated,
-                initialUnmatchedOutcome:
-                    unmatchedOutcome ?? DecisionOutcome.proceed,
-                onSave: widget.onSave,
-                onCancel: () => setState(() => _expanded = false),
-                onDelete: widget.onDelete,
-              ),
-          ],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => setState(() => _expanded = !_expanded),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      AionSpacing.sp12,
+                      AionSpacing.sp8,
+                      AionSpacing.sp12,
+                      AionSpacing.sp8,
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            spec?.displayName ?? widget.node.conditionId,
+                            style: AionText.cardTitle.copyWith(
+                              color: c.textPrimary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (matchedOutcome != null)
+                          _OutcomeBadge(outcome: matchedOutcome),
+                        const SizedBox(width: AionSpacing.sp8),
+                        if (unmatchedOutcome != null)
+                          _OutcomeBadge(outcome: unmatchedOutcome),
+                      ],
+                    ),
+                  ),
+                ),
+                if (_expanded)
+                  DecisionNodeForm(
+                    automationContext: widget.automationContext,
+                    initialConditionId: widget.node.conditionId,
+                    initialConditionParams: widget.node.conditionParams,
+                    initialMatchedBranch: widget.node.matchedBranch,
+                    initialUnmatchedBranch: widget.node.unmatchedBranch,
+                    matchedChildConditionLabel: chainedChildConditionLabel(
+                      widget.node.matchedBranch,
+                      widget.nodesById,
+                    ),
+                    unmatchedChildConditionLabel: chainedChildConditionLabel(
+                      widget.node.unmatchedBranch,
+                      widget.nodesById,
+                    ),
+                    onSave: widget.onSave,
+                    onCreateChainedChild: widget.onCreateChainedChild,
+                    onCancel: () => setState(() => _expanded = false),
+                    onDelete: widget.onDelete,
+                  ),
+              ],
+            ),
+          ),
         ),
-      ),
+        if (matchedChild != null)
+          _BranchChild(
+            matched: true,
+            child: matchedChild,
+            depth: widget.depth + 1,
+            nodesById: widget.nodesById,
+            automationContext: widget.automationContext,
+            onCreateChainedChild: widget.onCreateChainedChild,
+          ),
+        if (unmatchedChild != null)
+          _BranchChild(
+            matched: false,
+            child: unmatchedChild,
+            depth: widget.depth + 1,
+            nodesById: widget.nodesById,
+            automationContext: widget.automationContext,
+            onCreateChainedChild: widget.onCreateChainedChild,
+          ),
+      ],
     );
   }
 
   DecisionOutcome? _outcomeOf(DecisionBranch branch) =>
       branch is TerminalBranch ? branch.outcome : null;
+
+  /// The branch's chained child node, or `null` if it's terminal — or if
+  /// it's a [ToNodeBranch] whose target is missing from [_NodeRow
+  /// .nodesById] (a dangling reference; rendered as nothing here, the
+  /// same defensive treatment `decision_graph_evaluator.dart` gives it at
+  /// evaluation time).
+  DecisionNode? _childOf(DecisionBranch branch) => switch (branch) {
+    ToNodeBranch(:final nodeId) => widget.nodesById[nodeId],
+    TerminalBranch() => null,
+  };
+}
+
+/// One chained child beneath a [_NodeRow] — the design.md §2.1 "Branch
+/// label" (`MATCHED`/`UNMATCHED`) preceding the child's own recursive
+/// [_NodeRow]. The child row owns its own save/delete wiring (via
+/// `context.read<DecisionGraphConfigCubit>()`), since — unlike its
+/// parent — nothing above it already built those closures.
+class _BranchChild extends StatelessWidget {
+  const _BranchChild({
+    required this.matched,
+    required this.child,
+    required this.depth,
+    required this.nodesById,
+    required this.automationContext,
+    required this.onCreateChainedChild,
+  });
+
+  final bool matched;
+  final DecisionNode child;
+  final int depth;
+  final Map<String, DecisionNode> nodesById;
+  final AutomationContext automationContext;
+  final Future<String?> Function(String conditionId) onCreateChainedChild;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: EdgeInsets.only(left: 24.0 * depth, top: 2, bottom: 2),
+          child: Text(
+            matched
+                ? context.l10n.decisionGraphMatchedLabel.toUpperCase()
+                : context.l10n.decisionGraphUnmatchedLabel.toUpperCase(),
+            style: AionText.caption.copyWith(
+              color: matched ? c.primary : c.textMuted,
+            ),
+          ),
+        ),
+        _NodeRow(
+          node: child,
+          depth: depth,
+          nodesById: nodesById,
+          automationContext: automationContext,
+          onDelete: () =>
+              context.read<DecisionGraphConfigCubit>().deleteNode(child.id),
+          onSave:
+              ({
+                required conditionId,
+                required conditionParams,
+                required matchedBranch,
+                required unmatchedBranch,
+              }) {
+                context.read<DecisionGraphConfigCubit>().updateNode(
+                  child.copyWith(
+                    conditionId: conditionId,
+                    conditionParams: conditionParams,
+                    matchedBranch: matchedBranch,
+                    unmatchedBranch: unmatchedBranch,
+                  ),
+                );
+              },
+          onCreateChainedChild: onCreateChainedChild,
+        ),
+      ],
+    );
+  }
 }
 
 /// The terminal-outcome badge trailing a [_NodeRow] — per design.md §2.2.

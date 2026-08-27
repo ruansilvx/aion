@@ -967,6 +967,12 @@
   "decisionGraphContinueOption": "Continue to condition",
   "decisionGraphThenCheck": "THEN CHECK",
   "decisionGraphOtherwiseCheck": "OTHERWISE CHECK",
+  "decisionGraphContinuesToLabel": "Continues to: {conditionName}",
+  "@decisionGraphContinuesToLabel": {
+    "placeholders": {
+      "conditionName": { "type": "String" }
+    }
+  },
   "decisionGraphOutcomeProceedLabel": "Proceed",
   "decisionGraphOutcomeGatedLabel": "Ask first",
   "decisionGraphOutcomeDeclineLabel": "Decline",

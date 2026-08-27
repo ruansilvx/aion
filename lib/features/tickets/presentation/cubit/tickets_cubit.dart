@@ -4387,8 +4387,14 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// effective confidence (via [_automationSettingsRepository], falling
   /// back to [AutomationConfidence.gated] without one):
   ///
-  /// - [AutomationConfidence.auto]: re-enqueues every surviving entry and
-  ///   calls [_tryStartNextQueuedExecutions] immediately.
+  /// - [AutomationConfidence.auto]: further narrowed by
+  ///   [_evaluateDecisionGraph] once resolved `auto` (added for
+  ///   `aion-arch/changes/automation-decision-graphs`) — a `proceed`/
+  ///   `modelJudgment` outcome re-enqueues every surviving entry and
+  ///   calls [_tryStartNextQueuedExecutions] immediately, exactly as
+  ///   plain `auto` always has; `gated` routes through this same
+  ///   context's own gated surface below; `decline` clears the
+  ///   persisted snapshot, the same as `manual` does.
   /// - [AutomationConfidence.gated]: surfaces the surviving tickets via
   ///   [_pendingResumeTickets]/[TicketsLoaded.pendingResumePrompt] for
   ///   `ResumeRunsPrompt` to render — [resumePendingExecutions]/
@@ -4427,14 +4433,34 @@ class TicketsCubit extends Cubit<TicketsState> {
             AutomationContext.codingExecutionResume,
           );
 
+    void resume() {
+      _executionQueue.addAll(survivingTickets.map((t) => t.id));
+      _refreshInFlightBoardState();
+      unawaited(_tryStartNextQueuedExecutions());
+    }
+
+    void gate() {
+      _pendingResumeTickets = survivingTickets;
+      _refreshInFlightBoardState();
+    }
+
     switch (confidence) {
       case AutomationConfidence.auto:
-        _executionQueue.addAll(survivingTickets.map((t) => t.id));
-        _refreshInFlightBoardState();
-        unawaited(_tryStartNextQueuedExecutions());
+        final outcome = await _evaluateDecisionGraph(
+          AutomationContext.codingExecutionResume,
+          const DecisionEvalContext(),
+        );
+        switch (outcome) {
+          case DecisionOutcome.decline:
+            unawaited(_persistExecutionQueueSnapshot());
+          case DecisionOutcome.gated:
+            gate();
+          case DecisionOutcome.proceed:
+          case DecisionOutcome.modelJudgment:
+            resume();
+        }
       case AutomationConfidence.gated:
-        _pendingResumeTickets = survivingTickets;
-        _refreshInFlightBoardState();
+        gate();
       case AutomationConfidence.manual:
         unawaited(_persistExecutionQueueSnapshot());
     }
