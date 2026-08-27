@@ -127,6 +127,78 @@ void main() {
       final state = cubit.state as DecisionGraphConfigError;
       expect(state.reason, DecisionGraphConfigErrorReason.danglingBranchTarget);
     });
+
+    test(
+      'keeps the freshly created node in state even though the repository '
+      'reload does not return it yet (getAllNodes is root-reachable-only, '
+      'and this node is not attached to anything) — regression for a real '
+      'bug found via manual QA of aion-arch/changes/'
+      'automation-decision-graphs: DecisionNodeForm\'s "continue to '
+      'condition" chaining flow calls createNode then immediately '
+      'updateNode(parent) to attach it, and that follow-up call used to '
+      'see the new id as absent and reject with danglingBranchTarget, '
+      'silently discarding the whole edit',
+      () async {
+        await cubit.load(automationContext);
+
+        // The mock's getAllNodes always answers with the fixed
+        // [rootNode, childNode] list regardless of what's just been
+        // upserted — faithfully standing in for the real
+        // DriftDecisionGraphRepository, whose getAllNodes only walks
+        // nodes reachable from the graph's root and so genuinely cannot
+        // see a node that isn't attached to anything yet.
+        final newId = await cubit.createNode(
+          conditionId: 'attemptExceedsMax',
+          conditionParams: const {'maxAttempts': 1},
+        );
+        expect(newId, isNotNull);
+
+        final loaded = cubit.state as DecisionGraphConfigLoaded;
+        expect(loaded.nodesById.keys, contains(newId));
+
+        // The chaining flow's actual next step: attach the new node as
+        // root's matched-branch target. Must succeed, not reject.
+        await cubit.updateNode(
+          rootNode.copyWith(matchedBranch: DecisionBranch.toNode(newId!)),
+        );
+
+        expect(cubit.state, isA<DecisionGraphConfigLoaded>());
+        verify(() => repository.upsertNode(any())).called(2);
+      },
+    );
+
+    test(
+      'lets setRoot attach a freshly created node as the graph\'s very '
+      'first node — regression for the same root cause as above, hit by '
+      'the empty-graph "Add first condition" flow (createNode then '
+      'setRoot(newId))',
+      () async {
+        const emptyContext = AutomationContext.ticketCreation;
+        when(() => repository.getGraph(emptyContext)).thenAnswer(
+          (_) async =>
+              const DecisionGraph(context: emptyContext, rootNodeId: null),
+        );
+        when(
+          () => repository.getAllNodes(emptyContext),
+        ).thenAnswer((_) async => const []);
+        when(
+          () => repository.setRoot(emptyContext, any()),
+        ).thenAnswer((_) async {});
+
+        await cubit.load(emptyContext);
+
+        final newId = await cubit.createNode(
+          conditionId: 'attemptExceedsMax',
+          conditionParams: const {'maxAttempts': 1},
+        );
+        expect(newId, isNotNull);
+
+        await cubit.setRoot(newId);
+
+        expect(cubit.state, isA<DecisionGraphConfigLoaded>());
+        verify(() => repository.setRoot(emptyContext, newId)).called(1);
+      },
+    );
   });
 
   group('updateNode', () {

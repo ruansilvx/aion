@@ -55,12 +55,27 @@ class DecisionGraphConfigCubit extends Cubit<DecisionGraphConfigState> {
   /// edited further. Rejects if attaching either branch (when the caller
   /// passes a `DecisionBranch.toNode` pointing at an existing node) would
   /// violate the strict-tree invariant. Returns the new node's id, or
-  /// `null` if the write was rejected — a freshly created node isn't
-  /// reachable from the graph's root yet (`DecisionGraphRepository
-  /// .getAllNodes` only returns nodes reachable by walking from the
-  /// root), so a caller attaching it as the new root or as an existing
-  /// node's branch target needs this id directly rather than trying to
-  /// find it in the reloaded [DecisionGraphConfigLoaded.nodesById].
+  /// `null` if the write was rejected.
+  ///
+  /// A freshly created node isn't reachable from the graph's root yet
+  /// (`DecisionGraphRepository.getAllNodes` only returns nodes reachable
+  /// by walking from the root), so the post-write [load] this method
+  /// calls would normally drop it straight back out of
+  /// [DecisionGraphConfigLoaded.nodesById] — which broke every caller
+  /// that immediately follows up with [updateNode]/[setRoot] to attach
+  /// the new node (the form's "continue to condition" chaining flow, and
+  /// the empty-graph "add first condition" flow both do exactly this):
+  /// that follow-up call would see the just-created id as absent from
+  /// [DecisionGraphConfigLoaded.nodesById] and reject with
+  /// [DecisionGraphConfigErrorReason.danglingBranchTarget]/`nodeNotFound`,
+  /// discarding the edit. Fixed by re-merging the new orphan node into
+  /// the reloaded state whenever the reload didn't already pick it up —
+  /// found via manual QA of `aion-arch/changes/automation-decision-graphs`
+  /// (`/verify` follow-up), see that change's `tasks.md` for the
+  /// reproduction. An orphan that's never subsequently attached (the user
+  /// abandons the edit) simply stays in this merged-in state until the
+  /// next full [load] — matches [deleteNode]'s existing "cleanup is the
+  /// editor UI's responsibility" precedent.
   Future<String?> createNode({
     required String conditionId,
     required Map<String, dynamic> conditionParams,
@@ -90,6 +105,17 @@ class DecisionGraphConfigCubit extends Cubit<DecisionGraphConfigState> {
 
     await _repository.upsertNode(node);
     await load(loaded.context);
+    if (isClosed) return node.id;
+    final reloaded = _requireLoaded();
+    if (reloaded != null && !reloaded.nodesById.containsKey(node.id)) {
+      emit(
+        DecisionGraphConfigLoaded(
+          context: reloaded.context,
+          graph: reloaded.graph,
+          nodesById: {...reloaded.nodesById, node.id: node},
+        ),
+      );
+    }
     return node.id;
   }
 
