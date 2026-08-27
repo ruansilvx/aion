@@ -986,6 +986,12 @@
   "decisionGraphOutcomeModelJudgmentLabel": "Model decides",
   "decisionGraphDeleteButton": "Delete",
   "decisionGraphDeleteConfirmTitle": "Delete this condition?",
+  "decisionGraphDeleteConfirmTitleWithDescendants": "Delete this condition and its {count, plural, one{1 descendant} other{{count} descendants}}?",
+  "@decisionGraphDeleteConfirmTitleWithDescendants": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
   "decisionGraphDeleteConfirmMessage": "This also removes every condition beneath it.",
   "decisionGraphRootMarker": "ROOT",
   "decisionGraphResetButton": "Reset to always proceed",
