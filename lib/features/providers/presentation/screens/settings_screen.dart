@@ -810,10 +810,6 @@ class _ExecutionContextCapSectionState
   @override
   void initState() {
     super.initState();
-    // Rebuilds on every keystroke so the helper row (derived live from
-    // `_controller.text`, never stored — design.md §2.4) tracks what's
-    // being typed before it's committed.
-    _controller.addListener(() => setState(() {}));
     _focusNode.addListener(() {
       if (!_focusNode.hasFocus) _commit(_controller.text);
     });
@@ -842,6 +838,20 @@ class _ExecutionContextCapSectionState
         }
 
         final expected = state.overrideTokens?.toString() ?? '';
+        // Setting `.text` here — inside this `BlocBuilder`'s own builder,
+        // itself invoked from this State's build() — used to call
+        // `setState` directly on *this* State from a `_controller`
+        // listener added in `initState`, which is exactly the
+        // "setState() or markNeedsBuild() called during build" case:
+        // marking the widget currently being built as dirty is illegal,
+        // only a not-yet-visited *descendant* may be marked dirty mid-
+        // build. Fixed by moving every keystroke-reactive part below
+        // (spacing + the helper row) into the `ValueListenableBuilder`
+        // wrapping them — a genuine descendant, which Flutter's own
+        // "parent widgets build before children" rule explicitly allows
+        // to be marked dirty here. Found via manual QA (a user report
+        // that the settings screen threw this while editing an unrelated
+        // decision-graph node — same screen, unrelated section).
         if (!_seeded) {
           _seeded = true;
           _controller.text = expected;
@@ -853,9 +863,6 @@ class _ExecutionContextCapSectionState
         }
 
         final limit = state.modelDefaultTokens;
-        final text = _controller.text;
-        final parsed = int.tryParse(text);
-        final isClamped = parsed != null && parsed >= limit;
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -880,12 +887,25 @@ class _ExecutionContextCapSectionState
               textInputAction: TextInputAction.done,
               onSubmitted: _commit,
             ),
-            SizedBox(height: isClamped ? 6 : 8),
-            _ExecutionContextCapHelperRow(
-              text: text,
-              parsed: parsed,
-              limit: limit,
-              isClamped: isClamped,
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: _controller,
+              builder: (context, value, _) {
+                final text = value.text;
+                final parsed = int.tryParse(text);
+                final isClamped = parsed != null && parsed >= limit;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(height: isClamped ? 6 : 8),
+                    _ExecutionContextCapHelperRow(
+                      text: text,
+                      parsed: parsed,
+                      limit: limit,
+                      isClamped: isClamped,
+                    ),
+                  ],
+                );
+              },
             ),
           ],
         );
