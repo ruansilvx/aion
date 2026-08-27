@@ -1,5 +1,7 @@
 // presentation/screens/settings_screen.dart — Settings screen (presentation layer).
 
+import 'dart:async';
+
 import 'package:flutter/services.dart'
     show FilteringTextInputFormatter, TextInputAction, TextInputType;
 import 'package:flutter/widgets.dart';
@@ -177,9 +179,8 @@ class SettingsScreen extends StatelessWidget {
                         const SizedBox(height: 20),
                         _AutomationSection(
                           automationContext: AutomationContext.ticketLinking,
-                          label: context
-                              .l10n
-                              .settingsAutomationTicketLinkingLabel,
+                          label:
+                              context.l10n.settingsAutomationTicketLinkingLabel,
                           description: context
                               .l10n
                               .settingsAutomationTicketLinkingDescription,
@@ -412,9 +413,143 @@ class _AutomationSection extends StatelessWidget {
               ),
               trigger: _AutomationTrigger(confidence: confidence),
             ),
+            const SizedBox(height: AionSpacing.sp12),
+            _DecisionGraphAffordance(
+              automationContext: automationContext,
+              enabled: confidence == AutomationConfidence.auto,
+            ),
           ],
         );
       },
+    );
+  }
+}
+
+/// The "Configure decision graph" affordance appended to
+/// [_AutomationSection]'s trailing cluster — navigates to
+/// `DecisionGraphEditorScreen` for [automationContext]. Only enabled
+/// while [enabled] (i.e. that context's confidence is
+/// [AutomationConfidence.auto] — a decision graph is only ever consulted
+/// once a context has already resolved to `auto`); disabled otherwise,
+/// with an explanatory tooltip. Per design.md §5.1/§5.2. Added for
+/// `aion-arch/changes/automation-decision-graphs`.
+class _DecisionGraphAffordance extends StatefulWidget {
+  const _DecisionGraphAffordance({
+    required this.automationContext,
+    required this.enabled,
+  });
+
+  final AutomationContext automationContext;
+  final bool enabled;
+
+  @override
+  State<_DecisionGraphAffordance> createState() =>
+      _DecisionGraphAffordanceState();
+}
+
+class _DecisionGraphAffordanceState extends State<_DecisionGraphAffordance> {
+  int? _configuredCount;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadCount());
+  }
+
+  @override
+  void didUpdateWidget(covariant _DecisionGraphAffordance oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.automationContext != widget.automationContext) {
+      unawaited(_loadCount());
+    }
+  }
+
+  Future<void> _loadCount() async {
+    final repository = context.read<DecisionGraphRepository>();
+    final nodes = await repository.getAllNodes(widget.automationContext);
+    if (mounted) setState(() => _configuredCount = nodes.length);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    final count = _configuredCount ?? 0;
+    final label = context.l10n.decisionGraphAffordanceLabel;
+
+    final content = DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0x00000000),
+        border: Border.all(
+          color: c.border.withValues(alpha: widget.enabled ? 1 : 0.6),
+        ),
+        borderRadius: BorderRadius.all(AionRadius.md),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 0, 10, 0),
+        child: SizedBox(
+          height: 30,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: AionText.bodySm.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: widget.enabled
+                      ? c.textSecondary
+                      : c.textMuted.withValues(alpha: 0.6),
+                ),
+              ),
+              if (count > 0) ...[
+                const SizedBox(width: 6),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: c.primarySubtle,
+                    borderRadius: const BorderRadius.all(Radius.circular(4)),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(5, 1, 5, 1),
+                    child: Text(
+                      count.toString(),
+                      style: AionText.key.copyWith(color: c.primary),
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(width: AionSpacing.sp8),
+              PhosphorIcon(
+                PhosphorIcons.caretRightLight,
+                size: 12,
+                color: widget.enabled
+                    ? c.textMuted
+                    : c.textMuted.withValues(alpha: 0.6),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    return Semantics(
+      button: true,
+      enabled: widget.enabled,
+      label: count > 0
+          ? context.l10n.decisionGraphAffordanceConfiguredSemantics(count)
+          : label,
+      child: MouseRegion(
+        cursor: widget.enabled
+            ? SystemMouseCursors.click
+            : SystemMouseCursors.basic,
+        child: GestureDetector(
+          onTap: widget.enabled
+              ? () => context.push(
+                  '/workspace/settings/automation/'
+                  '${widget.automationContext.name}/graph',
+                )
+              : null,
+          child: content,
+        ),
+      ),
     );
   }
 }
@@ -926,15 +1061,17 @@ Color _schedulingModeDotColor(AionColors c, ExecutionSchedulingMode mode) =>
 /// Localized display label for [mode]. Module-private since
 /// [_ExecutionSchedulingSection]/[_ExecutionSchedulingTrigger]/
 /// [_ExecutionSchedulingMenuRow] are its only consumers.
-String _schedulingModeLabel(BuildContext context, ExecutionSchedulingMode mode) =>
-    switch (mode) {
-      ExecutionSchedulingMode.strictFifo =>
-        context.l10n.settingsExecutionSchedulingStrictFifoLabel,
-      ExecutionSchedulingMode.parallel =>
-        context.l10n.settingsExecutionSchedulingParallelLabel,
-      ExecutionSchedulingMode.hybrid =>
-        context.l10n.settingsExecutionSchedulingHybridLabel,
-    };
+String _schedulingModeLabel(
+  BuildContext context,
+  ExecutionSchedulingMode mode,
+) => switch (mode) {
+  ExecutionSchedulingMode.strictFifo =>
+    context.l10n.settingsExecutionSchedulingStrictFifoLabel,
+  ExecutionSchedulingMode.parallel =>
+    context.l10n.settingsExecutionSchedulingParallelLabel,
+  ExecutionSchedulingMode.hybrid =>
+    context.l10n.settingsExecutionSchedulingHybridLabel,
+};
 
 /// One-line explanatory sub-label for [mode], shown in
 /// [_ExecutionSchedulingMenuRow].
@@ -1059,7 +1196,10 @@ class _ExecutionSchedulingSectionState
                 context
                     .l10n
                     .settingsExecutionSchedulingConcurrencyCeilingDescription,
-                style: AionText.bodySm.copyWith(color: c.textMuted, height: 1.5),
+                style: AionText.bodySm.copyWith(
+                  color: c.textMuted,
+                  height: 1.5,
+                ),
               ),
               const SizedBox(height: 10),
               AppTextField(

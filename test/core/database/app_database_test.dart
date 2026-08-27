@@ -49,89 +49,141 @@ void main() {
       rows.map((r) => r.name).toList(),
       defaultWorkflowStatuses.map((s) => s.name).toList(),
     );
-    expect(
-      rows.where((r) => r.role != null).map((r) => r.role).toSet(),
-      {'executionTrigger', 'reviewReady', 'done'},
-    );
+    expect(rows.where((r) => r.role != null).map((r) => r.role).toSet(), {
+      'executionTrigger',
+      'reviewReady',
+      'done',
+    });
   });
 
-  test(
-    'a freshly-created ticket\'s default status resolves against the '
-    'seeded defaultWorkflowStatuses',
-    () async {
-      final database = AppDatabase(_testProject, NativeDatabase.memory());
-      addTearDown(database.close);
+  test('a freshly-created ticket\'s default status resolves against the '
+      'seeded defaultWorkflowStatuses', () async {
+    final database = AppDatabase(_testProject, NativeDatabase.memory());
+    addTearDown(database.close);
 
-      await database.ticketDao.insertTicket(
-        TicketsTableCompanion.insert(
-          id: 'ticket-1',
-          ticketId: '',
-          type: 'task',
-          title: 'A fresh ticket',
-          status: 'backlog',
-          createdAt: 0,
-          updatedAt: 0,
-        ),
-        'AIO',
+    await database.ticketDao.insertTicket(
+      TicketsTableCompanion.insert(
+        id: 'ticket-1',
+        ticketId: '',
+        type: 'task',
+        title: 'A fresh ticket',
+        status: 'backlog',
+        createdAt: 0,
+        updatedAt: 0,
+      ),
+      'AIO',
+    );
+
+    final ticket = await database.ticketDao.getTicketById('ticket-1');
+    final statuses = await database.workflowStatusDao.getAll();
+
+    expect(ticket, isNotNull);
+    expect(statuses.map((s) => s.name), contains(ticket!.status));
+  });
+
+  group(
+    'schema 16 — WorkflowSkillAttachmentsTable/WorkflowPromptTemplatesTable',
+    () {
+      // This codebase has no exported-schema/SchemaVerifier infrastructure
+      // (see the schema-15 coverage above), so rather than hand-author a
+      // byte-accurate schema-15 DDL snapshot, this test opens a
+      // `NativeDatabase.memory` whose `setup` callback stamps the raw
+      // sqlite3 `user_version` pragma to `15` *before* drift's own
+      // migration logic runs — drift then sees `from: 15 < schemaVersion:
+      // 16` on open and genuinely invokes `AppDatabase.migration.onUpgrade`'s
+      // real `from < 16` branch (not a re-implementation of it), same as
+      // it would for an actual upgrading install. The rest of schema 15's
+      // tables are never created by this test (nothing here needs them),
+      // so only `workflowSkillAttachmentDao`/`workflowPromptTemplateDao`
+      // are queried.
+      test(
+        'an install upgraded from schema 15 has both new tables, empty',
+        () async {
+          final database = AppDatabase(
+            _testProject,
+            NativeDatabase.memory(
+              setup: (db) => db.execute('PRAGMA user_version = 15'),
+            ),
+          );
+          addTearDown(database.close);
+
+          final attachments = await database.workflowSkillAttachmentDao
+              .getAll();
+          final templates = await database.workflowPromptTemplateDao.getAll();
+
+          expect(attachments, isEmpty);
+          expect(templates, isEmpty);
+        },
       );
 
-      final ticket = await database.ticketDao.getTicketById('ticket-1');
-      final statuses = await database.workflowStatusDao.getAll();
-
-      expect(ticket, isNotNull);
-      expect(statuses.map((s) => s.name), contains(ticket!.status));
-    },
-  );
-
-  group('schema 16 — WorkflowSkillAttachmentsTable/WorkflowPromptTemplatesTable', () {
-    // This codebase has no exported-schema/SchemaVerifier infrastructure
-    // (see the schema-15 coverage above), so rather than hand-author a
-    // byte-accurate schema-15 DDL snapshot, this test opens a
-    // `NativeDatabase.memory` whose `setup` callback stamps the raw
-    // sqlite3 `user_version` pragma to `15` *before* drift's own
-    // migration logic runs — drift then sees `from: 15 < schemaVersion:
-    // 16` on open and genuinely invokes `AppDatabase.migration.onUpgrade`'s
-    // real `from < 16` branch (not a re-implementation of it), same as
-    // it would for an actual upgrading install. The rest of schema 15's
-    // tables are never created by this test (nothing here needs them),
-    // so only `workflowSkillAttachmentDao`/`workflowPromptTemplateDao`
-    // are queried.
-    test(
-      'an install upgraded from schema 15 has both new tables, empty',
-      () async {
-        final database = AppDatabase(
-          _testProject,
-          NativeDatabase.memory(
-            setup: (db) => db.execute('PRAGMA user_version = 15'),
-          ),
-        );
+      // Same scoping rationale as this file's schema-15 coverage above: the
+      // `from < 16` branch is a two-line `createTable` pair with no seed/
+      // backfill logic to get wrong (see `app_database.dart`'s version-16
+      // dartdoc). This test confirms the fresh-`onCreate` install path
+      // (which shares `createAll()`, the same table set `onUpgrade`
+      // incrementally builds towards) ends with both new tables present
+      // and empty too.
+      test('a fresh onCreate install has both new tables, empty', () async {
+        final database = AppDatabase(_testProject, NativeDatabase.memory());
         addTearDown(database.close);
 
-        final attachments = await database.workflowSkillAttachmentDao
-            .getAll();
+        final attachments = await database.workflowSkillAttachmentDao.getAll();
         final templates = await database.workflowPromptTemplateDao.getAll();
 
         expect(attachments, isEmpty);
         expect(templates, isEmpty);
-      },
-    );
+      });
+    },
+  );
 
-    // Same scoping rationale as this file's schema-15 coverage above: the
-    // `from < 16` branch is a two-line `createTable` pair with no seed/
-    // backfill logic to get wrong (see `app_database.dart`'s version-16
-    // dartdoc). This test confirms the fresh-`onCreate` install path
-    // (which shares `createAll()`, the same table set `onUpgrade`
-    // incrementally builds towards) ends with both new tables present
-    // and empty too.
-    test('a fresh onCreate install has both new tables, empty', () async {
-      final database = AppDatabase(_testProject, NativeDatabase.memory());
-      addTearDown(database.close);
+  group(
+    'schema 18 — AutomationDecisionGraphsTable/AutomationDecisionNodesTable',
+    () {
+      // Same `PRAGMA user_version` technique as the schema-16 coverage
+      // above — genuinely exercises `AppDatabase.migration.onUpgrade`'s
+      // real `from < 18` branch. See
+      // `aion-arch/changes/automation-decision-graphs/design.md` §2.
+      test('an install upgraded from schema 17 seeds every AutomationContext, '
+          'including the two baseline nodes reproducing the former hardcoded '
+          'checks', () async {
+        final database = AppDatabase(
+          _testProject,
+          NativeDatabase.memory(
+            setup: (db) => db.execute('PRAGMA user_version = 17'),
+          ),
+        );
+        addTearDown(database.close);
 
-      final attachments = await database.workflowSkillAttachmentDao.getAll();
-      final templates = await database.workflowPromptTemplateDao.getAll();
+        final retryGraph = await database.automationDecisionDao.getGraph(
+          AutomationContext.codingExecutionRetry,
+        );
+        expect(retryGraph, isNotNull);
+        expect(retryGraph!.rootNodeId, isNotNull);
 
-      expect(attachments, isEmpty);
-      expect(templates, isEmpty);
-    });
-  });
+        final sddStageGraph = await database.automationDecisionDao.getGraph(
+          AutomationContext.sddStage,
+        );
+        expect(sddStageGraph, isNotNull);
+        expect(sddStageGraph!.rootNodeId, isNull);
+      });
+
+      test(
+        'a fresh onCreate install seeds every AutomationContext the same way',
+        () async {
+          final database = AppDatabase(_testProject, NativeDatabase.memory());
+          addTearDown(database.close);
+
+          final executionGraph = await database.automationDecisionDao.getGraph(
+            AutomationContext.codingExecution,
+          );
+          expect(executionGraph, isNotNull);
+          expect(executionGraph!.rootNodeId, isNotNull);
+          final node = await database.automationDecisionDao.getNode(
+            executionGraph.rootNodeId!,
+          );
+          expect(node!.conditionId, 'sessionOverageDetected');
+        },
+      );
+    },
+  );
 }

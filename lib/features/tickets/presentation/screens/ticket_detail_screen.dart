@@ -110,6 +110,20 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   /// "Precondition check on ticket-detail load" section.
   AutomationConfidence? _automationConfidence;
 
+  /// [AutomationContext.sddStage]'s decision-graph outcome, resolved
+  /// (once) immediately after [_automationConfidence] loads as
+  /// [AutomationConfidence.auto] — extends that plain confidence read
+  /// with the same graph-consultation step `TicketsCubit
+  /// ._evaluateDecisionGraph` performs at its own `case auto:` call
+  /// sites. Stays `null` (treated the same as
+  /// [DecisionOutcome.proceed]/[DecisionOutcome.modelJudgment] by
+  /// [_maybeAutoAdvanceSddStage]) when [_automationConfidence] never
+  /// resolves `auto`, or when [AutomationContext.sddStage]'s graph has no
+  /// configured root — the seeded baseline, so this is a structural
+  /// change with no behavior change until a project edits that graph.
+  /// Added for `aion-arch/changes/automation-decision-graphs`.
+  DecisionOutcome? _sddStageDecisionOutcome;
+
   /// `'<ticketId>:<sddStage>'` key of the last ticket+stage this screen
   /// already auto-advanced, so a rebuild doesn't re-trigger
   /// [TicketsCubit.advanceSddStage] repeatedly while
@@ -175,8 +189,25 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
       context
           .read<AutomationSettingsRepository>()
           .getConfidence(AutomationContext.sddStage)
-          .then((confidence) {
-            if (mounted) setState(() => _automationConfidence = confidence);
+          .then((confidence) async {
+            if (!mounted) return;
+            setState(() => _automationConfidence = confidence);
+            if (confidence != AutomationConfidence.auto) return;
+            final decisionGraphRepository = context
+                .read<DecisionGraphRepository>();
+            final graph = await decisionGraphRepository.getGraph(
+              AutomationContext.sddStage,
+            );
+            if (graph.rootNodeId == null) return;
+            final nodes = await decisionGraphRepository.getAllNodes(
+              AutomationContext.sddStage,
+            );
+            if (!mounted) return;
+            setState(
+              () => _sddStageDecisionOutcome = evaluateDecisionGraph(graph, {
+                for (final node in nodes) node.id: node,
+              }, const DecisionEvalContext()),
+            );
           }),
     );
   }
@@ -188,6 +219,10 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   /// again for the same ticket+stage.
   void _maybeAutoAdvanceSddStage(Ticket ticket, bool canAdvance) {
     if (_automationConfidence != AutomationConfidence.auto || !canAdvance) {
+      return;
+    }
+    if (_sddStageDecisionOutcome == DecisionOutcome.gated ||
+        _sddStageDecisionOutcome == DecisionOutcome.decline) {
       return;
     }
     final key = '${ticket.id}:${ticket.sddStage?.name}';
@@ -1288,7 +1323,8 @@ class _ToolProposalHeader extends StatelessWidget {
       ToolProposalKind.addLink => PhosphorIcons.linkLight,
     };
     final title = switch (kind) {
-      ToolProposalKind.branch => context.l10n.ticketDetailToolProposalBranchTitle,
+      ToolProposalKind.branch =>
+        context.l10n.ticketDetailToolProposalBranchTitle,
       ToolProposalKind.close => context.l10n.ticketDetailToolProposalCloseTitle,
       ToolProposalKind.createTicket =>
         context.l10n.ticketDetailToolProposalCreateTicketTitle(
@@ -1298,11 +1334,12 @@ class _ToolProposalHeader extends StatelessWidget {
           ).toLowerCase(),
           proposedTitle ?? '',
         ),
-      ToolProposalKind.addLink => context.l10n.ticketDetailToolProposalAddLinkTitle(
-        (linkType ?? TicketLinkType.relatesTo).label(context),
-        targetTicketKey ?? '',
-        targetTicketTitle ?? '',
-      ),
+      ToolProposalKind.addLink =>
+        context.l10n.ticketDetailToolProposalAddLinkTitle(
+          (linkType ?? TicketLinkType.relatesTo).label(context),
+          targetTicketKey ?? '',
+          targetTicketTitle ?? '',
+        ),
     };
     final haloAnimation = Tween<double>(
       begin: 0.35,
@@ -1664,9 +1701,7 @@ class _AddLinkProposalWell extends StatelessWidget {
     Widget keyChip(String key, {required bool emphasized}) => DecoratedBox(
       decoration: BoxDecoration(
         color: c.surfaceHover,
-        border: emphasized
-            ? Border.all(color: c.borderStrong, width: 1)
-            : null,
+        border: emphasized ? Border.all(color: c.borderStrong, width: 1) : null,
         borderRadius: BorderRadius.all(AionRadius.sm),
       ),
       child: Padding(
@@ -1717,11 +1752,7 @@ class _AddLinkProposalWell extends StatelessWidget {
               children: [
                 keyChip(currentTicketKey, emphasized: false),
                 const SizedBox(width: 10),
-                PhosphorIcon(
-                  linkType.glyph,
-                  size: 18,
-                  color: c.textSecondary,
-                ),
+                PhosphorIcon(linkType.glyph, size: 18, color: c.textSecondary),
                 const SizedBox(width: 10),
                 keyChip(targetTicketKey, emphasized: true),
               ],
@@ -2182,7 +2213,9 @@ class _PendingSkillAttachmentBannerState
                           const SizedBox(width: 7),
                           Expanded(
                             child: Text(
-                              context.l10n.ticketDetailPendingSkillStatusWaiting,
+                              context
+                                  .l10n
+                                  .ticketDetailPendingSkillStatusWaiting,
                               style: AionText.time.copyWith(
                                 fontSize: 12.5,
                                 color: c.textSecondary,
@@ -2217,7 +2250,9 @@ class _PendingSkillAttachmentBannerState
                               ? context
                                     .l10n
                                     .ticketDetailPendingSkillKindDelegatedSkill
-                              : context.l10n.ticketDetailPendingSkillKindTemplate,
+                              : context
+                                    .l10n
+                                    .ticketDetailPendingSkillKindTemplate,
                           style: AionText.chip.copyWith(
                             fontSize: 9.5,
                             color: tc,

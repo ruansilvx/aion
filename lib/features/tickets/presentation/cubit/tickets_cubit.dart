@@ -13,6 +13,12 @@ import 'package:uuid/uuid.dart';
 import 'package:aion/core/automation/automation_confidence.dart';
 import 'package:aion/core/automation/automation_context.dart';
 import 'package:aion/core/automation/automation_settings_repository.dart';
+import 'package:aion/core/automation/decision_graph.dart';
+import 'package:aion/core/automation/decision_graph_evaluator.dart';
+import 'package:aion/core/automation/decision_graph_repository.dart';
+import 'package:aion/core/automation/decision_node.dart';
+import 'package:aion/core/automation/decision_outcome.dart';
+import 'package:aion/core/automation/default_decision_graphs.dart';
 import 'package:aion/core/build/dependency_cache_service.dart';
 import 'package:aion/core/build/project_stack_detector.dart';
 import 'package:aion/core/contracts/agent_model_client.dart';
@@ -225,6 +231,15 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// dependencies); real usage (`app_router.dart`) always supplies one.
   /// Added for
   /// `aion-arch/changes/dependency-caching-and-ancestor-sibling-conflict`.
+  /// [decisionGraphRepository] follows the same optional-dependency
+  /// pattern once more — `null` (every existing construction site except
+  /// `app_router.dart`) makes [_evaluateDecisionGraph] fall back to
+  /// [defaultDecisionGraphFor]/[defaultDecisionNodesById] (see that
+  /// method's own dartdoc), pinning every `AutomationContext`'s `case
+  /// auto:` behavior to exactly what plain `auto` confidence already did
+  /// before this proposal. Real usage (`app_router.dart`) always
+  /// supplies one. Added for
+  /// `aion-arch/changes/automation-decision-graphs`.
   // The public param names below (embeddingProvider/gitProjector/
   // projectRootPath/providerRegistry/commentRepository/
   // automationSettingsRepository/modelRoutingRepository/gitClient/
@@ -268,6 +283,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     WorkflowPromptTemplateRepository? workflowPromptTemplateRepository,
     NotificationRepository? notificationRepository,
     DependencyCacheService? dependencyCacheService,
+    DecisionGraphRepository? decisionGraphRepository,
   }) : super(const TicketsInitial()) {
     _embeddingProvider = embeddingProvider;
     _gitProjector = gitProjector;
@@ -297,6 +313,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     _workflowPromptTemplateRepository = workflowPromptTemplateRepository;
     _notificationRepository = notificationRepository;
     _dependencyCache = dependencyCacheService;
+    _decisionGraphRepository = decisionGraphRepository;
     _workflowStatusChangesSubscription = workflowStatusRepository?.onChanged
         .listen((_) => _loadWorkflowStatuses());
     unawaited(_loadWorkflowStatuses());
@@ -304,6 +321,9 @@ class TicketsCubit extends Cubit<TicketsState> {
         ?.onChanged
         .listen((_) => _loadSkillAttachments());
     unawaited(_loadSkillAttachments());
+    _decisionGraphChangesSubscription = decisionGraphRepository?.onChanged
+        .listen((_) => _loadDecisionGraphs());
+    unawaited(_loadDecisionGraphs());
     _rollupRecomputer = TicketRollupRecomputer(
       _repository,
       gitProjector: gitProjector,
@@ -464,14 +484,16 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// (every existing construction site except `app_router.dart`) pins
   /// [_skillAttachments] to `const []` forever — see the constructor's
   /// own dartdoc. Added for `aion-arch/changes/workflow-skill-attachments`.
-  late final WorkflowSkillAttachmentRepository? _workflowSkillAttachmentRepository;
+  late final WorkflowSkillAttachmentRepository?
+  _workflowSkillAttachmentRepository;
 
   /// Persists the project's [WorkflowPromptTemplate] set, consulted by
   /// [_promptFor] to render an [SkillAttachmentKind.aionNativeTemplate]
   /// attachment's prompt. `null` makes [_promptFor] fall back to a
   /// defensive placeholder for that kind (see its own dartdoc). Added for
   /// `aion-arch/changes/workflow-skill-attachments`.
-  late final WorkflowPromptTemplateRepository? _workflowPromptTemplateRepository;
+  late final WorkflowPromptTemplateRepository?
+  _workflowPromptTemplateRepository;
 
   /// Persists coding-execution/SDD-stage-chat outcome notifications —
   /// see [_recordNotification]. `null` (every existing construction site
@@ -489,6 +511,15 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// Added for
   /// `aion-arch/changes/dependency-caching-and-ancestor-sibling-conflict`.
   late final DependencyCacheService? _dependencyCache;
+
+  /// Persists every `AutomationContext`'s configured [DecisionGraph]. Backs
+  /// [_evaluateDecisionGraph] — see [_decisionGraphsByContext]/
+  /// [_decisionNodesById]'s own dartdocs. `null` (every existing
+  /// construction site except `app_router.dart`) makes
+  /// [_evaluateDecisionGraph] fall back to [defaultDecisionGraphFor]/
+  /// [defaultDecisionNodesById] instead of reading a cache. Added for
+  /// `aion-arch/changes/automation-decision-graphs`.
+  late final DecisionGraphRepository? _decisionGraphRepository;
 
   /// English-only [AppLocalizationsEn] instance used to build
   /// [_recordNotification]'s persisted `message` strings and
@@ -602,6 +633,86 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [_attachmentForStatus].
   SkillAttachment? _attachmentForStage(SddStage stage) =>
       _skillAttachments.where((a) => a.sddStage == stage).firstOrNull;
+
+  /// Every [AutomationContext]'s currently-configured [DecisionGraph].
+  /// Loaded once at construction ([_loadDecisionGraphs], fired from the
+  /// constructor body without being awaited, mirroring
+  /// [_workflowStatuses]'s own load-then-upgrade shape) and refreshed
+  /// every time [_decisionGraphRepository] fires
+  /// [DecisionGraphRepository.onChanged] (i.e. whenever
+  /// `DecisionGraphConfigCubit` persists an edit). Empty (every context
+  /// resolves via [DecisionGraph]'s `null`-`rootNodeId` default inside
+  /// [_evaluateDecisionGraph]) until the first load resolves. See
+  /// `aion-arch/changes/automation-decision-graphs/design.md` §4.
+  Map<AutomationContext, DecisionGraph> _decisionGraphsByContext = const {};
+
+  /// Every [DecisionNode] belonging to any context's graph, keyed by
+  /// [DecisionNode.id] — the union of [DecisionGraphRepository
+  /// .getAllNodes] across every [AutomationContext], loaded alongside
+  /// [_decisionGraphsByContext].
+  Map<String, DecisionNode> _decisionNodesById = const {};
+
+  /// Subscription driving [_decisionGraphsByContext]/[_decisionNodesById]'s
+  /// live refresh — see those fields' dartdocs. `null` whenever this
+  /// cubit was constructed without a [DecisionGraphRepository]. Cancelled
+  /// in [close].
+  StreamSubscription<void>? _decisionGraphChangesSubscription;
+
+  /// Reloads [_decisionGraphsByContext]/[_decisionNodesById] from
+  /// [_decisionGraphRepository]. A no-op (leaving both at their current
+  /// value) when this cubit was constructed without one.
+  Future<void> _loadDecisionGraphs() async {
+    final repository = _decisionGraphRepository;
+    if (repository == null) return;
+    final graphsByContext = <AutomationContext, DecisionGraph>{};
+    final nodesById = <String, DecisionNode>{};
+    for (final context in AutomationContext.values) {
+      final graph = await repository.getGraph(context);
+      graphsByContext[context] = graph;
+      for (final node in await repository.getAllNodes(context)) {
+        nodesById[node.id] = node;
+      }
+    }
+    if (isClosed) return;
+    _decisionGraphsByContext = graphsByContext;
+    _decisionNodesById = nodesById;
+  }
+
+  /// Consults [context]'s configured [DecisionGraph] against [input].
+  /// When [context]'s cached graph has a `null` root (no graph
+  /// configured — the seeded baseline for six of the eight contexts),
+  /// resolves [DecisionOutcome.proceed], reproducing exactly what plain
+  /// `AutomationConfidence.auto` already did before this proposal. When
+  /// this cubit was constructed without a [DecisionGraphRepository] at
+  /// all, falls back to [defaultDecisionGraphFor]/
+  /// [defaultDecisionNodesById] — the same baseline data
+  /// `AutomationDecisionDao.seedDefaultsIfEmpty` persists — rather than a
+  /// blanket [DecisionOutcome.proceed]: unlike every other optional
+  /// dependency on this cubit, [AutomationContext.codingExecutionRetry]/
+  /// [AutomationContext.codingExecution]'s baseline graphs enforce a real
+  /// safety cap (the former hardcoded `attempt > _maxVerifyRetries`/
+  /// `_overageDetectedThisSession` checks) that must still hold for a
+  /// cubit with no repository — omitting one must reproduce old
+  /// behavior, not silently remove a retry cap and risk an unbounded
+  /// `_runCodingExecution` retry loop. Every `AutomationContext` call
+  /// site's `case AutomationConfidence.auto:` branch calls this before
+  /// proceeding — see
+  /// `aion-arch/changes/automation-decision-graphs/design.md` §4.
+  Future<DecisionOutcome> _evaluateDecisionGraph(
+    AutomationContext context,
+    DecisionEvalContext input,
+  ) async {
+    if (_decisionGraphRepository == null) {
+      return evaluateDecisionGraph(
+        defaultDecisionGraphFor(context),
+        defaultDecisionNodesById,
+        input,
+      );
+    }
+    final graph = _decisionGraphsByContext[context];
+    if (graph == null) return DecisionOutcome.proceed;
+    return evaluateDecisionGraph(graph, _decisionNodesById, input);
+  }
 
   /// The status every new ticket is created at — the shared-base set's
   /// lowest-[WorkflowStatus.sortOrder] status's name (today's hardcoded
@@ -741,6 +852,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     unawaited(_detailTickController.close());
     unawaited(_workflowStatusChangesSubscription?.cancel());
     unawaited(_skillAttachmentChangesSubscription?.cancel());
+    unawaited(_decisionGraphChangesSubscription?.cancel());
     unreadNotificationCount.dispose();
     return super.close();
   }
@@ -837,16 +949,6 @@ class TicketsCubit extends Cubit<TicketsState> {
     await repo.markAllRead();
     unreadNotificationCount.value = 0;
   }
-
-  /// Cap on automatic corrective turns (verification fails → feed the
-  /// reason back → re-implement) when the effective
-  /// `AutomationContext.codingExecutionRetry` confidence is `auto`. Once
-  /// exhausted, the failure is treated as `gated` regardless of the
-  /// configured confidence — mirrors
-  /// [_effectiveCodingExecutionConfidence]'s existing overage-forces-
-  /// `gated` precedent. Added for
-  /// `aion-arch/changes/coding-execution-reliability-and-safety`.
-  static const _maxVerifyRetries = 2;
 
   /// Task/Bug ids with a coding-execution run currently in flight —
   /// replaces the single-slot `_inFlightExecutionTaskId` this cubit used
@@ -1529,10 +1631,9 @@ class TicketsCubit extends Cubit<TicketsState> {
         unawaited(_tokenPredictor.suggest(persisted));
         unawaited(_triggerGitProjection(persisted, 'created'));
         unawaited(
-          _refreshDetailIfOpenAndAffected(
-            {persisted.id},
-            fromState: stateBeforeThisWrite,
-          ),
+          _refreshDetailIfOpenAndAffected({
+            persisted.id,
+          }, fromState: stateBeforeThisWrite),
         );
       }
       final page = await _repository.searchTickets(
@@ -1667,10 +1768,9 @@ class TicketsCubit extends Cubit<TicketsState> {
       // re-emission landing afterward. Added for
       // `aion-arch/changes/workflow-skill-attachments`.
       unawaited(
-        _refreshDetailIfOpenAndAffected(
-          {id},
-          fromState: stateBeforeThisWrite,
-        ).then((_) {
+        _refreshDetailIfOpenAndAffected({
+          id,
+        }, fromState: stateBeforeThisWrite).then((_) {
           if (updated != null && attachment != null) {
             return _resolveAndFireAttachment(updated, attachment);
           }
@@ -2076,10 +2176,9 @@ class TicketsCubit extends Cubit<TicketsState> {
       // takes. Added for
       // `aion-arch/changes/generalized-live-refresh-for-all-ticket-writes`.
       unawaited(
-        _refreshDetailIfOpenAndAffected(
-          {ticket.id},
-          fromState: stateBeforeThisWrite,
-        ),
+        _refreshDetailIfOpenAndAffected({
+          ticket.id,
+        }, fromState: stateBeforeThisWrite),
       );
       if (nextStage == SddStage.archived) {
         if (ticket.type == TicketType.epic) {
@@ -2250,7 +2349,9 @@ class TicketsCubit extends Cubit<TicketsState> {
         linkType: TicketLinkType.relatesTo,
       );
     } catch (e) {
-      emit(TicketsError(e.toString(), reason: TicketsErrorReason.specWriteFailed));
+      emit(
+        TicketsError(e.toString(), reason: TicketsErrorReason.specWriteFailed),
+      );
     }
   }
 
@@ -3024,7 +3125,8 @@ class TicketsCubit extends Cubit<TicketsState> {
           ? row.sourceTicketId
           : row.targetTicketId;
       final blockerStatus = byId[blockerId]?.status;
-      if (blockerStatus == null || _roleOf(blockerStatus) != WorkflowStatusRole.done) {
+      if (blockerStatus == null ||
+          _roleOf(blockerStatus) != WorkflowStatusRole.done) {
         blocked.add(blockeeId);
       }
     }
@@ -3080,7 +3182,8 @@ class TicketsCubit extends Cubit<TicketsState> {
           ? row.targetTicketId
           : row.sourceTicketId;
       final blocker = await _repository.getTicketById(blockerId);
-      if (blocker == null || _roleOf(blocker.status) != WorkflowStatusRole.done) {
+      if (blocker == null ||
+          _roleOf(blocker.status) != WorkflowStatusRole.done) {
         return true;
       }
     }
@@ -3385,11 +3488,14 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// loop stops immediately — there's nothing to verify (or nothing
   /// verified) if a turn never actually completed. On a verification
   /// failure, the effective [AutomationContext.codingExecutionRetry]
-  /// confidence (see [_effectiveCodingExecutionRetryConfidence]) decides
+  /// confidence (see [_effectiveCodingExecutionRetryConfidence]), further
+  /// narrowed by [_evaluateDecisionGraph] once resolved `auto`, decides
   /// whether a corrective turn (same chat, fed
-  /// [_assembleCorrectiveContext]'s prompt) runs automatically, up to
-  /// [_maxVerifyRetries] attempts; once retries are exhausted (forced
-  /// `gated`) or the confidence was never `auto`, posts a final
+  /// [_assembleCorrectiveContext]'s prompt) runs automatically; the
+  /// seeded baseline `AutomationContext.codingExecutionRetry` graph
+  /// forces `gated` once an `attemptExceedsMax` node's threshold is
+  /// exceeded — once retries are exhausted this way, or the confidence
+  /// was never `auto`, posts a final
   /// `"Execution failed verification: ..."` comment and stops — no PR.
   /// A `catch` around the whole worktree-setup-through-PR sequence posts
   /// an `"Execution failed: ..."` comment (same shape/detection as
@@ -3696,7 +3802,31 @@ class TicketsCubit extends Cubit<TicketsState> {
           automationRepo,
           attempt,
         );
-        if (retryConfidence == AutomationConfidence.auto) {
+        // `showRetryFailureToast` starts mirroring `retryConfidence ==
+        // AutomationConfidence.gated` (the toast's condition before this
+        // graph-consultation step existed), then may be overridden below
+        // once `retryConfidence == auto` is further narrowed by the
+        // decision graph.
+        var shouldRetry = retryConfidence == AutomationConfidence.auto;
+        var showRetryFailureToast =
+            retryConfidence == AutomationConfidence.gated;
+        if (shouldRetry) {
+          final outcome = await _evaluateDecisionGraph(
+            AutomationContext.codingExecutionRetry,
+            DecisionEvalContext(attempt: attempt),
+          );
+          switch (outcome) {
+            case DecisionOutcome.proceed:
+            case DecisionOutcome.modelJudgment:
+              break;
+            case DecisionOutcome.gated:
+              shouldRetry = false;
+              showRetryFailureToast = true;
+            case DecisionOutcome.decline:
+              shouldRetry = false;
+          }
+        }
+        if (shouldRetry) {
           prompt = _assembleCorrectiveContext(failureReason);
           continue;
         }
@@ -3710,11 +3840,12 @@ class TicketsCubit extends Cubit<TicketsState> {
             createdAt: DateTime.now(),
           ),
         );
-        // `manual` never surfaces proactively — the failure banner's
-        // always-available retry control is the only surface. `gated`
-        // (including auto-exhausted, forced to gated above) gets the
-        // one-shot toast too.
-        if (retryConfidence == AutomationConfidence.gated) {
+        // `manual` (and a decision-graph `decline`) never surfaces
+        // proactively — the failure banner's always-available retry
+        // control is the only surface. `gated` (including auto-exhausted,
+        // forced to gated above, and a decision-graph `gated` outcome)
+        // gets the one-shot toast too.
+        if (showRetryFailureToast) {
           emit(
             const TicketsError(
               '',
@@ -3818,12 +3949,24 @@ class TicketsCubit extends Cubit<TicketsState> {
       final confidence = await _effectiveCodingExecutionConfidence(
         automationRepo,
       );
-      if (confidence == AutomationConfidence.auto) {
+      var shouldFlipToReview = confidence == AutomationConfidence.auto;
+      if (shouldFlipToReview) {
+        final outcome = await _evaluateDecisionGraph(
+          AutomationContext.codingExecution,
+          DecisionEvalContext(
+            sessionOverageDetected: _overageDetectedThisSession,
+          ),
+        );
+        shouldFlipToReview =
+            outcome == DecisionOutcome.proceed ||
+            outcome == DecisionOutcome.modelJudgment;
+      }
+      if (shouldFlipToReview) {
         await _repository.updateTicketStatus(task.id, _reviewReadyStatus);
       }
-      // `gated`/`manual`: leave status as-is; getTicketById's re-check
-      // surfaces the "ready for review" banner or leaves it to a manual
-      // status change.
+      // `gated`/`manual` (and a decision-graph `gated`/`decline` outcome):
+      // leave status as-is; getTicketById's re-check surfaces the "ready
+      // for review" banner or leaves it to a manual status change.
     }
 
     // Cleared before the refresh below (not after) so getTicketById's own
@@ -3994,41 +4137,43 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// [automationRepo]'s persisted [AutomationContext.codingExecutionRetry]
-  /// confidence for [attempt] (1-based: how many verification failures
-  /// have happened so far this run), forced to
-  /// [AutomationConfidence.gated] once [attempt] exceeds
-  /// [_maxVerifyRetries] regardless of what's persisted — mirrors
-  /// [_effectiveCodingExecutionConfidence]'s own overage-forces-`gated`
-  /// precedent. Falls back to [AutomationConfidence.gated] (the safe
+  /// confidence. Falls back to [AutomationConfidence.gated] (the safe
   /// default for a recovery action that re-spawns a tool-enabled run)
   /// when constructed without an [AutomationSettingsRepository]. Added
   /// for `aion-arch/changes/coding-execution-reliability-and-safety`.
+  /// [attempt]'s former `attempt > _maxVerifyRetries`-forces-`gated`
+  /// hardcoded override was removed for
+  /// `aion-arch/changes/automation-decision-graphs` — the equivalent
+  /// behavior is now expressed as [AutomationContext.codingExecutionRetry]'s
+  /// seeded baseline decision graph (an `attemptExceedsMax` node),
+  /// consulted separately via [_evaluateDecisionGraph] once this function
+  /// itself resolves `auto` — [attempt] is still accepted (and still
+  /// passed through by every call site) purely so it can be forwarded
+  /// into that graph consultation's `DecisionEvalContext`.
   Future<AutomationConfidence> _effectiveCodingExecutionRetryConfidence(
     AutomationSettingsRepository? automationRepo,
     int attempt,
   ) async {
-    if (attempt > _maxVerifyRetries) return AutomationConfidence.gated;
     if (automationRepo == null) return AutomationConfidence.gated;
     return automationRepo.getConfidence(AutomationContext.codingExecutionRetry);
   }
 
   /// [automationRepo]'s persisted [AutomationContext.codingExecution]
-  /// confidence, forced to [AutomationConfidence.gated] once
-  /// [_overageDetectedThisSession] is `true` regardless of what's
-  /// persisted — shared by [_runCodingExecution]'s completion-flip
-  /// decision and [getTicketById]'s `executionAwaitingReview`
-  /// computation so the two can't disagree about whether an
-  /// overage-affected run counts as gated (post-`/verify` correction:
-  /// [getTicketById] originally read the repository directly, so the
-  /// "ready for review" banner never appeared after an overage forced
-  /// `gated` — [_runCodingExecution] correctly skipped the auto-flip, but
-  /// nothing surfaced the resulting awaiting-review state instead).
+  /// confidence — shared by [_runCodingExecution]'s completion-flip
+  /// decision and [getTicketById]'s `executionAwaitingReview` computation
+  /// so the two can't disagree about whether a run counts as gated (both
+  /// also separately consult [_evaluateDecisionGraph] once this function
+  /// resolves `auto`, so the two stay in agreement about a
+  /// decision-graph-forced `gated` outcome too — see either call site).
+  /// [_overageDetectedThisSession]'s former forces-`gated` hardcoded
+  /// override was removed for
+  /// `aion-arch/changes/automation-decision-graphs` — the equivalent
+  /// behavior is now expressed as [AutomationContext.codingExecution]'s
+  /// seeded baseline decision graph (a `sessionOverageDetected` node).
   Future<AutomationConfidence> _effectiveCodingExecutionConfidence(
     AutomationSettingsRepository automationRepo,
   ) async {
-    return _overageDetectedThisSession
-        ? AutomationConfidence.gated
-        : await automationRepo.getConfidence(AutomationContext.codingExecution);
+    return automationRepo.getConfidence(AutomationContext.codingExecution);
   }
 
   /// The user's persisted coding-execution scheduling mode, defaulting to
@@ -4242,8 +4387,14 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// effective confidence (via [_automationSettingsRepository], falling
   /// back to [AutomationConfidence.gated] without one):
   ///
-  /// - [AutomationConfidence.auto]: re-enqueues every surviving entry and
-  ///   calls [_tryStartNextQueuedExecutions] immediately.
+  /// - [AutomationConfidence.auto]: further narrowed by
+  ///   [_evaluateDecisionGraph] once resolved `auto` (added for
+  ///   `aion-arch/changes/automation-decision-graphs`) — a `proceed`/
+  ///   `modelJudgment` outcome re-enqueues every surviving entry and
+  ///   calls [_tryStartNextQueuedExecutions] immediately, exactly as
+  ///   plain `auto` always has; `gated` routes through this same
+  ///   context's own gated surface below; `decline` clears the
+  ///   persisted snapshot, the same as `manual` does.
   /// - [AutomationConfidence.gated]: surfaces the surviving tickets via
   ///   [_pendingResumeTickets]/[TicketsLoaded.pendingResumePrompt] for
   ///   `ResumeRunsPrompt` to render — [resumePendingExecutions]/
@@ -4282,14 +4433,34 @@ class TicketsCubit extends Cubit<TicketsState> {
             AutomationContext.codingExecutionResume,
           );
 
+    void resume() {
+      _executionQueue.addAll(survivingTickets.map((t) => t.id));
+      _refreshInFlightBoardState();
+      unawaited(_tryStartNextQueuedExecutions());
+    }
+
+    void gate() {
+      _pendingResumeTickets = survivingTickets;
+      _refreshInFlightBoardState();
+    }
+
     switch (confidence) {
       case AutomationConfidence.auto:
-        _executionQueue.addAll(survivingTickets.map((t) => t.id));
-        _refreshInFlightBoardState();
-        unawaited(_tryStartNextQueuedExecutions());
+        final outcome = await _evaluateDecisionGraph(
+          AutomationContext.codingExecutionResume,
+          const DecisionEvalContext(),
+        );
+        switch (outcome) {
+          case DecisionOutcome.decline:
+            unawaited(_persistExecutionQueueSnapshot());
+          case DecisionOutcome.gated:
+            gate();
+          case DecisionOutcome.proceed:
+          case DecisionOutcome.modelJudgment:
+            resume();
+        }
       case AutomationConfidence.gated:
-        _pendingResumeTickets = survivingTickets;
-        _refreshInFlightBoardState();
+        gate();
       case AutomationConfidence.manual:
         unawaited(_persistExecutionQueueSnapshot());
     }
@@ -4516,8 +4687,10 @@ class TicketsCubit extends Cubit<TicketsState> {
     final mostRecent = comments.reduce(
       (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
     );
-    final tokens = (mostRecent.inputTokens ?? 0) + (mostRecent.outputTokens ?? 0);
-    _executionTokenTotals[taskId] = (_executionTokenTotals[taskId] ?? 0) + tokens;
+    final tokens =
+        (mostRecent.inputTokens ?? 0) + (mostRecent.outputTokens ?? 0);
+    _executionTokenTotals[taskId] =
+        (_executionTokenTotals[taskId] ?? 0) + tokens;
   }
 
   /// Parses a verify turn's reply ([reply], from [_lastCommentContent])
@@ -4923,7 +5096,9 @@ class TicketsCubit extends Cubit<TicketsState> {
       final (model, provider) = await _resolveModelAndProvider(
         attachment == null
             ? stage.modelPhase
-            : (attachmentToolsEnabled ? ModelPhase.execution : ModelPhase.capable),
+            : (attachmentToolsEnabled
+                  ? ModelPhase.execution
+                  : ModelPhase.capable),
       );
       var tools = const <AgentToolDefinition>[];
       Future<Map<String, dynamic>> Function(
@@ -4944,9 +5119,7 @@ class TicketsCubit extends Cubit<TicketsState> {
             'project checkout to run in an isolated worktree.',
           );
         }
-        worktreePath = Directory.systemTemp
-            .createTempSync('aion_skill_')
-            .path;
+        worktreePath = Directory.systemTemp.createTempSync('aion_skill_').path;
         await gitClient.createWorktree(
           rootPath,
           worktreePath,
@@ -5064,9 +5237,7 @@ class TicketsCubit extends Cubit<TicketsState> {
           return '(template not found)';
         }
         final templates = await templateRepo.getAll();
-        final template = templates
-            .where((t) => t.id == templateId)
-            .firstOrNull;
+        final template = templates.where((t) => t.id == templateId).firstOrNull;
         if (template == null) return '(template not found)';
         return renderWorkflowPromptTemplate(template, parent);
       case SkillAttachmentKind.delegatedSkill:
@@ -5151,8 +5322,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       ),
     );
 
-    final toolsEnabled =
-        attachment.kind == SkillAttachmentKind.delegatedSkill;
+    final toolsEnabled = attachment.kind == SkillAttachmentKind.delegatedSkill;
     String? worktreePath;
     try {
       if (toolsEnabled) {
@@ -5164,9 +5334,7 @@ class TicketsCubit extends Cubit<TicketsState> {
             'project checkout to run in an isolated worktree.',
           );
         }
-        worktreePath = Directory.systemTemp
-            .createTempSync('aion_skill_')
-            .path;
+        worktreePath = Directory.systemTemp.createTempSync('aion_skill_').path;
         await gitClient.createWorktree(
           rootPath,
           worktreePath,
@@ -5226,7 +5394,10 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// always [_fireSkillAttachment]. Cleared by
   /// [confirmPendingSkillAttachment]/[rejectPendingSkillAttachment]. See
   /// `aion-arch/changes/workflow-skill-attachments/design.md` §3.3.
-  final Map<String, ({SkillAttachment attachment, Future<void> Function() fire})>
+  final Map<
+    String,
+    ({SkillAttachment attachment, Future<void> Function() fire})
+  >
   _pendingSkillAttachments = {};
 
   /// Resolves how [attachment] fires for [parent], per
@@ -5336,8 +5507,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// "create this exact `relatesTo` link"). Cleared by
   /// [confirmPendingSpecLinkSuggestion]/[rejectPendingSpecLinkSuggestion].
   /// Added for `aion-arch/changes/spec-ticket-type`.
-  final Map<String, PendingSpecLinkSuggestion> _pendingSpecLinkSuggestions =
-      {};
+  final Map<String, PendingSpecLinkSuggestion> _pendingSpecLinkSuggestions = {};
 
   /// Best-effort auto-link from [ticket] to the single most similar live
   /// `TicketType.spec` ticket, gated by
@@ -5370,9 +5540,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     if (embeddingProvider == null || linkRepo == null) return;
 
     try {
-      final specs = await _repository.getAllTicketsByType([
-        TicketType.spec,
-      ]);
+      final specs = await _repository.getAllTicketsByType([TicketType.spec]);
       if (specs.isEmpty) return;
 
       final queryVector = await embeddingProvider.embed(
@@ -5389,36 +5557,53 @@ class TicketsCubit extends Cubit<TicketsState> {
       final automationRepo = _automationSettingsRepository;
       final confidence = automationRepo == null
           ? AutomationConfidence.gated
-          : await automationRepo.getConfidence(
-              AutomationContext.specAutoLink,
-            );
+          : await automationRepo.getConfidence(AutomationContext.specAutoLink);
 
       switch (confidence) {
         case AutomationConfidence.auto:
-          await linkRepo.createLink(
-            sourceTicketId: ticket.id,
-            targetTicketId: match.id,
-            linkType: TicketLinkType.relatesTo,
+          final outcome = await _evaluateDecisionGraph(
+            AutomationContext.specAutoLink,
+            const DecisionEvalContext(),
           );
-        case AutomationConfidence.gated:
-          final suggestion = PendingSpecLinkSuggestion(
-            specTicketId: match.id,
-            specTicketTitle: match.title,
-          );
-          _pendingSpecLinkSuggestions[ticket.id] = suggestion;
-          final current = state;
-          if (current is TicketDetailLoaded &&
-              current.ticket.id == ticket.id) {
-            emit(
-              current.copyWith(pendingSpecLinkSuggestion: () => suggestion),
-            );
+          switch (outcome) {
+            case DecisionOutcome.decline:
+              break;
+            case DecisionOutcome.gated:
+              _recordPendingSpecLinkSuggestion(ticket, match);
+            case DecisionOutcome.proceed:
+            case DecisionOutcome.modelJudgment:
+              await linkRepo.createLink(
+                sourceTicketId: ticket.id,
+                targetTicketId: match.id,
+                linkType: TicketLinkType.relatesTo,
+              );
           }
+        case AutomationConfidence.gated:
+          _recordPendingSpecLinkSuggestion(ticket, match);
         case AutomationConfidence.manual:
           break;
       }
     } catch (_) {
       // Best-effort enrichment — never surface as TicketsError, mirrors
       // TicketEstimationSuggester._run's own catch-and-swallow.
+    }
+  }
+
+  /// Records a [PendingSpecLinkSuggestion] for [ticket]→[match] in
+  /// [_pendingSpecLinkSuggestions] and, if [ticket]'s detail screen is
+  /// currently open, re-emits [TicketDetailLoaded] carrying it — shared by
+  /// [_maybeAutoLinkToSpec]'s plain `gated`-confidence branch and its
+  /// `auto`-confidence-plus-decision-graph-`gated`-outcome branch, so the
+  /// two can never render divergent suggestion state.
+  void _recordPendingSpecLinkSuggestion(Ticket ticket, Ticket match) {
+    final suggestion = PendingSpecLinkSuggestion(
+      specTicketId: match.id,
+      specTicketTitle: match.title,
+    );
+    _pendingSpecLinkSuggestions[ticket.id] = suggestion;
+    final current = state;
+    if (current is TicketDetailLoaded && current.ticket.id == ticket.id) {
+      emit(current.copyWith(pendingSpecLinkSuggestion: () => suggestion));
     }
   }
 
@@ -5513,7 +5698,8 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// re-trigger through this method would double-fire it.
   Future<void> runAttachedSkillManually(Ticket ticket) async {
     final attachment = resolveCurrentAttachment(ticket);
-    if (attachment == null || attachment.confidence != AutomationConfidence.manual) {
+    if (attachment == null ||
+        attachment.confidence != AutomationConfidence.manual) {
       return;
     }
     unawaited(_fireSkillAttachment(ticket, attachment));
@@ -5560,8 +5746,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     final parentId = chat?.parentId;
     final branchOrCloseTool = parentId == null
         ? branchTicketToolDefinition
-        : (await _repository.getTicketById(parentId))?.type ==
-              TicketType.chat
+        : (await _repository.getTicketById(parentId))?.type == TicketType.chat
         ? closeBranchToolDefinition
         : branchTicketToolDefinition;
     return [
@@ -5782,20 +5967,36 @@ class TicketsCubit extends Cubit<TicketsState> {
         ? AutomationConfidence.gated
         : await automationRepo.getConfidence(AutomationContext.chatBranching);
 
+    Future<Map<String, dynamic>> branch() async {
+      final childId = await _createBranchChat(chat, title, description);
+      return {'accepted': true, 'childChatId': childId};
+    }
+
     switch (confidence) {
       case AutomationConfidence.manual:
         return {'accepted': false, 'reason': 'Automation set to manual.'};
       case AutomationConfidence.auto:
-        final childId = await _createBranchChat(chat, title, description);
-        return {'accepted': true, 'childChatId': childId};
+        final outcome = await _evaluateDecisionGraph(
+          AutomationContext.chatBranching,
+          const DecisionEvalContext(),
+        );
+        return switch (outcome) {
+          DecisionOutcome.decline => {
+            'accepted': false,
+            'reason': 'Blocked by decision graph.',
+          },
+          DecisionOutcome.gated => _awaitProposalConfirmation(
+            chat,
+            PendingToolProposal.branch(title: title, description: description),
+            onConfirm: branch,
+          ),
+          DecisionOutcome.proceed || DecisionOutcome.modelJudgment => branch(),
+        };
       case AutomationConfidence.gated:
         return _awaitProposalConfirmation(
           chat,
           PendingToolProposal.branch(title: title, description: description),
-          onConfirm: () async {
-            final childId = await _createBranchChat(chat, title, description);
-            return {'accepted': true, 'childChatId': childId};
-          },
+          onConfirm: branch,
         );
     }
   }
@@ -5826,20 +6027,36 @@ class TicketsCubit extends Cubit<TicketsState> {
         ? AutomationConfidence.gated
         : await automationRepo.getConfidence(AutomationContext.chatBranching);
 
+    Future<Map<String, dynamic>> close() async {
+      await _closeBranch(chat, parentId, summary);
+      return {'accepted': true};
+    }
+
     switch (confidence) {
       case AutomationConfidence.manual:
         return {'accepted': false, 'reason': 'Automation set to manual.'};
       case AutomationConfidence.auto:
-        await _closeBranch(chat, parentId, summary);
-        return {'accepted': true};
+        final outcome = await _evaluateDecisionGraph(
+          AutomationContext.chatBranching,
+          const DecisionEvalContext(),
+        );
+        return switch (outcome) {
+          DecisionOutcome.decline => {
+            'accepted': false,
+            'reason': 'Blocked by decision graph.',
+          },
+          DecisionOutcome.gated => _awaitProposalConfirmation(
+            chat,
+            PendingToolProposal.close(summary: summary),
+            onConfirm: close,
+          ),
+          DecisionOutcome.proceed || DecisionOutcome.modelJudgment => close(),
+        };
       case AutomationConfidence.gated:
         return _awaitProposalConfirmation(
           chat,
           PendingToolProposal.close(summary: summary),
-          onConfirm: () async {
-            await _closeBranch(chat, parentId, summary);
-            return {'accepted': true};
-          },
+          onConfirm: close,
         );
     }
   }
@@ -5861,17 +6078,11 @@ class TicketsCubit extends Cubit<TicketsState> {
   ) async {
     final title = arguments['title'] as String?;
     final typeArg = arguments['type'] as String?;
-    final type = TicketType.values
-        .where((t) => t.name == typeArg)
-        .firstOrNull;
+    final type = TicketType.values.where((t) => t.name == typeArg).firstOrNull;
     if (title == null || title.isEmpty) {
       return {'accepted': false, 'reason': 'Missing title.'};
     }
-    const creatableTypes = {
-      TicketType.story,
-      TicketType.task,
-      TicketType.bug,
-    };
+    const creatableTypes = {TicketType.story, TicketType.task, TicketType.bug};
     if (type == null || !creatableTypes.contains(type)) {
       return {'accepted': false, 'reason': 'type must be story, task, or bug.'};
     }
@@ -5903,7 +6114,26 @@ class TicketsCubit extends Cubit<TicketsState> {
       case AutomationConfidence.manual:
         return {'accepted': false, 'reason': 'Ticket creation set to manual.'};
       case AutomationConfidence.auto:
-        return create();
+        final outcome = await _evaluateDecisionGraph(
+          AutomationContext.ticketCreation,
+          const DecisionEvalContext(),
+        );
+        return switch (outcome) {
+          DecisionOutcome.decline => {
+            'accepted': false,
+            'reason': 'Blocked by decision graph.',
+          },
+          DecisionOutcome.gated => _awaitProposalConfirmation(
+            chat,
+            PendingToolProposal.createTicket(
+              title: title,
+              type: type,
+              description: description,
+            ),
+            onConfirm: create,
+          ),
+          DecisionOutcome.proceed || DecisionOutcome.modelJudgment => create(),
+        };
       case AutomationConfidence.gated:
         return _awaitProposalConfirmation(
           chat,
@@ -5958,7 +6188,8 @@ class TicketsCubit extends Cubit<TicketsState> {
     if (linkType == null) {
       return {
         'accepted': false,
-        'reason': 'linkType must be blocks, blockedBy, relatesTo, or duplicates.',
+        'reason':
+            'linkType must be blocks, blockedBy, relatesTo, or duplicates.',
       };
     }
 
@@ -5985,7 +6216,26 @@ class TicketsCubit extends Cubit<TicketsState> {
       case AutomationConfidence.manual:
         return {'accepted': false, 'reason': 'Ticket linking set to manual.'};
       case AutomationConfidence.auto:
-        return addLink();
+        final outcome = await _evaluateDecisionGraph(
+          AutomationContext.ticketLinking,
+          const DecisionEvalContext(),
+        );
+        return switch (outcome) {
+          DecisionOutcome.decline => {
+            'accepted': false,
+            'reason': 'Blocked by decision graph.',
+          },
+          DecisionOutcome.gated => _awaitProposalConfirmation(
+            chat,
+            PendingToolProposal.addLink(
+              targetTicketId: targetTicketId,
+              targetTicketTitle: target.title,
+              linkType: linkType,
+            ),
+            onConfirm: addLink,
+          ),
+          DecisionOutcome.proceed || DecisionOutcome.modelJudgment => addLink(),
+        };
       case AutomationConfidence.gated:
         return _awaitProposalConfirmation(
           chat,
@@ -6597,7 +6847,8 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// `aion-arch/changes/pr-metadata-and-notification-center`.
   Future<void> getTicketById(String id) async {
     final current = state;
-    final previousDetail = current is TicketDetailLoaded && current.ticket.id == id
+    final previousDetail =
+        current is TicketDetailLoaded && current.ticket.id == id
         ? current
         : null;
     if (previousDetail == null) {
@@ -6648,8 +6899,27 @@ class TicketsCubit extends Cubit<TicketsState> {
           final confidence = automationRepo == null
               ? null
               : await _effectiveCodingExecutionConfidence(automationRepo);
+          // Mirrors `_runCodingExecution`'s own completion-flip decision
+          // (see that method's `shouldFlipToReview` computation) so the
+          // two can never disagree about whether a decision-graph
+          // `gated`/`decline` outcome counts as "awaiting review" —
+          // plain `gated`/`manual` confidence needs no such consultation
+          // (the graph is only ever consulted once a context has already
+          // resolved to `auto`).
+          final autoOutcome = confidence == AutomationConfidence.auto
+              ? await _evaluateDecisionGraph(
+                  AutomationContext.codingExecution,
+                  DecisionEvalContext(
+                    sessionOverageDetected: _overageDetectedThisSession,
+                  ),
+                )
+              : null;
           executionAwaitingReview =
-              prConfirmed && confidence == AutomationConfidence.gated;
+              prConfirmed &&
+              (confidence == AutomationConfidence.gated ||
+                  (confidence == AutomationConfidence.auto &&
+                      (autoOutcome == DecisionOutcome.gated ||
+                          autoOutcome == DecisionOutcome.decline)));
           if (!prConfirmed) {
             final (reason, canRetry) = await _computeExecutionFailure(
               ticket.id,
@@ -6688,7 +6958,8 @@ class TicketsCubit extends Cubit<TicketsState> {
           childDocs: previousDetail?.childDocs ?? const [],
           linkedTickets: previousDetail?.linkedTickets ?? const [],
           backlinks: previousDetail?.backlinks ?? const [],
-          gapsAndOpenQuestions: previousDetail?.gapsAndOpenQuestions ?? const [],
+          gapsAndOpenQuestions:
+              previousDetail?.gapsAndOpenQuestions ?? const [],
           pendingToolProposal: previousDetail?.pendingToolProposal,
           pendingSkillAttachment: previousDetail?.pendingSkillAttachment,
           canAdvanceSddStage: check.canAdvance,
@@ -6771,7 +7042,8 @@ class TicketsCubit extends Cubit<TicketsState> {
     emit(const TicketTrashing());
     try {
       await _parentTrashService.trash(id);
-      if (previousState is TicketDetailLoaded && previousState.ticket.id == id) {
+      if (previousState is TicketDetailLoaded &&
+          previousState.ticket.id == id) {
         emit(const TicketTrashed());
       } else {
         if (previousState is! TicketDetailLoaded) {
@@ -6787,10 +7059,7 @@ class TicketsCubit extends Cubit<TicketsState> {
           emit(TicketsLoaded(page.tickets, hasMore: page.hasMore));
         }
         unawaited(
-          _refreshDetailIfOpenAndAffected(
-            {id},
-            fromState: previousState,
-          ),
+          _refreshDetailIfOpenAndAffected({id}, fromState: previousState),
         );
       }
     } catch (e) {
@@ -6921,10 +7190,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// `aion-arch/changes/generalized-live-refresh-for-all-ticket-writes`;
   /// the chaining was a `/verify`-time fix — see that change's `tasks.md`
   /// task 3 correction note.
-  Future<void> updateStatusForTickets(
-    List<String> ids,
-    String status,
-  ) async {
+  Future<void> updateStatusForTickets(List<String> ids, String status) async {
     // Captured before this call's own TicketsBatchStatusUpdating/
     // TicketsBatchStatusUpdated emissions below overwrite `state` — see
     // _refreshDetailIfOpenAndAffected's dartdoc for why a live `state`

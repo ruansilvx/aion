@@ -11,6 +11,10 @@ import 'package:mocktail/mocktail.dart';
 import 'package:aion/core/automation/automation_confidence.dart';
 import 'package:aion/core/automation/automation_context.dart';
 import 'package:aion/core/automation/automation_settings_repository.dart';
+import 'package:aion/core/automation/decision_graph.dart';
+import 'package:aion/core/automation/decision_graph_repository.dart';
+import 'package:aion/core/automation/decision_node.dart';
+import 'package:aion/core/automation/decision_outcome.dart';
 import 'package:aion/core/build/dependency_cache_service.dart';
 import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/core/contracts/agent_model_descriptor.dart';
@@ -97,6 +101,9 @@ class MockWorkflowPromptTemplateRepository extends Mock
 
 class MockNotificationRepository extends Mock
     implements NotificationRepository {}
+
+class MockDecisionGraphRepository extends Mock
+    implements DecisionGraphRepository {}
 
 /// Stubs [gitClient]/[gitHubClient] for a coding-execution run that
 /// isolates cleanly, pushes, and opens a PR — the happy path most
@@ -612,6 +619,7 @@ void main() {
     registerFallbackValue(SddStage.exploring);
     registerFallbackValue(<TicketType>[]);
     registerFallbackValue(<String>{});
+    registerFallbackValue(AutomationContext.ticketCreation);
     registerFallbackValue(
       Notification(
         id: '',
@@ -12754,6 +12762,7 @@ void main() {
     late MockExecutionSchedulingRepository schedulingRepository;
     late MockAutomationSettingsRepository automationSettingsRepository;
     late MockExecutionQueueRepository executionQueueRepository;
+    late MockDecisionGraphRepository decisionGraphRepository;
 
     // Tracks each task fixture's *live* status, mutable per-test (e.g. the
     // restoreExecutionQueue tests below simulate a Task interrupted mid-
@@ -12811,8 +12820,27 @@ void main() {
       schedulingRepository = MockExecutionSchedulingRepository();
       automationSettingsRepository = MockAutomationSettingsRepository();
       executionQueueRepository = MockExecutionQueueRepository();
+      decisionGraphRepository = MockDecisionGraphRepository();
       stubSuccessfulCodingExecutionInfra(gitClient, gitHubClient);
       stubEmptyBaseline(baselineRepository);
+      // Stubbed unconditionally, but only actually consulted by the
+      // `restoreExecutionQueue` tests below that opt into passing
+      // `decisionGraphRepository` to `buildSchedulingCubit` — every
+      // other test in this describe block never wires it, reproducing
+      // pre-change behavior. Defaults every context to a null-root
+      // graph unless a test overrides it.
+      when(() => decisionGraphRepository.getGraph(any())).thenAnswer(
+        (invocation) async => DecisionGraph(
+          context: invocation.positionalArguments.single as AutomationContext,
+          rootNodeId: null,
+        ),
+      );
+      when(
+        () => decisionGraphRepository.getAllNodes(any()),
+      ).thenAnswer((_) async => const []);
+      when(
+        () => decisionGraphRepository.onChanged,
+      ).thenAnswer((_) => const Stream<void>.empty());
 
       final byId = {
         parentEpic.id: parentEpic,
@@ -12883,6 +12911,7 @@ void main() {
       ExecutionSchedulingRepository? executionSchedulingRepository,
       ExecutionQueueRepository? executionQueueRepository,
       AutomationSettingsRepository? automationSettingsRepository,
+      DecisionGraphRepository? decisionGraphRepository,
     }) => TicketsCubit(
       repository,
       providerRegistry: registry,
@@ -12896,7 +12925,44 @@ void main() {
       baselineVersion: '0.1.0',
       executionSchedulingRepository: executionSchedulingRepository,
       executionQueueRepository: executionQueueRepository,
+      decisionGraphRepository: decisionGraphRepository,
     );
+
+    /// Stubs [decisionGraphRepository] so
+    /// [AutomationContext.codingExecutionResume]'s graph resolves to a
+    /// single node whose unmatched branch (the branch a plain
+    /// `DecisionEvalContext()` always takes, since `sessionOverageDetected`
+    /// defaults `false`) is [outcome] — mirrors
+    /// `tickets_cubit_decision_graph_test.dart`'s own `stubGraphOutcome`.
+    void stubResumeGraphOutcome(DecisionOutcome outcome) {
+      when(
+        () => decisionGraphRepository.getGraph(
+          AutomationContext.codingExecutionResume,
+        ),
+      ).thenAnswer(
+        (_) async => const DecisionGraph(
+          context: AutomationContext.codingExecutionResume,
+          rootNodeId: 'resume-node-1',
+        ),
+      );
+      when(
+        () => decisionGraphRepository.getAllNodes(
+          AutomationContext.codingExecutionResume,
+        ),
+      ).thenAnswer(
+        (_) async => [
+          DecisionNode(
+            id: 'resume-node-1',
+            conditionId: 'sessionOverageDetected',
+            conditionParams: const {},
+            matchedBranch: const DecisionBranch.terminal(
+              DecisionOutcome.gated,
+            ),
+            unmatchedBranch: DecisionBranch.terminal(outcome),
+          ),
+        ],
+      );
+    }
 
     test(
       'ExecutionSchedulingMode.strictFifo: a second Task stays queued '
@@ -13428,6 +13494,145 @@ void main() {
           ),
         ).called(1);
         verify(() => executionQueueRepository.replaceSnapshot([])).called(1);
+      },
+    );
+
+    test(
+      'restoreExecutionQueue (auto + decision graph resolving gated): '
+      'surfaces the surviving run via pendingResumePrompt without '
+      'starting it, the same surface plain AutomationConfidence.gated '
+      'uses — added for aion-arch/changes/automation-decision-graphs',
+      () async {
+        liveStatus[siblingA.id] = 'inProgress';
+        when(
+          () => executionQueueRepository.getSnapshot(),
+        ).thenAnswer(
+          (_) async => [
+            const ExecutionQueueEntry(taskId: 'sched-sibling-a', inFlight: true),
+          ],
+        );
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecutionResume,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.auto);
+        stubResumeGraphOutcome(DecisionOutcome.gated);
+        when(
+          () => schedulingRepository.getMode(),
+        ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
+
+        final cubit = buildSchedulingCubit(
+          executionSchedulingRepository: schedulingRepository,
+          executionQueueRepository: executionQueueRepository,
+          automationSettingsRepository: automationSettingsRepository,
+          decisionGraphRepository: decisionGraphRepository,
+        );
+        addTearDown(cubit.close);
+
+        // Lets the constructor's `unawaited(_loadDecisionGraphs())` cache
+        // every context's graph before `restoreExecutionQueue`'s own
+        // `case auto:` step reads it.
+        await Future<void>.delayed(Duration.zero);
+        await cubit.restoreExecutionQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.searchTickets();
+
+        final loaded = cubit.state as TicketsLoaded;
+        expect(loaded.pendingResumePrompt.map((t) => t.id), [siblingA.id]);
+        verifyNever(() => agentClient.run(any()));
+      },
+    );
+
+    test(
+      'restoreExecutionQueue (auto + decision graph resolving decline): '
+      'clears the persisted snapshot and starts nothing, the same '
+      'treatment AutomationConfidence.manual gets — added for '
+      'aion-arch/changes/automation-decision-graphs',
+      () async {
+        liveStatus[siblingA.id] = 'inProgress';
+        when(
+          () => executionQueueRepository.getSnapshot(),
+        ).thenAnswer(
+          (_) async => [
+            const ExecutionQueueEntry(taskId: 'sched-sibling-a', inFlight: true),
+          ],
+        );
+        when(
+          () => executionQueueRepository.replaceSnapshot(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecutionResume,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.auto);
+        stubResumeGraphOutcome(DecisionOutcome.decline);
+        when(
+          () => schedulingRepository.getMode(),
+        ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
+
+        final cubit = buildSchedulingCubit(
+          executionSchedulingRepository: schedulingRepository,
+          executionQueueRepository: executionQueueRepository,
+          automationSettingsRepository: automationSettingsRepository,
+          decisionGraphRepository: decisionGraphRepository,
+        );
+        addTearDown(cubit.close);
+
+        await Future<void>.delayed(Duration.zero);
+        await cubit.restoreExecutionQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.searchTickets();
+
+        expect((cubit.state as TicketsLoaded).pendingResumePrompt, isEmpty);
+        verifyNever(() => agentClient.run(any()));
+        verify(() => executionQueueRepository.replaceSnapshot([])).called(1);
+      },
+    );
+
+    test(
+      'restoreExecutionQueue (auto + null-root decision graph): resumes '
+      'exactly as plain AutomationConfidence.auto always has — added '
+      'for aion-arch/changes/automation-decision-graphs',
+      () async {
+        liveStatus[siblingA.id] = 'inProgress';
+        when(
+          () => executionQueueRepository.getSnapshot(),
+        ).thenAnswer(
+          (_) async => [
+            const ExecutionQueueEntry(taskId: 'sched-sibling-a', inFlight: true),
+          ],
+        );
+        when(
+          () => executionQueueRepository.replaceSnapshot(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecutionResume,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.auto);
+        when(
+          () => schedulingRepository.getMode(),
+        ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
+        when(
+          () => schedulingRepository.getConcurrencyCeiling(),
+        ).thenAnswer((_) async => 1);
+
+        final cubit = buildSchedulingCubit(
+          executionSchedulingRepository: schedulingRepository,
+          executionQueueRepository: executionQueueRepository,
+          automationSettingsRepository: automationSettingsRepository,
+          decisionGraphRepository: decisionGraphRepository,
+        );
+        addTearDown(cubit.close);
+
+        await Future<void>.delayed(Duration.zero);
+        await cubit.restoreExecutionQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        await cubit.getTicketById(siblingA.id);
+
+        expect((cubit.state as TicketDetailLoaded).isExecuting, isTrue);
+        await cubit.searchTickets();
+        expect((cubit.state as TicketsLoaded).pendingResumePrompt, isEmpty);
       },
     );
 
