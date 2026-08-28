@@ -32,10 +32,9 @@ void main() {
       );
     });
 
-    test('boolean gets only equals/notEquals', () {
+    test('boolean gets only the fixed equals ("is") operator', () {
       expect(operatorsFor(DecisionFieldType.boolean), [
         DecisionRuleOperator.equals,
-        DecisionRuleOperator.notEquals,
       ]);
     });
   });

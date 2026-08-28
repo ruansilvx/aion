@@ -943,6 +943,13 @@
     }
   },
   "decisionGraphNodeIncompleteEyebrow": "IF · INCOMPLETE",
+  "decisionGraphNodeRuleEyebrow": "RULE · {conditionName}",
+  "@decisionGraphNodeRuleEyebrow": {
+    "placeholders": {
+      "conditionName": { "type": "String" }
+    }
+  },
+  "decisionGraphNodeRuleIncompleteEyebrow": "RULE · INCOMPLETE",
   "decisionGraphAffordanceConfiguredSemantics": "Decision graph, {count} conditions configured",
   "@decisionGraphAffordanceConfiguredSemantics": {
     "placeholders": {

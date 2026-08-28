@@ -45,7 +45,7 @@ Color decisionOutcomeColor(AionColors c, DecisionOutcome outcome) =>
 /// `aion-arch/changes/decision-graph-rule-builder`.
 List<DecisionConditionSpec> _catalogFor(AutomationContext context) => [
   ...decisionConditionsFor(context),
-  if (ruleBuilderConditionSpec(context) case final spec?) spec,
+  ?ruleBuilderConditionSpec(context),
 ];
 
 /// [operator]'s full-word label for [type] — shown in the rule-builder

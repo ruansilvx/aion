@@ -604,14 +604,25 @@ class _CanvasNodeContent extends StatelessWidget {
       borderWidth = 1;
     }
     final fill = hovered && !dragging ? c.surfaceHover : c.surface;
-    final eyebrowColor = isError ? c.danger : c.textMuted;
-    final eyebrowText = isError
-        ? context.l10n.decisionGraphNodeIncompleteEyebrow
-        : context.l10n.decisionGraphNodeEyebrow(
-            decisionNodeTitle(node).toUpperCase(),
-          );
-    final parameterSummary = decisionNodeSummary(node);
     final isRuleBuilder = node.conditionId == ruleBuilderConditionId;
+    final eyebrowColor = isError ? c.danger : c.textMuted;
+    // `RULE ·` vs `IF ·` is the canvas card's first of two rule-vs-preset
+    // markers (design.md (Component Spec) §4.1) — title text alone
+    // ("Attempt count" vs. "Attempt count exceeds") isn't reliably
+    // distinguishable at small sizes, so the eyebrow carries the
+    // distinction along with the parameter chip's border below.
+    final eyebrowText = isError
+        ? (isRuleBuilder
+              ? context.l10n.decisionGraphNodeRuleIncompleteEyebrow
+              : context.l10n.decisionGraphNodeIncompleteEyebrow)
+        : (isRuleBuilder
+              ? context.l10n.decisionGraphNodeRuleEyebrow(
+                  decisionNodeTitle(node).toUpperCase(),
+                )
+              : context.l10n.decisionGraphNodeEyebrow(
+                  decisionNodeTitle(node).toUpperCase(),
+                ));
+    final parameterSummary = decisionNodeSummary(node);
 
     final box = DecoratedBox(
       decoration: BoxDecoration(

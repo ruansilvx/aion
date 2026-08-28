@@ -120,17 +120,16 @@ enum DecisionRuleOperator {
 }
 
 /// The [DecisionRuleOperator] values valid for [type] — an `integer`
-/// field offers all six; a `boolean` field offers only `equals`/
-/// `notEquals` (its value is picked directly as `true`/`false`, so there's
-/// no separate `isTrue`/`isFalse` operator pair to keep the operator
-/// vocabulary a single shared enum across both field types).
+/// field offers all six; a `boolean` field offers only `equals`, fixed
+/// (its value is picked directly as `true`/`false` via the value control,
+/// so `is <value>` alone is already fully expressive — no `notEquals`
+/// pair is offered, matching design.md (Component Spec) §1.2: a boolean
+/// field's operator picker renders a single, disabled `is` trigger rather
+/// than a real choice).
 List<DecisionRuleOperator> operatorsFor(DecisionFieldType type) =>
     switch (type) {
       DecisionFieldType.integer => DecisionRuleOperator.values,
-      DecisionFieldType.boolean => const [
-        DecisionRuleOperator.equals,
-        DecisionRuleOperator.notEquals,
-      ],
+      DecisionFieldType.boolean => const [DecisionRuleOperator.equals],
     };
 
 /// The reserved `DecisionNode.conditionId` value marking a rule-builder

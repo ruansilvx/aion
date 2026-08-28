@@ -225,6 +225,11 @@ void main() {
         // The canvas node's title and the outline row's title both read
         // the chosen field's display name, not the raw conditionId.
         expect(find.text('Attempt count'), findsNWidgets(2));
+        // The canvas card's eyebrow reads "RULE ·", not "IF ·" — the
+        // rule-vs-preset marker design.md (Component Spec) §4.1 requires
+        // alongside the parameter chip's border.
+        expect(find.text('RULE · ATTEMPT COUNT'), findsOneWidget);
+        expect(find.text('IF · ATTEMPT COUNT'), findsNothing);
         expect(find.text('IF · INCOMPLETE'), findsNothing);
         expect(find.text('RULE · INCOMPLETE'), findsNothing);
       },
