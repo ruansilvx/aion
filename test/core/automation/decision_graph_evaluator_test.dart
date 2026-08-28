@@ -3,6 +3,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aion/core/automation/automation_context.dart';
+import 'package:aion/core/automation/decision_field_catalog.dart';
 import 'package:aion/core/automation/decision_graph.dart';
 import 'package:aion/core/automation/decision_graph_evaluator.dart';
 import 'package:aion/core/automation/decision_node.dart';
@@ -172,5 +173,192 @@ void main() {
         expect(outcome, DecisionOutcome.proceed);
       },
     );
+  });
+
+  group('evaluateDecisionGraph — ruleBuilder condition', () {
+    DecisionOutcome evalRule(
+      Map<String, dynamic> params,
+      DecisionEvalContext input,
+    ) {
+      const graph = DecisionGraph(context: graphContext, rootNodeId: 'n1');
+      final nodes = {
+        'n1': DecisionNode(
+          id: 'n1',
+          conditionId: ruleBuilderConditionId,
+          conditionParams: params,
+          matchedBranch: const DecisionBranch.terminal(DecisionOutcome.gated),
+          unmatchedBranch: const DecisionBranch.terminal(
+            DecisionOutcome.proceed,
+          ),
+        ),
+      };
+      return evaluateDecisionGraph(graph, nodes, input);
+    }
+
+    test('greaterThan on attempt', () {
+      final params = {
+        'field': 'attempt',
+        'operator': 'greaterThan',
+        'value': 3,
+      };
+      expect(
+        evalRule(params, const DecisionEvalContext(attempt: 4)),
+        DecisionOutcome.gated,
+      );
+      expect(
+        evalRule(params, const DecisionEvalContext(attempt: 3)),
+        DecisionOutcome.proceed,
+      );
+    });
+
+    test('greaterThanOrEqual on attempt', () {
+      final params = {
+        'field': 'attempt',
+        'operator': 'greaterThanOrEqual',
+        'value': 3,
+      };
+      expect(
+        evalRule(params, const DecisionEvalContext(attempt: 3)),
+        DecisionOutcome.gated,
+      );
+      expect(
+        evalRule(params, const DecisionEvalContext(attempt: 2)),
+        DecisionOutcome.proceed,
+      );
+    });
+
+    test('lessThan on attempt', () {
+      final params = {'field': 'attempt', 'operator': 'lessThan', 'value': 3};
+      expect(
+        evalRule(params, const DecisionEvalContext(attempt: 2)),
+        DecisionOutcome.gated,
+      );
+      expect(
+        evalRule(params, const DecisionEvalContext(attempt: 3)),
+        DecisionOutcome.proceed,
+      );
+    });
+
+    test('lessThanOrEqual on attempt', () {
+      final params = {
+        'field': 'attempt',
+        'operator': 'lessThanOrEqual',
+        'value': 3,
+      };
+      expect(
+        evalRule(params, const DecisionEvalContext(attempt: 3)),
+        DecisionOutcome.gated,
+      );
+      expect(
+        evalRule(params, const DecisionEvalContext(attempt: 4)),
+        DecisionOutcome.proceed,
+      );
+    });
+
+    test('equals on attempt', () {
+      final params = {'field': 'attempt', 'operator': 'equals', 'value': 3};
+      expect(
+        evalRule(params, const DecisionEvalContext(attempt: 3)),
+        DecisionOutcome.gated,
+      );
+      expect(
+        evalRule(params, const DecisionEvalContext(attempt: 4)),
+        DecisionOutcome.proceed,
+      );
+    });
+
+    test('notEquals on attempt', () {
+      final params = {
+        'field': 'attempt',
+        'operator': 'notEquals',
+        'value': 3,
+      };
+      expect(
+        evalRule(params, const DecisionEvalContext(attempt: 4)),
+        DecisionOutcome.gated,
+      );
+      expect(
+        evalRule(params, const DecisionEvalContext(attempt: 3)),
+        DecisionOutcome.proceed,
+      );
+    });
+
+    test('equals/notEquals on the boolean sessionOverageDetected field', () {
+      final equalsParams = {
+        'field': 'sessionOverageDetected',
+        'operator': 'equals',
+        'value': true,
+      };
+      expect(
+        evalRule(
+          equalsParams,
+          const DecisionEvalContext(sessionOverageDetected: true),
+        ),
+        DecisionOutcome.gated,
+      );
+      expect(
+        evalRule(
+          equalsParams,
+          const DecisionEvalContext(sessionOverageDetected: false),
+        ),
+        DecisionOutcome.proceed,
+      );
+
+      final notEqualsParams = {
+        'field': 'sessionOverageDetected',
+        'operator': 'notEquals',
+        'value': true,
+      };
+      expect(
+        evalRule(
+          notEqualsParams,
+          const DecisionEvalContext(sessionOverageDetected: false),
+        ),
+        DecisionOutcome.gated,
+      );
+      expect(
+        evalRule(
+          notEqualsParams,
+          const DecisionEvalContext(sessionOverageDetected: true),
+        ),
+        DecisionOutcome.proceed,
+      );
+    });
+
+    test('an unrecognized field evaluates false defensively', () {
+      final params = {
+        'field': 'notAField',
+        'operator': 'equals',
+        'value': 3,
+      };
+      expect(
+        evalRule(params, const DecisionEvalContext(attempt: 3)),
+        DecisionOutcome.proceed,
+      );
+    });
+
+    test('an unrecognized operator evaluates false defensively', () {
+      final params = {
+        'field': 'attempt',
+        'operator': 'notAnOperator',
+        'value': 3,
+      };
+      expect(
+        evalRule(params, const DecisionEvalContext(attempt: 3)),
+        DecisionOutcome.proceed,
+      );
+    });
+
+    test('a null underlying field value evaluates false defensively', () {
+      final params = {
+        'field': 'attempt',
+        'operator': 'greaterThan',
+        'value': 0,
+      };
+      expect(
+        evalRule(params, const DecisionEvalContext()),
+        DecisionOutcome.proceed,
+      );
+    });
   });
 }

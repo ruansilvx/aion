@@ -3,6 +3,7 @@
 import 'package:meta/meta.dart';
 
 import 'package:aion/core/automation/decision_condition_catalog.dart';
+import 'package:aion/core/automation/decision_field_catalog.dart';
 import 'package:aion/core/automation/decision_graph.dart';
 import 'package:aion/core/automation/decision_node.dart';
 import 'package:aion/core/automation/decision_outcome.dart';
@@ -49,7 +50,64 @@ _conditionEvaluators = {
     return attempt > maxAttempts;
   },
   'sessionOverageDetected': (input, _) => input.sessionOverageDetected,
+  'ruleBuilder': (input, params) => _evaluateRule(input, params),
 };
+
+/// `DecisionFieldSpec.id → current value` for every
+/// `decisionFieldCatalog` entry — how [_evaluateRule] resolves
+/// `params['field']` to the [DecisionEvalContext] value it names. Adding
+/// a field to `decision_field_catalog.dart`'s catalog also means adding
+/// its accessor here.
+final Map<String, Object? Function(DecisionEvalContext input)>
+_fieldAccessors = {
+  'attempt': (input) => input.attempt,
+  'sessionOverageDetected': (input) => input.sessionOverageDetected,
+};
+
+/// Evaluates a `ruleBuilder` condition: resolves `params['field']` via
+/// [_fieldAccessors], `params['operator']` via a guarded
+/// `DecisionRuleOperator.values.byName`, and compares the field's current
+/// [input] value against `params['value']` per that operator. Returns
+/// `false` — never throws — for every failure mode: an unrecognized
+/// `field`, an unrecognized `operator`, a `null` field value (e.g.
+/// `attempt` unset for a context that never populated it), or a numeric
+/// operator (`greaterThan`/etc.) applied to a non-`num` value. This
+/// defensive-`false` contract is load-bearing: it's what lets a
+/// malformed/stale rule (e.g. authored against a field a later app
+/// version removed) fail its condition silently rather than crash the
+/// walk that's evaluating an otherwise-healthy graph.
+bool _evaluateRule(DecisionEvalContext input, Map<String, dynamic> params) {
+  final fieldId = params['field'];
+  final accessor = fieldId is String ? _fieldAccessors[fieldId] : null;
+  if (accessor == null) return false;
+  final fieldValue = accessor(input);
+  if (fieldValue == null) return false;
+
+  final operatorName = params['operator'];
+  DecisionRuleOperator? operator;
+  if (operatorName is String) {
+    try {
+      operator = DecisionRuleOperator.values.byName(operatorName);
+    } on ArgumentError {
+      operator = null;
+    }
+  }
+  if (operator == null) return false;
+
+  final target = params['value'];
+  return switch (operator) {
+    DecisionRuleOperator.equals => fieldValue == target,
+    DecisionRuleOperator.notEquals => fieldValue != target,
+    DecisionRuleOperator.greaterThan =>
+      fieldValue is num && target is num && fieldValue > target,
+    DecisionRuleOperator.greaterThanOrEqual =>
+      fieldValue is num && target is num && fieldValue >= target,
+    DecisionRuleOperator.lessThan =>
+      fieldValue is num && target is num && fieldValue < target,
+    DecisionRuleOperator.lessThanOrEqual =>
+      fieldValue is num && target is num && fieldValue <= target,
+  };
+}
 
 /// Walks [graph] from its `DecisionGraph.rootNodeId`, evaluating each
 /// [DecisionNode] (looked up in [nodesById]) against [input] via

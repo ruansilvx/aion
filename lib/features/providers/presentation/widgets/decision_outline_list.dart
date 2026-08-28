@@ -202,15 +202,24 @@ class _DecisionOutlineListState extends State<DecisionOutlineList> {
 
   /// [DecisionNodeForm.onCreateChainedChild]'s implementation for this
   /// pane: creates a fresh [DecisionNode] for [conditionId], its
-  /// parameters seeded via `defaultConditionParams`, and its own two
-  /// branches defaulting to terminal `gated`/`proceed` — the same shape
+  /// parameters seeded via `defaultConditionParams` (or, for
+  /// [ruleBuilderConditionId], `defaultRuleConditionParams` — a
+  /// rule-builder condition has no [DecisionConditionSpec] of its own to
+  /// seed defaults from), and its own two branches defaulting to terminal
+  /// `gated`/`proceed` — the same shape
   /// [DecisionGraphConfigCubit.createNode] already defaults a brand-new
   /// node to.
   Future<String?> _createChainedChild(String conditionId) {
-    final spec = decisionConditionSpecById(conditionId);
+    final Map<String, dynamic> conditionParams;
+    if (conditionId == ruleBuilderConditionId) {
+      conditionParams = defaultRuleConditionParams(widget.automationContext);
+    } else {
+      final spec = decisionConditionSpecById(conditionId);
+      conditionParams = spec == null ? const {} : defaultConditionParams(spec);
+    }
     return context.read<DecisionGraphConfigCubit>().createNode(
       conditionId: conditionId,
-      conditionParams: spec == null ? const {} : defaultConditionParams(spec),
+      conditionParams: conditionParams,
     );
   }
 }
@@ -280,10 +289,9 @@ class _NodeRowState extends State<_NodeRow> {
   @override
   Widget build(BuildContext context) {
     final c = ThemeScope.of(context).colors;
-    final spec = decisionConditionSpecById(widget.node.conditionId);
-    final parameterSummary = spec == null
-        ? null
-        : conditionParameterSummary(spec, widget.node.conditionParams);
+    final title = decisionNodeTitle(widget.node);
+    final parameterSummary = decisionNodeSummary(widget.node);
+    final isRuleBuilder = widget.node.conditionId == ruleBuilderConditionId;
     final matchedOutcome = _outcomeOf(widget.node.matchedBranch);
     final unmatchedOutcome = _outcomeOf(widget.node.unmatchedBranch);
     final matchedChild = _childOf(widget.node.matchedBranch);
@@ -337,7 +345,7 @@ class _NodeRowState extends State<_NodeRow> {
                           const SizedBox(width: AionSpacing.sp8),
                           Flexible(
                             child: Text(
-                              spec?.displayName ?? widget.node.conditionId,
+                              title,
                               style: AionText.cardTitle.copyWith(
                                 color: c.textPrimary,
                               ),
@@ -347,7 +355,10 @@ class _NodeRowState extends State<_NodeRow> {
                           ),
                           if (parameterSummary != null) ...[
                             const SizedBox(width: AionSpacing.sp8),
-                            _ParameterChip(text: parameterSummary),
+                            _ParameterChip(
+                              text: parameterSummary,
+                              bordered: isRuleBuilder,
+                            ),
                           ],
                           const Spacer(),
                           if (matchedOutcome != null)
@@ -642,10 +653,19 @@ class _GuideRailIndent extends StatelessWidget {
 /// shared across files, consistent with this codebase's existing
 /// per-file small-private-widget convention). Added for
 /// `aion-arch/changes/automation-decision-graphs` (`/verify` fix pass 2).
+/// [bordered] renders a 1px `AionColors.border` hairline and one point
+/// less vertical padding — the rule-builder node's one visual difference
+/// from a preset node's chip, mirroring the canvas pane's own
+/// `_ParameterChip.bordered`, per
+/// `aion-arch/changes/decision-graph-rule-builder/design.md`'s Component
+/// Spec §4.2. Defaults to `false`, preserving every preset-condition call
+/// site's unbordered rendering. Added for
+/// `aion-arch/changes/decision-graph-rule-builder`.
 class _ParameterChip extends StatelessWidget {
-  const _ParameterChip({required this.text});
+  const _ParameterChip({required this.text, this.bordered = false});
 
   final String text;
+  final bool bordered;
 
   @override
   Widget build(BuildContext context) {
@@ -653,10 +673,13 @@ class _ParameterChip extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: c.surfaceHover,
+        border: bordered ? Border.all(color: c.border, width: 1) : null,
         borderRadius: BorderRadius.all(AionRadius.sm),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(6, 2, 6, 2),
+        padding: bordered
+            ? const EdgeInsets.fromLTRB(6, 1, 6, 1)
+            : const EdgeInsets.fromLTRB(6, 2, 6, 2),
         child: Text(text, style: AionText.key.copyWith(color: c.textSecondary)),
       ),
     );
