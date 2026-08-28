@@ -162,4 +162,37 @@ void main() {
     expect((await repository.getGraph(ctx)).rootNodeId, isNull);
     expect(find.text('Add condition'), findsOneWidget);
   });
+
+  testWidgets(
+    'creating a rule-builder node round-trips conditionId/conditionParams '
+    'through the real drift-backed repository unchanged',
+    (tester) async {
+      const ctx = AutomationContext.codingExecutionRetry;
+      await tester.pumpWidget(_wrap(cubit, ctx));
+      await tester.pumpAndSettle();
+
+      const ruleParams = {
+        'field': 'attempt',
+        'operator': 'greaterThanOrEqual',
+        'value': 5,
+      };
+      final newNodeId = await cubit.createNode(
+        conditionId: ruleBuilderConditionId,
+        conditionParams: ruleParams,
+      );
+      expect(newNodeId, isNotNull);
+      await cubit.setRoot(newNodeId);
+      await tester.pumpAndSettle();
+
+      // Reload from the database directly (a fresh repository instance
+      // over the same in-memory database) to confirm the JSON encode/
+      // decode round-trip preserved the rule's `conditionId`/
+      // `conditionParams` unchanged, not just the in-memory cubit state.
+      final reloadedRepository = DriftDecisionGraphRepository(database);
+      final reloaded = await reloadedRepository.getAllNodes(ctx);
+      final ruleNode = reloaded.singleWhere((node) => node.id == newNodeId);
+      expect(ruleNode.conditionId, ruleBuilderConditionId);
+      expect(ruleNode.conditionParams, ruleParams);
+    },
+  );
 }

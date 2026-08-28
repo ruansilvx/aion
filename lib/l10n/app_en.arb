@@ -1003,6 +1003,10 @@
   "decisionGraphErrorDanglingBranchTarget": "That branch points to a condition that no longer exists.",
   "decisionGraphErrorDuplicateChildReference": "That condition is already used elsewhere in this graph — a condition can only have one parent branch.",
   "decisionGraphErrorCycleDetected": "That edit would create a cycle in the graph.",
+  "decisionGraphRuleBuilderLabel": "Custom rule…",
+  "decisionGraphRuleFieldLabel": "Field",
+  "decisionGraphRuleOperatorLabel": "Operator",
+  "decisionGraphRuleValueLabel": "Value",
 
   "settingsOverridesEyebrow": "OVERRIDES",
   "settingsOverridesSummary": "Browse every baseline skill and convention for this project and edit a plain-text local override for any one of them.",

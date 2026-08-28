@@ -34,6 +34,55 @@ Color decisionOutcomeColor(AionColors c, DecisionOutcome outcome) =>
       DecisionOutcome.modelJudgment => c.secondary,
     };
 
+/// [context]'s full condition catalog for `DecisionNodeForm`'s picker(s):
+/// [decisionConditionsFor]'s real catalog entries, plus the synthetic
+/// "Custom rule" entry from [ruleBuilderConditionSpec] when [context] has
+/// a non-empty rule-builder field vocabulary. Shared by
+/// [_DecisionNodeFormState.initState]/`.build` and (via `_BranchSection`'s
+/// own `catalog` parameter) the chained-branch picker, so a branch can
+/// chain into a fresh rule-builder condition exactly like it can chain
+/// into a fixed catalog one. Added for
+/// `aion-arch/changes/decision-graph-rule-builder`.
+List<DecisionConditionSpec> _catalogFor(AutomationContext context) => [
+  ...decisionConditionsFor(context),
+  if (ruleBuilderConditionSpec(context) case final spec?) spec,
+];
+
+/// [operator]'s full-word label for [type] — shown in the rule-builder
+/// operator picker's trigger and menu rows (e.g. `Is greater than`,
+/// `Equals`, `Is` for a `boolean` field's `equals`). Distinct from
+/// `decision_field_catalog.dart`'s own operator-symbol formatting (used
+/// internally by `decisionNodeSummary`'s compact chip text, e.g. `>`,
+/// `is`) — that helper lives in the domain layer and can't depend on this
+/// presentation-layer one, so the two are separate, deliberately
+/// consistent mappings rather than one shared function. Per
+/// `aion-arch/changes/decision-graph-rule-builder/design.md`'s Component
+/// Spec §1.2 Operator catalog. Added for
+/// `aion-arch/changes/decision-graph-rule-builder`.
+String _ruleOperatorLabel(
+  DecisionRuleOperator operator,
+  DecisionFieldType type,
+) {
+  if (type == DecisionFieldType.boolean) {
+    return switch (operator) {
+      DecisionRuleOperator.equals => 'Is',
+      DecisionRuleOperator.notEquals => 'Is not',
+      DecisionRuleOperator.greaterThan ||
+      DecisionRuleOperator.greaterThanOrEqual ||
+      DecisionRuleOperator.lessThan ||
+      DecisionRuleOperator.lessThanOrEqual => 'Is',
+    };
+  }
+  return switch (operator) {
+    DecisionRuleOperator.equals => 'Equals',
+    DecisionRuleOperator.notEquals => 'Is not',
+    DecisionRuleOperator.greaterThan => 'Is greater than',
+    DecisionRuleOperator.greaterThanOrEqual => 'Is at least',
+    DecisionRuleOperator.lessThan => 'Is less than',
+    DecisionRuleOperator.lessThanOrEqual => 'Is at most',
+  };
+}
+
 /// [branch]'s chained child's condition display name, resolved from
 /// [nodesById] — feeds [DecisionNodeForm]'s `...ChildConditionLabel`
 /// parameters. `null` for a terminal branch, or for a [DecisionBranch
@@ -50,8 +99,7 @@ String? chainedChildConditionLabel(
   if (branch is! ToNodeBranch) return null;
   final child = nodesById[branch.nodeId];
   if (child == null) return null;
-  return decisionConditionSpecById(child.conditionId)?.displayName ??
-      child.conditionId;
+  return decisionNodeTitle(child);
 }
 
 /// Whether a [DecisionNodeForm] branch (matched or unmatched) currently
@@ -324,6 +372,15 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
   DecisionConditionSpec? _condition;
   final Map<String, TextEditingController> _paramControllers = {};
 
+  /// The rule trio's local state — mirrors `_condition`'s own pattern,
+  /// populated only while `_condition?.id == ruleBuilderConditionId`. See
+  /// [_seedRuleState]. Added for
+  /// `aion-arch/changes/decision-graph-rule-builder`.
+  DecisionFieldSpec? _ruleField;
+  DecisionRuleOperator? _ruleOperator;
+  TextEditingController? _ruleIntValueController;
+  bool _ruleBoolValue = false;
+
   late DecisionBranchMode _matchedMode;
   late DecisionOutcome _matchedOutcome;
   String? _matchedExistingChildId;
@@ -339,11 +396,12 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
   @override
   void initState() {
     super.initState();
-    final catalog = decisionConditionsFor(widget.automationContext);
+    final catalog = _catalogFor(widget.automationContext);
     _condition = catalog
         .where((spec) => spec.id == widget.initialConditionId)
         .firstOrNull;
     _seedParamControllers();
+    _seedRuleState(widget.initialConditionParams);
 
     switch (widget.initialMatchedBranch) {
       case TerminalBranch(:final outcome):
@@ -374,6 +432,7 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
     for (final controller in _paramControllers.values) {
       controller.dispose();
     }
+    _ruleIntValueController?.dispose();
     super.dispose();
   }
 
@@ -411,6 +470,62 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
     if (mounted) setState(() {});
   }
 
+  /// (Re)builds the rule trio's local state (`_ruleField`/`_ruleOperator`/
+  /// `_ruleIntValueController`/`_ruleBoolValue`) from [params], disposing
+  /// whatever integer-value controller existed before — mirrors
+  /// [_seedParamControllers]'s own pattern, for the rule-builder condition
+  /// instead of a catalog condition's fixed parameters. Called from
+  /// [initState] with [DecisionNodeForm.initialConditionParams] (editing
+  /// an existing node) and from the condition picker's `onSelected`
+  /// handler with `defaultRuleConditionParams` (freshly picking "Custom
+  /// rule"). Clears every rule field to `null` when [_condition] isn't the
+  /// rule-builder condition — the trio isn't rendered in that case, but
+  /// keeping stale state around would let a leftover `_ruleField` leak
+  /// into a later save. Never throws on a missing/malformed [params]
+  /// shape (an unrecognized `field`/`operator` falls back to the first
+  /// valid option, matching this context's own rule-builder field/
+  /// operator vocabulary). Added for
+  /// `aion-arch/changes/decision-graph-rule-builder`.
+  void _seedRuleState(Map<String, dynamic> params) {
+    _ruleIntValueController?.dispose();
+    _ruleIntValueController = null;
+    final condition = _condition;
+    if (condition == null || condition.id != ruleBuilderConditionId) {
+      _ruleField = null;
+      _ruleOperator = null;
+      return;
+    }
+
+    final fields = decisionFieldsFor(widget.automationContext);
+    final fieldId = params['field'];
+    final field =
+        (fieldId is String
+            ? fields.where((f) => f.id == fieldId).firstOrNull
+            : null) ??
+        fields.firstOrNull;
+    _ruleField = field;
+    if (field == null) {
+      _ruleOperator = null;
+      return;
+    }
+
+    final operators = operatorsFor(field.type);
+    final operatorName = params['operator'];
+    final operator = operatorName is String
+        ? operators.where((o) => o.name == operatorName).firstOrNull
+        : null;
+    _ruleOperator = operator ?? operators.first;
+
+    if (field.type == DecisionFieldType.integer) {
+      final value = params['value'];
+      _ruleIntValueController = TextEditingController(
+        text: (value is num ? value.toInt() : 0).toString(),
+      )..addListener(_onParamChanged);
+    } else {
+      _ruleBoolValue = params['value'] == true;
+    }
+  }
+
   /// A branch in [DecisionBranchMode.continueToCondition] is valid once
   /// it either already has a chained child, or a chaining condition has
   /// been picked for a brand-new chain — mirrors [_save]'s own
@@ -428,9 +543,18 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
   bool get _isValid {
     final condition = _condition;
     if (condition == null) return false;
-    for (final spec in condition.parameterSpecs) {
-      final text = _paramControllers[spec.name]?.text.trim() ?? '';
-      if (int.tryParse(text) == null) return false;
+    if (condition.id == ruleBuilderConditionId) {
+      final field = _ruleField;
+      if (field == null || _ruleOperator == null) return false;
+      if (field.type == DecisionFieldType.integer) {
+        final text = _ruleIntValueController?.text.trim() ?? '';
+        if (int.tryParse(text) == null) return false;
+      }
+    } else {
+      for (final spec in condition.parameterSpecs) {
+        final text = _paramControllers[spec.name]?.text.trim() ?? '';
+        if (int.tryParse(text) == null) return false;
+      }
     }
     return _branchValid(
           mode: _matchedMode,
@@ -474,10 +598,18 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
     final condition = _condition;
     if (condition == null || !_isValid || _saving) return;
     setState(() => _saving = true);
-    final params = <String, dynamic>{
-      for (final spec in condition.parameterSpecs)
-        spec.name: int.parse(_paramControllers[spec.name]!.text.trim()),
-    };
+    final params = condition.id == ruleBuilderConditionId
+        ? <String, dynamic>{
+            'field': _ruleField!.id,
+            'operator': _ruleOperator!.name,
+            'value': _ruleField!.type == DecisionFieldType.integer
+                ? int.parse(_ruleIntValueController!.text.trim())
+                : _ruleBoolValue,
+          }
+        : <String, dynamic>{
+            for (final spec in condition.parameterSpecs)
+              spec.name: int.parse(_paramControllers[spec.name]!.text.trim()),
+          };
     final matchedBranch = await _resolveBranch(
       mode: _matchedMode,
       outcome: _matchedOutcome,
@@ -506,7 +638,7 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
   @override
   Widget build(BuildContext context) {
     final c = ThemeScope.of(context).colors;
-    final catalog = decisionConditionsFor(widget.automationContext);
+    final catalog = _catalogFor(widget.automationContext);
 
     return Padding(
       padding: const EdgeInsets.all(AionSpacing.sp16),
@@ -525,28 +657,39 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
             onSelected: (spec) => setState(() {
               _condition = spec;
               _seedParamControllers();
+              _seedRuleState(
+                spec.id == ruleBuilderConditionId
+                    ? defaultRuleConditionParams(widget.automationContext)
+                    : const {},
+              );
             }),
           ),
           if (_condition != null)
-            for (final spec in _condition!.parameterSpecs) ...[
+            if (_condition!.id == ruleBuilderConditionId) ...[
               const SizedBox(height: AionSpacing.sp16),
-              Text(
-                context.l10n.decisionGraphParameterLabel,
-                style: AionText.label.copyWith(color: c.textSecondary),
-              ),
-              const SizedBox(height: 7),
-              SizedBox(
-                width: 132,
-                child: AppTextField(
-                  controller: _paramControllers[spec.name]!,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  isError:
-                      int.tryParse(_paramControllers[spec.name]!.text.trim()) ==
-                      null,
+              _buildRuleTrio(context, c),
+            ] else
+              for (final spec in _condition!.parameterSpecs) ...[
+                const SizedBox(height: AionSpacing.sp16),
+                Text(
+                  context.l10n.decisionGraphParameterLabel,
+                  style: AionText.label.copyWith(color: c.textSecondary),
                 ),
-              ),
-            ],
+                const SizedBox(height: 7),
+                SizedBox(
+                  width: 132,
+                  child: AppTextField(
+                    controller: _paramControllers[spec.name]!,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    isError:
+                        int.tryParse(
+                          _paramControllers[spec.name]!.text.trim(),
+                        ) ==
+                        null,
+                  ),
+                ),
+              ],
           const SizedBox(height: AionSpacing.sp16),
           _BranchSection(
             label: context.l10n.decisionGraphMatchedLabel,
@@ -636,6 +779,118 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
       ),
     );
   }
+
+  /// The field/operator/value trio rendered in place of the generic
+  /// per-catalog-parameter loop when `_condition?.id ==
+  /// ruleBuilderConditionId` — [decisionFieldsFor]'s field picker, an
+  /// operator picker over `operatorsFor(field.type)`, and a value control
+  /// (digits-only [AppTextField] for `integer`, a `True`/`False` picker
+  /// for `boolean`). Per
+  /// `aion-arch/changes/decision-graph-rule-builder/design.md` §3. Added
+  /// for `aion-arch/changes/decision-graph-rule-builder`.
+  Widget _buildRuleTrio(BuildContext context, AionColors c) {
+    final fields = decisionFieldsFor(widget.automationContext);
+    final field = _ruleField;
+    final operators = field == null
+        ? const <DecisionRuleOperator>[]
+        : operatorsFor(field.type);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          context.l10n.decisionGraphRuleFieldLabel,
+          style: AionText.label.copyWith(color: c.textSecondary),
+        ),
+        const SizedBox(height: 7),
+        if (field != null)
+          _RulePicker<DecisionFieldSpec>(
+            items: fields,
+            value: field,
+            itemLabel: (f) => f.displayName,
+            semanticsLabel: context.l10n.decisionGraphRuleFieldLabel,
+            onSelected: (selected) => setState(() {
+              _ruleField = selected;
+              final newOperators = operatorsFor(selected.type);
+              _ruleOperator = newOperators.first;
+              _ruleIntValueController?.dispose();
+              _ruleIntValueController = null;
+              if (selected.type == DecisionFieldType.integer) {
+                _ruleIntValueController = TextEditingController(text: '0')
+                  ..addListener(_onParamChanged);
+              } else {
+                _ruleBoolValue = false;
+              }
+            }),
+          ),
+        const SizedBox(height: AionSpacing.sp16),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    context.l10n.decisionGraphRuleOperatorLabel,
+                    style: AionText.label.copyWith(color: c.textSecondary),
+                  ),
+                  const SizedBox(height: 7),
+                  if (field != null && _ruleOperator != null)
+                    _RulePicker<DecisionRuleOperator>(
+                      items: operators,
+                      value: _ruleOperator!,
+                      itemLabel: (o) => _ruleOperatorLabel(o, field.type),
+                      semanticsLabel: context.l10n.decisionGraphRuleOperatorLabel,
+                      onSelected: (selected) =>
+                          setState(() => _ruleOperator = selected),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(width: AionSpacing.sp12),
+            SizedBox(
+              width: 132,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    context.l10n.decisionGraphRuleValueLabel,
+                    style: AionText.label.copyWith(color: c.textSecondary),
+                  ),
+                  const SizedBox(height: 7),
+                  if (field == null)
+                    const SizedBox(height: 40)
+                  else if (field.type == DecisionFieldType.integer)
+                    AppTextField(
+                      controller: _ruleIntValueController!,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                      ],
+                      isError:
+                          int.tryParse(
+                            _ruleIntValueController!.text.trim(),
+                          ) ==
+                          null,
+                    )
+                  else
+                    _RulePicker<bool>(
+                      items: const [true, false],
+                      value: _ruleBoolValue,
+                      itemLabel: (v) => v ? 'True' : 'False',
+                      semanticsLabel: context.l10n.decisionGraphRuleValueLabel,
+                      onSelected: (selected) =>
+                          setState(() => _ruleBoolValue = selected),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
 }
 
 /// A `DecisionConditionSpec` never equal (by identity — the class has no
@@ -669,6 +924,14 @@ class _ConditionPicker extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = ThemeScope.of(context).colors;
     final current = value;
+    // The rule-builder entry's `displayName` ('Custom rule') is a
+    // plain-English domain-layer fallback, not the localized copy this
+    // picker actually shows — see `ruleBuilderConditionSpec`'s own
+    // dartdoc.
+    String label(DecisionConditionSpec spec) =>
+        spec.id == ruleBuilderConditionId
+        ? context.l10n.decisionGraphRuleBuilderLabel
+        : spec.displayName;
     final trigger = DecoratedBox(
       decoration: BoxDecoration(
         color: c.surfaceHover,
@@ -683,8 +946,9 @@ class _ConditionPicker extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  current?.displayName ??
-                      context.l10n.decisionGraphConditionPickerPlaceholder,
+                  current == null
+                      ? context.l10n.decisionGraphConditionPickerPlaceholder
+                      : label(current),
                   style: AionText.bodySm.copyWith(
                     color: current == null ? c.textMuted : c.textPrimary,
                     fontWeight: current == null
@@ -706,7 +970,7 @@ class _ConditionPicker extends StatelessWidget {
     return SelectionMenu<DecisionConditionSpec>(
       semanticsLabel: context.l10n.decisionGraphConditionPickerLabel,
       items: items,
-      itemLabel: (spec) => spec.displayName,
+      itemLabel: label,
       // `SelectionMenu` excludes `currentValue` from its offered list —
       // when nothing is chosen yet, `_unselectedConditionSentinel` (never
       // `==` a real catalog entry, since `DecisionConditionSpec` has no
@@ -717,6 +981,79 @@ class _ConditionPicker extends StatelessWidget {
       // `codingExecutionRetry`/`codingExecution`, whose catalog has
       // exactly one entry each. Fixed in `/verify` fix pass 2.
       currentValue: current ?? _unselectedConditionSentinel,
+      onSelected: onSelected,
+      trigger: trigger,
+    );
+  }
+}
+
+/// A compact `SelectionMenu<T>` trigger for the rule-builder trio's
+/// field/operator/boolean-value pickers — styled like [_ConditionPicker]'s
+/// own trigger, minus its "not yet chosen" sentinel handling: every
+/// rule-builder field/operator/value always has a selected [value] the
+/// moment a rule-builder condition is chosen (seeded by
+/// `defaultRuleConditionParams`/[_DecisionNodeFormState._seedRuleState]),
+/// so there's no unselected state to special-case. Renders inert (no
+/// [SelectionMenu]) when [items] has one or fewer selectable alternatives
+/// — [SelectionMenu] excludes [value] from its offered list, so a
+/// single-item [items] would otherwise open onto an empty overlay; this
+/// is expected for today's field picker, whose two contexts each expose
+/// exactly one field. Added for
+/// `aion-arch/changes/decision-graph-rule-builder`.
+class _RulePicker<T> extends StatelessWidget {
+  const _RulePicker({
+    required this.items,
+    required this.value,
+    required this.itemLabel,
+    required this.onSelected,
+    required this.semanticsLabel,
+  });
+
+  final List<T> items;
+  final T value;
+  final String Function(T) itemLabel;
+  final ValueChanged<T> onSelected;
+  final String semanticsLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    final trigger = DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.surfaceHover,
+        border: Border.all(color: c.border, width: 1),
+        borderRadius: BorderRadius.all(AionRadius.md),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 10, 0),
+        child: SizedBox(
+          height: 40,
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  itemLabel(value),
+                  style: AionText.bodySm.copyWith(
+                    color: c.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (items.length <= 1) return trigger;
+
+    return SelectionMenu<T>(
+      semanticsLabel: semanticsLabel,
+      items: items,
+      itemLabel: itemLabel,
+      currentValue: value,
       onSelected: onSelected,
       trigger: trigger,
     );

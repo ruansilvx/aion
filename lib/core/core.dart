@@ -8,6 +8,7 @@ export 'automation/automation_confidence.dart';
 export 'automation/automation_context.dart';
 export 'automation/automation_settings_repository.dart';
 export 'automation/decision_condition_catalog.dart';
+export 'automation/decision_field_catalog.dart';
 export 'automation/decision_graph.dart';
 export 'automation/decision_graph_evaluator.dart';
 export 'automation/decision_graph_repository.dart';

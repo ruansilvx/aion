@@ -44,25 +44,25 @@ sealed class _CanvasNode {
 }
 
 class _ConditionCanvasNode extends _CanvasNode {
-  const _ConditionCanvasNode(
-    this.node,
-    this.spec, {
-    required this.isRoot,
-    required this.isError,
-  });
+  const _ConditionCanvasNode(this.node, {required this.isRoot, required this.isError});
   final DecisionNode node;
-  final DecisionConditionSpec? spec;
 
   /// Whether this node is the graph's `rootNodeId` — drives the design.md
   /// §1.5 root-marker chip. Added for
   /// `aion-arch/changes/automation-decision-graphs` (`/verify` fix pass 2).
   final bool isRoot;
 
-  /// Whether this node is invalid: [spec] didn't resolve (an unknown
-  /// `conditionId`), or either branch is a dangling [ToNodeBranch] whose
-  /// target is missing from the loaded node set — design.md §1.2.1's
-  /// "Error" node state. Added for
-  /// `aion-arch/changes/automation-decision-graphs` (`/verify` fix pass 2).
+  /// Whether this node is invalid: `node.conditionId` doesn't resolve via
+  /// `isRecognizedConditionId` (an unknown `conditionId`, for neither the
+  /// fixed catalog nor the rule builder), or either branch is a dangling
+  /// [ToNodeBranch] whose target is missing from the loaded node set —
+  /// design.md §1.2.1's "Error" node state. Added for
+  /// `aion-arch/changes/automation-decision-graphs` (`/verify` fix pass 2);
+  /// no longer carries its own resolved `DecisionConditionSpec` — title/
+  /// summary rendering reads `node` directly via `decisionNodeTitle`/
+  /// `decisionNodeSummary`, which also cover the rule-builder case a bare
+  /// `decisionConditionSpecById` lookup can't. Added for
+  /// `aion-arch/changes/decision-graph-rule-builder`.
   final bool isError;
 }
 
@@ -293,8 +293,11 @@ class _CanvasPaneState extends State<_CanvasPane> {
       );
     }
 
-    final layout = _TreeLayout(widget.loaded.nodesById, rootId: rootId)
-      ..layout(rootNode, 0);
+    final layout = _TreeLayout(
+      widget.loaded.nodesById,
+      rootId: rootId,
+      automationContext: widget.automationContext,
+    )..layout(rootNode, 0);
 
     return GraphCanvas<_CanvasNode>(
       nodes: layout.nodes,
@@ -367,12 +370,18 @@ class _CanvasPaneState extends State<_CanvasPane> {
             );
           },
       onCreateChainedChild: (conditionId) {
-        final spec = decisionConditionSpecById(conditionId);
+        final Map<String, dynamic> conditionParams;
+        if (conditionId == ruleBuilderConditionId) {
+          conditionParams = defaultRuleConditionParams(
+            widget.automationContext,
+          );
+        } else {
+          final spec = decisionConditionSpecById(conditionId);
+          conditionParams = spec == null ? const {} : defaultConditionParams(spec);
+        }
         return cubit.createNode(
           conditionId: conditionId,
-          conditionParams: spec == null
-              ? const {}
-              : defaultConditionParams(spec),
+          conditionParams: conditionParams,
         );
       },
       onDelete: () => cubit.deleteNode(node.id),
@@ -393,10 +402,16 @@ class _CanvasPaneState extends State<_CanvasPane> {
 /// evaluation time. Added for `aion-arch/changes/automation-decision-graphs`
 /// (`/verify` fix pass).
 class _TreeLayout {
-  _TreeLayout(this._nodesById, {required String? rootId}) : _rootId = rootId;
+  _TreeLayout(
+    this._nodesById, {
+    required String? rootId,
+    required AutomationContext automationContext,
+  }) : _rootId = rootId,
+       _automationContext = automationContext;
 
   final Map<String, DecisionNode> _nodesById;
   final String? _rootId;
+  final AutomationContext _automationContext;
   final List<GraphCanvasNode<_CanvasNode>> nodes = [];
   final List<GraphCanvasEdge> edges = [];
   int _slot = 0;
@@ -418,9 +433,8 @@ class _TreeLayout {
     final x = (_slot * _slotWidth) + 40;
     _slot++;
     final y = (depth * _levelHeight) + 40;
-    final spec = decisionConditionSpecById(node.conditionId);
     final isError =
-        spec == null ||
+        !isRecognizedConditionId(node.conditionId, _automationContext) ||
         [node.matchedBranch, node.unmatchedBranch].any(
           (branch) =>
               branch is ToNodeBranch && !_nodesById.containsKey(branch.nodeId),
@@ -431,7 +445,6 @@ class _TreeLayout {
         position: Offset(x, y),
         data: _ConditionCanvasNode(
           node,
-          spec,
           isRoot: node.id == _rootId,
           isError: isError,
         ),
@@ -537,13 +550,8 @@ class _CanvasNodeContent extends StatelessWidget {
     final isDark = ThemeScope.of(context).isDark;
 
     return switch (data) {
-      _ConditionCanvasNode(
-        :final node,
-        :final spec,
-        :final isRoot,
-        :final isError,
-      ) =>
-        _buildConditionNode(context, c, isDark, node, spec, isRoot, isError),
+      _ConditionCanvasNode(:final node, :final isRoot, :final isError) =>
+        _buildConditionNode(context, c, isDark, node, isRoot, isError),
       _TerminalCanvasNode(:final outcome) => DecoratedBox(
         decoration: BoxDecoration(
           color: decisionOutcomeColor(c, outcome).withValues(alpha: 0.14),
@@ -574,7 +582,6 @@ class _CanvasNodeContent extends StatelessWidget {
     AionColors c,
     bool isDark,
     DecisionNode node,
-    DecisionConditionSpec? spec,
     bool isRoot,
     bool isError,
   ) {
@@ -601,11 +608,10 @@ class _CanvasNodeContent extends StatelessWidget {
     final eyebrowText = isError
         ? context.l10n.decisionGraphNodeIncompleteEyebrow
         : context.l10n.decisionGraphNodeEyebrow(
-            (spec?.displayName ?? node.conditionId).toUpperCase(),
+            decisionNodeTitle(node).toUpperCase(),
           );
-    final parameterSummary = spec == null
-        ? null
-        : conditionParameterSummary(spec, node.conditionParams);
+    final parameterSummary = decisionNodeSummary(node);
+    final isRuleBuilder = node.conditionId == ruleBuilderConditionId;
 
     final box = DecoratedBox(
       decoration: BoxDecoration(
@@ -632,7 +638,7 @@ class _CanvasNodeContent extends StatelessWidget {
                 children: [
                   Flexible(
                     child: Text(
-                      spec?.displayName ?? node.conditionId,
+                      decisionNodeTitle(node),
                       style: AionText.cardTitle.copyWith(color: c.textPrimary),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -640,7 +646,7 @@ class _CanvasNodeContent extends StatelessWidget {
                   ),
                   if (parameterSummary != null) ...[
                     const SizedBox(width: AionSpacing.sp8),
-                    _ParameterChip(text: parameterSummary),
+                    _ParameterChip(text: parameterSummary, bordered: isRuleBuilder),
                   ],
                 ],
               ),
@@ -672,11 +678,18 @@ class _CanvasNodeContent extends StatelessWidget {
 
 /// The condition box's parameter chip (design.md §1.2 "Parameter chip") —
 /// e.g. `> 3`. Added for `aion-arch/changes/automation-decision-graphs`
-/// (`/verify` fix pass 2).
+/// (`/verify` fix pass 2). [bordered] renders a 1px `AionColors.border`
+/// hairline and one point less vertical padding — the rule-builder node's
+/// one visual difference from a preset node's chip, per
+/// `aion-arch/changes/decision-graph-rule-builder/design.md`'s Component
+/// Spec §4.1. Defaults to `false`, preserving every preset-condition call
+/// site's unbordered rendering. Added for
+/// `aion-arch/changes/decision-graph-rule-builder`.
 class _ParameterChip extends StatelessWidget {
-  const _ParameterChip({required this.text});
+  const _ParameterChip({required this.text, this.bordered = false});
 
   final String text;
+  final bool bordered;
 
   @override
   Widget build(BuildContext context) {
@@ -684,10 +697,13 @@ class _ParameterChip extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: c.surfaceHover,
+        border: bordered ? Border.all(color: c.border, width: 1) : null,
         borderRadius: BorderRadius.all(AionRadius.sm),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(6, 2, 6, 2),
+        padding: bordered
+            ? const EdgeInsets.fromLTRB(6, 1, 6, 1)
+            : const EdgeInsets.fromLTRB(6, 2, 6, 2),
         child: Text(text, style: AionText.key.copyWith(color: c.textSecondary)),
       ),
     );
