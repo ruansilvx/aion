@@ -150,7 +150,7 @@ class _AppTextFieldState extends State<AppTextField> {
     final c = t.colors;
     // [obscureText] forces the field back to single-line regardless of
     // [maxLines] (see the `TextField.maxLines` line below) — computed here
-    // too so `isMultiline`/[_minLines] agree with what's actually rendered
+    // too so `isMultiline`/`minLines` agree with what's actually rendered
     // rather than with the un-overridden [maxLines] value alone.
     final effectiveMaxLines = widget.obscureText ? 1 : widget.maxLines;
     final isMultiline = effectiveMaxLines == null || effectiveMaxLines > 1;
