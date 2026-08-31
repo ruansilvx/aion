@@ -59,9 +59,12 @@ class AppTextField extends StatefulWidget {
   final String? hintText;
 
   /// Number of visible lines. `1` renders the single-line style; anything
-  /// greater renders the multiline style with a 5-line minimum height.
-  /// `null` renders the multiline style with no upper bound (an
-  /// unbounded/expanding textarea), passed through to the underlying
+  /// greater renders the multiline style with a 5-line minimum height, or
+  /// [maxLines] itself as the minimum when it's set below 5 (so a caller
+  /// can request a genuinely short multiline field — e.g. 3 or 4 lines —
+  /// without violating `TextField`'s own `minLines <= maxLines`
+  /// invariant). `null` renders the multiline style with no upper bound
+  /// (an unbounded/expanding textarea), passed through to the underlying
   /// `TextField` as-is — Flutter's `TextField` already supports
   /// `maxLines: null` natively.
   final int? maxLines;
@@ -145,7 +148,27 @@ class _AppTextFieldState extends State<AppTextField> {
   Widget build(BuildContext context) {
     final t = ThemeScope.of(context);
     final c = t.colors;
-    final isMultiline = widget.maxLines == null || widget.maxLines! > 1;
+    // [obscureText] forces the field back to single-line regardless of
+    // [maxLines] (see the `TextField.maxLines` line below) — computed here
+    // too so `isMultiline`/[_minLines] agree with what's actually rendered
+    // rather than with the un-overridden [maxLines] value alone.
+    final effectiveMaxLines = widget.obscureText ? 1 : widget.maxLines;
+    final isMultiline = effectiveMaxLines == null || effectiveMaxLines > 1;
+    // A 5-line minimum height for any multiline field, capped at
+    // [effectiveMaxLines] itself when that's fewer than 5 — `TextField`
+    // asserts `minLines <= maxLines`, so a caller-supplied [maxLines] below
+    // 5 (e.g. `AgentPromptField`'s 4-line prompt, per
+    // `aion-arch/changes/decision-graph-agentjudgment-condition/design.md`
+    // §2.1) must not be handed a fixed `minLines: 5` — that combination
+    // throws immediately. Fixed as part of that change's `/verify` pass;
+    // pre-existing bare `AppTextField(maxLines: 3)` call sites
+    // (`raise_gap_or_question_picker.dart`, `create_ticket_screen.dart`)
+    // shared the same latent crash before this fix.
+    final minLines = isMultiline
+        ? (effectiveMaxLines == null || effectiveMaxLines >= 5
+              ? 5
+              : effectiveMaxLines)
+        : 1;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -192,8 +215,8 @@ class _AppTextFieldState extends State<AppTextField> {
             child: TextField(
               controller: widget.controller,
               focusNode: _focusNode,
-              maxLines: widget.obscureText ? 1 : widget.maxLines,
-              minLines: isMultiline ? 5 : 1,
+              maxLines: effectiveMaxLines,
+              minLines: minLines,
               obscureText: widget.obscureText,
               keyboardType: widget.keyboardType,
               inputFormatters: widget.inputFormatters,

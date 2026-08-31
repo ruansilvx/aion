@@ -10,6 +10,7 @@ import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/providers/presentation/cubit/decision_graph_config_cubit.dart';
 import 'package:aion/features/providers/presentation/screens/decision_graph_editor_screen.dart';
+import 'package:aion/features/providers/presentation/widgets/agent_cost_hint.dart';
 import 'package:aion/l10n/generated/app_localizations.dart';
 
 class MockDecisionGraphRepository extends Mock
@@ -341,6 +342,68 @@ void main() {
         expect(find.text('Is this fix expensive?'), findsNWidgets(2));
         expect(find.text('ASK · NO QUESTION'), findsNothing);
         expect(find.text('Add a question'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'selecting "Ask the agent…" opens AgentPromptField without '
+      'crashing (regression — AppTextField(maxLines: 4) previously '
+      "violated TextField's minLines <= maxLines invariant)",
+      (tester) async {
+        const ticketCreationContext = AutomationContext.ticketCreation;
+        when(() => repository.getGraph(ticketCreationContext)).thenAnswer(
+          (_) async => const DecisionGraph(
+            context: ticketCreationContext,
+            rootNodeId: null,
+          ),
+        );
+        when(
+          () => repository.getAllNodes(ticketCreationContext),
+        ).thenAnswer((_) async => const []);
+
+        await tester.pumpWidget(wrapContext(ticketCreationContext));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Add condition'), warnIfMissed: false);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Choose a condition'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Ask the agent…'));
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.text('Question'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      "an incomplete (empty-prompt) agentJudgment node's canvas card "
+      'still shows AgentCostHint (design.md §3.3: unlike the outline '
+      "row, the canvas card's info trigger stays unchanged on error)",
+      (tester) async {
+        const ticketCreationContext = AutomationContext.ticketCreation;
+        const rootNode = DecisionNode(
+          id: 'root',
+          conditionId: agentJudgmentConditionId,
+          conditionParams: {'prompt': ''},
+          matchedBranch: DecisionBranch.terminal(DecisionOutcome.gated),
+          unmatchedBranch: DecisionBranch.terminal(DecisionOutcome.proceed),
+        );
+        when(() => repository.getGraph(ticketCreationContext)).thenAnswer(
+          (_) async => const DecisionGraph(
+            context: ticketCreationContext,
+            rootNodeId: 'root',
+          ),
+        );
+        when(
+          () => repository.getAllNodes(ticketCreationContext),
+        ).thenAnswer((_) async => const [rootNode]);
+
+        await tester.pumpWidget(wrapContext(ticketCreationContext));
+        await tester.pumpAndSettle();
+
+        expect(find.text('ASK · NO QUESTION'), findsOneWidget);
+        expect(find.byType(AgentCostHint), findsOneWidget);
       },
     );
   });

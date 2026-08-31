@@ -686,7 +686,14 @@ class _CanvasNodeContent extends StatelessWidget {
                       style: AionText.caption.copyWith(color: eyebrowColor),
                     ),
                   ),
-                  if (isAgentJudgment && !isError)
+                  // Unlike the outline row (which suppresses this on an
+                  // error row — design.md §4.3), the canvas card keeps it
+                  // even when incomplete: "the cost statement is still
+                  // true of an incomplete node" (design.md §3.3's own
+                  // "Info trigger" row). Fixed during `/verify` — this
+                  // used to also gate on `!isError`, wrongly borrowing
+                  // the outline row's suppression rule.
+                  if (isAgentJudgment)
                     const AgentCostHint(showLatencyLine: true),
                 ],
               ),
