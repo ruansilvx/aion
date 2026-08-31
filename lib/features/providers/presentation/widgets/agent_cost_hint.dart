@@ -272,56 +272,79 @@ class _AgentCostHintTooltip extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = ThemeScope.of(context);
     final c = t.colors;
-    return CompositedTransformFollower(
-      link: link,
-      showWhenUnlinked: false,
-      targetAnchor: Alignment.topRight,
-      followerAnchor: Alignment.bottomRight,
-      offset: const Offset(0, -8),
-      child: ExcludeSemantics(
-        child: ValueListenableBuilder<bool>(
-          valueListenable: visible,
-          builder: (context, isVisible, _) => AnimatedSlide(
-            offset: isVisible ? Offset.zero : const Offset(0, 0.06),
-            duration: Duration(milliseconds: isVisible ? 120 : 80),
-            curve: isVisible ? Curves.easeOut : Curves.easeIn,
-            child: AnimatedOpacity(
-              opacity: isVisible ? 1 : 0,
+    // `left`/`top` here are load-bearing, not decorative — and can't be
+    // omitted. `Overlay`'s internal `_Theatre` (a `Stack`) only shrink-wraps
+    // a child's own intrinsic size when `StackParentData.isPositioned` is
+    // true, which requires at least one of left/top/right/bottom/width/
+    // height to be non-null; a bare `Positioned()` with none of them set
+    // is *not* positioned at all and is silently treated exactly like an
+    // unwrapped child — stretched to the theatre's full size. `left: 0,
+    // top: 0` satisfies `isPositioned` while leaving the actual screen
+    // placement entirely to [CompositedTransformFollower]'s paint-time
+    // transform below, which is unaffected by this widget's layout
+    // position. Confirmed empirically (a debug-colored child filled the
+    // entire app window instead of its requested 240×~50, and remained
+    // stretched even after a first attempt with a geometry-less
+    // `Positioned`) while fixing
+    // `aion-arch/changes/decision-graph-agentjudgment-condition`'s
+    // `/verify` findings — pre-existing since that change's original
+    // `/apply`, not introduced by this pass.
+    return Positioned(
+      left: 0,
+      top: 0,
+      child: CompositedTransformFollower(
+        link: link,
+        showWhenUnlinked: false,
+        targetAnchor: Alignment.topRight,
+        followerAnchor: Alignment.bottomRight,
+        offset: const Offset(0, -8),
+        child: ExcludeSemantics(
+          child: ValueListenableBuilder<bool>(
+            valueListenable: visible,
+            builder: (context, isVisible, _) => AnimatedSlide(
+              offset: isVisible ? Offset.zero : const Offset(0, 0.06),
               duration: Duration(milliseconds: isVisible ? 120 : 80),
               curve: isVisible ? Curves.easeOut : Curves.easeIn,
-              child: SizedBox(
-                width: 240,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: c.surface,
-                    border: Border.all(color: c.borderStrong, width: 1),
-                    borderRadius: BorderRadius.all(AionRadius.md),
-                    boxShadow: AionShadows.card(c, t.isDark),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 8,
+              child: AnimatedOpacity(
+                opacity: isVisible ? 1 : 0,
+                duration: Duration(milliseconds: isVisible ? 120 : 80),
+                curve: isVisible ? Curves.easeOut : Curves.easeIn,
+                child: SizedBox(
+                  width: 240,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: c.surface,
+                      border: Border.all(color: c.borderStrong, width: 1),
+                      borderRadius: BorderRadius.all(AionRadius.md),
+                      boxShadow: AionShadows.card(c, t.isDark),
                     ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          context.l10n.decisionGraphAgentCostHintTooltip,
-                          style: AionText.bodySm.copyWith(
-                            color: c.textSecondary,
-                            height: 1.4,
-                          ),
-                        ),
-                        if (showLatencyLine) ...[
-                          const SizedBox(height: 4),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           Text(
-                            context.l10n.decisionGraphAgentCostHintLatency,
-                            style: AionText.time.copyWith(color: c.textMuted),
+                            context.l10n.decisionGraphAgentCostHintTooltip,
+                            style: AionText.bodySm.copyWith(
+                              color: c.textSecondary,
+                              height: 1.4,
+                            ),
                           ),
+                          if (showLatencyLine) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              context.l10n.decisionGraphAgentCostHintLatency,
+                              style: AionText.time.copyWith(
+                                color: c.textMuted,
+                              ),
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
                 ),
