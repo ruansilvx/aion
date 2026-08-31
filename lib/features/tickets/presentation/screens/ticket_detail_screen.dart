@@ -202,12 +202,16 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
             final nodes = await decisionGraphRepository.getAllNodes(
               AutomationContext.sddStage,
             );
+            // `AutomationContext.sddStage` is never `agentJudgment`-eligible
+            // (see proposal.md's "Why this only works for 3 of the 8"), so
+            // `const DecisionEvalContext()` (no session/askAgentJudgment)
+            // is always correct here — the `await` below is only needed
+            // because `evaluateDecisionGraph` is unconditionally async now.
+            final outcome = await evaluateDecisionGraph(graph, {
+              for (final node in nodes) node.id: node,
+            }, const DecisionEvalContext());
             if (!mounted) return;
-            setState(
-              () => _sddStageDecisionOutcome = evaluateDecisionGraph(graph, {
-                for (final node in nodes) node.id: node,
-              }, const DecisionEvalContext()),
-            );
+            setState(() => _sddStageDecisionOutcome = outcome);
           }),
     );
   }
@@ -319,9 +323,14 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
       context.read<ChatCubit>().sendMessage(
         chatTicketId: widget.ticketId,
         content: content,
-        onToolCall: (toolCallId, toolName, arguments) => context
-            .read<TicketsCubit>()
-            .handleChatToolCall(chat!, toolCallId, toolName, arguments),
+        onToolCall: (toolCallId, toolName, arguments, session) =>
+            context.read<TicketsCubit>().handleChatToolCall(
+              chat!,
+              toolCallId,
+              toolName,
+              arguments,
+              session,
+            ),
       );
     } else {
       context.read<CommentsCubit>().addComment(

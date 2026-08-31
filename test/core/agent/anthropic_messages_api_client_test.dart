@@ -252,7 +252,10 @@ void main() {
               inputSchema: {'type': 'object', 'properties': {}},
             ),
           ],
-          onToolCall: (toolCallId, toolName, arguments) async {
+          onToolCall: (toolCallId, toolName, arguments, session) async {
+            // The Messages API has no session concept — see
+            // AnthropicMessagesApiProvider.supportsSessionResume.
+            expect(session, isNull);
             toolCalls.add((toolCallId, toolName, arguments));
             return {'accepted': true};
           },

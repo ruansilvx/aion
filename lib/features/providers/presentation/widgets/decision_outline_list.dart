@@ -8,6 +8,7 @@ import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/providers/presentation/cubit/decision_graph_config_cubit.dart';
 import 'package:aion/features/providers/presentation/cubit/decision_graph_config_state.dart';
+import 'package:aion/features/providers/presentation/widgets/agent_cost_hint.dart';
 import 'package:aion/features/providers/presentation/widgets/decision_node_form.dart';
 
 /// The outline pane of `DecisionGraphEditorScreen`: one row per
@@ -213,6 +214,10 @@ class _DecisionOutlineListState extends State<DecisionOutlineList> {
     final Map<String, dynamic> conditionParams;
     if (conditionId == ruleBuilderConditionId) {
       conditionParams = defaultRuleConditionParams(widget.automationContext);
+    } else if (conditionId == agentJudgmentConditionId) {
+      conditionParams = defaultAgentJudgmentConditionParams(
+        widget.automationContext,
+      );
     } else {
       final spec = decisionConditionSpecById(conditionId);
       conditionParams = spec == null ? const {} : defaultConditionParams(spec);
@@ -288,14 +293,27 @@ class _NodeRowState extends State<_NodeRow> {
 
   @override
   Widget build(BuildContext context) {
-    final c = ThemeScope.of(context).colors;
-    final title = decisionNodeTitle(widget.node);
+    final t = ThemeScope.of(context);
+    final c = t.colors;
     final parameterSummary = decisionNodeSummary(widget.node);
     final isRuleBuilder = widget.node.conditionId == ruleBuilderConditionId;
+    final isAgentJudgment = widget.node.conditionId == agentJudgmentConditionId;
+    // For an `agentJudgment` node the authored question *is* the title
+    // (design.md §4.1's "no parameter chip — the question is the title
+    // here") — `decisionNodeTitle`'s fixed "Ask the agent" fallback is
+    // only ever shown here for an incomplete (empty-prompt) node.
+    final title = isAgentJudgment
+        ? (parameterSummary ?? context.l10n.decisionGraphAgentPromptMissingChip)
+        : decisionNodeTitle(widget.node);
     final matchedOutcome = _outcomeOf(widget.node.matchedBranch);
     final unmatchedOutcome = _outcomeOf(widget.node.unmatchedBranch);
     final matchedChild = _childOf(widget.node.matchedBranch);
     final unmatchedChild = _childOf(widget.node.unmatchedBranch);
+    // The row-level error/incomplete treatment (design.md §4.3) — an
+    // `agentJudgment` node whose prompt is missing/empty. Drives the row
+    // fill, the left rail, and `_AskBadge`'s tone below; the title color
+    // switch above already keys off this same condition.
+    final isIncompleteAgentJudgment = isAgentJudgment && parameterSummary == null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -304,11 +322,16 @@ class _NodeRowState extends State<_NodeRow> {
           depth: widget.depth,
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: _expanded
+              color: isIncompleteAgentJudgment
+                  ? c.agentJudgmentErrorFill(t.isDark)
+                  : _expanded
                   ? c.primarySubtle
                   : _hovered
                   ? c.surfaceHover
                   : const Color(0x00000000),
+              border: isIncompleteAgentJudgment
+                  ? Border(left: BorderSide(color: c.danger, width: 2))
+                  : null,
               borderRadius: BorderRadius.all(AionRadius.md),
             ),
             child: Column(
@@ -343,22 +366,32 @@ class _NodeRowState extends State<_NodeRow> {
                             ),
                           ),
                           const SizedBox(width: AionSpacing.sp8),
+                          if (isAgentJudgment) ...[
+                            _AskBadge(isError: isIncompleteAgentJudgment),
+                            const SizedBox(width: AionSpacing.sp8),
+                          ],
                           Flexible(
                             child: Text(
                               title,
                               style: AionText.cardTitle.copyWith(
-                                color: c.textPrimary,
+                                color: isIncompleteAgentJudgment
+                                    ? c.danger
+                                    : c.textPrimary,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          if (parameterSummary != null) ...[
+                          if (!isAgentJudgment && parameterSummary != null) ...[
                             const SizedBox(width: AionSpacing.sp8),
                             _ParameterChip(
                               text: parameterSummary,
                               bordered: isRuleBuilder,
                             ),
+                          ],
+                          if (isAgentJudgment && parameterSummary != null) ...[
+                            const SizedBox(width: AionSpacing.sp8),
+                            const AgentCostHint(),
                           ],
                           const Spacer(),
                           if (matchedOutcome != null)
@@ -642,6 +675,66 @@ class _GuideRailIndent extends StatelessWidget {
             ),
           Expanded(child: child),
         ],
+      ),
+    );
+  }
+}
+
+/// The `ASK` badge preceding an `agentJudgment` row's title (design.md
+/// §4.1) — a small diamond glyph (the same "the model resolves this" mark
+/// DG §1.4's `Model decides` outcome badge already uses) plus the fixed
+/// `ASK` label, on a `primaryWash` fill with a `primary`-toned hairline.
+/// Doesn't change tone between ordinary interaction states (design.md
+/// §4.2's "it identifies a kind, not a state") — [isError] is the one
+/// exception, re-toning the whole badge to `danger` for an incomplete
+/// (empty-prompt) node, mirroring `_QuestionChip`'s own `isError` handling
+/// on the canvas card (design.md §4.3). Added for
+/// `aion-arch/changes/decision-graph-agentjudgment-condition`.
+class _AskBadge extends StatelessWidget {
+  const _AskBadge({this.isError = false});
+
+  /// Re-tones the badge to `danger` — the row's incomplete/empty-prompt
+  /// state (design.md §4.3). Default `false` preserves the ordinary
+  /// `primary`-toned rendering.
+  final bool isError;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    final accent = isError ? c.danger : c.primary;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: isError ? c.agentJudgmentErrorFill(t.isDark) : c.primaryWash(t.isDark),
+        border: Border.all(
+          color: isError
+              ? c.danger.withValues(alpha: t.isDark ? 0.40 : 0.28)
+              : c.agentAccentBorderTint(t.isDark),
+          width: 1,
+        ),
+        borderRadius: BorderRadius.all(AionRadius.sm),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(6, 0, 7, 0),
+        child: SizedBox(
+          height: 20,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Transform.rotate(
+                angle: 0.7853981633974483, // pi / 4 — 45°.
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: accent, width: 1.4),
+                  ),
+                  child: const SizedBox(width: 5, height: 5),
+                ),
+              ),
+              const SizedBox(width: 5),
+              Text('ASK', style: AionText.caption.copyWith(color: accent)),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/core/contracts/agent_model_descriptor.dart';
 import 'package:aion/core/contracts/agent_provider.dart';
+import 'package:aion/core/contracts/agent_session_handle.dart';
 import 'package:aion/core/contracts/agent_tool_definition.dart';
 import 'package:aion/core/contracts/consumption_signal.dart';
 import 'package:aion/core/contracts/provider_registry.dart';
@@ -104,6 +105,7 @@ class ChatCubit extends Cubit<ChatState> {
       String toolCallId,
       String toolName,
       Map<String, dynamic> arguments,
+      AgentSessionHandle? session,
     )?
     onToolCall,
   }) async {
@@ -145,7 +147,11 @@ class ChatCubit extends Cubit<ChatState> {
         onChunk: (textSoFar) {
           latestStreamingText = textSoFar;
           emit(
-            ChatLoaded(afterHuman, streamingText: textSoFar, activeRunId: runId),
+            ChatLoaded(
+              afterHuman,
+              streamingText: textSoFar,
+              activeRunId: runId,
+            ),
           );
         },
         onToolUse: (toolName, summary) => emit(
@@ -289,7 +295,11 @@ class ChatCubit extends Cubit<ChatState> {
               TicketType.chat
         ? closeBranchToolDefinition
         : branchTicketToolDefinition;
-    return [branchOrCloseTool, createTicketToolDefinition, addLinkToolDefinition];
+    return [
+      branchOrCloseTool,
+      createTicketToolDefinition,
+      addLinkToolDefinition,
+    ];
   }
 
   /// Maps an Inbox-spawned chat's [InboxPurpose] to the [ModelPhase] its
@@ -343,7 +353,9 @@ class ChatCubit extends Cubit<ChatState> {
   /// through [onToolUse] too (with a `null` summary), the same live-
   /// progress channel `AgentToolUseEvent` already uses — the actual
   /// execution/result round trip happens inside [client] via
-  /// [onToolCall], not here.
+  /// [onToolCall], not here. [onToolCall]'s 4th parameter
+  /// ([AgentSessionHandle]?) is a pure passthrough into
+  /// [AgentRequest.onToolCall] — this method doesn't inspect it itself.
   ///
   /// [runId], if given, is threaded through to [AgentRequest.runId] so a
   /// caller can later cancel this exact turn via [AgentModelClient.cancel].
@@ -385,6 +397,7 @@ class ChatCubit extends Cubit<ChatState> {
       String toolCallId,
       String toolName,
       Map<String, dynamic> arguments,
+      AgentSessionHandle? session,
     )?
     onToolCall,
   }) async {

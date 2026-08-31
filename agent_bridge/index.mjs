@@ -2,23 +2,32 @@
 // (aion/lib/core/agent/claude_agent_sdk_client.dart). Not part of the
 // Flutter build — a plain Node/ESM script.
 //
-// Reads one JSON request line ({prompt, model, toolsEnabled, tools}) from
-// stdin and runs it through the Claude Agent SDK's query(). Tool access
-// (file edits, git, bash, MCP) is disabled unless the request sets
-// toolsEnabled: true — set only by TicketsCubit's coding-execution path
+// Reads one JSON request line ({prompt, model, toolsEnabled, tools, resume,
+// forkSession}) from stdin and runs it through the Claude Agent SDK's
+// query(). Tool access (file edits, git, bash, MCP) is disabled unless the
+// request sets toolsEnabled: true — set only by TicketsCubit's
+// coding-execution path
 // (aion-arch/changes/task-to-coding-execution-trigger/design.md §1.3); every
 // other caller keeps today's text-only behavior. Independently, a non-empty
 // `tools` array (AgentToolDefinition[] — see
 // aion/lib/core/contracts/agent_tool_definition.dart) registers app-defined
 // tools the model may call mid-run, regardless of toolsEnabled — see
-// aion-arch/changes/mid-task-chat-branching/design.md §3. Writes one NDJSON
-// line per resulting event to stdout:
+// aion-arch/changes/mid-task-chat-branching/design.md §3. `resume`
+// (session id string) and `forkSession` (boolean) resume/fork an existing
+// session rather than starting a fresh one — see
+// aion-arch/changes/decision-graph-agentjudgment-condition/design.md §3.
+// Writes one NDJSON line per resulting event to stdout:
+//   {"type":"session","sessionId":"..."}
 //   {"type":"text","text":"..."}
 //   {"type":"tool_use","name":"...","summary":"..."}
 //   {"type":"tool_call_request","toolCallId":"...","name":"...","arguments":{...}}
 //   {"type":"done","inputTokens":123,"outputTokens":456}
 //   {"type":"error","message":"..."}
 //   {"type":"overage","message":"..."}
+// The "session" line is emitted at most once, the first time any message in
+// the query() loop carries a session_id — always before that same message's
+// own "tool_use"/"tool_call_request"/"text" line, if any (see
+// decision-graph-agentjudgment-condition/design.md §3).
 // When `tools` is non-empty, stdin is kept open for the process's whole
 // lifetime (rather than closed after the initial request line) so Dart can
 // reply to a "tool_call_request" line with a matching
@@ -175,6 +184,8 @@ async function main() {
     model,
     toolsEnabled,
     tools: toolDefs = [],
+    resume,
+    forkSession,
   } = await readRequest();
 
   const pendingToolCalls = new Map(); // toolCallId -> resolve(result)
@@ -200,11 +211,14 @@ async function main() {
     toolDefs.map((t) => `mcp__${AION_TOOLS_SERVER_NAME}__${t.name}`),
   );
 
+  let sessionEmitted = false;
+
   try {
     for await (const message of query({
       prompt,
       options: {
         model,
+        ...(resume ? { resume, forkSession } : {}),
         ...(toolsServer
           ? { mcpServers: { [AION_TOOLS_SERVER_NAME]: toolsServer } }
           : {}),
@@ -231,6 +245,10 @@ async function main() {
           : { allowedTools: [...aionToolNames] }),
       },
     })) {
+      if (!sessionEmitted && message.session_id) {
+        sessionEmitted = true;
+        emit({ type: 'session', sessionId: message.session_id });
+      }
       if (message.type === 'assistant') {
         const content = message.message?.content ?? [];
         const text = content

@@ -10,6 +10,7 @@ import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/providers/presentation/cubit/decision_graph_config_cubit.dart';
 import 'package:aion/features/providers/presentation/screens/decision_graph_editor_screen.dart';
+import 'package:aion/features/providers/presentation/widgets/agent_cost_hint.dart';
 import 'package:aion/l10n/generated/app_localizations.dart';
 
 class MockDecisionGraphRepository extends Mock
@@ -122,10 +123,8 @@ void main() {
       'rule-builder fields (codingExecutionRetry)',
       (tester) async {
         when(() => repository.getGraph(automationContext)).thenAnswer(
-          (_) async => const DecisionGraph(
-            context: automationContext,
-            rootNodeId: null,
-          ),
+          (_) async =>
+              const DecisionGraph(context: automationContext, rootNodeId: null),
         );
         when(
           () => repository.getAllNodes(automationContext),
@@ -232,6 +231,179 @@ void main() {
         expect(find.text('IF · ATTEMPT COUNT'), findsNothing);
         expect(find.text('IF · INCOMPLETE'), findsNothing);
         expect(find.text('RULE · INCOMPLETE'), findsNothing);
+      },
+    );
+  });
+
+  group('agentJudgment', () {
+    Widget wrapContext(AutomationContext context) {
+      return ThemeScope(
+        theme: aionThemeArctic,
+        child: WidgetsApp(
+          color: aionThemeArctic.colors.primary,
+          localizationsDelegates: const [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+          ],
+          supportedLocales: AppLocalizations.supportedLocales,
+          builder: (_, _) => BlocProvider<DecisionGraphConfigCubit>.value(
+            value: cubit,
+            child: Overlay(
+              initialEntries: [
+                OverlayEntry(
+                  builder: (_) =>
+                      DecisionGraphEditorScreen(automationContext: context),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    for (final eligibleContext in [
+      AutomationContext.ticketCreation,
+      AutomationContext.ticketLinking,
+      AutomationContext.chatBranching,
+    ]) {
+      testWidgets('"Ask the agent…" appears in the condition picker for '
+          '$eligibleContext', (tester) async {
+        when(() => repository.getGraph(eligibleContext)).thenAnswer(
+          (_) async =>
+              DecisionGraph(context: eligibleContext, rootNodeId: null),
+        );
+        when(
+          () => repository.getAllNodes(eligibleContext),
+        ).thenAnswer((_) async => const []);
+
+        await tester.pumpWidget(wrapContext(eligibleContext));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Add condition'), warnIfMissed: false);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Choose a condition'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Ask the agent…'), findsOneWidget);
+      });
+    }
+
+    testWidgets('"Ask the agent…" is absent from the condition picker for a '
+        'non-eligible context (sddStage)', (tester) async {
+      const sddContext = AutomationContext.sddStage;
+      when(() => repository.getGraph(sddContext)).thenAnswer(
+        (_) async => const DecisionGraph(context: sddContext, rootNodeId: null),
+      );
+      when(
+        () => repository.getAllNodes(sddContext),
+      ).thenAnswer((_) async => const []);
+
+      await tester.pumpWidget(wrapContext(sddContext));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Add condition'), warnIfMissed: false);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Choose a condition'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Ask the agent…'), findsNothing);
+    });
+
+    testWidgets(
+      'an agentJudgment node renders its ASK · eyebrow and prompt-text '
+      'chip, and no error/incomplete chrome',
+      (tester) async {
+        const ticketCreationContext = AutomationContext.ticketCreation;
+        const rootNode = DecisionNode(
+          id: 'root',
+          conditionId: agentJudgmentConditionId,
+          conditionParams: {'prompt': 'Is this fix expensive?'},
+          matchedBranch: DecisionBranch.terminal(DecisionOutcome.gated),
+          unmatchedBranch: DecisionBranch.terminal(DecisionOutcome.proceed),
+        );
+        when(() => repository.getGraph(ticketCreationContext)).thenAnswer(
+          (_) async => const DecisionGraph(
+            context: ticketCreationContext,
+            rootNodeId: 'root',
+          ),
+        );
+        when(
+          () => repository.getAllNodes(ticketCreationContext),
+        ).thenAnswer((_) async => const [rootNode]);
+
+        await tester.pumpWidget(wrapContext(ticketCreationContext));
+        await tester.pumpAndSettle();
+
+        // The canvas card's eyebrow renders once; the prompt text renders
+        // twice — the canvas card's question chip and the outline row's
+        // title both show it, same as the rule-builder test above.
+        expect(find.text('ASK · AGENT'), findsOneWidget);
+        expect(find.text('Is this fix expensive?'), findsNWidgets(2));
+        expect(find.text('ASK · NO QUESTION'), findsNothing);
+        expect(find.text('Add a question'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'selecting "Ask the agent…" opens AgentPromptField without '
+      'crashing (regression — AppTextField(maxLines: 4) previously '
+      "violated TextField's minLines <= maxLines invariant)",
+      (tester) async {
+        const ticketCreationContext = AutomationContext.ticketCreation;
+        when(() => repository.getGraph(ticketCreationContext)).thenAnswer(
+          (_) async => const DecisionGraph(
+            context: ticketCreationContext,
+            rootNodeId: null,
+          ),
+        );
+        when(
+          () => repository.getAllNodes(ticketCreationContext),
+        ).thenAnswer((_) async => const []);
+
+        await tester.pumpWidget(wrapContext(ticketCreationContext));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Add condition'), warnIfMissed: false);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Choose a condition'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Ask the agent…'));
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(find.text('Question'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      "an incomplete (empty-prompt) agentJudgment node's canvas card "
+      'still shows AgentCostHint (design.md §3.3: unlike the outline '
+      "row, the canvas card's info trigger stays unchanged on error)",
+      (tester) async {
+        const ticketCreationContext = AutomationContext.ticketCreation;
+        const rootNode = DecisionNode(
+          id: 'root',
+          conditionId: agentJudgmentConditionId,
+          conditionParams: {'prompt': ''},
+          matchedBranch: DecisionBranch.terminal(DecisionOutcome.gated),
+          unmatchedBranch: DecisionBranch.terminal(DecisionOutcome.proceed),
+        );
+        when(() => repository.getGraph(ticketCreationContext)).thenAnswer(
+          (_) async => const DecisionGraph(
+            context: ticketCreationContext,
+            rootNodeId: 'root',
+          ),
+        );
+        when(
+          () => repository.getAllNodes(ticketCreationContext),
+        ).thenAnswer((_) async => const [rootNode]);
+
+        await tester.pumpWidget(wrapContext(ticketCreationContext));
+        await tester.pumpAndSettle();
+
+        expect(find.text('ASK · NO QUESTION'), findsOneWidget);
+        expect(find.byType(AgentCostHint), findsOneWidget);
       },
     );
   });

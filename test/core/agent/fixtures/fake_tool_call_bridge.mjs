@@ -3,10 +3,12 @@
 // claude_agent_sdk_client_test.dart's tool-call round-trip test. Never
 // touches the real Claude Agent SDK, node_modules, or network. Reads the
 // initial request line and, if it carries a non-empty `tools` array,
-// emits one "tool_call_request" line and awaits the matching
-// {"toolCallId":...,"result":...} reply on stdin before finishing —
-// exercising exactly the wire protocol ClaudeAgentSdkClient.run
-// implements (aion-arch/changes/mid-task-chat-branching/design.md §3).
+// emits one "session" line followed by one "tool_call_request" line and
+// awaits the matching {"toolCallId":...,"result":...} reply on stdin
+// before finishing — exercising exactly the wire protocol
+// ClaudeAgentSdkClient.run implements
+// (aion-arch/changes/mid-task-chat-branching/design.md §3 and
+// aion-arch/changes/decision-graph-agentjudgment-condition/design.md §3).
 
 import { createInterface } from 'node:readline';
 
@@ -22,6 +24,7 @@ async function main() {
   const request = JSON.parse(first.value);
 
   if (Array.isArray(request.tools) && request.tools.length > 0) {
+    emit({ type: 'session', sessionId: 'test-session-1' });
     emit({
       type: 'tool_call_request',
       toolCallId: 'test-call-1',

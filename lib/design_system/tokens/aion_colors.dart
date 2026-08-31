@@ -652,4 +652,36 @@ extension AionColorsHubTokens on AionColors {
   /// [fillAlphaObsidian]).
   Color outcomeTileFill(Color accent, bool isDark) =>
       accent.withValues(alpha: isDark ? fillAlphaObsidian : fillAlphaArctic);
+
+  // primary family — the `ASK ·` identity accent's own hairline, distinct
+  // from the neutral `border`/`borderStrong` family used by preset/rule
+  // condition chips (RB §4.1) since this is the one condition kind that
+  // costs a live model round trip. Added for
+  // decision-graph-agentjudgment-condition; see that change's design.md
+  // "New tokens" section / Component Spec §3.2, §4.1.
+  /// The `ASK ·` question chip's (canvas card, §3.2) and `ASK` badge's
+  /// (outline row, §4.1) 1px hairline — the `primary`-toned sibling of
+  /// RB §4.1's neutral `border` hairline.
+  Color agentAccentBorderTint(bool isDark) =>
+      primary.withValues(alpha: isDark ? 0.40 : 0.28);
+
+  // danger family — agentJudgment's empty-prompt/incomplete-node error
+  // treatment (Component Spec §2.5.5, §3.3, §4.3), parallel to
+  // multi-project-hub's [errorRing] but at this change's own alpha stops.
+  /// Error ring around an empty-prompt `AgentPromptField` (§2.5.5) and the
+  /// incomplete `ASK ·` canvas node card (§3.3) — per RB §3.5.7's error
+  /// convention.
+  Color agentJudgmentErrorRing(bool isDark) =>
+      danger.withValues(alpha: isDark ? 0.26 : 0.14);
+
+  /// Incomplete/empty-prompt fill for the `ASK ·` outline row (§4.3) and
+  /// canvas node card question chip (§3.3).
+  Color agentJudgmentErrorFill(bool isDark) =>
+      danger.withValues(alpha: isDark ? 0.14 : 0.08);
+
+  // primary family — `AgentPromptField`'s text-selection fill (Component
+  // Spec §2.2). Flat across both themes, like [columnsMotifBarTint] above.
+  /// `AgentPromptField`'s text-selection highlight — identical alpha in
+  /// both themes (§2.2).
+  Color get agentPromptSelectionFill => primary.withValues(alpha: 0.24);
 }

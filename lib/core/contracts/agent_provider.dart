@@ -39,4 +39,12 @@ abstract interface class AgentProvider {
   /// specific text) into a vendor-neutral, user-facing message. Pure —
   /// no I/O.
   String normalizeErrorMessage(String rawMessage);
+
+  /// Whether this provider's [client] can resume/fork an existing
+  /// session cheaply enough for a mid-turn side-question (see
+  /// `aion-arch/changes/decision-graph-agentjudgment-condition/design.md`
+  /// §1). `false` means an `agentJudgment` decision-graph condition
+  /// always resolves to its unmatched branch when evaluated under this
+  /// provider — never a crash, never a block.
+  bool get supportsSessionResume;
 }

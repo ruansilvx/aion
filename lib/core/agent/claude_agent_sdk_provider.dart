@@ -73,14 +73,17 @@ class ClaudeAgentSdkProvider implements AgentProvider {
   /// vendor identity out of it.
   @override
   String normalizeErrorMessage(String rawMessage) {
-    var message = rawMessage.replaceAll(
-      RegExp(r'`?/[a-zA-Z][\w-]*`?'),
-      '',
-    );
+    var message = rawMessage.replaceAll(RegExp(r'`?/[a-zA-Z][\w-]*`?'), '');
     for (final vendorMention in const ['Claude Code', 'claude-agent-sdk']) {
       message = message.replaceAll(vendorMention, '');
     }
     message = message.replaceAll(RegExp(r'\s{2,}'), ' ').trim();
     return message.isEmpty ? rawMessage : message;
   }
+
+  /// `true` per design.md §1's empirical finding that the Claude Agent
+  /// SDK's `resume`/`forkSession` mechanism resumes a live session cheaply
+  /// (near-free prompt-cache hit), even mid-turn.
+  @override
+  bool get supportsSessionResume => true;
 }

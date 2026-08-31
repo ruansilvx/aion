@@ -7289,6 +7289,7 @@ void main() {
             'call-1',
             'branch_ticket',
             {'title': 'Sub-issue'},
+            null,
           );
         },
         verify: (_) {
@@ -7313,6 +7314,7 @@ void main() {
             'call-1',
             'branch_ticket',
             {'title': 'Sub-issue'},
+            null,
           );
         },
         verify: (_) {
@@ -7339,6 +7341,7 @@ void main() {
             'call-1',
             'branch_ticket',
             {'title': 'Sub-issue'},
+            null,
           );
         },
         verify: (_) {
@@ -7377,7 +7380,8 @@ void main() {
               'call-1',
               'branch_ticket',
               {'title': 'Sub-issue'},
-            );
+            null,
+          );
           },
           verify: (_) {
             expect(result, {
@@ -7406,6 +7410,7 @@ void main() {
               'call-1',
               'branch_ticket',
               {'title': 'Sub-issue', 'description': 'Why'},
+              null,
             );
           },
           verify: (_) {
@@ -7440,7 +7445,7 @@ void main() {
               cubit
                   .handleChatToolCall(rootChat, 'call-1', 'branch_ticket', {
                     'title': 'Sub-issue',
-                  })
+                  }, null)
                   .then((value) => result = value),
             );
             await Future<void>.delayed(Duration.zero);
@@ -7487,6 +7492,7 @@ void main() {
               'call-1',
               'close_branch',
               {'summary': 'Fixed it'},
+              null,
             );
           },
           verify: (_) {
@@ -7526,6 +7532,7 @@ void main() {
               'call-1',
               'close_branch',
               {'summary': 'Fixed it'},
+              null,
             );
           },
           verify: (_) {
@@ -7573,7 +7580,7 @@ void main() {
               cubit
                   .handleChatToolCall(branchChat, 'call-1', 'close_branch', {
                     'summary': 'Fixed it',
-                  })
+                  }, null)
                   .then((value) => result = value),
             );
             await Future<void>.delayed(Duration.zero);
@@ -7626,7 +7633,7 @@ void main() {
             cubit
                 .handleChatToolCall(rootChat, 'call-1', 'branch_ticket', {
                   'title': 'Sub-issue',
-                })
+                }, null)
                 .then((value) => result = value),
           );
           await Future<void>.delayed(Duration.zero);
@@ -7662,7 +7669,7 @@ void main() {
             cubit
                 .handleChatToolCall(rootChat, 'call-1', 'branch_ticket', {
                   'title': 'Sub-issue',
-                })
+                }, null)
                 .then((value) => result = value),
           );
           await Future<void>.delayed(Duration.zero);
