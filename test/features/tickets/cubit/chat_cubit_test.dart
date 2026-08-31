@@ -7,6 +7,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/core/contracts/agent_model_descriptor.dart';
 import 'package:aion/core/contracts/agent_provider.dart';
+import 'package:aion/core/contracts/agent_session_handle.dart';
 import 'package:aion/core/contracts/agent_tool_definition.dart';
 import 'package:aion/core/contracts/consumption_signal.dart';
 import 'package:aion/core/contracts/provider_id.dart';
@@ -350,8 +351,7 @@ void main() {
           () => repository.getCommentsForTicket('chat-1'),
         ).thenAnswer((_) async => [humanComment]);
         when(() => client.run(any())).thenAnswer(
-          (_) async =>
-              Stream.fromIterable(const [AgentCancelledEvent()]),
+          (_) async => Stream.fromIterable(const [AgentCancelledEvent()]),
         );
       },
       build: buildCubit,
@@ -401,8 +401,7 @@ void main() {
       },
       verify: (_) {
         final capturedRunId =
-            verify(() => client.cancel(captureAny())).captured.single
-                as String;
+            verify(() => client.cancel(captureAny())).captured.single as String;
         final capturedRequest =
             verify(() => client.run(captureAny())).captured.single
                 as AgentRequest;
@@ -469,6 +468,7 @@ void main() {
       String toolCallId,
       String toolName,
       Map<String, dynamic> arguments,
+      AgentSessionHandle? session,
     ) async => {'accepted': false};
 
     blocTest<ChatCubit, ChatState>(
@@ -1032,6 +1032,7 @@ void main() {
           String toolCallId,
           String toolName,
           Map<String, dynamic> arguments,
+          AgentSessionHandle? session,
         ) async {
           onToolCallInvoked = true;
           return {'accepted': true};
@@ -1104,8 +1105,9 @@ void main() {
       expect(result, isA<ChatTurnSuccess>());
       final captured =
           verify(
-            () => ticketRepository.addTimeSpent('parent-1', captureAny()),
-          ).captured.single as int;
+                () => ticketRepository.addTimeSpent('parent-1', captureAny()),
+              ).captured.single
+              as int;
       expect(captured, greaterThanOrEqualTo(1));
     });
 
@@ -1136,8 +1138,9 @@ void main() {
       expect(result, isA<ChatTurnFailure>());
       final captured =
           verify(
-            () => ticketRepository.addTimeSpent('parent-1', captureAny()),
-          ).captured.single as int;
+                () => ticketRepository.addTimeSpent('parent-1', captureAny()),
+              ).captured.single
+              as int;
       expect(captured, greaterThanOrEqualTo(1));
     });
 
@@ -1166,8 +1169,9 @@ void main() {
       expect(result, isA<ChatTurnCancelled>());
       final captured =
           verify(
-            () => ticketRepository.addTimeSpent('parent-1', captureAny()),
-          ).captured.single as int;
+                () => ticketRepository.addTimeSpent('parent-1', captureAny()),
+              ).captured.single
+              as int;
       expect(captured, greaterThanOrEqualTo(1));
     });
 
@@ -1206,8 +1210,7 @@ void main() {
       verifyNever(() => ticketRepository.addTimeSpent(any(), any()));
     });
 
-    test('never logs time when getTicketById resolves null entirely',
-        () async {
+    test('never logs time when getTicketById resolves null entirely', () async {
       when(
         () => ticketRepository.getTicketById('chat-missing'),
       ).thenAnswer((_) async => null);

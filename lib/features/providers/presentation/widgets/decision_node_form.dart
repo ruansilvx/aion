@@ -6,6 +6,7 @@ import 'package:flutter/services.dart'
     show
         FilteringTextInputFormatter,
         KeyDownEvent,
+        LengthLimitingTextInputFormatter,
         LogicalKeyboardKey,
         TextInputType;
 import 'package:flutter/widgets.dart';
@@ -46,6 +47,7 @@ Color decisionOutcomeColor(AionColors c, DecisionOutcome outcome) =>
 List<DecisionConditionSpec> _catalogFor(AutomationContext context) => [
   ...decisionConditionsFor(context),
   ?ruleBuilderConditionSpec(context),
+  ?agentJudgmentConditionSpec(context),
 ];
 
 /// [operator]'s full-word label for [type] — shown in the rule-builder
@@ -381,6 +383,17 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
   TextEditingController? _ruleIntValueController;
   bool _ruleBoolValue = false;
 
+  /// The `agentJudgment` prompt field's local state — mirrors
+  /// [_ruleField]'s own pattern, populated only while `_condition?.id ==
+  /// agentJudgmentConditionId`. See [_seedAgentJudgmentState]. A save
+  /// attempt (or a blur while empty) while this field is empty renders
+  /// it in the error state per design.md §2.4/§2.5.5 — tracked here
+  /// rather than derived, since "untouched" and "touched-then-emptied"
+  /// render differently (§2.4's table). Added for
+  /// `aion-arch/changes/decision-graph-agentjudgment-condition`.
+  TextEditingController? _agentPromptController;
+  bool _agentPromptShowError = false;
+
   late DecisionBranchMode _matchedMode;
   late DecisionOutcome _matchedOutcome;
   String? _matchedExistingChildId;
@@ -402,6 +415,7 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
         .firstOrNull;
     _seedParamControllers();
     _seedRuleState(widget.initialConditionParams);
+    _seedAgentJudgmentState(widget.initialConditionParams);
 
     switch (widget.initialMatchedBranch) {
       case TerminalBranch(:final outcome):
@@ -433,6 +447,7 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
       controller.dispose();
     }
     _ruleIntValueController?.dispose();
+    _agentPromptController?.dispose();
     super.dispose();
   }
 
@@ -526,6 +541,32 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
     }
   }
 
+  /// (Re)builds the `agentJudgment` prompt field's local state
+  /// (`_agentPromptController`/`_agentPromptShowError`) from [params],
+  /// disposing whatever controller existed before — mirrors
+  /// [_seedRuleState]'s own pattern, for the `agentJudgment` condition
+  /// instead of the rule-builder trio. Called from [initState] with
+  /// [DecisionNodeForm.initialConditionParams] (editing an existing node)
+  /// and from the condition picker's `onSelected` handler with
+  /// `{'prompt': ''}` (freshly picking "Ask the agent"). Leaves
+  /// [_agentPromptController] `null` when [_condition] isn't the
+  /// `agentJudgment` condition — the field isn't rendered in that case,
+  /// but keeping a stale controller around would leak into a later save.
+  /// Never throws on a missing/malformed `params` shape. Added for
+  /// `aion-arch/changes/decision-graph-agentjudgment-condition`.
+  void _seedAgentJudgmentState(Map<String, dynamic> params) {
+    _agentPromptController?.dispose();
+    _agentPromptController = null;
+    _agentPromptShowError = false;
+    final condition = _condition;
+    if (condition == null || condition.id != agentJudgmentConditionId) return;
+
+    final prompt = params['prompt'];
+    _agentPromptController = TextEditingController(
+      text: prompt is String ? prompt : '',
+    )..addListener(_onParamChanged);
+  }
+
   /// A branch in [DecisionBranchMode.continueToCondition] is valid once
   /// it either already has a chained child, or a chaining condition has
   /// been picked for a brand-new chain — mirrors [_save]'s own
@@ -550,6 +591,8 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
         final text = _ruleIntValueController?.text.trim() ?? '';
         if (int.tryParse(text) == null) return false;
       }
+    } else if (condition.id == agentJudgmentConditionId) {
+      if ((_agentPromptController?.text.trim() ?? '').isEmpty) return false;
     } else {
       for (final spec in condition.parameterSpecs) {
         final text = _paramControllers[spec.name]?.text.trim() ?? '';
@@ -596,7 +639,18 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
 
   Future<void> _save() async {
     final condition = _condition;
-    if (condition == null || !_isValid || _saving) return;
+    if (condition == null) return;
+    if (!_isValid) {
+      // An empty prompt is the one validity failure this form surfaces
+      // inline (§2.4/§2.5.5) rather than just leaving Save disabled —
+      // every other invalid state here has no dedicated error copy of its
+      // own.
+      if (condition.id == agentJudgmentConditionId) {
+        setState(() => _agentPromptShowError = true);
+      }
+      return;
+    }
+    if (_saving) return;
     setState(() => _saving = true);
     final params = condition.id == ruleBuilderConditionId
         ? <String, dynamic>{
@@ -606,6 +660,8 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
                 ? int.parse(_ruleIntValueController!.text.trim())
                 : _ruleBoolValue,
           }
+        : condition.id == agentJudgmentConditionId
+        ? <String, dynamic>{'prompt': _agentPromptController!.text.trim()}
         : <String, dynamic>{
             for (final spec in condition.parameterSpecs)
               spec.name: int.parse(_paramControllers[spec.name]!.text.trim()),
@@ -662,12 +718,22 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
                     ? defaultRuleConditionParams(widget.automationContext)
                     : const {},
               );
+              _seedAgentJudgmentState(
+                spec.id == agentJudgmentConditionId
+                    ? defaultAgentJudgmentConditionParams(
+                        widget.automationContext,
+                      )
+                    : const {},
+              );
             }),
           ),
           if (_condition != null)
             if (_condition!.id == ruleBuilderConditionId) ...[
               const SizedBox(height: AionSpacing.sp16),
               _buildRuleTrio(context, c),
+            ] else if (_condition!.id == agentJudgmentConditionId) ...[
+              const SizedBox(height: AionSpacing.sp16),
+              _buildAgentPromptField(context, c),
             ] else
               for (final spec in _condition!.parameterSpecs) ...[
                 const SizedBox(height: AionSpacing.sp16),
@@ -841,7 +907,8 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
                       items: operators,
                       value: _ruleOperator!,
                       itemLabel: (o) => _ruleOperatorLabel(o, field.type),
-                      semanticsLabel: context.l10n.decisionGraphRuleOperatorLabel,
+                      semanticsLabel:
+                          context.l10n.decisionGraphRuleOperatorLabel,
                       onSelected: (selected) =>
                           setState(() => _ruleOperator = selected),
                     ),
@@ -865,13 +932,9 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
                     AppTextField(
                       controller: _ruleIntValueController!,
                       keyboardType: TextInputType.number,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
-                      ],
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                       isError:
-                          int.tryParse(
-                            _ruleIntValueController!.text.trim(),
-                          ) ==
+                          int.tryParse(_ruleIntValueController!.text.trim()) ==
                           null,
                     )
                   else
@@ -886,6 +949,68 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
                 ],
               ),
             ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  /// The `agentJudgment` condition's single field: a multi-line prompt
+  /// (`AgentPromptField`), rendered in place of both the generic
+  /// per-catalog-parameter loop and the rule trio when
+  /// `_condition?.id == agentJudgmentConditionId`. Per
+  /// `aion-arch/changes/decision-graph-agentjudgment-condition/design.md`
+  /// §2 — label + required marker, placeholder example question, a
+  /// default two-sentence helper (states the yes/no branch semantics,
+  /// per §2.2's "the one place this is stated"), a `n/240` counter once
+  /// the prompt reaches 180 characters, and the error treatment (§2.5.5)
+  /// once [_agentPromptShowError] is set (a save attempt, or blurring
+  /// while empty — see [_save]/the field's `onEditingComplete`). Added
+  /// for `aion-arch/changes/decision-graph-agentjudgment-condition`.
+  Widget _buildAgentPromptField(BuildContext context, AionColors c) {
+    final controller = _agentPromptController!;
+    final length = controller.text.length;
+    final isEmpty = controller.text.trim().isEmpty;
+    final isError = _agentPromptShowError && isEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AppTextField(
+          controller: controller,
+          labelText: context.l10n.decisionGraphAgentPromptLabel,
+          hintText: context.l10n.decisionGraphAgentPromptPlaceholder,
+          isRequired: true,
+          maxLines: 4,
+          inputFormatters: [LengthLimitingTextInputFormatter(240)],
+          isError: isError,
+        ),
+        const SizedBox(height: 5),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                isError
+                    ? context.l10n.decisionGraphAgentPromptRequiredError
+                    : context.l10n.decisionGraphAgentPromptHelper,
+                style: AionText.bodySm.copyWith(
+                  color: isError ? c.danger : c.textMuted,
+                ),
+              ),
+            ),
+            if (length >= 180) ...[
+              const SizedBox(width: AionSpacing.sp8),
+              Text(
+                '$length/240',
+                style: AionText.time.copyWith(
+                  color: length >= 240
+                      ? c.danger
+                      : length >= 220
+                      ? c.warning
+                      : c.textMuted,
+                ),
+              ),
+            ],
           ],
         ),
       ],
@@ -928,10 +1053,11 @@ class _ConditionPicker extends StatelessWidget {
     // plain-English domain-layer fallback, not the localized copy this
     // picker actually shows — see `ruleBuilderConditionSpec`'s own
     // dartdoc.
-    String label(DecisionConditionSpec spec) =>
-        spec.id == ruleBuilderConditionId
-        ? context.l10n.decisionGraphRuleBuilderLabel
-        : spec.displayName;
+    String label(DecisionConditionSpec spec) => switch (spec.id) {
+      ruleBuilderConditionId => context.l10n.decisionGraphRuleBuilderLabel,
+      agentJudgmentConditionId => context.l10n.decisionGraphAgentJudgmentLabel,
+      _ => spec.displayName,
+    };
     final trigger = DecoratedBox(
       decoration: BoxDecoration(
         color: c.surfaceHover,

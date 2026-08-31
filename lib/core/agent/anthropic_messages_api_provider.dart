@@ -108,4 +108,11 @@ class AnthropicMessagesApiProvider implements AgentProvider {
     message = message.replaceAll(RegExp(r'\s{2,}'), ' ').trim();
     return message.isEmpty ? rawMessage : message;
   }
+
+  /// `false` — the Messages API is stateless HTTP with no server-side
+  /// resumable session concept (per design.md §2); an `agentJudgment`
+  /// decision-graph condition always resolves unmatched under this
+  /// provider.
+  @override
+  bool get supportsSessionResume => false;
 }

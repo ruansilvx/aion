@@ -223,6 +223,7 @@ void main() {
           'call-1',
           'create_ticket',
           {'title': 'Follow-up', 'type': 'task'},
+          null,
         );
       },
       verify: (_) {
@@ -254,6 +255,7 @@ void main() {
           'call-1',
           'create_ticket',
           {'title': 'Follow-up', 'type': 'task'},
+          null,
         );
       },
       verify: (_) {
@@ -292,7 +294,7 @@ void main() {
               .handleChatToolCall(crudChat, 'call-1', 'create_ticket', {
                 'title': 'Follow-up',
                 'type': 'task',
-              })
+              }, null)
               .then((value) => result = value),
         );
         await Future<void>.delayed(Duration.zero);
@@ -345,7 +347,7 @@ void main() {
               .handleChatToolCall(crudChat, 'call-1', 'create_ticket', {
                 'title': 'Follow-up',
                 'type': 'task',
-              })
+              }, null)
               .then((value) => result = value),
         );
         await Future<void>.delayed(Duration.zero);
@@ -379,6 +381,7 @@ void main() {
           'call-1',
           'create_ticket',
           {'title': 'Follow-up', 'type': 'task'},
+          null,
         );
       },
       verify: (_) {
@@ -421,6 +424,7 @@ void main() {
           'call-1',
           'add_link',
           {'targetTicketId': targetTicket.ticketId, 'linkType': 'relatesTo'},
+          null,
         );
       },
       verify: (_) {
@@ -460,6 +464,7 @@ void main() {
           'call-1',
           'add_link',
           {'targetTicketId': targetTicket.ticketId, 'linkType': 'relatesTo'},
+          null,
         );
       },
       verify: (_) {
@@ -501,6 +506,7 @@ void main() {
           'call-1',
           'branch_ticket',
           {'title': 'Sub-issue'},
+          null,
         );
       },
       verify: (_) {
@@ -537,7 +543,7 @@ void main() {
           cubit
               .handleChatToolCall(branchChat, 'call-1', 'branch_ticket', {
                 'title': 'Sub-issue',
-              })
+              }, null)
               .then((value) => result = value),
         );
         await Future<void>.delayed(Duration.zero);

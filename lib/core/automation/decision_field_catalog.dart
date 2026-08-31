@@ -4,6 +4,7 @@ import 'package:meta/meta.dart';
 
 import 'package:aion/core/automation/automation_context.dart';
 import 'package:aion/core/automation/decision_condition_catalog.dart';
+import 'package:aion/core/automation/decision_graph_evaluator.dart';
 import 'package:aion/core/automation/decision_node.dart';
 
 /// The data type of one [DecisionFieldSpec] — selects which
@@ -175,16 +176,53 @@ Map<String, dynamic> defaultRuleConditionParams(AutomationContext context) {
   };
 }
 
+/// The fixed set of `AutomationContext` values evaluated from inside a
+/// live tool-call handler with an in-flight session — see proposal.md's
+/// "Why this only works for 3 of the 8". Not derived from any existing
+/// enum/field, since "has a live session at evaluation time" isn't a
+/// property any other part of this system currently models — this list
+/// is this change's own source of truth for it. Added for
+/// `aion-arch/changes/decision-graph-agentjudgment-condition`.
+const _agentJudgmentEligibleContexts = {
+  AutomationContext.ticketCreation,
+  AutomationContext.ticketLinking,
+  AutomationContext.chatBranching,
+};
+
+/// Synthesizes the "Ask the agent" entry `DecisionNodeForm`'s condition
+/// picker appends after the rule-builder entry (if any) — `null` if
+/// [context] isn't one of the 3 contexts a live session can ever be
+/// available for. Added for
+/// `aion-arch/changes/decision-graph-agentjudgment-condition`.
+DecisionConditionSpec? agentJudgmentConditionSpec(AutomationContext context) {
+  if (!_agentJudgmentEligibleContexts.contains(context)) return null;
+  return DecisionConditionSpec(
+    id: agentJudgmentConditionId,
+    displayName: 'Ask the agent',
+    contexts: [context],
+    parameterSpecs: const [],
+  );
+}
+
+/// The `conditionParams` a freshly created `agentJudgment` [DecisionNode]
+/// starts with: an empty, unauthored prompt. Mirrors
+/// [defaultRuleConditionParams]'s role for the rule-builder kind. Added
+/// for `aion-arch/changes/decision-graph-agentjudgment-condition`.
+Map<String, dynamic> defaultAgentJudgmentConditionParams(
+  AutomationContext context,
+) => const {'prompt': ''};
+
 /// Whether [conditionId] is a condition `GraphCanvas`/`DecisionOutlineList`
 /// know how to render for [context] — a real [decisionConditionCatalog]
-/// entry, or [ruleBuilderConditionId]. Replaces the bare
-/// `decisionConditionSpecById(id) != null` check `GraphCanvas`'s layout
-/// used to flag a node `isError`, which (before this) flagged every
+/// entry, [ruleBuilderConditionId], or [agentJudgmentConditionId]. Replaces
+/// the bare `decisionConditionSpecById(id) != null` check `GraphCanvas`'s
+/// layout used to flag a node `isError`, which (before this) flagged every
 /// rule-builder node as "INCOMPLETE" simply for not being in the fixed
 /// catalog.
 bool isRecognizedConditionId(String conditionId, AutomationContext context) {
   return decisionConditionSpecById(conditionId) != null ||
-      conditionId == ruleBuilderConditionId;
+      conditionId == ruleBuilderConditionId ||
+      conditionId == agentJudgmentConditionId;
 }
 
 /// [operator]'s short display symbol for [type] — the compact glyph shown
@@ -245,13 +283,22 @@ DecisionFieldSpec? _fieldById(String fieldId) {
 }
 
 /// [node]'s display title: a catalog spec's `displayName` when
-/// [node.conditionId] resolves via [decisionConditionSpecById], or (for a
+/// [node.conditionId] resolves via [decisionConditionSpecById], (for a
 /// rule-builder node) the chosen field's `displayName` — read from
-/// `node.conditionParams['field']`, looked up in [decisionFieldCatalog].
-/// Falls back to [node.conditionId] itself when neither resolves
-/// (mirrors every call site's former `spec?.displayName ??
-/// node.conditionId` pattern, generalized to also cover the rule-builder
-/// case). Never throws on a missing/malformed `conditionParams` shape.
+/// `node.conditionParams['field']`, looked up in [decisionFieldCatalog] —
+/// or (for an `agentJudgment` node) the plain-English fallback `'Ask the
+/// agent'`, since there's no catalog/field spec to look up (unlike the
+/// rule-builder case). This file is a `core/` file with no
+/// Flutter/`AppLocalizations` dependency today, so this fallback is
+/// unlocalized — `DecisionNodeForm`'s condition-picker row overrides its
+/// own rendered label with the localized
+/// `decisionGraphAgentJudgmentLabel` string instead, exactly mirroring
+/// how the rule-builder case's picker row is separately overridden by
+/// `decisionGraphRuleBuilderLabel`. Falls back to [node.conditionId]
+/// itself when nothing resolves (mirrors every call site's former
+/// `spec?.displayName ?? node.conditionId` pattern, generalized to also
+/// cover the rule-builder and agent-judgment cases). Never throws on a
+/// missing/malformed `conditionParams` shape.
 String decisionNodeTitle(DecisionNode node) {
   final spec = decisionConditionSpecById(node.conditionId);
   if (spec != null) return spec.displayName;
@@ -260,20 +307,32 @@ String decisionNodeTitle(DecisionNode node) {
     final field = fieldId is String ? _fieldById(fieldId) : null;
     if (field != null) return field.displayName;
   }
+  if (node.conditionId == agentJudgmentConditionId) return 'Ask the agent';
   return node.conditionId;
 }
 
 /// [node]'s parameter-chip text: a catalog spec's existing
 /// `conditionParameterSummary` output when [node.conditionId] resolves
-/// via [decisionConditionSpecById], or (for a rule-builder node) the
+/// via [decisionConditionSpecById], (for a rule-builder node) the
 /// operator symbol followed by the value (e.g. `> 3`, `is False`) built
-/// from `node.conditionParams`.
-/// `null` for a flag-only catalog condition, or for a rule-builder node
-/// whose `conditionParams` is missing/malformed (an unrecognized `field`
-/// or `operator`, or a `null` field) — never throws.
+/// from `node.conditionParams`, or (for an `agentJudgment` node) the
+/// authored `conditionParams['prompt']` itself, truncated to ~120 chars
+/// mirroring `agent_bridge/index.mjs`'s `summarizeToolInput` truncation
+/// convention.
+/// `null` for a flag-only catalog condition, a rule-builder node whose
+/// `conditionParams` is missing/malformed (an unrecognized `field` or
+/// `operator`, or a `null` field), or an `agentJudgment` node whose
+/// `prompt` is missing, non-`String`, or empty — never throws.
 String? decisionNodeSummary(DecisionNode node) {
   final spec = decisionConditionSpecById(node.conditionId);
   if (spec != null) return conditionParameterSummary(spec, node.conditionParams);
+
+  if (node.conditionId == agentJudgmentConditionId) {
+    final prompt = node.conditionParams['prompt'];
+    if (prompt is! String || prompt.isEmpty) return null;
+    return prompt.length > 120 ? '${prompt.substring(0, 120)}…' : prompt;
+  }
+
   if (node.conditionId != ruleBuilderConditionId) return null;
 
   final params = node.conditionParams;

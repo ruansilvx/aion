@@ -7,6 +7,7 @@ import 'package:aion/core/automation/decision_field_catalog.dart';
 import 'package:aion/core/automation/decision_graph.dart';
 import 'package:aion/core/automation/decision_node.dart';
 import 'package:aion/core/automation/decision_outcome.dart';
+import 'package:aion/core/contracts/agent_session_handle.dart';
 
 /// Every value a [DecisionConditionSpec]'s evaluator might need to read,
 /// bundled by the call site rather than fetched by
@@ -21,6 +22,8 @@ class DecisionEvalContext {
   const DecisionEvalContext({
     this.attempt,
     this.sessionOverageDetected = false,
+    this.session,
+    this.askAgentJudgment,
   });
 
   /// How many verification failures have happened so far this
@@ -32,7 +35,30 @@ class DecisionEvalContext {
   /// Whether a budget/consumption overage has already been detected this
   /// session — read by the `sessionOverageDetected` condition.
   final bool sessionOverageDetected;
+
+  /// The in-flight run's resumable session, if one exists at this call
+  /// site — read by the `agentJudgment` condition. `null` for every
+  /// context with no live tool-call-blocked session (5 of 8
+  /// `AutomationContext` values always pass `null` here; see
+  /// proposal.md's "Why this only works for 3 of the 8" section).
+  final AgentSessionHandle? session;
+
+  /// Performs the actual `agentJudgment` round trip: asks [prompt] as a
+  /// scoped yes/no question inside [session], returning `true`/`false`
+  /// for a clear answer or `null` for anything else (no session
+  /// available, the call errored, an ambiguous/empty response). Real I/O
+  /// — the one reason [evaluateDecisionGraph] is no longer pure. `null`
+  /// (the default) for a call site with no way to ask at all, in which
+  /// case an `agentJudgment` node always resolves unmatched without
+  /// attempting a call.
+  final Future<bool?> Function(AgentSessionHandle session, String prompt)?
+  askAgentJudgment;
 }
+
+/// The reserved `DecisionNode.conditionId` value marking an
+/// `agentJudgment` condition — never collides with a real catalog
+/// entry or [ruleBuilderConditionId].
+const agentJudgmentConditionId = 'agentJudgment';
 
 /// `conditionId → bool Function(DecisionEvalContext, params)` registry —
 /// how each shipped [DecisionConditionSpec] is actually evaluated. Adding
@@ -58,11 +84,11 @@ _conditionEvaluators = {
 /// `params['field']` to the [DecisionEvalContext] value it names. Adding
 /// a field to `decision_field_catalog.dart`'s catalog also means adding
 /// its accessor here.
-final Map<String, Object? Function(DecisionEvalContext input)>
-_fieldAccessors = {
-  'attempt': (input) => input.attempt,
-  'sessionOverageDetected': (input) => input.sessionOverageDetected,
-};
+final Map<String, Object? Function(DecisionEvalContext input)> _fieldAccessors =
+    {
+      'attempt': (input) => input.attempt,
+      'sessionOverageDetected': (input) => input.sessionOverageDetected,
+    };
 
 /// Evaluates a `ruleBuilder` condition: resolves `params['field']` via
 /// [_fieldAccessors], `params['operator']` via a guarded
@@ -109,22 +135,49 @@ bool _evaluateRule(DecisionEvalContext input, Map<String, dynamic> params) {
   };
 }
 
+/// Evaluates an `agentJudgment` condition: reads `params['prompt']` (a
+/// `String`; defensively `false`/unmatched if missing or not a `String` —
+/// the same posture [_evaluateRule] already uses for a malformed
+/// rule-builder node), and, if [input] carries both a live
+/// `DecisionEvalContext.session` and a `DecisionEvalContext.askAgentJudgment`
+/// implementation, awaits it for the answer. `false` (unmatched) for any
+/// failure mode — no session, no way to ask, or an ambiguous/`null`
+/// answer. The one place in this file that performs real I/O — see
+/// `aion-arch/changes/decision-graph-agentjudgment-condition/design.md`
+/// §5.
+Future<bool> _evaluateAgentJudgment(
+  DecisionEvalContext input,
+  Map<String, dynamic> params,
+) async {
+  final prompt = params['prompt'];
+  final session = input.session;
+  final ask = input.askAgentJudgment;
+  if (prompt is! String || session == null || ask == null) return false;
+  final answer = await ask(session, prompt);
+  return answer ?? false;
+}
+
 /// Walks [graph] from its `DecisionGraph.rootNodeId`, evaluating each
 /// [DecisionNode] (looked up in [nodesById]) against [input] via
-/// [_conditionEvaluators], following `DecisionNode.matchedBranch`/
+/// [_conditionEvaluators] (or, for an `agentJudgment` node,
+/// [_evaluateAgentJudgment]), following `DecisionNode.matchedBranch`/
 /// `.unmatchedBranch` until a `DecisionBranch.terminal` is reached.
 /// Returns [DecisionOutcome.proceed] immediately if
 /// `DecisionGraph.rootNodeId` is `null` (no graph configured) or if the
 /// walk ever references a node id missing from [nodesById] (defensive —
 /// a dangling reference should never silently block automation that
-/// otherwise resolved to `auto`). Pure — no I/O, no dependency on
-/// `DecisionGraphRepository`. Added for
-/// `aion-arch/changes/automation-decision-graphs`.
-DecisionOutcome evaluateDecisionGraph(
+/// otherwise resolved to `auto`). No longer pure — an `agentJudgment` node
+/// performs real I/O via [DecisionEvalContext.askAgentJudgment] (see
+/// design.md §5; `providers.md`'s "Decision graphs" section still
+/// describes this function as pure and needs correcting when this change
+/// is archived). A walk that never reaches an `agentJudgment` node stays
+/// exactly as fast as before — the `await` only actually suspends on that
+/// one branch. Added for `aion-arch/changes/automation-decision-graphs`.
+Future<DecisionOutcome> evaluateDecisionGraph(
   DecisionGraph graph,
   Map<String, DecisionNode> nodesById,
   DecisionEvalContext input,
-) {
+) async {
   var currentId = graph.rootNodeId;
   if (currentId == null) return DecisionOutcome.proceed;
 
@@ -132,8 +185,13 @@ DecisionOutcome evaluateDecisionGraph(
     final node = nodesById[currentId];
     if (node == null) return DecisionOutcome.proceed;
 
-    final evaluator = _conditionEvaluators[node.conditionId];
-    final matched = evaluator?.call(input, node.conditionParams) ?? false;
+    final matched = node.conditionId == agentJudgmentConditionId
+        ? await _evaluateAgentJudgment(input, node.conditionParams)
+        : (_conditionEvaluators[node.conditionId]?.call(
+                input,
+                node.conditionParams,
+              ) ??
+              false);
     final branch = matched ? node.matchedBranch : node.unmatchedBranch;
 
     switch (branch) {

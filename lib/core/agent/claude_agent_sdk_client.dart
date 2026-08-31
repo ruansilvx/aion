@@ -6,6 +6,8 @@ import 'dart:io';
 
 import 'package:aion/core/agent/agent_bridge_locator.dart';
 import 'package:aion/core/contracts/agent_model_client.dart';
+import 'package:aion/core/contracts/agent_session_handle.dart';
+import 'package:aion/core/contracts/provider_id.dart';
 
 /// Sole [AgentModelClient] implementation for this MVP: spawns a bundled
 /// Node.js bridge process (`agent_bridge/index.mjs`) per [run] call and
@@ -32,6 +34,16 @@ import 'package:aion/core/contracts/agent_model_client.dart';
 /// `SIGKILL` if the process hasn't exited shortly after the first signal.
 /// Added for `aion-arch/changes/parallel-work`; see that change's
 /// design.md §2.
+///
+/// When [AgentRequest.resumeSessionId] is set, the outgoing request JSON
+/// also carries `{'resume': ..., 'forkSession': true}`, resuming and
+/// forking that session inside the bridge process rather than starting a
+/// fresh conversation. Independently, every bridge process reports its own
+/// session id via a `"session"` stdout line the moment the SDK's message
+/// stream first carries one — captured per-[run] call so
+/// [_handleToolCallRequest] can hand a resumable [AgentSessionHandle] to
+/// [AgentRequest.onToolCall]. See
+/// `aion-arch/changes/decision-graph-agentjudgment-condition/design.md` §3.
 class ClaudeAgentSdkClient implements AgentModelClient {
   /// Creates a [ClaudeAgentSdkClient] that resolves the bridge script's
   /// path via [bridgeLocator].
@@ -88,9 +100,7 @@ class ClaudeAgentSdkClient implements AgentModelClient {
     }
 
     final runId = request.runId;
-    final _ActiveRun? activeRun = runId == null
-        ? null
-        : _ActiveRun(process);
+    final _ActiveRun? activeRun = runId == null ? null : _ActiveRun(process);
     if (runId != null && activeRun != null) {
       _activeRuns[runId] = activeRun;
     }
@@ -109,6 +119,10 @@ class ClaudeAgentSdkClient implements AgentModelClient {
               },
             )
             .toList(),
+        if (request.resumeSessionId != null) ...{
+          'resume': request.resumeSessionId,
+          'forkSession': true,
+        },
       }),
     );
     // Stdin stays open for the run's whole duration (rather than closed
@@ -118,6 +132,10 @@ class ClaudeAgentSdkClient implements AgentModelClient {
 
     var sawTerminalEvent = false;
     final stderrBuffer = StringBuffer();
+    // Captured off a `"session"` stdout line the moment the bridge emits
+    // one — scoped to this run(), never exposed as a public [AgentEvent].
+    // See [_handleToolCallRequest] and design.md §3.
+    String? sessionId;
 
     late final StreamSubscription<String> stdoutSubscription;
     stdoutSubscription = process.stdout
@@ -142,6 +160,14 @@ class ClaudeAgentSdkClient implements AgentModelClient {
             }
           }
 
+          // `"session"` doesn't go through [_parseLine] either — it's
+          // never a public [AgentEvent], just captured for
+          // [_handleToolCallRequest] below. See design.md §3.
+          if (json != null && json['type'] == 'session') {
+            sessionId = json['sessionId'] as String?;
+            return;
+          }
+
           // `"tool_call_request"` doesn't go through [_parseLine]'s
           // normal return-an-[AgentEvent] path: it needs to pause the
           // subscription, await [AgentRequest.onToolCall], and write a
@@ -155,6 +181,7 @@ class ClaudeAgentSdkClient implements AgentModelClient {
                 request,
                 controller,
                 process,
+                sessionId,
               ).whenComplete(stdoutSubscription.resume),
             );
             return;
@@ -198,17 +225,40 @@ class ClaudeAgentSdkClient implements AgentModelClient {
   /// [process]'s stdin so the bridge — and the model's in-progress turn —
   /// can continue. See
   /// `aion-arch/changes/mid-task-chat-branching/design.md` §3.
+  ///
+  /// [sessionId] is [run]'s locally-captured session id at the moment this
+  /// call fires — `null` if no `"session"` line has arrived yet (defensive;
+  /// shouldn't happen in practice, since the bridge always emits it before
+  /// any `"tool_call_request"` in the same message batch, but a tool call
+  /// firing before it is parsed is not a crash, just a missed opportunity
+  /// for that one call). Wrapped into an [AgentSessionHandle] and passed as
+  /// [AgentRequest.onToolCall]'s 4th argument. See
+  /// `aion-arch/changes/decision-graph-agentjudgment-condition/design.md`
+  /// §3.
   Future<void> _handleToolCallRequest(
     Map<String, dynamic> json,
     AgentRequest request,
     StreamController<AgentEvent> controller,
     Process process,
+    String? sessionId,
   ) async {
     final toolCallId = json['toolCallId'] as String? ?? '';
     final toolName = json['name'] as String? ?? '';
     final arguments = (json['arguments'] as Map<String, dynamic>?) ?? const {};
     controller.add(AgentToolCallEvent(toolCallId, toolName, arguments));
-    final result = await request.onToolCall!(toolCallId, toolName, arguments);
+    final session = sessionId == null
+        ? null
+        : AgentSessionHandle(
+            providerId: ProviderId.claudeAgentSdk,
+            sessionId: sessionId,
+            modelId: request.model,
+          );
+    final result = await request.onToolCall!(
+      toolCallId,
+      toolName,
+      arguments,
+      session,
+    );
     process.stdin.writeln(
       jsonEncode({'toolCallId': toolCallId, 'result': result}),
     );
@@ -220,9 +270,11 @@ class ClaudeAgentSdkClient implements AgentModelClient {
   /// `{"type":"done","inputTokens":123,"outputTokens":456}`,
   /// `{"type":"error",...}`, `{"type":"overage",...}`. Returns `null` for
   /// a blank or unrecognized line rather than throwing — a malformed line
-  /// shouldn't crash the run. `{"type":"tool_call_request",...}` is never
-  /// passed here — [run]'s listener intercepts and routes it to
-  /// [_handleToolCallRequest] instead.
+  /// shouldn't crash the run. `{"type":"tool_call_request",...}` and
+  /// `{"type":"session",...}` are never passed here — [run]'s listener
+  /// intercepts both directly (the former routed to
+  /// [_handleToolCallRequest], the latter captured into a local variable)
+  /// before either reaches this method.
   AgentEvent? _parseLine(String line) {
     if (line.trim().isEmpty) return null;
     final Map<String, dynamic> json;

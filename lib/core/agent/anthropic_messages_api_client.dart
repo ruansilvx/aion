@@ -208,10 +208,13 @@ class AnthropicMessagesApiClient implements AgentModelClient {
           final arguments =
               (call['input'] as Map<String, dynamic>?) ?? const {};
           controller.add(AgentToolCallEvent(toolCallId, toolName, arguments));
+          // No session concept on this provider (see
+          // AnthropicMessagesApiProvider.supportsSessionResume) — always null.
           final result = await request.onToolCall!(
             toolCallId,
             toolName,
             arguments,
+            null,
           );
           toolResults.add({
             'type': 'tool_result',

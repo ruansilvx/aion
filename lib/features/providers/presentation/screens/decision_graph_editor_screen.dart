@@ -9,6 +9,7 @@ import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/providers/presentation/cubit/decision_graph_config_cubit.dart';
 import 'package:aion/features/providers/presentation/cubit/decision_graph_config_state.dart';
+import 'package:aion/features/providers/presentation/widgets/agent_cost_hint.dart';
 import 'package:aion/features/providers/presentation/widgets/decision_node_form.dart';
 import 'package:aion/features/providers/presentation/widgets/decision_outline_list.dart';
 
@@ -44,7 +45,11 @@ sealed class _CanvasNode {
 }
 
 class _ConditionCanvasNode extends _CanvasNode {
-  const _ConditionCanvasNode(this.node, {required this.isRoot, required this.isError});
+  const _ConditionCanvasNode(
+    this.node, {
+    required this.isRoot,
+    required this.isError,
+  });
   final DecisionNode node;
 
   /// Whether this node is the graph's `rootNodeId` — drives the design.md
@@ -375,9 +380,15 @@ class _CanvasPaneState extends State<_CanvasPane> {
           conditionParams = defaultRuleConditionParams(
             widget.automationContext,
           );
+        } else if (conditionId == agentJudgmentConditionId) {
+          conditionParams = defaultAgentJudgmentConditionParams(
+            widget.automationContext,
+          );
         } else {
           final spec = decisionConditionSpecById(conditionId);
-          conditionParams = spec == null ? const {} : defaultConditionParams(spec);
+          conditionParams = spec == null
+              ? const {}
+              : defaultConditionParams(spec);
         }
         return cubit.createNode(
           conditionId: conditionId,
@@ -438,7 +449,13 @@ class _TreeLayout {
         [node.matchedBranch, node.unmatchedBranch].any(
           (branch) =>
               branch is ToNodeBranch && !_nodesById.containsKey(branch.nodeId),
-        );
+        ) ||
+        // An `agentJudgment` node with an empty/whitespace-only prompt is
+        // incomplete — never evaluated, rendered in the error treatment.
+        // See design.md §2.4.
+        (node.conditionId == agentJudgmentConditionId &&
+            (node.conditionParams['prompt'] is! String ||
+                (node.conditionParams['prompt'] as String).trim().isEmpty));
     nodes.add(
       GraphCanvasNode(
         id: node.id,
@@ -605,13 +622,27 @@ class _CanvasNodeContent extends StatelessWidget {
     }
     final fill = hovered && !dragging ? c.surfaceHover : c.surface;
     final isRuleBuilder = node.conditionId == ruleBuilderConditionId;
-    final eyebrowColor = isError ? c.danger : c.textMuted;
+    final isAgentJudgment = node.conditionId == agentJudgmentConditionId;
+    final eyebrowColor = isError
+        ? c.danger
+        : isAgentJudgment
+        ? c.primary
+        : c.textMuted;
     // `RULE ·` vs `IF ·` is the canvas card's first of two rule-vs-preset
     // markers (design.md (Component Spec) §4.1) — title text alone
     // ("Attempt count" vs. "Attempt count exceeds") isn't reliably
     // distinguishable at small sizes, so the eyebrow carries the
-    // distinction along with the parameter chip's border below.
-    final eyebrowText = isError
+    // distinction along with the parameter chip's border below. `ASK ·`
+    // is a third, fixed eyebrow (never parameterized by a field/preset
+    // name, since an `agentJudgment` node's question is prose, not a
+    // symbol) — added for
+    // `aion-arch/changes/decision-graph-agentjudgment-condition`; see
+    // that change's design.md §3.
+    final eyebrowText = isAgentJudgment
+        ? (isError
+              ? context.l10n.decisionGraphNodeAgentJudgmentIncompleteEyebrow
+              : context.l10n.decisionGraphNodeAgentJudgmentEyebrow)
+        : isError
         ? (isRuleBuilder
               ? context.l10n.decisionGraphNodeRuleIncompleteEyebrow
               : context.l10n.decisionGraphNodeIncompleteEyebrow)
@@ -639,28 +670,53 @@ class _CanvasNodeContent extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                eyebrowText,
-                style: AionText.caption.copyWith(color: eyebrowColor),
-              ),
-              const SizedBox(height: 5),
               Row(
-                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Flexible(
+                  Expanded(
                     child: Text(
-                      decisionNodeTitle(node),
-                      style: AionText.cardTitle.copyWith(color: c.textPrimary),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      eyebrowText,
+                      style: AionText.caption.copyWith(color: eyebrowColor),
                     ),
                   ),
-                  if (parameterSummary != null) ...[
-                    const SizedBox(width: AionSpacing.sp8),
-                    _ParameterChip(text: parameterSummary, bordered: isRuleBuilder),
-                  ],
+                  if (isAgentJudgment && !isError)
+                    const AgentCostHint(showLatencyLine: true),
                 ],
               ),
+              const SizedBox(height: 5),
+              // An `agentJudgment` node has no title line — the question
+              // itself is the content, so its full-width prose chip
+              // occupies the title's slot instead of sitting beside a
+              // separate title (design.md §3.1's "No title line").
+              if (isAgentJudgment)
+                _QuestionChip(
+                  text:
+                      parameterSummary ??
+                      context.l10n.decisionGraphAgentPromptMissingChip,
+                  isError: isError,
+                )
+              else
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        decisionNodeTitle(node),
+                        style: AionText.cardTitle.copyWith(
+                          color: c.textPrimary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (parameterSummary != null) ...[
+                      const SizedBox(width: AionSpacing.sp8),
+                      _ParameterChip(
+                        text: parameterSummary,
+                        bordered: isRuleBuilder,
+                      ),
+                    ],
+                  ],
+                ),
             ],
           ),
         ),
@@ -716,6 +772,54 @@ class _ParameterChip extends StatelessWidget {
             ? const EdgeInsets.fromLTRB(6, 1, 6, 1)
             : const EdgeInsets.fromLTRB(6, 2, 6, 2),
         child: Text(text, style: AionText.key.copyWith(color: c.textSecondary)),
+      ),
+    );
+  }
+}
+
+/// An `agentJudgment` node's full-width question chip (design.md §3.2/
+/// §3.3) — occupies the title's slot on the canvas card (no separate
+/// title line for this condition kind). Prose in Manrope
+/// (`AionText.bodySm`), not a symbol — deliberately distinct from
+/// [_ParameterChip]'s compact key/value styling. [isError] re-tones it
+/// for the empty-prompt/incomplete state, per design.md §3.3. Added for
+/// `aion-arch/changes/decision-graph-agentjudgment-condition`.
+class _QuestionChip extends StatelessWidget {
+  const _QuestionChip({required this.text, required this.isError});
+
+  final String text;
+  final bool isError;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    final accent = isError ? c.danger : c.primary;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: isError
+            ? c.agentJudgmentErrorFill(t.isDark)
+            : c.primaryWash(t.isDark),
+        border: Border.all(
+          color: isError
+              ? accent.withValues(alpha: t.isDark ? 0.40 : 0.28)
+              : c.agentAccentBorderTint(t.isDark),
+          width: 1,
+        ),
+        borderRadius: BorderRadius.all(AionRadius.sm),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 5, 8, 6),
+        child: Text(
+          text,
+          style: AionText.bodySm.copyWith(
+            color: isError ? c.danger : c.textPrimary,
+            fontWeight: FontWeight.w500,
+            height: 1.35,
+          ),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
     );
   }

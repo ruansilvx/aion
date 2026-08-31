@@ -2,6 +2,7 @@
 
 import 'package:equatable/equatable.dart';
 
+import 'agent_session_handle.dart';
 import 'agent_tool_definition.dart';
 
 /// Provider-agnostic entry point for every model call in Aion.
@@ -52,6 +53,7 @@ class AgentRequest extends Equatable {
     this.tools = const [],
     this.onToolCall,
     this.runId,
+    this.resumeSessionId,
   });
 
   /// The user- or system-authored prompt text.
@@ -93,10 +95,21 @@ class AgentRequest extends Equatable {
   /// empty; a non-empty [tools] list with no [onToolCall] is a programmer
   /// error (see the constructor's dartdoc for why this isn't a compile-time
   /// `assert`).
+  ///
+  /// The 4th parameter, [AgentSessionHandle], is this call's own
+  /// resumable session — non-null only when the implementation has
+  /// already captured a session id for this run (e.g.
+  /// `ClaudeAgentSdkClient` after its bridge process emits a `"session"`
+  /// line) and the underlying provider supports resumption
+  /// ([AgentProvider.supportsSessionResume]); `null` otherwise, including
+  /// for every provider with no session concept at all. See
+  /// `aion-arch/changes/decision-graph-agentjudgment-condition/design.md`
+  /// §4.
   final Future<Map<String, dynamic>> Function(
     String toolCallId,
     String toolName,
     Map<String, dynamic> arguments,
+    AgentSessionHandle? session,
   )?
   onToolCall;
 
@@ -107,6 +120,13 @@ class AgentRequest extends Equatable {
   /// `aion-arch/changes/parallel-work`; see that change's design.md §2.
   final String? runId;
 
+  /// When set, this run resumes and forks [resumeSessionId] rather than
+  /// starting a fresh conversation — see design.md §3. `null` (the
+  /// default) for every existing call site, preserving today's behavior.
+  /// Only honored by a provider whose [AgentProvider.supportsSessionResume]
+  /// is `true`; ignored otherwise.
+  final String? resumeSessionId;
+
   @override
   List<Object?> get props => [
     prompt,
@@ -115,6 +135,7 @@ class AgentRequest extends Equatable {
     workingDirectory,
     tools,
     runId,
+    resumeSessionId,
   ];
 }
 

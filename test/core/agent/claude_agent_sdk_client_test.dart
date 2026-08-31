@@ -8,7 +8,9 @@ import 'package:path/path.dart' as p;
 import 'package:aion/core/agent/agent_bridge_locator.dart';
 import 'package:aion/core/agent/claude_agent_sdk_client.dart';
 import 'package:aion/core/contracts/agent_model_client.dart';
+import 'package:aion/core/contracts/agent_session_handle.dart';
 import 'package:aion/core/contracts/agent_tool_definition.dart';
+import 'package:aion/core/contracts/provider_id.dart';
 
 /// Points [ClaudeAgentSdkClient] at
 /// `test/core/agent/fixtures/fake_tool_call_bridge.mjs` — a minimal
@@ -43,6 +45,7 @@ void main() {
       'emits AgentToolCallEvent and feeds onToolCall\'s result back',
       () async {
         final calls = <(String, String, Map<String, dynamic>)>[];
+        AgentSessionHandle? capturedSession;
         final client = ClaudeAgentSdkClient(_FixtureBridgeLocator());
 
         final stream = await client.run(
@@ -56,8 +59,9 @@ void main() {
                 inputSchema: {'type': 'object', 'properties': {}},
               ),
             ],
-            onToolCall: (toolCallId, toolName, arguments) async {
+            onToolCall: (toolCallId, toolName, arguments, session) async {
               calls.add((toolCallId, toolName, arguments));
+              capturedSession = session;
               return {'accepted': true};
             },
           ),
@@ -68,6 +72,14 @@ void main() {
         expect(calls.single.$1, 'test-call-1');
         expect(calls.single.$2, 'branch_ticket');
         expect(calls.single.$3, {'title': 'From fixture'});
+        expect(
+          capturedSession,
+          const AgentSessionHandle(
+            providerId: ProviderId.claudeAgentSdk,
+            sessionId: 'test-session-1',
+            modelId: 'irrelevant',
+          ),
+        );
 
         final toolCallEvents = events.whereType<AgentToolCallEvent>();
         expect(toolCallEvents, hasLength(1));

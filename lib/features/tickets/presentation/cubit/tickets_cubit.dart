@@ -24,6 +24,7 @@ import 'package:aion/core/build/project_stack_detector.dart';
 import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/core/contracts/agent_model_descriptor.dart';
 import 'package:aion/core/contracts/agent_provider.dart';
+import 'package:aion/core/contracts/agent_session_handle.dart';
 import 'package:aion/core/contracts/agent_tool_definition.dart';
 import 'package:aion/core/contracts/consumption_signal.dart';
 import 'package:aion/core/contracts/embedding_provider.dart';
@@ -698,20 +699,97 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// site's `case AutomationConfidence.auto:` branch calls this before
   /// proceeding — see
   /// `aion-arch/changes/automation-decision-graphs/design.md` §4.
+  ///
+  /// [session], when non-null, is merged into [input] as
+  /// `DecisionEvalContext.session`/`.askAgentJudgment` (the latter always
+  /// [_askAgentJudgment]) — only the 3 live-session call sites
+  /// (`ticketCreation`/`ticketLinking`/`chatBranching`) ever pass a
+  /// non-null [session]; every other call site's `input` is used exactly
+  /// as constructed. See
+  /// `aion-arch/changes/decision-graph-agentjudgment-condition/design.md`
+  /// §7.
   Future<DecisionOutcome> _evaluateDecisionGraph(
     AutomationContext context,
-    DecisionEvalContext input,
-  ) async {
+    DecisionEvalContext input, {
+    AgentSessionHandle? session,
+  }) async {
+    final effectiveInput = session == null
+        ? input
+        : DecisionEvalContext(
+            attempt: input.attempt,
+            sessionOverageDetected: input.sessionOverageDetected,
+            session: session,
+            askAgentJudgment: _askAgentJudgment,
+          );
     if (_decisionGraphRepository == null) {
       return evaluateDecisionGraph(
         defaultDecisionGraphFor(context),
         defaultDecisionNodesById,
-        input,
+        effectiveInput,
       );
     }
     final graph = _decisionGraphsByContext[context];
     if (graph == null) return DecisionOutcome.proceed;
-    return evaluateDecisionGraph(graph, _decisionNodesById, input);
+    return evaluateDecisionGraph(graph, _decisionNodesById, effectiveInput);
+  }
+
+  /// [DecisionEvalContext.askAgentJudgment]'s real implementation — resolves
+  /// [session]'s provider via [_providerRegistry], issues a forked,
+  /// resumed [AgentModelClient.run] call asking [prompt] as a scoped
+  /// yes/no question, and parses the answer. Returns `null` (not `false`)
+  /// for every failure mode — no provider registered, the run errors, or
+  /// the response doesn't clearly parse as yes/no — so
+  /// [evaluateDecisionGraph]'s `answer ?? false` fallback is the single
+  /// place that turns "couldn't get a clear answer" into "unmatched",
+  /// rather than this method silently conflating "no" with "couldn't
+  /// ask". Added for
+  /// `aion-arch/changes/decision-graph-agentjudgment-condition`.
+  Future<bool?> _askAgentJudgment(
+    AgentSessionHandle session,
+    String prompt,
+  ) async {
+    final registry = _providerRegistry;
+    if (registry == null) return null;
+    final AgentProvider provider;
+    try {
+      provider = registry.providerById(session.providerId);
+    } on StateError {
+      return null;
+    }
+    if (!provider.supportsSessionResume) return null;
+
+    final buffer = StringBuffer();
+    try {
+      final events = await provider.client.run(
+        AgentRequest(
+          prompt: 'Answer only "yes" or "no", with no other text: $prompt',
+          model: session.modelId,
+          resumeSessionId: session.sessionId,
+        ),
+      );
+      await for (final event in events) {
+        switch (event) {
+          case AgentTextEvent(:final text):
+            buffer.write(text);
+          case AgentDoneEvent():
+            break;
+          case AgentErrorEvent():
+          case AgentCancelledEvent():
+            return null;
+          case AgentOverageDetectedEvent():
+          case AgentToolUseEvent():
+          case AgentToolCallEvent():
+            break; // Not expected on a tools-empty request; ignored defensively.
+        }
+      }
+    } catch (_) {
+      return null;
+    }
+
+    final normalized = buffer.toString().trim().toLowerCase();
+    if (normalized.startsWith('yes')) return true;
+    if (normalized.startsWith('no')) return false;
+    return null; // Ambiguous — evaluateDecisionGraph treats this as unmatched.
   }
 
   /// The status every new ticket is created at — the shared-base set's
@@ -5105,6 +5183,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         String toolCallId,
         String toolName,
         Map<String, dynamic> arguments,
+        AgentSessionHandle? session,
       )?
       onToolCall;
       if (attachment == null) {
@@ -5777,6 +5856,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         String toolCallId,
         String toolName,
         Map<String, dynamic> arguments,
+        AgentSessionHandle? session,
       )?
       onToolCall,
     )
@@ -5802,6 +5882,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     String toolCallId,
     String toolName,
     Map<String, dynamic> arguments,
+    AgentSessionHandle? session,
   )
   _onToolCallFor(Ticket chat) {
     // Dart's constant-pattern evaluator can't fold a `const` object's field
@@ -5812,16 +5893,17 @@ class TicketsCubit extends Cubit<TicketsState> {
     // in sync with `chat_branch_tool_definitions.dart`/
     // `ticket_crud_tool_definitions.dart`, which is why every case below is
     // commented with the constant it mirrors.
-    return (toolCallId, toolName, arguments) => switch (toolName) {
+    return (toolCallId, toolName, arguments, session) => switch (toolName) {
       'close_branch' /* closeBranchToolDefinition.name */ =>
-        _handleCloseBranchToolCall(chat, arguments),
+        _handleCloseBranchToolCall(chat, arguments, session),
       'create_ticket' /* createTicketToolDefinition.name */ =>
-        _handleCreateTicketToolCall(chat, arguments),
+        _handleCreateTicketToolCall(chat, arguments, session),
       'add_link' /* addLinkToolDefinition.name */ => _handleAddLinkToolCall(
         chat,
         arguments,
+        session,
       ),
-      _ => _handleBranchToolCall(chat, arguments),
+      _ => _handleBranchToolCall(chat, arguments, session),
     };
   }
 
@@ -5838,7 +5920,8 @@ class TicketsCubit extends Cubit<TicketsState> {
     String toolCallId,
     String toolName,
     Map<String, dynamic> arguments,
-  ) => _onToolCallFor(chat)(toolCallId, toolName, arguments);
+    AgentSessionHandle? session,
+  ) => _onToolCallFor(chat)(toolCallId, toolName, arguments, session);
 
   /// Whether [chat] (a `chat` ticket) may currently be branched via
   /// `branch_ticket` — instance-level depth-cap check, deliberately not on
@@ -5948,12 +6031,18 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [_createBranchChat], `gated` surfaces a [BranchProposal] via
   /// [_awaitProposalConfirmation] and waits. [chat] must satisfy
   /// [_canBranch] or this declines with a depth-cap reason before ever
-  /// checking automation confidence. Added for
+  /// checking automation confidence. [session], when non-null, is the
+  /// in-flight run's resumable session — threaded to [_evaluateDecisionGraph]
+  /// so an `agentJudgment` condition on [AutomationContext.chatBranching]'s
+  /// graph can ask its scoped side-question. Added for
   /// `aion-arch/changes/mid-task-chat-branching`; see that change's
-  /// design.md §6.
+  /// design.md §6. `session` param added for
+  /// `aion-arch/changes/decision-graph-agentjudgment-condition`; see that
+  /// change's design.md §4.
   Future<Map<String, dynamic>> _handleBranchToolCall(
     Ticket chat,
     Map<String, dynamic> arguments,
+    AgentSessionHandle? session,
   ) async {
     final title = arguments['title'] as String? ?? 'Untitled branch';
     final description = arguments['description'] as String?;
@@ -5979,6 +6068,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         final outcome = await _evaluateDecisionGraph(
           AutomationContext.chatBranching,
           const DecisionEvalContext(),
+          session: session,
         );
         return switch (outcome) {
           DecisionOutcome.decline => {
@@ -6008,10 +6098,17 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// folding via [_closeBranch] on `auto`, or surfacing a
   /// [CloseBranchProposal] via [_awaitProposalConfirmation] on `gated`.
   /// Added for `aion-arch/changes/mid-task-chat-branching`; see that
-  /// change's design.md §6.
+  /// change's design.md §6. [session] is accepted for signature symmetry
+  /// with the other three `_onToolCallFor`-dispatched handlers but
+  /// deliberately unused: `AutomationContext.chatBranching`'s
+  /// `agentJudgment`-eligible graph is only actually consulted from
+  /// [_handleBranchToolCall]'s call in a given turn (see design.md §4's
+  /// note). Added for
+  /// `aion-arch/changes/decision-graph-agentjudgment-condition`.
   Future<Map<String, dynamic>> _handleCloseBranchToolCall(
     Ticket chat,
     Map<String, dynamic> arguments,
+    AgentSessionHandle? session,
   ) async {
     final summary = arguments['summary'] as String? ?? 'Branch resolved.';
     final parentId = chat.parentId;
@@ -6071,10 +6168,15 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// top-level (`parentId: null`) — this tool never accepts a
   /// model-supplied parent; see proposal.md's Non-goals. Added for
   /// `aion-arch/changes/ticket-crud-tool-calls`; see that change's
-  /// design.md §3.3.
+  /// design.md §3.3. [session], when non-null, is threaded to
+  /// [_evaluateDecisionGraph] so an `agentJudgment` condition on
+  /// [AutomationContext.ticketCreation]'s graph can ask its scoped
+  /// side-question — added for
+  /// `aion-arch/changes/decision-graph-agentjudgment-condition`.
   Future<Map<String, dynamic>> _handleCreateTicketToolCall(
     Ticket chat,
     Map<String, dynamic> arguments,
+    AgentSessionHandle? session,
   ) async {
     final title = arguments['title'] as String?;
     final typeArg = arguments['type'] as String?;
@@ -6117,6 +6219,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         final outcome = await _evaluateDecisionGraph(
           AutomationContext.ticketCreation,
           const DecisionEvalContext(),
+          session: session,
         );
         return switch (outcome) {
           DecisionOutcome.decline => {
@@ -6159,10 +6262,15 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// also how duplicate-flagging works — `linkType: 'duplicates'` is an
   /// ordinary call, not a separate tool. Added for
   /// `aion-arch/changes/ticket-crud-tool-calls`; see that change's
-  /// design.md §3.3.
+  /// design.md §3.3. [session], when non-null, is threaded to
+  /// [_evaluateDecisionGraph] so an `agentJudgment` condition on
+  /// [AutomationContext.ticketLinking]'s graph can ask its scoped
+  /// side-question — added for
+  /// `aion-arch/changes/decision-graph-agentjudgment-condition`.
   Future<Map<String, dynamic>> _handleAddLinkToolCall(
     Ticket chat,
     Map<String, dynamic> arguments,
+    AgentSessionHandle? session,
   ) async {
     final sourceId = chat.parentId;
     if (sourceId == null) {
@@ -6219,6 +6327,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         final outcome = await _evaluateDecisionGraph(
           AutomationContext.ticketLinking,
           const DecisionEvalContext(),
+          session: session,
         );
         return switch (outcome) {
           DecisionOutcome.decline => {

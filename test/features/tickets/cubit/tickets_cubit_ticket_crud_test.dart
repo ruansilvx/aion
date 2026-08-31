@@ -23,6 +23,16 @@ import 'package:mocktail/mocktail.dart';
 import 'package:aion/core/automation/automation_confidence.dart';
 import 'package:aion/core/automation/automation_context.dart';
 import 'package:aion/core/automation/automation_settings_repository.dart';
+import 'package:aion/core/automation/decision_graph.dart';
+import 'package:aion/core/automation/decision_graph_evaluator.dart';
+import 'package:aion/core/automation/decision_graph_repository.dart';
+import 'package:aion/core/automation/decision_node.dart';
+import 'package:aion/core/automation/decision_outcome.dart';
+import 'package:aion/core/contracts/agent_model_client.dart';
+import 'package:aion/core/contracts/agent_provider.dart';
+import 'package:aion/core/contracts/agent_session_handle.dart';
+import 'package:aion/core/contracts/provider_id.dart';
+import 'package:aion/core/contracts/provider_registry.dart';
 import 'package:aion/features/tickets/tickets.dart';
 
 class MockTicketRepository extends Mock implements TicketRepository {}
@@ -32,12 +42,27 @@ class MockTicketLinkRepository extends Mock implements TicketLinkRepository {}
 class MockAutomationSettingsRepository extends Mock
     implements AutomationSettingsRepository {}
 
+class MockDecisionGraphRepository extends Mock
+    implements DecisionGraphRepository {}
+
+class MockAgentModelClient extends Mock implements AgentModelClient {}
+
+class MockAgentProvider extends Mock implements AgentProvider {}
+
+class MockProviderRegistry extends Mock implements ProviderRegistry {}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late MockTicketRepository repository;
   late MockAutomationSettingsRepository automationSettingsRepository;
   late MockTicketLinkRepository linkRepository;
+  // Wired for the `_askAgentJudgment` group below only — every other
+  // group's `buildCubit()` never passes a `providerRegistry`, so these
+  // mocks simply go unused there.
+  late MockAgentModelClient client;
+  late MockAgentProvider provider;
+  late MockProviderRegistry registry;
   Map<String, dynamic>? result;
 
   // The ticket a `create_ticket`/`add_link` tool call is "working on" —
@@ -57,6 +82,11 @@ void main() {
     // Needed for `repository.createTicket(any()/captureAny())` — mocktail
     // requires a fallback for any custom type used with those matchers.
     registerFallbackValue(ticket);
+    // Needed for `client.run(any())` in the `_askAgentJudgment` group below.
+    registerFallbackValue(const AgentRequest(prompt: '', model: ''));
+    // Needed for `decisionGraphRepository.getGraph(any())`/`.getAllNodes
+    // (any())` in that same group.
+    registerFallbackValue(AutomationContext.ticketCreation);
   });
 
   // A chat parented by `ticket` — the shape every create_ticket/add_link
@@ -85,6 +115,13 @@ void main() {
     repository = MockTicketRepository();
     automationSettingsRepository = MockAutomationSettingsRepository();
     linkRepository = MockTicketLinkRepository();
+    client = MockAgentModelClient();
+    provider = MockAgentProvider();
+    registry = MockProviderRegistry();
+    when(() => provider.client).thenReturn(client);
+    when(
+      () => registry.providerById(ProviderId.claudeAgentSdk),
+    ).thenReturn(provider);
     result = null;
   });
 
@@ -112,6 +149,7 @@ void main() {
           'call-1',
           'create_ticket',
           {'title': 'Follow-up', 'type': 'task'},
+          null,
         );
       },
       verify: (_) {
@@ -147,6 +185,7 @@ void main() {
           'call-1',
           'add_link',
           {'targetTicketId': targetTicket.ticketId, 'linkType': 'relatesTo'},
+          null,
         );
       },
       verify: (_) {
@@ -183,6 +222,7 @@ void main() {
           'call-1',
           'branch_ticket',
           {'title': 'Sub-issue'},
+          null,
         );
       },
       verify: (_) {
@@ -210,6 +250,7 @@ void main() {
           'call-1',
           'create_ticket',
           {'title': 'Follow-up', 'type': 'task'},
+          null,
         );
       },
       verify: (_) {
@@ -234,16 +275,12 @@ void main() {
       },
       build: buildCubit,
       act: (cubit) async {
-        result = await cubit.handleChatToolCall(
-          crudChat,
-          'call-1',
-          'create_ticket',
-          {
-            'title': 'Follow-up bug',
-            'type': 'bug',
-            'description': 'Found while working on this',
-          },
-        );
+        result = await cubit
+            .handleChatToolCall(crudChat, 'call-1', 'create_ticket', {
+              'title': 'Follow-up bug',
+              'type': 'bug',
+              'description': 'Found while working on this',
+            }, null);
       },
       verify: (_) {
         expect(result?['accepted'], true);
@@ -270,6 +307,7 @@ void main() {
           'call-1',
           'create_ticket',
           {'title': 'Follow-up', 'type': 'epic'},
+          null,
         );
       },
       verify: (_) {
@@ -302,7 +340,7 @@ void main() {
               .handleChatToolCall(crudChat, 'call-1', 'create_ticket', {
                 'title': 'Follow-up',
                 'type': 'task',
-              })
+              }, null)
               .then((value) => result = value),
         );
         await Future<void>.delayed(Duration.zero);
@@ -328,7 +366,11 @@ void main() {
             ),
         isA<TicketDetailLoaded>()
             .having((s) => s.ticket.id, 'ticket.id', crudChat.id)
-            .having((s) => s.pendingToolProposal, 'pendingToolProposal', isNull),
+            .having(
+              (s) => s.pendingToolProposal,
+              'pendingToolProposal',
+              isNull,
+            ),
       ],
     );
   });
@@ -353,6 +395,7 @@ void main() {
           'call-1',
           'add_link',
           {'targetTicketId': targetTicket.ticketId, 'linkType': 'blocks'},
+          null,
         );
       },
       verify: (_) {
@@ -397,6 +440,7 @@ void main() {
           'call-1',
           'add_link',
           {'targetTicketId': targetTicket.ticketId, 'linkType': 'duplicates'},
+          null,
         );
       },
       verify: (_) {
@@ -426,6 +470,7 @@ void main() {
           'call-1',
           'add_link',
           {'targetTicketId': 'AIO-999', 'linkType': 'blocks'},
+          null,
         );
       },
       verify: (_) {
@@ -471,7 +516,7 @@ void main() {
               .handleChatToolCall(crudChat, 'call-1', 'add_link', {
                 'targetTicketId': targetTicket.ticketId,
                 'linkType': 'blocks',
-              })
+              }, null)
               .then((value) => result = value),
         );
         await Future<void>.delayed(Duration.zero);
@@ -503,7 +548,11 @@ void main() {
             ),
         isA<TicketDetailLoaded>()
             .having((s) => s.ticket.id, 'ticket.id', crudChat.id)
-            .having((s) => s.pendingToolProposal, 'pendingToolProposal', isNull),
+            .having(
+              (s) => s.pendingToolProposal,
+              'pendingToolProposal',
+              isNull,
+            ),
       ],
     );
   });
@@ -534,7 +583,7 @@ void main() {
                 .handleChatToolCall(crudChat, 'call-1', 'create_ticket', {
                   'title': 'Follow-up',
                   'type': 'task',
-                })
+                }, null)
                 .then((value) => result = value),
           );
           await Future<void>.delayed(Duration.zero);
@@ -579,7 +628,7 @@ void main() {
                 .handleChatToolCall(crudChat, 'call-1', 'add_link', {
                   'targetTicketId': targetTicket.ticketId,
                   'linkType': 'relatesTo',
-                })
+                }, null)
                 .then((value) => result = value),
           );
           await Future<void>.delayed(Duration.zero);
@@ -612,4 +661,261 @@ void main() {
       );
     },
   );
+
+  group('_askAgentJudgment (via _handleCreateTicketToolCall)', () {
+    // Single agentJudgment node for AutomationContext.ticketCreation:
+    // matched (a "yes" answer) → decline (blocked, resolves immediately —
+    // no proposal-confirmation dance to unwind in these tests), unmatched
+    // (a "no"/null/ambiguous answer) → proceed (creates immediately).
+    final agentJudgmentGraph = DecisionGraph(
+      context: AutomationContext.ticketCreation,
+      rootNodeId: 'node-1',
+    );
+    const agentJudgmentNode = DecisionNode(
+      id: 'node-1',
+      conditionId: agentJudgmentConditionId,
+      conditionParams: {'prompt': 'Is this expensive?'},
+      matchedBranch: DecisionBranch.terminal(DecisionOutcome.decline),
+      unmatchedBranch: DecisionBranch.terminal(DecisionOutcome.proceed),
+    );
+    const session = AgentSessionHandle(
+      providerId: ProviderId.claudeAgentSdk,
+      sessionId: 'sess-1',
+      modelId: 'claude-sonnet-5',
+    );
+
+    late MockDecisionGraphRepository decisionGraphRepository;
+
+    setUp(() {
+      decisionGraphRepository = MockDecisionGraphRepository();
+      // Every context defaults to a null-root graph (TicketsCubit's
+      // constructor loads every AutomationContext's graph up front, not
+      // just ticketCreation's) — overridden below for ticketCreation only.
+      when(() => decisionGraphRepository.getGraph(any())).thenAnswer(
+        (invocation) async => DecisionGraph(
+          context: invocation.positionalArguments.single as AutomationContext,
+          rootNodeId: null,
+        ),
+      );
+      when(
+        () => decisionGraphRepository.getAllNodes(any()),
+      ).thenAnswer((_) async => const []);
+      when(
+        () =>
+            decisionGraphRepository.getGraph(AutomationContext.ticketCreation),
+      ).thenAnswer((_) async => agentJudgmentGraph);
+      when(
+        () => decisionGraphRepository.getAllNodes(
+          AutomationContext.ticketCreation,
+        ),
+      ).thenAnswer((_) async => const [agentJudgmentNode]);
+      when(
+        () => decisionGraphRepository.onChanged,
+      ).thenAnswer((_) => const Stream<void>.empty());
+      when(
+        () => automationSettingsRepository.getConfidence(
+          AutomationContext.ticketCreation,
+        ),
+      ).thenAnswer((_) async => AutomationConfidence.auto);
+      when(() => repository.createTicket(any())).thenAnswer((_) async {});
+    });
+
+    /// [TicketsCubit]'s constructor fires `_loadDecisionGraphs` unawaited
+    /// — every `act:` below awaits this once, first, mirroring
+    /// `tickets_cubit_decision_graph_test.dart`'s own
+    /// `awaitDecisionGraphsLoaded` precedent.
+    Future<void> awaitDecisionGraphsLoaded() =>
+        Future<void>.delayed(Duration.zero);
+
+    Future<Map<String, dynamic>> callWithSession(TicketsCubit cubit) =>
+        cubit.handleChatToolCall(crudChat, 'call-1', 'create_ticket', {
+          'title': 'Follow-up',
+          'type': 'task',
+        }, session);
+
+    blocTest<TicketsCubit, TicketsState>(
+      'a provider with supportsSessionResume == false resolves unmatched, '
+      'no client.run call attempted',
+      setUp: () {
+        when(() => provider.supportsSessionResume).thenReturn(false);
+      },
+      build: () => TicketsCubit(
+        repository,
+        automationSettingsRepository: automationSettingsRepository,
+        linkRepository: linkRepository,
+        decisionGraphRepository: decisionGraphRepository,
+        providerRegistry: registry,
+      ),
+      act: (cubit) async {
+        await awaitDecisionGraphsLoaded();
+        result = await callWithSession(cubit);
+      },
+      verify: (_) {
+        expect(result?['accepted'], true); // unmatched → proceed → created.
+        verifyNever(() => client.run(any()));
+      },
+      expect: () => <TicketsState>[],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'AgentTextEvent("Yes") → AgentDoneEvent() matches, blocking creation',
+      setUp: () {
+        when(() => provider.supportsSessionResume).thenReturn(true);
+        when(() => client.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Yes'),
+            AgentDoneEvent(),
+          ]),
+        );
+      },
+      build: () => TicketsCubit(
+        repository,
+        automationSettingsRepository: automationSettingsRepository,
+        linkRepository: linkRepository,
+        decisionGraphRepository: decisionGraphRepository,
+        providerRegistry: registry,
+      ),
+      act: (cubit) async {
+        await awaitDecisionGraphsLoaded();
+        result = await callWithSession(cubit);
+      },
+      verify: (_) {
+        expect(result, {
+          'accepted': false,
+          'reason': 'Blocked by decision graph.',
+        });
+        verifyNever(() => repository.createTicket(any()));
+      },
+      expect: () => <TicketsState>[],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'AgentTextEvent("No") is unmatched, creating immediately',
+      setUp: () {
+        when(() => provider.supportsSessionResume).thenReturn(true);
+        when(() => client.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('No'),
+            AgentDoneEvent(),
+          ]),
+        );
+      },
+      build: () => TicketsCubit(
+        repository,
+        automationSettingsRepository: automationSettingsRepository,
+        linkRepository: linkRepository,
+        decisionGraphRepository: decisionGraphRepository,
+        providerRegistry: registry,
+      ),
+      act: (cubit) async {
+        await awaitDecisionGraphsLoaded();
+        result = await callWithSession(cubit);
+      },
+      verify: (_) {
+        expect(result?['accepted'], true);
+        verify(() => repository.createTicket(any())).called(1);
+      },
+      expect: () => <TicketsState>[],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'AgentErrorEvent is unmatched, creating immediately',
+      setUp: () {
+        when(() => provider.supportsSessionResume).thenReturn(true);
+        when(() => client.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [AgentErrorEvent('boom')]),
+        );
+      },
+      build: () => TicketsCubit(
+        repository,
+        automationSettingsRepository: automationSettingsRepository,
+        linkRepository: linkRepository,
+        decisionGraphRepository: decisionGraphRepository,
+        providerRegistry: registry,
+      ),
+      act: (cubit) async {
+        await awaitDecisionGraphsLoaded();
+        result = await callWithSession(cubit);
+      },
+      verify: (_) {
+        expect(result?['accepted'], true);
+        verify(() => repository.createTicket(any())).called(1);
+      },
+      expect: () => <TicketsState>[],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'AgentCancelledEvent is unmatched, creating immediately',
+      setUp: () {
+        when(() => provider.supportsSessionResume).thenReturn(true);
+        when(() => client.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [AgentCancelledEvent()]),
+        );
+      },
+      build: () => TicketsCubit(
+        repository,
+        automationSettingsRepository: automationSettingsRepository,
+        linkRepository: linkRepository,
+        decisionGraphRepository: decisionGraphRepository,
+        providerRegistry: registry,
+      ),
+      act: (cubit) async {
+        await awaitDecisionGraphsLoaded();
+        result = await callWithSession(cubit);
+      },
+      verify: (_) {
+        expect(result?['accepted'], true);
+        verify(() => repository.createTicket(any())).called(1);
+      },
+      expect: () => <TicketsState>[],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'ambiguous text is unmatched, creating immediately',
+      setUp: () {
+        when(() => provider.supportsSessionResume).thenReturn(true);
+        when(() => client.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Maybe, hard to say'),
+            AgentDoneEvent(),
+          ]),
+        );
+      },
+      build: () => TicketsCubit(
+        repository,
+        automationSettingsRepository: automationSettingsRepository,
+        linkRepository: linkRepository,
+        decisionGraphRepository: decisionGraphRepository,
+        providerRegistry: registry,
+      ),
+      act: (cubit) async {
+        await awaitDecisionGraphsLoaded();
+        result = await callWithSession(cubit);
+      },
+      verify: (_) {
+        expect(result?['accepted'], true);
+        verify(() => repository.createTicket(any())).called(1);
+      },
+      expect: () => <TicketsState>[],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'no ProviderRegistry at all resolves unmatched, no lookup attempted',
+      build: () => TicketsCubit(
+        repository,
+        automationSettingsRepository: automationSettingsRepository,
+        linkRepository: linkRepository,
+        decisionGraphRepository: decisionGraphRepository,
+      ),
+      act: (cubit) async {
+        await awaitDecisionGraphsLoaded();
+        result = await callWithSession(cubit);
+      },
+      verify: (_) {
+        expect(result?['accepted'], true);
+        verify(() => repository.createTicket(any())).called(1);
+      },
+      expect: () => <TicketsState>[],
+    );
+  });
 }
