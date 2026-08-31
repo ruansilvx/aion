@@ -758,6 +758,32 @@ void main() {
     );
 
     blocTest<TicketsCubit, TicketsState>(
+      'registry.providerById throwing StateError (provider not registered) '
+      'resolves unmatched, no client.run call attempted',
+      setUp: () {
+        when(
+          () => registry.providerById(ProviderId.claudeAgentSdk),
+        ).thenThrow(StateError('No AgentProvider registered for claudeAgentSdk.'));
+      },
+      build: () => TicketsCubit(
+        repository,
+        automationSettingsRepository: automationSettingsRepository,
+        linkRepository: linkRepository,
+        decisionGraphRepository: decisionGraphRepository,
+        providerRegistry: registry,
+      ),
+      act: (cubit) async {
+        await awaitDecisionGraphsLoaded();
+        result = await callWithSession(cubit);
+      },
+      verify: (_) {
+        expect(result?['accepted'], true); // unmatched → proceed → created.
+        verifyNever(() => client.run(any()));
+      },
+      expect: () => <TicketsState>[],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
       'AgentTextEvent("Yes") → AgentDoneEvent() matches, blocking creation',
       setUp: () {
         when(() => provider.supportsSessionResume).thenReturn(true);

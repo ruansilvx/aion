@@ -394,6 +394,13 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
   TextEditingController? _agentPromptController;
   bool _agentPromptShowError = false;
 
+  /// Owns focus for [_agentPromptController]'s field so [_seedAgentJudgmentState]
+  /// can attach [_onAgentPromptFocusChange] — the mechanism behind
+  /// design.md §2.4's "focus + blur while empty" error trigger, alongside
+  /// [_save]'s own save-attempt trigger. Added for
+  /// `aion-arch/changes/decision-graph-agentjudgment-condition`.
+  FocusNode? _agentPromptFocusNode;
+
   late DecisionBranchMode _matchedMode;
   late DecisionOutcome _matchedOutcome;
   String? _matchedExistingChildId;
@@ -448,6 +455,7 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
     }
     _ruleIntValueController?.dispose();
     _agentPromptController?.dispose();
+    _agentPromptFocusNode?.dispose();
     super.dispose();
   }
 
@@ -542,10 +550,11 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
   }
 
   /// (Re)builds the `agentJudgment` prompt field's local state
-  /// (`_agentPromptController`/`_agentPromptShowError`) from [params],
-  /// disposing whatever controller existed before — mirrors
-  /// [_seedRuleState]'s own pattern, for the `agentJudgment` condition
-  /// instead of the rule-builder trio. Called from [initState] with
+  /// (`_agentPromptController`/`_agentPromptFocusNode`/
+  /// `_agentPromptShowError`) from [params], disposing whatever
+  /// controller/focus node existed before — mirrors [_seedRuleState]'s
+  /// own pattern, for the `agentJudgment` condition instead of the
+  /// rule-builder trio. Called from [initState] with
   /// [DecisionNodeForm.initialConditionParams] (editing an existing node)
   /// and from the condition picker's `onSelected` handler with
   /// `{'prompt': ''}` (freshly picking "Ask the agent"). Leaves
@@ -557,6 +566,8 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
   void _seedAgentJudgmentState(Map<String, dynamic> params) {
     _agentPromptController?.dispose();
     _agentPromptController = null;
+    _agentPromptFocusNode?.dispose();
+    _agentPromptFocusNode = null;
     _agentPromptShowError = false;
     final condition = _condition;
     if (condition == null || condition.id != agentJudgmentConditionId) return;
@@ -565,6 +576,26 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
     _agentPromptController = TextEditingController(
       text: prompt is String ? prompt : '',
     )..addListener(_onParamChanged);
+    _agentPromptFocusNode = FocusNode()
+      ..addListener(_onAgentPromptFocusChange);
+  }
+
+  /// Design.md §2.4's "focus + blur while empty" error trigger — the
+  /// counterpart to [_save]'s save-attempt trigger. Fires the error state
+  /// the moment the field loses focus while still empty; does nothing on
+  /// gaining focus (an untouched, unfocused field is never itself an
+  /// error — §2.4's "before any interaction" row) and does nothing once
+  /// [_agentPromptShowError] is already `true` (avoids a redundant
+  /// rebuild). Added for
+  /// `aion-arch/changes/decision-graph-agentjudgment-condition`.
+  void _onAgentPromptFocusChange() {
+    final focusNode = _agentPromptFocusNode;
+    if (focusNode == null || focusNode.hasFocus || _agentPromptShowError) {
+      return;
+    }
+    if ((_agentPromptController?.text.trim() ?? '').isEmpty) {
+      setState(() => _agentPromptShowError = true);
+    }
   }
 
   /// A branch in [DecisionBranchMode.continueToCondition] is valid once
@@ -965,7 +996,7 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
   /// per §2.2's "the one place this is stated"), a `n/240` counter once
   /// the prompt reaches 180 characters, and the error treatment (§2.5.5)
   /// once [_agentPromptShowError] is set (a save attempt, or blurring
-  /// while empty — see [_save]/the field's `onEditingComplete`). Added
+  /// while empty — see [_save]/[_onAgentPromptFocusChange]). Added
   /// for `aion-arch/changes/decision-graph-agentjudgment-condition`.
   Widget _buildAgentPromptField(BuildContext context, AionColors c) {
     final controller = _agentPromptController!;
@@ -978,6 +1009,7 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
       children: [
         AppTextField(
           controller: controller,
+          focusNode: _agentPromptFocusNode,
           labelText: context.l10n.decisionGraphAgentPromptLabel,
           hintText: context.l10n.decisionGraphAgentPromptPlaceholder,
           isRequired: true,

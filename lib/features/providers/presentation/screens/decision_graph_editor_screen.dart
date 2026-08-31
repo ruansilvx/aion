@@ -672,6 +672,14 @@ class _CanvasNodeContent extends StatelessWidget {
             children: [
               Row(
                 children: [
+                  // The `◇` diamond design.md §3.1's layout places before
+                  // `ASK · AGENT`/`ASK · NO QUESTION` — the same "model
+                  // resolves this" mark `_AskBadge` already draws on the
+                  // outline row's equivalent badge (design.md §0's table).
+                  if (isAgentJudgment) ...[
+                    _AskDiamond(color: eyebrowColor),
+                    const SizedBox(width: 6),
+                  ],
                   Expanded(
                     child: Text(
                       eyebrowText,
@@ -772,6 +780,31 @@ class _ParameterChip extends StatelessWidget {
             ? const EdgeInsets.fromLTRB(6, 1, 6, 1)
             : const EdgeInsets.fromLTRB(6, 2, 6, 2),
         child: Text(text, style: AionText.key.copyWith(color: c.textSecondary)),
+      ),
+    );
+  }
+}
+
+/// The `9×9` rotated-square diamond preceding an `agentJudgment` canvas
+/// card's eyebrow (design.md §3.1/§0) — the same "the model resolves
+/// this" mark DG §1.4's `Model decides` outcome badge already uses, and
+/// the one `_AskBadge` (`decision_outline_list.dart`) draws for the
+/// outline row's own equivalent badge. [color] follows the eyebrow's own
+/// color (`primary` normally, `danger` when the node is incomplete) so
+/// the two stay in lockstep. Added for
+/// `aion-arch/changes/decision-graph-agentjudgment-condition`.
+class _AskDiamond extends StatelessWidget {
+  const _AskDiamond({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Transform.rotate(
+      angle: 0.7853981633974483, // pi / 4 — 45°.
+      child: DecoratedBox(
+        decoration: BoxDecoration(border: Border.all(color: color, width: 1.6)),
+        child: const SizedBox(width: 6, height: 6),
       ),
     );
   }
