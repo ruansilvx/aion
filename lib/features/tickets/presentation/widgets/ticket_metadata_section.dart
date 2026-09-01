@@ -1664,7 +1664,7 @@ class _SddStageSection extends StatelessWidget {
 
   final Ticket ticket;
   final bool canAdvance;
-  final SddStageBlockReason? blockReason;
+  final String? blockReason;
   final AutomationConfidence? automationConfidence;
   final VoidCallback onAdvance;
 
@@ -1757,20 +1757,6 @@ class _SddStageSection extends StatelessWidget {
     SddStage.archived => null,
   };
 
-  String _blockReasonHint(BuildContext context, SddStageBlockReason reason) =>
-      switch (reason) {
-        SddStageBlockReason.awaitingChatReply =>
-          context.l10n.ticketDetailSddStageHintAwaitingChat,
-        SddStageBlockReason.awaitingChildren =>
-          ticket.type == TicketType.story
-              ? context.l10n.ticketDetailSddStageHintAwaitingTasks
-              : context.l10n.ticketDetailSddStageHintAwaitingStories,
-        SddStageBlockReason.awaitingDesignPaste =>
-          context.l10n.ticketDetailSddStageHintAwaitingDesignPaste,
-        SddStageBlockReason.awaitingDesignApproval =>
-          context.l10n.ticketDetailSddStageHintAwaitingDesignApproval,
-      };
-
   @override
   Widget build(BuildContext context) {
     final c = ThemeScope.of(context).colors;
@@ -1861,37 +1847,43 @@ class _SddStageSection extends StatelessWidget {
           },
         ] else if (!canAdvance && blockReason != null) ...[
           const SizedBox(height: AionSpacing.sp12),
-          _NotReadyHint(text: _blockReasonHint(context, blockReason!)),
+          _NotReadyHint(reason: blockReason!),
         ],
       ],
     );
   }
 }
 
-/// The "Not ready" state (design.md §2.2): a single hint row explaining
-/// what's still blocking [_SddStageSection.onAdvance], shown when the
-/// precondition isn't met yet and there's still a next stage to advance
-/// to.
+/// The "Not ready" state, shown when the precondition isn't met yet and
+/// there's still a next stage to advance to — plain body copy, no enum-
+/// driven styling, no badge/chip/icon, per
+/// `aion-arch/changes/sddstage-transition-preconditions/design.md` §6:
+/// [reason] (already `'Waiting on: <field display name>'`, auto-derived
+/// by `TicketsCubit._sddStageAdvanceCheck`) is displayed directly, not
+/// resolved from a fixed enum here.
 class _NotReadyHint extends StatelessWidget {
-  const _NotReadyHint({required this.text});
+  const _NotReadyHint({required this.reason});
 
-  final String text;
+  /// [_SddStageSection.blockReason], never `null` when this is built.
+  final String reason;
 
   @override
   Widget build(BuildContext context) {
     final c = ThemeScope.of(context).colors;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        PhosphorIcon(PhosphorIcons.infoLight, size: 15, color: c.textMuted),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            text,
-            style: AionText.bodySm.copyWith(color: c.textMuted),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, AionSpacing.sp8, 0, 0),
+      child: Text.rich(
+        TextSpan(
+          style: AionText.bodySm.copyWith(
+            color: c.textSecondary,
+            height: 1.45,
           ),
+          children: [
+            TextSpan(text: context.l10n.ticketDetailSddStageNotReadyPrefix),
+            TextSpan(text: reason, style: TextStyle(color: c.textPrimary)),
+          ],
         ),
-      ],
+      ),
     );
   }
 }

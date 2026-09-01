@@ -35,6 +35,7 @@ class WorkflowConfigLoaded extends WorkflowConfigState {
     required this.stageDisplayNameOverrides,
     required this.attachments,
     required this.templates,
+    this.transitionPreconditionNodeCounts = const {},
   });
 
   /// Every configured [WorkflowStatus] — base and every per-type
@@ -64,6 +65,18 @@ class WorkflowConfigLoaded extends WorkflowConfigState {
   /// `aion-arch/changes/workflow-skill-attachments`.
   final List<WorkflowPromptTemplate> templates;
 
+  /// Each precondition-bearing [SddStage]'s current transition-precondition
+  /// field-check count — from `TransitionPreconditionRepository
+  /// .getNodeCounts`, `0`/absent when unconfigured. Powers
+  /// `WorkflowStatusSettingsScreen`'s "Configure precondition" affordance
+  /// count badge. Defaults to `{}` — a project built without a
+  /// `TransitionPreconditionRepository` (see [WorkflowConfigCubit]'s
+  /// constructor) shows every stage as unconfigured rather than failing
+  /// to load. Added for
+  /// `aion-arch/changes/sddstage-transition-preconditions`'s post-`/verify`
+  /// follow-up.
+  final Map<SddStage, int> transitionPreconditionNodeCounts;
+
   /// The shared-base statuses only (no per-type extensions), sorted by
   /// [WorkflowStatus.sortOrder] — the scope a cross-type surface (Board,
   /// Filters, Columns, bulk status menu) renders, since a status
@@ -77,12 +90,10 @@ class WorkflowConfigLoaded extends WorkflowConfigState {
   /// [WorkflowStatus.sortOrder] — the scope a single ticket's own status
   /// picker renders. Mirrors [WorkflowConfigCubit]'s own
   /// `_isNameUniqueInScope` scope definition.
-  List<WorkflowStatus> effectiveStatusesForType(TicketType type) =>
-      [
-          for (final s in statuses)
-            if (s.ticketType == null || s.ticketType == type) s,
-        ]
-        ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+  List<WorkflowStatus> effectiveStatusesForType(TicketType type) => [
+    for (final s in statuses)
+      if (s.ticketType == null || s.ticketType == type) s,
+  ]..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
 
   @override
   List<Object?> get props => [
@@ -91,6 +102,7 @@ class WorkflowConfigLoaded extends WorkflowConfigState {
     stageDisplayNameOverrides,
     attachments,
     templates,
+    transitionPreconditionNodeCounts,
   ];
 }
 

@@ -105,6 +105,164 @@ class MockNotificationRepository extends Mock
 class MockDecisionGraphRepository extends Mock
     implements DecisionGraphRepository {}
 
+/// In-memory [TransitionPreconditionRepository] fake, pre-seeded (at
+/// construction) with the exact baseline graphs
+/// `TransitionPreconditionDao.seedDefaultsIfEmpty` persists — see
+/// `aion-arch/changes/sddstage-transition-preconditions/design.md` §3.
+/// `TicketsCubit` pins every stage to `TransitionOutcome.allowed` when
+/// constructed without a [TransitionPreconditionRepository] at all, so
+/// every test below that exercises `_sddStageAdvanceCheck`'s real
+/// precondition-gated behavior (rather than just its "always allowed"
+/// fallback) supplies one of these instead of omitting the parameter.
+class FakeTransitionPreconditionRepository
+    implements TransitionPreconditionRepository {
+  /// Creates a [FakeTransitionPreconditionRepository], seeded immediately.
+  FakeTransitionPreconditionRepository() {
+    for (final stage in [SddStage.exploring, SddStage.verifying]) {
+      _seedSingleNodeGraph(
+        stage: stage,
+        fieldId: mostRecentChatHasTerminalReplyField.id,
+      );
+    }
+
+    final allChildrenComplete = _node(
+      'seed-proposed-allChildrenComplete',
+      allChildrenCompleteField.id,
+      matched: const TransitionBranch.terminal(TransitionOutcome.allowed),
+      unmatched: const TransitionBranch.terminal(TransitionOutcome.blocked),
+    );
+    final storyNeedsDesignReview = _node(
+      'seed-proposed-storyNeedsDesignReview',
+      storyNeedsDesignReviewField.id,
+      matched: const TransitionBranch.terminal(TransitionOutcome.allowed),
+      unmatched: TransitionBranch.toNode(allChildrenComplete.id),
+    );
+    final hasChildren = _node(
+      'seed-proposed-hasChildren',
+      hasChildrenField.id,
+      matched: TransitionBranch.toNode(storyNeedsDesignReview.id),
+      unmatched: const TransitionBranch.terminal(TransitionOutcome.blocked),
+    );
+    _graphs[SddStage.proposed] = TransitionGraph(
+      stage: SddStage.proposed,
+      rootNodeId: hasChildren.id,
+    );
+
+    _seedSingleNodeGraph(
+      stage: SddStage.designBrief,
+      fieldId: linkedDesignPageHasContentField.id,
+    );
+
+    final designSyncApproved = _node(
+      'seed-designSync-designSyncApproved',
+      designSyncApprovedField.id,
+      matched: const TransitionBranch.terminal(TransitionOutcome.allowed),
+      unmatched: const TransitionBranch.terminal(TransitionOutcome.blocked),
+    );
+    final allTasksComplete = _node(
+      'seed-designSync-allTasksComplete',
+      allTasksCompleteField.id,
+      matched: TransitionBranch.toNode(designSyncApproved.id),
+      unmatched: const TransitionBranch.terminal(TransitionOutcome.blocked),
+    );
+    _graphs[SddStage.designSync] = TransitionGraph(
+      stage: SddStage.designSync,
+      rootNodeId: allTasksComplete.id,
+    );
+  }
+
+  final Map<SddStage, TransitionGraph> _graphs = {};
+  final Map<String, TransitionNode> _nodesById = {};
+  final _changeController = StreamController<void>.broadcast(sync: true);
+
+  TransitionNode _node(
+    String id,
+    String fieldId, {
+    required TransitionBranch matched,
+    required TransitionBranch unmatched,
+  }) {
+    final node = TransitionNode(
+      id: id,
+      fieldId: fieldId,
+      matchedBranch: matched,
+      unmatchedBranch: unmatched,
+    );
+    _nodesById[id] = node;
+    return node;
+  }
+
+  void _seedSingleNodeGraph({
+    required SddStage stage,
+    required String fieldId,
+  }) {
+    final node = _node(
+      'seed-$stage',
+      fieldId,
+      matched: const TransitionBranch.terminal(TransitionOutcome.allowed),
+      unmatched: const TransitionBranch.terminal(TransitionOutcome.blocked),
+    );
+    _graphs[stage] = TransitionGraph(stage: stage, rootNodeId: node.id);
+  }
+
+  @override
+  Future<TransitionGraph> getGraph(SddStage stage) async =>
+      _graphs[stage] ?? TransitionGraph(stage: stage, rootNodeId: null);
+
+  @override
+  Future<TransitionNode?> getNode(String id) async => _nodesById[id];
+
+  @override
+  Future<List<TransitionNode>> getAllNodes(SddStage stage) async {
+    final rootId = _graphs[stage]?.rootNodeId;
+    if (rootId == null) return [];
+    final result = <TransitionNode>[];
+    final toVisit = <String>[rootId];
+    final visited = <String>{};
+    while (toVisit.isNotEmpty) {
+      final id = toVisit.removeLast();
+      if (!visited.add(id)) continue;
+      final node = _nodesById[id];
+      if (node == null) continue;
+      result.add(node);
+      for (final branch in [node.matchedBranch, node.unmatchedBranch]) {
+        if (branch is ToTransitionNodeBranch) toVisit.add(branch.nodeId);
+      }
+    }
+    return result;
+  }
+
+  @override
+  Future<void> upsertNode(TransitionNode node) async {
+    _nodesById[node.id] = node;
+    _changeController.add(null);
+  }
+
+  @override
+  Future<void> deleteNode(String id) async {
+    _nodesById.remove(id);
+    _changeController.add(null);
+  }
+
+  @override
+  Future<void> setRoot(SddStage stage, String? nodeId) async {
+    _graphs[stage] = TransitionGraph(stage: stage, rootNodeId: nodeId);
+    _changeController.add(null);
+  }
+
+  @override
+  Future<void> seedDefaultsIfEmpty() async {}
+
+  @override
+  Stream<void> get onChanged => _changeController.stream;
+
+  @override
+  Future<Map<SddStage, int>> getNodeCounts() async {
+    return {
+      for (final stage in _graphs.keys) stage: (await getAllNodes(stage)).length,
+    };
+  }
+}
+
 /// Stubs [gitClient]/[gitHubClient] for a coding-execution run that
 /// isolates cleanly, pushes, and opens a PR — the happy path most
 /// `_runCodingExecution` tests exercise. Whether the run actually
@@ -5620,6 +5778,7 @@ void main() {
       providerRegistry: registry,
       commentRepository: commentRepository,
       linkRepository: linkRepository,
+      transitionPreconditionRepository: FakeTransitionPreconditionRepository(),
     );
 
     blocTest<TicketsCubit, TicketsState>(
@@ -5657,7 +5816,18 @@ void main() {
         ).thenAnswer((_) async => storyProposed);
       },
       build: buildCubit,
-      act: (cubit) => cubit.advanceSddStage(storyProposed),
+      // A zero-duration delay before acting — waits one real event-loop
+      // turn so the constructor's fire-and-forget `_loadTransitionGraphs()`
+      // (a chain of pure microtask `await`s against
+      // `FakeTransitionPreconditionRepository`, no real I/O) has fully
+      // drained first; a `Timer`-backed delay always runs after every
+      // already-queued microtask, so this is deterministic, not a flaky
+      // sleep. Without it, `_sddStageAdvanceCheck` would race the load and
+      // fall back to its permissive "no repository yet" default.
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        await cubit.advanceSddStage(storyProposed);
+      },
       verify: (_) {
         verifyNever(() => repository.updateTicketSddStage(any(), any()));
       },
@@ -5667,6 +5837,70 @@ void main() {
           reason: TicketsErrorReason.sddStagePreconditionNotMet,
         ),
         TicketDetailLoaded(storyProposed),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'rejects exploring to proposed when the stage chat has no AI reply '
+      'yet',
+      setUp: () {
+        final epicExploring = Ticket(
+          id: epic.id,
+          ticketId: epic.ticketId,
+          type: epic.type,
+          title: epic.title,
+          status: epic.status,
+          sddStage: SddStage.exploring,
+          createdAt: epic.createdAt,
+          updatedAt: epic.updatedAt,
+        );
+        when(
+          () => repository.getTicketById(epicExploring.id),
+        ).thenAnswer((_) async => epicExploring);
+        when(
+          () => repository.getTicketsByParent(
+            epicExploring.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => []);
+      },
+      build: buildCubit,
+      // See the equivalent test above for why this awaits a zero-duration
+      // delay before acting.
+      act: (cubit) async {
+        final epicExploring = Ticket(
+          id: epic.id,
+          ticketId: epic.ticketId,
+          type: epic.type,
+          title: epic.title,
+          status: epic.status,
+          sddStage: SddStage.exploring,
+          createdAt: epic.createdAt,
+          updatedAt: epic.updatedAt,
+        );
+        await Future<void>.delayed(Duration.zero);
+        await cubit.advanceSddStage(epicExploring);
+      },
+      verify: (_) {
+        verifyNever(() => repository.updateTicketSddStage(any(), any()));
+      },
+      expect: () => [
+        const TicketsError(
+          '',
+          reason: TicketsErrorReason.sddStagePreconditionNotMet,
+        ),
+        TicketDetailLoaded(
+          Ticket(
+            id: epic.id,
+            ticketId: epic.ticketId,
+            type: epic.type,
+            title: epic.title,
+            status: epic.status,
+            sddStage: SddStage.exploring,
+            createdAt: epic.createdAt,
+            updatedAt: epic.updatedAt,
+          ),
+        ),
       ],
     );
 
@@ -6033,6 +6267,7 @@ void main() {
       linkRepository: linkRepository,
       providerRegistry: registry,
       commentRepository: commentRepository,
+      transitionPreconditionRepository: FakeTransitionPreconditionRepository(),
     );
 
     blocTest<TicketsCubit, TicketsState>(
@@ -6242,7 +6477,12 @@ void main() {
         ).thenAnswer((_) async => storyDesignBrief);
       },
       build: buildCubit,
-      act: (cubit) => cubit.advanceSddStage(storyDesignBrief),
+      // See the standalone `advanceSddStage` group's own equivalent test
+      // for why this awaits a zero-duration delay before acting.
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        await cubit.advanceSddStage(storyDesignBrief);
+      },
       verify: (_) {
         verifyNever(() => repository.updateTicketSddStage(any(), any()));
       },
@@ -6282,7 +6522,12 @@ void main() {
         ).thenAnswer((_) async => storyDesignBrief);
       },
       build: buildCubit,
-      act: (cubit) => cubit.advanceSddStage(storyDesignBrief),
+      // See the standalone `advanceSddStage` group's own equivalent test
+      // for why this awaits a zero-duration delay before acting.
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        await cubit.advanceSddStage(storyDesignBrief);
+      },
       verify: (_) {
         verifyNever(() => repository.updateTicketSddStage(any(), any()));
       },
@@ -6380,7 +6625,12 @@ void main() {
         ).thenAnswer((_) async => storyDesignSync);
       },
       build: buildCubit,
-      act: (cubit) => cubit.advanceSddStage(storyDesignSync),
+      // See the standalone `advanceSddStage` group's own equivalent test
+      // for why this awaits a zero-duration delay before acting.
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        await cubit.advanceSddStage(storyDesignSync);
+      },
       verify: (_) {
         verifyNever(() => repository.updateTicketSddStage(any(), any()));
       },
@@ -10909,7 +11159,10 @@ void main() {
           ),
         ).thenAnswer((_) async => [taskChildUi]);
       },
-      build: () => TicketsCubit(repository),
+      build: () => TicketsCubit(
+        repository,
+        transitionPreconditionRepository: FakeTransitionPreconditionRepository(),
+      ),
       act: (cubit) => cubit.getTicketById(storyProposed.id),
       expect: () => [
         const TicketsLoading(),
@@ -10935,7 +11188,10 @@ void main() {
           ),
         ).thenAnswer((_) async => [taskChildDone]);
       },
-      build: () => TicketsCubit(repository),
+      build: () => TicketsCubit(
+        repository,
+        transitionPreconditionRepository: FakeTransitionPreconditionRepository(),
+      ),
       act: (cubit) => cubit.getTicketById(storyProposed.id),
       expect: () => [
         const TicketsLoading(),
@@ -10954,7 +11210,10 @@ void main() {
           () => repository.getTicketById(epic.id),
         ).thenAnswer((_) async => epic);
       },
-      build: () => TicketsCubit(repository),
+      build: () => TicketsCubit(
+        repository,
+        transitionPreconditionRepository: FakeTransitionPreconditionRepository(),
+      ),
       act: (cubit) => cubit.getTicketById(epic.id),
       expect: () => [
         const TicketsLoading(),
@@ -10975,13 +11234,21 @@ void main() {
           ),
         ).thenAnswer((_) async => []);
       },
-      build: () => TicketsCubit(repository),
-      act: (cubit) => cubit.getTicketById(storyProposed.id),
+      build: () => TicketsCubit(
+        repository,
+        transitionPreconditionRepository: FakeTransitionPreconditionRepository(),
+      ),
+      // See the standalone `advanceSddStage` group's own equivalent test
+      // for why this awaits a zero-duration delay before acting.
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        await cubit.getTicketById(storyProposed.id);
+      },
       expect: () => [
         const TicketsLoading(),
         TicketDetailLoaded(
           storyProposed,
-          sddStageBlockReason: SddStageBlockReason.awaitingChildren,
+          sddStageBlockReason: 'Waiting on: ${hasChildrenField.displayName}',
         ),
       ],
     );
@@ -10996,6 +11263,56 @@ void main() {
       build: () => TicketsCubit(repository),
       act: (cubit) => cubit.getTicketById(ticket.id),
       expect: () => [const TicketsLoading(), TicketDetailLoaded(ticket)],
+    );
+
+    test(
+      'canAdvanceSddStage/sddStageBlockReason (via getTicketById) and '
+      'advanceSddStage\'s own rejection never disagree — both read through '
+      'the shared _sddStageAdvanceCheck. Regression guard for the '
+      'guarantee documented on that method\'s own dartdoc.',
+      () async {
+        when(
+          () => repository.getTicketById(storyProposed.id),
+        ).thenAnswer((_) async => storyProposed);
+        when(
+          () => repository.getTicketsByParent(
+            storyProposed.id,
+            types: any(named: 'types'),
+          ),
+        ).thenAnswer((_) async => []);
+
+        final cubit = TicketsCubit(
+          repository,
+          transitionPreconditionRepository:
+              FakeTransitionPreconditionRepository(),
+        );
+        addTearDown(cubit.close);
+        await Future<void>.delayed(Duration.zero);
+
+        await cubit.getTicketById(storyProposed.id);
+        final detail = cubit.state as TicketDetailLoaded;
+        expect(detail.canAdvanceSddStage, isFalse);
+        expect(
+          detail.sddStageBlockReason,
+          'Waiting on: ${hasChildrenField.displayName}',
+        );
+
+        final states = <TicketsState>[];
+        final sub = cubit.stream.listen(states.add);
+        await cubit.advanceSddStage(storyProposed);
+        await sub.cancel();
+
+        expect(
+          states,
+          contains(
+            isA<TicketsError>().having(
+              (e) => e.reason,
+              'reason',
+              TicketsErrorReason.sddStagePreconditionNotMet,
+            ),
+          ),
+        );
+      },
     );
   });
 

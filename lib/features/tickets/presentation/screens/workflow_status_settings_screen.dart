@@ -97,8 +97,9 @@ class _WorkflowStatusSettingsScreenState
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         _WorkflowSectionHeader(
-                          eyebrow:
-                              context.l10n.workflowSettingsTicketStatusesEyebrow,
+                          eyebrow: context
+                              .l10n
+                              .workflowSettingsTicketStatusesEyebrow,
                         ),
                         _ScopeSelector(
                           selectedScope: _selectedScope,
@@ -126,7 +127,8 @@ class _WorkflowStatusSettingsScreenState
                         // spec's own token-usage note (§11).
                         const SizedBox(height: 28),
                         _WorkflowSectionHeader(
-                          eyebrow: context.l10n.workflowSettingsSddStagesEyebrow,
+                          eyebrow:
+                              context.l10n.workflowSettingsSddStagesEyebrow,
                         ),
                         _SddToggleRow(
                           designStagesEnabled: loaded.designStagesEnabled,
@@ -146,6 +148,8 @@ class _WorkflowStatusSettingsScreenState
                                 .where((a) => a.sddStage == stage)
                                 .firstOrNull,
                             templates: loaded.templates,
+                            preconditionNodeCount:
+                                loaded.transitionPreconditionNodeCounts[stage],
                           ),
                       ],
                     );
@@ -308,10 +312,11 @@ List<WorkflowStatus> _scopedStatuses(
   List<WorkflowStatus> allStatuses,
   TicketType? scope,
 ) {
-  final result = allStatuses
-      .where((s) => s.ticketType == null || s.ticketType == scope)
-      .toList()
-    ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+  final result =
+      allStatuses
+          .where((s) => s.ticketType == null || s.ticketType == scope)
+          .toList()
+        ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
   return result;
 }
 
@@ -543,7 +548,10 @@ class _StatusRowState extends State<_StatusRow> {
                       else if (widget.scope != null)
                         _Tag(
                           label: context.l10n.workflowSettingsTypeOnlyTag(
-                            ticketTypeLabel(context, widget.scope!).toUpperCase(),
+                            ticketTypeLabel(
+                              context,
+                              widget.scope!,
+                            ).toUpperCase(),
                           ),
                           fg: _typeAccent(c, widget.scope!),
                           fill: _typeAccent(
@@ -790,10 +798,7 @@ class _RoleDropdownState extends State<_RoleDropdown> {
 
   @override
   Widget build(BuildContext context) {
-    final roles = <WorkflowStatusRole?>[
-      null,
-      ...WorkflowStatusRole.values,
-    ];
+    final roles = <WorkflowStatusRole?>[null, ...WorkflowStatusRole.values];
     return SelectionMenu<WorkflowStatusRole?>(
       semanticsLabel: context.l10n.workflowSettingsChangeRole,
       items: roles,
@@ -974,9 +979,10 @@ class _AddStatusControlState extends State<_AddStatusControl> {
   bool get _isDuplicate {
     final name = _controller.text.trim().toLowerCase();
     if (name.isEmpty) return false;
-    return _scopedStatuses(widget.allStatuses, widget.scope).any(
-      (s) => s.displayName.toLowerCase() == name,
-    );
+    return _scopedStatuses(
+      widget.allStatuses,
+      widget.scope,
+    ).any((s) => s.displayName.toLowerCase() == name);
   }
 
   static const _uuid = Uuid();
@@ -995,9 +1001,10 @@ class _AddStatusControlState extends State<_AddStatusControl> {
     // rule: base statuses, plus (only when adding into a type scope)
     // that type's own extensions — the same merged view [_scopedStatuses]
     // itself renders.
-    final existingNames = _scopedStatuses(widget.allStatuses, widget.scope)
-        .map((s) => s.name)
-        .toSet();
+    final existingNames = _scopedStatuses(
+      widget.allStatuses,
+      widget.scope,
+    ).map((s) => s.name).toSet();
     if (!existingNames.contains(base)) return base;
     var i = 2;
     while (existingNames.contains('${base}_$i')) {
@@ -1014,7 +1021,10 @@ class _AddStatusControlState extends State<_AddStatusControl> {
     // repainted.
     if (displayName.isEmpty || _isDuplicate) return;
     final nextSortOrder =
-        (_scopedStatuses(widget.allStatuses, widget.scope).map((s) => s.sortOrder).fold<int>(-1, (a, b) => a > b ? a : b)) +
+        (_scopedStatuses(
+          widget.allStatuses,
+          widget.scope,
+        ).map((s) => s.sortOrder).fold<int>(-1, (a, b) => a > b ? a : b)) +
         1;
     final status = WorkflowStatus(
       id: _uuid.v4(),
@@ -1039,7 +1049,9 @@ class _AddStatusControlState extends State<_AddStatusControl> {
     final c = t.colors;
 
     if (!_expanded) {
-      return _AddStatusCollapsedButton(onTap: () => setState(() => _expanded = true));
+      return _AddStatusCollapsedButton(
+        onTap: () => setState(() => _expanded = true),
+      );
     }
 
     final scopeLabel = widget.scope == null
@@ -1153,10 +1165,7 @@ class _AddStatusCollapsedButtonState extends State<_AddStatusCollapsedButton> {
               boxShadow: _isFocused ? AionShadows.focus(c, t.isDark) : null,
             ),
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 14,
-                vertical: 12,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -1332,6 +1341,7 @@ class _SddStageRenameRow extends StatefulWidget {
     required this.isLast,
     required this.attachment,
     required this.templates,
+    required this.preconditionNodeCount,
   });
 
   final SddStage stage;
@@ -1346,6 +1356,14 @@ class _SddStageRenameRow extends StatefulWidget {
   /// [_AttachmentForm]'s template picker. Added for
   /// `aion-arch/changes/workflow-skill-attachments`.
   final List<WorkflowPromptTemplate> templates;
+
+  /// This stage's current transition-precondition field-check count, or
+  /// `null` if unconfigured — [WorkflowConfigLoaded
+  /// .transitionPreconditionNodeCounts]`[stage]`. Threaded down to
+  /// [_PreconditionAffordance]'s count badge. Added for
+  /// `aion-arch/changes/sddstage-transition-preconditions`'s post-
+  /// `/verify` follow-up.
+  final int? preconditionNodeCount;
 
   @override
   State<_SddStageRenameRow> createState() => _SddStageRenameRowState();
@@ -1372,7 +1390,8 @@ class _SddStageRenameRowState extends State<_SddStageRenameRow> {
   @override
   void didUpdateWidget(covariant _SddStageRenameRow oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!_focusNode.hasFocus && oldWidget.displayNameOverride != widget.displayNameOverride) {
+    if (!_focusNode.hasFocus &&
+        oldWidget.displayNameOverride != widget.displayNameOverride) {
       _controller.text = widget.displayNameOverride ?? '';
     }
   }
@@ -1429,9 +1448,10 @@ class _SddStageRenameRowState extends State<_SddStageRenameRow> {
                     onSubmitted: (_) => _focusNode.unfocus(),
                   ),
                 ),
-                // Skill attachment indicator, appended to the display-
-                // label field's line, gap 10 (Component Spec §4). Added
-                // for `aion-arch/changes/workflow-skill-attachments`.
+                // Skill attachment indicator, appended to the
+                // display-label field's line, gap 10 (Component Spec
+                // §4). Added for `aion-arch/changes/workflow-skill-
+                // attachments`.
                 const SizedBox(width: 10),
                 _AttachmentBadge(
                   attachment: widget.attachment,
@@ -1439,6 +1459,32 @@ class _SddStageRenameRowState extends State<_SddStageRenameRow> {
                     () => _attachmentFormOpen = !_attachmentFormOpen,
                   ),
                 ),
+                // "Configure precondition" affordance, appended after
+                // the skill-attachment indicator — every precondition-
+                // bearing stage (all of `SddStage.values` except
+                // `archived`, which has no precondition and stays
+                // untouched — design.md §7/§5) gets one. Added for
+                // `aion-arch/changes/sddstage-transition-
+                // preconditions`; see that change's design.md §5.
+                // Excluding `archived` here was missed in the original
+                // `/apply` pass and fixed in a follow-up `/verify`
+                // round (see tasks.md's "Verify follow-ups (round 2)").
+                if (widget.stage != SddStage.archived) ...[
+                  const SizedBox(width: 10),
+                  // Flexible (not a fixed size): the affordance itself
+                  // decides compact (§5.1) vs. labeled (§5.2) from
+                  // whatever width this leaves it — see its own
+                  // dartdoc — rather than this row guessing from its
+                  // own gross width, which the AttachmentBadge's
+                  // variable width (short "+ Attach skill" vs. a long
+                  // "KIND · CONFIDENCE" label) makes unreliable.
+                  Flexible(
+                    child: _PreconditionAffordance(
+                      stage: widget.stage,
+                      count: widget.preconditionNodeCount,
+                    ),
+                  ),
+                ],
               ],
             ),
             if (_attachmentFormOpen) ...[
@@ -1468,6 +1514,226 @@ String _fixedStageName(SddStage stage) => switch (stage) {
   SddStage.verifying => 'Verifying',
   SddStage.archived => 'Archived',
 };
+
+/// The "Configure precondition" affordance appended to every
+/// [_SddStageRenameRow] — tapping it pushes
+/// `SddStagePreconditionEditorScreen(stage: ...)`, then (once that route
+/// pops) reloads [WorkflowConfigCubit] so [count] reflects whatever was
+/// just edited. Renders the compact §5.1 icon-only treatment or the
+/// labeled §5.2 treatment depending on how much width its own
+/// `LayoutBuilder` gets — decided locally rather than by
+/// `_SddStageRenameRow` guessing from its own gross row width, since a
+/// wide `AttachmentBadge` (a long "KIND · CONFIDENCE" label) can leave
+/// this affordance far less room than the row's total width would
+/// suggest. Originally shipped always-compact, with no count wiring at
+/// all; both gaps were closed for `aion-arch/changes/sddstage-
+/// transition-preconditions`'s post-`/verify` follow-up. Added for that
+/// change.
+class _PreconditionAffordance extends StatefulWidget {
+  const _PreconditionAffordance({required this.stage, required this.count});
+
+  final SddStage stage;
+
+  /// This stage's current field-check count, or `null`/`0` if
+  /// unconfigured — [_SddStageRenameRow.preconditionNodeCount].
+  final int? count;
+
+  @override
+  State<_PreconditionAffordance> createState() =>
+      _PreconditionAffordanceState();
+}
+
+class _PreconditionAffordanceState extends State<_PreconditionAffordance> {
+  bool _isHovered = false;
+  bool _isFocused = false;
+
+  /// Below this available width, render §5.1's icon-only treatment
+  /// instead of §5.2's labeled one — chosen as the labeled treatment's
+  /// own comfortable minimum (icon + a few characters of ellipsized
+  /// label + count slot + caret, per this widget's own padding/gaps),
+  /// not design.md §5.2's `420`px *row*-width figure, which described
+  /// the outer row, not this affordance's own slot.
+  static const _labeledMinWidth = 170.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < _labeledMinWidth;
+        return _build(context, compact);
+      },
+    );
+  }
+
+  Widget _build(BuildContext context, bool compact) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    final hasCount = widget.count != null && widget.count! > 0;
+
+    final decoration = BoxDecoration(
+      color: _isHovered ? c.surfaceHover : const Color(0x00000000),
+      border: Border.all(
+        color: _isFocused ? c.primary : c.border,
+        width: _isFocused ? 1.5 : 1,
+      ),
+      borderRadius: BorderRadius.all(
+        compact ? AionRadius.iconBtnSm : AionRadius.md,
+      ),
+      boxShadow: _isFocused ? AionShadows.focus(c, t.isDark) : null,
+    );
+    final glyphColor = _isHovered ? c.primary : c.textSecondary;
+
+    final child = compact
+        ? Stack(
+            clipBehavior: Clip.none,
+            children: [
+              DecoratedBox(
+                decoration: decoration,
+                child: SizedBox(
+                  width: 30,
+                  height: 30,
+                  child: Center(
+                    child: PhosphorIcon(
+                      PhosphorIcons.treeStructureLight,
+                      size: 13,
+                      color: glyphColor,
+                    ),
+                  ),
+                ),
+              ),
+              if (hasCount)
+                Positioned(
+                  top: -4,
+                  right: -4,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: c.primarySubtle,
+                      shape: BoxShape.circle,
+                    ),
+                    child: SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: Center(
+                        child: Text(
+                          '${widget.count}',
+                          style: AionText.key.copyWith(
+                            fontSize: 9,
+                            height: 1,
+                            color: c.primary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          )
+        : DecoratedBox(
+            decoration: decoration,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 10, 0),
+              child: SizedBox(
+                height: 30,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    PhosphorIcon(
+                      PhosphorIcons.treeStructureLight,
+                      size: 13,
+                      color: glyphColor,
+                    ),
+                    const SizedBox(width: AionSpacing.sp8),
+                    // Flexible+ellipsis, not a bare Text — the most
+                    // compressible element in this row, so a tight
+                    // Flexible allotment (a long AttachmentBadge label
+                    // next to it) truncates here instead of forcing a
+                    // hard RenderFlex overflow.
+                    Flexible(
+                      child: Text(
+                        context.l10n.transitionPreconditionConfigureAffordance,
+                        style: AionText.bodySm.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: c.textSecondary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (hasCount) ...[
+                      const SizedBox(width: 6),
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: c.primarySubtle,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(5, 1, 5, 1),
+                          child: Text(
+                            '${widget.count}',
+                            style: AionText.key.copyWith(color: c.primary),
+                          ),
+                        ),
+                      ),
+                    ] else ...[
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          context.l10n.transitionPreconditionCountNone,
+                          style: AionText.bodySm.copyWith(color: c.textMuted),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(width: AionSpacing.sp8),
+                    PhosphorIcon(
+                      PhosphorIcons.caretRightLight,
+                      size: 6,
+                      color: c.textMuted,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+
+    return FocusableActionDetector(
+      actions: {
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) {
+            _open(context);
+            return null;
+          },
+        ),
+      },
+      onShowFocusHighlight: (value) => setState(() => _isFocused = value),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: Semantics(
+          button: true,
+          label: context.l10n.transitionPreconditionConfigureAffordanceForStage(
+            _fixedStageName(widget.stage),
+          ),
+          child: GestureDetector(onTap: () => _open(context), child: child),
+        ),
+      ),
+    );
+  }
+
+  /// Pushes the precondition editor for [_PreconditionAffordance.stage]
+  /// and, once it pops, reloads [WorkflowConfigCubit] so this row's count
+  /// reflects whatever was just edited there.
+  Future<void> _open(BuildContext context) async {
+    final cubit = context.read<WorkflowConfigCubit>();
+    await context.push(
+      '/workspace/settings/workflow/sdd/${widget.stage.name}/precondition',
+    );
+    if (!mounted) return;
+    cubit.load();
+  }
+}
 
 // ---------------------------------------------------------------------
 // Skill attachments (Phase 2) — `_AttachmentBadge`/`_AttachmentForm`,
@@ -1501,7 +1767,10 @@ String _attachmentDisplayName(
   if (attachment.kind == SkillAttachmentKind.delegatedSkill) {
     return attachment.skillName ?? '';
   }
-  return templates.where((t) => t.id == attachment.templateId).firstOrNull?.name ??
+  return templates
+          .where((t) => t.id == attachment.templateId)
+          .firstOrNull
+          ?.name ??
       '(deleted template)';
 }
 
@@ -1523,21 +1792,21 @@ String _confidenceOptionLabel(
 ) => switch (confidence) {
   AutomationConfidence.auto => context.l10n.workflowSettingsConfidenceAuto,
   AutomationConfidence.gated => context.l10n.workflowSettingsConfidenceGated,
-  AutomationConfidence.manual =>
-    context.l10n.workflowSettingsConfidenceManual,
+  AutomationConfidence.manual => context.l10n.workflowSettingsConfidenceManual,
 };
 
 /// The help line under [_AttachmentForm]'s confidence selector, describing
 /// what the currently-selected [confidence] does. Component Spec §3.5.
-String _confidenceHelpText(BuildContext context, AutomationConfidence confidence) =>
-    switch (confidence) {
-      AutomationConfidence.auto =>
-        context.l10n.workflowSettingsConfidenceAutoHelp,
-      AutomationConfidence.gated =>
-        context.l10n.workflowSettingsConfidenceGatedHelp,
-      AutomationConfidence.manual =>
-        context.l10n.workflowSettingsConfidenceManualHelp,
-    };
+String _confidenceHelpText(
+  BuildContext context,
+  AutomationConfidence confidence,
+) => switch (confidence) {
+  AutomationConfidence.auto => context.l10n.workflowSettingsConfidenceAutoHelp,
+  AutomationConfidence.gated =>
+    context.l10n.workflowSettingsConfidenceGatedHelp,
+  AutomationConfidence.manual =>
+    context.l10n.workflowSettingsConfidenceManualHelp,
+};
 
 /// [confidence]'s identity color, per Component Spec §1.2's "strongest →
 /// quietest" mapping — `auto` reads as live/active, `gated` as a pending
@@ -1929,7 +2198,8 @@ class _TemplatePickerFieldState extends State<_TemplatePickerField> {
             children: [
               Expanded(
                 child: Text(
-                  selected?.name ?? context.l10n.workflowSettingsSelectTemplateHint,
+                  selected?.name ??
+                      context.l10n.workflowSettingsSelectTemplateHint,
                   style: AionText.bodySm.copyWith(
                     fontSize: 14,
                     color: selected != null ? c.textPrimary : c.textMuted,
@@ -2179,7 +2449,10 @@ class _AttachmentFormState extends State<_AttachmentForm> {
             Text(
               isEditing
                   ? context.l10n.workflowSettingsEditSkillEyebrow(
-                      _attachmentDisplayName(widget.existing!, widget.templates),
+                      _attachmentDisplayName(
+                        widget.existing!,
+                        widget.templates,
+                      ),
                     )
                   : context.l10n.workflowSettingsAttachSkillEyebrow(
                       widget.targetLabel.toUpperCase(),

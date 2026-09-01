@@ -36,6 +36,7 @@ import 'package:aion/features/tickets/data/repositories/drift_notification_repos
 import 'package:aion/features/tickets/data/repositories/drift_page_wikilink_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_link_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_ticket_repository.dart';
+import 'package:aion/features/tickets/data/repositories/drift_transition_precondition_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_workflow_prompt_template_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_workflow_skill_attachment_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_workflow_status_repository.dart';
@@ -353,6 +354,7 @@ final appRouter = GoRouter(
               context.read<TicketRepository>(),
               context.read<WorkflowSkillAttachmentRepository>(),
               context.read<WorkflowPromptTemplateRepository>(),
+              context.read<TransitionPreconditionRepository>(),
             )..load(),
             child: const WorkflowStatusSettingsScreen(),
           ),
@@ -376,6 +378,7 @@ final appRouter = GoRouter(
               context.read<TicketRepository>(),
               context.read<WorkflowSkillAttachmentRepository>(),
               context.read<WorkflowPromptTemplateRepository>(),
+              context.read<TransitionPreconditionRepository>(),
             )..load(),
             child: const WorkflowPromptTemplatesScreen(),
           ),
@@ -396,6 +399,23 @@ final appRouter = GoRouter(
               child: DecisionGraphEditorScreen(
                 automationContext: automationContext,
               ),
+            );
+          },
+        ),
+        // Reached from `WorkflowStatusSettingsScreen`'s `_SddStageRenameRow`
+        // "Configure precondition" affordance. See
+        // aion-arch/changes/sddstage-transition-preconditions/design.md §4.
+        GoRoute(
+          path: '/workspace/settings/workflow/sdd/:stage/precondition',
+          builder: (context, state) {
+            final stage = SddStage.values.firstWhere(
+              (s) => s.name == state.pathParameters['stage'],
+            );
+            return BlocProvider<TransitionPreconditionConfigCubit>(
+              create: (context) => TransitionPreconditionConfigCubit(
+                context.read<TransitionPreconditionRepository>(),
+              ),
+              child: SddStagePreconditionEditorScreen(stage: stage),
             );
           },
         ),
@@ -655,6 +675,12 @@ class _WorkspaceShellState extends State<WorkspaceShell>
         RepositoryProvider<DecisionGraphRepository>(
           create: (_) => DriftDecisionGraphRepository(_database),
         ),
+        // Project-scoped transition-precondition configuration — same
+        // Drift-backed shape as DecisionGraphRepository above. See
+        // aion-arch/changes/sddstage-transition-preconditions/design.md §2.
+        RepositoryProvider<TransitionPreconditionRepository>(
+          create: (_) => DriftTransitionPreconditionRepository(_database),
+        ),
         // Desktop-only project-scoped services below — git projection,
         // bidirectional resource/page reconcile, and repair. Absent
         // entirely on mobile/web (no rootPath to address git commands
@@ -742,6 +768,7 @@ class _WorkspaceShellState extends State<WorkspaceShell>
               context.read<TicketRepository>(),
               context.read<WorkflowSkillAttachmentRepository>(),
               context.read<WorkflowPromptTemplateRepository>(),
+              context.read<TransitionPreconditionRepository>(),
             )..load(),
             child: BlocProvider<TicketsCubit>(
               create: (context) =>
@@ -796,6 +823,8 @@ class _WorkspaceShellState extends State<WorkspaceShell>
                       dependencyCacheService: const DependencyCacheService(),
                       decisionGraphRepository: context
                           .read<DecisionGraphRepository>(),
+                      transitionPreconditionRepository: context
+                          .read<TransitionPreconditionRepository>(),
                     )
                     ..restoreExecutionQueue()
                     ..loadUnreadNotificationCount(),

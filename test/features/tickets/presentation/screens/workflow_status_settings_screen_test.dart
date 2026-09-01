@@ -382,4 +382,41 @@ void main() {
       verifyNever(() => attachmentRepository.create(any()));
     },
   );
+
+  // `aion-arch/changes/sddstage-transition-preconditions` — round-2
+  // `/verify` follow-up: the "Configure precondition" affordance must
+  // appear on every precondition-bearing stage row (5) and never on
+  // `SddStage.archived`, which has no precondition (design.md §5/§7).
+  testWidgets(
+    'the "Configure precondition" affordance appears on all 5 '
+    'precondition-bearing stage rows and not on Archived',
+    (tester) async {
+      final cubit = buildCubit()..load();
+      await tester.pumpWidget(_wrap(cubit));
+      await tester.pumpAndSettle();
+
+      // Semantics label (set identically by both the compact §5.1 and
+      // labeled §5.2 variants) is more robust than the visible "Configure
+      // precondition" text, which only the labeled variant renders — the
+      // affordance's own width-driven variant choice shouldn't matter to
+      // this assertion. Mirrors the private `_fixedStageName` switch in
+      // workflow_status_settings_screen.dart.
+      const fixedStageNames = {
+        SddStage.exploring: 'Exploring',
+        SddStage.proposed: 'Proposed',
+        SddStage.designBrief: 'Design Brief',
+        SddStage.designSync: 'Design Sync',
+        SddStage.verifying: 'Verifying',
+        SddStage.archived: 'Archived',
+      };
+      for (final stage in SddStage.values) {
+        final label = 'Configure precondition for ${fixedStageNames[stage]}';
+        expect(
+          find.bySemanticsLabel(label),
+          stage == SddStage.archived ? findsNothing : findsOneWidget,
+          reason: label,
+        );
+      }
+    },
+  );
 }
