@@ -260,35 +260,14 @@ enum CodingExecutionBlockReason {
   storyDesignGatePending,
 }
 
-/// Why an `epic`/`story` [TicketDetailLoaded.ticket]'s current
-/// [SddStage](../../domain/enums/sdd_stage.dart) precondition isn't met
-/// yet — resolved to localized hint text at the widget layer (the
-/// `_SddStageSection` "Not ready" state, per
-/// `aion-arch/changes/sdd-ticket-execution/design.md` §2.2), mirroring
-/// how [TicketsErrorReason] is resolved via `ticketsErrorMessage`. `null`
-/// on [TicketDetailLoaded.sddStageBlockReason] means either the ticket
-/// can already advance ([TicketDetailLoaded.canAdvanceSddStage] is
-/// `true`), or there's nothing left to advance to (not an epic/story, or
-/// already [SddStage.archived]).
-enum SddStageBlockReason {
-  /// The current stage's most recently created `chat` child doesn't have
-  /// an AI reply yet (or no `chat` child exists yet).
-  awaitingChatReply,
-
-  /// Not every direct child at the next rank down (Tasks for a story,
-  /// Stories for an epic) has reached a terminal state yet — or none
-  /// exist yet.
-  awaitingChildren,
-
-  /// [SddStage.designBrief]'s linked design Page ticket doesn't have any
-  /// pasted content yet. Added for `aion-arch/changes/sdd-design-gate`.
-  awaitingDesignPaste,
-
-  /// [SddStage.designSync]'s chat hasn't produced a `"DESIGN GATE:
-  /// APPROVED"` reply yet — either no reply exists, or the most recent
-  /// one says `PENDING`. Added for `aion-arch/changes/sdd-design-gate`.
-  awaitingDesignApproval,
-}
+// `SddStageBlockReason` (an `epic`/`story`'s current `SddStage`
+// precondition-not-met reason) was removed for
+// `aion-arch/changes/sddstage-transition-preconditions` —
+// [TicketDetailLoaded.sddStageBlockReason] is now a plain, already-built
+// `String?` (`'Waiting on: <field display name>'`), auto-derived by
+// `TicketsCubit._sddStageAdvanceCheck` from the failing
+// `TransitionFieldSpec`'s `displayName` rather than resolved from a fixed
+// enum at the widget layer. See that change's design.md §4.
 
 /// A deterministic, code-computed embedding-similarity match from a ticket
 /// to the single most relevant live `TicketType.spec` ticket, surfaced on
@@ -481,8 +460,11 @@ class TicketDetailLoaded extends TicketsState {
   /// Why [canAdvanceSddStage] is `false`, for the "Not ready" hint row —
   /// `null` whenever [canAdvanceSddStage] is `true`, or [ticket] has
   /// nothing left to advance to. Computed by
-  /// [TicketsCubit.getTicketById] alongside [canAdvanceSddStage].
-  final SddStageBlockReason? sddStageBlockReason;
+  /// [TicketsCubit.getTicketById] alongside [canAdvanceSddStage]. An
+  /// already-built, auto-derived string (`'Waiting on: <field display
+  /// name>'`), not a fixed enum — see
+  /// `aion-arch/changes/sddstage-transition-preconditions/design.md` §4.
+  final String? sddStageBlockReason;
 
   /// Whether [ticket] (a `story`) needs a `designBrief`/`designSync`
   /// pass, computed by [TicketsCubit.getTicketById] from its current
@@ -676,7 +658,7 @@ class TicketDetailLoaded extends TicketsState {
     List<BacklinkRef>? backlinks,
     List<GapOrQuestionRef>? gapsAndOpenQuestions,
     bool? canAdvanceSddStage,
-    SddStageBlockReason? sddStageBlockReason,
+    String? sddStageBlockReason,
     bool? needsDesignReview,
     Ticket? linkedDesignPage,
     bool? isExecuting,

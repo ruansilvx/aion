@@ -58,9 +58,12 @@ import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_list_filters.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_list_sort.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_list_view_mode.dart';
+import 'package:aion/features/tickets/domain/entities/transition_field_spec.dart';
+import 'package:aion/features/tickets/domain/entities/transition_node.dart';
 import 'package:aion/features/tickets/domain/enums/backlink_origin.dart';
 import 'package:aion/features/tickets/domain/enums/comment_author_type.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
+import 'package:aion/features/tickets/domain/enums/transition_outcome.dart';
 import 'package:aion/features/tickets/domain/enums/summarization_depth.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_complexity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
@@ -84,10 +87,12 @@ import 'package:aion/features/tickets/domain/repositories/ticket_list_filter_rep
 import 'package:aion/features/tickets/domain/repositories/ticket_list_sort_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_list_view_mode_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
+import 'package:aion/features/tickets/domain/repositories/transition_precondition_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/workflow_prompt_template_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/workflow_skill_attachment_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/workflow_status_repository.dart';
 import 'package:aion/features/tickets/domain/utils/embedding_similarity.dart';
+import 'package:aion/features/tickets/domain/utils/evaluate_transition_graph.dart';
 import 'package:aion/features/tickets/domain/utils/render_workflow_prompt_template.dart';
 import 'package:aion/features/tickets/domain/utils/ticket_link_direction.dart';
 import 'package:aion/features/tickets/domain/utils/ticket_rollup_calculator.dart';
@@ -285,6 +290,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     NotificationRepository? notificationRepository,
     DependencyCacheService? dependencyCacheService,
     DecisionGraphRepository? decisionGraphRepository,
+    TransitionPreconditionRepository? transitionPreconditionRepository,
   }) : super(const TicketsInitial()) {
     _embeddingProvider = embeddingProvider;
     _gitProjector = gitProjector;
@@ -315,6 +321,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     _notificationRepository = notificationRepository;
     _dependencyCache = dependencyCacheService;
     _decisionGraphRepository = decisionGraphRepository;
+    _transitionPreconditionRepository = transitionPreconditionRepository;
     _workflowStatusChangesSubscription = workflowStatusRepository?.onChanged
         .listen((_) => _loadWorkflowStatuses());
     unawaited(_loadWorkflowStatuses());
@@ -325,6 +332,10 @@ class TicketsCubit extends Cubit<TicketsState> {
     _decisionGraphChangesSubscription = decisionGraphRepository?.onChanged
         .listen((_) => _loadDecisionGraphs());
     unawaited(_loadDecisionGraphs());
+    _transitionGraphChangesSubscription = transitionPreconditionRepository
+        ?.onChanged
+        .listen((_) => _loadTransitionGraphs());
+    unawaited(_loadTransitionGraphs());
     _rollupRecomputer = TicketRollupRecomputer(
       _repository,
       gitProjector: gitProjector,
@@ -521,6 +532,18 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [defaultDecisionNodesById] instead of reading a cache. Added for
   /// `aion-arch/changes/automation-decision-graphs`.
   late final DecisionGraphRepository? _decisionGraphRepository;
+
+  /// Persists every precondition-bearing `SddStage`'s configured
+  /// `TransitionGraph`. Backs [_sddStageAdvanceCheck] — see
+  /// [_transitionGraphsByStage]/[_transitionNodesById]'s own dartdocs.
+  /// `null` (every existing construction site except `app_router.dart`)
+  /// pins every stage to `TransitionOutcome.allowed` — **not** today's
+  /// hardcoded checks; a construction site that needs
+  /// `_sddStageAdvanceCheck`'s real precondition logic must supply one
+  /// seeded with the baseline graphs (design.md §3). Added for
+  /// `aion-arch/changes/sddstage-transition-preconditions`.
+  late final TransitionPreconditionRepository?
+  _transitionPreconditionRepository;
 
   /// English-only [AppLocalizationsEn] instance used to build
   /// [_recordNotification]'s persisted `message` strings and
@@ -733,6 +756,63 @@ class TicketsCubit extends Cubit<TicketsState> {
     return evaluateDecisionGraph(graph, _decisionNodesById, effectiveInput);
   }
 
+  /// Every precondition-bearing `SddStage`'s currently-configured
+  /// `TransitionGraph`. Loaded once at construction
+  /// ([_loadTransitionGraphs], fired from the constructor body without
+  /// being awaited, mirroring [_decisionGraphsByContext]'s own
+  /// load-then-upgrade shape) and refreshed every time
+  /// [_transitionPreconditionRepository] fires
+  /// `TransitionPreconditionRepository.onChanged` (i.e. whenever
+  /// `TransitionPreconditionConfigCubit` persists an edit). Empty until
+  /// the first load resolves. See
+  /// `aion-arch/changes/sddstage-transition-preconditions/design.md` §4.
+  Map<SddStage, TransitionGraph> _transitionGraphsByStage = const {};
+
+  /// Every `TransitionNode` belonging to any stage's graph, keyed by
+  /// [TransitionNode.id] — the union of
+  /// `TransitionPreconditionRepository.getAllNodes` across every
+  /// precondition-bearing `SddStage`, loaded alongside
+  /// [_transitionGraphsByStage].
+  Map<String, TransitionNode> _transitionNodesById = const {};
+
+  /// Subscription driving [_transitionGraphsByStage]/
+  /// [_transitionNodesById]'s live refresh — see those fields' dartdocs.
+  /// `null` whenever this cubit was constructed without a
+  /// [TransitionPreconditionRepository]. Cancelled in [close].
+  StreamSubscription<void>? _transitionGraphChangesSubscription;
+
+  /// The 5 `SddStage` values [_loadTransitionGraphs] fetches a graph for —
+  /// the only stages `_sddStageAdvanceCheck` ever gates. `null`/
+  /// [SddStage.archived] are excluded, mirroring
+  /// `TransitionPreconditionRepository.seedDefaultsIfEmpty`'s own scope.
+  static const _preconditionBearingStages = [
+    SddStage.exploring,
+    SddStage.proposed,
+    SddStage.designBrief,
+    SddStage.designSync,
+    SddStage.verifying,
+  ];
+
+  /// Reloads [_transitionGraphsByStage]/[_transitionNodesById] from
+  /// [_transitionPreconditionRepository]. A no-op (leaving both at their
+  /// current value) when this cubit was constructed without one.
+  Future<void> _loadTransitionGraphs() async {
+    final repository = _transitionPreconditionRepository;
+    if (repository == null) return;
+    final graphsByStage = <SddStage, TransitionGraph>{};
+    final nodesById = <String, TransitionNode>{};
+    for (final stage in _preconditionBearingStages) {
+      final graph = await repository.getGraph(stage);
+      graphsByStage[stage] = graph;
+      for (final node in await repository.getAllNodes(stage)) {
+        nodesById[node.id] = node;
+      }
+    }
+    if (isClosed) return;
+    _transitionGraphsByStage = graphsByStage;
+    _transitionNodesById = nodesById;
+  }
+
   /// [DecisionEvalContext.askAgentJudgment]'s real implementation — resolves
   /// [session]'s provider via [_providerRegistry], issues a forked,
   /// resumed [AgentModelClient.run] call asking [prompt] as a scoped
@@ -931,6 +1011,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     unawaited(_workflowStatusChangesSubscription?.cancel());
     unawaited(_skillAttachmentChangesSubscription?.cancel());
     unawaited(_decisionGraphChangesSubscription?.cancel());
+    unawaited(_transitionGraphChangesSubscription?.cancel());
     unreadNotificationCount.dispose();
     return super.close();
   }
@@ -2792,19 +2873,84 @@ class TicketsCubit extends Cubit<TicketsState> {
     });
   }
 
+  /// Whether [children] is non-empty — [hasChildrenField]'s value.
+  /// Extracted from `_sddStageAdvanceCheck`'s former inline `proposed`
+  /// logic. Added for `aion-arch/changes/sddstage-transition-preconditions`.
+  bool _hasChildren(List<Ticket> children) => children.isNotEmpty;
+
+  /// Whether every ticket in [children] has reached a terminal state at
+  /// [nextRank] — `WorkflowStatusRole.done` for [TicketType.task] (a
+  /// Task/Bug child), or [SddStage.archived] for any other [nextRank] (a
+  /// Story child of an Epic). `false` when [children] is empty — an empty
+  /// list is never "complete," matching `_sddStageAdvanceCheck`'s
+  /// pre-existing `children.isNotEmpty && children.every(...)` guard.
+  /// [allChildrenCompleteField]'s value for `proposed`,
+  /// [allTasksCompleteField]'s for `designSync` (called with
+  /// `nextRank: TicketType.task`). Extracted from
+  /// `_sddStageAdvanceCheck`'s former inline `proposed`/`designSync`
+  /// logic. Added for `aion-arch/changes/sddstage-transition-preconditions`.
+  bool _allChildrenComplete(List<Ticket> children, TicketType nextRank) {
+    if (children.isEmpty) return false;
+    return children.every(
+      (c) => nextRank == TicketType.task
+          ? _roleOf(c.status) == WorkflowStatusRole.done
+          : c.sddStage == SddStage.archived,
+    );
+  }
+
+  /// Whether [page] exists and has non-empty pasted content —
+  /// [linkedDesignPageHasContentField]'s value, folding "page exists" and
+  /// "description non-empty" into one field since both failure modes
+  /// produced the same outcome today. Extracted from
+  /// `_sddStageAdvanceCheck`'s former inline `designBrief` logic. Added
+  /// for `aion-arch/changes/sddstage-transition-preconditions`.
+  bool _linkedDesignPageHasContent(Ticket? page) =>
+      page != null && (page.description?.trim().isNotEmpty ?? false);
+
+  /// Resolves [stage]'s currently-cached `TransitionGraph` against [input]
+  /// via `evaluateTransitionGraph`, translating the result into
+  /// `_sddStageAdvanceCheck`'s `(canAdvance, blockReason)` shape. Falls
+  /// back to `canAdvance: true` (never gating) when [stage]'s graph hasn't
+  /// loaded yet — either this cubit was constructed without a
+  /// [TransitionPreconditionRepository] at all, or
+  /// [_loadTransitionGraphs]'s first load hasn't resolved yet — mirroring
+  /// [_transitionPreconditionRepository]'s own documented "no repository,
+  /// no gate" contract. Added for
+  /// `aion-arch/changes/sddstage-transition-preconditions`.
+  ({bool canAdvance, String? blockReason}) _resolveTransition(
+    SddStage stage,
+    TransitionEvalContext input,
+  ) {
+    final graph = _transitionGraphsByStage[stage];
+    if (graph == null) return (canAdvance: true, blockReason: null);
+    final result = evaluateTransitionGraph(graph, _transitionNodesById, input);
+    return (
+      canAdvance: result.outcome == TransitionOutcome.allowed,
+      blockReason: result.outcome == TransitionOutcome.blocked
+          ? 'Waiting on: ${result.blockingFieldDisplayName}'
+          : null,
+    );
+  }
+
   /// Whether [advanceSddStage] would currently succeed for [ticket],
-  /// alongside — when it wouldn't — why, as an [SddStageBlockReason] for
-  /// the "Not ready" hint row (`_SddStageSection`, see
-  /// `aion-arch/changes/sdd-ticket-execution/design.md` §2.2). Shared by
-  /// [advanceSddStage]'s own check and [getTicketById]'s
+  /// alongside — when it wouldn't — why, as an auto-derived hint string
+  /// for the "Not ready" hint row (`_SddStageSection`, see
+  /// `aion-arch/changes/sddstage-transition-preconditions/design.md` §4/
+  /// §6). Shared by [advanceSddStage]'s own check and [getTicketById]'s
   /// [TicketDetailLoaded.canAdvanceSddStage]/
   /// [TicketDetailLoaded.sddStageBlockReason] computation, so the two
   /// can't disagree. `canAdvance` is `false` with `blockReason: null` for
   /// any type other than [TicketType.epic]/[TicketType.story], or once
   /// [SddStage.archived] is reached (nothing left to advance to, not a
-  /// "blocked" state).
-  Future<({bool canAdvance, SddStageBlockReason? blockReason})>
-  _sddStageAdvanceCheck(Ticket ticket) async {
+  /// "blocked" state). Each of the 5 precondition-bearing branches below
+  /// builds a [TransitionEvalContext] from the same signals the pre-
+  /// `sddstage-transition-preconditions` hardcoded checks used, then
+  /// consults [stage]'s project-configured `TransitionGraph` via
+  /// [_resolveTransition] rather than a fixed rule — see that change's
+  /// design.md §4.
+  Future<({bool canAdvance, String? blockReason})> _sddStageAdvanceCheck(
+    Ticket ticket,
+  ) async {
     if (ticket.type != TicketType.epic && ticket.type != TicketType.story) {
       return (canAdvance: false, blockReason: null);
     }
@@ -2817,10 +2963,11 @@ class TicketsCubit extends Cubit<TicketsState> {
         return (canAdvance: true, blockReason: null);
       case SddStage.exploring:
       case SddStage.verifying:
+        final stage = ticket.sddStage!;
         final ready = await _mostRecentChatHasTerminalReply(ticket.id);
-        return (
-          canAdvance: ready,
-          blockReason: ready ? null : SddStageBlockReason.awaitingChatReply,
+        return _resolveTransition(
+          stage,
+          TransitionEvalContext(mostRecentChatHasTerminalReply: ready),
         );
       case SddStage.proposed:
         // Story branch: `designBrief`/`designSync` are supposed to run
@@ -2842,25 +2989,21 @@ class TicketsCubit extends Cubit<TicketsState> {
         final needsDesign =
             ticket.type == TicketType.story &&
             await _storyNeedsDesignReview(children);
-        final ready =
-            children.isNotEmpty &&
-            (needsDesign ||
-                children.every(
-                  (c) => nextRank == TicketType.task
-                      ? _roleOf(c.status) == WorkflowStatusRole.done
-                      : c.sddStage == SddStage.archived,
-                ));
-        return (
-          canAdvance: ready,
-          blockReason: ready ? null : SddStageBlockReason.awaitingChildren,
+        return _resolveTransition(
+          SddStage.proposed,
+          TransitionEvalContext(
+            hasChildren: _hasChildren(children),
+            storyNeedsDesignReview: needsDesign,
+            allChildrenComplete: _allChildrenComplete(children, nextRank),
+          ),
         );
       case SddStage.designBrief:
         final page = await _linkedDesignPage(ticket.id);
-        final ready =
-            page != null && (page.description?.trim().isNotEmpty ?? false);
-        return (
-          canAdvance: ready,
-          blockReason: ready ? null : SddStageBlockReason.awaitingDesignPaste,
+        return _resolveTransition(
+          SddStage.designBrief,
+          TransitionEvalContext(
+            linkedDesignPageHasContent: _linkedDesignPageHasContent(page),
+          ),
         );
       case SddStage.designSync:
         // Also requires every child Task done — restoring the check to
@@ -2872,15 +3015,12 @@ class TicketsCubit extends Cubit<TicketsState> {
           ticket.id,
           types: TicketTypeHierarchy.executableTypes,
         );
-        final ready =
-            approved &&
-            tasks.isNotEmpty &&
-            tasks.every((t) => _roleOf(t.status) == WorkflowStatusRole.done);
-        return (
-          canAdvance: ready,
-          blockReason: ready
-              ? null
-              : SddStageBlockReason.awaitingDesignApproval,
+        return _resolveTransition(
+          SddStage.designSync,
+          TransitionEvalContext(
+            allTasksComplete: _allChildrenComplete(tasks, TicketType.task),
+            designSyncApproved: approved,
+          ),
         );
       case SddStage.archived:
         return (canAdvance: false, blockReason: null);

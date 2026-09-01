@@ -280,11 +280,7 @@
       "stage": { "type": "String" }
     }
   },
-  "ticketDetailSddStageHintAwaitingChat": "Advance unlocks once this stage's chat replies.",
-  "ticketDetailSddStageHintAwaitingTasks": "Advance unlocks once every Task is done.",
-  "ticketDetailSddStageHintAwaitingStories": "Advance unlocks once every Story is archived.",
-  "ticketDetailSddStageHintAwaitingDesignPaste": "Advance unlocks once the linked design page has content.",
-  "ticketDetailSddStageHintAwaitingDesignApproval": "Advance unlocks once Design Sync approves the pasted design.",
+  "ticketDetailSddStageNotReadyPrefix": "Not ready to advance. ",
   "ticketDetailSddStageSubProposalAccepted": "Precondition met · proposal accepted",
   "ticketDetailSddStageSubDesignPasted": "Linked design page has content",
   "ticketDetailSddStageSubDesignApproved": "Design Sync approved the pasted design",
@@ -1025,6 +1021,72 @@
   "decisionGraphAgentCostHintSemantics": "Cost, calls the agent, adds a few seconds to evaluate",
   "decisionGraphAgentCostHintTooltip": "Calls the agent — adds a few seconds to evaluate.",
   "decisionGraphAgentCostHintLatency": "~2–6s per evaluation",
+
+  "transitionPreconditionEyebrow": "SDD STAGE · PRECONDITION",
+  "transitionPreconditionOutlineHeader": "OUTLINE · {count, plural, one{1 FIELD CHECK} other{{count} FIELD CHECKS}}",
+  "@transitionPreconditionOutlineHeader": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "transitionPreconditionAddFieldCheck": "Add field check",
+  "transitionPreconditionMaxDepthReached": "Max depth reached",
+  "transitionPreconditionFieldPickerPlaceholder": "Choose a field check",
+  "transitionPreconditionFieldPickerLabel": "Field check",
+  "transitionPreconditionMatchedLabel": "Matched",
+  "transitionPreconditionUnmatchedLabel": "Unmatched",
+  "transitionPreconditionEndHereOption": "End here",
+  "transitionPreconditionContinueOption": "Continue to field check",
+  "transitionPreconditionThenCheck": "THEN CHECK",
+  "transitionPreconditionOtherwiseCheck": "OTHERWISE CHECK",
+  "transitionPreconditionContinuesToLabel": "Continues to: {fieldName}",
+  "@transitionPreconditionContinuesToLabel": {
+    "placeholders": {
+      "fieldName": { "type": "String" }
+    }
+  },
+  "transitionPreconditionOutcomeAllowedLabel": "Allowed",
+  "transitionPreconditionOutcomeBlockedLabel": "Blocked",
+  "transitionPreconditionDeleteButton": "Delete",
+  "transitionPreconditionDeleteConfirmTitle": "Delete this field check?",
+  "transitionPreconditionDeleteConfirmTitleWithDescendants": "Delete this field check and its {count, plural, one{1 descendant} other{{count} descendants}}?",
+  "@transitionPreconditionDeleteConfirmTitleWithDescendants": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "transitionPreconditionDeleteConfirmMessage": "This also removes every field check beneath it.",
+  "transitionPreconditionRootMarker": "ROOT · LEAVING {stage}",
+  "@transitionPreconditionRootMarker": {
+    "placeholders": {
+      "stage": { "type": "String" }
+    }
+  },
+  "transitionPreconditionResetButton": "Reset to always allowed",
+  "transitionPreconditionEmptyStateEyebrow": "NO PRECONDITION",
+  "transitionPreconditionEmptyStateHeadline": "{stage} always advances",
+  "@transitionPreconditionEmptyStateHeadline": {
+    "placeholders": {
+      "stage": { "type": "String" }
+    }
+  },
+  "transitionPreconditionEmptyStateBody": "Nothing gates this stage today. Add a field check to block the transition until the ticket is ready.",
+  "transitionPreconditionEmptyStateButton": "Add first field check",
+  "transitionPreconditionConfigureAffordance": "Configure precondition",
+  "transitionPreconditionConfigureAffordanceForStage": "Configure precondition for {stage}",
+  "@transitionPreconditionConfigureAffordanceForStage": {
+    "placeholders": {
+      "stage": { "type": "String" }
+    }
+  },
+  "transitionPreconditionCountNone": "None",
+  "transitionPreconditionStagePositionChip": "Stage {position} of {total}",
+  "@transitionPreconditionStagePositionChip": {
+    "placeholders": {
+      "position": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
 
   "settingsOverridesEyebrow": "OVERRIDES",
   "settingsOverridesSummary": "Browse every baseline skill and convention for this project and edit a plain-text local override for any one of them.",

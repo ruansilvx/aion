@@ -1439,6 +1439,13 @@ class _SddStageRenameRowState extends State<_SddStageRenameRow> {
                     () => _attachmentFormOpen = !_attachmentFormOpen,
                   ),
                 ),
+                // "Configure precondition" affordance, appended after the
+                // skill-attachment indicator — every one of the 5 stages
+                // carries a precondition. Added for
+                // `aion-arch/changes/sddstage-transition-preconditions`;
+                // see that change's design.md §5.
+                const SizedBox(width: 10),
+                _PreconditionAffordance(stage: widget.stage),
               ],
             ),
             if (_attachmentFormOpen) ...[
@@ -1468,6 +1475,91 @@ String _fixedStageName(SddStage stage) => switch (stage) {
   SddStage.verifying => 'Verifying',
   SddStage.archived => 'Archived',
 };
+
+/// The "Configure precondition" affordance appended to every
+/// [_SddStageRenameRow] — tapping it pushes
+/// `SddStagePreconditionEditorScreen(stage: ...)`. A single compact
+/// icon-button treatment reused at every row width — a deliberate
+/// simplification from the pasted Component Spec's compact/labeled
+/// variant split (§5.1/§5.2), which also carries a live field-check
+/// count this row has no wiring to fetch (no `WorkflowConfigState` field
+/// carries it — out of this task's listed scope). Added for
+/// `aion-arch/changes/sddstage-transition-preconditions`.
+class _PreconditionAffordance extends StatefulWidget {
+  const _PreconditionAffordance({required this.stage});
+
+  final SddStage stage;
+
+  @override
+  State<_PreconditionAffordance> createState() =>
+      _PreconditionAffordanceState();
+}
+
+class _PreconditionAffordanceState extends State<_PreconditionAffordance> {
+  bool _isHovered = false;
+  bool _isFocused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+
+    return FocusableActionDetector(
+      actions: {
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (_) {
+            _open(context);
+            return null;
+          },
+        ),
+      },
+      onShowFocusHighlight: (value) => setState(() => _isFocused = value),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: Semantics(
+          button: true,
+          label: context.l10n
+              .transitionPreconditionConfigureAffordanceForStage(
+                _fixedStageName(widget.stage),
+              ),
+          child: GestureDetector(
+            onTap: () => _open(context),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: _isHovered ? c.surfaceHover : const Color(0x00000000),
+                border: Border.all(
+                  color: _isFocused ? c.primary : c.border,
+                  width: _isFocused ? 1.5 : 1,
+                ),
+                borderRadius: BorderRadius.all(AionRadius.iconBtnSm),
+                boxShadow: _isFocused ? AionShadows.focus(c, t.isDark) : null,
+              ),
+              child: SizedBox(
+                width: 30,
+                height: 30,
+                child: Center(
+                  child: PhosphorIcon(
+                    PhosphorIcons.treeStructureLight,
+                    size: 13,
+                    color: _isHovered ? c.primary : c.textSecondary,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _open(BuildContext context) {
+    context.push(
+      '/workspace/settings/workflow/sdd/${widget.stage.name}/precondition',
+    );
+  }
+}
 
 // ---------------------------------------------------------------------
 // Skill attachments (Phase 2) — `_AttachmentBadge`/`_AttachmentForm`,

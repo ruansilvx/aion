@@ -28,6 +28,9 @@ import 'package:aion/features/tickets/data/models/ticket_comment_model.dart';
 import 'package:aion/features/tickets/data/models/ticket_link_model.dart';
 import 'package:aion/features/tickets/data/models/ticket_model.dart';
 import 'package:aion/features/tickets/data/models/workflow_prompt_template_table.dart';
+import 'package:aion/features/tickets/data/daos/transition_precondition_dao.dart';
+import 'package:aion/features/tickets/data/models/transition_precondition_graphs_table.dart';
+import 'package:aion/features/tickets/data/models/transition_precondition_nodes_table.dart';
 import 'package:aion/features/tickets/data/models/workflow_skill_attachment_table.dart';
 import 'package:aion/features/tickets/data/models/workflow_status_table.dart';
 import 'package:aion/features/tickets/domain/utils/ticket_rollup_calculator.dart';
@@ -153,7 +156,16 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
 /// hardcoded `_effectiveCodingExecutionRetryConfidence`/
 /// `_effectiveCodingExecutionConfidence` ad hoc checks a pre-18 database
 /// already behaved with. See
-/// `aion-arch/changes/automation-decision-graphs/design.md` §2.
+/// `aion-arch/changes/automation-decision-graphs/design.md` §2. Version 19
+/// adds [TransitionPreconditionGraphsTable]/
+/// [TransitionPreconditionNodesTable], seeded with a baseline transition-
+/// precondition graph for each of the 5 `SddStage` values that has a real
+/// precondition today (via
+/// [TransitionPreconditionDao.seedDefaultsIfEmpty]) for both a fresh
+/// install and a backfill of every pre-existing project — reproducing the
+/// exact hardcoded `TicketsCubit._sddStageAdvanceCheck` branches a pre-19
+/// database already behaved with. See
+/// `aion-arch/changes/sddstage-transition-preconditions/design.md` §2/§3.
 @DriftDatabase(
   tables: [
     TicketsTable,
@@ -168,6 +180,8 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
     NotificationsTable,
     AutomationDecisionGraphsTable,
     AutomationDecisionNodesTable,
+    TransitionPreconditionGraphsTable,
+    TransitionPreconditionNodesTable,
   ],
   daos: [
     TicketDao,
@@ -180,6 +194,7 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
     WorkflowPromptTemplateDao,
     NotificationDao,
     AutomationDecisionDao,
+    TransitionPreconditionDao,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -192,7 +207,7 @@ class AppDatabase extends _$AppDatabase {
     : super(executor ?? _openConnection(project));
 
   @override
-  int get schemaVersion => 18;
+  int get schemaVersion => 19;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -204,6 +219,7 @@ class AppDatabase extends _$AppDatabase {
       await _createSearchInfrastructure(m);
       await workflowStatusDao.seedDefaultsIfEmpty();
       await automationDecisionDao.seedDefaultsIfEmpty();
+      await transitionPreconditionDao.seedDefaultsIfEmpty();
     },
     onUpgrade: (Migrator m, int from, int to) async {
       if (from < 2) {
@@ -299,6 +315,11 @@ class AppDatabase extends _$AppDatabase {
         await m.createTable(automationDecisionGraphsTable);
         await m.createTable(automationDecisionNodesTable);
         await automationDecisionDao.seedDefaultsIfEmpty();
+      }
+      if (from < 19) {
+        await m.createTable(transitionPreconditionGraphsTable);
+        await m.createTable(transitionPreconditionNodesTable);
+        await transitionPreconditionDao.seedDefaultsIfEmpty();
       }
     },
   );
