@@ -85,8 +85,7 @@ class MockTicketListViewModeRepository extends Mock
 class MockTicketBoardColumnVisibilityRepository extends Mock
     implements TicketBoardColumnVisibilityRepository {}
 
-class MockPageWikilinkRepository extends Mock
-    implements PageWikilinkRepository {}
+class MockPageWikilinkRepository extends Mock implements PageWikilinkRepository {}
 
 class MockExecutionSchedulingRepository extends Mock
     implements ExecutionSchedulingRepository {}
@@ -259,8 +258,7 @@ class FakeTransitionPreconditionRepository
   @override
   Future<Map<SddStage, int>> getNodeCounts() async {
     return {
-      for (final stage in _graphs.keys)
-        stage: (await getAllNodes(stage)).length,
+      for (final stage in _graphs.keys) stage: (await getAllNodes(stage)).length,
     };
   }
 }
@@ -295,7 +293,9 @@ void stubSuccessfulCodingExecutionInfra(
     ),
   ).thenAnswer((_) async => (url: 'https://example/pr/mock', number: 1));
   when(() => gitClient.removeWorktree(any(), any())).thenAnswer((_) async {});
-  when(() => gitClient.deleteBranch(any(), any())).thenAnswer((_) async {});
+  when(
+    () => gitClient.deleteBranch(any(), any()),
+  ).thenAnswer((_) async {});
 }
 
 /// Stubs [baselineRepository] with an empty manifest for [baselineVersion]
@@ -832,7 +832,9 @@ void main() {
     // separately so a test whose own `getTicketById` override resolves
     // a real parent doesn't throw against an otherwise-unstubbed call.
     when(() => repository.getTicketById(any())).thenAnswer((_) async => null);
-    when(() => repository.addTimeSpent(any(), any())).thenAnswer((_) async {});
+    when(
+      () => repository.addTimeSpent(any(), any()),
+    ).thenAnswer((_) async {});
   });
 
   group('TicketsCubit', () {
@@ -848,8 +850,8 @@ void main() {
             sort: any(named: 'sort'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-            statusSortOrder: any(named: 'statusSortOrder'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).thenAnswer(
           (_) async => TicketSearchPage(tickets: [ticket], hasMore: false),
         );
@@ -874,8 +876,8 @@ void main() {
             sort: any(named: 'sort'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-            statusSortOrder: any(named: 'statusSortOrder'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).thenThrow(Exception('boom'));
       },
       build: () => TicketsCubit(repository),
@@ -896,8 +898,8 @@ void main() {
             sort: any(named: 'sort'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-            statusSortOrder: any(named: 'statusSortOrder'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).thenAnswer(
           (_) async => TicketSearchPage(tickets: [ticket], hasMore: false),
         );
@@ -926,8 +928,8 @@ void main() {
             sort: any(named: 'sort'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-            statusSortOrder: any(named: 'statusSortOrder'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).thenAnswer(
           (_) async => TicketSearchPage(tickets: [ticket], hasMore: false),
         );
@@ -978,8 +980,8 @@ void main() {
             sort: any(named: 'sort'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-            statusSortOrder: any(named: 'statusSortOrder'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).thenAnswer(
           (_) async => TicketSearchPage(
             tickets: [ticket.copyWith(status: 'done')],
@@ -992,7 +994,9 @@ void main() {
       act: (cubit) => cubit.updateTicketStatus(ticket.id, 'done'),
       expect: () => [
         TicketStatusUpdating([ticket.copyWith(status: 'done')]),
-        TicketStatusUpdated([ticket.copyWith(status: 'done')], hasMore: false),
+        TicketStatusUpdated([
+          ticket.copyWith(status: 'done'),
+        ], hasMore: false),
       ],
     );
 
@@ -1180,309 +1184,333 @@ void main() {
         activeTicketViewRegistry: activeTicketViewRegistry,
       );
 
-      test('reindexes outgoing links against a widened page/resource candidate '
-          'set, resolving a bare-title and a bare-ticketId reference in the '
-          'same content', () async {
-        final edited = pageA.copyWith(
-          description: () => 'See [[Page B]] and [[AIO-102]].',
-        );
-        var callCount = 0;
-        when(() => repository.updateTicket(any())).thenAnswer((_) async {});
-        when(() => repository.getTicketById(pageA.id)).thenAnswer((_) async {
-          callCount++;
-          // previous (call 1) is the pre-edit ticket, with no description
-          // yet — refreshed (call 2) is the edited one — updateTicket's
-          // own before/after reads. The reindex is gated on
-          // description actually changing, so the two calls must differ.
-          return callCount == 1 ? pageA : edited;
-        });
-        when(
-          () => repository.getAllTicketsByType([
-            TicketType.page,
-            TicketType.resource,
-          ]),
-        ).thenAnswer((_) async => [pageA, pageB, pageBDuplicateTitle]);
-        final cubit = buildCubit();
+      test(
+        'reindexes outgoing links against a widened page/resource candidate '
+        'set, resolving a bare-title and a bare-ticketId reference in the '
+        'same content',
+        () async {
+          final edited = pageA.copyWith(
+            description: () => 'See [[Page B]] and [[AIO-102]].',
+          );
+          var callCount = 0;
+          when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+          when(() => repository.getTicketById(pageA.id)).thenAnswer((_) async {
+            callCount++;
+            // previous (call 1) is the pre-edit ticket, with no description
+            // yet — refreshed (call 2) is the edited one — updateTicket's
+            // own before/after reads. The reindex is gated on
+            // description actually changing, so the two calls must differ.
+            return callCount == 1 ? pageA : edited;
+          });
+          when(
+            () => repository.getAllTicketsByType([
+              TicketType.page,
+              TicketType.resource,
+            ]),
+          ).thenAnswer((_) async => [pageA, pageB, pageBDuplicateTitle]);
+          final cubit = buildCubit();
 
-        await cubit.updateTicket(edited);
-        await Future<void>.delayed(Duration.zero);
+          await cubit.updateTicket(edited);
+          await Future<void>.delayed(Duration.zero);
 
-        verify(
-          () => wikilinkRepository.replaceOutgoingLinks(edited.id, {
-            pageB.id,
-            pageBDuplicateTitle.id,
-          }),
-        ).called(1);
-        await cubit.close();
-      });
+          verify(
+            () => wikilinkRepository.replaceOutgoingLinks(edited.id, {
+              pageB.id,
+              pageBDuplicateTitle.id,
+            }),
+          ).called(1);
+          await cubit.close();
+        },
+      );
 
-      test('no-ops entirely when pageWikilinkRepository is null', () async {
-        final edited = pageA.copyWith(description: () => 'See [[Page B]].');
-        when(() => repository.updateTicket(any())).thenAnswer((_) async {});
-        when(
-          () => repository.getTicketById(pageA.id),
-        ).thenAnswer((_) async => edited);
-        final cubit = TicketsCubit(repository); // no pageWikilinkRepository
+      test(
+        'no-ops entirely when pageWikilinkRepository is null',
+        () async {
+          final edited = pageA.copyWith(
+            description: () => 'See [[Page B]].',
+          );
+          when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(pageA.id),
+          ).thenAnswer((_) async => edited);
+          final cubit = TicketsCubit(repository); // no pageWikilinkRepository
 
-        await cubit.updateTicket(edited);
-        await Future<void>.delayed(Duration.zero);
+          await cubit.updateTicket(edited);
+          await Future<void>.delayed(Duration.zero);
 
-        verifyNever(
-          () => repository.getAllTicketsByType([
-            TicketType.page,
-            TicketType.resource,
-          ]),
-        );
-        await cubit.close();
-      });
+          verifyNever(
+            () => repository.getAllTicketsByType([
+              TicketType.page,
+              TicketType.resource,
+            ]),
+          );
+          await cubit.close();
+        },
+      );
 
-      test('no-ops when neither title nor description changed — same content '
-          'gate the embedding-regen trigger uses, per design.md', () async {
-        when(() => repository.updateTicket(any())).thenAnswer((_) async {});
-        when(
-          () => repository.getTicketById(pageA.id),
-        ).thenAnswer((_) async => pageA);
-        final cubit = buildCubit();
+      test(
+        'no-ops when neither title nor description changed — same content '
+        'gate the embedding-regen trigger uses, per design.md',
+        () async {
+          when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(pageA.id),
+          ).thenAnswer((_) async => pageA);
+          final cubit = buildCubit();
 
-        // Only a field the wikilink reindex has no business touching
-        // (title/description both unchanged from the stored ticket).
-        await cubit.updateTicket(pageA);
-        await Future<void>.delayed(Duration.zero);
+          // Only a field the wikilink reindex has no business touching
+          // (title/description both unchanged from the stored ticket).
+          await cubit.updateTicket(pageA);
+          await Future<void>.delayed(Duration.zero);
 
-        verifyNever(
-          () => repository.getAllTicketsByType([
-            TicketType.page,
-            TicketType.resource,
-          ]),
-        );
-        verifyNever(
-          () => wikilinkRepository.replaceOutgoingLinks(any(), any()),
-        );
-        await cubit.close();
-      });
+          verifyNever(
+            () => repository.getAllTicketsByType([
+              TicketType.page,
+              TicketType.resource,
+            ]),
+          );
+          verifyNever(() => wikilinkRepository.replaceOutgoingLinks(any(), any()));
+          await cubit.close();
+        },
+      );
 
-      test('rename triggers getIncomingLinks and rewrites a referrer whose '
-          'content has a title-anchored occurrence, recursing through '
-          'updateTicket', () async {
-        final referrer = Ticket(
-          id: 'referrer-1',
-          ticketId: 'AIO-200',
-          type: TicketType.page,
-          title: 'Referrer',
-          description: 'Links to [[Page A]] and [[AIO-100|alias]].',
-          status: 'backlog',
-          createdAt: DateTime(2026, 1, 1),
-          updatedAt: DateTime(2026, 1, 1),
-        );
-        final renamed = pageA.copyWith(title: 'Page A Renamed');
+      test(
+        'rename triggers getIncomingLinks and rewrites a referrer whose '
+        'content has a title-anchored occurrence, recursing through '
+        'updateTicket',
+        () async {
+          final referrer = Ticket(
+            id: 'referrer-1',
+            ticketId: 'AIO-200',
+            type: TicketType.page,
+            title: 'Referrer',
+            description: 'Links to [[Page A]] and [[AIO-100|alias]].',
+            status: 'backlog',
+            createdAt: DateTime(2026, 1, 1),
+            updatedAt: DateTime(2026, 1, 1),
+          );
+          final renamed = pageA.copyWith(title: 'Page A Renamed');
 
-        var callCount = 0;
-        when(() => repository.getTicketById(pageA.id)).thenAnswer((_) async {
-          callCount++;
-          // previous (call 1) is the pre-rename ticket; refreshed (call
-          // 2) is the renamed one — updateTicket's own before/after reads.
-          return callCount == 1 ? pageA : renamed;
-        });
-        when(() => repository.updateTicket(any())).thenAnswer((_) async {});
-        when(
-          () => repository.getAllTicketsByType([
-            TicketType.page,
-            TicketType.resource,
-          ]),
-        ).thenAnswer((_) async => [renamed]);
-        when(() => wikilinkRepository.getIncomingLinks(pageA.id)).thenAnswer(
-          (_) async => [
-            PageWikilink(
-              id: 'wl-1',
-              sourcePageId: referrer.id,
-              targetPageId: pageA.id,
-              createdAt: DateTime(2026, 1, 1),
+          var callCount = 0;
+          when(() => repository.getTicketById(pageA.id)).thenAnswer((_) async {
+            callCount++;
+            // previous (call 1) is the pre-rename ticket; refreshed (call
+            // 2) is the renamed one — updateTicket's own before/after reads.
+            return callCount == 1 ? pageA : renamed;
+          });
+          when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+          when(
+            () => repository.getAllTicketsByType([
+              TicketType.page,
+              TicketType.resource,
+            ]),
+          ).thenAnswer((_) async => [renamed]);
+          when(
+            () => wikilinkRepository.getIncomingLinks(pageA.id),
+          ).thenAnswer(
+            (_) async => [
+              PageWikilink(
+                id: 'wl-1',
+                sourcePageId: referrer.id,
+                targetPageId: pageA.id,
+                createdAt: DateTime(2026, 1, 1),
+              ),
+            ],
+          );
+          when(
+            () => repository.getTicketById(referrer.id),
+          ).thenAnswer((_) async => referrer);
+          final cubit = buildCubit();
+
+          await cubit.updateTicket(renamed);
+          await Future<void>.delayed(Duration.zero);
+          await Future<void>.delayed(Duration.zero);
+
+          // Only the title-anchored `[[Page A]]` occurrence is rewritten —
+          // the id-anchored `[[AIO-100|alias]]` occurrence's target is
+          // never a title, so it's left untouched even though its own
+          // alias is irrelevant here.
+          final captured = verify(
+            () => repository.updateTicket(captureAny()),
+          ).captured;
+          final referrerUpdate = captured.cast<Ticket>().firstWhere(
+            (t) => t.id == referrer.id,
+          );
+          expect(
+            referrerUpdate.description,
+            'Links to [[Page A Renamed]] and [[AIO-100|alias]].',
+          );
+          await cubit.close();
+        },
+      );
+
+      test(
+        'skips a referrer whose content does not actually contain the old '
+        'title (no redundant recursive update)',
+        () async {
+          final referrer = Ticket(
+            id: 'referrer-2',
+            ticketId: 'AIO-201',
+            type: TicketType.page,
+            title: 'Referrer',
+            description: 'Links via [[AIO-100]] only.',
+            status: 'backlog',
+            createdAt: DateTime(2026, 1, 1),
+            updatedAt: DateTime(2026, 1, 1),
+          );
+          final renamed = pageA.copyWith(title: 'Page A Renamed');
+
+          var callCount = 0;
+          when(() => repository.getTicketById(pageA.id)).thenAnswer((_) async {
+            callCount++;
+            return callCount == 1 ? pageA : renamed;
+          });
+          when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+          when(
+            () => repository.getAllTicketsByType([
+              TicketType.page,
+              TicketType.resource,
+            ]),
+          ).thenAnswer((_) async => [renamed]);
+          when(
+            () => wikilinkRepository.getIncomingLinks(pageA.id),
+          ).thenAnswer(
+            (_) async => [
+              PageWikilink(
+                id: 'wl-1',
+                sourcePageId: referrer.id,
+                targetPageId: pageA.id,
+                createdAt: DateTime(2026, 1, 1),
+              ),
+            ],
+          );
+          when(
+            () => repository.getTicketById(referrer.id),
+          ).thenAnswer((_) async => referrer);
+          final cubit = buildCubit();
+
+          await cubit.updateTicket(renamed);
+          await Future<void>.delayed(Duration.zero);
+          await Future<void>.delayed(Duration.zero);
+
+          // The only updateTicket call captured is the primary rename
+          // itself — no second call for the referrer, since its content
+          // has no title-anchored occurrence of the old title.
+          final captured = verify(
+            () => repository.updateTicket(captureAny()),
+          ).captured;
+          expect(captured.cast<Ticket>().map((t) => t.id), [renamed.id]);
+          await cubit.close();
+        },
+      );
+
+      test(
+        'defers rewriting a referrer the user currently has open, then '
+        'rewrites it once activeTicketId changes away',
+        () async {
+          final referrer = Ticket(
+            id: 'referrer-3',
+            ticketId: 'AIO-202',
+            type: TicketType.page,
+            title: 'Referrer',
+            description: 'Links to [[Page A]].',
+            status: 'backlog',
+            createdAt: DateTime(2026, 1, 1),
+            updatedAt: DateTime(2026, 1, 1),
+          );
+          final renamed = pageA.copyWith(title: 'Page A Renamed');
+
+          var callCount = 0;
+          when(() => repository.getTicketById(pageA.id)).thenAnswer((_) async {
+            callCount++;
+            return callCount == 1 ? pageA : renamed;
+          });
+          when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+          when(
+            () => repository.getAllTicketsByType([
+              TicketType.page,
+              TicketType.resource,
+            ]),
+          ).thenAnswer((_) async => [renamed]);
+          when(
+            () => wikilinkRepository.getIncomingLinks(pageA.id),
+          ).thenAnswer(
+            (_) async => [
+              PageWikilink(
+                id: 'wl-1',
+                sourcePageId: referrer.id,
+                targetPageId: pageA.id,
+                createdAt: DateTime(2026, 1, 1),
+              ),
+            ],
+          );
+          when(
+            () => repository.getTicketById(referrer.id),
+          ).thenAnswer((_) async => referrer);
+          activeTicketViewRegistry.activeTicketId.value = referrer.ticketId;
+          final cubit = buildCubit();
+
+          await cubit.updateTicket(renamed);
+          await Future<void>.delayed(Duration.zero);
+          await Future<void>.delayed(Duration.zero);
+
+          // Deferred — no rewrite yet while the referrer is the active view.
+          verifyNever(
+            () => repository.updateTicket(
+              any(that: predicate<Ticket>((t) => t.id == referrer.id)),
             ),
-          ],
-        );
-        when(
-          () => repository.getTicketById(referrer.id),
-        ).thenAnswer((_) async => referrer);
-        final cubit = buildCubit();
+          );
 
-        await cubit.updateTicket(renamed);
-        await Future<void>.delayed(Duration.zero);
-        await Future<void>.delayed(Duration.zero);
+          activeTicketViewRegistry.activeTicketId.value = null;
+          await Future<void>.delayed(Duration.zero);
+          await Future<void>.delayed(Duration.zero);
 
-        // Only the title-anchored `[[Page A]]` occurrence is rewritten —
-        // the id-anchored `[[AIO-100|alias]]` occurrence's target is
-        // never a title, so it's left untouched even though its own
-        // alias is irrelevant here.
-        final captured = verify(
-          () => repository.updateTicket(captureAny()),
-        ).captured;
-        final referrerUpdate = captured.cast<Ticket>().firstWhere(
-          (t) => t.id == referrer.id,
-        );
-        expect(
-          referrerUpdate.description,
-          'Links to [[Page A Renamed]] and [[AIO-100|alias]].',
-        );
-        await cubit.close();
-      });
+          final captured = verify(
+            () => repository.updateTicket(captureAny()),
+          ).captured;
+          final referrerUpdate = captured
+              .cast<Ticket>()
+              .where((t) => t.id == referrer.id);
+          expect(referrerUpdate, hasLength(1));
+          expect(referrerUpdate.single.description, 'Links to [[Page A Renamed]].');
+          await cubit.close();
+        },
+      );
 
-      test('skips a referrer whose content does not actually contain the old '
-          'title (no redundant recursive update)', () async {
-        final referrer = Ticket(
-          id: 'referrer-2',
-          ticketId: 'AIO-201',
-          type: TicketType.page,
-          title: 'Referrer',
-          description: 'Links via [[AIO-100]] only.',
-          status: 'backlog',
-          createdAt: DateTime(2026, 1, 1),
-          updatedAt: DateTime(2026, 1, 1),
-        );
-        final renamed = pageA.copyWith(title: 'Page A Renamed');
+      test(
+        'a thrown error from the wikilink step does not affect the primary '
+        'update\'s emitted state',
+        () async {
+          final edited = pageA.copyWith(description: () => 'See [[Page B]].');
+          var callCount = 0;
+          when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+          when(() => repository.getTicketById(pageA.id)).thenAnswer((_) async {
+            callCount++;
+            // The reindex step only fires when description actually
+            // changed, so the pre-write (previous) read must differ from
+            // the post-write (refreshed) one for this test to genuinely
+            // exercise the swallowed-throw path.
+            return callCount == 1 ? pageA : edited;
+          });
+          when(
+            () => repository.getAllTicketsByType([
+              TicketType.page,
+              TicketType.resource,
+            ]),
+          ).thenThrow(Exception('boom'));
+          final cubit = buildCubit();
+          final states = <TicketsState>[];
+          final sub = cubit.stream.listen(states.add);
 
-        var callCount = 0;
-        when(() => repository.getTicketById(pageA.id)).thenAnswer((_) async {
-          callCount++;
-          return callCount == 1 ? pageA : renamed;
-        });
-        when(() => repository.updateTicket(any())).thenAnswer((_) async {});
-        when(
-          () => repository.getAllTicketsByType([
-            TicketType.page,
-            TicketType.resource,
-          ]),
-        ).thenAnswer((_) async => [renamed]);
-        when(() => wikilinkRepository.getIncomingLinks(pageA.id)).thenAnswer(
-          (_) async => [
-            PageWikilink(
-              id: 'wl-1',
-              sourcePageId: referrer.id,
-              targetPageId: pageA.id,
-              createdAt: DateTime(2026, 1, 1),
-            ),
-          ],
-        );
-        when(
-          () => repository.getTicketById(referrer.id),
-        ).thenAnswer((_) async => referrer);
-        final cubit = buildCubit();
+          final result = await cubit.updateTicket(edited);
+          await Future<void>.delayed(Duration.zero);
 
-        await cubit.updateTicket(renamed);
-        await Future<void>.delayed(Duration.zero);
-        await Future<void>.delayed(Duration.zero);
-
-        // The only updateTicket call captured is the primary rename
-        // itself — no second call for the referrer, since its content
-        // has no title-anchored occurrence of the old title.
-        final captured = verify(
-          () => repository.updateTicket(captureAny()),
-        ).captured;
-        expect(captured.cast<Ticket>().map((t) => t.id), [renamed.id]);
-        await cubit.close();
-      });
-
-      test('defers rewriting a referrer the user currently has open, then '
-          'rewrites it once activeTicketId changes away', () async {
-        final referrer = Ticket(
-          id: 'referrer-3',
-          ticketId: 'AIO-202',
-          type: TicketType.page,
-          title: 'Referrer',
-          description: 'Links to [[Page A]].',
-          status: 'backlog',
-          createdAt: DateTime(2026, 1, 1),
-          updatedAt: DateTime(2026, 1, 1),
-        );
-        final renamed = pageA.copyWith(title: 'Page A Renamed');
-
-        var callCount = 0;
-        when(() => repository.getTicketById(pageA.id)).thenAnswer((_) async {
-          callCount++;
-          return callCount == 1 ? pageA : renamed;
-        });
-        when(() => repository.updateTicket(any())).thenAnswer((_) async {});
-        when(
-          () => repository.getAllTicketsByType([
-            TicketType.page,
-            TicketType.resource,
-          ]),
-        ).thenAnswer((_) async => [renamed]);
-        when(() => wikilinkRepository.getIncomingLinks(pageA.id)).thenAnswer(
-          (_) async => [
-            PageWikilink(
-              id: 'wl-1',
-              sourcePageId: referrer.id,
-              targetPageId: pageA.id,
-              createdAt: DateTime(2026, 1, 1),
-            ),
-          ],
-        );
-        when(
-          () => repository.getTicketById(referrer.id),
-        ).thenAnswer((_) async => referrer);
-        activeTicketViewRegistry.activeTicketId.value = referrer.ticketId;
-        final cubit = buildCubit();
-
-        await cubit.updateTicket(renamed);
-        await Future<void>.delayed(Duration.zero);
-        await Future<void>.delayed(Duration.zero);
-
-        // Deferred — no rewrite yet while the referrer is the active view.
-        verifyNever(
-          () => repository.updateTicket(
-            any(that: predicate<Ticket>((t) => t.id == referrer.id)),
-          ),
-        );
-
-        activeTicketViewRegistry.activeTicketId.value = null;
-        await Future<void>.delayed(Duration.zero);
-        await Future<void>.delayed(Duration.zero);
-
-        final captured = verify(
-          () => repository.updateTicket(captureAny()),
-        ).captured;
-        final referrerUpdate = captured.cast<Ticket>().where(
-          (t) => t.id == referrer.id,
-        );
-        expect(referrerUpdate, hasLength(1));
-        expect(
-          referrerUpdate.single.description,
-          'Links to [[Page A Renamed]].',
-        );
-        await cubit.close();
-      });
-
-      test('a thrown error from the wikilink step does not affect the primary '
-          'update\'s emitted state', () async {
-        final edited = pageA.copyWith(description: () => 'See [[Page B]].');
-        var callCount = 0;
-        when(() => repository.updateTicket(any())).thenAnswer((_) async {});
-        when(() => repository.getTicketById(pageA.id)).thenAnswer((_) async {
-          callCount++;
-          // The reindex step only fires when description actually
-          // changed, so the pre-write (previous) read must differ from
-          // the post-write (refreshed) one for this test to genuinely
-          // exercise the swallowed-throw path.
-          return callCount == 1 ? pageA : edited;
-        });
-        when(
-          () => repository.getAllTicketsByType([
-            TicketType.page,
-            TicketType.resource,
-          ]),
-        ).thenThrow(Exception('boom'));
-        final cubit = buildCubit();
-        final states = <TicketsState>[];
-        final sub = cubit.stream.listen(states.add);
-
-        final result = await cubit.updateTicket(edited);
-        await Future<void>.delayed(Duration.zero);
-
-        expect(result, edited);
-        expect(states, [TicketDetailLoaded(edited)]);
-        await sub.cancel();
-        await cubit.close();
-      });
+          expect(result, edited);
+          expect(states, [TicketDetailLoaded(edited)]);
+          await sub.cancel();
+          await cubit.close();
+        },
+      );
     });
 
     blocTest<TicketsCubit, TicketsState>(
@@ -1497,7 +1525,9 @@ void main() {
       },
       build: () => TicketsCubit(repository),
       act: (cubit) => cubit.changeTicketStatus(ticket, 'done'),
-      expect: () => [TicketDetailLoaded(ticket.copyWith(status: 'done'))],
+      expect: () => [
+        TicketDetailLoaded(ticket.copyWith(status: 'done')),
+      ],
     );
 
     blocTest<TicketsCubit, TicketsState>(
@@ -1600,8 +1630,8 @@ void main() {
             sort: any(named: 'sort'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-            statusSortOrder: any(named: 'statusSortOrder'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).thenAnswer(
           (_) async => const TicketSearchPage(tickets: [], hasMore: false),
         );
@@ -1634,8 +1664,8 @@ void main() {
             sort: any(named: 'sort'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-            statusSortOrder: any(named: 'statusSortOrder'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).thenAnswer(
           (_) async => const TicketSearchPage(tickets: [], hasMore: false),
         );
@@ -1724,8 +1754,8 @@ void main() {
             priorities: any(named: 'priorities'),
             sort: any(named: 'sort'),
             limit: any(named: 'limit'),
-            statusSortOrder: any(named: 'statusSortOrder'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).thenAnswer(
           (_) async => const TicketSearchPage(tickets: [], hasMore: false),
         );
@@ -1797,7 +1827,9 @@ void main() {
           () => linkRepository.getLinksForTicket(bulkCleanTask.id),
         ).thenAnswer((_) async => []);
         when(
-          () => repository.updateStatusForIds([bulkCleanTask.id], 'inProgress'),
+          () => repository.updateStatusForIds([
+            bulkCleanTask.id,
+          ], 'inProgress'),
         ).thenAnswer((_) async {});
         when(
           () => gitProjector.project(any(), any(), any()),
@@ -1819,8 +1851,9 @@ void main() {
         ], 'inProgress'),
         verify: (_) {
           verify(
-            () =>
-                repository.updateStatusForIds([bulkCleanTask.id], 'inProgress'),
+            () => repository.updateStatusForIds([
+              bulkCleanTask.id,
+            ], 'inProgress'),
           ).called(1);
         },
         expect: () => [
@@ -1861,11 +1894,13 @@ void main() {
         'a target status other than inProgress skips gating entirely — '
         'skippedCount is always 0 and no link data is queried',
         setUp: () {
+          when(() => repository.getTicketById(bulkBlockedTask.id)).thenAnswer(
+            (_) async => bulkBlockedTask.copyWith(status: 'done'),
+          );
           when(
-            () => repository.getTicketById(bulkBlockedTask.id),
-          ).thenAnswer((_) async => bulkBlockedTask.copyWith(status: 'done'));
-          when(
-            () => repository.updateStatusForIds([bulkBlockedTask.id], 'done'),
+            () => repository.updateStatusForIds([
+              bulkBlockedTask.id,
+            ], 'done'),
           ).thenAnswer((_) async {});
           when(
             () => gitProjector.project(any(), any(), any()),
@@ -1873,12 +1908,15 @@ void main() {
           stubEmptySearch();
         },
         build: buildCubit,
-        act: (cubit) =>
-            cubit.updateStatusForTickets([bulkBlockedTask.id], 'done'),
+        act: (cubit) => cubit.updateStatusForTickets([
+          bulkBlockedTask.id,
+        ], 'done'),
         verify: (_) {
           verifyNever(() => linkRepository.getLinksForTicket(any()));
           verify(
-            () => repository.updateStatusForIds([bulkBlockedTask.id], 'done'),
+            () => repository.updateStatusForIds([
+              bulkBlockedTask.id,
+            ], 'done'),
           ).called(1);
         },
         expect: () => [
@@ -1896,7 +1934,8 @@ void main() {
           ).thenThrow(Exception('boom'));
         },
         build: () => TicketsCubit(repository),
-        act: (cubit) => cubit.updateStatusForTickets([ticket.id], 'done'),
+        act: (cubit) =>
+            cubit.updateStatusForTickets([ticket.id], 'done'),
         expect: () => [const TicketsBatchStatusUpdating(), isA<TicketsError>()],
       );
 
@@ -1967,7 +2006,7 @@ void main() {
               sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
-              statusSortOrder: any(named: 'statusSortOrder'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).thenAnswer(
             (_) async => TicketSearchPage(tickets: [child], hasMore: false),
@@ -1989,7 +2028,7 @@ void main() {
               ),
               limit: 50,
               offset: 1,
-              statusSortOrder: any(named: 'statusSortOrder'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).called(1);
         },
@@ -2014,7 +2053,7 @@ void main() {
               sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
-              statusSortOrder: any(named: 'statusSortOrder'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           );
         },
@@ -2036,7 +2075,7 @@ void main() {
               sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
-              statusSortOrder: any(named: 'statusSortOrder'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           );
         },
@@ -2056,7 +2095,7 @@ void main() {
               sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
-              statusSortOrder: any(named: 'statusSortOrder'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).thenThrow(Exception('boom'));
         },
@@ -2082,7 +2121,7 @@ void main() {
               sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
-              statusSortOrder: any(named: 'statusSortOrder'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).thenAnswer(
             (_) async => TicketSearchPage(tickets: [ticket], hasMore: true),
@@ -2102,7 +2141,7 @@ void main() {
               sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
-              statusSortOrder: any(named: 'statusSortOrder'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).thenAnswer((_) => loadMoreCompleter.future);
 
@@ -2118,7 +2157,7 @@ void main() {
               sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
-              statusSortOrder: any(named: 'statusSortOrder'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).thenAnswer(
             (_) async => TicketSearchPage(tickets: [unrelated], hasMore: false),
@@ -2155,8 +2194,8 @@ void main() {
             priorities: any(named: 'priorities'),
             sort: any(named: 'sort'),
             limit: any(named: 'limit'),
-            statusSortOrder: any(named: 'statusSortOrder'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).thenAnswer(
           (_) async => const TicketSearchPage(tickets: [], hasMore: false),
         );
@@ -2217,8 +2256,8 @@ void main() {
               direction: TicketSortDirection.descending,
             ),
             limit: any(named: 'limit'),
-            statusSortOrder: any(named: 'statusSortOrder'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).called(1);
       });
 
@@ -2348,8 +2387,8 @@ void main() {
             sort: any(named: 'sort'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-            statusSortOrder: any(named: 'statusSortOrder'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).thenAnswer(
           (_) async => TicketSearchPage(tickets: const [], hasMore: hasMore),
         );
@@ -2371,8 +2410,8 @@ void main() {
             sort: createdAtDesc,
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-            statusSortOrder: any(named: 'statusSortOrder'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).called(1);
         expect(cubit.currentSort, createdAtDesc);
       });
@@ -2393,8 +2432,8 @@ void main() {
             sort: relevanceDesc,
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-            statusSortOrder: any(named: 'statusSortOrder'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).called(1);
         expect(cubit.currentSort, relevanceDesc);
       });
@@ -2424,8 +2463,8 @@ void main() {
             sort: priorityAsc,
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-            statusSortOrder: any(named: 'statusSortOrder'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).called(1);
       });
 
@@ -2519,8 +2558,8 @@ void main() {
             sort: priorityAsc,
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-            statusSortOrder: any(named: 'statusSortOrder'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).called(3);
       });
 
@@ -2552,7 +2591,7 @@ void main() {
               sort: priorityAsc,
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
-              statusSortOrder: any(named: 'statusSortOrder'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).called(1);
         },
@@ -2589,8 +2628,8 @@ void main() {
             sort: priorityAsc,
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-            statusSortOrder: any(named: 'statusSortOrder'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).called(1);
       });
 
@@ -2626,7 +2665,7 @@ void main() {
               sort: priorityAsc,
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
-              statusSortOrder: any(named: 'statusSortOrder'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).called(1);
         },
@@ -2664,7 +2703,7 @@ void main() {
               sort: priorityAsc,
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
-              statusSortOrder: any(named: 'statusSortOrder'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).called(1);
         },
@@ -2701,8 +2740,8 @@ void main() {
             sort: priorityAsc,
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-            statusSortOrder: any(named: 'statusSortOrder'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).called(1);
       });
 
@@ -2731,8 +2770,8 @@ void main() {
             sort: priorityAsc,
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-            statusSortOrder: any(named: 'statusSortOrder'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).called(1);
       });
     });
@@ -2773,8 +2812,10 @@ void main() {
         await cubit.setViewMode(TicketListViewMode.list);
 
         verify(
-          () =>
-              viewModeRepository.setViewMode('proj-1', TicketListViewMode.list),
+          () => viewModeRepository.setViewMode(
+            'proj-1',
+            TicketListViewMode.list,
+          ),
         ).called(1);
         expect(cubit.currentViewMode, TicketListViewMode.list);
         expect(states, isEmpty);
@@ -2869,35 +2910,33 @@ void main() {
         expect(cubit.hiddenBoardColumns, isEmpty);
       });
 
-      test(
-        'toggleBoardColumnVisibility hides a visible column, persists '
-        'via boardColumnVisibilityRepository, and never emits a state',
-        () async {
-          when(
-            () =>
-                boardColumnVisibilityRepository.setHiddenColumns(any(), any()),
-          ).thenAnswer((_) async {});
-          final cubit = TicketsCubit(
-            repository,
-            boardColumnVisibilityRepository: boardColumnVisibilityRepository,
-            projectId: 'proj-1',
-          );
-          final states = <TicketsState>[];
-          final subscription = cubit.stream.listen(states.add);
+      test('toggleBoardColumnVisibility hides a visible column, persists '
+          'via boardColumnVisibilityRepository, and never emits a state', () async {
+        when(
+          () => boardColumnVisibilityRepository.setHiddenColumns(any(), any()),
+        ).thenAnswer((_) async {});
+        final cubit = TicketsCubit(
+          repository,
+          boardColumnVisibilityRepository: boardColumnVisibilityRepository,
+          projectId: 'proj-1',
+        );
+        final states = <TicketsState>[];
+        final subscription = cubit.stream.listen(states.add);
 
-          await cubit.toggleBoardColumnVisibility('backlog');
+        await cubit.toggleBoardColumnVisibility('backlog');
 
-          verify(
-            () => boardColumnVisibilityRepository.setHiddenColumns(
-              'proj-1',
-              const TicketBoardColumnVisibility(hiddenStatuses: {'backlog'}),
+        verify(
+          () => boardColumnVisibilityRepository.setHiddenColumns(
+            'proj-1',
+            const TicketBoardColumnVisibility(
+              hiddenStatuses: {'backlog'},
             ),
-          ).called(1);
-          expect(cubit.hiddenBoardColumns, {'backlog'});
-          expect(states, isEmpty);
-          await subscription.cancel();
-        },
-      );
+          ),
+        ).called(1);
+        expect(cubit.hiddenBoardColumns, {'backlog'});
+        expect(states, isEmpty);
+        await subscription.cancel();
+      });
 
       test('toggleBoardColumnVisibility shows an already-hidden column '
           'again (toggles off)', () async {
@@ -2916,29 +2955,38 @@ void main() {
         expect(cubit.hiddenBoardColumns, isEmpty);
       });
 
-      test('toggleBoardColumnVisibility does not persist when '
-          'boardColumnVisibilityRepository is null', () async {
-        final cubit = TicketsCubit(repository, projectId: 'proj-1');
+      test(
+        'toggleBoardColumnVisibility does not persist when '
+        'boardColumnVisibilityRepository is null',
+        () async {
+          final cubit = TicketsCubit(repository, projectId: 'proj-1');
 
-        await cubit.toggleBoardColumnVisibility('backlog');
+          await cubit.toggleBoardColumnVisibility('backlog');
 
-        expect(cubit.hiddenBoardColumns, {'backlog'});
-      });
+          expect(cubit.hiddenBoardColumns, {'backlog'});
+        },
+      );
 
-      test('toggleBoardColumnVisibility does not persist when projectId is '
-          'null', () async {
-        final cubit = TicketsCubit(
-          repository,
-          boardColumnVisibilityRepository: boardColumnVisibilityRepository,
-        );
+      test(
+        'toggleBoardColumnVisibility does not persist when projectId is '
+        'null',
+        () async {
+          final cubit = TicketsCubit(
+            repository,
+            boardColumnVisibilityRepository: boardColumnVisibilityRepository,
+          );
 
-        await cubit.toggleBoardColumnVisibility('backlog');
+          await cubit.toggleBoardColumnVisibility('backlog');
 
-        verifyNever(
-          () => boardColumnVisibilityRepository.setHiddenColumns(any(), any()),
-        );
-        expect(cubit.hiddenBoardColumns, {'backlog'});
-      });
+          verifyNever(
+            () => boardColumnVisibilityRepository.setHiddenColumns(
+              any(),
+              any(),
+            ),
+          );
+          expect(cubit.hiddenBoardColumns, {'backlog'});
+        },
+      );
 
       test('loadPersistedBoardColumnVisibility populates hiddenBoardColumns '
           'from a fake repository without emitting a state', () async {
@@ -2959,19 +3007,25 @@ void main() {
 
         await cubit.loadPersistedBoardColumnVisibility();
 
-        expect(cubit.hiddenBoardColumns, {'backlog', 'cancelled'});
+        expect(cubit.hiddenBoardColumns, {
+          'backlog',
+          'cancelled',
+        });
         expect(states, isEmpty);
         await subscription.cancel();
       });
 
-      test('loadPersistedBoardColumnVisibility no-ops when '
-          'boardColumnVisibilityRepository is null', () async {
-        final cubit = TicketsCubit(repository, projectId: 'proj-1');
+      test(
+        'loadPersistedBoardColumnVisibility no-ops when '
+        'boardColumnVisibilityRepository is null',
+        () async {
+          final cubit = TicketsCubit(repository, projectId: 'proj-1');
 
-        await cubit.loadPersistedBoardColumnVisibility();
+          await cubit.loadPersistedBoardColumnVisibility();
 
-        expect(cubit.hiddenBoardColumns, isEmpty);
-      });
+          expect(cubit.hiddenBoardColumns, isEmpty);
+        },
+      );
 
       test(
         'loadPersistedBoardColumnVisibility no-ops when projectId is null',
@@ -3380,7 +3434,7 @@ void main() {
               sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
-              statusSortOrder: any(named: 'statusSortOrder'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).thenAnswer(
             (_) async => TicketSearchPage(tickets: [ticket], hasMore: false),
@@ -3437,7 +3491,7 @@ void main() {
               sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
-              statusSortOrder: any(named: 'statusSortOrder'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).thenAnswer(
             (_) async => TicketSearchPage(
@@ -3504,7 +3558,7 @@ void main() {
               sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
-              statusSortOrder: any(named: 'statusSortOrder'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).thenAnswer(
             (_) async => TicketSearchPage(tickets: [ticket], hasMore: false),
@@ -3591,7 +3645,7 @@ void main() {
               sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
-              statusSortOrder: any(named: 'statusSortOrder'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).thenAnswer(
             (_) async => TicketSearchPage(tickets: [ticket], hasMore: false),
@@ -3755,8 +3809,10 @@ void main() {
           () => repository.updateEmbedding(any(), any()),
         ).thenAnswer((_) async {});
         when(
-          () =>
-              repository.getTicketsByParent(any(), types: any(named: 'types')),
+          () => repository.getTicketsByParent(
+            any(),
+            types: any(named: 'types'),
+          ),
         ).thenAnswer((_) async => []);
         when(
           () => repository.getAllTicketsByType(any()),
@@ -3792,7 +3848,7 @@ void main() {
               sort: any(named: 'sort'),
               limit: any(named: 'limit'),
               offset: any(named: 'offset'),
-              statusSortOrder: any(named: 'statusSortOrder'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).thenAnswer(
             (_) async =>
@@ -3847,9 +3903,7 @@ void main() {
             ),
           ).called(1);
         },
-        expect: () => [
-          TicketDetailLoaded(embeddedTicket.copyWith(title: 'New')),
-        ],
+        expect: () => [TicketDetailLoaded(embeddedTicket.copyWith(title: 'New'))],
       );
 
       blocTest<TicketsCubit, TicketsState>(
@@ -4275,7 +4329,7 @@ void main() {
               priorities: any(named: 'priorities'),
               sort: any(named: 'sort'),
               limit: any(named: 'limit'),
-              statusSortOrder: any(named: 'statusSortOrder'),
+            statusSortOrder: any(named: 'statusSortOrder'),
             ),
           ).thenAnswer(
             (_) async => const TicketSearchPage(tickets: [], hasMore: false),
@@ -4651,7 +4705,9 @@ void main() {
         when(
           () => repository.getTicketById(backlinkPage.id),
         ).thenAnswer((_) async => backlinkPage);
-        when(() => wikilinkRepository.getIncomingLinks(page.id)).thenAnswer(
+        when(
+          () => wikilinkRepository.getIncomingLinks(page.id),
+        ).thenAnswer(
           (_) async => [
             PageWikilink(
               id: 'wl-1',
@@ -4667,10 +4723,7 @@ void main() {
       act: (cubit) => cubit.loadDocumentRelations(page.id),
       expect: () => [
         isA<TicketDetailLoaded>().having((s) => s.backlinks, 'backlinks', [
-          BacklinkRef(
-            ticket: backlinkPage,
-            origin: BacklinkOrigin.explicitLink,
-          ),
+          BacklinkRef(ticket: backlinkPage, origin: BacklinkOrigin.explicitLink),
           BacklinkRef(ticket: backlinkPage, origin: BacklinkOrigin.wikilink),
         ]),
       ],
@@ -5176,8 +5229,7 @@ void main() {
       build: buildCubit,
       seed: () => TicketDetailLoaded(
         taskForFieldPreservation,
-        executionFailureReason:
-            'Execution ended without a clear result — '
+        executionFailureReason: 'Execution ended without a clear result — '
             'retry to try again.',
         executionCanRetry: true,
       ),
@@ -6137,7 +6189,10 @@ void main() {
         ).captured.cast<Ticket>();
         expect(created, hasLength(1));
         expect(created.single.type, TicketType.spec);
-        expect(created.single.title, 'Spec — Board Filtering & Saved Views');
+        expect(
+          created.single.title,
+          'Spec — Board Filtering & Saved Views',
+        );
         verify(
           () => linkRepository.createLink(
             sourceTicketId: created.single.id,
@@ -6280,7 +6335,9 @@ void main() {
             storyProposed.id,
             types: any(named: 'types'),
           ),
-        ).thenAnswer((_) async => [taskChildUi.copyWith(status: 'todo')]);
+        ).thenAnswer(
+          (_) async => [taskChildUi.copyWith(status: 'todo')],
+        );
         when(
           () => repository.updateTicketSddStage(
             storyProposed.id,
@@ -6846,17 +6903,14 @@ void main() {
   // Added for `aion-arch/changes/pr-metadata-and-notification-center`.
   group('notifications', () {
     group('without a NotificationRepository', () {
-      test(
-        'unreadNotificationCount stays 0 and loadUnreadNotificationCount no-ops',
-        () async {
-          final cubit = TicketsCubit(repository);
-          addTearDown(cubit.close);
+      test('unreadNotificationCount stays 0 and loadUnreadNotificationCount no-ops', () async {
+        final cubit = TicketsCubit(repository);
+        addTearDown(cubit.close);
 
-          expect(cubit.unreadNotificationCount.value, 0);
-          await cubit.loadUnreadNotificationCount();
-          expect(cubit.unreadNotificationCount.value, 0);
-        },
-      );
+        expect(cubit.unreadNotificationCount.value, 0);
+        await cubit.loadUnreadNotificationCount();
+        expect(cubit.unreadNotificationCount.value, 0);
+      });
 
       test('getRecentNotifications returns an empty list', () async {
         final cubit = TicketsCubit(repository);
@@ -6865,17 +6919,14 @@ void main() {
         expect(await cubit.getRecentNotifications(), isEmpty);
       });
 
-      test(
-        'markNotificationRead/markAllNotificationsRead no-op cleanly',
-        () async {
-          final cubit = TicketsCubit(repository);
-          addTearDown(cubit.close);
+      test('markNotificationRead/markAllNotificationsRead no-op cleanly', () async {
+        final cubit = TicketsCubit(repository);
+        addTearDown(cubit.close);
 
-          await cubit.markNotificationRead('some-id');
-          await cubit.markAllNotificationsRead();
-          expect(cubit.unreadNotificationCount.value, 0);
-        },
-      );
+        await cubit.markNotificationRead('some-id');
+        await cubit.markAllNotificationsRead();
+        expect(cubit.unreadNotificationCount.value, 0);
+      });
     });
 
     group('with a NotificationRepository', () {
@@ -6890,20 +6941,17 @@ void main() {
         notificationRepository: notificationRepository,
       );
 
-      test(
-        'loadUnreadNotificationCount populates from the repository',
-        () async {
-          when(
-            () => notificationRepository.getUnreadCount(),
-          ).thenAnswer((_) async => 4);
-          final cubit = buildCubit();
-          addTearDown(cubit.close);
+      test('loadUnreadNotificationCount populates from the repository', () async {
+        when(
+          () => notificationRepository.getUnreadCount(),
+        ).thenAnswer((_) async => 4);
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
 
-          await cubit.loadUnreadNotificationCount();
+        await cubit.loadUnreadNotificationCount();
 
-          expect(cubit.unreadNotificationCount.value, 4);
-        },
-      );
+        expect(cubit.unreadNotificationCount.value, 4);
+      });
 
       test('getRecentNotifications delegates to the repository', () async {
         final rows = [
@@ -6926,41 +6974,35 @@ void main() {
         expect(await cubit.getRecentNotifications(), rows);
       });
 
-      test(
-        'markNotificationRead delegates and refreshes the unread count',
-        () async {
-          when(
-            () => notificationRepository.markRead('n1'),
-          ).thenAnswer((_) async {});
-          when(
-            () => notificationRepository.getUnreadCount(),
-          ).thenAnswer((_) async => 2);
-          final cubit = buildCubit();
-          addTearDown(cubit.close);
+      test('markNotificationRead delegates and refreshes the unread count', () async {
+        when(
+          () => notificationRepository.markRead('n1'),
+        ).thenAnswer((_) async {});
+        when(
+          () => notificationRepository.getUnreadCount(),
+        ).thenAnswer((_) async => 2);
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
 
-          await cubit.markNotificationRead('n1');
+        await cubit.markNotificationRead('n1');
 
-          verify(() => notificationRepository.markRead('n1')).called(1);
-          expect(cubit.unreadNotificationCount.value, 2);
-        },
-      );
+        verify(() => notificationRepository.markRead('n1')).called(1);
+        expect(cubit.unreadNotificationCount.value, 2);
+      });
 
-      test(
-        'markAllNotificationsRead delegates and zeroes the unread count',
-        () async {
-          when(
-            () => notificationRepository.markAllRead(),
-          ).thenAnswer((_) async {});
-          final cubit = buildCubit();
-          addTearDown(cubit.close);
-          cubit.unreadNotificationCount.value = 5;
+      test('markAllNotificationsRead delegates and zeroes the unread count', () async {
+        when(
+          () => notificationRepository.markAllRead(),
+        ).thenAnswer((_) async {});
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+        cubit.unreadNotificationCount.value = 5;
 
-          await cubit.markAllNotificationsRead();
+        await cubit.markAllNotificationsRead();
 
-          verify(() => notificationRepository.markAllRead()).called(1);
-          expect(cubit.unreadNotificationCount.value, 0);
-        },
-      );
+        verify(() => notificationRepository.markAllRead()).called(1);
+        expect(cubit.unreadNotificationCount.value, 0);
+      });
     });
 
     group('_recordNotification call sites', () {
@@ -7044,7 +7086,8 @@ void main() {
               types: const [TicketType.chat],
             ),
           ).thenAnswer(
-            (_) async => executionChatCreated ? [dummyExecutionChatTicket] : [],
+            (_) async =>
+                executionChatCreated ? [dummyExecutionChatTicket] : [],
           );
           stubStatefulComments(commentRepository, dummyExecutionChatTicket.id);
           when(() => repository.getTicketById(any())).thenAnswer((
@@ -7075,7 +7118,8 @@ void main() {
             ),
           ).thenAnswer((_) async => AutomationConfidence.auto);
         },
-        act: (cubit) => cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
+        act: (cubit) =>
+            cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
         wait: const Duration(milliseconds: 50),
         verify: (_) {
           final captured = verify(
@@ -7310,7 +7354,9 @@ void main() {
           // "hard-failure path posts a 'Stage advance failed: '"
           // comment" test above).
           var addCommentCallCount = 0;
-          when(() => commentRepository.addComment(any())).thenAnswer((_) async {
+          when(() => commentRepository.addComment(any())).thenAnswer((
+            _,
+          ) async {
             addCommentCallCount++;
             if (addCommentCallCount == 2) {
               throw Exception('boom');
@@ -7584,8 +7630,8 @@ void main() {
               'call-1',
               'branch_ticket',
               {'title': 'Sub-issue'},
-              null,
-            );
+            null,
+          );
           },
           verify: (_) {
             expect(result, {
@@ -7720,7 +7766,10 @@ void main() {
               ),
             ).thenAnswer((_) async => AutomationConfidence.auto);
             when(
-              () => repository.updateTicketStatus(branchChat.id, 'done'),
+              () => repository.updateTicketStatus(
+                branchChat.id,
+                'done',
+              ),
             ).thenAnswer((_) async {});
             when(
               () => commentRepository.addComment(any()),
@@ -7739,7 +7788,10 @@ void main() {
           verify: (_) {
             expect(result, {'accepted': true});
             verify(
-              () => repository.updateTicketStatus(branchChat.id, 'done'),
+              () => repository.updateTicketStatus(
+                branchChat.id,
+                'done',
+              ),
             ).called(1);
             final posted = verify(
               () => commentRepository.addComment(captureAny()),
@@ -7763,7 +7815,10 @@ void main() {
               ),
             ).thenAnswer((_) async => AutomationConfidence.gated);
             when(
-              () => repository.updateTicketStatus(branchChat.id, 'done'),
+              () => repository.updateTicketStatus(
+                branchChat.id,
+                'done',
+              ),
             ).thenAnswer((_) async {});
             when(
               () => commentRepository.addComment(any()),
@@ -7978,7 +8033,8 @@ void main() {
         );
       },
       build: buildFullCubit,
-      act: (cubit) => cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
+      act: (cubit) =>
+          cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
       verify: (_) {
         verifyNever(() => repository.updateTicketStatus(any(), any()));
         verifyNever(() => repository.createTicket(any()));
@@ -7998,20 +8054,29 @@ void main() {
       build: () => TicketsCubit(repository),
       setUp: () {
         when(
-          () => repository.updateTicketStatus(taskNoStory.id, 'inProgress'),
+          () => repository.updateTicketStatus(
+            taskNoStory.id,
+            'inProgress',
+          ),
         ).thenAnswer((_) async {});
-        when(
-          () => repository.getTicketById(taskNoStory.id),
-        ).thenAnswer((_) async => taskNoStory.copyWith(status: 'inProgress'));
+        when(() => repository.getTicketById(taskNoStory.id)).thenAnswer(
+          (_) async => taskNoStory.copyWith(status: 'inProgress'),
+        );
       },
-      act: (cubit) => cubit.changeTicketStatus(taskNoStory, 'inProgress'),
+      act: (cubit) =>
+          cubit.changeTicketStatus(taskNoStory, 'inProgress'),
       verify: (_) {
         verify(
-          () => repository.updateTicketStatus(taskNoStory.id, 'inProgress'),
+          () => repository.updateTicketStatus(
+            taskNoStory.id,
+            'inProgress',
+          ),
         ).called(1);
       },
       expect: () => [
-        TicketDetailLoaded(taskNoStory.copyWith(status: 'inProgress')),
+        TicketDetailLoaded(
+          taskNoStory.copyWith(status: 'inProgress'),
+        ),
         // Queued, then started, then cleared once _runCodingExecution's
         // no-providerRegistry early-return runs — _refreshTaskDetailIfShowing
         // keeps this already-open detail screen's isExecuting/
@@ -8026,7 +8091,9 @@ void main() {
           taskNoStory.copyWith(status: 'inProgress'),
           isExecuting: true,
         ),
-        TicketDetailLoaded(taskNoStory.copyWith(status: 'inProgress')),
+        TicketDetailLoaded(
+          taskNoStory.copyWith(status: 'inProgress'),
+        ),
       ],
     );
 
@@ -8105,17 +8172,24 @@ void main() {
           ),
         ).thenAnswer((_) async => AutomationConfidence.auto);
       },
-      act: (cubit) => cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
+      act: (cubit) =>
+          cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
       wait: const Duration(milliseconds: 50),
       verify: (_) {
         verify(
-          () => repository.updateTicketStatus(taskUnderStory.id, 'inProgress'),
+          () => repository.updateTicketStatus(
+            taskUnderStory.id,
+            'inProgress',
+          ),
         ).called(1);
         verify(() => repository.createTicket(any())).called(1);
         // 2 model turns: implement, then agentic verify.
         verify(() => agentClient.run(any())).called(2);
         verify(
-          () => repository.updateTicketStatus(taskUnderStory.id, 'inReview'),
+          () => repository.updateTicketStatus(
+            taskUnderStory.id,
+            'inReview',
+          ),
         ).called(1);
         // A successfully pushed branch survives cleanup — it's what the
         // opened PR is based on. Regression guard for the retry-branch-
@@ -8192,7 +8266,8 @@ void main() {
           ]),
         );
       },
-      act: (cubit) => cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
+      act: (cubit) =>
+          cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
       wait: const Duration(milliseconds: 50),
       verify: (_) {
         verify(
@@ -8273,7 +8348,8 @@ void main() {
           ]),
         );
       },
-      act: (cubit) => cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
+      act: (cubit) =>
+          cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
       wait: const Duration(milliseconds: 50),
       verify: (_) {
         // Distinguished from the verify turn's own prompt (also absent
@@ -8358,11 +8434,15 @@ void main() {
           ),
         ).thenAnswer((_) async => AutomationConfidence.gated);
       },
-      act: (cubit) => cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
+      act: (cubit) =>
+          cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
       wait: const Duration(milliseconds: 50),
       verify: (_) {
         verifyNever(
-          () => repository.updateTicketStatus(taskUnderStory.id, 'inReview'),
+          () => repository.updateTicketStatus(
+            taskUnderStory.id,
+            'inReview',
+          ),
         );
       },
     );
@@ -8451,11 +8531,14 @@ void main() {
         when(
           () => repository.getTicketById(taskUnderStoryNoDesign.id),
         ).thenAnswer(
-          (_) async => taskUnderStoryNoDesign.copyWith(status: 'inProgress'),
+          (_) async =>
+              taskUnderStoryNoDesign.copyWith(status: 'inProgress'),
         );
       },
-      act: (cubit) =>
-          cubit.changeTicketStatus(taskUnderStoryNoDesign, 'inProgress'),
+      act: (cubit) => cubit.changeTicketStatus(
+        taskUnderStoryNoDesign,
+        'inProgress',
+      ),
       verify: (_) {
         verify(
           () => repository.updateTicketStatus(
@@ -8502,16 +8585,23 @@ void main() {
           () => repository.getTicketById(epic.id),
         ).thenAnswer((_) async => epic);
         when(
-          () => repository.updateTicketStatus(taskUnderEpic.id, 'inProgress'),
+          () => repository.updateTicketStatus(
+            taskUnderEpic.id,
+            'inProgress',
+          ),
         ).thenAnswer((_) async {});
-        when(
-          () => repository.getTicketById(taskUnderEpic.id),
-        ).thenAnswer((_) async => taskUnderEpic.copyWith(status: 'inProgress'));
+        when(() => repository.getTicketById(taskUnderEpic.id)).thenAnswer(
+          (_) async => taskUnderEpic.copyWith(status: 'inProgress'),
+        );
       },
-      act: (cubit) => cubit.changeTicketStatus(taskUnderEpic, 'inProgress'),
+      act: (cubit) =>
+          cubit.changeTicketStatus(taskUnderEpic, 'inProgress'),
       verify: (_) {
         verify(
-          () => repository.updateTicketStatus(taskUnderEpic.id, 'inProgress'),
+          () => repository.updateTicketStatus(
+            taskUnderEpic.id,
+            'inProgress',
+          ),
         ).called(1);
         // Never walks past the Epic looking for sibling Tasks/a Story.
         verifyNever(
@@ -8522,7 +8612,9 @@ void main() {
         );
       },
       expect: () => [
-        TicketDetailLoaded(taskUnderEpic.copyWith(status: 'inProgress')),
+        TicketDetailLoaded(
+          taskUnderEpic.copyWith(status: 'inProgress'),
+        ),
         // See the "no governing Story" case above for why these two extra
         // emissions are expected — _refreshTaskDetailIfShowing, added for
         // `aion-arch/changes/parallel-work` post-/verify.
@@ -8534,7 +8626,9 @@ void main() {
           taskUnderEpic.copyWith(status: 'inProgress'),
           isExecuting: true,
         ),
-        TicketDetailLoaded(taskUnderEpic.copyWith(status: 'inProgress')),
+        TicketDetailLoaded(
+          taskUnderEpic.copyWith(status: 'inProgress'),
+        ),
       ],
     );
 
@@ -8611,11 +8705,15 @@ void main() {
           ),
         ).thenAnswer((_) async => AutomationConfidence.gated);
       },
-      act: (cubit) => cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
+      act: (cubit) =>
+          cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
       wait: const Duration(milliseconds: 50),
       verify: (_) {
         verifyNever(
-          () => repository.updateTicketStatus(taskUnderStory.id, 'inReview'),
+          () => repository.updateTicketStatus(
+            taskUnderStory.id,
+            'inReview',
+          ),
         );
       },
     );
@@ -8690,15 +8788,21 @@ void main() {
           ),
         ).thenAnswer((_) async => AutomationConfidence.auto);
       },
-      act: (cubit) => cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
+      act: (cubit) =>
+          cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
       wait: const Duration(milliseconds: 50),
       verify: (_) {
         verifyNever(
-          () => repository.updateTicketStatus(taskUnderStory.id, 'inReview'),
+          () => repository.updateTicketStatus(
+            taskUnderStory.id,
+            'inReview',
+          ),
         );
       },
       expect: () => [
-        TicketDetailLoaded(taskUnderStory.copyWith(status: 'inProgress')),
+        TicketDetailLoaded(
+          taskUnderStory.copyWith(status: 'inProgress'),
+        ),
         // See the "no governing Story" case above for why these two extra
         // emissions are expected — _refreshTaskDetailIfShowing, added for
         // `aion-arch/changes/parallel-work` post-/verify.
@@ -8796,181 +8900,190 @@ void main() {
       },
     );
 
-    group('Node.js dependency caching '
-        '(dependency-caching-and-ancestor-sibling-conflict)', () {
-      late MockDependencyCacheService dependencyCache;
-      late Directory nodeProjectDir;
-      late Directory nonNodeProjectDir;
+    group(
+      'Node.js dependency caching '
+      '(dependency-caching-and-ancestor-sibling-conflict)',
+      () {
+        late MockDependencyCacheService dependencyCache;
+        late Directory nodeProjectDir;
+        late Directory nonNodeProjectDir;
 
-      setUp(() async {
-        dependencyCache = MockDependencyCacheService();
-        nodeProjectDir = await Directory.systemTemp.createTemp(
-          'dep_cache_node_project_',
-        );
-        File(
-          '${nodeProjectDir.path}${Platform.pathSeparator}package.json',
-        ).writeAsStringSync('{}');
-        nonNodeProjectDir = await Directory.systemTemp.createTemp(
-          'dep_cache_non_node_project_',
-        );
-        when(
-          () => dependencyCache.cacheDirFor(any(), any()),
-        ).thenReturn('/fake/cache/node_modules');
-        when(() => dependencyCache.seed(any(), any())).thenAnswer((_) async {});
-        when(
-          () => dependencyCache.writeBack(any(), any()),
-        ).thenAnswer((_) async {});
-        when(
-          () => dependencyCache.installDependencies(any()),
-        ).thenAnswer((_) async => true);
-      });
-
-      tearDown(() async {
-        if (nodeProjectDir.existsSync()) {
-          await nodeProjectDir.delete(recursive: true);
-        }
-        if (nonNodeProjectDir.existsSync()) {
-          await nonNodeProjectDir.delete(recursive: true);
-        }
-      });
-
-      TicketsCubit buildCubitWithRoot(String rootPath) => TicketsCubit(
-        repository,
-        providerRegistry: registry,
-        commentRepository: commentRepository,
-        automationSettingsRepository: automationSettingsRepository,
-        projectRootPath: rootPath,
-        gitClient: gitClient,
-        gitHubClient: gitHubClient,
-        baselineRepository: baselineRepository,
-        projectId: 'project-1',
-        baselineVersion: '0.1.0',
-        dependencyCacheService: dependencyCache,
-      );
-
-      // Same happy-path wiring as "runs the coding-execution chat on an
-      // approved Task..." above — reused here since these tests only
-      // care about the new dependency-caching side effect, not the
-      // execution flow itself.
-      void wireHappyPathStubs() {
-        when(
-          () => repository.getTicketsByParent(
-            storyForExecution.id,
-            types: TicketTypeHierarchy.executableTypes,
-          ),
-        ).thenAnswer((_) async => [taskUnderStory]);
-        when(
-          () => repository.getTicketsByParent(
-            storyForExecution.id,
-            types: const [TicketType.chat],
-          ),
-        ).thenAnswer((_) async => [designSyncChatForExecution]);
-        when(
-          () => commentRepository.getCommentsForTicket(
-            designSyncChatForExecution.id,
-          ),
-        ).thenAnswer(
-          (_) async => [
-            TicketComment(
-              id: 'c-dep-cache',
-              ticketId: designSyncChatForExecution.id,
-              content: 'No issues found.\n\nDESIGN GATE: APPROVED',
-              authorType: CommentAuthorType.ai,
-              createdAt: DateTime(2026),
-            ),
-          ],
-        );
-        var executionChatCreated = false;
-        when(
-          () => repository.getTicketsByParent(
-            taskUnderStory.id,
-            types: const [TicketType.chat],
-          ),
-        ).thenAnswer(
-          (_) async => executionChatCreated ? [dummyExecutionChatTicket] : [],
-        );
-        stubStatefulComments(commentRepository, dummyExecutionChatTicket.id);
-        when(() => repository.getTicketById(any())).thenAnswer((
-          invocation,
-        ) async {
-          final id = invocation.positionalArguments[0] as String;
-          if (id == storyForExecution.id) return storyForExecution;
-          if (id == taskUnderStory.id) {
-            return taskUnderStory.copyWith(status: 'inProgress');
-          }
-          return dummyExecutionChatTicket;
-        });
-        when(
-          () => repository.updateTicketStatus(any(), any()),
-        ).thenAnswer((_) async {});
-        when(() => repository.createTicket(any())).thenAnswer((_) async {
-          executionChatCreated = true;
-        });
-        when(() => agentClient.run(any())).thenAnswer(
-          (_) async => Stream.fromIterable(const [
-            AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
-            AgentDoneEvent(),
-          ]),
-        );
-        when(
-          () => automationSettingsRepository.getConfidence(
-            AutomationContext.codingExecution,
-          ),
-        ).thenAnswer((_) async => AutomationConfidence.auto);
-      }
-
-      blocTest<TicketsCubit, TicketsState>(
-        'a Node.js-marker fixture project seeds, installs, and writes '
-        'back the dependency cache',
-        build: () => buildCubitWithRoot(nodeProjectDir.path),
-        setUp: wireHappyPathStubs,
-        act: (cubit) => cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
-        wait: const Duration(milliseconds: 50),
-        verify: (_) {
-          verify(() => dependencyCache.seed(any(), any())).called(1);
-          verify(() => dependencyCache.installDependencies(any())).called(1);
-          verify(() => dependencyCache.writeBack(any(), any())).called(1);
-        },
-      );
-
-      blocTest<TicketsCubit, TicketsState>(
-        'a non-Node.js fixture project skips the dependency step '
-        'entirely',
-        build: () => buildCubitWithRoot(nonNodeProjectDir.path),
-        setUp: wireHappyPathStubs,
-        act: (cubit) => cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
-        wait: const Duration(milliseconds: 50),
-        verify: (_) {
-          verifyNever(() => dependencyCache.seed(any(), any()));
-          verifyNever(() => dependencyCache.installDependencies(any()));
-          verifyNever(() => dependencyCache.writeBack(any(), any()));
-        },
-      );
-
-      blocTest<TicketsCubit, TicketsState>(
-        "a failed npm install doesn't abort the run",
-        build: () => buildCubitWithRoot(nodeProjectDir.path),
-        setUp: () {
-          wireHappyPathStubs();
+        setUp(() async {
+          dependencyCache = MockDependencyCacheService();
+          nodeProjectDir = await Directory.systemTemp.createTemp(
+            'dep_cache_node_project_',
+          );
+          File(
+            '${nodeProjectDir.path}${Platform.pathSeparator}package.json',
+          ).writeAsStringSync('{}');
+          nonNodeProjectDir = await Directory.systemTemp.createTemp(
+            'dep_cache_non_node_project_',
+          );
+          when(
+            () => dependencyCache.cacheDirFor(any(), any()),
+          ).thenReturn('/fake/cache/node_modules');
+          when(
+            () => dependencyCache.seed(any(), any()),
+          ).thenAnswer((_) async {});
+          when(
+            () => dependencyCache.writeBack(any(), any()),
+          ).thenAnswer((_) async {});
           when(
             () => dependencyCache.installDependencies(any()),
-          ).thenAnswer((_) async => false);
-        },
-        act: (cubit) => cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
-        wait: const Duration(milliseconds: 50),
-        verify: (_) {
-          verify(() => dependencyCache.installDependencies(any())).called(1);
-          // A failed install is never written back to the cache.
-          verifyNever(() => dependencyCache.writeBack(any(), any()));
-          // The run itself still completes and flips status, exactly
-          // like the happy path — a cache miss for the model's own
-          // troubleshooting, not an aborted run.
-          verify(
-            () => repository.updateTicketStatus(taskUnderStory.id, 'inReview'),
-          ).called(1);
-        },
-      );
-    });
+          ).thenAnswer((_) async => true);
+        });
+
+        tearDown(() async {
+          if (nodeProjectDir.existsSync()) {
+            await nodeProjectDir.delete(recursive: true);
+          }
+          if (nonNodeProjectDir.existsSync()) {
+            await nonNodeProjectDir.delete(recursive: true);
+          }
+        });
+
+        TicketsCubit buildCubitWithRoot(String rootPath) => TicketsCubit(
+          repository,
+          providerRegistry: registry,
+          commentRepository: commentRepository,
+          automationSettingsRepository: automationSettingsRepository,
+          projectRootPath: rootPath,
+          gitClient: gitClient,
+          gitHubClient: gitHubClient,
+          baselineRepository: baselineRepository,
+          projectId: 'project-1',
+          baselineVersion: '0.1.0',
+          dependencyCacheService: dependencyCache,
+        );
+
+        // Same happy-path wiring as "runs the coding-execution chat on an
+        // approved Task..." above — reused here since these tests only
+        // care about the new dependency-caching side effect, not the
+        // execution flow itself.
+        void wireHappyPathStubs() {
+          when(
+            () => repository.getTicketsByParent(
+              storyForExecution.id,
+              types: TicketTypeHierarchy.executableTypes,
+            ),
+          ).thenAnswer((_) async => [taskUnderStory]);
+          when(
+            () => repository.getTicketsByParent(
+              storyForExecution.id,
+              types: const [TicketType.chat],
+            ),
+          ).thenAnswer((_) async => [designSyncChatForExecution]);
+          when(
+            () => commentRepository.getCommentsForTicket(
+              designSyncChatForExecution.id,
+            ),
+          ).thenAnswer(
+            (_) async => [
+              TicketComment(
+                id: 'c-dep-cache',
+                ticketId: designSyncChatForExecution.id,
+                content: 'No issues found.\n\nDESIGN GATE: APPROVED',
+                authorType: CommentAuthorType.ai,
+                createdAt: DateTime(2026),
+              ),
+            ],
+          );
+          var executionChatCreated = false;
+          when(
+            () => repository.getTicketsByParent(
+              taskUnderStory.id,
+              types: const [TicketType.chat],
+            ),
+          ).thenAnswer(
+            (_) async =>
+                executionChatCreated ? [dummyExecutionChatTicket] : [],
+          );
+          stubStatefulComments(commentRepository, dummyExecutionChatTicket.id);
+          when(() => repository.getTicketById(any())).thenAnswer((
+            invocation,
+          ) async {
+            final id = invocation.positionalArguments[0] as String;
+            if (id == storyForExecution.id) return storyForExecution;
+            if (id == taskUnderStory.id) {
+              return taskUnderStory.copyWith(status: 'inProgress');
+            }
+            return dummyExecutionChatTicket;
+          });
+          when(
+            () => repository.updateTicketStatus(any(), any()),
+          ).thenAnswer((_) async {});
+          when(() => repository.createTicket(any())).thenAnswer((_) async {
+            executionChatCreated = true;
+          });
+          when(() => agentClient.run(any())).thenAnswer(
+            (_) async => Stream.fromIterable(const [
+              AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+              AgentDoneEvent(),
+            ]),
+          );
+          when(
+            () => automationSettingsRepository.getConfidence(
+              AutomationContext.codingExecution,
+            ),
+          ).thenAnswer((_) async => AutomationConfidence.auto);
+        }
+
+        blocTest<TicketsCubit, TicketsState>(
+          'a Node.js-marker fixture project seeds, installs, and writes '
+          'back the dependency cache',
+          build: () => buildCubitWithRoot(nodeProjectDir.path),
+          setUp: wireHappyPathStubs,
+          act: (cubit) => cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
+          wait: const Duration(milliseconds: 50),
+          verify: (_) {
+            verify(() => dependencyCache.seed(any(), any())).called(1);
+            verify(() => dependencyCache.installDependencies(any())).called(1);
+            verify(() => dependencyCache.writeBack(any(), any())).called(1);
+          },
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          'a non-Node.js fixture project skips the dependency step '
+          'entirely',
+          build: () => buildCubitWithRoot(nonNodeProjectDir.path),
+          setUp: wireHappyPathStubs,
+          act: (cubit) => cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
+          wait: const Duration(milliseconds: 50),
+          verify: (_) {
+            verifyNever(() => dependencyCache.seed(any(), any()));
+            verifyNever(() => dependencyCache.installDependencies(any()));
+            verifyNever(() => dependencyCache.writeBack(any(), any()));
+          },
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          "a failed npm install doesn't abort the run",
+          build: () => buildCubitWithRoot(nodeProjectDir.path),
+          setUp: () {
+            wireHappyPathStubs();
+            when(
+              () => dependencyCache.installDependencies(any()),
+            ).thenAnswer((_) async => false);
+          },
+          act: (cubit) => cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
+          wait: const Duration(milliseconds: 50),
+          verify: (_) {
+            verify(() => dependencyCache.installDependencies(any())).called(1);
+            // A failed install is never written back to the cache.
+            verifyNever(() => dependencyCache.writeBack(any(), any()));
+            // The run itself still completes and flips status, exactly
+            // like the happy path — a cache miss for the model's own
+            // troubleshooting, not an aborted run.
+            verify(
+              () => repository.updateTicketStatus(
+                taskUnderStory.id,
+                'inReview',
+              ),
+            ).called(1);
+          },
+        );
+      },
+    );
   });
 
   group(
@@ -9028,10 +9141,16 @@ void main() {
         stubStatefulComments(commentRepository, 'exec-chat-task1');
         stubStatefulComments(commentRepository, 'exec-chat-task2');
         when(
-          () => repository.updateTicketStatus(taskNoStory.id, 'inProgress'),
+          () => repository.updateTicketStatus(
+            taskNoStory.id,
+            'inProgress',
+          ),
         ).thenAnswer((_) async {});
         when(
-          () => repository.updateTicketStatus(otherTask.id, 'inProgress'),
+          () => repository.updateTicketStatus(
+            otherTask.id,
+            'inProgress',
+          ),
         ).thenAnswer((_) async {});
         // Each Task's own execution chat is distinguishable by which
         // Task's children are being queried — getTicketsByParent's mock
@@ -9099,8 +9218,8 @@ void main() {
             priorities: any(named: 'priorities'),
             sort: any(named: 'sort'),
             limit: any(named: 'limit'),
-            statusSortOrder: any(named: 'statusSortOrder'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).thenAnswer(
           (_) async => TicketSearchPage(
             tickets: [taskNoStory, otherTask],
@@ -9173,16 +9292,22 @@ void main() {
         ),
         setUp: () {
           when(
-            () => repository.updateTicketStatus(otherTask.id, 'inProgress'),
+            () => repository.updateTicketStatus(
+              otherTask.id,
+              'inProgress',
+            ),
           ).thenAnswer((_) async {});
-          when(
-            () => repository.getTicketById(otherTask.id),
-          ).thenAnswer((_) async => otherTask.copyWith(status: 'inProgress'));
+          when(() => repository.getTicketById(otherTask.id)).thenAnswer(
+            (_) async => otherTask.copyWith(status: 'inProgress'),
+          );
         },
-        act: (cubit) => cubit.changeTicketStatus(otherTask, 'inProgress'),
+        act: (cubit) =>
+            cubit.changeTicketStatus(otherTask, 'inProgress'),
         wait: const Duration(milliseconds: 50),
         expect: () => [
-          TicketDetailLoaded(otherTask.copyWith(status: 'inProgress')),
+          TicketDetailLoaded(
+            otherTask.copyWith(status: 'inProgress'),
+          ),
           TicketDetailLoaded(
             otherTask.copyWith(status: 'inProgress'),
             executionQueuePosition: 1,
@@ -9191,7 +9316,9 @@ void main() {
             otherTask.copyWith(status: 'inProgress'),
             isExecuting: true,
           ),
-          TicketDetailLoaded(otherTask.copyWith(status: 'inProgress')),
+          TicketDetailLoaded(
+            otherTask.copyWith(status: 'inProgress'),
+          ),
         ],
       );
     },
@@ -9378,20 +9505,29 @@ void main() {
       build: () => TicketsCubit(repository),
       setUp: () {
         when(
-          () => repository.updateTicketStatus(bugNoStory.id, 'inProgress'),
+          () => repository.updateTicketStatus(
+            bugNoStory.id,
+            'inProgress',
+          ),
         ).thenAnswer((_) async {});
-        when(
-          () => repository.getTicketById(bugNoStory.id),
-        ).thenAnswer((_) async => bugNoStory.copyWith(status: 'inProgress'));
+        when(() => repository.getTicketById(bugNoStory.id)).thenAnswer(
+          (_) async => bugNoStory.copyWith(status: 'inProgress'),
+        );
       },
-      act: (cubit) => cubit.changeTicketStatus(bugNoStory, 'inProgress'),
+      act: (cubit) =>
+          cubit.changeTicketStatus(bugNoStory, 'inProgress'),
       verify: (_) {
         verify(
-          () => repository.updateTicketStatus(bugNoStory.id, 'inProgress'),
+          () => repository.updateTicketStatus(
+            bugNoStory.id,
+            'inProgress',
+          ),
         ).called(1);
       },
       expect: () => [
-        TicketDetailLoaded(bugNoStory.copyWith(status: 'inProgress')),
+        TicketDetailLoaded(
+          bugNoStory.copyWith(status: 'inProgress'),
+        ),
         // See the Task-parity case in the coding-execution trigger group
         // above for why these two extra emissions are expected —
         // _refreshTaskDetailIfShowing, added for
@@ -9404,7 +9540,9 @@ void main() {
           bugNoStory.copyWith(status: 'inProgress'),
           isExecuting: true,
         ),
-        TicketDetailLoaded(bugNoStory.copyWith(status: 'inProgress')),
+        TicketDetailLoaded(
+          bugNoStory.copyWith(status: 'inProgress'),
+        ),
       ],
     );
 
@@ -9448,7 +9586,8 @@ void main() {
           ),
         ).thenAnswer((_) async => [designSyncChatForExecution]);
       },
-      act: (cubit) => cubit.changeTicketStatus(bugUnderStory, 'inProgress'),
+      act: (cubit) =>
+          cubit.changeTicketStatus(bugUnderStory, 'inProgress'),
       verify: (_) {
         verifyNever(() => repository.updateTicketStatus(any(), any()));
       },
@@ -9572,7 +9711,8 @@ void main() {
             ]),
           );
         },
-        act: (cubit) => cubit.changeTicketStatus(taskNoStory, 'inProgress'),
+        act: (cubit) =>
+            cubit.changeTicketStatus(taskNoStory, 'inProgress'),
         wait: const Duration(milliseconds: 50),
         verify: (_) {
           verify(() => gitClient.createWorktree(any(), any(), any())).called(1);
@@ -9618,7 +9758,8 @@ void main() {
                   ]);
           });
         },
-        act: (cubit) => cubit.changeTicketStatus(taskNoStory, 'inProgress'),
+        act: (cubit) =>
+            cubit.changeTicketStatus(taskNoStory, 'inProgress'),
         wait: const Duration(milliseconds: 50),
         verify: (bloc) {
           final state = bloc.state;
@@ -9637,7 +9778,8 @@ void main() {
         setUp: () {
           when(() => agentClient.run(any())).thenThrow(Exception('boom'));
         },
-        act: (cubit) => cubit.changeTicketStatus(taskNoStory, 'inProgress'),
+        act: (cubit) =>
+            cubit.changeTicketStatus(taskNoStory, 'inProgress'),
         wait: const Duration(milliseconds: 50),
         verify: (_) {
           verify(() => gitClient.createWorktree(any(), any(), any())).called(1);
@@ -9662,11 +9804,14 @@ void main() {
         'kept for possible inspection/resume',
         build: buildCubit,
         setUp: () {
-          when(() => agentClient.run(any())).thenAnswer(
-            (_) async => Stream.fromIterable(const [AgentCancelledEvent()]),
-          );
+          when(
+            () => agentClient.run(any()),
+          ).thenAnswer((_) async => Stream.fromIterable(const [
+            AgentCancelledEvent(),
+          ]));
         },
-        act: (cubit) => cubit.changeTicketStatus(taskNoStory, 'inProgress'),
+        act: (cubit) =>
+            cubit.changeTicketStatus(taskNoStory, 'inProgress'),
         wait: const Duration(milliseconds: 50),
         verify: (_) {
           verify(() => gitClient.createWorktree(any(), any(), any())).called(1);
@@ -9697,7 +9842,8 @@ void main() {
             ),
           ).thenAnswer((_) async => AutomationConfidence.auto);
         },
-        act: (cubit) => cubit.changeTicketStatus(taskNoStory, 'inProgress'),
+        act: (cubit) =>
+            cubit.changeTicketStatus(taskNoStory, 'inProgress'),
         wait: const Duration(milliseconds: 50),
         verify: (_) {
           // 1 initial attempt + 2 automatic retries (the cap) = 3
@@ -9738,7 +9884,8 @@ void main() {
             ),
           ).thenAnswer((_) async => AutomationConfidence.gated);
         },
-        act: (cubit) => cubit.changeTicketStatus(taskNoStory, 'inProgress'),
+        act: (cubit) =>
+            cubit.changeTicketStatus(taskNoStory, 'inProgress'),
         wait: const Duration(milliseconds: 50),
         verify: (_) {
           // 2 model turns: implement, then agentic verify (which fails,
@@ -9759,7 +9906,9 @@ void main() {
           verify(() => gitClient.deleteBranch(any(), any())).called(1);
         },
         expect: () => [
-          TicketDetailLoaded(taskNoStory.copyWith(status: 'inProgress')),
+          TicketDetailLoaded(
+            taskNoStory.copyWith(status: 'inProgress'),
+          ),
           // See the "no governing Story" trigger case above for why these
           // two extra emissions are expected — _refreshTaskDetailIfShowing,
           // added for `aion-arch/changes/parallel-work` post-/verify.
@@ -9810,7 +9959,8 @@ void main() {
             ),
           ).thenAnswer((_) async => AutomationConfidence.manual);
         },
-        act: (cubit) => cubit.changeTicketStatus(taskNoStory, 'inProgress'),
+        act: (cubit) =>
+            cubit.changeTicketStatus(taskNoStory, 'inProgress'),
         wait: const Duration(milliseconds: 50),
         verify: (_) {
           // 2 model turns: implement, then agentic verify.
@@ -9830,7 +9980,9 @@ void main() {
           verify(() => gitClient.deleteBranch(any(), any())).called(1);
         },
         expect: () => [
-          TicketDetailLoaded(taskNoStory.copyWith(status: 'inProgress')),
+          TicketDetailLoaded(
+            taskNoStory.copyWith(status: 'inProgress'),
+          ),
           // See the "no governing Story" trigger case above for why these
           // two extra emissions are expected — _refreshTaskDetailIfShowing,
           // added for `aion-arch/changes/parallel-work` post-/verify.
@@ -9848,7 +10000,9 @@ void main() {
           // this same TicketDetailLoaded showing, and
           // _refreshTaskDetailIfShowing emits once more for it before the
           // post-run refresh below.
-          TicketDetailLoaded(taskNoStory.copyWith(status: 'inProgress')),
+          TicketDetailLoaded(
+            taskNoStory.copyWith(status: 'inProgress'),
+          ),
           // No toast for `manual` — straight to the post-run refresh. No
           // intervening TicketsLoading — getTicketById's same-id
           // Loading-skip now covers this re-fetch too (added for
@@ -10014,7 +10168,8 @@ void main() {
             ]),
           );
         },
-        act: (cubit) => cubit.changeTicketStatus(taskNoStory, 'inProgress'),
+        act: (cubit) =>
+            cubit.changeTicketStatus(taskNoStory, 'inProgress'),
         wait: const Duration(milliseconds: 50),
         verify: (_) {
           verify(() => repository.createTicket(any())).called(1);
@@ -10744,9 +10899,8 @@ void main() {
       ).thenAnswer(
         (_) async => const TicketSearchPage(tickets: [], hasMore: false),
       );
-      when(
-        () => repository.getAllTicketsByType([TicketType.spec]),
-      ).thenAnswer((_) async => [matchingSpec]);
+      when(() => repository.getAllTicketsByType([TicketType.spec]))
+          .thenAnswer((_) async => [matchingSpec]);
       when(
         () => embeddingProvider.embed(any()),
       ).thenAnswer((_) async => vec([1, 0, 0]));
@@ -11007,8 +11161,7 @@ void main() {
       },
       build: () => TicketsCubit(
         repository,
-        transitionPreconditionRepository:
-            FakeTransitionPreconditionRepository(),
+        transitionPreconditionRepository: FakeTransitionPreconditionRepository(),
       ),
       act: (cubit) => cubit.getTicketById(storyProposed.id),
       expect: () => [
@@ -11037,8 +11190,7 @@ void main() {
       },
       build: () => TicketsCubit(
         repository,
-        transitionPreconditionRepository:
-            FakeTransitionPreconditionRepository(),
+        transitionPreconditionRepository: FakeTransitionPreconditionRepository(),
       ),
       act: (cubit) => cubit.getTicketById(storyProposed.id),
       expect: () => [
@@ -11060,8 +11212,7 @@ void main() {
       },
       build: () => TicketsCubit(
         repository,
-        transitionPreconditionRepository:
-            FakeTransitionPreconditionRepository(),
+        transitionPreconditionRepository: FakeTransitionPreconditionRepository(),
       ),
       act: (cubit) => cubit.getTicketById(epic.id),
       expect: () => [
@@ -11085,8 +11236,7 @@ void main() {
       },
       build: () => TicketsCubit(
         repository,
-        transitionPreconditionRepository:
-            FakeTransitionPreconditionRepository(),
+        transitionPreconditionRepository: FakeTransitionPreconditionRepository(),
       ),
       // See the standalone `advanceSddStage` group's own equivalent test
       // for why this awaits a zero-duration delay before acting.
@@ -11115,644 +11265,669 @@ void main() {
       expect: () => [const TicketsLoading(), TicketDetailLoaded(ticket)],
     );
 
-    test('canAdvanceSddStage/sddStageBlockReason (via getTicketById) and '
-        'advanceSddStage\'s own rejection never disagree — both read through '
-        'the shared _sddStageAdvanceCheck. Regression guard for the '
-        'guarantee documented on that method\'s own dartdoc.', () async {
-      when(
-        () => repository.getTicketById(storyProposed.id),
-      ).thenAnswer((_) async => storyProposed);
-      when(
-        () => repository.getTicketsByParent(
-          storyProposed.id,
-          types: any(named: 'types'),
-        ),
-      ).thenAnswer((_) async => []);
-
-      final cubit = TicketsCubit(
-        repository,
-        transitionPreconditionRepository:
-            FakeTransitionPreconditionRepository(),
-      );
-      addTearDown(cubit.close);
-      await Future<void>.delayed(Duration.zero);
-
-      await cubit.getTicketById(storyProposed.id);
-      final detail = cubit.state as TicketDetailLoaded;
-      expect(detail.canAdvanceSddStage, isFalse);
-      expect(
-        detail.sddStageBlockReason,
-        'Waiting on: ${hasChildrenField.displayName}',
-      );
-
-      final states = <TicketsState>[];
-      final sub = cubit.stream.listen(states.add);
-      await cubit.advanceSddStage(storyProposed);
-      await sub.cancel();
-
-      expect(
-        states,
-        contains(
-          isA<TicketsError>().having(
-            (e) => e.reason,
-            'reason',
-            TicketsErrorReason.sddStagePreconditionNotMet,
+    test(
+      'canAdvanceSddStage/sddStageBlockReason (via getTicketById) and '
+      'advanceSddStage\'s own rejection never disagree — both read through '
+      'the shared _sddStageAdvanceCheck. Regression guard for the '
+      'guarantee documented on that method\'s own dartdoc.',
+      () async {
+        when(
+          () => repository.getTicketById(storyProposed.id),
+        ).thenAnswer((_) async => storyProposed);
+        when(
+          () => repository.getTicketsByParent(
+            storyProposed.id,
+            types: any(named: 'types'),
           ),
-        ),
-      );
-    });
+        ).thenAnswer((_) async => []);
+
+        final cubit = TicketsCubit(
+          repository,
+          transitionPreconditionRepository:
+              FakeTransitionPreconditionRepository(),
+        );
+        addTearDown(cubit.close);
+        await Future<void>.delayed(Duration.zero);
+
+        await cubit.getTicketById(storyProposed.id);
+        final detail = cubit.state as TicketDetailLoaded;
+        expect(detail.canAdvanceSddStage, isFalse);
+        expect(
+          detail.sddStageBlockReason,
+          'Waiting on: ${hasChildrenField.displayName}',
+        );
+
+        final states = <TicketsState>[];
+        final sub = cubit.stream.listen(states.add);
+        await cubit.advanceSddStage(storyProposed);
+        await sub.cancel();
+
+        expect(
+          states,
+          contains(
+            isA<TicketsError>().having(
+              (e) => e.reason,
+              'reason',
+              TicketsErrorReason.sddStagePreconditionNotMet,
+            ),
+          ),
+        );
+      },
+    );
   });
 
-  group('live-refresh an open ticket detail screen', () {
-    Future<TicketSearchPage> searchAnyArgs() => repository.searchTickets(
-      query: any(named: 'query'),
-      statuses: any(named: 'statuses'),
-      types: any(named: 'types'),
-      priorities: any(named: 'priorities'),
-      sort: any(named: 'sort'),
-      limit: any(named: 'limit'),
-      offset: any(named: 'offset'),
+  group(
+    'live-refresh an open ticket detail screen',
+    () {
+      Future<TicketSearchPage> searchAnyArgs() => repository.searchTickets(
+        query: any(named: 'query'),
+        statuses: any(named: 'statuses'),
+        types: any(named: 'types'),
+        priorities: any(named: 'priorities'),
+        sort: any(named: 'sort'),
+        limit: any(named: 'limit'),
+        offset: any(named: 'offset'),
       statusSortOrder: any(named: 'statusSortOrder'),
-    );
+            );
 
-    // Only used by the advanceSddStage-related cases below, which need
-    // the full provider/comment/link stack to spawn a stage chat —
-    // mirrors the standalone 'advanceSddStage' group's own setup.
-    late MockAgentModelClient agentClient;
-    late MockProviderRegistry registry;
-    late MockCommentRepository commentRepository;
-    late MockTicketLinkRepository linkRepository;
+      // Only used by the advanceSddStage-related cases below, which need
+      // the full provider/comment/link stack to spawn a stage chat —
+      // mirrors the standalone 'advanceSddStage' group's own setup.
+      late MockAgentModelClient agentClient;
+      late MockProviderRegistry registry;
+      late MockCommentRepository commentRepository;
+      late MockTicketLinkRepository linkRepository;
 
-    blocTest<TicketsCubit, TicketsState>(
-      'updateTicketStatus live-refreshes an open Story detail screen '
-      'when a direct Task child\'s status changes, flipping '
-      'canAdvanceSddStage — via a transient TicketsLoading, since the '
-      'write\'s own TicketStatusUpdated emission already overwrote '
-      '`state` by the time the refresh check runs',
-      setUp: () {
-        final taskChildNowDone = taskChildNotDone.copyWith(status: 'done');
-        when(
-          () => repository.updateTicketStatus(taskChildNotDone.id, 'done'),
-        ).thenAnswer((_) async {});
-        when(
-          () => repository.getTicketById(taskChildNotDone.id),
-        ).thenAnswer((_) async => taskChildNowDone);
-        when(
-          () => repository.getTicketById(storyProposed.id),
-        ).thenAnswer((_) async => storyProposed);
-        when(searchAnyArgs).thenAnswer(
-          (_) async => TicketSearchPage(tickets: const [], hasMore: false),
-        );
-        when(
-          () => repository.getTicketsByParent(
-            storyProposed.id,
-            types: any(named: 'types'),
+      blocTest<TicketsCubit, TicketsState>(
+        'updateTicketStatus live-refreshes an open Story detail screen '
+        'when a direct Task child\'s status changes, flipping '
+        'canAdvanceSddStage — via a transient TicketsLoading, since the '
+        'write\'s own TicketStatusUpdated emission already overwrote '
+        '`state` by the time the refresh check runs',
+        setUp: () {
+          final taskChildNowDone = taskChildNotDone.copyWith(
+            status: 'done',
+          );
+          when(
+            () => repository.updateTicketStatus(
+              taskChildNotDone.id,
+              'done',
+            ),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(taskChildNotDone.id),
+          ).thenAnswer((_) async => taskChildNowDone);
+          when(
+            () => repository.getTicketById(storyProposed.id),
+          ).thenAnswer((_) async => storyProposed);
+          when(searchAnyArgs).thenAnswer(
+            (_) async => TicketSearchPage(tickets: const [], hasMore: false),
+          );
+          when(
+            () => repository.getTicketsByParent(
+              storyProposed.id,
+              types: any(named: 'types'),
+            ),
+          ).thenAnswer((_) async => [taskChildDone, taskChildNowDone]);
+        },
+        build: () => TicketsCubit(repository),
+        seed: () => TicketDetailLoaded(storyProposed),
+        act: (cubit) =>
+            cubit.updateTicketStatus(taskChildNotDone.id, 'done'),
+        wait: const Duration(milliseconds: 10),
+        expect: () => [
+          const TicketStatusUpdating([]),
+          const TicketStatusUpdated([], hasMore: false),
+          const TicketsLoading(),
+          TicketDetailLoaded(
+            storyProposed,
+            canAdvanceSddStage: true,
+            needsDesignReview: false,
           ),
-        ).thenAnswer((_) async => [taskChildDone, taskChildNowDone]);
-      },
-      build: () => TicketsCubit(repository),
-      seed: () => TicketDetailLoaded(storyProposed),
-      act: (cubit) => cubit.updateTicketStatus(taskChildNotDone.id, 'done'),
-      wait: const Duration(milliseconds: 10),
-      expect: () => [
-        const TicketStatusUpdating([]),
-        const TicketStatusUpdated([], hasMore: false),
-        const TicketsLoading(),
-        TicketDetailLoaded(
-          storyProposed,
-          canAdvanceSddStage: true,
-          needsDesignReview: false,
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'updateTicketStatus live-refreshes the same ticket\'s own '
+        'already-open detail screen',
+        setUp: () {
+          final done = ticket.copyWith(status: 'done');
+          when(
+            () => repository.updateTicketStatus(ticket.id, 'done'),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(ticket.id),
+          ).thenAnswer((_) async => done);
+          when(searchAnyArgs).thenAnswer(
+            (_) async => TicketSearchPage(tickets: const [], hasMore: false),
+          );
+        },
+        build: () => TicketsCubit(repository),
+        seed: () => TicketDetailLoaded(ticket),
+        act: (cubit) => cubit.updateTicketStatus(ticket.id, 'done'),
+        wait: const Duration(milliseconds: 10),
+        expect: () => [
+          const TicketStatusUpdating([]),
+          const TicketStatusUpdated([], hasMore: false),
+          const TicketsLoading(),
+          TicketDetailLoaded(ticket.copyWith(status: 'done')),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'updateTicketStatus attempts no refresh when no detail screen is '
+        'open',
+        setUp: () {
+          when(
+            () =>
+                repository.updateTicketStatus(otherTask.id, 'done'),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(otherTask.id),
+          ).thenAnswer((_) async => otherTask.copyWith(status: 'done'));
+          when(searchAnyArgs).thenAnswer(
+            (_) async => TicketSearchPage(tickets: const [], hasMore: false),
+          );
+        },
+        build: () => TicketsCubit(repository),
+        act: (cubit) => cubit.updateTicketStatus(otherTask.id, 'done'),
+        wait: const Duration(milliseconds: 10),
+        verify: (_) {
+          verifyNever(
+            () => repository.getTicketsByParent(
+              any(),
+              types: any(named: 'types'),
+            ),
+          );
+        },
+        expect: () => [
+          const TicketStatusUpdating([]),
+          const TicketStatusUpdated([], hasMore: false),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'updateTicketStatus checks but does not refresh an open Story '
+        'detail screen when the written ticket is not one of its '
+        'children',
+        setUp: () {
+          when(
+            () =>
+                repository.updateTicketStatus(otherTask.id, 'done'),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(otherTask.id),
+          ).thenAnswer((_) async => otherTask.copyWith(status: 'done'));
+          when(searchAnyArgs).thenAnswer(
+            (_) async => TicketSearchPage(tickets: const [], hasMore: false),
+          );
+          when(
+            () => repository.getTicketsByParent(
+              storyProposed.id,
+              types: any(named: 'types'),
+            ),
+          ).thenAnswer((_) async => [taskChildDone, taskChildNotDone]);
+        },
+        build: () => TicketsCubit(repository),
+        seed: () => TicketDetailLoaded(storyProposed),
+        act: (cubit) => cubit.updateTicketStatus(otherTask.id, 'done'),
+        wait: const Duration(milliseconds: 10),
+        expect: () => [
+          const TicketStatusUpdating([]),
+          const TicketStatusUpdated([], hasMore: false),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'updateTicketStatus skips the children query entirely when the '
+        'open detail screen isn\'t a story',
+        setUp: () {
+          when(
+            () =>
+                repository.updateTicketStatus(otherTask.id, 'done'),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(otherTask.id),
+          ).thenAnswer((_) async => otherTask.copyWith(status: 'done'));
+          when(searchAnyArgs).thenAnswer(
+            (_) async => TicketSearchPage(tickets: const [], hasMore: false),
+          );
+        },
+        build: () => TicketsCubit(repository),
+        seed: () => TicketDetailLoaded(ticket), // ticket.type == task
+        act: (cubit) => cubit.updateTicketStatus(otherTask.id, 'done'),
+        wait: const Duration(milliseconds: 10),
+        verify: (_) {
+          verifyNever(
+            () => repository.getTicketsByParent(
+              any(),
+              types: any(named: 'types'),
+            ),
+          );
+        },
+        expect: () => [
+          const TicketStatusUpdating([]),
+          const TicketStatusUpdated([], hasMore: false),
+        ],
+      );
+
+      // Generalized coverage — aion-arch/changes/
+      // generalized-live-refresh-for-all-ticket-writes. The
+      // updateTicketStatus cases above cover the mechanism's original
+      // single-ticket path; these cover every write path newly wired to
+      // it: bulk status, advanceSddStage, trash (single + bulk),
+      // reparent (both directions), and create.
+
+      blocTest<TicketsCubit, TicketsState>(
+        'updateStatusForTickets live-refreshes an open Story detail '
+        'screen when a direct Task child is included in the bulk write',
+        setUp: () {
+          final taskChildNowDone = taskChildNotDone.copyWith(
+            status: 'done',
+          );
+          when(
+            () => repository.updateStatusForIds([taskChildNotDone.id], 'done'),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(taskChildNotDone.id),
+          ).thenAnswer((_) async => taskChildNowDone);
+          when(
+            () => repository.getTicketById(storyProposed.id),
+          ).thenAnswer((_) async => storyProposed);
+          when(
+            () => repository.getTicketsByParent(
+              storyProposed.id,
+              types: any(named: 'types'),
+            ),
+          ).thenAnswer((_) async => [taskChildDone, taskChildNowDone]);
+          when(searchAnyArgs).thenAnswer(
+            (_) async => TicketSearchPage(tickets: const [], hasMore: false),
+          );
+        },
+        build: () => TicketsCubit(repository),
+        seed: () => TicketDetailLoaded(storyProposed),
+        act: (cubit) =>
+            cubit.updateStatusForTickets([taskChildNotDone.id], 'done'),
+        wait: const Duration(milliseconds: 10),
+        verify: (_) {
+          verify(() => repository.getTicketById(storyProposed.id)).called(1);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'updateStatusForTickets does not refresh an open Story detail '
+        'screen when none of the bulk-written ids are its children',
+        setUp: () {
+          when(
+            () => repository.updateStatusForIds([otherTask.id], 'done'),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(otherTask.id),
+          ).thenAnswer((_) async => otherTask.copyWith(status: 'done'));
+          when(searchAnyArgs).thenAnswer(
+            (_) async => TicketSearchPage(tickets: const [], hasMore: false),
+          );
+        },
+        build: () => TicketsCubit(repository),
+        seed: () => TicketDetailLoaded(storyProposed),
+        act: (cubit) => cubit.updateStatusForTickets([otherTask.id], 'done'),
+        wait: const Duration(milliseconds: 10),
+        verify: (_) {
+          verifyNever(
+            () => repository.getTicketsByParent(
+              storyProposed.id,
+              types: any(named: 'types'),
+            ),
+          );
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'advanceSddStage live-refreshes an open Epic detail screen when '
+        'a direct child Story advances its own sddStage',
+        setUp: () {
+          agentClient = MockAgentModelClient();
+          registry = buildProviderStack(agentClient).registry;
+          commentRepository = MockCommentRepository();
+          linkRepository = MockTicketLinkRepository();
+          when(
+            () => linkRepository.getLinksForTicket(any()),
+          ).thenAnswer((_) async => []);
+          final advancedStory = Ticket(
+            id: storyUnderEpic.id,
+            ticketId: storyUnderEpic.ticketId,
+            type: storyUnderEpic.type,
+            title: storyUnderEpic.title,
+            status: storyUnderEpic.status,
+            parentId: storyUnderEpic.parentId,
+            sddStage: SddStage.exploring,
+            createdAt: storyUnderEpic.createdAt,
+            updatedAt: storyUnderEpic.updatedAt,
+          );
+          when(
+            () => repository.updateTicketSddStage(
+              storyUnderEpic.id,
+              SddStage.exploring,
+            ),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(any()),
+          ).thenAnswer((_) async => dummyChatTicket);
+          when(
+            () => repository.getTicketById(storyUnderEpic.id),
+          ).thenAnswer((_) async => advancedStory);
+          when(
+            () => repository.getTicketById(openEpic.id),
+          ).thenAnswer((_) async => openEpic);
+          when(() => repository.createTicket(any())).thenAnswer((_) async {});
+          when(
+            () => commentRepository.addComment(any()),
+          ).thenAnswer((_) async {});
+          when(() => agentClient.run(any())).thenAnswer(
+            (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+          );
+        },
+        build: () => TicketsCubit(
+          repository,
+          providerRegistry: registry,
+          commentRepository: commentRepository,
+          linkRepository: linkRepository,
         ),
-      ],
-    );
+        seed: () => TicketDetailLoaded(openEpic),
+        act: (cubit) => cubit.advanceSddStage(storyUnderEpic),
+        wait: const Duration(milliseconds: 50),
+        verify: (_) {
+          verify(() => repository.getTicketById(openEpic.id)).called(1);
+        },
+      );
 
-    blocTest<TicketsCubit, TicketsState>(
-      'updateTicketStatus live-refreshes the same ticket\'s own '
-      'already-open detail screen',
-      setUp: () {
-        final done = ticket.copyWith(status: 'done');
-        when(
-          () => repository.updateTicketStatus(ticket.id, 'done'),
-        ).thenAnswer((_) async {});
-        when(
-          () => repository.getTicketById(ticket.id),
-        ).thenAnswer((_) async => done);
-        when(searchAnyArgs).thenAnswer(
-          (_) async => TicketSearchPage(tickets: const [], hasMore: false),
-        );
-      },
-      build: () => TicketsCubit(repository),
-      seed: () => TicketDetailLoaded(ticket),
-      act: (cubit) => cubit.updateTicketStatus(ticket.id, 'done'),
-      wait: const Duration(milliseconds: 10),
-      expect: () => [
-        const TicketStatusUpdating([]),
-        const TicketStatusUpdated([], hasMore: false),
-        const TicketsLoading(),
-        TicketDetailLoaded(ticket.copyWith(status: 'done')),
-      ],
-    );
+      blocTest<TicketsCubit, TicketsState>(
+        'advanceSddStage does not refresh a Story\'s already-open detail '
+        'screen when an unrelated ticket advances its own sddStage',
+        setUp: () {
+          agentClient = MockAgentModelClient();
+          registry = buildProviderStack(agentClient).registry;
+          commentRepository = MockCommentRepository();
+          linkRepository = MockTicketLinkRepository();
+          when(
+            () => linkRepository.getLinksForTicket(any()),
+          ).thenAnswer((_) async => []);
+          final advancedEpic = Ticket(
+            id: epic.id,
+            ticketId: epic.ticketId,
+            type: epic.type,
+            title: epic.title,
+            status: epic.status,
+            sddStage: SddStage.exploring,
+            createdAt: epic.createdAt,
+            updatedAt: epic.updatedAt,
+          );
+          when(
+            () => repository.updateTicketSddStage(epic.id, SddStage.exploring),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(any()),
+          ).thenAnswer((_) async => dummyChatTicket);
+          when(
+            () => repository.getTicketById(epic.id),
+          ).thenAnswer((_) async => advancedEpic);
+          when(() => repository.createTicket(any())).thenAnswer((_) async {});
+          when(
+            () => commentRepository.addComment(any()),
+          ).thenAnswer((_) async {});
+          when(() => agentClient.run(any())).thenAnswer(
+            (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+          );
+        },
+        build: () => TicketsCubit(
+          repository,
+          providerRegistry: registry,
+          commentRepository: commentRepository,
+          linkRepository: linkRepository,
+        ),
+        seed: () => TicketDetailLoaded(storyProposed),
+        act: (cubit) => cubit.advanceSddStage(epic),
+        wait: const Duration(milliseconds: 50),
+        verify: (_) {
+          verifyNever(() => repository.getTicketById(storyProposed.id));
+        },
+      );
 
-    blocTest<TicketsCubit, TicketsState>(
-      'updateTicketStatus attempts no refresh when no detail screen is '
-      'open',
-      setUp: () {
-        when(
-          () => repository.updateTicketStatus(otherTask.id, 'done'),
-        ).thenAnswer((_) async {});
-        when(
-          () => repository.getTicketById(otherTask.id),
-        ).thenAnswer((_) async => otherTask.copyWith(status: 'done'));
-        when(searchAnyArgs).thenAnswer(
-          (_) async => TicketSearchPage(tickets: const [], hasMore: false),
-        );
-      },
-      build: () => TicketsCubit(repository),
-      act: (cubit) => cubit.updateTicketStatus(otherTask.id, 'done'),
-      wait: const Duration(milliseconds: 10),
-      verify: (_) {
-        verifyNever(
-          () =>
-              repository.getTicketsByParent(any(), types: any(named: 'types')),
-        );
-      },
-      expect: () => [
-        const TicketStatusUpdating([]),
-        const TicketStatusUpdated([], hasMore: false),
-      ],
-    );
+      blocTest<TicketsCubit, TicketsState>(
+        'trashTicket live-refreshes a different, already-open Story '
+        'detail screen when one of its direct Task children is trashed',
+        setUp: () {
+          when(
+            () => repository.trashTicket(taskChildNotDone.id),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(taskChildNotDone.id),
+          ).thenAnswer((_) async => taskChildNotDone);
+          when(
+            () => repository.getTicketById(storyProposed.id),
+          ).thenAnswer((_) async => storyProposed);
+          when(
+            () => repository.getTicketsByParent(
+              storyProposed.id,
+              types: any(named: 'types'),
+            ),
+          ).thenAnswer((_) async => [taskChildDone]);
+        },
+        build: () => TicketsCubit(repository),
+        seed: () => TicketDetailLoaded(storyProposed),
+        act: (cubit) => cubit.trashTicket(taskChildNotDone.id),
+        wait: const Duration(milliseconds: 10),
+        verify: (_) {
+          verify(() => repository.getTicketById(storyProposed.id)).called(1);
+        },
+      );
 
-    blocTest<TicketsCubit, TicketsState>(
-      'updateTicketStatus checks but does not refresh an open Story '
-      'detail screen when the written ticket is not one of its '
-      'children',
-      setUp: () {
-        when(
-          () => repository.updateTicketStatus(otherTask.id, 'done'),
-        ).thenAnswer((_) async {});
-        when(
-          () => repository.getTicketById(otherTask.id),
-        ).thenAnswer((_) async => otherTask.copyWith(status: 'done'));
-        when(searchAnyArgs).thenAnswer(
-          (_) async => TicketSearchPage(tickets: const [], hasMore: false),
-        );
-        when(
-          () => repository.getTicketsByParent(
-            storyProposed.id,
-            types: any(named: 'types'),
-          ),
-        ).thenAnswer((_) async => [taskChildDone, taskChildNotDone]);
-      },
-      build: () => TicketsCubit(repository),
-      seed: () => TicketDetailLoaded(storyProposed),
-      act: (cubit) => cubit.updateTicketStatus(otherTask.id, 'done'),
-      wait: const Duration(milliseconds: 10),
-      expect: () => [
-        const TicketStatusUpdating([]),
-        const TicketStatusUpdated([], hasMore: false),
-      ],
-    );
+      blocTest<TicketsCubit, TicketsState>(
+        'trashTicket does not fire an extra refresh when the trashed '
+        'ticket is itself the one open (navigates away instead)',
+        setUp: () {
+          when(
+            () => repository.trashTicket(ticket.id),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(ticket.id),
+          ).thenAnswer((_) async => ticket);
+        },
+        build: () => TicketsCubit(repository),
+        seed: () => TicketDetailLoaded(ticket),
+        act: (cubit) => cubit.trashTicket(ticket.id),
+        expect: () => [const TicketTrashing(), const TicketTrashed()],
+      );
 
-    blocTest<TicketsCubit, TicketsState>(
-      'updateTicketStatus skips the children query entirely when the '
-      'open detail screen isn\'t a story',
-      setUp: () {
-        when(
-          () => repository.updateTicketStatus(otherTask.id, 'done'),
-        ).thenAnswer((_) async {});
-        when(
-          () => repository.getTicketById(otherTask.id),
-        ).thenAnswer((_) async => otherTask.copyWith(status: 'done'));
-        when(searchAnyArgs).thenAnswer(
-          (_) async => TicketSearchPage(tickets: const [], hasMore: false),
-        );
-      },
-      build: () => TicketsCubit(repository),
-      seed: () => TicketDetailLoaded(ticket), // ticket.type == task
-      act: (cubit) => cubit.updateTicketStatus(otherTask.id, 'done'),
-      wait: const Duration(milliseconds: 10),
-      verify: (_) {
-        verifyNever(
-          () =>
-              repository.getTicketsByParent(any(), types: any(named: 'types')),
-        );
-      },
-      expect: () => [
-        const TicketStatusUpdating([]),
-        const TicketStatusUpdated([], hasMore: false),
-      ],
-    );
+      blocTest<TicketsCubit, TicketsState>(
+        'trashTickets live-refreshes an open Story detail screen when a '
+        'direct Task child is included in the bulk trash',
+        setUp: () {
+          when(
+            () => repository.trashTickets([taskChildNotDone.id]),
+          ).thenAnswer((_) async => 1);
+          when(
+            () => repository.getTicketById(taskChildNotDone.id),
+          ).thenAnswer((_) async => taskChildNotDone);
+          when(
+            () => repository.getTicketById(storyProposed.id),
+          ).thenAnswer((_) async => storyProposed);
+          when(
+            () => repository.getTicketsByParent(
+              storyProposed.id,
+              types: any(named: 'types'),
+            ),
+          ).thenAnswer((_) async => [taskChildDone]);
+          when(searchAnyArgs).thenAnswer(
+            (_) async => TicketSearchPage(tickets: const [], hasMore: false),
+          );
+        },
+        build: () => TicketsCubit(repository),
+        seed: () => TicketDetailLoaded(storyProposed),
+        act: (cubit) => cubit.trashTickets([taskChildNotDone.id]),
+        wait: const Duration(milliseconds: 10),
+        verify: (_) {
+          verify(() => repository.getTicketById(storyProposed.id)).called(1);
+        },
+      );
 
-    // Generalized coverage — aion-arch/changes/
-    // generalized-live-refresh-for-all-ticket-writes. The
-    // updateTicketStatus cases above cover the mechanism's original
-    // single-ticket path; these cover every write path newly wired to
-    // it: bulk status, advanceSddStage, trash (single + bulk),
-    // reparent (both directions), and create.
+      blocTest<TicketsCubit, TicketsState>(
+        'updateTicketParent live-refreshes an open Epic detail screen '
+        'when a Story is reparented into it',
+        setUp: () {
+          final storyReparentedIntoEpic = Ticket(
+            id: storyProposed.id,
+            ticketId: storyProposed.ticketId,
+            type: storyProposed.type,
+            title: storyProposed.title,
+            status: storyProposed.status,
+            sddStage: storyProposed.sddStage,
+            parentId: openEpic.id,
+            createdAt: storyProposed.createdAt,
+            updatedAt: storyProposed.updatedAt,
+          );
+          when(
+            () => repository.getAllTickets(),
+          ).thenAnswer((_) async => [storyProposed, openEpic]);
+          when(
+            () => repository.updateTicketParent(storyProposed.id, openEpic.id),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(storyProposed.id),
+          ).thenAnswer((_) async => storyReparentedIntoEpic);
+          when(
+            () => repository.getTicketById(openEpic.id),
+          ).thenAnswer((_) async => openEpic);
+        },
+        build: () => TicketsCubit(repository),
+        seed: () => TicketDetailLoaded(openEpic),
+        act: (cubit) => cubit.updateTicketParent(storyProposed, openEpic.id),
+        wait: const Duration(milliseconds: 10),
+        verify: (_) {
+          // Also called once by TicketParentTrashService.changeParent's own
+          // new-parent validation — this only asserts the live-refresh
+          // mechanism additionally re-fetched it, not an exact total count.
+          verify(() => repository.getTicketById(openEpic.id)).called(greaterThan(0));
+        },
+      );
 
-    blocTest<TicketsCubit, TicketsState>(
-      'updateStatusForTickets live-refreshes an open Story detail '
-      'screen when a direct Task child is included in the bulk write',
-      setUp: () {
-        final taskChildNowDone = taskChildNotDone.copyWith(status: 'done');
-        when(
-          () => repository.updateStatusForIds([taskChildNotDone.id], 'done'),
-        ).thenAnswer((_) async {});
-        when(
-          () => repository.getTicketById(taskChildNotDone.id),
-        ).thenAnswer((_) async => taskChildNowDone);
-        when(
-          () => repository.getTicketById(storyProposed.id),
-        ).thenAnswer((_) async => storyProposed);
-        when(
-          () => repository.getTicketsByParent(
-            storyProposed.id,
-            types: any(named: 'types'),
-          ),
-        ).thenAnswer((_) async => [taskChildDone, taskChildNowDone]);
-        when(searchAnyArgs).thenAnswer(
-          (_) async => TicketSearchPage(tickets: const [], hasMore: false),
-        );
-      },
-      build: () => TicketsCubit(repository),
-      seed: () => TicketDetailLoaded(storyProposed),
-      act: (cubit) =>
-          cubit.updateStatusForTickets([taskChildNotDone.id], 'done'),
-      wait: const Duration(milliseconds: 10),
-      verify: (_) {
-        verify(() => repository.getTicketById(storyProposed.id)).called(1);
-      },
-    );
+      blocTest<TicketsCubit, TicketsState>(
+        'updateTicketParent live-refreshes the open Story detail screen '
+        'it just lost a Task child from, when that Task is reparented '
+        'elsewhere',
+        setUp: () {
+          final taskReparentedAway = Ticket(
+            id: taskChildNotDone.id,
+            ticketId: taskChildNotDone.ticketId,
+            type: taskChildNotDone.type,
+            title: taskChildNotDone.title,
+            status: taskChildNotDone.status,
+            parentId: unrelated.id,
+            createdAt: taskChildNotDone.createdAt,
+            updatedAt: taskChildNotDone.updatedAt,
+          );
+          when(
+            () => repository.getAllTickets(),
+          ).thenAnswer((_) async => [taskChildNotDone, storyProposed, unrelated]);
+          when(
+            () =>
+                repository.updateTicketParent(
+              taskChildNotDone.id,
+              unrelated.id,
+            ),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(taskChildNotDone.id),
+          ).thenAnswer((_) async => taskReparentedAway);
+          when(
+            () => repository.getTicketById(storyProposed.id),
+          ).thenAnswer((_) async => storyProposed);
+          when(
+            () => repository.getTicketById(unrelated.id),
+          ).thenAnswer((_) async => unrelated);
+          when(
+            () => repository.getTicketsByParent(
+              storyProposed.id,
+              types: any(named: 'types'),
+            ),
+          ).thenAnswer((_) async => []);
+        },
+        build: () => TicketsCubit(repository),
+        seed: () => TicketDetailLoaded(storyProposed),
+        act: (cubit) =>
+            cubit.updateTicketParent(taskChildNotDone, unrelated.id),
+        wait: const Duration(milliseconds: 10),
+        verify: (_) {
+          verify(() => repository.getTicketById(storyProposed.id)).called(1);
+        },
+      );
 
-    blocTest<TicketsCubit, TicketsState>(
-      'updateStatusForTickets does not refresh an open Story detail '
-      'screen when none of the bulk-written ids are its children',
-      setUp: () {
-        when(
-          () => repository.updateStatusForIds([otherTask.id], 'done'),
-        ).thenAnswer((_) async {});
-        when(
-          () => repository.getTicketById(otherTask.id),
-        ).thenAnswer((_) async => otherTask.copyWith(status: 'done'));
-        when(searchAnyArgs).thenAnswer(
-          (_) async => TicketSearchPage(tickets: const [], hasMore: false),
-        );
-      },
-      build: () => TicketsCubit(repository),
-      seed: () => TicketDetailLoaded(storyProposed),
-      act: (cubit) => cubit.updateStatusForTickets([otherTask.id], 'done'),
-      wait: const Duration(milliseconds: 10),
-      verify: (_) {
-        verifyNever(
-          () => repository.getTicketsByParent(
-            storyProposed.id,
-            types: any(named: 'types'),
-          ),
-        );
-      },
-    );
+      blocTest<TicketsCubit, TicketsState>(
+        'createTicket live-refreshes an open Story detail screen the '
+        'moment a new Task child is created, independent of the '
+        'AI-suggestion chain',
+        setUp: () {
+          when(() => repository.createTicket(any())).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(any()),
+          ).thenAnswer((_) async => taskChildNotDone);
+          when(
+            () => repository.getTicketById(storyProposed.id),
+          ).thenAnswer((_) async => storyProposed);
+          when(
+            () => repository.getTicketsByParent(
+              storyProposed.id,
+              types: any(named: 'types'),
+            ),
+          ).thenAnswer((_) async => [taskChildNotDone]);
+          when(searchAnyArgs).thenAnswer(
+            (_) async => TicketSearchPage(tickets: const [], hasMore: false),
+          );
+        },
+        build: () => TicketsCubit(repository),
+        seed: () => TicketDetailLoaded(storyProposed),
+        act: (cubit) => cubit.createTicket(
+          type: TicketType.task,
+          title: 'New task',
+          parentId: storyProposed.id,
+        ),
+        wait: const Duration(milliseconds: 10),
+        verify: (_) {
+          verify(() => repository.getTicketById(storyProposed.id)).called(1);
+        },
+      );
 
-    blocTest<TicketsCubit, TicketsState>(
-      'advanceSddStage live-refreshes an open Epic detail screen when '
-      'a direct child Story advances its own sddStage',
-      setUp: () {
-        agentClient = MockAgentModelClient();
-        registry = buildProviderStack(agentClient).registry;
-        commentRepository = MockCommentRepository();
-        linkRepository = MockTicketLinkRepository();
-        when(
-          () => linkRepository.getLinksForTicket(any()),
-        ).thenAnswer((_) async => []);
-        final advancedStory = Ticket(
-          id: storyUnderEpic.id,
-          ticketId: storyUnderEpic.ticketId,
-          type: storyUnderEpic.type,
-          title: storyUnderEpic.title,
-          status: storyUnderEpic.status,
-          parentId: storyUnderEpic.parentId,
-          sddStage: SddStage.exploring,
-          createdAt: storyUnderEpic.createdAt,
-          updatedAt: storyUnderEpic.updatedAt,
-        );
-        when(
-          () => repository.updateTicketSddStage(
-            storyUnderEpic.id,
-            SddStage.exploring,
-          ),
-        ).thenAnswer((_) async {});
-        when(
-          () => repository.getTicketById(any()),
-        ).thenAnswer((_) async => dummyChatTicket);
-        when(
-          () => repository.getTicketById(storyUnderEpic.id),
-        ).thenAnswer((_) async => advancedStory);
-        when(
-          () => repository.getTicketById(openEpic.id),
-        ).thenAnswer((_) async => openEpic);
-        when(() => repository.createTicket(any())).thenAnswer((_) async {});
-        when(
-          () => commentRepository.addComment(any()),
-        ).thenAnswer((_) async {});
-        when(() => agentClient.run(any())).thenAnswer(
-          (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
-        );
-      },
-      build: () => TicketsCubit(
-        repository,
-        providerRegistry: registry,
-        commentRepository: commentRepository,
-        linkRepository: linkRepository,
-      ),
-      seed: () => TicketDetailLoaded(openEpic),
-      act: (cubit) => cubit.advanceSddStage(storyUnderEpic),
-      wait: const Duration(milliseconds: 50),
-      verify: (_) {
-        verify(() => repository.getTicketById(openEpic.id)).called(1);
-      },
-    );
-
-    blocTest<TicketsCubit, TicketsState>(
-      'advanceSddStage does not refresh a Story\'s already-open detail '
-      'screen when an unrelated ticket advances its own sddStage',
-      setUp: () {
-        agentClient = MockAgentModelClient();
-        registry = buildProviderStack(agentClient).registry;
-        commentRepository = MockCommentRepository();
-        linkRepository = MockTicketLinkRepository();
-        when(
-          () => linkRepository.getLinksForTicket(any()),
-        ).thenAnswer((_) async => []);
-        final advancedEpic = Ticket(
-          id: epic.id,
-          ticketId: epic.ticketId,
-          type: epic.type,
-          title: epic.title,
-          status: epic.status,
-          sddStage: SddStage.exploring,
-          createdAt: epic.createdAt,
-          updatedAt: epic.updatedAt,
-        );
-        when(
-          () => repository.updateTicketSddStage(epic.id, SddStage.exploring),
-        ).thenAnswer((_) async {});
-        when(
-          () => repository.getTicketById(any()),
-        ).thenAnswer((_) async => dummyChatTicket);
-        when(
-          () => repository.getTicketById(epic.id),
-        ).thenAnswer((_) async => advancedEpic);
-        when(() => repository.createTicket(any())).thenAnswer((_) async {});
-        when(
-          () => commentRepository.addComment(any()),
-        ).thenAnswer((_) async {});
-        when(() => agentClient.run(any())).thenAnswer(
-          (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
-        );
-      },
-      build: () => TicketsCubit(
-        repository,
-        providerRegistry: registry,
-        commentRepository: commentRepository,
-        linkRepository: linkRepository,
-      ),
-      seed: () => TicketDetailLoaded(storyProposed),
-      act: (cubit) => cubit.advanceSddStage(epic),
-      wait: const Duration(milliseconds: 50),
-      verify: (_) {
-        verifyNever(() => repository.getTicketById(storyProposed.id));
-      },
-    );
-
-    blocTest<TicketsCubit, TicketsState>(
-      'trashTicket live-refreshes a different, already-open Story '
-      'detail screen when one of its direct Task children is trashed',
-      setUp: () {
-        when(
-          () => repository.trashTicket(taskChildNotDone.id),
-        ).thenAnswer((_) async {});
-        when(
-          () => repository.getTicketById(taskChildNotDone.id),
-        ).thenAnswer((_) async => taskChildNotDone);
-        when(
-          () => repository.getTicketById(storyProposed.id),
-        ).thenAnswer((_) async => storyProposed);
-        when(
-          () => repository.getTicketsByParent(
-            storyProposed.id,
-            types: any(named: 'types'),
-          ),
-        ).thenAnswer((_) async => [taskChildDone]);
-      },
-      build: () => TicketsCubit(repository),
-      seed: () => TicketDetailLoaded(storyProposed),
-      act: (cubit) => cubit.trashTicket(taskChildNotDone.id),
-      wait: const Duration(milliseconds: 10),
-      verify: (_) {
-        verify(() => repository.getTicketById(storyProposed.id)).called(1);
-      },
-    );
-
-    blocTest<TicketsCubit, TicketsState>(
-      'trashTicket does not fire an extra refresh when the trashed '
-      'ticket is itself the one open (navigates away instead)',
-      setUp: () {
-        when(() => repository.trashTicket(ticket.id)).thenAnswer((_) async {});
-        when(
-          () => repository.getTicketById(ticket.id),
-        ).thenAnswer((_) async => ticket);
-      },
-      build: () => TicketsCubit(repository),
-      seed: () => TicketDetailLoaded(ticket),
-      act: (cubit) => cubit.trashTicket(ticket.id),
-      expect: () => [const TicketTrashing(), const TicketTrashed()],
-    );
-
-    blocTest<TicketsCubit, TicketsState>(
-      'trashTickets live-refreshes an open Story detail screen when a '
-      'direct Task child is included in the bulk trash',
-      setUp: () {
-        when(
-          () => repository.trashTickets([taskChildNotDone.id]),
-        ).thenAnswer((_) async => 1);
-        when(
-          () => repository.getTicketById(taskChildNotDone.id),
-        ).thenAnswer((_) async => taskChildNotDone);
-        when(
-          () => repository.getTicketById(storyProposed.id),
-        ).thenAnswer((_) async => storyProposed);
-        when(
-          () => repository.getTicketsByParent(
-            storyProposed.id,
-            types: any(named: 'types'),
-          ),
-        ).thenAnswer((_) async => [taskChildDone]);
-        when(searchAnyArgs).thenAnswer(
-          (_) async => TicketSearchPage(tickets: const [], hasMore: false),
-        );
-      },
-      build: () => TicketsCubit(repository),
-      seed: () => TicketDetailLoaded(storyProposed),
-      act: (cubit) => cubit.trashTickets([taskChildNotDone.id]),
-      wait: const Duration(milliseconds: 10),
-      verify: (_) {
-        verify(() => repository.getTicketById(storyProposed.id)).called(1);
-      },
-    );
-
-    blocTest<TicketsCubit, TicketsState>(
-      'updateTicketParent live-refreshes an open Epic detail screen '
-      'when a Story is reparented into it',
-      setUp: () {
-        final storyReparentedIntoEpic = Ticket(
-          id: storyProposed.id,
-          ticketId: storyProposed.ticketId,
-          type: storyProposed.type,
-          title: storyProposed.title,
-          status: storyProposed.status,
-          sddStage: storyProposed.sddStage,
-          parentId: openEpic.id,
-          createdAt: storyProposed.createdAt,
-          updatedAt: storyProposed.updatedAt,
-        );
-        when(
-          () => repository.getAllTickets(),
-        ).thenAnswer((_) async => [storyProposed, openEpic]);
-        when(
-          () => repository.updateTicketParent(storyProposed.id, openEpic.id),
-        ).thenAnswer((_) async {});
-        when(
-          () => repository.getTicketById(storyProposed.id),
-        ).thenAnswer((_) async => storyReparentedIntoEpic);
-        when(
-          () => repository.getTicketById(openEpic.id),
-        ).thenAnswer((_) async => openEpic);
-      },
-      build: () => TicketsCubit(repository),
-      seed: () => TicketDetailLoaded(openEpic),
-      act: (cubit) => cubit.updateTicketParent(storyProposed, openEpic.id),
-      wait: const Duration(milliseconds: 10),
-      verify: (_) {
-        // Also called once by TicketParentTrashService.changeParent's own
-        // new-parent validation — this only asserts the live-refresh
-        // mechanism additionally re-fetched it, not an exact total count.
-        verify(
-          () => repository.getTicketById(openEpic.id),
-        ).called(greaterThan(0));
-      },
-    );
-
-    blocTest<TicketsCubit, TicketsState>(
-      'updateTicketParent live-refreshes the open Story detail screen '
-      'it just lost a Task child from, when that Task is reparented '
-      'elsewhere',
-      setUp: () {
-        final taskReparentedAway = Ticket(
-          id: taskChildNotDone.id,
-          ticketId: taskChildNotDone.ticketId,
-          type: taskChildNotDone.type,
-          title: taskChildNotDone.title,
-          status: taskChildNotDone.status,
-          parentId: unrelated.id,
-          createdAt: taskChildNotDone.createdAt,
-          updatedAt: taskChildNotDone.updatedAt,
-        );
-        when(
-          () => repository.getAllTickets(),
-        ).thenAnswer((_) async => [taskChildNotDone, storyProposed, unrelated]);
-        when(
-          () =>
-              repository.updateTicketParent(taskChildNotDone.id, unrelated.id),
-        ).thenAnswer((_) async {});
-        when(
-          () => repository.getTicketById(taskChildNotDone.id),
-        ).thenAnswer((_) async => taskReparentedAway);
-        when(
-          () => repository.getTicketById(storyProposed.id),
-        ).thenAnswer((_) async => storyProposed);
-        when(
-          () => repository.getTicketById(unrelated.id),
-        ).thenAnswer((_) async => unrelated);
-        when(
-          () => repository.getTicketsByParent(
-            storyProposed.id,
-            types: any(named: 'types'),
-          ),
-        ).thenAnswer((_) async => []);
-      },
-      build: () => TicketsCubit(repository),
-      seed: () => TicketDetailLoaded(storyProposed),
-      act: (cubit) => cubit.updateTicketParent(taskChildNotDone, unrelated.id),
-      wait: const Duration(milliseconds: 10),
-      verify: (_) {
-        verify(() => repository.getTicketById(storyProposed.id)).called(1);
-      },
-    );
-
-    blocTest<TicketsCubit, TicketsState>(
-      'createTicket live-refreshes an open Story detail screen the '
-      'moment a new Task child is created, independent of the '
-      'AI-suggestion chain',
-      setUp: () {
-        when(() => repository.createTicket(any())).thenAnswer((_) async {});
-        when(
-          () => repository.getTicketById(any()),
-        ).thenAnswer((_) async => taskChildNotDone);
-        when(
-          () => repository.getTicketById(storyProposed.id),
-        ).thenAnswer((_) async => storyProposed);
-        when(
-          () => repository.getTicketsByParent(
-            storyProposed.id,
-            types: any(named: 'types'),
-          ),
-        ).thenAnswer((_) async => [taskChildNotDone]);
-        when(searchAnyArgs).thenAnswer(
-          (_) async => TicketSearchPage(tickets: const [], hasMore: false),
-        );
-      },
-      build: () => TicketsCubit(repository),
-      seed: () => TicketDetailLoaded(storyProposed),
-      act: (cubit) => cubit.createTicket(
-        type: TicketType.task,
-        title: 'New task',
-        parentId: storyProposed.id,
-      ),
-      wait: const Duration(milliseconds: 10),
-      verify: (_) {
-        verify(() => repository.getTicketById(storyProposed.id)).called(1);
-      },
-    );
-
-    blocTest<TicketsCubit, TicketsState>(
-      'getTicketById skips TicketsLoading when re-entering for the '
-      'ticket already shown, but still emits it when navigating to a '
-      'different ticket',
-      setUp: () {
-        // Returns a genuinely refreshed value (not identical to the
-        // seed) — Cubit.emit is a no-op for a value equal to the
-        // current state, which would otherwise make the first
-        // re-entry's emission invisible to this test for the wrong
-        // reason (deduped, not because Loading was skipped).
-        when(
-          () => repository.getTicketById(ticket.id),
-        ).thenAnswer((_) async => ticket.copyWith(title: 'Refreshed'));
-        when(
-          () => repository.getTicketById(otherTask.id),
-        ).thenAnswer((_) async => otherTask);
-      },
-      build: () => TicketsCubit(repository),
-      seed: () => TicketDetailLoaded(ticket),
-      act: (cubit) async {
-        await cubit.getTicketById(ticket.id);
-        await cubit.getTicketById(otherTask.id);
-      },
-      expect: () => [
-        TicketDetailLoaded(ticket.copyWith(title: 'Refreshed')),
-        const TicketsLoading(),
-        TicketDetailLoaded(otherTask),
-      ],
-    );
-  });
+      blocTest<TicketsCubit, TicketsState>(
+        'getTicketById skips TicketsLoading when re-entering for the '
+        'ticket already shown, but still emits it when navigating to a '
+        'different ticket',
+        setUp: () {
+          // Returns a genuinely refreshed value (not identical to the
+          // seed) — Cubit.emit is a no-op for a value equal to the
+          // current state, which would otherwise make the first
+          // re-entry's emission invisible to this test for the wrong
+          // reason (deduped, not because Loading was skipped).
+          when(() => repository.getTicketById(ticket.id)).thenAnswer(
+            (_) async => ticket.copyWith(title: 'Refreshed'),
+          );
+          when(
+            () => repository.getTicketById(otherTask.id),
+          ).thenAnswer((_) async => otherTask);
+        },
+        build: () => TicketsCubit(repository),
+        seed: () => TicketDetailLoaded(ticket),
+        act: (cubit) async {
+          await cubit.getTicketById(ticket.id);
+          await cubit.getTicketById(otherTask.id);
+        },
+        expect: () => [
+          TicketDetailLoaded(ticket.copyWith(title: 'Refreshed')),
+          const TicketsLoading(),
+          TicketDetailLoaded(otherTask),
+        ],
+      );
+    },
+  );
 
   group('per-phase model routing (per-phase-tier-based-model-routing)', () {
     late MockAgentModelClient agentClient;
@@ -12013,7 +12188,8 @@ void main() {
         ).thenAnswer((_) async => AutomationConfidence.gated);
       },
       build: buildCubit,
-      act: (cubit) => cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
+      act: (cubit) =>
+          cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
       wait: const Duration(milliseconds: 50),
       verify: (_) {
         // Resolved three times: once by _resolveExecutionChat's cap check
@@ -12090,8 +12266,8 @@ void main() {
           sort: any(named: 'sort'),
           limit: any(named: 'limit'),
           offset: any(named: 'offset'),
-          statusSortOrder: any(named: 'statusSortOrder'),
-        ),
+        statusSortOrder: any(named: 'statusSortOrder'),
+            ),
       ).thenAnswer(
         (_) async => TicketSearchPage(tickets: tickets, hasMore: false),
       );
@@ -12134,7 +12310,10 @@ void main() {
       'the same link with the blocker done does not appear in '
       'blockedTicketIds',
       setUp: () {
-        stubSearch([blockerTicket.copyWith(status: 'done'), blockedTicket]);
+        stubSearch([
+          blockerTicket.copyWith(status: 'done'),
+          blockedTicket,
+        ]);
         when(
           () => linkRepository.getLinksByTypes([
             TicketLinkType.blocks,
@@ -12215,8 +12394,8 @@ void main() {
             sort: any(named: 'sort'),
             limit: any(named: 'limit'),
             offset: any(named: 'offset'),
-            statusSortOrder: any(named: 'statusSortOrder'),
-          ),
+          statusSortOrder: any(named: 'statusSortOrder'),
+            ),
         ).thenAnswer(
           (_) async => TicketSearchPage(
             tickets: [
@@ -12242,7 +12421,10 @@ void main() {
           ],
         );
         when(
-          () => repository.updateTicketStatus(blockerTicket.id, 'done'),
+          () => repository.updateTicketStatus(
+            blockerTicket.id,
+            'done',
+          ),
         ).thenAnswer((_) async {
           blockerStatus = 'done';
         });
@@ -12316,8 +12498,8 @@ void main() {
           priorities: any(named: 'priorities'),
           sort: any(named: 'sort'),
           limit: any(named: 'limit'),
-          statusSortOrder: any(named: 'statusSortOrder'),
-        ),
+        statusSortOrder: any(named: 'statusSortOrder'),
+            ),
       ).thenAnswer(
         (_) async => const TicketSearchPage(tickets: [], hasMore: false),
       );
@@ -12345,7 +12527,8 @@ void main() {
         ).thenAnswer((_) async => gateBlocker);
       },
       build: buildCubit,
-      act: (cubit) => cubit.updateTicketStatus(blockedEpic.id, 'inProgress'),
+      act: (cubit) =>
+          cubit.updateTicketStatus(blockedEpic.id, 'inProgress'),
       verify: (_) {
         verifyNever(() => repository.updateTicketStatus(any(), any()));
       },
@@ -12375,18 +12558,25 @@ void main() {
             ),
           ],
         );
+        when(() => repository.getTicketById(gateBlocker.id)).thenAnswer(
+          (_) async => gateBlocker.copyWith(status: 'done'),
+        );
         when(
-          () => repository.getTicketById(gateBlocker.id),
-        ).thenAnswer((_) async => gateBlocker.copyWith(status: 'done'));
-        when(
-          () => repository.updateTicketStatus(blockedEpic.id, 'inProgress'),
+          () => repository.updateTicketStatus(
+            blockedEpic.id,
+            'inProgress',
+          ),
         ).thenAnswer((_) async {});
       },
       build: buildCubit,
-      act: (cubit) => cubit.updateTicketStatus(blockedEpic.id, 'inProgress'),
+      act: (cubit) =>
+          cubit.updateTicketStatus(blockedEpic.id, 'inProgress'),
       verify: (_) {
         verify(
-          () => repository.updateTicketStatus(blockedEpic.id, 'inProgress'),
+          () => repository.updateTicketStatus(
+            blockedEpic.id,
+            'inProgress',
+          ),
         ).called(1);
       },
     );
@@ -12403,14 +12593,21 @@ void main() {
           () => linkRepository.getLinksForTicket(blockedEpic.id),
         ).thenAnswer((_) async => []);
         when(
-          () => repository.updateTicketStatus(blockedEpic.id, 'inProgress'),
+          () => repository.updateTicketStatus(
+            blockedEpic.id,
+            'inProgress',
+          ),
         ).thenAnswer((_) async {});
       },
       build: buildCubit,
-      act: (cubit) => cubit.updateTicketStatus(blockedEpic.id, 'inProgress'),
+      act: (cubit) =>
+          cubit.updateTicketStatus(blockedEpic.id, 'inProgress'),
       verify: (_) {
         verify(
-          () => repository.updateTicketStatus(blockedEpic.id, 'inProgress'),
+          () => repository.updateTicketStatus(
+            blockedEpic.id,
+            'inProgress',
+          ),
         ).called(1);
       },
     );
@@ -12421,14 +12618,16 @@ void main() {
       setUp: () {
         stubEmptySearch();
         when(
-          () => repository.updateTicketStatus(blockedEpic.id, 'todo'),
+          () =>
+              repository.updateTicketStatus(blockedEpic.id, 'todo'),
         ).thenAnswer((_) async {});
         when(
           () => repository.getTicketById(blockedEpic.id),
         ).thenAnswer((_) async => blockedEpic);
       },
       build: buildCubit,
-      act: (cubit) => cubit.updateTicketStatus(blockedEpic.id, 'todo'),
+      act: (cubit) =>
+          cubit.updateTicketStatus(blockedEpic.id, 'todo'),
       verify: (_) {
         verifyNever(() => linkRepository.getLinksForTicket(any()));
       },
@@ -12453,7 +12652,8 @@ void main() {
         ).thenAnswer((_) async => gateBlocker);
       },
       build: buildCubit,
-      act: (cubit) => cubit.changeTicketStatus(blockedEpic, 'inProgress'),
+      act: (cubit) =>
+          cubit.changeTicketStatus(blockedEpic, 'inProgress'),
       verify: (_) {
         verifyNever(() => repository.updateTicketStatus(any(), any()));
       },
@@ -12479,25 +12679,34 @@ void main() {
             ),
           ],
         );
+        when(() => repository.getTicketById(gateBlocker.id)).thenAnswer(
+          (_) async => gateBlocker.copyWith(status: 'done'),
+        );
         when(
-          () => repository.getTicketById(gateBlocker.id),
-        ).thenAnswer((_) async => gateBlocker.copyWith(status: 'done'));
-        when(
-          () => repository.updateTicketStatus(blockedEpic.id, 'inProgress'),
+          () => repository.updateTicketStatus(
+            blockedEpic.id,
+            'inProgress',
+          ),
         ).thenAnswer((_) async {});
-        when(
-          () => repository.getTicketById(blockedEpic.id),
-        ).thenAnswer((_) async => blockedEpic.copyWith(status: 'inProgress'));
+        when(() => repository.getTicketById(blockedEpic.id)).thenAnswer(
+          (_) async => blockedEpic.copyWith(status: 'inProgress'),
+        );
       },
       build: buildCubit,
-      act: (cubit) => cubit.changeTicketStatus(blockedEpic, 'inProgress'),
+      act: (cubit) =>
+          cubit.changeTicketStatus(blockedEpic, 'inProgress'),
       verify: (_) {
         verify(
-          () => repository.updateTicketStatus(blockedEpic.id, 'inProgress'),
+          () => repository.updateTicketStatus(
+            blockedEpic.id,
+            'inProgress',
+          ),
         ).called(1);
       },
       expect: () => [
-        TicketDetailLoaded(blockedEpic.copyWith(status: 'inProgress')),
+        TicketDetailLoaded(
+          blockedEpic.copyWith(status: 'inProgress'),
+        ),
       ],
     );
 
@@ -12509,17 +12718,24 @@ void main() {
           () => linkRepository.getLinksForTicket(blockedEpic.id),
         ).thenAnswer((_) async => []);
         when(
-          () => repository.updateTicketStatus(blockedEpic.id, 'inProgress'),
+          () => repository.updateTicketStatus(
+            blockedEpic.id,
+            'inProgress',
+          ),
         ).thenAnswer((_) async {});
-        when(
-          () => repository.getTicketById(blockedEpic.id),
-        ).thenAnswer((_) async => blockedEpic.copyWith(status: 'inProgress'));
+        when(() => repository.getTicketById(blockedEpic.id)).thenAnswer(
+          (_) async => blockedEpic.copyWith(status: 'inProgress'),
+        );
       },
       build: buildCubit,
-      act: (cubit) => cubit.changeTicketStatus(blockedEpic, 'inProgress'),
+      act: (cubit) =>
+          cubit.changeTicketStatus(blockedEpic, 'inProgress'),
       verify: (_) {
         verify(
-          () => repository.updateTicketStatus(blockedEpic.id, 'inProgress'),
+          () => repository.updateTicketStatus(
+            blockedEpic.id,
+            'inProgress',
+          ),
         ).called(1);
       },
     );
@@ -12529,11 +12745,12 @@ void main() {
       'target status',
       setUp: () {
         when(
-          () => repository.updateTicketStatus(blockedEpic.id, 'todo'),
+          () =>
+              repository.updateTicketStatus(blockedEpic.id, 'todo'),
         ).thenAnswer((_) async {});
-        when(
-          () => repository.getTicketById(blockedEpic.id),
-        ).thenAnswer((_) async => blockedEpic.copyWith(status: 'todo'));
+        when(() => repository.getTicketById(blockedEpic.id)).thenAnswer(
+          (_) async => blockedEpic.copyWith(status: 'todo'),
+        );
       },
       build: buildCubit,
       act: (cubit) => cubit.changeTicketStatus(blockedEpic, 'todo'),
@@ -12978,18 +13195,15 @@ void main() {
           updatedAt: DateTime(2026),
         );
       });
-      when(() => repository.updateTicketStatus(any(), any())).thenAnswer((
-        invocation,
-      ) async {
+      when(
+        () => repository.updateTicketStatus(any(), any()),
+      ).thenAnswer((invocation) async {
         final id = invocation.positionalArguments[0] as String;
         final status = invocation.positionalArguments[1] as String;
         if (liveStatus.containsKey(id)) liveStatus[id] = status;
       });
       when(
-        () => repository.getTicketsByParent(
-          any(),
-          types: const [TicketType.chat],
-        ),
+        () => repository.getTicketsByParent(any(), types: const [TicketType.chat]),
       ).thenAnswer((_) async => []);
       when(() => repository.createTicket(any())).thenAnswer((_) async {});
       when(
@@ -13000,15 +13214,13 @@ void main() {
           priorities: any(named: 'priorities'),
           sort: any(named: 'sort'),
           limit: any(named: 'limit'),
-          statusSortOrder: any(named: 'statusSortOrder'),
-        ),
-      ).thenAnswer(
-        (_) async => const TicketSearchPage(tickets: [], hasMore: false),
-      );
+        statusSortOrder: any(named: 'statusSortOrder'),
+            ),
+      ).thenAnswer((_) async => const TicketSearchPage(tickets: [], hasMore: false));
       when(() => commentRepository.addComment(any())).thenAnswer((_) async {});
-      when(
-        () => commentRepository.getCommentsForTicket(any()),
-      ).thenAnswer((_) async => []);
+      when(() => commentRepository.getCommentsForTicket(any())).thenAnswer(
+        (_) async => [],
+      );
       // Every run just hangs forever — never emits, never closes — so a
       // triggered run's implement turn stays "in flight" for the whole
       // test, letting these tests assert on TicketsCubit's scheduling
@@ -13067,503 +13279,547 @@ void main() {
             id: 'resume-node-1',
             conditionId: 'sessionOverageDetected',
             conditionParams: const {},
-            matchedBranch: const DecisionBranch.terminal(DecisionOutcome.gated),
+            matchedBranch: const DecisionBranch.terminal(
+              DecisionOutcome.gated,
+            ),
             unmatchedBranch: DecisionBranch.terminal(outcome),
           ),
         ],
       );
     }
 
-    test('ExecutionSchedulingMode.strictFifo: a second Task stays queued '
-        "behind the first, even though nothing links them (today's default, "
-        'unchanged)', () async {
-      when(
-        () => schedulingRepository.getMode(),
-      ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
-      when(
-        () => schedulingRepository.getConcurrencyCeiling(),
-      ).thenAnswer((_) async => 2); // Ignored under strictFifo.
+    test(
+      'ExecutionSchedulingMode.strictFifo: a second Task stays queued '
+      "behind the first, even though nothing links them (today's default, "
+      'unchanged)',
+      () async {
+        when(
+          () => schedulingRepository.getMode(),
+        ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
+        when(
+          () => schedulingRepository.getConcurrencyCeiling(),
+        ).thenAnswer((_) async => 2); // Ignored under strictFifo.
 
-      final cubit = buildSchedulingCubit(
-        executionSchedulingRepository: schedulingRepository,
-      );
-      addTearDown(cubit.close);
+        final cubit = buildSchedulingCubit(
+          executionSchedulingRepository: schedulingRepository,
+        );
+        addTearDown(cubit.close);
 
-      await cubit.updateTicketStatus(siblingA.id, 'inProgress');
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      await cubit.updateTicketStatus(unrelatedTaskC.id, 'inProgress');
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.updateTicketStatus(siblingA.id, 'inProgress');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.updateTicketStatus(unrelatedTaskC.id, 'inProgress');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
 
-      await cubit.getTicketById(siblingA.id);
-      expect((cubit.state as TicketDetailLoaded).isExecuting, isTrue);
+        await cubit.getTicketById(siblingA.id);
+        expect((cubit.state as TicketDetailLoaded).isExecuting, isTrue);
 
-      await cubit.getTicketById(unrelatedTaskC.id);
-      final taskCState = cubit.state as TicketDetailLoaded;
-      expect(taskCState.isExecuting, isFalse);
-      expect(taskCState.executionQueuePosition, 1);
+        await cubit.getTicketById(unrelatedTaskC.id);
+        final taskCState = cubit.state as TicketDetailLoaded;
+        expect(taskCState.isExecuting, isFalse);
+        expect(taskCState.executionQueuePosition, 1);
 
-      verify(() => agentClient.run(any())).called(1);
-    });
+        verify(() => agentClient.run(any())).called(1);
+      },
+    );
 
-    test('ExecutionSchedulingMode.parallel: two unrelated Tasks both run '
-        'concurrently', () async {
-      when(
-        () => schedulingRepository.getMode(),
-      ).thenAnswer((_) async => ExecutionSchedulingMode.parallel);
-      when(
-        () => schedulingRepository.getConcurrencyCeiling(),
-      ).thenAnswer((_) async => 2);
+    test(
+      'ExecutionSchedulingMode.parallel: two unrelated Tasks both run '
+      'concurrently',
+      () async {
+        when(
+          () => schedulingRepository.getMode(),
+        ).thenAnswer((_) async => ExecutionSchedulingMode.parallel);
+        when(
+          () => schedulingRepository.getConcurrencyCeiling(),
+        ).thenAnswer((_) async => 2);
 
-      final cubit = buildSchedulingCubit(
-        executionSchedulingRepository: schedulingRepository,
-      );
-      addTearDown(cubit.close);
+        final cubit = buildSchedulingCubit(
+          executionSchedulingRepository: schedulingRepository,
+        );
+        addTearDown(cubit.close);
 
-      await cubit.updateTicketStatus(siblingA.id, 'inProgress');
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      await cubit.updateTicketStatus(unrelatedTaskC.id, 'inProgress');
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.updateTicketStatus(siblingA.id, 'inProgress');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.updateTicketStatus(unrelatedTaskC.id, 'inProgress');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
 
-      await cubit.getTicketById(siblingA.id);
-      expect((cubit.state as TicketDetailLoaded).isExecuting, isTrue);
+        await cubit.getTicketById(siblingA.id);
+        expect((cubit.state as TicketDetailLoaded).isExecuting, isTrue);
 
-      await cubit.getTicketById(unrelatedTaskC.id);
-      expect((cubit.state as TicketDetailLoaded).isExecuting, isTrue);
+        await cubit.getTicketById(unrelatedTaskC.id);
+        expect((cubit.state as TicketDetailLoaded).isExecuting, isTrue);
 
-      verify(() => agentClient.run(any())).called(2);
-    });
+        verify(() => agentClient.run(any())).called(2);
+      },
+    );
 
-    test('ExecutionSchedulingMode.hybrid: a same-parent sibling serializes '
-        'behind its in-flight counterpart, while an unrelated queued Task '
-        'starts immediately (skip-ahead)', () async {
-      when(
-        () => schedulingRepository.getMode(),
-      ).thenAnswer((_) async => ExecutionSchedulingMode.hybrid);
-      when(
-        () => schedulingRepository.getConcurrencyCeiling(),
-      ).thenAnswer((_) async => 2);
+    test(
+      'ExecutionSchedulingMode.hybrid: a same-parent sibling serializes '
+      'behind its in-flight counterpart, while an unrelated queued Task '
+      'starts immediately (skip-ahead)',
+      () async {
+        when(
+          () => schedulingRepository.getMode(),
+        ).thenAnswer((_) async => ExecutionSchedulingMode.hybrid);
+        when(
+          () => schedulingRepository.getConcurrencyCeiling(),
+        ).thenAnswer((_) async => 2);
 
-      final cubit = buildSchedulingCubit(
-        executionSchedulingRepository: schedulingRepository,
-      );
-      addTearDown(cubit.close);
+        final cubit = buildSchedulingCubit(
+          executionSchedulingRepository: schedulingRepository,
+        );
+        addTearDown(cubit.close);
 
-      await cubit.updateTicketStatus(siblingA.id, 'inProgress');
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      await cubit.updateTicketStatus(siblingB.id, 'inProgress');
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      await cubit.updateTicketStatus(unrelatedTaskC.id, 'inProgress');
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.updateTicketStatus(siblingA.id, 'inProgress');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.updateTicketStatus(siblingB.id, 'inProgress');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.updateTicketStatus(unrelatedTaskC.id, 'inProgress');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
 
-      await cubit.getTicketById(siblingA.id);
-      expect((cubit.state as TicketDetailLoaded).isExecuting, isTrue);
+        await cubit.getTicketById(siblingA.id);
+        expect((cubit.state as TicketDetailLoaded).isExecuting, isTrue);
 
-      await cubit.getTicketById(siblingB.id);
-      final siblingBState = cubit.state as TicketDetailLoaded;
-      expect(siblingBState.isExecuting, isFalse);
-      expect(siblingBState.executionQueuePosition, 1);
+        await cubit.getTicketById(siblingB.id);
+        final siblingBState = cubit.state as TicketDetailLoaded;
+        expect(siblingBState.isExecuting, isFalse);
+        expect(siblingBState.executionQueuePosition, 1);
 
-      await cubit.getTicketById(unrelatedTaskC.id);
-      expect((cubit.state as TicketDetailLoaded).isExecuting, isTrue);
+        await cubit.getTicketById(unrelatedTaskC.id);
+        expect((cubit.state as TicketDetailLoaded).isExecuting, isTrue);
 
-      verify(() => agentClient.run(any())).called(2);
-    });
+        verify(() => agentClient.run(any())).called(2);
+      },
+    );
 
-    test('ExecutionSchedulingMode.hybrid: two Tasks under different Stories '
-        'of the same Epic serialize too, an unrelated Task still starts '
-        'immediately, and two Tasks under unrelated Epics never conflict '
-        '(ancestor-generalized, dependency-caching-and-ancestor-sibling-'
-        'conflict)', () async {
-      // cousinX/cousinY are not direct siblings (different Story
-      // parents) but share parentEpic as a grandparent — the case
-      // direct-parentId comparison alone couldn't catch pre-change.
-      final storyX = Ticket(
-        id: 'sched-story-x',
-        ticketId: 'AIO-SCHED-SX',
-        type: TicketType.story,
-        title: 'Story X',
-        status: 'backlog',
-        parentId: parentEpic.id,
-        createdAt: DateTime(2026),
-        updatedAt: DateTime(2026),
-      );
-      final storyY = Ticket(
-        id: 'sched-story-y',
-        ticketId: 'AIO-SCHED-SY',
-        type: TicketType.story,
-        title: 'Story Y',
-        status: 'backlog',
-        parentId: parentEpic.id,
-        createdAt: DateTime(2026),
-        updatedAt: DateTime(2026),
-      );
-      final cousinX = Ticket(
-        id: 'sched-cousin-x',
-        ticketId: 'AIO-SCHED-CX',
-        type: TicketType.task,
-        title: 'Cousin X',
-        status: 'backlog',
-        parentId: storyX.id,
-        createdAt: DateTime(2026),
-        updatedAt: DateTime(2026),
-      );
-      final cousinY = Ticket(
-        id: 'sched-cousin-y',
-        ticketId: 'AIO-SCHED-CY',
-        type: TicketType.task,
-        title: 'Cousin Y',
-        status: 'backlog',
-        parentId: storyY.id,
-        createdAt: DateTime(2026),
-        updatedAt: DateTime(2026),
-      );
-      // unrelatedTaskC (no parent at all) plays the "unrelated Epic"
-      // role too — it shares no ancestor with cousinX/cousinY either
-      // way, exercising both "an unrelated queued Task still starts
-      // immediately" and "two Tasks under unrelated Epics don't
-      // conflict" in one fixture.
-      final extraById = {
-        storyX.id: storyX,
-        storyY.id: storyY,
-        cousinX.id: cousinX,
-        cousinY.id: cousinY,
-      };
-      final baseById = {
-        parentEpic.id: parentEpic,
-        siblingA.id: siblingA,
-        siblingB.id: siblingB,
-        unrelatedTaskC.id: unrelatedTaskC,
-      };
-      when(() => repository.getTicketById(any())).thenAnswer((
-        invocation,
-      ) async {
-        final id = invocation.positionalArguments[0] as String;
-        final extra = extraById[id];
-        if (extra != null) return extra;
-        final base = baseById[id];
-        if (base != null) return base.copyWith(status: liveStatus[id]);
-        return Ticket(
-          id: id,
-          ticketId: '',
-          type: TicketType.chat,
-          title: 'Coding Execution — synthetic',
+    test(
+      'ExecutionSchedulingMode.hybrid: two Tasks under different Stories '
+      'of the same Epic serialize too, an unrelated Task still starts '
+      'immediately, and two Tasks under unrelated Epics never conflict '
+      '(ancestor-generalized, dependency-caching-and-ancestor-sibling-'
+      'conflict)',
+      () async {
+        // cousinX/cousinY are not direct siblings (different Story
+        // parents) but share parentEpic as a grandparent — the case
+        // direct-parentId comparison alone couldn't catch pre-change.
+        final storyX = Ticket(
+          id: 'sched-story-x',
+          ticketId: 'AIO-SCHED-SX',
+          type: TicketType.story,
+          title: 'Story X',
           status: 'backlog',
+          parentId: parentEpic.id,
           createdAt: DateTime(2026),
           updatedAt: DateTime(2026),
         );
-      });
-      // _codingExecutionGateCheck's design-review-gate walk: cousinX/
-      // cousinY are each governed by a Story (storyX/storyY), unlike
-      // siblingA/siblingB/unrelatedTaskC above (governed directly by
-      // an Epic, or parentless) — so this test is the first in this
-      // group to actually reach _governingStory/_storyNeedsDesignReview.
-      // Neither title contains a UI keyword, so _storyNeedsDesignReview
-      // resolves false and no design-sync chat lookup is needed.
-      when(
-        () => repository.getTicketsByParent(
-          storyX.id,
-          types: TicketTypeHierarchy.executableTypes,
-        ),
-      ).thenAnswer((_) async => [cousinX]);
-      when(
-        () => repository.getTicketsByParent(
-          storyY.id,
-          types: TicketTypeHierarchy.executableTypes,
-        ),
-      ).thenAnswer((_) async => [cousinY]);
+        final storyY = Ticket(
+          id: 'sched-story-y',
+          ticketId: 'AIO-SCHED-SY',
+          type: TicketType.story,
+          title: 'Story Y',
+          status: 'backlog',
+          parentId: parentEpic.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final cousinX = Ticket(
+          id: 'sched-cousin-x',
+          ticketId: 'AIO-SCHED-CX',
+          type: TicketType.task,
+          title: 'Cousin X',
+          status: 'backlog',
+          parentId: storyX.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final cousinY = Ticket(
+          id: 'sched-cousin-y',
+          ticketId: 'AIO-SCHED-CY',
+          type: TicketType.task,
+          title: 'Cousin Y',
+          status: 'backlog',
+          parentId: storyY.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        // unrelatedTaskC (no parent at all) plays the "unrelated Epic"
+        // role too — it shares no ancestor with cousinX/cousinY either
+        // way, exercising both "an unrelated queued Task still starts
+        // immediately" and "two Tasks under unrelated Epics don't
+        // conflict" in one fixture.
+        final extraById = {
+          storyX.id: storyX,
+          storyY.id: storyY,
+          cousinX.id: cousinX,
+          cousinY.id: cousinY,
+        };
+        final baseById = {
+          parentEpic.id: parentEpic,
+          siblingA.id: siblingA,
+          siblingB.id: siblingB,
+          unrelatedTaskC.id: unrelatedTaskC,
+        };
+        when(() => repository.getTicketById(any())).thenAnswer((
+          invocation,
+        ) async {
+          final id = invocation.positionalArguments[0] as String;
+          final extra = extraById[id];
+          if (extra != null) return extra;
+          final base = baseById[id];
+          if (base != null) return base.copyWith(status: liveStatus[id]);
+          return Ticket(
+            id: id,
+            ticketId: '',
+            type: TicketType.chat,
+            title: 'Coding Execution — synthetic',
+            status: 'backlog',
+            createdAt: DateTime(2026),
+            updatedAt: DateTime(2026),
+          );
+        });
+        // _codingExecutionGateCheck's design-review-gate walk: cousinX/
+        // cousinY are each governed by a Story (storyX/storyY), unlike
+        // siblingA/siblingB/unrelatedTaskC above (governed directly by
+        // an Epic, or parentless) — so this test is the first in this
+        // group to actually reach _governingStory/_storyNeedsDesignReview.
+        // Neither title contains a UI keyword, so _storyNeedsDesignReview
+        // resolves false and no design-sync chat lookup is needed.
+        when(
+          () => repository.getTicketsByParent(
+            storyX.id,
+            types: TicketTypeHierarchy.executableTypes,
+          ),
+        ).thenAnswer((_) async => [cousinX]);
+        when(
+          () => repository.getTicketsByParent(
+            storyY.id,
+            types: TicketTypeHierarchy.executableTypes,
+          ),
+        ).thenAnswer((_) async => [cousinY]);
 
-      when(
-        () => schedulingRepository.getMode(),
-      ).thenAnswer((_) async => ExecutionSchedulingMode.hybrid);
-      when(
-        () => schedulingRepository.getConcurrencyCeiling(),
-      ).thenAnswer((_) async => 2);
+        when(
+          () => schedulingRepository.getMode(),
+        ).thenAnswer((_) async => ExecutionSchedulingMode.hybrid);
+        when(
+          () => schedulingRepository.getConcurrencyCeiling(),
+        ).thenAnswer((_) async => 2);
 
-      final cubit = buildSchedulingCubit(
-        executionSchedulingRepository: schedulingRepository,
-      );
-      addTearDown(cubit.close);
+        final cubit = buildSchedulingCubit(
+          executionSchedulingRepository: schedulingRepository,
+        );
+        addTearDown(cubit.close);
 
-      await cubit.updateTicketStatus(cousinX.id, 'inProgress');
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      await cubit.updateTicketStatus(cousinY.id, 'inProgress');
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      await cubit.updateTicketStatus(unrelatedTaskC.id, 'inProgress');
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.updateTicketStatus(cousinX.id, 'inProgress');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.updateTicketStatus(cousinY.id, 'inProgress');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.updateTicketStatus(unrelatedTaskC.id, 'inProgress');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
 
-      await cubit.getTicketById(cousinX.id);
-      expect((cubit.state as TicketDetailLoaded).isExecuting, isTrue);
+        await cubit.getTicketById(cousinX.id);
+        expect((cubit.state as TicketDetailLoaded).isExecuting, isTrue);
 
-      await cubit.getTicketById(cousinY.id);
-      final cousinYState = cubit.state as TicketDetailLoaded;
-      expect(
-        cousinYState.isExecuting,
-        isFalse,
-        reason:
-            'Cousin Y shares no direct parent with Cousin X, but both '
-            'roll up to the same Epic, so Hybrid should still '
-            'serialize it behind Cousin X',
-      );
-      expect(cousinYState.executionQueuePosition, 1);
+        await cubit.getTicketById(cousinY.id);
+        final cousinYState = cubit.state as TicketDetailLoaded;
+        expect(
+          cousinYState.isExecuting,
+          isFalse,
+          reason:
+              'Cousin Y shares no direct parent with Cousin X, but both '
+              'roll up to the same Epic, so Hybrid should still '
+              'serialize it behind Cousin X',
+        );
+        expect(cousinYState.executionQueuePosition, 1);
 
-      await cubit.getTicketById(unrelatedTaskC.id);
-      expect(
-        (cubit.state as TicketDetailLoaded).isExecuting,
-        isTrue,
-        reason:
-            'unrelatedTaskC has no parent at all, so it shares no '
-            'ancestor with Cousin X and should start immediately '
-            '(skip-ahead), not queue behind Cousin Y',
-      );
+        await cubit.getTicketById(unrelatedTaskC.id);
+        expect(
+          (cubit.state as TicketDetailLoaded).isExecuting,
+          isTrue,
+          reason:
+              'unrelatedTaskC has no parent at all, so it shares no '
+              'ancestor with Cousin X and should start immediately '
+              '(skip-ahead), not queue behind Cousin Y',
+        );
 
-      verify(() => agentClient.run(any())).called(2);
-    });
+        verify(() => agentClient.run(any())).called(2);
+      },
+    );
 
-    test('searchTickets seeds TicketsLoaded.inFlightExecutionIds/'
-        'executionQueuePositions from already-in-flight/queued state — a '
-        'fresh Board load reflects runs that started before it, not just '
-        'runs that start while it is already showing', () async {
-      // Regression coverage for a /verify finding: _refreshInFlightBoardState
-      // can only ever *update* an already-emitted TicketsLoaded — it's a
-      // no-op otherwise — so searchTickets (the sole method that emits a
-      // *fresh* TicketsLoaded) is the only place that can seed these
-      // fields for a just-opened/just-filtered Board. Before this fix,
-      // searchTickets always emitted them at their `const {}` defaults,
-      // so a Task already running/queued at the moment the Board loads
-      // showed no Running/Queued badge and no cancel affordance. Added
-      // for `aion-arch/changes/parallel-work` post-/verify.
-      when(
-        () => schedulingRepository.getMode(),
-      ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
-      when(
-        () => schedulingRepository.getConcurrencyCeiling(),
-      ).thenAnswer((_) async => 1);
+    test(
+      'searchTickets seeds TicketsLoaded.inFlightExecutionIds/'
+      'executionQueuePositions from already-in-flight/queued state — a '
+      'fresh Board load reflects runs that started before it, not just '
+      'runs that start while it is already showing',
+      () async {
+        // Regression coverage for a /verify finding: _refreshInFlightBoardState
+        // can only ever *update* an already-emitted TicketsLoaded — it's a
+        // no-op otherwise — so searchTickets (the sole method that emits a
+        // *fresh* TicketsLoaded) is the only place that can seed these
+        // fields for a just-opened/just-filtered Board. Before this fix,
+        // searchTickets always emitted them at their `const {}` defaults,
+        // so a Task already running/queued at the moment the Board loads
+        // showed no Running/Queued badge and no cancel affordance. Added
+        // for `aion-arch/changes/parallel-work` post-/verify.
+        when(
+          () => schedulingRepository.getMode(),
+        ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
+        when(
+          () => schedulingRepository.getConcurrencyCeiling(),
+        ).thenAnswer((_) async => 1);
 
-      final cubit = buildSchedulingCubit(
-        executionSchedulingRepository: schedulingRepository,
-      );
-      addTearDown(cubit.close);
+        final cubit = buildSchedulingCubit(
+          executionSchedulingRepository: schedulingRepository,
+        );
+        addTearDown(cubit.close);
 
-      await cubit.updateTicketStatus(siblingA.id, 'inProgress');
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      await cubit.updateTicketStatus(unrelatedTaskC.id, 'inProgress');
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.updateTicketStatus(siblingA.id, 'inProgress');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.updateTicketStatus(unrelatedTaskC.id, 'inProgress');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
 
-      // Simulates navigating to (or back to) the Board — a fresh
-      // TicketsLoaded, not a refresh of one already on screen.
-      await cubit.searchTickets();
+        // Simulates navigating to (or back to) the Board — a fresh
+        // TicketsLoaded, not a refresh of one already on screen.
+        await cubit.searchTickets();
 
-      final loaded = cubit.state as TicketsLoaded;
-      expect(loaded.inFlightExecutionIds, contains(siblingA.id));
-      expect(loaded.executionQueuePositions[unrelatedTaskC.id], 1);
-    });
+        final loaded = cubit.state as TicketsLoaded;
+        expect(loaded.inFlightExecutionIds, contains(siblingA.id));
+        expect(loaded.executionQueuePositions[unrelatedTaskC.id], 1);
+      },
+    );
 
-    test('cancelCodingExecution reverts a still-queued Task to its '
-        'pre-trigger status and drops it from the queue', () async {
-      when(
-        () => schedulingRepository.getMode(),
-      ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
-      when(
-        () => schedulingRepository.getConcurrencyCeiling(),
-      ).thenAnswer((_) async => 1);
+    test(
+      'cancelCodingExecution reverts a still-queued Task to its '
+      'pre-trigger status and drops it from the queue',
+      () async {
+        when(
+          () => schedulingRepository.getMode(),
+        ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
+        when(
+          () => schedulingRepository.getConcurrencyCeiling(),
+        ).thenAnswer((_) async => 1);
 
-      final cubit = buildSchedulingCubit(
-        executionSchedulingRepository: schedulingRepository,
-      );
-      addTearDown(cubit.close);
+        final cubit = buildSchedulingCubit(
+          executionSchedulingRepository: schedulingRepository,
+        );
+        addTearDown(cubit.close);
 
-      await cubit.updateTicketStatus(siblingA.id, 'inProgress');
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      await cubit.updateTicketStatus(unrelatedTaskC.id, 'inProgress');
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      await cubit.getTicketById(unrelatedTaskC.id);
-      expect((cubit.state as TicketDetailLoaded).executionQueuePosition, 1);
+        await cubit.updateTicketStatus(siblingA.id, 'inProgress');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.updateTicketStatus(unrelatedTaskC.id, 'inProgress');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.getTicketById(unrelatedTaskC.id);
+        expect(
+          (cubit.state as TicketDetailLoaded).executionQueuePosition,
+          1,
+        );
 
-      await cubit.cancelCodingExecution(
-        unrelatedTaskC.copyWith(status: 'inProgress'),
-      );
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.cancelCodingExecution(
+          unrelatedTaskC.copyWith(status: 'inProgress'),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
 
-      verify(
-        () => repository.updateTicketStatus(unrelatedTaskC.id, 'backlog'),
-      ).called(1);
-      // Regression coverage for a /verify finding: this comment was
-      // missing entirely from the queued-cancel path despite design.md
-      // §5.4 documenting it. Added for
-      // `aion-arch/changes/parallel-work` post-/verify.
-      verify(
-        () => commentRepository.addComment(
-          any(
-            that: predicate<TicketComment>(
-              (c) =>
-                  c.content == 'Execution cancelled before it started.' &&
-                  c.authorType == CommentAuthorType.system,
+        verify(
+          () => repository.updateTicketStatus(
+            unrelatedTaskC.id,
+            'backlog',
+          ),
+        ).called(1);
+        // Regression coverage for a /verify finding: this comment was
+        // missing entirely from the queued-cancel path despite design.md
+        // §5.4 documenting it. Added for
+        // `aion-arch/changes/parallel-work` post-/verify.
+        verify(
+          () => commentRepository.addComment(
+            any(
+              that: predicate<TicketComment>(
+                (c) =>
+                    c.content == 'Execution cancelled before it started.' &&
+                    c.authorType == CommentAuthorType.system,
+              ),
             ),
           ),
-        ),
-      ).called(1);
-      await cubit.getTicketById(unrelatedTaskC.id);
-      final afterCancel = cubit.state as TicketDetailLoaded;
-      expect(afterCancel.isExecuting, isFalse);
-      expect(afterCancel.executionQueuePosition, isNull);
-    });
+        ).called(1);
+        await cubit.getTicketById(unrelatedTaskC.id);
+        final afterCancel = cubit.state as TicketDetailLoaded;
+        expect(afterCancel.isExecuting, isFalse);
+        expect(afterCancel.executionQueuePosition, isNull);
+      },
+    );
 
-    test('cancelCodingExecution signals AgentModelClient.cancel with the '
-        "in-flight run's current runId", () async {
-      when(
-        () => schedulingRepository.getMode(),
-      ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
-      when(
-        () => schedulingRepository.getConcurrencyCeiling(),
-      ).thenAnswer((_) async => 1);
+    test(
+      'cancelCodingExecution signals AgentModelClient.cancel with the '
+      "in-flight run's current runId",
+      () async {
+        when(
+          () => schedulingRepository.getMode(),
+        ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
+        when(
+          () => schedulingRepository.getConcurrencyCeiling(),
+        ).thenAnswer((_) async => 1);
 
-      final cubit = buildSchedulingCubit(
-        executionSchedulingRepository: schedulingRepository,
-      );
-      addTearDown(cubit.close);
+        final cubit = buildSchedulingCubit(
+          executionSchedulingRepository: schedulingRepository,
+        );
+        addTearDown(cubit.close);
 
-      await cubit.updateTicketStatus(siblingA.id, 'inProgress');
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      await cubit.getTicketById(siblingA.id);
-      expect((cubit.state as TicketDetailLoaded).isExecuting, isTrue);
+        await cubit.updateTicketStatus(siblingA.id, 'inProgress');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.getTicketById(siblingA.id);
+        expect((cubit.state as TicketDetailLoaded).isExecuting, isTrue);
 
-      await cubit.cancelCodingExecution(
-        siblingA.copyWith(status: 'inProgress'),
-      );
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.cancelCodingExecution(
+          siblingA.copyWith(status: 'inProgress'),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
 
-      final capturedRunId =
-          verify(() => agentClient.cancel(captureAny())).captured.single
-              as String;
-      expect(capturedRunId, isNotEmpty);
-    });
+        final capturedRunId =
+            verify(() => agentClient.cancel(captureAny())).captured.single
+                as String;
+        expect(capturedRunId, isNotEmpty);
+      },
+    );
 
-    test('restoreExecutionQueue (auto): resumes a surviving interrupted run '
-        'immediately, with no resume prompt', () async {
-      // Simulates a Task the app left `inProgress` mid-execution before
-      // an interrupting restart.
-      liveStatus[siblingA.id] = 'inProgress';
-      when(() => executionQueueRepository.getSnapshot()).thenAnswer(
-        (_) async => [
-          const ExecutionQueueEntry(taskId: 'sched-sibling-a', inFlight: true),
-        ],
-      );
-      when(
-        () => executionQueueRepository.replaceSnapshot(any()),
-      ).thenAnswer((_) async {});
-      when(
-        () => automationSettingsRepository.getConfidence(
-          AutomationContext.codingExecutionResume,
-        ),
-      ).thenAnswer((_) async => AutomationConfidence.auto);
-      when(
-        () => schedulingRepository.getMode(),
-      ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
-      when(
-        () => schedulingRepository.getConcurrencyCeiling(),
-      ).thenAnswer((_) async => 1);
+    test(
+      'restoreExecutionQueue (auto): resumes a surviving interrupted run '
+      'immediately, with no resume prompt',
+      () async {
+        // Simulates a Task the app left `inProgress` mid-execution before
+        // an interrupting restart.
+        liveStatus[siblingA.id] = 'inProgress';
+        when(
+          () => executionQueueRepository.getSnapshot(),
+        ).thenAnswer(
+          (_) async => [
+            const ExecutionQueueEntry(taskId: 'sched-sibling-a', inFlight: true),
+          ],
+        );
+        when(
+          () => executionQueueRepository.replaceSnapshot(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecutionResume,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.auto);
+        when(
+          () => schedulingRepository.getMode(),
+        ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
+        when(
+          () => schedulingRepository.getConcurrencyCeiling(),
+        ).thenAnswer((_) async => 1);
 
-      final cubit = buildSchedulingCubit(
-        executionSchedulingRepository: schedulingRepository,
-        executionQueueRepository: executionQueueRepository,
-        automationSettingsRepository: automationSettingsRepository,
-      );
-      addTearDown(cubit.close);
+        final cubit = buildSchedulingCubit(
+          executionSchedulingRepository: schedulingRepository,
+          executionQueueRepository: executionQueueRepository,
+          automationSettingsRepository: automationSettingsRepository,
+        );
+        addTearDown(cubit.close);
 
-      await cubit.restoreExecutionQueue();
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-      await cubit.getTicketById(siblingA.id);
+        await cubit.restoreExecutionQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        await cubit.getTicketById(siblingA.id);
 
-      expect((cubit.state as TicketDetailLoaded).isExecuting, isTrue);
-      await cubit.searchTickets();
-      expect((cubit.state as TicketsLoaded).pendingResumePrompt, isEmpty);
-    });
+        expect((cubit.state as TicketDetailLoaded).isExecuting, isTrue);
+        await cubit.searchTickets();
+        expect((cubit.state as TicketsLoaded).pendingResumePrompt, isEmpty);
+      },
+    );
 
-    test('restoreExecutionQueue (gated): surfaces the surviving run via '
-        'pendingResumePrompt without starting it', () async {
-      // Simulates a Task the app left `inProgress` mid-execution before
-      // an interrupting restart.
-      liveStatus[siblingA.id] = 'inProgress';
-      when(() => executionQueueRepository.getSnapshot()).thenAnswer(
-        (_) async => [
-          const ExecutionQueueEntry(taskId: 'sched-sibling-a', inFlight: true),
-        ],
-      );
-      when(
-        () => automationSettingsRepository.getConfidence(
-          AutomationContext.codingExecutionResume,
-        ),
-      ).thenAnswer((_) async => AutomationConfidence.gated);
-      // searchTickets (called below) now also resolves the scheduling
-      // mode for TicketsLoaded.topmostAncestorId — see
-      // TicketsCubit._topmostAncestorIdIfHybrid. Added for
-      // aion-arch/changes/dependency-caching-and-ancestor-sibling-conflict.
-      when(
-        () => schedulingRepository.getMode(),
-      ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
+    test(
+      'restoreExecutionQueue (gated): surfaces the surviving run via '
+      'pendingResumePrompt without starting it',
+      () async {
+        // Simulates a Task the app left `inProgress` mid-execution before
+        // an interrupting restart.
+        liveStatus[siblingA.id] = 'inProgress';
+        when(
+          () => executionQueueRepository.getSnapshot(),
+        ).thenAnswer(
+          (_) async => [
+            const ExecutionQueueEntry(taskId: 'sched-sibling-a', inFlight: true),
+          ],
+        );
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecutionResume,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.gated);
+        // searchTickets (called below) now also resolves the scheduling
+        // mode for TicketsLoaded.topmostAncestorId — see
+        // TicketsCubit._topmostAncestorIdIfHybrid. Added for
+        // aion-arch/changes/dependency-caching-and-ancestor-sibling-conflict.
+        when(
+          () => schedulingRepository.getMode(),
+        ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
 
-      final cubit = buildSchedulingCubit(
-        executionSchedulingRepository: schedulingRepository,
-        executionQueueRepository: executionQueueRepository,
-        automationSettingsRepository: automationSettingsRepository,
-      );
-      addTearDown(cubit.close);
+        final cubit = buildSchedulingCubit(
+          executionSchedulingRepository: schedulingRepository,
+          executionQueueRepository: executionQueueRepository,
+          automationSettingsRepository: automationSettingsRepository,
+        );
+        addTearDown(cubit.close);
 
-      await cubit.restoreExecutionQueue();
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      await cubit.searchTickets();
+        await cubit.restoreExecutionQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.searchTickets();
 
-      final loaded = cubit.state as TicketsLoaded;
-      expect(loaded.pendingResumePrompt.map((t) => t.id), [siblingA.id]);
-      verifyNever(() => agentClient.run(any()));
-    });
+        final loaded = cubit.state as TicketsLoaded;
+        expect(loaded.pendingResumePrompt.map((t) => t.id), [siblingA.id]);
+        verifyNever(() => agentClient.run(any()));
+      },
+    );
 
-    test('restoreExecutionQueue (manual): clears the persisted snapshot and '
-        'starts nothing, no resume prompt', () async {
-      // Simulates a Task the app left `inProgress` mid-execution before
-      // an interrupting restart.
-      liveStatus[siblingA.id] = 'inProgress';
-      when(() => executionQueueRepository.getSnapshot()).thenAnswer(
-        (_) async => [
-          const ExecutionQueueEntry(taskId: 'sched-sibling-a', inFlight: true),
-        ],
-      );
-      when(
-        () => executionQueueRepository.replaceSnapshot(any()),
-      ).thenAnswer((_) async {});
-      when(
-        () => automationSettingsRepository.getConfidence(
-          AutomationContext.codingExecutionResume,
-        ),
-      ).thenAnswer((_) async => AutomationConfidence.manual);
-      // searchTickets (called below) now also resolves the scheduling
-      // mode for TicketsLoaded.topmostAncestorId — see
-      // TicketsCubit._topmostAncestorIdIfHybrid. Added for
-      // aion-arch/changes/dependency-caching-and-ancestor-sibling-conflict.
-      when(
-        () => schedulingRepository.getMode(),
-      ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
+    test(
+      'restoreExecutionQueue (manual): clears the persisted snapshot and '
+      'starts nothing, no resume prompt',
+      () async {
+        // Simulates a Task the app left `inProgress` mid-execution before
+        // an interrupting restart.
+        liveStatus[siblingA.id] = 'inProgress';
+        when(
+          () => executionQueueRepository.getSnapshot(),
+        ).thenAnswer(
+          (_) async => [
+            const ExecutionQueueEntry(taskId: 'sched-sibling-a', inFlight: true),
+          ],
+        );
+        when(
+          () => executionQueueRepository.replaceSnapshot(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecutionResume,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.manual);
+        // searchTickets (called below) now also resolves the scheduling
+        // mode for TicketsLoaded.topmostAncestorId — see
+        // TicketsCubit._topmostAncestorIdIfHybrid. Added for
+        // aion-arch/changes/dependency-caching-and-ancestor-sibling-conflict.
+        when(
+          () => schedulingRepository.getMode(),
+        ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
 
-      final cubit = buildSchedulingCubit(
-        executionSchedulingRepository: schedulingRepository,
-        executionQueueRepository: executionQueueRepository,
-        automationSettingsRepository: automationSettingsRepository,
-      );
-      addTearDown(cubit.close);
+        final cubit = buildSchedulingCubit(
+          executionSchedulingRepository: schedulingRepository,
+          executionQueueRepository: executionQueueRepository,
+          automationSettingsRepository: automationSettingsRepository,
+        );
+        addTearDown(cubit.close);
 
-      await cubit.restoreExecutionQueue();
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      await cubit.searchTickets();
+        await cubit.restoreExecutionQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.searchTickets();
 
-      expect((cubit.state as TicketsLoaded).pendingResumePrompt, isEmpty);
-      verifyNever(() => agentClient.run(any()));
-      verify(
-        () => automationSettingsRepository.getConfidence(
-          AutomationContext.codingExecutionResume,
-        ),
-      ).called(1);
-      verify(() => executionQueueRepository.replaceSnapshot([])).called(1);
-    });
+        expect((cubit.state as TicketsLoaded).pendingResumePrompt, isEmpty);
+        verifyNever(() => agentClient.run(any()));
+        verify(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecutionResume,
+          ),
+        ).called(1);
+        verify(() => executionQueueRepository.replaceSnapshot([])).called(1);
+      },
+    );
 
     test(
       'restoreExecutionQueue (auto + decision graph resolving gated): '
@@ -13572,12 +13828,11 @@ void main() {
       'uses — added for aion-arch/changes/automation-decision-graphs',
       () async {
         liveStatus[siblingA.id] = 'inProgress';
-        when(() => executionQueueRepository.getSnapshot()).thenAnswer(
+        when(
+          () => executionQueueRepository.getSnapshot(),
+        ).thenAnswer(
           (_) async => [
-            const ExecutionQueueEntry(
-              taskId: 'sched-sibling-a',
-              inFlight: true,
-            ),
+            const ExecutionQueueEntry(taskId: 'sched-sibling-a', inFlight: true),
           ],
         );
         when(
@@ -13612,141 +13867,155 @@ void main() {
       },
     );
 
-    test('restoreExecutionQueue (auto + decision graph resolving decline): '
-        'clears the persisted snapshot and starts nothing, the same '
-        'treatment AutomationConfidence.manual gets — added for '
-        'aion-arch/changes/automation-decision-graphs', () async {
-      liveStatus[siblingA.id] = 'inProgress';
-      when(() => executionQueueRepository.getSnapshot()).thenAnswer(
-        (_) async => [
-          const ExecutionQueueEntry(taskId: 'sched-sibling-a', inFlight: true),
-        ],
-      );
-      when(
-        () => executionQueueRepository.replaceSnapshot(any()),
-      ).thenAnswer((_) async {});
-      when(
-        () => automationSettingsRepository.getConfidence(
-          AutomationContext.codingExecutionResume,
-        ),
-      ).thenAnswer((_) async => AutomationConfidence.auto);
-      stubResumeGraphOutcome(DecisionOutcome.decline);
-      when(
-        () => schedulingRepository.getMode(),
-      ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
-
-      final cubit = buildSchedulingCubit(
-        executionSchedulingRepository: schedulingRepository,
-        executionQueueRepository: executionQueueRepository,
-        automationSettingsRepository: automationSettingsRepository,
-        decisionGraphRepository: decisionGraphRepository,
-      );
-      addTearDown(cubit.close);
-
-      await Future<void>.delayed(Duration.zero);
-      await cubit.restoreExecutionQueue();
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      await cubit.searchTickets();
-
-      expect((cubit.state as TicketsLoaded).pendingResumePrompt, isEmpty);
-      verifyNever(() => agentClient.run(any()));
-      verify(() => executionQueueRepository.replaceSnapshot([])).called(1);
-    });
-
-    test('restoreExecutionQueue (auto + null-root decision graph): resumes '
-        'exactly as plain AutomationConfidence.auto always has — added '
-        'for aion-arch/changes/automation-decision-graphs', () async {
-      liveStatus[siblingA.id] = 'inProgress';
-      when(() => executionQueueRepository.getSnapshot()).thenAnswer(
-        (_) async => [
-          const ExecutionQueueEntry(taskId: 'sched-sibling-a', inFlight: true),
-        ],
-      );
-      when(
-        () => executionQueueRepository.replaceSnapshot(any()),
-      ).thenAnswer((_) async {});
-      when(
-        () => automationSettingsRepository.getConfidence(
-          AutomationContext.codingExecutionResume,
-        ),
-      ).thenAnswer((_) async => AutomationConfidence.auto);
-      when(
-        () => schedulingRepository.getMode(),
-      ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
-      when(
-        () => schedulingRepository.getConcurrencyCeiling(),
-      ).thenAnswer((_) async => 1);
-
-      final cubit = buildSchedulingCubit(
-        executionSchedulingRepository: schedulingRepository,
-        executionQueueRepository: executionQueueRepository,
-        automationSettingsRepository: automationSettingsRepository,
-        decisionGraphRepository: decisionGraphRepository,
-      );
-      addTearDown(cubit.close);
-
-      await Future<void>.delayed(Duration.zero);
-      await cubit.restoreExecutionQueue();
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-      await cubit.getTicketById(siblingA.id);
-
-      expect((cubit.state as TicketDetailLoaded).isExecuting, isTrue);
-      await cubit.searchTickets();
-      expect((cubit.state as TicketsLoaded).pendingResumePrompt, isEmpty);
-    });
-
-    test('restoreExecutionQueue drops a stale entry whose ticket is no '
-        'longer inProgress, clearing the snapshot without surfacing '
-        'anything', () async {
-      when(() => executionQueueRepository.getSnapshot()).thenAnswer(
-        (_) async => [
-          const ExecutionQueueEntry(
-            taskId: 'no-longer-running',
-            inFlight: true,
+    test(
+      'restoreExecutionQueue (auto + decision graph resolving decline): '
+      'clears the persisted snapshot and starts nothing, the same '
+      'treatment AutomationConfidence.manual gets — added for '
+      'aion-arch/changes/automation-decision-graphs',
+      () async {
+        liveStatus[siblingA.id] = 'inProgress';
+        when(
+          () => executionQueueRepository.getSnapshot(),
+        ).thenAnswer(
+          (_) async => [
+            const ExecutionQueueEntry(taskId: 'sched-sibling-a', inFlight: true),
+          ],
+        );
+        when(
+          () => executionQueueRepository.replaceSnapshot(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecutionResume,
           ),
-        ],
-      );
-      when(
-        () => executionQueueRepository.replaceSnapshot(any()),
-      ).thenAnswer((_) async {});
-      when(() => repository.getTicketById('no-longer-running')).thenAnswer(
-        (_) async => Ticket(
-          id: 'no-longer-running',
-          ticketId: 'AIO-SCHED-STALE',
-          type: TicketType.task,
-          title: 'No longer running',
-          status: 'done',
-          createdAt: DateTime(2026),
-          updatedAt: DateTime(2026),
-        ),
-      );
-      // searchTickets (called below) now also resolves the scheduling
-      // mode for TicketsLoaded.topmostAncestorId — see
-      // TicketsCubit._topmostAncestorIdIfHybrid. Added for
-      // aion-arch/changes/dependency-caching-and-ancestor-sibling-conflict.
-      when(
-        () => schedulingRepository.getMode(),
-      ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
+        ).thenAnswer((_) async => AutomationConfidence.auto);
+        stubResumeGraphOutcome(DecisionOutcome.decline);
+        when(
+          () => schedulingRepository.getMode(),
+        ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
 
-      final cubit = buildSchedulingCubit(
-        executionSchedulingRepository: schedulingRepository,
-        executionQueueRepository: executionQueueRepository,
-        automationSettingsRepository: automationSettingsRepository,
-      );
-      addTearDown(cubit.close);
+        final cubit = buildSchedulingCubit(
+          executionSchedulingRepository: schedulingRepository,
+          executionQueueRepository: executionQueueRepository,
+          automationSettingsRepository: automationSettingsRepository,
+          decisionGraphRepository: decisionGraphRepository,
+        );
+        addTearDown(cubit.close);
 
-      await cubit.restoreExecutionQueue();
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      await cubit.searchTickets();
+        await Future<void>.delayed(Duration.zero);
+        await cubit.restoreExecutionQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.searchTickets();
 
-      expect((cubit.state as TicketsLoaded).pendingResumePrompt, isEmpty);
-      verifyNever(
-        () => automationSettingsRepository.getConfidence(
-          AutomationContext.codingExecutionResume,
-        ),
-      );
-      verify(() => executionQueueRepository.replaceSnapshot([])).called(1);
-    });
+        expect((cubit.state as TicketsLoaded).pendingResumePrompt, isEmpty);
+        verifyNever(() => agentClient.run(any()));
+        verify(() => executionQueueRepository.replaceSnapshot([])).called(1);
+      },
+    );
+
+    test(
+      'restoreExecutionQueue (auto + null-root decision graph): resumes '
+      'exactly as plain AutomationConfidence.auto always has — added '
+      'for aion-arch/changes/automation-decision-graphs',
+      () async {
+        liveStatus[siblingA.id] = 'inProgress';
+        when(
+          () => executionQueueRepository.getSnapshot(),
+        ).thenAnswer(
+          (_) async => [
+            const ExecutionQueueEntry(taskId: 'sched-sibling-a', inFlight: true),
+          ],
+        );
+        when(
+          () => executionQueueRepository.replaceSnapshot(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecutionResume,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.auto);
+        when(
+          () => schedulingRepository.getMode(),
+        ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
+        when(
+          () => schedulingRepository.getConcurrencyCeiling(),
+        ).thenAnswer((_) async => 1);
+
+        final cubit = buildSchedulingCubit(
+          executionSchedulingRepository: schedulingRepository,
+          executionQueueRepository: executionQueueRepository,
+          automationSettingsRepository: automationSettingsRepository,
+          decisionGraphRepository: decisionGraphRepository,
+        );
+        addTearDown(cubit.close);
+
+        await Future<void>.delayed(Duration.zero);
+        await cubit.restoreExecutionQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        await cubit.getTicketById(siblingA.id);
+
+        expect((cubit.state as TicketDetailLoaded).isExecuting, isTrue);
+        await cubit.searchTickets();
+        expect((cubit.state as TicketsLoaded).pendingResumePrompt, isEmpty);
+      },
+    );
+
+    test(
+      'restoreExecutionQueue drops a stale entry whose ticket is no '
+      'longer inProgress, clearing the snapshot without surfacing '
+      'anything',
+      () async {
+        when(
+          () => executionQueueRepository.getSnapshot(),
+        ).thenAnswer(
+          (_) async => [
+            const ExecutionQueueEntry(taskId: 'no-longer-running', inFlight: true),
+          ],
+        );
+        when(
+          () => executionQueueRepository.replaceSnapshot(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById('no-longer-running'),
+        ).thenAnswer(
+          (_) async => Ticket(
+            id: 'no-longer-running',
+            ticketId: 'AIO-SCHED-STALE',
+            type: TicketType.task,
+            title: 'No longer running',
+            status: 'done',
+            createdAt: DateTime(2026),
+            updatedAt: DateTime(2026),
+          ),
+        );
+        // searchTickets (called below) now also resolves the scheduling
+        // mode for TicketsLoaded.topmostAncestorId — see
+        // TicketsCubit._topmostAncestorIdIfHybrid. Added for
+        // aion-arch/changes/dependency-caching-and-ancestor-sibling-conflict.
+        when(
+          () => schedulingRepository.getMode(),
+        ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
+
+        final cubit = buildSchedulingCubit(
+          executionSchedulingRepository: schedulingRepository,
+          executionQueueRepository: executionQueueRepository,
+          automationSettingsRepository: automationSettingsRepository,
+        );
+        addTearDown(cubit.close);
+
+        await cubit.restoreExecutionQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.searchTickets();
+
+        expect((cubit.state as TicketsLoaded).pendingResumePrompt, isEmpty);
+        verifyNever(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecutionResume,
+          ),
+        );
+        verify(() => executionQueueRepository.replaceSnapshot([])).called(1);
+      },
+    );
   });
 
   group('Skill attachments (Phase 2)', () {
@@ -13806,15 +14075,15 @@ void main() {
         (_) async => const TicketSearchPage(tickets: [], hasMore: false),
       );
       when(() => repository.createTicket(any())).thenAnswer((_) async {});
-      when(() => commentRepository.addComment(any())).thenAnswer((_) async {});
+      when(
+        () => commentRepository.addComment(any()),
+      ).thenAnswer((_) async {});
       // _fireSkillAttachment reads back both `ticket` (the parent) and
       // the fresh chat ticket it just created (a freshly-generated id
       // this test can't know ahead of time) — echo back a fabricated
       // chat ticket for any other id, so that second lookup never nulls
       // out.
-      when(() => repository.getTicketById(any())).thenAnswer((
-        invocation,
-      ) async {
+      when(() => repository.getTicketById(any())).thenAnswer((invocation) async {
         final id = invocation.positionalArguments[0] as String;
         if (id == ticket.id) return ticket;
         return Ticket(
@@ -14206,7 +14475,9 @@ void main() {
             'backlog',
           );
           await Future<void>.delayed(const Duration(milliseconds: 20));
-          await cubit.rejectPendingSkillAttachment(epicForFieldPreservation.id);
+          await cubit.rejectPendingSkillAttachment(
+            epicForFieldPreservation.id,
+          );
         },
         verify: (cubit) {
           final loaded = cubit.state as TicketDetailLoaded;
@@ -14243,9 +14514,10 @@ void main() {
             () => attachmentRepository.getAll(),
           ).thenAnswer((_) async => [attachment]);
           when(
-            () => repository.updateStatusForIds([
-              epicForFieldPreservation.id,
-            ], 'backlog'),
+            () => repository.updateStatusForIds(
+              [epicForFieldPreservation.id],
+              'backlog',
+            ),
           ).thenAnswer((_) async {});
           when(
             () => repository.getTicketById(epicForFieldPreservation.id),
@@ -14255,9 +14527,10 @@ void main() {
         seed: () => TicketDetailLoaded(epicForFieldPreservation),
         act: (cubit) async {
           await Future<void>.delayed(Duration.zero);
-          await cubit.updateStatusForTickets([
-            epicForFieldPreservation.id,
-          ], 'backlog');
+          await cubit.updateStatusForTickets(
+            [epicForFieldPreservation.id],
+            'backlog',
+          );
           await Future<void>.delayed(const Duration(milliseconds: 20));
         },
         verify: (cubit) {
@@ -14421,18 +14694,21 @@ void main() {
       },
     );
 
-    test('calling startDetailTicker twice in a row does not throw — the '
-        'second call cancels and replaces the first timer '
-        '(cancel-before-replace)', () async {
-      final cubit = TicketsCubit(repository);
+    test(
+      'calling startDetailTicker twice in a row does not throw — the '
+      'second call cancels and replaces the first timer '
+      '(cancel-before-replace)',
+      () async {
+        final cubit = TicketsCubit(repository);
 
-      expect(() {
-        cubit.startDetailTicker();
-        cubit.startDetailTicker();
-      }, returnsNormally);
+        expect(() {
+          cubit.startDetailTicker();
+          cubit.startDetailTicker();
+        }, returnsNormally);
 
-      cubit.stopDetailTicker();
-      await cubit.close();
-    });
+        cubit.stopDetailTicker();
+        await cubit.close();
+      },
+    );
   });
 }
