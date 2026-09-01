@@ -418,6 +418,7 @@ class TicketDetailLoaded extends TicketsState {
     this.pendingSpecLinkSuggestion,
     this.verifyRetryReady = false,
     this.verifyRetryConfidence,
+    this.verifyPendingFixesRemaining,
   });
 
   /// The loaded ticket.
@@ -627,6 +628,16 @@ class TicketDetailLoaded extends TicketsState {
   /// Added for `aion-arch/changes/sdd-verify-quality-gate`.
   final AutomationConfidence? verifyRetryConfidence;
 
+  /// How many of [ticket]'s current fix Task/Bug children (spawned by a
+  /// `VERIFY GATE: PENDING` verdict) haven't yet reached `done`, or
+  /// `null` when there's no unresolved `PENDING` verdict to report on.
+  /// Computed by [TicketsCubit.getTicketById] alongside [verifyRetryReady]
+  /// — populated whether or not [verifyRetryReady] ends up `true`, so
+  /// `_SddStageSection` can show the Component Spec §1.4 "not-ready
+  /// predecessor" hint while fixes are still open. Added for
+  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  final int? verifyPendingFixesRemaining;
+
   @override
   List<Object?> get props => [
     ticket,
@@ -654,6 +665,7 @@ class TicketDetailLoaded extends TicketsState {
     pendingSpecLinkSuggestion,
     verifyRetryReady,
     verifyRetryConfidence,
+    verifyPendingFixesRemaining,
   ];
 
   /// Returns a copy of this state with the given fields replaced; every
@@ -704,6 +716,7 @@ class TicketDetailLoaded extends TicketsState {
     TicketFieldSetter<PendingSpecLinkSuggestion?>? pendingSpecLinkSuggestion,
     bool? verifyRetryReady,
     AutomationConfidence? verifyRetryConfidence,
+    int? verifyPendingFixesRemaining,
   }) {
     return TicketDetailLoaded(
       ticket ?? this.ticket,
@@ -741,6 +754,8 @@ class TicketDetailLoaded extends TicketsState {
       verifyRetryReady: verifyRetryReady ?? this.verifyRetryReady,
       verifyRetryConfidence:
           verifyRetryConfidence ?? this.verifyRetryConfidence,
+      verifyPendingFixesRemaining:
+          verifyPendingFixesRemaining ?? this.verifyPendingFixesRemaining,
     );
   }
 }

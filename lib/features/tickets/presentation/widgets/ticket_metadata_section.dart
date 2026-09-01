@@ -220,6 +220,7 @@ class TicketMetadataSection extends StatelessWidget {
                   :final sddStageCanRetry,
                   :final verifyRetryReady,
                   :final verifyRetryConfidence,
+                  :final verifyPendingFixesRemaining,
                 ) =>
                   Semantics(
                     header: true,
@@ -752,6 +753,8 @@ class TicketMetadataSection extends StatelessWidget {
                                     onAdvanceSddStage(ticket),
                                 verifyRetryReady: verifyRetryReady,
                                 verifyRetryConfidence: verifyRetryConfidence,
+                                verifyPendingFixesRemaining:
+                                    verifyPendingFixesRemaining,
                                 onRetryVerify: onRetryVerify,
                               ),
                               const SizedBox(height: AionSpacing.sp16),
@@ -1678,6 +1681,7 @@ class _SddStageSection extends StatelessWidget {
     this.onRetryStageAdvance,
     this.verifyRetryReady = false,
     this.verifyRetryConfidence,
+    this.verifyPendingFixesRemaining,
     this.onRetryVerify,
   });
 
@@ -1734,6 +1738,18 @@ class _SddStageSection extends StatelessWidget {
   /// [automationConfidence]'s own role for the advance tier. Added for
   /// `aion-arch/changes/sdd-verify-quality-gate`.
   final AutomationConfidence? verifyRetryConfidence;
+
+  /// How many of [ticket]'s current fix Task/Bug children (spawned by a
+  /// `VERIFY GATE: PENDING` verdict) haven't yet reached `done`, or
+  /// `null` when there's no unresolved `PENDING` verdict to report on at
+  /// all (already approved, no verdict posted yet, or [verifyRetryReady]
+  /// is already `true` — nothing left to wait for). Drives the
+  /// Component Spec §1.4 "not-ready predecessor" hint, taking priority
+  /// over the generic [blockReason] hint whenever it's a positive count.
+  /// Computed by [TicketsCubit.getTicketById] via
+  /// `TicketsCubit._verifyRetryReadiness`. Added for
+  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  final int? verifyPendingFixesRemaining;
 
   /// Called when the "Ready to retry verification" tier's gated-confirm
   /// or manual button is pressed — re-calls `TicketsCubit.retryVerify`
@@ -1888,19 +1904,47 @@ class _SddStageSection extends StatelessWidget {
               // the computed sub-line would already resolve to for this
               // (currentStage, null) pair.
               subLine: null,
-              actionLabel: context.l10n.ticketDetailSddStageRetryVerifyAction,
+              // Compact "Retry" (not "Retry verification") — the banner
+              // title already carries "Ready to retry verification", and
+              // Component Spec §1.1.3 sizes this button assuming the
+              // short label so the title doesn't ellipsize at narrow
+              // (phone) widths. Reuses the generic `commonRetry` key
+              // rather than minting a new one-word one.
+              actionLabel: context.l10n.commonRetry,
             ),
             AutomationConfidence.manual => _ManualAdvanceButton(
               nextStageLabel: nextStageLabel,
               onAdvance: onRetryVerify ?? () {},
               icon: PhosphorIcons.arrowsClockwiseLight,
+              // Full "Retry verification" here — this button stands
+              // alone with no title above it to carry the context.
               actionLabel: context.l10n.ticketDetailSddStageRetryVerifyAction,
             ),
-            AutomationConfidence.auto => const _AutoAdvancedNote(
+            AutomationConfidence.auto => _AutoAdvancedNote(
               stageLabel: '',
-              text: 'Verification retried automatically',
+              text: context
+                  .l10n
+                  .ticketDetailSddStageVerificationRetriedAutomatically,
             ),
           },
+        ] else if (!canAdvance &&
+            verifyPendingFixesRemaining != null &&
+            verifyPendingFixesRemaining! > 0) ...[
+          // Component Spec §1.4 "not-ready predecessor" — while a
+          // PENDING verdict's fix Tasks/Bugs are still open, this takes
+          // priority over the generic blockReason hint below: it names
+          // the actual precondition (fix tasks reaching Done) rather
+          // than the transition graph's generic "Waiting on: ..." text,
+          // which would otherwise read as if nothing had happened yet.
+          // Reuses `_NotReadyHint` verbatim — same visual treatment, per
+          // spec, just different copy. Added for
+          // `aion-arch/changes/sdd-verify-quality-gate`.
+          const SizedBox(height: AionSpacing.sp12),
+          _NotReadyHint(
+            reason: context.l10n.ticketDetailSddStageVerifyRetryUnlocksHint(
+              verifyPendingFixesRemaining!,
+            ),
+          ),
         ] else if (canAdvance && automationConfidence != null) ...[
           const SizedBox(height: AionSpacing.sp12),
           switch (automationConfidence!) {

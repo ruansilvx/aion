@@ -118,12 +118,32 @@ class FakeTransitionPreconditionRepository
     implements TransitionPreconditionRepository {
   /// Creates a [FakeTransitionPreconditionRepository], seeded immediately.
   FakeTransitionPreconditionRepository() {
-    for (final stage in [SddStage.exploring, SddStage.verifying]) {
-      _seedSingleNodeGraph(
-        stage: stage,
-        fieldId: mostRecentChatHasTerminalReplyField.id,
-      );
-    }
+    _seedSingleNodeGraph(
+      stage: SddStage.exploring,
+      fieldId: mostRecentChatHasTerminalReplyField.id,
+    );
+
+    // `verifying`'s two-node tree — mirrors
+    // `TransitionPreconditionDao.seedDefaultsIfEmpty`'s real shape per
+    // `aion-arch/changes/sdd-verify-quality-gate/design.md` §3.1, not
+    // just the single-node `mostRecentChatHasTerminalReply` shape every
+    // other stage this constructor still single-node-seeds uses.
+    final verifyGateApproved = _node(
+      'seed-verifying-verifyGateApproved',
+      verifyGateApprovedField.id,
+      matched: const TransitionBranch.terminal(TransitionOutcome.allowed),
+      unmatched: const TransitionBranch.terminal(TransitionOutcome.blocked),
+    );
+    final mostRecentChatHasTerminalReply = _node(
+      'seed-verifying-mostRecentChatHasTerminalReply',
+      mostRecentChatHasTerminalReplyField.id,
+      matched: TransitionBranch.toNode(verifyGateApproved.id),
+      unmatched: const TransitionBranch.terminal(TransitionOutcome.blocked),
+    );
+    _graphs[SddStage.verifying] = TransitionGraph(
+      stage: SddStage.verifying,
+      rootNodeId: mostRecentChatHasTerminalReply.id,
+    );
 
     final allChildrenComplete = _node(
       'seed-proposed-allChildrenComplete',
@@ -7463,6 +7483,775 @@ void main() {
         verify(() => agentClient.run(any())).called(1);
       },
       expect: () => <TicketsState>[],
+    );
+  });
+
+  // Added for `aion-arch/changes/sdd-verify-quality-gate`.
+  group('getTicketById — verify gate (sdd-verify-quality-gate)', () {
+    late MockCommentRepository commentRepository;
+    late MockAutomationSettingsRepository automationSettingsRepository;
+
+    final storyVerifyGate = Ticket(
+      id: 'verify-gate-story',
+      ticketId: 'AIO-80',
+      type: TicketType.story,
+      title: 'Verify-gated story',
+      status: 'backlog',
+      sddStage: SddStage.verifying,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final verifyGateChat = Ticket(
+      id: 'verify-gate-chat',
+      ticketId: 'AIO-81',
+      type: TicketType.chat,
+      title: 'Verifying — Verify-gated story',
+      status: 'backlog',
+      parentId: storyVerifyGate.id,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final fixTaskDone = Ticket(
+      id: 'verify-gate-fix-task-done',
+      ticketId: 'AIO-82',
+      type: TicketType.task,
+      title: 'Fix task (done)',
+      status: 'done',
+      parentId: storyVerifyGate.id,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final fixTaskNotDone = Ticket(
+      id: 'verify-gate-fix-task-not-done',
+      ticketId: 'AIO-83',
+      type: TicketType.task,
+      title: 'Fix task (not done)',
+      status: 'inProgress',
+      parentId: storyVerifyGate.id,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    setUp(() {
+      commentRepository = MockCommentRepository();
+      automationSettingsRepository = MockAutomationSettingsRepository();
+      when(
+        () => repository.getTicketById(storyVerifyGate.id),
+      ).thenAnswer((_) async => storyVerifyGate);
+      when(
+        () => repository.getTicketsByParent(
+          storyVerifyGate.id,
+          types: const [TicketType.chat],
+        ),
+      ).thenAnswer((_) async => [verifyGateChat]);
+    });
+
+    TicketsCubit buildCubit() => TicketsCubit(
+      repository,
+      commentRepository: commentRepository,
+      automationSettingsRepository: automationSettingsRepository,
+      transitionPreconditionRepository: FakeTransitionPreconditionRepository(),
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'canAdvanceSddStage is false, verifyRetryReady is false, and '
+      'verifyPendingFixesRemaining is null while the Verifying-stage '
+      "chat's latest reply says PENDING with no fix Tasks yet",
+      setUp: () {
+        when(
+          () => repository.getTicketsByParent(
+            storyVerifyGate.id,
+            types: TicketTypeHierarchy.executableTypes,
+          ),
+        ).thenAnswer((_) async => <Ticket>[]);
+        when(
+          () => commentRepository.getCommentsForTicket(verifyGateChat.id),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'c-pending',
+              ticketId: verifyGateChat.id,
+              content: 'Found an issue.\n\nVERIFY GATE: PENDING',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+      },
+      build: buildCubit,
+      // A zero-duration delay before acting, since the transition graph
+      // loads asynchronously (unawaited) from the constructor — see the
+      // `getTicketById computes canAdvanceSddStage` group's own
+      // equivalent test for the same rationale. Without it, this could
+      // race the FakeTransitionPreconditionRepository load and silently
+      // fall back to the no-repository "always allowed" default.
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        await cubit.getTicketById(storyVerifyGate.id);
+      },
+      expect: () => [
+        const TicketsLoading(),
+        isA<TicketDetailLoaded>()
+            .having((s) => s.canAdvanceSddStage, 'canAdvanceSddStage', false)
+            .having(
+              (s) => s.sddStageBlockReason,
+              'sddStageBlockReason',
+              'Waiting on: Verification has been approved',
+            )
+            .having((s) => s.verifyRetryReady, 'verifyRetryReady', false)
+            .having(
+              (s) => s.verifyPendingFixesRemaining,
+              'verifyPendingFixesRemaining',
+              isNull,
+            ),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'canAdvanceSddStage is true and verifyRetryReady is false once the '
+      "chat's latest reply says APPROVED — nothing left to retry",
+      setUp: () {
+        when(
+          () => repository.getTicketsByParent(
+            storyVerifyGate.id,
+            types: TicketTypeHierarchy.executableTypes,
+          ),
+        ).thenAnswer((_) async => <Ticket>[]);
+        when(
+          () => commentRepository.getCommentsForTicket(verifyGateChat.id),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'c-approved',
+              ticketId: verifyGateChat.id,
+              content: 'No issues found.\n\nVERIFY GATE: APPROVED',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+      },
+      build: buildCubit,
+      // A zero-duration delay before acting, since the transition graph
+      // loads asynchronously (unawaited) from the constructor — see the
+      // `getTicketById computes canAdvanceSddStage` group's own
+      // equivalent test for the same rationale. Without it, this could
+      // race the FakeTransitionPreconditionRepository load and silently
+      // fall back to the no-repository "always allowed" default.
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        await cubit.getTicketById(storyVerifyGate.id);
+      },
+      expect: () => [
+        const TicketsLoading(),
+        isA<TicketDetailLoaded>()
+            .having((s) => s.canAdvanceSddStage, 'canAdvanceSddStage', true)
+            .having((s) => s.sddStageBlockReason, 'sddStageBlockReason', isNull)
+            .having((s) => s.verifyRetryReady, 'verifyRetryReady', false)
+            .having(
+              (s) => s.verifyPendingFixesRemaining,
+              'verifyPendingFixesRemaining',
+              isNull,
+            ),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'verifyPendingFixesRemaining reflects the not-done count while a '
+      'PENDING verdict has open fix Tasks',
+      setUp: () {
+        when(
+          () => repository.getTicketsByParent(
+            storyVerifyGate.id,
+            types: TicketTypeHierarchy.executableTypes,
+          ),
+        ).thenAnswer((_) async => [fixTaskDone, fixTaskNotDone]);
+        when(
+          () => commentRepository.getCommentsForTicket(verifyGateChat.id),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'c-pending-2',
+              ticketId: verifyGateChat.id,
+              content: 'Found an issue.\n\nVERIFY GATE: PENDING',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+      },
+      build: buildCubit,
+      // A zero-duration delay before acting, since the transition graph
+      // loads asynchronously (unawaited) from the constructor — see the
+      // `getTicketById computes canAdvanceSddStage` group's own
+      // equivalent test for the same rationale. Without it, this could
+      // race the FakeTransitionPreconditionRepository load and silently
+      // fall back to the no-repository "always allowed" default.
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        await cubit.getTicketById(storyVerifyGate.id);
+      },
+      expect: () => [
+        const TicketsLoading(),
+        isA<TicketDetailLoaded>()
+            .having((s) => s.verifyRetryReady, 'verifyRetryReady', false)
+            .having(
+              (s) => s.verifyPendingFixesRemaining,
+              'verifyPendingFixesRemaining',
+              1,
+            ),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'verifyRetryReady is true and verifyPendingFixesRemaining is 0 once '
+      "every fix Task is done — verifyRetryConfidence reflects the "
+      'configured AutomationContext.verifyGateRetry confidence',
+      setUp: () {
+        when(
+          () => repository.getTicketsByParent(
+            storyVerifyGate.id,
+            types: TicketTypeHierarchy.executableTypes,
+          ),
+        ).thenAnswer((_) async => [fixTaskDone]);
+        when(
+          () => commentRepository.getCommentsForTicket(verifyGateChat.id),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'c-pending-3',
+              ticketId: verifyGateChat.id,
+              content: 'Found an issue.\n\nVERIFY GATE: PENDING',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.verifyGateRetry,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.gated);
+      },
+      build: buildCubit,
+      // A zero-duration delay before acting, since the transition graph
+      // loads asynchronously (unawaited) from the constructor — see the
+      // `getTicketById computes canAdvanceSddStage` group's own
+      // equivalent test for the same rationale. Without it, this could
+      // race the FakeTransitionPreconditionRepository load and silently
+      // fall back to the no-repository "always allowed" default.
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        await cubit.getTicketById(storyVerifyGate.id);
+      },
+      expect: () => [
+        const TicketsLoading(),
+        isA<TicketDetailLoaded>()
+            .having((s) => s.verifyRetryReady, 'verifyRetryReady', true)
+            .having(
+              (s) => s.verifyPendingFixesRemaining,
+              'verifyPendingFixesRemaining',
+              0,
+            )
+            .having(
+              (s) => s.verifyRetryConfidence,
+              'verifyRetryConfidence',
+              AutomationConfidence.gated,
+            ),
+      ],
+    );
+  });
+
+  // Mirrors the `retryDesignSync` group above exactly, one stage later.
+  // Added for `aion-arch/changes/sdd-verify-quality-gate`.
+  group('retryVerify (sdd-verify-quality-gate)', () {
+    late MockAgentModelClient agentClient;
+    late MockProviderRegistry registry;
+    late MockCommentRepository commentRepository;
+
+    final storyVerifyGateForRetry = Ticket(
+      id: 'retry-verify-story',
+      ticketId: 'AIO-84',
+      type: TicketType.story,
+      title: 'Retry-verify story',
+      status: 'backlog',
+      sddStage: SddStage.verifying,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final verifyChatForRetry = Ticket(
+      id: 'retry-verify-chat',
+      ticketId: 'AIO-85',
+      type: TicketType.chat,
+      title: 'Verifying — Retry-verify story',
+      status: 'backlog',
+      parentId: storyVerifyGateForRetry.id,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    setUp(() {
+      agentClient = MockAgentModelClient();
+      registry = buildProviderStack(agentClient).registry;
+      commentRepository = MockCommentRepository();
+    });
+
+    TicketsCubit buildCubit() => TicketsCubit(
+      repository,
+      providerRegistry: registry,
+      commentRepository: commentRepository,
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'no-ops for a non-chat ticket',
+      build: buildCubit,
+      act: (cubit) => cubit.retryVerify(storyVerifyGateForRetry),
+      verify: (_) {
+        verifyNever(() => commentRepository.addComment(any()));
+        verifyNever(() => agentClient.run(any()));
+      },
+      expect: () => <TicketsState>[],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      "no-ops when the chat's parent isn't at SddStage.verifying",
+      setUp: () {
+        when(
+          () => repository.getTicketById(storyProposed.id),
+        ).thenAnswer((_) async => storyProposed);
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.retryVerify(
+        Ticket(
+          id: verifyChatForRetry.id,
+          ticketId: verifyChatForRetry.ticketId,
+          type: TicketType.chat,
+          title: verifyChatForRetry.title,
+          status: verifyChatForRetry.status,
+          parentId: storyProposed.id,
+          createdAt: verifyChatForRetry.createdAt,
+          updatedAt: verifyChatForRetry.updatedAt,
+        ),
+      ),
+      verify: (_) {
+        verifyNever(() => commentRepository.addComment(any()));
+        verifyNever(() => agentClient.run(any()));
+      },
+      expect: () => <TicketsState>[],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'posts fresh context and calls the agent when the parent is at '
+      'SddStage.verifying',
+      setUp: () {
+        when(
+          () => repository.getTicketById(storyVerifyGateForRetry.id),
+        ).thenAnswer((_) async => storyVerifyGateForRetry);
+        // _toolsFor (mid-task-chat-branching) reads the chat itself first
+        // to resolve its own parent's type.
+        when(
+          () => repository.getTicketById(verifyChatForRetry.id),
+        ).thenAnswer((_) async => verifyChatForRetry);
+        when(
+          () => commentRepository.addComment(any()),
+        ).thenAnswer((_) async {});
+        // Unlike designSync's own prompt-assembly branch,
+        // _assembleStageContext's `verifying` branch also lists direct
+        // Task/Bug children — stub empty (no children) for this context
+        // build.
+        when(
+          () => repository.getTicketsByParent(
+            storyVerifyGateForRetry.id,
+            types: TicketTypeHierarchy.executableTypes,
+          ),
+        ).thenAnswer((_) async => <Ticket>[]);
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.retryVerify(verifyChatForRetry),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        // The context comment retryVerify itself posts, plus
+        // runChatTurn's own failure comment — agentClient.run isn't
+        // stubbed here, so it throws and the run fails.
+        verify(() => commentRepository.addComment(any())).called(2);
+        verify(() => agentClient.run(any())).called(1);
+      },
+      expect: () => <TicketsState>[],
+    );
+  });
+
+  // Added for `aion-arch/changes/sdd-verify-quality-gate`.
+  group('_materializeVerifyFixes (sdd-verify-quality-gate)', () {
+    late MockAgentModelClient agentClient;
+    late MockProviderRegistry registry;
+    late MockCommentRepository commentRepository;
+    late MockTicketLinkRepository linkRepository;
+
+    final verifyFixesStory = Ticket(
+      id: 'verify-fixes-story',
+      ticketId: 'AIO-86',
+      type: TicketType.story,
+      title: 'Story to verify',
+      status: 'backlog',
+      sddStage: SddStage.proposed,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final newVerifyChat = Ticket(
+      id: 'verify-fixes-new-chat',
+      ticketId: 'AIO-87',
+      type: TicketType.chat,
+      title: 'Verifying — Story to verify',
+      status: 'backlog',
+      parentId: verifyFixesStory.id,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    setUp(() {
+      agentClient = MockAgentModelClient();
+      registry = buildProviderStack(agentClient).registry;
+      commentRepository = MockCommentRepository();
+      linkRepository = MockTicketLinkRepository();
+      when(
+        () => linkRepository.getLinksForTicket(any()),
+      ).thenAnswer((_) async => []);
+    });
+
+    TicketsCubit buildCubit() => TicketsCubit(
+      repository,
+      providerRegistry: registry,
+      commentRepository: commentRepository,
+      linkRepository: linkRepository,
+    );
+
+    /// Wires the stage transition's own persistence round trip and the
+    /// new stage chat's creation — everything short of the AI turn
+    /// itself, which each test stubs with its own reply text via
+    /// [agentClient.run]. Mirrors `stubAdvanceToProposed` (further below
+    /// in this file, for `_materializeDecomposition`'s own coverage)
+    /// field-for-field, one stage later.
+    void stubAdvanceToVerifying() {
+      when(
+        () => repository.updateTicketSddStage(
+          verifyFixesStory.id,
+          SddStage.verifying,
+        ),
+      ).thenAnswer((_) async {});
+      when(
+        () => repository.getTicketById(any()),
+      ).thenAnswer((_) async => newVerifyChat);
+      when(() => repository.getTicketById(verifyFixesStory.id)).thenAnswer(
+        (_) async => Ticket(
+          id: verifyFixesStory.id,
+          ticketId: verifyFixesStory.ticketId,
+          type: verifyFixesStory.type,
+          title: verifyFixesStory.title,
+          status: verifyFixesStory.status,
+          sddStage: SddStage.verifying,
+          createdAt: verifyFixesStory.createdAt,
+          updatedAt: verifyFixesStory.updatedAt,
+        ),
+      );
+      // No child Tasks yet — proposed -> verifying skips the design
+      // stages (no UI-keyword matches on an empty list), and
+      // _assembleStageContext's own children listing for `verifying`
+      // reuses this same query.
+      when(
+        () => repository.getTicketsByParent(
+          verifyFixesStory.id,
+          types: TicketTypeHierarchy.executableTypes,
+        ),
+      ).thenAnswer((_) async => <Ticket>[]);
+      when(() => repository.createTicket(any())).thenAnswer((_) async {});
+    }
+
+    test(
+      'a PENDING reply with a Fixes Needed block materializes a Task and '
+      'a Bug child, with a blockedBy link for the resolvable sibling '
+      'title',
+      () async {
+        stubAdvanceToVerifying();
+        stubStatefulComments(commentRepository, newVerifyChat.id);
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent(
+              'Found issues.\n\n'
+              '## Fixes Needed\n'
+              '- Task: Fix the null check\n'
+              '- Bug: Crash on save (blockedBy: Fix the null check)\n\n'
+              'VERIFY GATE: PENDING',
+            ),
+            AgentDoneEvent(),
+          ]),
+        );
+        final createdTickets = <Ticket>[];
+        when(() => repository.createTicket(any())).thenAnswer((
+          invocation,
+        ) async {
+          final t = invocation.positionalArguments[0] as Ticket;
+          createdTickets.add(t);
+        });
+
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+        await cubit.advanceSddStage(verifyFixesStory);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        final children = createdTickets
+            .where(
+              (t) =>
+                  t.parentId == verifyFixesStory.id &&
+                  t.type != TicketType.chat,
+            )
+            .toList();
+        expect(children, hasLength(2));
+        final task = children.firstWhere((t) => t.type == TicketType.task);
+        final bug = children.firstWhere((t) => t.type == TicketType.bug);
+        expect(task.title, 'Fix the null check');
+        expect(bug.title, 'Crash on save');
+
+        verify(
+          () => linkRepository.createLink(
+            sourceTicketId: bug.id,
+            targetTicketId: task.id,
+            linkType: TicketLinkType.blockedBy,
+          ),
+        ).called(1);
+      },
+    );
+
+    test(
+      'a PENDING reply with no Fixes Needed block materializes nothing — '
+      'the manual retry bar still covers that case',
+      () async {
+        stubAdvanceToVerifying();
+        stubStatefulComments(commentRepository, newVerifyChat.id);
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent(
+              "Looks complete but I couldn't verify everything.\n\n"
+              'VERIFY GATE: PENDING',
+            ),
+            AgentDoneEvent(),
+          ]),
+        );
+        final createdTickets = <Ticket>[];
+        when(() => repository.createTicket(any())).thenAnswer((
+          invocation,
+        ) async {
+          final t = invocation.positionalArguments[0] as Ticket;
+          createdTickets.add(t);
+        });
+
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+        await cubit.advanceSddStage(verifyFixesStory);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        final children = createdTickets.where(
+          (t) =>
+              t.parentId == verifyFixesStory.id && t.type != TicketType.chat,
+        );
+        expect(children, isEmpty);
+      },
+    );
+  });
+
+  // Added for `aion-arch/changes/sdd-verify-quality-gate`.
+  group('_maybeRetryPendingVerify (sdd-verify-quality-gate)', () {
+    late MockAgentModelClient agentClient;
+    late MockProviderRegistry registry;
+    late MockCommentRepository commentRepository;
+    late MockAutomationSettingsRepository automationSettingsRepository;
+
+    final autoRetryStory = Ticket(
+      id: 'auto-retry-story',
+      ticketId: 'AIO-88',
+      type: TicketType.story,
+      title: 'Story awaiting fix',
+      status: 'backlog',
+      sddStage: SddStage.verifying,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final autoRetryChat = Ticket(
+      id: 'auto-retry-chat',
+      ticketId: 'AIO-89',
+      type: TicketType.chat,
+      title: 'Verifying — Story awaiting fix',
+      status: 'backlog',
+      parentId: autoRetryStory.id,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final fixTaskA = Ticket(
+      id: 'auto-retry-fix-a',
+      ticketId: 'AIO-90',
+      type: TicketType.task,
+      title: 'Fix A',
+      status: 'inProgress',
+      parentId: autoRetryStory.id,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final fixTaskB = Ticket(
+      id: 'auto-retry-fix-b',
+      ticketId: 'AIO-91',
+      type: TicketType.task,
+      title: 'Fix B',
+      status: 'done',
+      parentId: autoRetryStory.id,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    setUp(() {
+      agentClient = MockAgentModelClient();
+      registry = buildProviderStack(agentClient).registry;
+      commentRepository = MockCommentRepository();
+      automationSettingsRepository = MockAutomationSettingsRepository();
+      when(
+        () => repository.getTicketById(autoRetryStory.id),
+      ).thenAnswer((_) async => autoRetryStory);
+      when(
+        () => repository.getTicketsByParent(
+          autoRetryStory.id,
+          types: const [TicketType.chat],
+        ),
+      ).thenAnswer((_) async => [autoRetryChat]);
+      when(
+        () => commentRepository.getCommentsForTicket(autoRetryChat.id),
+      ).thenAnswer(
+        (_) async => [
+          TicketComment(
+            id: 'pending-reply',
+            ticketId: autoRetryChat.id,
+            content: 'Found an issue.\n\nVERIFY GATE: PENDING',
+            authorType: CommentAuthorType.ai,
+            createdAt: DateTime(2026),
+          ),
+        ],
+      );
+      when(() => commentRepository.addComment(any())).thenAnswer((_) async {});
+      when(
+        () => repository.updateTicketStatus(fixTaskA.id, 'done'),
+      ).thenAnswer((_) async {});
+      when(() => repository.getTicketById(fixTaskA.id)).thenAnswer(
+        (_) async => Ticket(
+          id: fixTaskA.id,
+          ticketId: fixTaskA.ticketId,
+          type: fixTaskA.type,
+          title: fixTaskA.title,
+          status: 'done',
+          parentId: fixTaskA.parentId,
+          createdAt: fixTaskA.createdAt,
+          updatedAt: fixTaskA.updatedAt,
+        ),
+      );
+    });
+
+    TicketsCubit buildCubit() => TicketsCubit(
+      repository,
+      providerRegistry: registry,
+      commentRepository: commentRepository,
+      automationSettingsRepository: automationSettingsRepository,
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'auto confidence fires retryVerify once the last fix Task reaches '
+      'done',
+      setUp: () {
+        when(
+          () => repository.getTicketsByParent(
+            autoRetryStory.id,
+            types: TicketTypeHierarchy.executableTypes,
+          ),
+        ).thenAnswer(
+          // _verifyRetryReadiness re-queries the children fresh rather
+          // than trusting the `task` passed into
+          // _maybeRetryPendingVerify — so this stub must reflect the
+          // post-write state (fixTaskA now done), not the stale fixture.
+          (_) async => [fixTaskA.copyWith(status: 'done'), fixTaskB],
+        );
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.verifyGateRetry,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.auto);
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.changeTicketStatus(fixTaskA, 'done'),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        // retryVerify's own context comment, plus runChatTurn's own
+        // failure comment — agentClient.run isn't stubbed here, so the
+        // turn throws.
+        verify(() => commentRepository.addComment(any())).called(2);
+        verify(() => agentClient.run(any())).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'gated confidence does not auto-fire retryVerify — the ready-to-'
+      'retry footer tier covers it instead',
+      setUp: () {
+        when(
+          () => repository.getTicketsByParent(
+            autoRetryStory.id,
+            types: TicketTypeHierarchy.executableTypes,
+          ),
+          // Same post-write-state note as the `auto` test above — every
+          // fix Task is done, so this test genuinely exercises "ready,
+          // but gated confidence withholds the auto-fire" rather than
+          // accidentally passing because nothing was ready yet.
+        ).thenAnswer((_) async => [fixTaskA.copyWith(status: 'done'), fixTaskB]);
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.verifyGateRetry,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.gated);
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.changeTicketStatus(fixTaskA, 'done'),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verifyNever(() => commentRepository.addComment(any()));
+        verifyNever(() => agentClient.run(any()));
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'no-ops when a fix Task other than the last still isn\'t done',
+      setUp: () {
+        when(
+          () => repository.getTicketsByParent(
+            autoRetryStory.id,
+            types: TicketTypeHierarchy.executableTypes,
+          ),
+        ).thenAnswer(
+          (_) async => [
+            fixTaskA,
+            Ticket(
+              id: fixTaskB.id,
+              ticketId: fixTaskB.ticketId,
+              type: fixTaskB.type,
+              title: fixTaskB.title,
+              status: 'inProgress',
+              parentId: fixTaskB.parentId,
+              createdAt: fixTaskB.createdAt,
+              updatedAt: fixTaskB.updatedAt,
+            ),
+          ],
+        );
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.changeTicketStatus(fixTaskA, 'done'),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verifyNever(() => commentRepository.addComment(any()));
+        verifyNever(() => agentClient.run(any()));
+      },
     );
   });
 

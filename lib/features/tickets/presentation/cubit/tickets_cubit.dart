@@ -2905,41 +2905,70 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// more fixes still outstanding otherwise. `verifyChat` carries the
   /// found chat whenever one exists (even if `ready` is `false`), so a
   /// caller that only needs the chat (not the full readiness gate) can
-  /// reuse this same lookup. Shared by [_maybeRetryPendingVerify] (which
-  /// additionally resolves confidence and may fire [retryVerify]) and
-  /// [getTicketById]'s `verifyRetryReady` computation. Added for
+  /// reuse this same lookup. `pendingFixesRemaining` is the count of
+  /// [parent]'s current Task/Bug children not yet [WorkflowStatusRole
+  /// .done], computed only once a genuine `PENDING` verdict is confirmed
+  /// (step 3) — `null` before that point (nothing to report), or when
+  /// [parent] has no Task/Bug children at all (a `PENDING` reply with no
+  /// `## Fixes Needed` block; see [_materializeVerifyFixes]'s dartdoc —
+  /// there's no fix-task count to report on in that case either, and the
+  /// manual "Retry validation" bar covers it instead). Drives the
+  /// Component Spec §1.4 "not-ready predecessor" hint. Shared by
+  /// [_maybeRetryPendingVerify] (which additionally resolves confidence
+  /// and may fire [retryVerify]) and [getTicketById]'s `verifyRetryReady`
+  /// /`verifyPendingFixesRemaining` computation. Added for
   /// `aion-arch/changes/sdd-verify-quality-gate`.
-  Future<({bool ready, Ticket? verifyChat})> _verifyRetryReadiness(
-    Ticket parent,
-  ) async {
+  Future<({bool ready, Ticket? verifyChat, int? pendingFixesRemaining})>
+  _verifyRetryReadiness(Ticket parent) async {
     if (parent.sddStage != SddStage.verifying) {
-      return (ready: false, verifyChat: null);
+      return (ready: false, verifyChat: null, pendingFixesRemaining: null);
     }
     if (await _verifyGateApproved(parent.id)) {
-      return (ready: false, verifyChat: null);
+      return (ready: false, verifyChat: null, pendingFixesRemaining: null);
     }
 
     final commentRepo = _commentRepository;
-    if (commentRepo == null) return (ready: false, verifyChat: null);
+    if (commentRepo == null) {
+      return (ready: false, verifyChat: null, pendingFixesRemaining: null);
+    }
     final verifyChat = await _mostRecentVerifyChat(parent.id);
-    if (verifyChat == null) return (ready: false, verifyChat: null);
+    if (verifyChat == null) {
+      return (ready: false, verifyChat: null, pendingFixesRemaining: null);
+    }
     final comments = await commentRepo.getCommentsForTicket(verifyChat.id);
-    if (comments.isEmpty) return (ready: false, verifyChat: verifyChat);
+    if (comments.isEmpty) {
+      return (
+        ready: false,
+        verifyChat: verifyChat,
+        pendingFixesRemaining: null,
+      );
+    }
     final mostRecent = comments.reduce(
       (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
     );
     if (mostRecent.authorType != CommentAuthorType.ai ||
         !mostRecent.content.contains('VERIFY GATE: PENDING')) {
-      return (ready: false, verifyChat: verifyChat);
+      return (
+        ready: false,
+        verifyChat: verifyChat,
+        pendingFixesRemaining: null,
+      );
     }
 
     final children = await _repository.getTicketsByParent(
       parent.id,
       types: TicketTypeHierarchy.executableTypes,
     );
+    if (children.isEmpty) {
+      return (ready: false, verifyChat: verifyChat, pendingFixesRemaining: null);
+    }
+    final notDoneCount = children
+        .where((c) => _roleOf(c.status) != WorkflowStatusRole.done)
+        .length;
     return (
-      ready: _allChildrenComplete(children, TicketType.task),
+      ready: notDoneCount == 0,
       verifyChat: verifyChat,
+      pendingFixesRemaining: notDoneCount,
     );
   }
 
@@ -7488,9 +7517,11 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// the comment thread a second time. Added for
   /// `aion-arch/changes/pr-metadata-and-notification-center`. For an
   /// `epic`/`story` ticket, also computes
-  /// [TicketDetailLoaded.verifyRetryReady] via [_verifyRetryReadiness]
-  /// (a pure read reusing [_maybeRetryPendingVerify]'s own precondition
-  /// chain) and, when that's `true`,
+  /// [TicketDetailLoaded.verifyRetryReady] and
+  /// [TicketDetailLoaded.verifyPendingFixesRemaining] via
+  /// [_verifyRetryReadiness] (a pure read reusing
+  /// [_maybeRetryPendingVerify]'s own precondition chain) and, when
+  /// `verifyRetryReady` is `true`,
   /// [TicketDetailLoaded.verifyRetryConfidence] from
   /// [AutomationContext.verifyGateRetry]'s configured confidence. Added
   /// for `aion-arch/changes/sdd-verify-quality-gate`.
@@ -7601,8 +7632,11 @@ class TicketsCubit extends Cubit<TicketsState> {
 
       var verifyRetryReady = false;
       AutomationConfidence? verifyRetryConfidence;
+      int? verifyPendingFixesRemaining;
       if (ticket.type == TicketType.epic || ticket.type == TicketType.story) {
-        verifyRetryReady = (await _verifyRetryReadiness(ticket)).ready;
+        final readiness = await _verifyRetryReadiness(ticket);
+        verifyRetryReady = readiness.ready;
+        verifyPendingFixesRemaining = readiness.pendingFixesRemaining;
         if (verifyRetryReady) {
           final automationRepo = _automationSettingsRepository;
           verifyRetryConfidence = automationRepo == null
@@ -7641,6 +7675,7 @@ class TicketsCubit extends Cubit<TicketsState> {
           executionTokenTotal: _executionTokenTotals[ticket.id],
           verifyRetryReady: verifyRetryReady,
           verifyRetryConfidence: verifyRetryConfidence,
+          verifyPendingFixesRemaining: verifyPendingFixesRemaining,
         ),
       );
     } catch (e) {
