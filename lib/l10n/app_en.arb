@@ -1087,6 +1087,9 @@
       "total": { "type": "int" }
     }
   },
+  "transitionPreconditionUnsavedChange": "1 UNSAVED CHANGE",
+  "transitionPreconditionGraphSegment": "Graph",
+  "transitionPreconditionOutlineSegment": "Outline",
 
   "settingsOverridesEyebrow": "OVERRIDES",
   "settingsOverridesSummary": "Browse every baseline skill and convention for this project and edit a plain-text local override for any one of them.",

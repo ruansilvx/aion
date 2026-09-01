@@ -100,6 +100,45 @@ class DriftTransitionPreconditionRepository
     return _db.transitionPreconditionDao.seedDefaultsIfEmpty();
   }
 
+  @override
+  Future<Map<SddStage, int>> getNodeCounts() async {
+    final graphRows = await _db.transitionPreconditionDao.getAllGraphs();
+    final nodeRows = await _db.transitionPreconditionDao.getAllNodes();
+    final rowsById = {for (final row in nodeRows) row.id: row};
+
+    final counts = <SddStage, int>{};
+    for (final graphRow in graphRows) {
+      final stage = SddStage.values
+          .where((s) => s.name == graphRow.sddStage)
+          .firstOrNull;
+      if (stage == null) continue;
+
+      final rootId = graphRow.rootNodeId;
+      if (rootId == null) {
+        counts[stage] = 0;
+        continue;
+      }
+
+      // Walk the reachable set in memory — mirrors getAllNodes's own
+      // traversal, but against the single already-fetched `rowsById`
+      // rather than a per-stage query.
+      final visited = <String>{};
+      final toVisit = <String>[rootId];
+      while (toVisit.isNotEmpty) {
+        final id = toVisit.removeLast();
+        if (!visited.add(id)) continue;
+        final row = rowsById[id];
+        if (row == null) continue;
+        final node = _toEntity(row);
+        for (final branch in [node.matchedBranch, node.unmatchedBranch]) {
+          if (branch is ToTransitionNodeBranch) toVisit.add(branch.nodeId);
+        }
+      }
+      counts[stage] = visited.length;
+    }
+    return counts;
+  }
+
   /// Maps a domain [TransitionNode] to its persisted-row companion,
   /// decomposing [TransitionNode.matchedBranch]/
   /// [TransitionNode.unmatchedBranch] into the table's `*Kind`/`*NodeId`

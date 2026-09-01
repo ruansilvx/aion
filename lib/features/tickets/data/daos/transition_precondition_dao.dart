@@ -31,6 +31,13 @@ class TransitionPreconditionDao extends DatabaseAccessor<AppDatabase>
     )..where((t) => t.sddStage.equals(stage.name))).getSingleOrNull();
   }
 
+  /// Returns every graph row currently persisted (one per seeded/
+  /// configured `SddStage`) — one query, backing
+  /// [TransitionPreconditionRepository.getNodeCounts]'s batch read.
+  Future<List<TransitionPreconditionGraphData>> getAllGraphs() {
+    return select(transitionPreconditionGraphsTable).get();
+  }
+
   /// Returns the node row with id [id], or `null` if none exists.
   Future<TransitionPreconditionNodeData?> getNode(String id) {
     return (select(

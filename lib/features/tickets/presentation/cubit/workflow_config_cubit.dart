@@ -12,6 +12,7 @@ import 'package:aion/features/tickets/domain/enums/skill_attachment_kind.dart';
 import 'package:aion/features/tickets/domain/enums/workflow_status_role.dart';
 import 'package:aion/features/tickets/domain/repositories/sdd_stage_config_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
+import 'package:aion/features/tickets/domain/repositories/transition_precondition_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/workflow_prompt_template_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/workflow_skill_attachment_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/workflow_status_repository.dart';
@@ -57,13 +58,19 @@ class WorkflowConfigCubit extends Cubit<WorkflowConfigState> {
   /// only by [deleteStatus]'s in-use check — a live-ticket count query,
   /// not a write path — so it's a narrower dependency than
   /// `WorkflowStatusRepository`/`SddStageConfigRepository`.
+  /// [_transitionPreconditionRepository] is optional, following
+  /// `WorkflowStatusRepository`'s own optional-dependency convention —
+  /// omitting it leaves [WorkflowConfigLoaded.transitionPreconditionNodeCounts]
+  /// empty (every stage reads as unconfigured) rather than failing
+  /// [load].
   WorkflowConfigCubit(
     this._statusRepository,
     this._sddStageConfigRepository,
     this._ticketRepository,
     this._attachmentRepository,
-    this._templateRepository,
-  ) : super(const WorkflowConfigInitial());
+    this._templateRepository, [
+    this._transitionPreconditionRepository,
+  ]) : super(const WorkflowConfigInitial());
 
   final WorkflowStatusRepository _statusRepository;
   final SddStageConfigRepository _sddStageConfigRepository;
@@ -77,9 +84,15 @@ class WorkflowConfigCubit extends Cubit<WorkflowConfigState> {
   /// `aion-arch/changes/workflow-skill-attachments`.
   final WorkflowPromptTemplateRepository _templateRepository;
 
+  /// Source of [WorkflowConfigLoaded.transitionPreconditionNodeCounts].
+  /// Added for `aion-arch/changes/sddstage-transition-preconditions`'s
+  /// post-`/verify` follow-up.
+  final TransitionPreconditionRepository? _transitionPreconditionRepository;
+
   /// Loads every configured [WorkflowStatus] plus the project's `SddStage`
-  /// settings, [SkillAttachment]s, and [WorkflowPromptTemplate]s, and
-  /// emits [WorkflowConfigLoaded].
+  /// settings, [SkillAttachment]s, [WorkflowPromptTemplate]s, and each
+  /// precondition-bearing stage's field-check count, and emits
+  /// [WorkflowConfigLoaded].
   Future<void> load() async {
     final statuses = await _statusRepository.getAll();
     final designStagesEnabled = await _sddStageConfigRepository
@@ -87,6 +100,8 @@ class WorkflowConfigCubit extends Cubit<WorkflowConfigState> {
     final overrides = await _loadStageDisplayNameOverrides();
     final attachments = await _attachmentRepository.getAll();
     final templates = await _templateRepository.getAll();
+    final nodeCounts =
+        await _transitionPreconditionRepository?.getNodeCounts() ?? const {};
     if (isClosed) return;
     emit(
       WorkflowConfigLoaded(
@@ -95,6 +110,7 @@ class WorkflowConfigCubit extends Cubit<WorkflowConfigState> {
         stageDisplayNameOverrides: overrides,
         attachments: attachments,
         templates: templates,
+        transitionPreconditionNodeCounts: nodeCounts,
       ),
     );
   }
@@ -135,9 +151,15 @@ class WorkflowConfigCubit extends Cubit<WorkflowConfigState> {
     final loaded = _requireLoaded();
     if (loaded == null) return;
 
-    final existing = loaded.statuses.where((s) => s.id == status.id).firstOrNull;
+    final existing = loaded.statuses
+        .where((s) => s.id == status.id)
+        .firstOrNull;
     if (existing == null) {
-      _emitDuplicateNameError(status, loaded, message: 'That status no longer exists.');
+      _emitDuplicateNameError(
+        status,
+        loaded,
+        message: 'That status no longer exists.',
+      );
       return;
     }
 
@@ -423,9 +445,7 @@ class WorkflowConfigCubit extends Cubit<WorkflowConfigState> {
         .where((s) => s.id != excludingId && s.role == role)
         .firstOrNull;
     if (previousHolder == null) return;
-    await _statusRepository.update(
-      previousHolder.copyWith(role: () => null),
-    );
+    await _statusRepository.update(previousHolder.copyWith(role: () => null));
   }
 
   /// Counts live tickets currently at the status named [statusName].
@@ -500,8 +520,7 @@ class WorkflowConfigCubit extends Cubit<WorkflowConfigState> {
           a.id != candidate.id &&
           ((candidate.workflowStatusId != null &&
                   a.workflowStatusId == candidate.workflowStatusId) ||
-              (candidate.sddStage != null &&
-                  a.sddStage == candidate.sddStage)),
+              (candidate.sddStage != null && a.sddStage == candidate.sddStage)),
     );
   }
 
@@ -532,8 +551,7 @@ class WorkflowConfigCubit extends Cubit<WorkflowConfigState> {
   ) {
     _emit(
       WorkflowConfigError(
-        message:
-            'A template named "${template.name}" already exists.',
+        message: 'A template named "${template.name}" already exists.',
         previous: loaded,
       ),
     );

@@ -304,4 +304,77 @@ void main() {
       await sub.cancel();
     });
   });
+
+  group('getNodeCounts', () {
+    test('is empty when no graph has ever been seeded/configured', () async {
+      expect(await repository.getNodeCounts(), isEmpty);
+    });
+
+    test('counts 0 for a graph row with a null root', () async {
+      await repository.setRoot(SddStage.exploring, null);
+
+      expect(await repository.getNodeCounts(), {SddStage.exploring: 0});
+    });
+
+    test(
+      'counts every node reachable from each stage\'s root, in one batch',
+      () async {
+        // exploring: a single-node tree.
+        await repository.upsertNode(
+          const TransitionNode(
+            id: 'exploring-n1',
+            fieldId: 'mostRecentChatHasTerminalReply',
+            matchedBranch: TransitionBranch.terminal(TransitionOutcome.allowed),
+            unmatchedBranch: TransitionBranch.terminal(
+              TransitionOutcome.blocked,
+            ),
+          ),
+        );
+        await repository.setRoot(SddStage.exploring, 'exploring-n1');
+
+        // proposed: the 3-node baseline shape.
+        await repository.upsertNode(
+          const TransitionNode(
+            id: 'proposed-allChildrenComplete',
+            fieldId: 'allChildrenComplete',
+            matchedBranch: TransitionBranch.terminal(TransitionOutcome.allowed),
+            unmatchedBranch: TransitionBranch.terminal(
+              TransitionOutcome.blocked,
+            ),
+          ),
+        );
+        await repository.upsertNode(
+          const TransitionNode(
+            id: 'proposed-storyNeedsDesignReview',
+            fieldId: 'storyNeedsDesignReview',
+            matchedBranch: TransitionBranch.terminal(TransitionOutcome.allowed),
+            unmatchedBranch: TransitionBranch.toNode(
+              'proposed-allChildrenComplete',
+            ),
+          ),
+        );
+        await repository.upsertNode(
+          const TransitionNode(
+            id: 'proposed-hasChildren',
+            fieldId: 'hasChildren',
+            matchedBranch: TransitionBranch.toNode(
+              'proposed-storyNeedsDesignReview',
+            ),
+            unmatchedBranch: TransitionBranch.terminal(
+              TransitionOutcome.blocked,
+            ),
+          ),
+        );
+        await repository.setRoot(SddStage.proposed, 'proposed-hasChildren');
+
+        // designBrief: no graph configured at all — absent from the
+        // result entirely (never seeded/setRoot-touched), distinct from
+        // a `0` count.
+        expect(await repository.getNodeCounts(), {
+          SddStage.exploring: 1,
+          SddStage.proposed: 3,
+        });
+      },
+    );
+  });
 }

@@ -354,6 +354,7 @@ final appRouter = GoRouter(
               context.read<TicketRepository>(),
               context.read<WorkflowSkillAttachmentRepository>(),
               context.read<WorkflowPromptTemplateRepository>(),
+              context.read<TransitionPreconditionRepository>(),
             )..load(),
             child: const WorkflowStatusSettingsScreen(),
           ),
@@ -377,6 +378,7 @@ final appRouter = GoRouter(
               context.read<TicketRepository>(),
               context.read<WorkflowSkillAttachmentRepository>(),
               context.read<WorkflowPromptTemplateRepository>(),
+              context.read<TransitionPreconditionRepository>(),
             )..load(),
             child: const WorkflowPromptTemplatesScreen(),
           ),
@@ -766,6 +768,7 @@ class _WorkspaceShellState extends State<WorkspaceShell>
               context.read<TicketRepository>(),
               context.read<WorkflowSkillAttachmentRepository>(),
               context.read<WorkflowPromptTemplateRepository>(),
+              context.read<TransitionPreconditionRepository>(),
             )..load(),
             child: BlocProvider<TicketsCubit>(
               create: (context) =>

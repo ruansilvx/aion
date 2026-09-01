@@ -24,10 +24,20 @@ import 'package:aion/features/tickets/tickets.dart';
 /// `aion-arch/changes/sddstage-transition-preconditions`.
 class TransitionOutlineList extends StatefulWidget {
   /// Creates a [TransitionOutlineList] for [stage].
-  const TransitionOutlineList({super.key, required this.stage});
+  const TransitionOutlineList({
+    super.key,
+    required this.stage,
+    this.onDirtyChanged,
+  });
 
   /// Which [SddStage] this pane edits.
   final SddStage stage;
+
+  /// Forwarded to every [TransitionNodeForm] this pane mounts inline —
+  /// see [TransitionNodeForm.onDirtyChanged]. Added for
+  /// `aion-arch/changes/sddstage-transition-preconditions`'s post-
+  /// `/verify` follow-up.
+  final ValueChanged<bool>? onDirtyChanged;
 
   @override
   State<TransitionOutlineList> createState() => _TransitionOutlineListState();
@@ -102,6 +112,7 @@ class _TransitionOutlineListState extends State<TransitionOutlineList> {
                         depth: 0,
                         nodesById: loaded.nodesById,
                         stage: widget.stage,
+                        onDirtyChanged: widget.onDirtyChanged,
                         onDelete: () => context
                             .read<TransitionPreconditionConfigCubit>()
                             .deleteNode(rootNode.id),
@@ -136,6 +147,7 @@ class _TransitionOutlineListState extends State<TransitionOutlineList> {
                           ),
                           child: TransitionNodeForm(
                             stage: widget.stage,
+                            onDirtyChanged: widget.onDirtyChanged,
                             onSave:
                                 ({
                                   required fieldId,
@@ -208,6 +220,7 @@ class _NodeRow extends StatefulWidget {
     required this.onSave,
     required this.onDelete,
     required this.onCreateChainedChild,
+    this.onDirtyChanged,
   });
 
   final TransitionNode node;
@@ -226,6 +239,11 @@ class _NodeRow extends StatefulWidget {
   onSave;
   final VoidCallback onDelete;
   final Future<String?> Function(String fieldId) onCreateChainedChild;
+
+  /// Forwarded to this row's inline [TransitionNodeForm] (when expanded)
+  /// and to every descendant [_NodeRow] — see
+  /// [TransitionOutlineList.onDirtyChanged].
+  final ValueChanged<bool>? onDirtyChanged;
 
   @override
   State<_NodeRow> createState() => _NodeRowState();
@@ -331,6 +349,7 @@ class _NodeRowState extends State<_NodeRow> {
                 if (_expanded)
                   TransitionNodeForm(
                     stage: widget.stage,
+                    onDirtyChanged: widget.onDirtyChanged,
                     initialFieldId: widget.node.fieldId,
                     initialMatchedBranch: widget.node.matchedBranch,
                     initialUnmatchedBranch: widget.node.unmatchedBranch,
@@ -367,6 +386,7 @@ class _NodeRowState extends State<_NodeRow> {
             nodesById: widget.nodesById,
             stage: widget.stage,
             onCreateChainedChild: widget.onCreateChainedChild,
+            onDirtyChanged: widget.onDirtyChanged,
           )
         else if (widget.node.matchedBranch is TerminalTransitionBranch)
           _GuideRailIndent(
@@ -383,6 +403,7 @@ class _NodeRowState extends State<_NodeRow> {
             nodesById: widget.nodesById,
             stage: widget.stage,
             onCreateChainedChild: widget.onCreateChainedChild,
+            onDirtyChanged: widget.onDirtyChanged,
           )
         else if (widget.node.unmatchedBranch is TerminalTransitionBranch)
           _GuideRailIndent(
@@ -420,6 +441,7 @@ class _BranchChild extends StatelessWidget {
     required this.nodesById,
     required this.stage,
     required this.onCreateChainedChild,
+    this.onDirtyChanged,
   });
 
   final bool matched;
@@ -428,6 +450,10 @@ class _BranchChild extends StatelessWidget {
   final Map<String, TransitionNode> nodesById;
   final SddStage stage;
   final Future<String?> Function(String fieldId) onCreateChainedChild;
+
+  /// Forwarded to this child's own recursive [_NodeRow] — see
+  /// [TransitionOutlineList.onDirtyChanged].
+  final ValueChanged<bool>? onDirtyChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -456,6 +482,7 @@ class _BranchChild extends StatelessWidget {
           depth: depth,
           nodesById: nodesById,
           stage: stage,
+          onDirtyChanged: onDirtyChanged,
           onDelete: () => context
               .read<TransitionPreconditionConfigCubit>()
               .deleteNode(child.id),

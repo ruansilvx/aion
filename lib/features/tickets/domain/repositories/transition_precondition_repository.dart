@@ -93,4 +93,16 @@ abstract interface class TransitionPreconditionRepository {
   /// holding a direct reference to each other — mirrors
   /// `WorkflowStatusRepository.onChanged`'s own precedent.
   Stream<void> get onChanged;
+
+  /// The current field-check count (every node reachable from its graph's
+  /// root) for every [SddStage] that has ever been seeded/configured, in
+  /// one batch — a stage with no graph row yet, or a graph row with a
+  /// `null` root, contributes `0`. Powers `WorkflowStatusSettingsScreen`'s
+  /// "Configure precondition" affordance count badge
+  /// (`aion-arch/changes/sddstage-transition-preconditions/design.md`
+  /// §5.1/§5.2) without an N-query fan-out over the 5 precondition-bearing
+  /// stages — implementations fetch every graph row and every node row
+  /// once each, then walk each graph's reachable set in memory. Added for
+  /// that change's post-`/verify` follow-up.
+  Future<Map<SddStage, int>> getNodeCounts();
 }

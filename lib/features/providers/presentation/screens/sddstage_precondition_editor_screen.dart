@@ -27,6 +27,20 @@ String sddStagePreconditionStageLabel(BuildContext context, SddStage stage) =>
       SddStage.archived => context.l10n.ticketDetailSddStageArchive,
     };
 
+/// The 5 [SddStage] values that carry a real precondition today, in
+/// their `_sddStageAdvanceCheck` advancement order — `null`/[SddStage
+/// .archived] are excluded, since neither has a precondition. Backs
+/// [_Header]'s "Stage N of 5" position chip (design.md §4.1). Added for
+/// `aion-arch/changes/sddstage-transition-preconditions`'s post-
+/// `/verify` follow-up.
+const _preconditionBearingStagesInOrder = [
+  SddStage.exploring,
+  SddStage.proposed,
+  SddStage.designBrief,
+  SddStage.designSync,
+  SddStage.verifying,
+];
+
 /// One node datum rendered by this screen's [GraphCanvas] instance —
 /// either a field-check node, or one of its two terminal outcome pills.
 /// `GraphCanvas` itself has no knowledge of either shape; this type
@@ -83,14 +97,46 @@ class SddStagePreconditionEditorScreen extends StatefulWidget {
       _SddStagePreconditionEditorScreenState();
 }
 
+/// Which pane is visible below design.md §4.4's `760`px single-pane
+/// breakpoint. Added for `aion-arch/changes/sddstage-transition-
+/// preconditions`'s post-`/verify` follow-up.
+enum _PaneMode {
+  /// `PreconditionGraphCanvas`.
+  graph,
+
+  /// [TransitionOutlineList].
+  outline,
+}
+
 class _SddStagePreconditionEditorScreenState
     extends State<SddStagePreconditionEditorScreen> {
   String? _selectedCanvasId;
+
+  /// The single-pane toggle's explicit selection, once the user has made
+  /// one — `null` beforehand, in which case [build] derives the default
+  /// from the *current* width every frame (`< 560` → outline, else
+  /// graph, per design.md §4.4's phone-width note) rather than fixing it
+  /// once at construction, so a resize before the user ever touches the
+  /// toggle keeps tracking the sensible default.
+  _PaneMode? _paneMode;
+
+  /// Whether the currently-open `TransitionNodeForm` (inline or
+  /// popover), if any, has unsaved edits — feeds [_Header]'s "N UNSAVED
+  /// CHANGE" indicator (design.md §4.1). A `ValueNotifier` rather than
+  /// `setState` state so a dirty flip doesn't rebuild the whole
+  /// canvas/outline subtree, only [_Header]'s `ValueListenableBuilder`.
+  final ValueNotifier<bool> _dirty = ValueNotifier(false);
 
   @override
   void initState() {
     super.initState();
     context.read<TransitionPreconditionConfigCubit>().load(widget.stage);
+  }
+
+  @override
+  void dispose() {
+    _dirty.dispose();
+    super.dispose();
   }
 
   @override
@@ -100,50 +146,84 @@ class _SddStagePreconditionEditorScreenState
 
     return ColoredBox(
       color: c.background,
-      child: Column(
-        children: [
-          _Header(stage: widget.stage),
-          Expanded(
-            child:
-                BlocBuilder<
-                  TransitionPreconditionConfigCubit,
-                  TransitionPreconditionConfigState
-                >(
-                  builder: (context, state) {
-                    final loaded = switch (state) {
-                      TransitionPreconditionConfigLoaded loaded => loaded,
-                      TransitionPreconditionConfigError(:final previous) =>
-                        previous,
-                      TransitionPreconditionConfigInitial() => null,
-                    };
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Expanded(
-                          child: loaded == null
-                              ? const Center(child: AppSpinner())
-                              : _CanvasPane(
-                                  stage: widget.stage,
-                                  loaded: loaded,
-                                  selectedId: _selectedCanvasId,
-                                  onSelect: (id) =>
-                                      setState(() => _selectedCanvasId = id),
-                                ),
-                        ),
-                        SizedBox(width: 1, child: ColoredBox(color: c.border)),
-                        SizedBox(
-                          width: 420,
-                          child: ColoredBox(
-                            color: c.surface,
-                            child: TransitionOutlineList(stage: widget.stage),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth;
+          // design.md §4.4's three bands: >= 1040 both panes at full
+          // width, 760-1039 both panes with a narrower outline, < 760
+          // one pane at a time via the header toggle.
+          final singlePane = width < 760;
+          final stacked = width < 560;
+          final outlineWidth = width < 1040 ? 340.0 : 420.0;
+          final paneMode =
+              _paneMode ?? (stacked ? _PaneMode.outline : _PaneMode.graph);
+
+          return Column(
+            children: [
+              _Header(
+                stage: widget.stage,
+                dirty: _dirty,
+                stacked: stacked,
+                paneToggle: singlePane
+                    ? (
+                        mode: paneMode,
+                        onChanged: (m) => setState(() => _paneMode = m),
+                      )
+                    : null,
+              ),
+              Expanded(
+                child:
+                    BlocBuilder<
+                      TransitionPreconditionConfigCubit,
+                      TransitionPreconditionConfigState
+                    >(
+                      builder: (context, state) {
+                        final loaded = switch (state) {
+                          TransitionPreconditionConfigLoaded loaded => loaded,
+                          TransitionPreconditionConfigError(:final previous) =>
+                            previous,
+                          TransitionPreconditionConfigInitial() => null,
+                        };
+                        if (loaded == null) {
+                          return const Center(child: AppSpinner());
+                        }
+
+                        final canvas = _CanvasPane(
+                          stage: widget.stage,
+                          loaded: loaded,
+                          selectedId: _selectedCanvasId,
+                          onSelect: (id) =>
+                              setState(() => _selectedCanvasId = id),
+                          onDirtyChanged: (v) => _dirty.value = v,
+                        );
+                        final outline = ColoredBox(
+                          color: c.surface,
+                          child: TransitionOutlineList(
+                            stage: widget.stage,
+                            onDirtyChanged: (v) => _dirty.value = v,
                           ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
-          ),
-        ],
+                        );
+
+                        if (singlePane) {
+                          return paneMode == _PaneMode.graph ? canvas : outline;
+                        }
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(child: canvas),
+                            SizedBox(
+                              width: 1,
+                              child: ColoredBox(color: c.border),
+                            ),
+                            SizedBox(width: outlineWidth, child: outline),
+                          ],
+                        );
+                      },
+                    ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -152,13 +232,123 @@ class _SddStagePreconditionEditorScreenState
 /// The 72px header: back button, eyebrow + title, and a "reset to always
 /// allowed" action.
 class _Header extends StatelessWidget {
-  const _Header({required this.stage});
+  const _Header({
+    required this.stage,
+    required this.dirty,
+    required this.stacked,
+    required this.paneToggle,
+  });
 
   final SddStage stage;
+
+  /// [_SddStagePreconditionEditorScreenState._dirty] — feeds the "N
+  /// UNSAVED CHANGE" indicator (design.md §4.1). Added for
+  /// `aion-arch/changes/sddstage-transition-preconditions`'s post-
+  /// `/verify` follow-up.
+  final ValueNotifier<bool> dirty;
+
+  /// Below `560`px (design.md §4.4): eyebrow/title on their own line,
+  /// chips + toggle on a second line beneath. Added for that same
+  /// follow-up.
+  final bool stacked;
+
+  /// Non-`null` below the `760`px single-pane breakpoint — the header's
+  /// Graph/Outline toggle and its current selection/handler. `null` at
+  /// `>= 760`px, where both panes render side by side and no toggle is
+  /// shown. Added for that same follow-up.
+  final ({_PaneMode mode, ValueChanged<_PaneMode> onChanged})? paneToggle;
 
   @override
   Widget build(BuildContext context) {
     final c = ThemeScope.of(context).colors;
+
+    final backButton = Semantics(
+      button: true,
+      label: context.l10n.commonBack,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: () => context.pop(),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: c.surfaceHover,
+              border: Border.all(color: c.border, width: 1),
+              borderRadius: BorderRadius.all(AionRadius.iconBtn),
+            ),
+            child: SizedBox(
+              width: 34,
+              height: 34,
+              child: Center(
+                child: PhosphorIcon(
+                  PhosphorIcons.caretLeftLight,
+                  size: 16,
+                  color: c.textPrimary,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final titleBlock = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          context.l10n.transitionPreconditionEyebrow,
+          style: AionText.caption.copyWith(color: c.textMuted),
+        ),
+        Text(
+          sddStagePreconditionStageLabel(context, stage),
+          style: AionText.h2.copyWith(color: c.textPrimary),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
+    );
+
+    // Chips + toggle line — design.md §4.1's stage-position chip and
+    // dirty indicator, plus (below `760`px) the Graph/Outline toggle.
+    // Horizontally scrollable rather than a fixed overflow-menu
+    // treatment for a cramped phone width — a deliberate simplification
+    // of design.md §4.4's "reset moves into an overflow IconBtn" note:
+    // Reset stays a plain, always-reachable button here instead of a
+    // new overlay-menu component, at the cost of occasional horizontal
+    // scroll at the very narrowest widths.
+    final chipsRow = SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          _StagePositionChip(stage: stage),
+          const SizedBox(width: AionSpacing.sp16),
+          ValueListenableBuilder<bool>(
+            valueListenable: dirty,
+            builder: (context, isDirty, _) => isDirty
+                ? const Padding(
+                    padding: EdgeInsets.only(right: AionSpacing.sp16),
+                    child: _DirtyIndicator(),
+                  )
+                : const SizedBox.shrink(),
+          ),
+          AppButton(
+            label: context.l10n.transitionPreconditionResetButton,
+            variant: AppButtonVariant.ghost,
+            onPressed: () =>
+                context.read<TransitionPreconditionConfigCubit>().setRoot(null),
+          ),
+          if (paneToggle != null) ...[
+            const SizedBox(width: AionSpacing.sp12),
+            _PaneModeToggle(
+              mode: paneToggle!.mode,
+              onChanged: paneToggle!.onChanged,
+            ),
+          ],
+        ],
+      ),
+    );
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -167,65 +357,197 @@ class _Header extends StatelessWidget {
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: AionSpacing.sp20),
-        child: SizedBox(
-          height: 72,
-          child: Row(
-            children: [
-              Semantics(
-                button: true,
-                label: context.l10n.commonBack,
-                child: MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  child: GestureDetector(
-                    onTap: () => context.pop(),
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: c.surfaceHover,
-                        border: Border.all(color: c.border, width: 1),
-                        borderRadius: BorderRadius.all(AionRadius.iconBtn),
-                      ),
-                      child: SizedBox(
-                        width: 34,
-                        height: 34,
-                        child: Center(
-                          child: PhosphorIcon(
-                            PhosphorIcons.caretLeftLight,
-                            size: 16,
-                            color: c.textPrimary,
-                          ),
-                        ),
-                      ),
+        child: stacked
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    height: 64,
+                    child: Row(
+                      children: [
+                        backButton,
+                        const SizedBox(width: AionSpacing.sp12),
+                        Expanded(child: titleBlock),
+                      ],
                     ),
                   ),
-                ),
-              ),
-              const SizedBox(width: AionSpacing.sp12),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  SizedBox(
+                    height: 44,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: chipsRow,
+                    ),
+                  ),
+                ],
+              )
+            : SizedBox(
+                height: 72,
+                child: Row(
                   children: [
-                    Text(
-                      context.l10n.transitionPreconditionEyebrow,
-                      style: AionText.caption.copyWith(color: c.textMuted),
-                    ),
-                    Text(
-                      sddStagePreconditionStageLabel(context, stage),
-                      style: AionText.h2.copyWith(color: c.textPrimary),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    backButton,
+                    const SizedBox(width: AionSpacing.sp12),
+                    Expanded(child: titleBlock),
+                    const SizedBox(width: AionSpacing.sp16),
+                    chipsRow,
                   ],
                 ),
               ),
-              AppButton(
-                label: context.l10n.transitionPreconditionResetButton,
-                variant: AppButtonVariant.ghost,
-                onPressed: () => context
-                    .read<TransitionPreconditionConfigCubit>()
-                    .setRoot(null),
+      ),
+    );
+  }
+}
+
+/// Design.md §4.1's read-only "Stage N of 5" chip — [stage]'s 1-based
+/// position in [_preconditionBearingStagesInOrder]. Added for
+/// `aion-arch/changes/sddstage-transition-preconditions`'s post-
+/// `/verify` follow-up.
+class _StagePositionChip extends StatelessWidget {
+  const _StagePositionChip({required this.stage});
+
+  final SddStage stage;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    final position = _preconditionBearingStagesInOrder.indexOf(stage) + 1;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.primarySubtle,
+        borderRadius: BorderRadius.all(AionRadius.sm),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 3, 10, 3),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: c.primary,
+                shape: BoxShape.circle,
               ),
-            ],
+              child: const SizedBox(width: 7, height: 7),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              context.l10n.transitionPreconditionStagePositionChip(
+                position,
+                _preconditionBearingStagesInOrder.length,
+              ),
+              style: AionText.badgeLabel.copyWith(color: c.primary),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Design.md §4.1's "N UNSAVED CHANGE" indicator — shown by [_Header]
+/// only while [_SddStagePreconditionEditorScreenState._dirty] is `true`.
+/// Only ever one form can be open at a time (single-selection outline/
+/// canvas), so the count is always `1`. Added for `aion-arch/changes/
+/// sddstage-transition-preconditions`'s post-`/verify` follow-up.
+class _DirtyIndicator extends StatelessWidget {
+  const _DirtyIndicator();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        DecoratedBox(
+          decoration: BoxDecoration(color: c.warning, shape: BoxShape.circle),
+          child: const SizedBox(width: 6, height: 6),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          context.l10n.transitionPreconditionUnsavedChange,
+          style: AionText.caption.copyWith(color: c.warning),
+        ),
+      ],
+    );
+  }
+}
+
+/// The Graph/Outline two-segment control shown in [_Header] below the
+/// `760`px single-pane breakpoint — same two-segment shape as
+/// `_BranchModeToggle` (`transition_node_form.dart`). Added for
+/// `aion-arch/changes/sddstage-transition-preconditions`'s post-
+/// `/verify` follow-up.
+class _PaneModeToggle extends StatelessWidget {
+  const _PaneModeToggle({required this.mode, required this.onChanged});
+
+  final _PaneMode mode;
+  final ValueChanged<_PaneMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.surfaceHover,
+        borderRadius: BorderRadius.all(AionRadius.md),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(3),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _PaneModeSegment(
+              label: context.l10n.transitionPreconditionGraphSegment,
+              selected: mode == _PaneMode.graph,
+              onTap: () => onChanged(_PaneMode.graph),
+            ),
+            _PaneModeSegment(
+              label: context.l10n.transitionPreconditionOutlineSegment,
+              selected: mode == _PaneMode.outline,
+              onTap: () => onChanged(_PaneMode.outline),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One segment of [_PaneModeToggle].
+class _PaneModeSegment extends StatelessWidget {
+  const _PaneModeSegment({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: selected ? c.surface : const Color(0x00000000),
+            border: selected ? Border.all(color: c.border, width: 1) : null,
+            borderRadius: BorderRadius.all(AionRadius.sm),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            child: Text(
+              label,
+              style: AionText.bodySm.copyWith(
+                color: selected ? c.textPrimary : c.textSecondary,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              ),
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         ),
       ),
@@ -244,12 +566,19 @@ class _CanvasPane extends StatefulWidget {
     required this.loaded,
     required this.selectedId,
     required this.onSelect,
+    this.onDirtyChanged,
   });
 
   final SddStage stage;
   final TransitionPreconditionConfigLoaded loaded;
   final String? selectedId;
   final ValueChanged<String> onSelect;
+
+  /// Forwarded to [TransitionNodeForm.showAsPopover] — see
+  /// [TransitionNodeForm.onDirtyChanged]. Added for
+  /// `aion-arch/changes/sddstage-transition-preconditions`'s post-
+  /// `/verify` follow-up.
+  final ValueChanged<bool>? onDirtyChanged;
 
   @override
   State<_CanvasPane> createState() => _CanvasPaneState();
@@ -332,6 +661,7 @@ class _CanvasPaneState extends State<_CanvasPane> {
       ),
       descendantCount:
           descendantIdsOf(node.id, widget.loaded.nodesById).length - 1,
+      onDirtyChanged: widget.onDirtyChanged,
       onSave:
           ({
             required fieldId,

@@ -106,6 +106,7 @@ class TransitionNodeForm extends StatefulWidget {
     required this.onCreateChainedChild,
     required this.onCancel,
     this.onDelete,
+    this.onDirtyChanged,
   });
 
   /// Which [SddStage] this form's field picker is scoped to.
@@ -169,6 +170,16 @@ class TransitionNodeForm extends StatefulWidget {
   /// entirely — used for a not-yet-saved new node.
   final VoidCallback? onDelete;
 
+  /// Called with `true` the moment the form's picks first diverge from
+  /// [initialFieldId]/[initialMatchedBranch]/[initialUnmatchedBranch], and
+  /// with `false` whenever they revert to matching, or when the form is
+  /// disposed (dismissed, saved, or unmounted for any other reason).
+  /// Backs `SddStagePreconditionEditorScreen`'s "N UNSAVED CHANGE" header
+  /// indicator (design.md §4.1). `null` if the caller doesn't care. Added
+  /// for `aion-arch/changes/sddstage-transition-preconditions`'s
+  /// post-`/verify` follow-up.
+  final ValueChanged<bool>? onDirtyChanged;
+
   /// Mounts a [TransitionNodeForm] as a popover: an [OverlayEntry] +
   /// [CompositedTransformFollower] anchored below [link]'s target,
   /// dismissed on outside-tap or Escape. Used by
@@ -198,6 +209,7 @@ class TransitionNodeForm extends StatefulWidget {
     onSave,
     required Future<String?> Function(String fieldId) onCreateChainedChild,
     VoidCallback? onDelete,
+    ValueChanged<bool>? onDirtyChanged,
   }) {
     late OverlayEntry entry;
     void dismiss() => entry.remove();
@@ -256,6 +268,7 @@ class TransitionNodeForm extends StatefulWidget {
                           onDelete();
                           dismiss();
                         },
+                  onDirtyChanged: onDirtyChanged,
                 ),
               ),
             ),
@@ -314,6 +327,75 @@ class _TransitionNodeFormState extends State<TransitionNodeForm> {
         _unmatchedMode = TransitionBranchMode.continueToField;
         _unmatchedOutcome = TransitionOutcome.blocked;
         _unmatchedExistingChildId = nodeId;
+    }
+    widget.onDirtyChanged?.call(_isDirty);
+  }
+
+  @override
+  void dispose() {
+    widget.onDirtyChanged?.call(false);
+    super.dispose();
+  }
+
+  /// `setState(fn)`, then re-derives [_isDirty] and notifies
+  /// [TransitionNodeForm.onDirtyChanged] — the shared wrapper every
+  /// mutating callback below uses in place of a bare `setState`, so no
+  /// pick can change without the header's "N UNSAVED CHANGE" indicator
+  /// staying in sync.
+  void _setAndNotify(VoidCallback fn) {
+    setState(fn);
+    widget.onDirtyChanged?.call(_isDirty);
+  }
+
+  /// Whether the form's current picks diverge from
+  /// [TransitionNodeForm.initialFieldId]/`.initialMatchedBranch`/
+  /// `.initialUnmatchedBranch`.
+  bool get _isDirty {
+    if (_field?.id != widget.initialFieldId) return true;
+    if (_branchDirty(
+      initial: widget.initialMatchedBranch,
+      mode: _matchedMode,
+      outcome: _matchedOutcome,
+      existingChildId: _matchedExistingChildId,
+    )) {
+      return true;
+    }
+    if (_branchDirty(
+      initial: widget.initialUnmatchedBranch,
+      mode: _unmatchedMode,
+      outcome: _unmatchedOutcome,
+      existingChildId: _unmatchedExistingChildId,
+    )) {
+      return true;
+    }
+    return false;
+  }
+
+  /// Whether one branch's current [mode]/[outcome]/[existingChildId]
+  /// diverges from [initial] — a mode switch (terminal ↔ chained) is
+  /// always dirty; within [TransitionBranchMode.endHere], only an
+  /// [outcome] flip is; within [TransitionBranchMode.continueToField], a
+  /// still-unpicked or newly-different chain target is (an existing
+  /// chain reused as-is, the common case, is never dirty on its own).
+  bool _branchDirty({
+    required TransitionBranch initial,
+    required TransitionBranchMode mode,
+    required TransitionOutcome outcome,
+    required String? existingChildId,
+  }) {
+    switch (mode) {
+      case TransitionBranchMode.endHere:
+        return switch (initial) {
+          TerminalTransitionBranch(outcome: final initialOutcome) =>
+            initialOutcome != outcome,
+          ToTransitionNodeBranch() => true,
+        };
+      case TransitionBranchMode.continueToField:
+        return switch (initial) {
+          ToTransitionNodeBranch(nodeId: final initialNodeId) =>
+            existingChildId == null || existingChildId != initialNodeId,
+          TerminalTransitionBranch() => true,
+        };
     }
   }
 
@@ -419,7 +501,7 @@ class _TransitionNodeFormState extends State<TransitionNodeForm> {
           _FieldPicker(
             items: catalog,
             value: _field,
-            onSelected: (spec) => setState(() => _field = spec),
+            onSelected: (spec) => _setAndNotify(() => _field = spec),
           ),
           const SizedBox(height: AionSpacing.sp16),
           _BranchSection(
@@ -427,14 +509,14 @@ class _TransitionNodeFormState extends State<TransitionNodeForm> {
             dotColor: c.primary,
             chainEyebrow: context.l10n.transitionPreconditionThenCheck,
             mode: _matchedMode,
-            onModeChanged: (m) => setState(() => _matchedMode = m),
+            onModeChanged: (m) => _setAndNotify(() => _matchedMode = m),
             outcome: _matchedOutcome,
-            onOutcomeSelected: (o) => setState(() => _matchedOutcome = o),
+            onOutcomeSelected: (o) => _setAndNotify(() => _matchedOutcome = o),
             catalog: catalog,
             existingChildFieldLabel: widget.matchedChildFieldLabel,
             chainField: _matchedChainField,
             onChainFieldSelected: (spec) =>
-                setState(() => _matchedChainField = spec),
+                _setAndNotify(() => _matchedChainField = spec),
           ),
           const SizedBox(height: AionSpacing.sp16),
           _BranchSection(
@@ -442,14 +524,15 @@ class _TransitionNodeFormState extends State<TransitionNodeForm> {
             dotColor: c.borderStrong,
             chainEyebrow: context.l10n.transitionPreconditionOtherwiseCheck,
             mode: _unmatchedMode,
-            onModeChanged: (m) => setState(() => _unmatchedMode = m),
+            onModeChanged: (m) => _setAndNotify(() => _unmatchedMode = m),
             outcome: _unmatchedOutcome,
-            onOutcomeSelected: (o) => setState(() => _unmatchedOutcome = o),
+            onOutcomeSelected: (o) =>
+                _setAndNotify(() => _unmatchedOutcome = o),
             catalog: catalog,
             existingChildFieldLabel: widget.unmatchedChildFieldLabel,
             chainField: _unmatchedChainField,
             onChainFieldSelected: (spec) =>
-                setState(() => _unmatchedChainField = spec),
+                _setAndNotify(() => _unmatchedChainField = spec),
           ),
           const SizedBox(height: AionSpacing.sp16),
           DecoratedBox(
