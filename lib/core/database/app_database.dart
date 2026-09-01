@@ -207,7 +207,7 @@ class AppDatabase extends _$AppDatabase {
     : super(executor ?? _openConnection(project));
 
   @override
-  int get schemaVersion => 19;
+  int get schemaVersion => 20;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -320,6 +320,14 @@ class AppDatabase extends _$AppDatabase {
         await m.createTable(transitionPreconditionGraphsTable);
         await m.createTable(transitionPreconditionNodesTable);
         await transitionPreconditionDao.seedDefaultsIfEmpty();
+      }
+      if (from < 20) {
+        // Upgrades an existing project's `verifying` transition-
+        // precondition graph to the new two-node `verifyGateApproved`
+        // shape `seedDefaultsIfEmpty` now seeds directly for a fresh
+        // install — see
+        // `aion-arch/changes/sdd-verify-quality-gate/design.md` §3.2.
+        await transitionPreconditionDao.upgradeVerifyingGraphIfDefault();
       }
     },
   );

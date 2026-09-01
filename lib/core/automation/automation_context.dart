@@ -59,4 +59,14 @@ enum AutomationContext {
   /// `aion-arch/changes/spec-ticket-type`; see
   /// `TicketsCubit._maybeAutoLinkToSpec`.
   specAutoLink,
+
+  /// SDD-stage verify-gate retry — whether, once every fix Task/Bug a
+  /// `VERIFY GATE: PENDING` verdict spawned has reached `done`, a fresh
+  /// verification turn fires automatically, asks first, or waits for the
+  /// existing manual "Retry validation" action. Distinct from [sddStage]
+  /// (which governs advancing *once already eligible*, not re-attempting
+  /// an unmet gate). Added for
+  /// `aion-arch/changes/sdd-verify-quality-gate`; see
+  /// `TicketsCubit._maybeRetryPendingVerify`.
+  verifyGateRetry,
 }

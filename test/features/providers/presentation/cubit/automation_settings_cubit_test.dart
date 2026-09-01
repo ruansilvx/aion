@@ -53,6 +53,11 @@ void main() {
         when(
           () => repository.getConfidence(AutomationContext.specAutoLink),
         ).thenAnswer((_) async => AutomationConfidence.gated);
+        // AutomationContext.verifyGateRetry — added for
+        // aion-arch/changes/sdd-verify-quality-gate.
+        when(
+          () => repository.getConfidence(AutomationContext.verifyGateRetry),
+        ).thenAnswer((_) async => AutomationConfidence.gated);
       },
       build: () => AutomationSettingsCubit(repository),
       act: (cubit) => cubit.load(),
@@ -66,6 +71,7 @@ void main() {
           AutomationContext.ticketCreation: AutomationConfidence.gated,
           AutomationContext.ticketLinking: AutomationConfidence.gated,
           AutomationContext.specAutoLink: AutomationConfidence.gated,
+          AutomationContext.verifyGateRetry: AutomationConfidence.gated,
         }),
       ],
     );

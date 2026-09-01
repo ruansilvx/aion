@@ -86,23 +86,50 @@ class TransitionPreconditionDao extends DatabaseAccessor<AppDatabase>
   /// unconditionally from both `onCreate` and every `onUpgrade` branch.
   /// Every seeded tree reproduces that stage's exact pre-existing
   /// hardcoded `TicketsCubit._sddStageAdvanceCheck` branch as data, per
-  /// design.md §3. [SddStage.exploring]/[SddStage.verifying] share one
-  /// single-node tree shape (seeded separately per stage, since each has
-  /// its own graph row); `null`/[SddStage.archived] get no seeded graph.
+  /// design.md §3. [SddStage.exploring] gets a single-node tree shape;
+  /// [SddStage.verifying] gets its own two-node tree (see below, per
+  /// `aion-arch/changes/sdd-verify-quality-gate/design.md` §3.1); `null`/
+  /// [SddStage.archived] get no seeded graph.
   Future<void> seedDefaultsIfEmpty() async {
     final existing = await select(transitionPreconditionGraphsTable).get();
     if (existing.isNotEmpty) return;
 
     await transaction<void>(() async {
-      // `exploring`/`verifying`: one node —
-      // `mostRecentChatHasTerminalReply` → matched: allowed; unmatched:
-      // blocked.
-      for (final stage in [SddStage.exploring, SddStage.verifying]) {
-        await _seedSingleNodeGraph(
-          stage: stage,
+      // `exploring`: one node — `mostRecentChatHasTerminalReply` →
+      // matched: allowed; unmatched: blocked.
+      await _seedSingleNodeGraph(
+        stage: SddStage.exploring,
+        fieldId: 'mostRecentChatHasTerminalReply',
+      );
+
+      // `verifying`: two nodes — `mostRecentChatHasTerminalReply` →
+      // unmatched: blocked; matched → `verifyGateApproved` → matched:
+      // allowed; unmatched: blocked.
+      final verifyGateApprovedId = _uuid.v4();
+      await into(transitionPreconditionNodesTable).insert(
+        TransitionPreconditionNodesTableCompanion.insert(
+          id: verifyGateApprovedId,
+          fieldId: 'verifyGateApproved',
+          matchedBranchKind: 'allowed',
+          unmatchedBranchKind: 'blocked',
+        ),
+      );
+      final verifyingRootId = _uuid.v4();
+      await into(transitionPreconditionNodesTable).insert(
+        TransitionPreconditionNodesTableCompanion.insert(
+          id: verifyingRootId,
           fieldId: 'mostRecentChatHasTerminalReply',
-        );
-      }
+          matchedBranchKind: 'node',
+          matchedBranchNodeId: Value(verifyGateApprovedId),
+          unmatchedBranchKind: 'blocked',
+        ),
+      );
+      await into(transitionPreconditionGraphsTable).insert(
+        TransitionPreconditionGraphsTableCompanion.insert(
+          sddStage: SddStage.verifying.name,
+          rootNodeId: Value(verifyingRootId),
+        ),
+      );
 
       // `proposed`: three nodes — `hasChildren` → unmatched: blocked;
       // matched → `storyNeedsDesignReview` → matched: allowed; unmatched
@@ -183,9 +210,8 @@ class TransitionPreconditionDao extends DatabaseAccessor<AppDatabase>
 
   /// Inserts [stage]'s single-node baseline graph: one node checking
   /// [fieldId], matched → `allowed`, unmatched → `blocked`. Shared by
-  /// [seedDefaultsIfEmpty]'s `exploring`/`verifying`/`designBrief`
-  /// branches — the three stages whose baseline tree is exactly this
-  /// one-node shape.
+  /// [seedDefaultsIfEmpty]'s `exploring`/`designBrief` branches — the two
+  /// stages whose baseline tree is exactly this one-node shape.
   Future<void> _seedSingleNodeGraph({
     required SddStage stage,
     required String fieldId,
@@ -205,5 +231,54 @@ class TransitionPreconditionDao extends DatabaseAccessor<AppDatabase>
         rootNodeId: Value(nodeId),
       ),
     );
+  }
+
+  /// One-time migration helper for schema version 20 (see
+  /// `core/database/app_database.dart`'s `onUpgrade`) — upgrades an
+  /// existing project's [SddStage.verifying] graph to the new two-node
+  /// shape [seedDefaultsIfEmpty] now seeds directly for a fresh install,
+  /// per `aion-arch/changes/sdd-verify-quality-gate/design.md` §3.2.
+  ///
+  /// Only touches the graph if its root node still carries the exact
+  /// original single-node default's fingerprint — `fieldId ==
+  /// 'mostRecentChatHasTerminalReply'` with `matchedBranchKind ==
+  /// 'allowed'` — meaning it was never customized via the Workflow
+  /// config UI (and hasn't already been upgraded). Any other shape is
+  /// left untouched. If [SddStage.verifying] has no graph row at all
+  /// yet, this is a no-op — [seedDefaultsIfEmpty] (already called ahead
+  /// of every `onUpgrade` branch, per `app_database.dart`) will have
+  /// seeded the new shape directly in that case.
+  Future<void> upgradeVerifyingGraphIfDefault() async {
+    final graph = await getGraph(SddStage.verifying);
+    final rootNodeId = graph?.rootNodeId;
+    if (rootNodeId == null) return;
+
+    final rootNode = await getNode(rootNodeId);
+    if (rootNode == null) return;
+    final isUntouchedDefault =
+        rootNode.fieldId == 'mostRecentChatHasTerminalReply' &&
+        rootNode.matchedBranchKind == 'allowed';
+    if (!isUntouchedDefault) return;
+
+    await transaction<void>(() async {
+      final verifyGateApprovedId = _uuid.v4();
+      await into(transitionPreconditionNodesTable).insert(
+        TransitionPreconditionNodesTableCompanion.insert(
+          id: verifyGateApprovedId,
+          fieldId: 'verifyGateApproved',
+          matchedBranchKind: 'allowed',
+          unmatchedBranchKind: 'blocked',
+        ),
+      );
+      await upsertNode(
+        TransitionPreconditionNodesTableCompanion.insert(
+          id: rootNodeId,
+          fieldId: rootNode.fieldId,
+          matchedBranchKind: 'node',
+          matchedBranchNodeId: Value(verifyGateApprovedId),
+          unmatchedBranchKind: rootNode.unmatchedBranchKind,
+        ),
+      );
+    });
   }
 }

@@ -95,10 +95,20 @@ const designSyncApprovedField = TransitionFieldSpec(
   stages: [SddStage.designSync],
 );
 
-/// Every field this proposal ships, regardless of stage. Exactly the 7
-/// entries reproducing the 5 precondition-bearing stages' hardcoded checks
+/// Wraps `TicketsCubit._verifyGateApproved` — whether the Verifying-stage
+/// chat's most recent AI reply contains `VERIFY GATE: APPROVED`. Added for
+/// `aion-arch/changes/sdd-verify-quality-gate`.
+const verifyGateApprovedField = TransitionFieldSpec(
+  id: 'verifyGateApproved',
+  displayName: 'Verification has been approved',
+  stages: [SddStage.verifying],
+);
+
+/// Every field this proposal ships, regardless of stage. Exactly the 8
+/// entries reproducing the precondition-bearing stages' hardcoded checks
 /// as data — see
-/// `aion-arch/changes/sddstage-transition-preconditions/design.md` §1.
+/// `aion-arch/changes/sddstage-transition-preconditions/design.md` §1 and
+/// `aion-arch/changes/sdd-verify-quality-gate/design.md` §2.1.
 const List<TransitionFieldSpec> transitionFieldCatalog = [
   mostRecentChatHasTerminalReplyField,
   hasChildrenField,
@@ -107,6 +117,7 @@ const List<TransitionFieldSpec> transitionFieldCatalog = [
   linkedDesignPageHasContentField,
   allTasksCompleteField,
   designSyncApprovedField,
+  verifyGateApprovedField,
 ];
 
 /// The subset of [transitionFieldCatalog] valid for [stage] — what

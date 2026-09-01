@@ -2,6 +2,7 @@
 
 import 'package:equatable/equatable.dart';
 
+import 'package:aion/core/automation/automation_confidence.dart';
 import 'package:aion/features/tickets/domain/entities/backlink_ref.dart';
 import 'package:aion/features/tickets/domain/entities/gap_or_question_ref.dart';
 import 'package:aion/features/tickets/domain/entities/linked_ticket_ref.dart';
@@ -415,6 +416,9 @@ class TicketDetailLoaded extends TicketsState {
     this.executionTokenTotal,
     this.pendingSkillAttachment,
     this.pendingSpecLinkSuggestion,
+    this.verifyRetryReady = false,
+    this.verifyRetryConfidence,
+    this.verifyPendingFixesRemaining,
   });
 
   /// The loaded ticket.
@@ -602,6 +606,38 @@ class TicketDetailLoaded extends TicketsState {
   /// shape. Added for `aion-arch/changes/spec-ticket-type`.
   final PendingSpecLinkSuggestion? pendingSpecLinkSuggestion;
 
+  /// Whether [ticket] (an `epic`/`story`) is ready for a verify retry —
+  /// its `sddStage` is [SddStage.verifying], the Verifying-stage chat's
+  /// latest AI reply carries `VERIFY GATE: PENDING`, and every fix
+  /// Task/Bug that verdict spawned has reached `done`. Computed by
+  /// [TicketsCubit.getTicketById] via
+  /// [TicketsCubit._verifyRetryReadiness]. Always `false` for every
+  /// other ticket type, or while fixes are still open. Drives
+  /// `_SddStageSection`'s "Ready to retry verification" footer tier.
+  /// Added for `aion-arch/changes/sdd-verify-quality-gate`.
+  final bool verifyRetryReady;
+
+  /// The configured [AutomationContext.verifyGateRetry] confidence,
+  /// populated only when [verifyRetryReady] is `true` — selects which of
+  /// the three "Ready to retry verification" tier treatments
+  /// `_SddStageSection` renders (gated banner, manual button, or auto
+  /// note), mirroring how [TicketsCubit.getTicketById]'s screen-level
+  /// automation-confidence read already drives the "Advance to next
+  /// stage" tier. `null` whenever [verifyRetryReady] is `false`, or the
+  /// cubit was constructed without an `AutomationSettingsRepository`.
+  /// Added for `aion-arch/changes/sdd-verify-quality-gate`.
+  final AutomationConfidence? verifyRetryConfidence;
+
+  /// How many of [ticket]'s current fix Task/Bug children (spawned by a
+  /// `VERIFY GATE: PENDING` verdict) haven't yet reached `done`, or
+  /// `null` when there's no unresolved `PENDING` verdict to report on.
+  /// Computed by [TicketsCubit.getTicketById] alongside [verifyRetryReady]
+  /// — populated whether or not [verifyRetryReady] ends up `true`, so
+  /// `_SddStageSection` can show the Component Spec §1.4 "not-ready
+  /// predecessor" hint while fixes are still open. Added for
+  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  final int? verifyPendingFixesRemaining;
+
   @override
   List<Object?> get props => [
     ticket,
@@ -627,6 +663,9 @@ class TicketDetailLoaded extends TicketsState {
     executionTokenTotal,
     pendingSkillAttachment,
     pendingSpecLinkSuggestion,
+    verifyRetryReady,
+    verifyRetryConfidence,
+    verifyPendingFixesRemaining,
   ];
 
   /// Returns a copy of this state with the given fields replaced; every
@@ -675,6 +714,9 @@ class TicketDetailLoaded extends TicketsState {
     int? executionTokenTotal,
     TicketFieldSetter<SkillAttachment?>? pendingSkillAttachment,
     TicketFieldSetter<PendingSpecLinkSuggestion?>? pendingSpecLinkSuggestion,
+    bool? verifyRetryReady,
+    AutomationConfidence? verifyRetryConfidence,
+    int? verifyPendingFixesRemaining,
   }) {
     return TicketDetailLoaded(
       ticket ?? this.ticket,
@@ -709,6 +751,11 @@ class TicketDetailLoaded extends TicketsState {
       pendingSpecLinkSuggestion: pendingSpecLinkSuggestion != null
           ? pendingSpecLinkSuggestion()
           : this.pendingSpecLinkSuggestion,
+      verifyRetryReady: verifyRetryReady ?? this.verifyRetryReady,
+      verifyRetryConfidence:
+          verifyRetryConfidence ?? this.verifyRetryConfidence,
+      verifyPendingFixesRemaining:
+          verifyPendingFixesRemaining ?? this.verifyPendingFixesRemaining,
     );
   }
 }

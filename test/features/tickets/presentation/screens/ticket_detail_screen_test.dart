@@ -179,11 +179,19 @@ void _stubTicketsCubit(MockTicketsCubit ticketsCubit) {
   when(
     () => ticketsCubit.getValidParentCandidates(any()),
   ).thenAnswer((_) async => const []);
+  // TicketDetailScreen.initState resolves SddStage.verifying's present
+  // name once per screen instance (aion-arch/changes/sdd-verify-quality-
+  // gate) — stubbed here alongside every other unconditional initState
+  // call so it doesn't need repeating per test.
+  when(
+    () => ticketsCubit.stagePresentName(any()),
+  ).thenAnswer((_) async => 'Verifying');
 }
 
 void main() {
   setUpAll(() {
     registerFallbackValue(AutomationContext.sddStage);
+    registerFallbackValue(SddStage.exploring);
     registerFallbackValue(
       Ticket(
         id: 'fallback',

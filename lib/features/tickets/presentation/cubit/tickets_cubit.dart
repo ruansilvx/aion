@@ -1162,6 +1162,16 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// `aion-arch/changes/board-execution-indicators-and-notifications`.
   final Set<String> _inFlightStageAdvanceIds = {};
 
+  /// Epic/Story ids currently mid-automatic-verify-retry (an
+  /// [AutomationContext.verifyGateRetry] `auto`-confidence
+  /// [retryVerify] call [_maybeRetryPendingVerify] fired hasn't finished
+  /// yet). Mirrors [_inFlightStageAdvanceIds]'s exact purpose — guards
+  /// against a concurrent re-entrant retry — but scoped separately, since
+  /// a verify retry isn't itself a stage advance. In-memory only, does
+  /// not survive an app restart. Added for
+  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  final Set<String> _inFlightVerifyRetryIds = {};
+
   /// Whether an `AgentOverageDetectedEvent` has fired during any
   /// coding-execution run this session — once `true`, every subsequent
   /// completion is treated as [AutomationConfidence.gated] regardless of
@@ -1850,6 +1860,13 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// relationship to the Epic whose spec it actually invalidates) needs
   /// this similarity-based path. Added for
   /// `aion-arch/changes/spec-ticket-type`.
+  ///
+  /// Also fires a fire-and-forget [_maybeRetryPendingVerify] call
+  /// whenever [id]'s ticket is executable ([TicketTypeHierarchy
+  /// .isExecutable]) and [status] resolves to a [WorkflowStatusRole.done]
+  /// role — covers a fix Task/Bug spawned by a `VERIFY GATE: PENDING`
+  /// verdict reaching Done. Added for
+  /// `aion-arch/changes/sdd-verify-quality-gate`.
   Future<void> updateTicketStatus(String id, String status) async {
     // Only fetch the ticket up front when the status holds the
     // executionTrigger role — every other transition returns true
@@ -1903,6 +1920,10 @@ class TicketsCubit extends Cubit<TicketsState> {
         if (updated.type == TicketType.bug &&
             _roleOf(status) == WorkflowStatusRole.done) {
           unawaited(_maybeAutoLinkToSpec(updated));
+        }
+        if (updated.type.isExecutable &&
+            _roleOf(status) == WorkflowStatusRole.done) {
+          unawaited(_maybeRetryPendingVerify(updated));
         }
         final statusId = _resolveStatus(status)?.id;
         attachment = statusId != null ? _attachmentForStatus(statusId) : null;
@@ -2096,6 +2117,10 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// A rejection from either skips the write entirely; an allowed
   /// transition proceeds as normal, then [_triggerOrQueueCodingExecution]
   /// starts (or queues) the coding-execution run once the write succeeds.
+  /// Also fires a fire-and-forget [_maybeRetryPendingVerify] call under
+  /// the same executable/`done`-role condition [updateTicketStatus] uses
+  /// — see its dartdoc. Added for
+  /// `aion-arch/changes/sdd-verify-quality-gate`.
   Future<void> changeTicketStatus(Ticket ticket, String status) async {
     if (!(await _interceptBlockedDependencyTrigger(ticket, status))) return;
     if (!(await _interceptTaskExecutionTrigger(ticket, status))) return;
@@ -2108,6 +2133,10 @@ class TicketsCubit extends Cubit<TicketsState> {
         if (refreshed.type.isExecutable &&
             _roleOf(status) == WorkflowStatusRole.executionTrigger) {
           unawaited(_triggerOrQueueCodingExecution(refreshed));
+        }
+        if (refreshed.type.isExecutable &&
+            _roleOf(status) == WorkflowStatusRole.done) {
+          unawaited(_maybeRetryPendingVerify(refreshed));
         }
       }
     } catch (e) {
@@ -2796,6 +2825,203 @@ class TicketsCubit extends Cubit<TicketsState> {
     );
   }
 
+  /// Re-runs [SddStage.verifying]'s validation in place, after a `VERIFY
+  /// GATE: PENDING` verdict's fix Tasks/Bugs have been addressed.
+  /// Re-assembles fresh context and posts another turn to the existing
+  /// [verifyingChat], via the same [ChatCubit.runChatTurn] helper
+  /// [_spawnStageChat] uses. Mirrors [retryDesignSync] exactly — same
+  /// guard shape, same [_assembleStageContext] re-context, same model/
+  /// provider resolution via [SddStage.verifying]'s
+  /// [SddStageModelPhase.modelPhase]. No-ops (returns without posting) if
+  /// [verifyingChat] isn't a `chat` ticket, its parent isn't at
+  /// [SddStage.verifying], or the cubit was constructed without a
+  /// [ProviderRegistry]/[CommentRepository] (see the constructor's
+  /// dartdoc). Reentrancy for the *automatic* trigger
+  /// ([_maybeRetryPendingVerify]) is guarded there, not here — this
+  /// method itself stays a plain, repeatable action, the same way
+  /// [retryDesignSync] is. Added for
+  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  Future<void> retryVerify(Ticket verifyingChat) async {
+    if (verifyingChat.type != TicketType.chat) return;
+    final providerRegistry = _providerRegistry;
+    final commentRepo = _commentRepository;
+    if (providerRegistry == null || commentRepo == null) return;
+    final parentId = verifyingChat.parentId;
+    if (parentId == null) return;
+    final parent = await _repository.getTicketById(parentId);
+    if (parent == null || parent.sddStage != SddStage.verifying) return;
+
+    final context = await _assembleStageContext(parent, SddStage.verifying);
+    await commentRepo.addComment(
+      TicketComment(
+        id: '',
+        ticketId: verifyingChat.id,
+        content: context,
+        authorType: CommentAuthorType.system,
+        createdAt: DateTime.now(),
+      ),
+    );
+    final (model, provider) = await _resolveModelAndProvider(
+      SddStage.verifying.modelPhase,
+    );
+    await ChatCubit.runChatTurn(
+      client: provider.client,
+      provider: provider,
+      commentRepo: commentRepo,
+      ticketRepository: _repository,
+      chatTicketId: verifyingChat.id,
+      prompt: context,
+      model: model,
+      tools: await _toolsFor(verifyingChat.id),
+      onToolCall: _onToolCallFor(verifyingChat),
+    );
+  }
+
+  /// Public wrapper resolving [storyOrEpic]'s current Verifying-stage
+  /// chat (via [_mostRecentVerifyChat]) and calling [retryVerify] on it
+  /// — lets presentation-layer code (`TicketDetailScreen`'s "Ready to
+  /// retry verification" footer-tier wiring, via
+  /// `TicketMetadataSection.onRetryVerify`) trigger a retry from the
+  /// Epic/Story ticket itself, without needing to know which chat
+  /// ticket that resolves to. No-ops if no Verifying-stage chat exists
+  /// yet. Added for `aion-arch/changes/sdd-verify-quality-gate`.
+  Future<void> retryVerifyForStoryOrEpic(Ticket storyOrEpic) async {
+    final verifyChat = await _mostRecentVerifyChat(storyOrEpic.id);
+    if (verifyChat == null) return;
+    await retryVerify(verifyChat);
+  }
+
+  /// Pure readiness check for a verify retry on [parent] (an
+  /// `epic`/`story` ticket) — no side effects, so it's safe for
+  /// [getTicketById] to call on every fetch. `ready` is `true` only when
+  /// *all* hold: (1) [parent.sddStage] is [SddStage.verifying]; (2)
+  /// [_verifyGateApproved] on [parent] is still `false` — nothing to
+  /// retry once already approved; (3) [parent]'s current Verifying-stage
+  /// chat (via [_mostRecentVerifyChat]) has a most recent comment that's
+  /// an [CommentAuthorType.ai] reply containing `VERIFY GATE: PENDING` —
+  /// an explicit pending verdict, not merely still running or never
+  /// started; (4) every one of [parent]'s current Task/Bug children has
+  /// reached [WorkflowStatusRole.done] (via [_allChildrenComplete]) —
+  /// more fixes still outstanding otherwise. `verifyChat` carries the
+  /// found chat whenever one exists (even if `ready` is `false`), so a
+  /// caller that only needs the chat (not the full readiness gate) can
+  /// reuse this same lookup. `pendingFixesRemaining` is the count of
+  /// [parent]'s current Task/Bug children not yet [WorkflowStatusRole
+  /// .done], computed only once a genuine `PENDING` verdict is confirmed
+  /// (step 3) — `null` before that point (nothing to report), or when
+  /// [parent] has no Task/Bug children at all (a `PENDING` reply with no
+  /// `## Fixes Needed` block; see [_materializeVerifyFixes]'s dartdoc —
+  /// there's no fix-task count to report on in that case either, and the
+  /// manual "Retry validation" bar covers it instead). Drives the
+  /// Component Spec §1.4 "not-ready predecessor" hint. Shared by
+  /// [_maybeRetryPendingVerify] (which additionally resolves confidence
+  /// and may fire [retryVerify]) and [getTicketById]'s `verifyRetryReady`
+  /// /`verifyPendingFixesRemaining` computation. Added for
+  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  Future<({bool ready, Ticket? verifyChat, int? pendingFixesRemaining})>
+  _verifyRetryReadiness(Ticket parent) async {
+    if (parent.sddStage != SddStage.verifying) {
+      return (ready: false, verifyChat: null, pendingFixesRemaining: null);
+    }
+    if (await _verifyGateApproved(parent.id)) {
+      return (ready: false, verifyChat: null, pendingFixesRemaining: null);
+    }
+
+    final commentRepo = _commentRepository;
+    if (commentRepo == null) {
+      return (ready: false, verifyChat: null, pendingFixesRemaining: null);
+    }
+    final verifyChat = await _mostRecentVerifyChat(parent.id);
+    if (verifyChat == null) {
+      return (ready: false, verifyChat: null, pendingFixesRemaining: null);
+    }
+    final comments = await commentRepo.getCommentsForTicket(verifyChat.id);
+    if (comments.isEmpty) {
+      return (
+        ready: false,
+        verifyChat: verifyChat,
+        pendingFixesRemaining: null,
+      );
+    }
+    final mostRecent = comments.reduce(
+      (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
+    );
+    if (mostRecent.authorType != CommentAuthorType.ai ||
+        !mostRecent.content.contains('VERIFY GATE: PENDING')) {
+      return (
+        ready: false,
+        verifyChat: verifyChat,
+        pendingFixesRemaining: null,
+      );
+    }
+
+    final children = await _repository.getTicketsByParent(
+      parent.id,
+      types: TicketTypeHierarchy.executableTypes,
+    );
+    if (children.isEmpty) {
+      return (ready: false, verifyChat: verifyChat, pendingFixesRemaining: null);
+    }
+    final notDoneCount = children
+        .where((c) => _roleOf(c.status) != WorkflowStatusRole.done)
+        .length;
+    return (
+      ready: notDoneCount == 0,
+      verifyChat: verifyChat,
+      pendingFixesRemaining: notDoneCount,
+    );
+  }
+
+  /// Fires [retryVerify] automatically once every fix Task/Bug a `VERIFY
+  /// GATE: PENDING` verdict spawned has reached `done` — called
+  /// `unawaited` from [updateTicketStatus]/[changeTicketStatus]'s
+  /// post-write side effects whenever [task] is a Task/Bug reaching a
+  /// [WorkflowStatusRole.done]-role status, alongside the existing
+  /// [_maybeAutoLinkToSpec] call. No-ops (silently) unless [task
+  /// .parentId] resolves to an `epic`/`story` ticket and
+  /// [_verifyRetryReadiness] on that parent reports `ready: true` (see
+  /// its dartdoc for the exact precondition chain). Once ready, resolves
+  /// [AutomationContext.verifyGateRetry]'s confidence via
+  /// [_automationSettingsRepository] (a `null` repository, or an unset
+  /// value, no-ops the same way every other optional-repository context
+  /// does): `auto` guards against concurrent re-entrancy with
+  /// [_inFlightVerifyRetryIds] and calls [retryVerify] `unawaited`;
+  /// `gated`/`manual` take no direct action here — the "ready to retry
+  /// verification" footer tier (`ticket_metadata_section.dart`) renders
+  /// for both, differing only in whether its action is a confirm banner
+  /// or a plain button. Added for
+  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  Future<void> _maybeRetryPendingVerify(Ticket task) async {
+    final parentId = task.parentId;
+    if (parentId == null) return;
+    final parent = await _repository.getTicketById(parentId);
+    if (parent == null ||
+        (parent.type != TicketType.epic && parent.type != TicketType.story)) {
+      return;
+    }
+
+    final readiness = await _verifyRetryReadiness(parent);
+    final verifyChat = readiness.verifyChat;
+    if (!readiness.ready || verifyChat == null) return;
+
+    final automationRepo = _automationSettingsRepository;
+    final confidence = automationRepo == null
+        ? null
+        : await automationRepo.getConfidence(AutomationContext.verifyGateRetry);
+
+    if (confidence == AutomationConfidence.auto) {
+      if (_inFlightVerifyRetryIds.contains(parent.id)) return;
+      _inFlightVerifyRetryIds.add(parent.id);
+      unawaited(
+        retryVerify(verifyChat).whenComplete(() {
+          _inFlightVerifyRetryIds.remove(parent.id);
+        }),
+      );
+    }
+    // gated/manual: no direct action — the ready-to-retry footer tier
+    // covers both, per this method's own dartdoc.
+  }
+
   /// Emits the rejected-stage-advance error for ticket [ticketId], then
   /// re-emits its unchanged [TicketDetailLoaded] so the detail screen
   /// shows a toast instead of collapsing to the generic error view.
@@ -2962,12 +3188,26 @@ class TicketsCubit extends Cubit<TicketsState> {
       case null:
         return (canAdvance: true, blockReason: null);
       case SddStage.exploring:
-      case SddStage.verifying:
-        final stage = ticket.sddStage!;
         final ready = await _mostRecentChatHasTerminalReply(ticket.id);
         return _resolveTransition(
-          stage,
+          SddStage.exploring,
           TransitionEvalContext(mostRecentChatHasTerminalReply: ready),
+        );
+      case SddStage.verifying:
+        // Also requires the Verifying-stage chat's most recent AI reply
+        // to carry `VERIFY GATE: APPROVED` — mirrors `designSync`'s own
+        // approved-content gate. `approved` short-circuits to `false`
+        // when there's no reply yet at all, avoiding a redundant chat-
+        // content lookup; see
+        // `aion-arch/changes/sdd-verify-quality-gate/design.md` §4.2.
+        final ready = await _mostRecentChatHasTerminalReply(ticket.id);
+        final approved = ready ? await _verifyGateApproved(ticket.id) : false;
+        return _resolveTransition(
+          SddStage.verifying,
+          TransitionEvalContext(
+            mostRecentChatHasTerminalReply: ready,
+            verifyGateApproved: approved,
+          ),
         );
       case SddStage.proposed:
         // Story branch: `designBrief`/`designSync` are supposed to run
@@ -3052,24 +3292,30 @@ class TicketsCubit extends Cubit<TicketsState> {
     return null;
   }
 
-  /// Whether [storyId]'s `"Design Sync — "`-prefixed chat's most recent
-  /// comment is an [CommentAuthorType.ai] reply whose content contains
-  /// the literal line `DESIGN GATE: APPROVED` — mirrors `/design-sync`'s
-  /// own final-summary line format. Unlike
-  /// [_mostRecentChatHasTerminalReply] (any AI reply unlocks
-  /// advancement), this checks the reply's *content*, since a `DESIGN
-  /// GATE: PENDING` verdict must not unblock advancement — see
-  /// [retryDesignSync] for how a fresh verdict gets produced after a
-  /// `PENDING` result. Added for `aion-arch/changes/sdd-design-gate`.
+  /// Whether [storyId]'s Design-Sync-stage chat's most recent comment is
+  /// an [CommentAuthorType.ai] reply whose content contains the literal
+  /// line `DESIGN GATE: APPROVED` — mirrors `/design-sync`'s own
+  /// final-summary line format. Unlike [_mostRecentChatHasTerminalReply]
+  /// (any AI reply unlocks advancement), this checks the reply's
+  /// *content*, since a `DESIGN GATE: PENDING` verdict must not unblock
+  /// advancement — see [retryDesignSync] for how a fresh verdict gets
+  /// produced after a `PENDING` result. The chat-title prefix is
+  /// resolved through [_stagePresentName] rather than hardcoded, so a
+  /// project that has overridden [SddStage.designSync]'s display name
+  /// (via `SddStageConfigRepository`) still finds its own chat — fixed
+  /// alongside [_verifyGateApproved] per
+  /// `aion-arch/changes/sdd-verify-quality-gate/design.md` §4.1. Added
+  /// for `aion-arch/changes/sdd-design-gate`.
   Future<bool> _designSyncApproved(String storyId) async {
     final commentRepo = _commentRepository;
     if (commentRepo == null) return false;
+    final prefix = '${await _stagePresentName(SddStage.designSync)} — ';
     final chats = await _repository.getTicketsByParent(
       storyId,
       types: const [TicketType.chat],
     );
     final designSyncChats =
-        chats.where((c) => c.title.startsWith('Design Sync — ')).toList()
+        chats.where((c) => c.title.startsWith(prefix)).toList()
           ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     if (designSyncChats.isEmpty) return false;
     final comments = await commentRepo.getCommentsForTicket(
@@ -3081,6 +3327,48 @@ class TicketsCubit extends Cubit<TicketsState> {
     );
     return mostRecent.authorType == CommentAuthorType.ai &&
         mostRecent.content.contains('DESIGN GATE: APPROVED');
+  }
+
+  /// The Story/Epic [storyOrEpicId]'s current Verifying-stage chat — its
+  /// most recently created chat child whose title starts with
+  /// `'${await _stagePresentName(SddStage.verifying)} — '`. `null` if
+  /// none exists yet. Mirrors [_mostRecentExecutionChat]'s own factored-
+  /// lookup shape; shared by [_verifyGateApproved] and
+  /// [_maybeRetryPendingVerify]. Added for
+  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  Future<Ticket?> _mostRecentVerifyChat(String storyOrEpicId) async {
+    final prefix = '${await _stagePresentName(SddStage.verifying)} — ';
+    final chats = await _repository.getTicketsByParent(
+      storyOrEpicId,
+      types: const [TicketType.chat],
+    );
+    final verifyChats = chats.where((c) => c.title.startsWith(prefix)).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return verifyChats.isEmpty ? null : verifyChats.first;
+  }
+
+  /// Whether [storyOrEpicId]'s Verifying-stage chat's most recent comment
+  /// is an [CommentAuthorType.ai] reply whose content contains the
+  /// literal line `VERIFY GATE: APPROVED` — mirrors [_designSyncApproved]
+  /// field-for-field, built on [_mostRecentVerifyChat]. Unlike
+  /// [_mostRecentChatHasTerminalReply] (any AI reply unlocks
+  /// advancement), this checks the reply's *content*, since a `VERIFY
+  /// GATE: PENDING` verdict must not unblock advancement — see
+  /// [retryVerify] for how a fresh verdict gets produced after a
+  /// `PENDING` result. Added for
+  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  Future<bool> _verifyGateApproved(String storyOrEpicId) async {
+    final commentRepo = _commentRepository;
+    if (commentRepo == null) return false;
+    final verifyChat = await _mostRecentVerifyChat(storyOrEpicId);
+    if (verifyChat == null) return false;
+    final comments = await commentRepo.getCommentsForTicket(verifyChat.id);
+    if (comments.isEmpty) return false;
+    final mostRecent = comments.reduce(
+      (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
+    );
+    return mostRecent.authorType == CommentAuthorType.ai &&
+        mostRecent.content.contains('VERIFY GATE: APPROVED');
   }
 
   /// Whether a Task or Bug's coding-execution run may start, built
@@ -5268,7 +5556,11 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [CommentRepository.getCommentsForTicket] (mirrors
   /// [_designSyncApproved]'s own read-back pattern — no change to
   /// [ChatCubit.runChatTurn]'s shared return contract) and passes it to
-  /// [_materializeDecomposition]. Added for
+  /// [_materializeDecomposition]. Similarly, when `stage ==
+  /// SddStage.verifying` and the turn succeeds, reads the reply back and
+  /// — only if it contains `VERIFY GATE: PENDING` — passes it to
+  /// [_materializeVerifyFixes] (added for
+  /// `aion-arch/changes/sdd-verify-quality-gate`). Added for
   /// `aion-arch/changes/board-execution-indicators-and-notifications`
   /// and `aion-arch/changes/board-task-ordering-indication`. When [stage]
   /// has a configured [_attachmentForStage], re-derives [_promptFor]'s
@@ -5374,6 +5666,17 @@ class TicketsCubit extends Cubit<TicketsState> {
             (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
           );
           await _materializeDecomposition(parent, mostRecent.content);
+        }
+      }
+      if (succeeded && stage == SddStage.verifying) {
+        final comments = await commentRepo.getCommentsForTicket(chatId);
+        if (comments.isNotEmpty) {
+          final mostRecent = comments.reduce(
+            (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
+          );
+          if (mostRecent.content.contains('VERIFY GATE: PENDING')) {
+            await _materializeVerifyFixes(parent, mostRecent.content);
+          }
         }
       }
     } catch (e) {
@@ -6538,17 +6841,22 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [_contextEnricher] (see
   /// [TicketContextEnricher.relatedTicketsSection] — omitted entirely
   /// when it returns `''`), and — for [SddStage.verifying]/
-  /// [SddStage.archived] — its direct children's titles and statuses, or
-  /// — for [SddStage.designBrief]/[SddStage.designSync] — the existing
+  /// [SddStage.archived] — its direct children's titles and statuses
+  /// (plus, for [SddStage.verifying] specifically, instructions to end
+  /// the reply with `VERIFY GATE: APPROVED`/`PENDING` and, on `PENDING`,
+  /// optionally a fenced `## Fixes Needed` block — parsed by
+  /// [_materializeVerifyFixes] once the turn completes, per
+  /// `aion-arch/changes/sdd-verify-quality-gate/design.md` §4.3), or —
+  /// for [SddStage.designBrief]/[SddStage.designSync] — the existing
   /// design-token file contents (see [_readTokenFilesForContext]) and,
   /// for [SddStage.designSync] specifically, the linked design Page's
   /// pasted content (see [_linkedDesignPage]), or — for
   /// [SddStage.proposed] — instructions to end the reply with a fenced
   /// `## Decomposition` block (parsed by [_parseDecomposition] once the
   /// turn completes, see [_materializeDecomposition]). Shared by
-  /// [_createStageChat], [_runStageChatTurn], and [retryDesignSync] (which
-  /// calls this method directly, so the related-tickets walk automatically
-  /// re-runs on retry too).
+  /// [_createStageChat], [_runStageChatTurn], and [retryDesignSync]/
+  /// [retryVerify] (which call this method directly, so the related-
+  /// tickets walk automatically re-runs on retry too).
   Future<String> _assembleStageContext(Ticket parent, SddStage stage) async {
     final buffer = StringBuffer()..writeln('# ${parent.title}');
     final description = parent.description;
@@ -6585,6 +6893,22 @@ class TicketsCubit extends Cubit<TicketsState> {
               : (child.sddStage?.name ?? 'not started');
           buffer.writeln('- ${child.title} ($statusLabel)');
         }
+      }
+      if (stage == SddStage.verifying) {
+        buffer
+          ..writeln()
+          ..writeln(
+            "Verify this ${parent.type.name}'s implementation against its "
+            'proposal and design (if any) — check for drift, missing '
+            'pieces, or bugs. End your reply with exactly one line: '
+            '"VERIFY GATE: APPROVED" if there are no issues, or "VERIFY '
+            'GATE: PENDING" if there are. If PENDING, optionally include a '
+            'fenced block titled "## Fixes Needed", one line per fix in '
+            'the exact form "- Task: <title>" or "- Bug: <title>" '
+            'optionally suffixed with " (blockedBy: <exact title of an '
+            'earlier line in this block>)" when that fix cannot start '
+            'until another one finishes.',
+          );
       }
     } else if (stage == SddStage.designBrief) {
       buffer
@@ -6657,7 +6981,57 @@ class TicketsCubit extends Cubit<TicketsState> {
     String reply,
     TicketType childType,
   ) {
-    const heading = '## Decomposition';
+    final expectedLabel = childType == TicketType.task ? 'Task' : 'Story';
+    return [
+      for (final (label, title, blockedByTitle) in _parseFencedChildLines(
+        reply: reply,
+        heading: '## Decomposition',
+        childTypeLabels: const ['Story', 'Task'],
+      ))
+        if (label == expectedLabel) (title, blockedByTitle),
+    ];
+  }
+
+  /// Parses [reply]'s trailing `"## Fixes Needed"` fenced block (see
+  /// [_assembleStageContext]'s [SddStage.verifying] prompt) into an
+  /// ordered list of `(childType, title, blockedByTitle)` triples — the
+  /// `Task`/`Bug` line prefix maps directly to [TicketType.task]/
+  /// [TicketType.bug], unlike [_parseDecomposition] (whose single
+  /// [TicketType] is fixed by the parent's own type, not per-line).
+  /// Returns an empty list if no `"## Fixes Needed"` block is found, or
+  /// no line matches at all — parse failure is silent, not an error, the
+  /// same fail-open posture [_parseDecomposition] already has. Added for
+  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  List<(TicketType childType, String title, String? blockedByTitle)>
+  _parseVerifyFixes(String reply) {
+    return [
+      for (final (label, title, blockedByTitle) in _parseFencedChildLines(
+        reply: reply,
+        heading: '## Fixes Needed',
+        childTypeLabels: const ['Task', 'Bug'],
+      ))
+        (label == 'Task' ? TicketType.task : TicketType.bug, title,
+            blockedByTitle),
+    ];
+  }
+
+  /// Shared line-parsing core behind [_parseDecomposition]/
+  /// [_parseVerifyFixes]: finds [heading] in [reply], takes the block of
+  /// text between it and the next blank line (or the end of [reply]),
+  /// and matches every `"- label: title"` line whose label is one of
+  /// [childTypeLabels] — optionally suffixed with an exact-title
+  /// `" (blockedBy: ...)"` reference to an earlier line in the same
+  /// block. Regex per line:
+  /// `^- (label1|label2|...): (.+?)(?: \(blockedBy: (.+)\))?$`. Added for
+  /// `aion-arch/changes/sdd-verify-quality-gate` (extracted from
+  /// [_parseDecomposition], which previously inlined this logic fixed to
+  /// `"## Decomposition"`/`Story|Task`).
+  List<(String label, String title, String? blockedByTitle)>
+  _parseFencedChildLines({
+    required String reply,
+    required String heading,
+    required List<String> childTypeLabels,
+  }) {
     final headingIndex = reply.indexOf(heading);
     if (headingIndex == -1) return [];
 
@@ -6667,16 +7041,15 @@ class TicketsCubit extends Cubit<TicketsState> {
         ? afterHeading
         : afterHeading.substring(0, blockEnd);
 
-    final expectedPrefix = childType == TicketType.task ? 'Task' : 'Story';
+    final labelPattern = childTypeLabels.join('|');
     final linePattern = RegExp(
-      r'^- (Story|Task): (.+?)(?: \(blockedBy: (.+)\))?$',
+      '^- ($labelPattern): (.+?)(?: \\(blockedBy: (.+)\\))?\$',
       multiLine: true,
     );
 
     return [
       for (final match in linePattern.allMatches(block))
-        if (match.group(1) == expectedPrefix)
-          (match.group(2)!.trim(), match.group(3)?.trim()),
+        (match.group(1)!, match.group(2)!.trim(), match.group(3)?.trim()),
     ];
   }
 
@@ -6700,11 +7073,52 @@ class TicketsCubit extends Cubit<TicketsState> {
         ? TicketType.story
         : TicketType.task;
     final parsed = _parseDecomposition(reply, childType);
+    await _materializeParsedChildren(
+      parent,
+      [
+        for (final (title, blockedByTitle) in parsed)
+          (childType, title, blockedByTitle),
+      ],
+    );
+  }
+
+  /// Runs once per `verifying`-stage chat turn whose reply contains
+  /// `VERIFY GATE: PENDING` (called from [_runStageChatTurn] immediately
+  /// after such a turn): parses [reply] via [_parseVerifyFixes], creates
+  /// one `task`/`bug` child ticket per parsed line under [parent] (via
+  /// [_materializeParsedChildren], the same child-creation/`blockedBy`-
+  /// linking core [_materializeDecomposition] uses). A `PENDING` reply
+  /// with no `"## Fixes Needed"` block is valid and materializes
+  /// nothing — the manual "Retry validation" bar still covers that case;
+  /// only the automatic retry tier ([_maybeRetryPendingVerify]) depends
+  /// on fix Tasks/Bugs existing at all, since it triggers off "all
+  /// children done." Added for `aion-arch/changes/sdd-verify-quality-gate`.
+  Future<void> _materializeVerifyFixes(Ticket parent, String reply) async {
+    await _materializeParsedChildren(parent, _parseVerifyFixes(reply));
+  }
+
+  /// Shared child-creation core behind [_materializeDecomposition]/
+  /// [_materializeVerifyFixes]: creates one ticket per [parsed] entry
+  /// under [parent] (default creation status via [_defaultCreationStatus]),
+  /// then — for every entry whose `blockedByTitle` exact-matches (case-
+  /// insensitive) another entry's title — creates a `blockedBy` link from
+  /// the new child to its blocker sibling (via
+  /// [TicketLinkRepository.createLink]). An unresolved `blockedByTitle`
+  /// (no matching sibling title) is skipped for the link only — the
+  /// child ticket itself is still created. An empty [parsed] list, or no
+  /// [TicketLinkRepository] configured, is a silent no-op. Added for
+  /// `aion-arch/changes/sdd-verify-quality-gate` (extracted from
+  /// [_materializeDecomposition], which previously inlined this logic
+  /// fixed to a single [TicketType] per call).
+  Future<void> _materializeParsedChildren(
+    Ticket parent,
+    List<(TicketType childType, String title, String? blockedByTitle)> parsed,
+  ) async {
     if (parsed.isEmpty) return;
 
     final now = DateTime.now();
     final idByTitle = <String, String>{};
-    for (final (title, _) in parsed) {
+    for (final (childType, title, _) in parsed) {
       final child = Ticket(
         id: _uuid.v4(),
         ticketId: '',
@@ -6721,7 +7135,7 @@ class TicketsCubit extends Cubit<TicketsState> {
 
     final linkRepo = _linkRepository;
     if (linkRepo == null) return;
-    for (final (title, blockedByTitle) in parsed) {
+    for (final (_, title, blockedByTitle) in parsed) {
       if (blockedByTitle == null) continue;
       final childId = idByTitle[title.toLowerCase()];
       final blockerId = idByTitle[blockedByTitle.toLowerCase()];
@@ -6782,6 +7196,14 @@ class TicketsCubit extends Cubit<TicketsState> {
     );
     return override ?? _stageHardcodedPresentName(stage);
   }
+
+  /// Public wrapper around [_stagePresentName], for presentation-layer
+  /// code (e.g. `TicketDetailScreen`'s Verifying-stage-chat title match)
+  /// that needs the same override-aware display name a spawned stage
+  /// chat is titled with, without duplicating [_sddStageConfigRepository]
+  /// resolution logic outside this cubit. Added for
+  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  Future<String> stagePresentName(SddStage stage) => _stagePresentName(stage);
 
   /// [stage]'s own hardcoded present-progressive name — the fallback
   /// [_stagePresentName] uses when no override is configured.
@@ -7093,7 +7515,16 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [_notificationRepository] — `null` when constructed without one, or
   /// when no matching notification exists yet) rather than re-parsing
   /// the comment thread a second time. Added for
-  /// `aion-arch/changes/pr-metadata-and-notification-center`.
+  /// `aion-arch/changes/pr-metadata-and-notification-center`. For an
+  /// `epic`/`story` ticket, also computes
+  /// [TicketDetailLoaded.verifyRetryReady] and
+  /// [TicketDetailLoaded.verifyPendingFixesRemaining] via
+  /// [_verifyRetryReadiness] (a pure read reusing
+  /// [_maybeRetryPendingVerify]'s own precondition chain) and, when
+  /// `verifyRetryReady` is `true`,
+  /// [TicketDetailLoaded.verifyRetryConfidence] from
+  /// [AutomationContext.verifyGateRetry]'s configured confidence. Added
+  /// for `aion-arch/changes/sdd-verify-quality-gate`.
   Future<void> getTicketById(String id) async {
     final current = state;
     final previousDetail =
@@ -7199,6 +7630,23 @@ class TicketsCubit extends Cubit<TicketsState> {
         sddStageCanRetry = canRetry;
       }
 
+      var verifyRetryReady = false;
+      AutomationConfidence? verifyRetryConfidence;
+      int? verifyPendingFixesRemaining;
+      if (ticket.type == TicketType.epic || ticket.type == TicketType.story) {
+        final readiness = await _verifyRetryReadiness(ticket);
+        verifyRetryReady = readiness.ready;
+        verifyPendingFixesRemaining = readiness.pendingFixesRemaining;
+        if (verifyRetryReady) {
+          final automationRepo = _automationSettingsRepository;
+          verifyRetryConfidence = automationRepo == null
+              ? null
+              : await automationRepo.getConfidence(
+                  AutomationContext.verifyGateRetry,
+                );
+        }
+      }
+
       await _seedExecutionTokenTotals([ticket.id]);
 
       emit(
@@ -7225,6 +7673,9 @@ class TicketsCubit extends Cubit<TicketsState> {
           sddStageFailureReason: sddStageFailureReason,
           sddStageCanRetry: sddStageCanRetry,
           executionTokenTotal: _executionTokenTotals[ticket.id],
+          verifyRetryReady: verifyRetryReady,
+          verifyRetryConfidence: verifyRetryConfidence,
+          verifyPendingFixesRemaining: verifyPendingFixesRemaining,
         ),
       );
     } catch (e) {

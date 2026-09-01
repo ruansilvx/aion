@@ -52,6 +52,11 @@ class SharedPrefsAutomationSettingsRepository
   static const _specAutoLinkAutomationKey =
       'automation_settings.spec_auto_link_automation';
 
+  /// [AutomationContext.verifyGateRetry]'s key. Added for
+  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  static const _verifyGateRetryAutomationKey =
+      'automation_settings.verify_gate_retry_automation';
+
   String _keyFor(AutomationContext context) => switch (context) {
     AutomationContext.sddStage => _sddStageAutomationKey,
     AutomationContext.codingExecution => _codingExecutionAutomationKey,
@@ -63,6 +68,7 @@ class SharedPrefsAutomationSettingsRepository
     AutomationContext.ticketCreation => _ticketCreationAutomationKey,
     AutomationContext.ticketLinking => _ticketLinkingAutomationKey,
     AutomationContext.specAutoLink => _specAutoLinkAutomationKey,
+    AutomationContext.verifyGateRetry => _verifyGateRetryAutomationKey,
   };
 
   @override
