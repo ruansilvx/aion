@@ -842,11 +842,23 @@ class _CanvasNodeContent extends StatelessWidget {
           width: 150,
           height: 36,
           child: Center(
-            child: Text(
-              transitionOutcomeLabel(context, outcome),
-              style: AionText.badgeLabel.copyWith(
-                color: transitionOutcomeColor(c, outcome),
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // §1.3: glyph §0.1, 12×12, glyph → label gap
+                // AionSpacing.sp8.
+                TransitionOutcomeGlyph(
+                  outcome: outcome,
+                  color: transitionOutcomeColor(c, outcome),
+                ),
+                const SizedBox(width: AionSpacing.sp8),
+                Text(
+                  transitionOutcomeLabel(context, outcome),
+                  style: AionText.badgeLabel.copyWith(
+                    color: transitionOutcomeColor(c, outcome),
+                  ),
+                ),
+              ],
             ),
           ),
         ),

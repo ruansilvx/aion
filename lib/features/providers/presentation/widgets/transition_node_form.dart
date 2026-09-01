@@ -33,6 +33,142 @@ Color transitionOutcomeColor(AionColors c, TransitionOutcome outcome) =>
       TransitionOutcome.blocked => c.danger,
     };
 
+/// The `CustomPaint` check/cross glyph every outcome indicator renders,
+/// per `aion-arch/changes/sddstage-transition-preconditions/design.md`
+/// §0.1 — no icon font, so the two outcomes stay distinguishable by
+/// silhouette alone, not by hue: a closed check (`allowed`) versus an
+/// open cross (`blocked`). Shared by the canvas terminal pill (§1.3), the
+/// outline badge (§2.2), and this form's own outcome chip (§3.3) — the
+/// "one table, three consumers" pattern §0.1 itself calls out. Public
+/// (not module-private) since `transition_outline_list.dart` and
+/// `sddstage_precondition_editor_screen.dart` both render it too. Added
+/// for `aion-arch/changes/sddstage-transition-preconditions`'s round-2
+/// `/verify` follow-up — the glyph was specified but never built in the
+/// original `/apply` pass.
+class TransitionOutcomeGlyph extends StatelessWidget {
+  /// Creates a [TransitionOutcomeGlyph] painting [outcome] in [color] at
+  /// [size] (a square box — §0.1's baseline is `12`, §2.2's outline
+  /// badge uses `10`, §3.3's form chip uses `11`). [checkStrokeWidth]/
+  /// [crossStrokeWidth] default to §0.1's `12×12` values (`2.0`/`1.6`)
+  /// scaled by `size / 12`; pass §2.2's literal `1.8`/`1.4` at the
+  /// `10×10` outline-badge call site, where the spec gives non-scaled
+  /// values explicitly.
+  const TransitionOutcomeGlyph({
+    super.key,
+    required this.outcome,
+    required this.color,
+    this.size = 12,
+    this.checkStrokeWidth,
+    this.crossStrokeWidth,
+  });
+
+  /// Which glyph to paint — a check for [TransitionOutcome.allowed], a
+  /// cross for [TransitionOutcome.blocked].
+  final TransitionOutcome outcome;
+
+  /// The glyph's stroke color — always [transitionOutcomeColor] at the
+  /// call site, per §0.1.
+  final Color color;
+
+  /// The square box (width and height) the glyph is painted in.
+  final double size;
+
+  /// Overrides §0.1's `12×12`-scaled default check-stroke width (`2.0 *
+  /// size / 12`) — pass §2.2's literal `1.8` at the `10×10` outline-badge
+  /// call site, where the spec gives a non-scaled value explicitly.
+  final double? checkStrokeWidth;
+
+  /// Same override shape as [checkStrokeWidth], for the cross stroke
+  /// (default `1.6 * size / 12`; §2.2's literal outline-badge value is
+  /// `1.4`).
+  final double? crossStrokeWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(
+        painter: _TransitionOutcomeGlyphPainter(
+          outcome: outcome,
+          color: color,
+          size: size,
+          checkStrokeWidth: checkStrokeWidth ?? 2.0 * size / 12,
+          crossStrokeWidth: crossStrokeWidth ?? 1.6 * size / 12,
+        ),
+      ),
+    );
+  }
+}
+
+/// [TransitionOutcomeGlyph]'s painter. Draws within a `size × size` box,
+/// scaled from §0.1's `12×12` reference geometry.
+class _TransitionOutcomeGlyphPainter extends CustomPainter {
+  _TransitionOutcomeGlyphPainter({
+    required this.outcome,
+    required this.color,
+    required this.size,
+    required this.checkStrokeWidth,
+    required this.crossStrokeWidth,
+  });
+
+  final TransitionOutcome outcome;
+  final Color color;
+  final double size;
+  final double checkStrokeWidth;
+  final double crossStrokeWidth;
+
+  @override
+  void paint(Canvas canvas, Size canvasSize) {
+    final scale = size / 12;
+    switch (outcome) {
+      case TransitionOutcome.allowed:
+        // Two strokes, ~11 long × 7 tall (§0.1's check), StrokeCap.round
+        // + StrokeJoin.round at the joint.
+        final paint = Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = checkStrokeWidth
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round;
+        final path = Path()
+          ..moveTo(0.5 * scale, 6.3 * scale)
+          ..lineTo(4.5 * scale, 9.7 * scale)
+          ..lineTo(11.5 * scale, 2.3 * scale);
+        canvas.drawPath(path, paint);
+      case TransitionOutcome.blocked:
+        // Two ~10-long strokes at ±45° through the box's center (§0.1's
+        // cross), StrokeCap.round.
+        final paint = Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = crossStrokeWidth
+          ..strokeCap = StrokeCap.round;
+        final center = size / 2;
+        final half = 3.5355 * scale; // half of a 10-long diagonal
+        canvas
+          ..drawLine(
+            Offset(center - half, center - half),
+            Offset(center + half, center + half),
+            paint,
+          )
+          ..drawLine(
+            Offset(center + half, center - half),
+            Offset(center - half, center + half),
+            paint,
+          );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _TransitionOutcomeGlyphPainter oldDelegate) =>
+      oldDelegate.outcome != outcome ||
+      oldDelegate.color != color ||
+      oldDelegate.size != size ||
+      oldDelegate.checkStrokeWidth != checkStrokeWidth ||
+      oldDelegate.crossStrokeWidth != crossStrokeWidth;
+}
+
 /// [branch]'s chained child's field display name, resolved from
 /// [nodesById] — feeds [TransitionNodeForm]'s `...ChildFieldLabel`
 /// parameters. `null` for a terminal branch, or for a
@@ -906,6 +1042,13 @@ class _OutcomeChip extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // §3.3: glyph §0.1 at 11×11, glyph → label gap 7.
+                  TransitionOutcomeGlyph(
+                    outcome: outcome,
+                    color: selected ? color : c.textSecondary,
+                    size: 11,
+                  ),
+                  const SizedBox(width: 7),
                   Text(
                     transitionOutcomeLabel(context, outcome),
                     style: AionText.badgeLabel.copyWith(

@@ -1460,24 +1460,31 @@ class _SddStageRenameRowState extends State<_SddStageRenameRow> {
                   ),
                 ),
                 // "Configure precondition" affordance, appended after
-                // the skill-attachment indicator — every one of the 5
-                // stages carries a precondition. Added for
+                // the skill-attachment indicator — every precondition-
+                // bearing stage (all of `SddStage.values` except
+                // `archived`, which has no precondition and stays
+                // untouched — design.md §7/§5) gets one. Added for
                 // `aion-arch/changes/sddstage-transition-
                 // preconditions`; see that change's design.md §5.
-                const SizedBox(width: 10),
-                // Flexible (not a fixed size): the affordance itself
-                // decides compact (§5.1) vs. labeled (§5.2) from
-                // whatever width this leaves it — see its own dartdoc —
-                // rather than this row guessing from its own gross
-                // width, which the AttachmentBadge's variable width
-                // (short "+ Attach skill" vs. a long "KIND ·
-                // CONFIDENCE" label) makes unreliable.
-                Flexible(
-                  child: _PreconditionAffordance(
-                    stage: widget.stage,
-                    count: widget.preconditionNodeCount,
+                // Excluding `archived` here was missed in the original
+                // `/apply` pass and fixed in a follow-up `/verify`
+                // round (see tasks.md's "Verify follow-ups (round 2)").
+                if (widget.stage != SddStage.archived) ...[
+                  const SizedBox(width: 10),
+                  // Flexible (not a fixed size): the affordance itself
+                  // decides compact (§5.1) vs. labeled (§5.2) from
+                  // whatever width this leaves it — see its own
+                  // dartdoc — rather than this row guessing from its
+                  // own gross width, which the AttachmentBadge's
+                  // variable width (short "+ Attach skill" vs. a long
+                  // "KIND · CONFIDENCE" label) makes unreliable.
+                  Flexible(
+                    child: _PreconditionAffordance(
+                      stage: widget.stage,
+                      count: widget.preconditionNodeCount,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
             if (_attachmentFormOpen) ...[

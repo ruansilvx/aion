@@ -312,36 +312,56 @@ class _NodeRowState extends State<_NodeRow> {
                         AionSpacing.sp12,
                         AionSpacing.sp8,
                       ),
-                      child: Row(
-                        children: [
-                          AnimatedRotation(
-                            turns: _expanded ? 0.25 : 0,
-                            duration: const Duration(milliseconds: 140),
-                            curve: Curves.easeOut,
-                            child: PhosphorIcon(
-                              PhosphorIcons.caretRightLight,
-                              size: 14,
-                              color: _hovered ? c.textSecondary : c.textMuted,
-                            ),
-                          ),
-                          const SizedBox(width: AionSpacing.sp8),
-                          Flexible(
-                            child: Text(
-                              title,
-                              style: AionText.cardTitle.copyWith(
-                                color: c.textPrimary,
+                      // §2.2's branch-word prefix abbreviates (`M`/`U`)
+                      // below 360px of *pane* width — measured here via
+                      // `LayoutBuilder`, the row's own available width,
+                      // since that's what's actually cramped when the
+                      // prefix needs to shrink.
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final narrow = constraints.maxWidth < 360;
+                          return Row(
+                            children: [
+                              AnimatedRotation(
+                                turns: _expanded ? 0.25 : 0,
+                                duration: const Duration(milliseconds: 140),
+                                curve: Curves.easeOut,
+                                child: PhosphorIcon(
+                                  PhosphorIcons.caretRightLight,
+                                  size: 14,
+                                  color: _hovered
+                                      ? c.textSecondary
+                                      : c.textMuted,
+                                ),
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const Spacer(),
-                          if (matchedOutcome != null)
-                            _OutcomeBadge(outcome: matchedOutcome),
-                          const SizedBox(width: AionSpacing.sp8),
-                          if (unmatchedOutcome != null)
-                            _OutcomeBadge(outcome: unmatchedOutcome),
-                        ],
+                              const SizedBox(width: AionSpacing.sp8),
+                              Flexible(
+                                child: Text(
+                                  title,
+                                  style: AionText.cardTitle.copyWith(
+                                    color: c.textPrimary,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const Spacer(),
+                              if (matchedOutcome != null)
+                                _OutcomeBadge(
+                                  outcome: matchedOutcome,
+                                  matched: true,
+                                  narrow: narrow,
+                                ),
+                              const SizedBox(width: AionSpacing.sp8),
+                              if (unmatchedOutcome != null)
+                                _OutcomeBadge(
+                                  outcome: unmatchedOutcome,
+                                  matched: false,
+                                  narrow: narrow,
+                                ),
+                            ],
+                          );
+                        },
                       ),
                     ),
                   ),
@@ -508,16 +528,41 @@ class _BranchChild extends StatelessWidget {
 }
 
 /// The terminal-outcome badge trailing a [_NodeRow]. Mirrors
-/// `_OutcomeBadge` (`decision_outline_list.dart`).
+/// `_OutcomeBadge` (`decision_outline_list.dart`), plus design.md §2.2's
+/// [TransitionOutcomeGlyph] and branch-word prefix (added for this
+/// change's round-2 `/verify` follow-up — both were missing from the
+/// original `/apply` pass).
 class _OutcomeBadge extends StatelessWidget {
-  const _OutcomeBadge({required this.outcome});
+  const _OutcomeBadge({
+    required this.outcome,
+    required this.matched,
+    required this.narrow,
+  });
 
   final TransitionOutcome outcome;
+
+  /// Whether this badge sits on the `matched` (vs. `unmatched`) branch —
+  /// which branch-word prefix (§2.2) to show.
+  final bool matched;
+
+  /// Whether the pane is narrower than §2.2's `360`px threshold —
+  /// abbreviates the branch-word prefix to `M`/`U`.
+  final bool narrow;
 
   @override
   Widget build(BuildContext context) {
     final c = ThemeScope.of(context).colors;
     final color = transitionOutcomeColor(c, outcome);
+    final prefixColor = matched ? c.primary : c.textMuted;
+    final prefixText = narrow
+        ? (matched
+              ? context.l10n.transitionPreconditionMatchedLabel[0]
+              : context.l10n.transitionPreconditionUnmatchedLabel[0])
+              .toUpperCase()
+        : (matched
+                  ? context.l10n.transitionPreconditionMatchedLabel
+                  : context.l10n.transitionPreconditionUnmatchedLabel)
+              .toUpperCase();
     return DecoratedBox(
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.14),
@@ -531,6 +576,19 @@ class _OutcomeBadge extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              Text(
+                prefixText,
+                style: AionText.caption.copyWith(color: prefixColor),
+              ),
+              const SizedBox(width: 5),
+              TransitionOutcomeGlyph(
+                outcome: outcome,
+                color: color,
+                size: 10,
+                checkStrokeWidth: 1.8,
+                crossStrokeWidth: 1.4,
+              ),
+              const SizedBox(width: 5),
               Text(
                 transitionOutcomeLabel(context, outcome),
                 style: AionText.badgeLabel.copyWith(color: color),
