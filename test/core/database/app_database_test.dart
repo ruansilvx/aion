@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:aion/core/core.dart';
 import 'package:aion/features/projects/projects.dart';
 import 'package:aion/features/tickets/domain/entities/default_workflow_statuses.dart';
+import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 
 /// Dummy project — every test passes an explicit in-memory executor,
 /// mirroring `ticket_dao_test.dart`'s own precedent.
@@ -186,4 +187,58 @@ void main() {
       );
     },
   );
+
+  group('schema 20 — verifying graph upgraded to the verifyGateApproved '
+      'two-node shape', () {
+    // Same `PRAGMA user_version` technique as the schema-16/18 coverage
+    // above — genuinely exercises `AppDatabase.migration.onUpgrade`'s real
+    // `from < 20` branch (calling
+    // `TransitionPreconditionDao.upgradeVerifyingGraphIfDefault`), chained
+    // after the real `from < 19` branch (`PRAGMA user_version = 18`, one
+    // less than 19, so that branch's own `createTable` +
+    // `seedDefaultsIfEmpty` genuinely run first — an in-memory database
+    // has no pre-existing tables, so a `from = 19` starting point would
+    // skip table creation entirely). Since `seedDefaultsIfEmpty` already
+    // seeds the *new* two-node shape directly for any table it creates
+    // fresh, `upgradeVerifyingGraphIfDefault`'s own fingerprint check
+    // correctly no-ops here — this test only confirms the end state
+    // (every upgraded install ends up on the two-node shape, whichever
+    // path got it there), not the fingerprint-matching logic itself.
+    // `upgradeVerifyingGraphIfDefault`'s actual upgrade-in-place behavior
+    // (starting from real single-node data) is covered directly against
+    // the DAO in `drift_transition_precondition_repository_test.dart`'s
+    // own `upgradeVerifyingGraphIfDefault` group, per
+    // `aion-arch/changes/sdd-verify-quality-gate/design.md` §3.2.
+    test(
+      'an install upgraded from schema 18 ends up with the two-node '
+      'verifying shape',
+      () async {
+        final database = AppDatabase(
+          _testProject,
+          NativeDatabase.memory(
+            setup: (db) => db.execute('PRAGMA user_version = 18'),
+          ),
+        );
+        addTearDown(database.close);
+
+        final nodes = await database.transitionPreconditionDao.getAllNodes();
+        final verifyingGraph = await database.transitionPreconditionDao
+            .getGraph(SddStage.verifying);
+        final verifyingNodes = nodes
+            .where(
+              (n) =>
+                  n.id == verifyingGraph?.rootNodeId ||
+                  n.fieldId == 'verifyGateApproved',
+            )
+            .toList();
+
+        expect(verifyingGraph?.rootNodeId, isNotNull);
+        expect(verifyingNodes, hasLength(2));
+        expect(
+          verifyingNodes.map((n) => n.fieldId),
+          containsAll(['mostRecentChatHasTerminalReply', 'verifyGateApproved']),
+        );
+      },
+    );
+  });
 }

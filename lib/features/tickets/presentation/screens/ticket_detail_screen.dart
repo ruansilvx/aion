@@ -138,6 +138,21 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   /// `aion-arch/changes/sdd-design-gate`.
   bool _retryingDesignSync = false;
 
+  /// Whether a [TicketsCubit.retryVerify] call is currently in flight —
+  /// mirrors [_retryingDesignSync]'s exact purpose, one stage later.
+  /// Added for `aion-arch/changes/sdd-verify-quality-gate`.
+  bool _retryingVerify = false;
+
+  /// [SddStage.verifying]'s override-aware display name (via
+  /// [TicketsCubit.stagePresentName]), resolved once in [initState] —
+  /// mirrors [_automationConfidence]'s own "loaded once per screen
+  /// instance" pattern. `null` until resolved, in which case the
+  /// Verifying-stage retry bar's title match falls back to the
+  /// hardcoded `'Verifying'` literal so the bar isn't silently hidden
+  /// during that brief window. Added for
+  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  String? _verifyingStagePresentName;
+
   /// Whether the top-level [BlocListener]'s most recently seen
   /// [TicketDetailLoaded] had `isAdvancingStage: true` for the
   /// currently-viewed `chat` ticket — tracked so the listener can detect
@@ -164,6 +179,21 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     }
   }
 
+  /// Calls [TicketsCubit.retryVerify], toggling [_retryingVerify] around
+  /// the call so `_RetryValidationButton` can show its in-flight state
+  /// and ignore further taps until this one resolves. Mirrors
+  /// [_retryDesignSync] exactly. Added for
+  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  Future<void> _retryVerify(Ticket verifyingChat) async {
+    if (_retryingVerify) return;
+    setState(() => _retryingVerify = true);
+    try {
+      await context.read<TicketsCubit>().retryVerify(verifyingChat);
+    } finally {
+      if (mounted) setState(() => _retryingVerify = false);
+    }
+  }
+
   /// Captured once in [initState] so [dispose] can call
   /// [TicketsCubit.stopDetailTicker] on the resolved instance directly,
   /// rather than a fresh `context.read<TicketsCubit>()` — an ancestor
@@ -185,6 +215,11 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     context.read<CommentsCubit>().loadComments(widget.ticketId);
     context.read<ChatCubit>().loadMessages(widget.ticketId);
     context.read<TicketsCubit>().startDetailTicker();
+    unawaited(
+      _ticketsCubit.stagePresentName(SddStage.verifying).then((name) {
+        if (mounted) setState(() => _verifyingStagePresentName = name);
+      }),
+    );
     unawaited(
       context
           .read<AutomationSettingsRepository>()
@@ -476,6 +511,9 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                       _maybeAutoAdvanceSddStage(t, canAdvance),
                                   executionTokenTotal:
                                       state.executionTokenTotal,
+                                  onRetryVerify: () => context
+                                      .read<TicketsCubit>()
+                                      .retryVerifyForStoryOrEpic(ticket),
                                 ),
                                 // `_PendingSkillAttachmentBanner` — placed
                                 // directly under the title/type/status
@@ -624,6 +662,59 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                 child: _RetryValidationButton(
                                   isLoading: _retryingDesignSync,
                                   onRetry: () => _retryDesignSync(chatTicket),
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                  // "Retry validation" bar for the Verifying-stage chat —
+                  // structurally identical to the Design Sync bar above,
+                  // one stage later. Shown only for a
+                  // "<Verifying present name> — <Story>" chat whose most
+                  // recent AI reply says PENDING. Added for
+                  // aion-arch/changes/sdd-verify-quality-gate; see
+                  // design.md §5.1 and the Component Spec §2.
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 160),
+                    alignment: Alignment.topCenter,
+                    child: BlocBuilder<TicketsCubit, TicketsState>(
+                      builder: (context, ticketsState) {
+                        if (ticketsState is! TicketDetailLoaded) {
+                          return const SizedBox.shrink();
+                        }
+                        final chatTicket = ticketsState.ticket;
+                        final prefix =
+                            '${_verifyingStagePresentName ?? 'Verifying'} — ';
+                        if (chatTicket.type != TicketType.chat ||
+                            !chatTicket.title.startsWith(prefix)) {
+                          return const SizedBox.shrink();
+                        }
+                        return BlocBuilder<ChatCubit, ChatState>(
+                          builder: (context, chatState) {
+                            if (chatState is! ChatLoaded ||
+                                chatState.comments.isEmpty) {
+                              return const SizedBox.shrink();
+                            }
+                            final mostRecent = chatState.comments.reduce(
+                              (a, b) =>
+                                  a.createdAt.isAfter(b.createdAt) ? a : b,
+                            );
+                            final isPending =
+                                mostRecent.authorType == CommentAuthorType.ai &&
+                                mostRecent.content.contains(
+                                  'VERIFY GATE: PENDING',
+                                );
+                            if (!isPending) return const SizedBox.shrink();
+                            return Padding(
+                              padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: _RetryValidationButton(
+                                  isLoading: _retryingVerify,
+                                  onRetry: () => _retryVerify(chatTicket),
                                 ),
                               ),
                             );

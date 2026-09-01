@@ -336,6 +336,18 @@ String _confidenceSubLabel(
     AutomationConfidence.manual =>
       context.l10n.settingsAutomationSpecAutoLinkManualSubLabel,
   },
+  // No `_AutomationSection` instance renders this context yet — mirrors
+  // `specAutoLink`'s own "no dedicated Settings row yet" precedent
+  // immediately above; reachable via the generic decision-graph editor
+  // route only. Added for `aion-arch/changes/sdd-verify-quality-gate`.
+  AutomationContext.verifyGateRetry => switch (confidence) {
+    AutomationConfidence.auto =>
+      context.l10n.settingsAutomationVerifyGateRetryAutoSubLabel,
+    AutomationConfidence.gated =>
+      context.l10n.settingsAutomationVerifyGateRetryGatedSubLabel,
+    AutomationConfidence.manual =>
+      context.l10n.settingsAutomationVerifyGateRetryManualSubLabel,
+  },
 };
 
 /// The mode dot's color, encoding [confidence] per design.md §7's

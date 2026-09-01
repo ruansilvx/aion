@@ -117,6 +117,7 @@ class TicketMetadataSection extends StatelessWidget {
     required this.onAdvanceSddStage,
     required this.onMaybeAutoAdvance,
     required this.executionTokenTotal,
+    this.onRetryVerify,
   });
 
   /// The ticket this section renders metadata for — see the class doc
@@ -154,6 +155,16 @@ class TicketMetadataSection extends StatelessWidget {
   /// has completed yet — see [_showPredictedTokenRange]. Added for
   /// `aion-arch/changes/token-cost-prediction`.
   final int? executionTokenTotal;
+
+  /// Called when the "Ready to retry verification" footer tier's
+  /// gated-confirm or manual button is pressed for an `epic`/`story`
+  /// [ticket] — see `TicketDetailScreen`'s wiring via
+  /// `TicketsCubit.retryVerifyForStoryOrEpic`. `null` (the default) for
+  /// any caller that never renders an `epic`/`story` [ticket] here (e.g.
+  /// `ChatTranscriptPane`'s embedding, always a `chat` ticket, where the
+  /// "Ready to retry verification" tier can never trigger). Added for
+  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  final VoidCallback? onRetryVerify;
 
   /// [ActiveTicketViewRegistry] is only provided on desktop with a
   /// resolved project directory — mirrors
@@ -207,6 +218,8 @@ class TicketMetadataSection extends StatelessWidget {
                   :final isAdvancingStage,
                   :final sddStageFailureReason,
                   :final sddStageCanRetry,
+                  :final verifyRetryReady,
+                  :final verifyRetryConfidence,
                 ) =>
                   Semantics(
                     header: true,
@@ -737,6 +750,9 @@ class TicketMetadataSection extends StatelessWidget {
                                 sddStageCanRetry: sddStageCanRetry,
                                 onRetryStageAdvance: () =>
                                     onAdvanceSddStage(ticket),
+                                verifyRetryReady: verifyRetryReady,
+                                verifyRetryConfidence: verifyRetryConfidence,
+                                onRetryVerify: onRetryVerify,
                               ),
                               const SizedBox(height: AionSpacing.sp16),
                               Container(color: c.border, height: 1),
@@ -1660,6 +1676,9 @@ class _SddStageSection extends StatelessWidget {
     this.sddStageFailureReason,
     this.sddStageCanRetry = false,
     this.onRetryStageAdvance,
+    this.verifyRetryReady = false,
+    this.verifyRetryConfidence,
+    this.onRetryVerify,
   });
 
   final Ticket ticket;
@@ -1697,6 +1716,31 @@ class _SddStageSection extends StatelessWidget {
   /// meaningful when [sddStageFailureReason] is non-`null`. Added for
   /// `aion-arch/changes/board-execution-indicators-and-notifications`.
   final VoidCallback? onRetryStageAdvance;
+
+  /// Whether [ticket] (an `epic`/`story`) is ready for a verify retry —
+  /// see `TicketsCubit._verifyRetryReadiness`'s dartdoc for the exact
+  /// precondition chain. Takes priority over the generic
+  /// `canAdvance`/[_NotReadyHint] tiers when `true` (Component Spec
+  /// §1.0's mutual-exclusivity rule) — while a `VERIFY GATE: PENDING`
+  /// verdict is unresolved, advance to `archived` stays blocked, so the
+  /// two tiers never both apply. Added for
+  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  final bool verifyRetryReady;
+
+  /// The configured [AutomationContext.verifyGateRetry] confidence,
+  /// meaningful only when [verifyRetryReady] is `true` — selects which
+  /// of the three "Ready to retry verification" tier treatments renders
+  /// (gated banner, manual button, or auto note), mirroring
+  /// [automationConfidence]'s own role for the advance tier. Added for
+  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  final AutomationConfidence? verifyRetryConfidence;
+
+  /// Called when the "Ready to retry verification" tier's gated-confirm
+  /// or manual button is pressed — re-calls `TicketsCubit.retryVerify`
+  /// for [ticket]'s current Verifying-stage chat. Only meaningful when
+  /// [verifyRetryReady] is `true`. Added for
+  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  final VoidCallback? onRetryVerify;
 
   static const _fullStages = [
     SddStage.exploring,
@@ -1820,6 +1864,43 @@ class _SddStageSection extends StatelessWidget {
             canRetry: sddStageCanRetry,
             onRetry: onRetryStageAdvance,
           ),
+        ] else if (verifyRetryReady && verifyRetryConfidence != null) ...[
+          // "Ready to retry verification" footer tier — Component Spec
+          // §1. More specific/actionable than the generic canAdvance/
+          // _NotReadyHint tiers below, so it preempts both; mutually
+          // exclusive with them in practice (§1.0), since advance to
+          // `archived` stays blocked while a PENDING verdict is
+          // unresolved. Added for
+          // `aion-arch/changes/sdd-verify-quality-gate`.
+          const SizedBox(height: AionSpacing.sp12),
+          switch (verifyRetryConfidence!) {
+            AutomationConfidence.gated => _GatedBanner(
+              currentStage: currentStage,
+              nextStage: null,
+              nextStageLabel: nextStageLabel,
+              onAdvance: onRetryVerify ?? () {},
+              icon: PhosphorIcons.arrowsClockwiseLight,
+              title: context.l10n.ticketDetailSddStageSubReadyToRetryVerify,
+              // This tier only ever means one thing (Component Spec
+              // §1.1.2), so no sub-line — the override exists for
+              // completeness/future callers; explicitly passing `null`
+              // here (rather than omitting it) matches the same fallback
+              // the computed sub-line would already resolve to for this
+              // (currentStage, null) pair.
+              subLine: null,
+              actionLabel: context.l10n.ticketDetailSddStageRetryVerifyAction,
+            ),
+            AutomationConfidence.manual => _ManualAdvanceButton(
+              nextStageLabel: nextStageLabel,
+              onAdvance: onRetryVerify ?? () {},
+              icon: PhosphorIcons.arrowsClockwiseLight,
+              actionLabel: context.l10n.ticketDetailSddStageRetryVerifyAction,
+            ),
+            AutomationConfidence.auto => const _AutoAdvancedNote(
+              stageLabel: '',
+              text: 'Verification retried automatically',
+            ),
+          },
         ] else if (canAdvance && automationConfidence != null) ...[
           const SizedBox(height: AionSpacing.sp12),
           switch (automationConfidence!) {
@@ -2257,6 +2338,10 @@ class _GatedBanner extends StatelessWidget {
     required this.nextStage,
     required this.nextStageLabel,
     required this.onAdvance,
+    this.icon,
+    this.title,
+    this.subLine,
+    this.actionLabel,
   });
 
   /// [Ticket.sddStage] before this advance — determines the design-stage
@@ -2269,22 +2354,46 @@ class _GatedBanner extends StatelessWidget {
 
   /// The present-progressive name of the stage advancing would move to
   /// (e.g. `"Verifying"`), interpolated into the banner title per
-  /// design.md §2.3.
+  /// design.md §2.3. Unused when [title] is provided.
   final String nextStageLabel;
   final VoidCallback onAdvance;
+
+  /// Explicit leading-glyph override — used by the "Ready to retry
+  /// verification" footer tier's `arrows-clockwise` motif in place of
+  /// the stage-derived sparkle/pencil glyph (Component Spec §1.1.2).
+  /// `null` falls back to the existing [currentStage]-derived
+  /// computation. Added for `aion-arch/changes/sdd-verify-quality-gate`.
+  final PhosphorIconData? icon;
+
+  /// Explicit banner title override, falling back to the existing
+  /// `"Ready to advance to <stage>"` computed title when `null`. Added
+  /// for `aion-arch/changes/sdd-verify-quality-gate`.
+  final String? title;
+
+  /// Explicit sub-line override, falling back to [_computedSubLine] when
+  /// `null` (which itself may resolve to `null` — no sub-line — for any
+  /// [currentStage]/[nextStage] pair it doesn't cover). Added for
+  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  final String? subLine;
+
+  /// Explicit confirm-button label override, falling back to the
+  /// existing fixed `"Advance"` label when `null`. Added for
+  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  final String? actionLabel;
 
   /// The sub-line text from design.md §3.3's table, or `null` for every
   /// transition it doesn't cover (the original explore/propose/verify/
   /// archive stages keep no sub-line at all).
-  String? _subLine(BuildContext context) => switch ((currentStage, nextStage)) {
-    (SddStage.proposed, SddStage.designBrief) =>
-      context.l10n.ticketDetailSddStageSubProposalAccepted,
-    (SddStage.designBrief, SddStage.designSync) =>
-      context.l10n.ticketDetailSddStageSubDesignPasted,
-    (SddStage.designSync, SddStage.verifying) =>
-      context.l10n.ticketDetailSddStageSubDesignApproved,
-    _ => null,
-  };
+  String? _computedSubLine(BuildContext context) =>
+      switch ((currentStage, nextStage)) {
+        (SddStage.proposed, SddStage.designBrief) =>
+          context.l10n.ticketDetailSddStageSubProposalAccepted,
+        (SddStage.designBrief, SddStage.designSync) =>
+          context.l10n.ticketDetailSddStageSubDesignPasted,
+        (SddStage.designSync, SddStage.verifying) =>
+          context.l10n.ticketDetailSddStageSubDesignApproved,
+        _ => null,
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -2293,7 +2402,22 @@ class _GatedBanner extends StatelessWidget {
     final isDesignStage =
         currentStage == SddStage.designBrief ||
         currentStage == SddStage.designSync;
-    final subLine = _subLine(context);
+    final resolvedIcon =
+        icon ??
+        (isDesignStage
+            ? PhosphorIcons.pencilSimpleLight
+            : PhosphorIcons.sparkleLight);
+    // No color change for an overridden icon — still `primary` (Component
+    // Spec §1.1.2). Only the stage-derived default distinguishes
+    // `typePage` for the design-stage pencil glyph.
+    final resolvedIconColor = icon != null || !isDesignStage
+        ? c.primary
+        : c.typePage;
+    final resolvedTitle =
+        title ?? context.l10n.ticketDetailSddStageReadyBanner(nextStageLabel);
+    final resolvedSubLine = subLine ?? _computedSubLine(context);
+    final resolvedActionLabel =
+        actionLabel ?? context.l10n.ticketDetailSddStageAdvance;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: c.primary.withValues(alpha: t.fillAlpha),
@@ -2308,13 +2432,7 @@ class _GatedBanner extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            PhosphorIcon(
-              isDesignStage
-                  ? PhosphorIcons.pencilSimpleLight
-                  : PhosphorIcons.sparkleLight,
-              size: 18,
-              color: isDesignStage ? c.typePage : c.primary,
-            ),
+            PhosphorIcon(resolvedIcon, size: 18, color: resolvedIconColor),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -2322,15 +2440,13 @@ class _GatedBanner extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    context.l10n.ticketDetailSddStageReadyBanner(
-                      nextStageLabel,
-                    ),
+                    resolvedTitle,
                     style: AionText.cardTitle.copyWith(color: c.textPrimary),
                   ),
-                  if (subLine != null) ...[
+                  if (resolvedSubLine != null) ...[
                     const SizedBox(height: 2),
                     Text(
-                      subLine,
+                      resolvedSubLine,
                       style: AionText.time.copyWith(color: c.textSecondary),
                     ),
                   ],
@@ -2339,7 +2455,7 @@ class _GatedBanner extends StatelessWidget {
             ),
             Semantics(
               button: true,
-              label: context.l10n.ticketDetailSddStageAdvance,
+              label: resolvedActionLabel,
               child: GestureDetector(
                 onTap: onAdvance,
                 child: DecoratedBox(
@@ -2353,7 +2469,7 @@ class _GatedBanner extends StatelessWidget {
                       vertical: 9,
                     ),
                     child: Text(
-                      context.l10n.ticketDetailSddStageAdvance,
+                      resolvedActionLabel,
                       style: AionText.button.copyWith(
                         color: const Color(0xFFFFFFFF),
                       ),
@@ -2375,21 +2491,36 @@ class _ManualAdvanceButton extends StatelessWidget {
   const _ManualAdvanceButton({
     required this.nextStageLabel,
     required this.onAdvance,
+    this.icon,
+    this.actionLabel,
   });
 
   /// The present-progressive name of the stage advancing would move to
   /// (e.g. `"Verifying"`), interpolated into the button label per
   /// design.md §2.4 — this button has no banner title to supply that
-  /// context, unlike [_GatedBanner]'s inline "Advance".
+  /// context, unlike [_GatedBanner]'s inline "Advance". Unused when
+  /// [actionLabel] is provided.
   final String nextStageLabel;
   final VoidCallback onAdvance;
+
+  /// Explicit leading-glyph override — used by the "Ready to retry
+  /// verification" footer tier's `arrows-clockwise` motif in place of
+  /// the default caret (Component Spec §1.2). `null` falls back to
+  /// [PhosphorIcons.caretRightLight]. Added for
+  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  final PhosphorIconData? icon;
+
+  /// Explicit button-label override, falling back to the existing
+  /// `"Advance to <stage>"` computed label when `null`. Added for
+  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  final String? actionLabel;
 
   @override
   Widget build(BuildContext context) {
     final c = ThemeScope.of(context).colors;
-    final label = context.l10n.ticketDetailSddStageAdvanceToStage(
-      nextStageLabel,
-    );
+    final label =
+        actionLabel ??
+        context.l10n.ticketDetailSddStageAdvanceToStage(nextStageLabel);
     return Semantics(
       button: true,
       label: label,
@@ -2407,7 +2538,7 @@ class _ManualAdvanceButton extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 PhosphorIcon(
-                  PhosphorIcons.caretRightLight,
+                  icon ?? PhosphorIcons.caretRightLight,
                   size: 14,
                   color: c.primary,
                 ),
@@ -3281,17 +3412,30 @@ class _ExecutionActionButtonState extends State<_ExecutionActionButton> {
 /// post-frame callback in _TicketDetailScreenState
 /// ._maybeAutoAdvanceSddStage; no button, since auto never asks.
 class _AutoAdvancedNote extends StatelessWidget {
-  const _AutoAdvancedNote({required this.stageLabel});
+  const _AutoAdvancedNote({required this.stageLabel, this.text});
 
   /// The present-progressive name of the stage that was just advanced to
   /// (e.g. `"Verifying"`), interpolated into the note text per
-  /// design.md §2.5.
+  /// design.md §2.5. Unused when [text] is provided.
   final String stageLabel;
+
+  /// Explicit note-text override, falling back to the existing
+  /// `"Automatically advanced to <stage>"` computed text when `null` —
+  /// used by the "Ready to retry verification" footer tier's auto-state
+  /// note (Component Spec §1.3), which reads "Verification retried
+  /// automatically" instead. No new l10n key was provisioned for this
+  /// exact string (see `aion-arch/changes/sdd-verify-quality-gate/
+  /// tasks.md` T20's l10n list), so the caller passes a plain literal
+  /// rather than a `context.l10n.*` accessor. Added for
+  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  final String? text;
 
   @override
   Widget build(BuildContext context) {
     final t = ThemeScope.of(context);
     final c = t.colors;
+    final resolvedText =
+        text ?? context.l10n.ticketDetailSddStageAutoAdvancedNote(stageLabel);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: c.success.withValues(alpha: t.fillAlpha),
@@ -3314,7 +3458,7 @@ class _AutoAdvancedNote extends StatelessWidget {
             const SizedBox(width: 9),
             Expanded(
               child: Text(
-                context.l10n.ticketDetailSddStageAutoAdvancedNote(stageLabel),
+                resolvedText,
                 style: AionText.bodySm.copyWith(color: c.textPrimary),
               ),
             ),

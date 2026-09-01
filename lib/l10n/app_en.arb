@@ -281,6 +281,8 @@
     }
   },
   "ticketDetailSddStageNotReadyPrefix": "Not ready to advance. ",
+  "ticketDetailSddStageSubReadyToRetryVerify": "Ready to retry verification",
+  "ticketDetailSddStageRetryVerifyAction": "Retry verification",
   "ticketDetailSddStageSubProposalAccepted": "Precondition met · proposal accepted",
   "ticketDetailSddStageSubDesignPasted": "Linked design page has content",
   "ticketDetailSddStageSubDesignApproved": "Design Sync approved the pasted design",
@@ -923,6 +925,9 @@
   "settingsAutomationSpecAutoLinkAutoSubLabel": "Links to the nearest spec on its own",
   "settingsAutomationSpecAutoLinkGatedSubLabel": "Asks before linking to a spec",
   "settingsAutomationSpecAutoLinkManualSubLabel": "You link specs yourself",
+  "settingsAutomationVerifyGateRetryAutoSubLabel": "Retries verification automatically once fixes are done",
+  "settingsAutomationVerifyGateRetryGatedSubLabel": "Asks before retrying verification",
+  "settingsAutomationVerifyGateRetryManualSubLabel": "You trigger the verification retry yourself",
 
   "settingsAutomationCodingExecutionResumeLabel": "Resume After Restart",
   "settingsAutomationCodingExecutionResumeDescription": "When a coding-execution run was interrupted by an app restart, resume it automatically, ask first, or leave it for a manual retry.",
@@ -960,6 +965,7 @@
   "decisionGraphContextTitleTicketCreation": "Ticket Creation",
   "decisionGraphContextTitleTicketLinking": "Ticket Linking",
   "decisionGraphContextTitleSpecAutoLink": "Spec Auto-Link",
+  "decisionGraphContextTitleVerifyGateRetry": "Verify Gate Retry",
   "decisionGraphOutlineHeader": "OUTLINE · {count} CONDITIONS",
   "@decisionGraphOutlineHeader": {
     "placeholders": {

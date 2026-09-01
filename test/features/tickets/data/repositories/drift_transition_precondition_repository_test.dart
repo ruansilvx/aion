@@ -85,25 +85,58 @@ void main() {
     });
 
     test(
-      'exploring/verifying each seed a single mostRecentChatHasTerminalReply '
-      'node — matched allowed, unmatched blocked',
+      'exploring seeds a single mostRecentChatHasTerminalReply node — '
+      'matched allowed, unmatched blocked',
       () async {
         await repository.seedDefaultsIfEmpty();
 
-        for (final stage in [SddStage.exploring, SddStage.verifying]) {
-          final nodes = await repository.getAllNodes(stage);
-          expect(nodes, hasLength(1), reason: stage.name);
-          final node = nodes.single;
-          expect(node.fieldId, 'mostRecentChatHasTerminalReply');
-          expect(
-            node.matchedBranch,
-            const TransitionBranch.terminal(TransitionOutcome.allowed),
-          );
-          expect(
-            node.unmatchedBranch,
-            const TransitionBranch.terminal(TransitionOutcome.blocked),
-          );
-        }
+        final nodes = await repository.getAllNodes(SddStage.exploring);
+        expect(nodes, hasLength(1));
+        final node = nodes.single;
+        expect(node.fieldId, 'mostRecentChatHasTerminalReply');
+        expect(
+          node.matchedBranch,
+          const TransitionBranch.terminal(TransitionOutcome.allowed),
+        );
+        expect(
+          node.unmatchedBranch,
+          const TransitionBranch.terminal(TransitionOutcome.blocked),
+        );
+      },
+    );
+
+    // verifying's 2-node tree — added for
+    // aion-arch/changes/sdd-verify-quality-gate; mirrors designSync's own
+    // 2-node shape test below.
+    test(
+      'verifying seeds the 2-node tree reproducing '
+      'mostRecentChatHasTerminalReply && verifyGateApproved',
+      () async {
+        await repository.seedDefaultsIfEmpty();
+
+        final nodes = await repository.getAllNodes(SddStage.verifying);
+        expect(nodes, hasLength(2));
+
+        final graph = await repository.getGraph(SddStage.verifying);
+        final byId = {for (final n in nodes) n.id: n};
+        final root = byId[graph.rootNodeId]!;
+        expect(root.fieldId, 'mostRecentChatHasTerminalReply');
+        expect(
+          root.unmatchedBranch,
+          const TransitionBranch.terminal(TransitionOutcome.blocked),
+        );
+
+        final verifyGateApproved =
+            byId[(root.matchedBranch as ToTransitionNodeBranch).nodeId]!;
+        expect(verifyGateApproved.fieldId, 'verifyGateApproved');
+        expect(
+          verifyGateApproved.matchedBranch,
+          const TransitionBranch.terminal(TransitionOutcome.allowed),
+        );
+        expect(
+          verifyGateApproved.unmatchedBranch,
+          const TransitionBranch.terminal(TransitionOutcome.blocked),
+        );
       },
     );
 
@@ -197,10 +230,10 @@ void main() {
       await repository.seedDefaultsIfEmpty();
       await repository.seedDefaultsIfEmpty();
 
-      // 1 (exploring) + 1 (verifying) + 3 (proposed) + 1 (designBrief) +
-      // 2 (designSync) = 8 baseline nodes total, never doubled.
+      // 1 (exploring) + 2 (verifying) + 3 (proposed) + 1 (designBrief) +
+      // 2 (designSync) = 9 baseline nodes total, never doubled.
       final allNodes = await database.transitionPreconditionDao.getAllNodes();
-      expect(allNodes, hasLength(8));
+      expect(allNodes, hasLength(9));
     });
 
     test('is a no-op on an already-populated graph table', () async {
@@ -210,6 +243,93 @@ void main() {
 
       final graph = await repository.getGraph(SddStage.proposed);
       expect(graph.rootNodeId, isNull);
+    });
+  });
+
+  // aion-arch/changes/sdd-verify-quality-gate/design.md §3.2 — the
+  // schema-20 migration helper `AppDatabase.onUpgrade` calls for every
+  // existing project on upgrade, exercised here directly against the DAO
+  // (accessed via `AppDatabase.transitionPreconditionDao`, the same way
+  // `app_database_test.dart`'s own migration coverage reaches other DAOs).
+  group('upgradeVerifyingGraphIfDefault', () {
+    test(
+      'upgrades an untouched single-node verifying graph (the original '
+      'default fingerprint) to the new two-node shape, in place',
+      () async {
+        // The exact pre-this-change default: a single
+        // mostRecentChatHasTerminalReply node, matched -> allowed.
+        const oldRoot = TransitionNode(
+          id: 'old-root',
+          fieldId: 'mostRecentChatHasTerminalReply',
+          matchedBranch: TransitionBranch.terminal(TransitionOutcome.allowed),
+          unmatchedBranch: TransitionBranch.terminal(
+            TransitionOutcome.blocked,
+          ),
+        );
+        await repository.upsertNode(oldRoot);
+        await repository.setRoot(SddStage.verifying, 'old-root');
+
+        await database.transitionPreconditionDao
+            .upgradeVerifyingGraphIfDefault();
+
+        final nodes = await repository.getAllNodes(SddStage.verifying);
+        expect(nodes, hasLength(2));
+        final graph = await repository.getGraph(SddStage.verifying);
+        final byId = {for (final n in nodes) n.id: n};
+        final root = byId[graph.rootNodeId]!;
+        // Upgraded in place — the original node id survives, only its
+        // matched branch changes from a terminal to pointing at the new
+        // verifyGateApproved node.
+        expect(root.id, 'old-root');
+        expect(root.fieldId, 'mostRecentChatHasTerminalReply');
+        expect(
+          root.unmatchedBranch,
+          const TransitionBranch.terminal(TransitionOutcome.blocked),
+        );
+
+        final verifyGateApproved =
+            byId[(root.matchedBranch as ToTransitionNodeBranch).nodeId]!;
+        expect(verifyGateApproved.fieldId, 'verifyGateApproved');
+        expect(
+          verifyGateApproved.matchedBranch,
+          const TransitionBranch.terminal(TransitionOutcome.allowed),
+        );
+        expect(
+          verifyGateApproved.unmatchedBranch,
+          const TransitionBranch.terminal(TransitionOutcome.blocked),
+        );
+      },
+    );
+
+    test(
+      'leaves an already-customized verifying graph untouched',
+      () async {
+        const customRoot = TransitionNode(
+          id: 'custom-root',
+          fieldId: 'verifyGateApproved',
+          matchedBranch: TransitionBranch.terminal(TransitionOutcome.allowed),
+          unmatchedBranch: TransitionBranch.terminal(
+            TransitionOutcome.blocked,
+          ),
+        );
+        await repository.upsertNode(customRoot);
+        await repository.setRoot(SddStage.verifying, 'custom-root');
+
+        await database.transitionPreconditionDao
+            .upgradeVerifyingGraphIfDefault();
+
+        final nodes = await repository.getAllNodes(SddStage.verifying);
+        expect(nodes, hasLength(1));
+        expect(nodes.single.id, 'custom-root');
+      },
+    );
+
+    test('no-ops when verifying has no graph row at all yet', () async {
+      await database.transitionPreconditionDao
+          .upgradeVerifyingGraphIfDefault();
+
+      final nodes = await repository.getAllNodes(SddStage.verifying);
+      expect(nodes, isEmpty);
     });
   });
 

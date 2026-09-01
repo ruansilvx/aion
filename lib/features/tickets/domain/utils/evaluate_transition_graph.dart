@@ -27,6 +27,7 @@ class TransitionEvalContext {
     this.linkedDesignPageHasContent,
     this.allTasksComplete,
     this.designSyncApproved,
+    this.verifyGateApproved,
   });
 
   /// Value for [mostRecentChatHasTerminalReplyField].
@@ -49,6 +50,9 @@ class TransitionEvalContext {
 
   /// Value for [designSyncApprovedField].
   final bool? designSyncApproved;
+
+  /// Value for [verifyGateApprovedField].
+  final bool? verifyGateApproved;
 }
 
 /// `TransitionFieldSpec.id → current value` accessor registry — how
@@ -67,6 +71,7 @@ final Map<String, bool? Function(TransitionEvalContext input)> _fieldAccessors =
           input.linkedDesignPageHasContent,
       allTasksCompleteField.id: (input) => input.allTasksComplete,
       designSyncApprovedField.id: (input) => input.designSyncApproved,
+      verifyGateApprovedField.id: (input) => input.verifyGateApproved,
     };
 
 /// Walks [graph] from its `TransitionGraph.rootNodeId`, evaluating each
