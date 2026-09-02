@@ -115,4 +115,16 @@ class AnthropicMessagesApiProvider implements AgentProvider {
   /// provider.
   @override
   bool get supportsSessionResume => false;
+
+  /// `false` — plain HTTP/SSE against the Messages API, with no
+  /// filesystem-based skill discovery of any kind. Already unreachable
+  /// for `SkillAttachmentKind.delegatedSkill` today via
+  /// [supportedToolAccessTiers] excluding [ToolAccessTier.full]; this
+  /// declaration makes that exclusion explicit on the capability that
+  /// actually applies, rather than leaving it an accidental side effect
+  /// of a different, coarser filter. See
+  /// `aion-arch/changes/delegated-skill-provider-portability/design.md`
+  /// §2.
+  @override
+  bool get supportsSkillDiscovery => false;
 }

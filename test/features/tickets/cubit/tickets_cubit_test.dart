@@ -399,6 +399,12 @@ buildProviderStack(MockAgentModelClient client) {
     (invocation) =>
         UsageWindowConsumption(invocation.positionalArguments[0] as String),
   );
+  // Matches ClaudeAgentSdkProvider's real declared value — every
+  // existing delegatedSkill test using this shared fixture exercises a
+  // discovery-capable provider unless it explicitly overrides this
+  // stub (see the dedicated non-discovering-provider test below). Added
+  // for aion-arch/changes/delegated-skill-provider-portability.
+  when(() => provider.supportsSkillDiscovery).thenReturn(true);
   when(() => registry.availableProviders).thenReturn([provider]);
   when(
     () => registry.providerById(ProviderId.claudeAgentSdk),
@@ -15011,6 +15017,79 @@ void main() {
           ).called(1);
         },
       );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'a resolved provider without skill-discovery support fails the '
+        'delegatedSkill run instead of sending the prompt to it',
+        setUp: () {
+          final attachment = SkillAttachment(
+            id: 'attach-2b',
+            workflowStatusId: backlogStatusId,
+            kind: SkillAttachmentKind.delegatedSkill,
+            skillName: 'code-review',
+            confidence: AutomationConfidence.auto,
+          );
+          when(
+            () => attachmentRepository.getAll(),
+          ).thenAnswer((_) async => [attachment]);
+          when(
+            () => repository.getTicketById(ticket.id),
+          ).thenAnswer((_) async => ticket);
+          // Repoint the resolved provider (registry.providerById is the
+          // only lookup _resolveModelAndProvider goes through — the
+          // model list itself, via registry.availableProviders, stays
+          // buildProviderStack's original fixture) to a second
+          // MockAgentProvider declaring no skill-discovery support,
+          // simulating a hypothetical future full-tool provider that
+          // isn't a Claude-Code-CLI wrapper.
+          final nonDiscoveringProvider = MockAgentProvider();
+          when(
+            () => nonDiscoveringProvider.client,
+          ).thenReturn(MockAgentModelClient());
+          when(
+            () => nonDiscoveringProvider.displayName,
+          ).thenReturn('Non-Discovering Provider');
+          when(
+            () => nonDiscoveringProvider.supportsSkillDiscovery,
+          ).thenReturn(false);
+          when(
+            () => registry.providerById(ProviderId.claudeAgentSdk),
+          ).thenReturn(nonDiscoveringProvider);
+        },
+        build: buildAttachmentCubit,
+        act: (cubit) async {
+          await Future<void>.delayed(Duration.zero);
+          await cubit.updateTicketStatus(ticket.id, 'backlog');
+        },
+        wait: const Duration(milliseconds: 50),
+        verify: (_) {
+          // The worktree is still set up and torn down — that happens
+          // before the skill-discovery check runs — but the prompt
+          // never reaches any client's run().
+          verify(
+            () => gitClient.createWorktree(any(), any(), any()),
+          ).called(1);
+          verify(
+            () => gitClient.removeWorktree(any(), any()),
+          ).called(1);
+          verifyNever(
+            () => agentClient.run(
+              any(
+                that: predicate<AgentRequest>((r) => r.prompt == '/code-review'),
+              ),
+            ),
+          );
+          verify(
+            () => commentRepository.addComment(
+              any(
+                that: predicate<TicketComment>(
+                  (c) => c.content.startsWith('Skill attachment failed:'),
+                ),
+              ),
+            ),
+          ).called(1);
+        },
+      );
     });
 
     group('gated confidence — WorkflowStatus entry', () {
@@ -15465,6 +15544,83 @@ void main() {
           ).called(1);
           verify(
             () => gitClient.removeWorktree('/project/root', worktreePath),
+          ).called(1);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'a resolved provider without skill-discovery support fails the '
+        'delegatedSkill stage attachment instead of sending the prompt '
+        'to it',
+        setUp: () {
+          final attachment = SkillAttachment(
+            id: 'attach-stage-1b',
+            sddStage: SddStage.exploring,
+            kind: SkillAttachmentKind.delegatedSkill,
+            skillName: 'kickoff-skill',
+            confidence: AutomationConfidence.auto,
+          );
+          when(
+            () => attachmentRepository.getAll(),
+          ).thenAnswer((_) async => [attachment]);
+          when(
+            () => repository.updateTicketSddStage(epic.id, SddStage.exploring),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketById(any()),
+          ).thenAnswer((_) async => dummyChatTicket);
+          when(
+            () => repository.getTicketById(epic.id),
+          ).thenAnswer((_) async => epic);
+          // Repoint the resolved provider — same technique as the
+          // WorkflowStatus-surface regression test above — to a
+          // MockAgentProvider declaring no skill-discovery support.
+          final nonDiscoveringProvider = MockAgentProvider();
+          when(
+            () => nonDiscoveringProvider.client,
+          ).thenReturn(MockAgentModelClient());
+          when(
+            () => nonDiscoveringProvider.displayName,
+          ).thenReturn('Non-Discovering Provider');
+          when(
+            () => nonDiscoveringProvider.supportsSkillDiscovery,
+          ).thenReturn(false);
+          when(
+            () => registry.providerById(ProviderId.claudeAgentSdk),
+          ).thenReturn(nonDiscoveringProvider);
+        },
+        build: buildStageCubit,
+        act: (cubit) async {
+          await Future<void>.delayed(Duration.zero);
+          await cubit.advanceSddStage(epic);
+        },
+        wait: const Duration(milliseconds: 50),
+        verify: (_) {
+          // Unlike _fireSkillAttachment (where worktree setup precedes
+          // model/provider resolution), _runStageChatTurn's
+          // skill-discovery check sits right after resolution but
+          // before its own worktree setup — so a failing check here
+          // means the worktree is never created at all, not created
+          // then torn down.
+          verifyNever(() => gitClient.createWorktree(any(), any(), any()));
+          verifyNever(() => gitClient.removeWorktree(any(), any()));
+          verifyNever(
+            () => agentClient.run(
+              any(
+                that: predicate<AgentRequest>(
+                  (r) => r.prompt == '/kickoff-skill',
+                ),
+              ),
+            ),
+          );
+          verify(
+            () => commentRepository.addComment(
+              any(
+                that: predicate<TicketComment>(
+                  (c) => c.content.startsWith('Stage advance failed:'),
+                ),
+              ),
+            ),
           ).called(1);
         },
       );

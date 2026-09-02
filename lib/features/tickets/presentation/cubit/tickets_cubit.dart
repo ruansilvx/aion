@@ -5578,7 +5578,11 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// `delegatedSkill` attachment can't touch the developer's real
   /// checkout. Throws (caught below, posting the usual failure comment)
   /// if constructed without a [GitRepositoryClient]/`projectRootPath` in
-  /// that case. Added for `aion-arch/changes/workflow-skill-attachments`.
+  /// that case, or if the resolved provider lacks
+  /// [AgentProvider.supportsSkillDiscovery] (see
+  /// `aion-arch/changes/delegated-skill-provider-portability/design.md`
+  /// §3a — the `SddStage` counterpart to [_fireSkillAttachment]'s own
+  /// same check). Added for `aion-arch/changes/workflow-skill-attachments`.
   /// Also calls [_recordNotification] exactly once, from the `finally`
   /// block (after worktree cleanup and the [_inFlightStageAdvanceIds]
   /// removal below, so it fires regardless of which path was taken) —
@@ -5610,6 +5614,12 @@ class TicketsCubit extends Cubit<TicketsState> {
                   ? ModelPhase.execution
                   : ModelPhase.capable),
       );
+      if (attachmentToolsEnabled && !provider.supportsSkillDiscovery) {
+        throw StateError(
+          '${provider.displayName} cannot run delegated skills — it has '
+          'no .claude/skills/ discovery capability.',
+        );
+      }
       var tools = const <AgentToolDefinition>[];
       Future<Map<String, dynamic>> Function(
         String toolCallId,
@@ -5809,7 +5819,10 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// throws rather than silently falling back to [_projectRootPath] — is
   /// caught and posted as a "Skill attachment failed: `<e>`"
   /// [CommentAuthorType.system] comment, mirroring [_runStageChatTurn]'s
-  /// own catch-comment shape.
+  /// own catch-comment shape — the same path a resolved provider lacking
+  /// [AgentProvider.supportsSkillDiscovery] hits for a `delegatedSkill`
+  /// run (see `aion-arch/changes/delegated-skill-provider-portability/design.md`
+  /// §3).
   Future<void> _fireSkillAttachment(
     Ticket parent,
     SkillAttachment attachment,
@@ -5866,6 +5879,12 @@ class TicketsCubit extends Cubit<TicketsState> {
       final (model, provider) = await _resolveModelAndProvider(
         toolsEnabled ? ModelPhase.execution : ModelPhase.capable,
       );
+      if (toolsEnabled && !provider.supportsSkillDiscovery) {
+        throw StateError(
+          '${provider.displayName} cannot run delegated skills — it has '
+          'no .claude/skills/ discovery capability.',
+        );
+      }
       await ChatCubit.runChatTurn(
         client: provider.client,
         provider: provider,

@@ -44,6 +44,10 @@ void main() {
       },
     );
 
+    test('supportsSkillDiscovery is true', () {
+      expect(provider.supportsSkillDiscovery, isTrue);
+    });
+
     test('describeOverage wraps the message in UsageWindowConsumption', () {
       final signal = provider.describeOverage('usage window exhausted');
 

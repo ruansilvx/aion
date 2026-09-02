@@ -47,4 +47,23 @@ abstract interface class AgentProvider {
   /// always resolves to its unmatched branch when evaluated under this
   /// provider — never a crash, never a block.
   bool get supportsSessionResume;
+
+  /// Whether this provider's underlying agent discovers and can execute
+  /// project-local `.claude/skills/<name>` skills on disk when sent a
+  /// `/<name>` slash-command prompt — the mechanism
+  /// `SkillAttachmentKind.delegatedSkill` depends on entirely (see
+  /// `TicketsCubit._promptFor`, which sends that literal prompt text and
+  /// relies on the resolved provider's own discovery to do the rest).
+  /// `false` means a `delegatedSkill` attachment resolved to this
+  /// provider cannot run at all. Checked at
+  /// `TicketsCubit._fireSkillAttachment`'s provider-resolution point,
+  /// not folded into `ModelPhaseToolAccess`/`ModelRoutingCubit`'s
+  /// Settings-dropdown filtering — that filtering is phase-wide
+  /// (`ModelPhase.execution` is shared with plain coding-execution runs
+  /// that have no skill-discovery dependency), while this capability is
+  /// specific to the one `delegatedSkill` call site. Same
+  /// per-call-site-capability shape as [supportsSessionResume], above.
+  /// See `aion-arch/changes/delegated-skill-provider-portability/design.md`
+  /// §1.
+  bool get supportsSkillDiscovery;
 }
