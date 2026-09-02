@@ -2555,10 +2555,16 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [AgentModelClient.run] call requesting changelog prose plus a
   /// suggested semver bump. Also calls
   /// [ProjectStackDetector.detectVersionFile] on [_projectRootPath] to
-  /// populate [ReleaseDraft.detectedVersionFile]. Returns `null` (no
+  /// populate [ReleaseDraft.detectedVersionFile], and resolves
+  /// [ReleaseDraft.targetBranch] via [GitRepositoryClient.defaultBranch]
+  /// — the same call `confirmRelease` itself makes, so the branch shown
+  /// to the user during review is guaranteed to match the one actually
+  /// written to — and [ReleaseDraft.releaseKey] from the release ticket's
+  /// own `ticketId`. Returns `null` (no
   /// error emitted — the caller shows an inline message, mirroring
   /// [_createEpicSpec]'s own guard) if this cubit was constructed without
-  /// a [ProviderRegistry]/[TicketLinkRepository]/`projectRootPath`, or if
+  /// a [ProviderRegistry]/[TicketLinkRepository]/[GitRepositoryClient]/
+  /// `projectRootPath`, or if
   /// [releaseTicketId] doesn't resolve to a live `release`-type ticket.
   /// On a model failure, emits `TicketsError(reason:
   /// TicketsErrorReason.releasePreparationFailed)` and returns `null` —
@@ -2566,12 +2572,17 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [_createEpicSpec]'s "the source ticket's own state never depends on
   /// this call succeeding" behavior. Added for
   /// `aion-arch/changes/release-preparation-and-tagging`; see that
-  /// change's design.md §4.1.
+  /// change's design.md §4.1, extended by the `/verify` round-1 fix-up's
+  /// T15 to also resolve `releaseKey`/`targetBranch`.
   Future<ReleaseDraft?> prepareReleaseDraft(String releaseTicketId) async {
     final providerRegistry = _providerRegistry;
     final linkRepo = _linkRepository;
     final rootPath = _projectRootPath;
-    if (providerRegistry == null || linkRepo == null || rootPath == null) {
+    final gitClient = _gitClient;
+    if (providerRegistry == null ||
+        linkRepo == null ||
+        rootPath == null ||
+        gitClient == null) {
       return null;
     }
 
@@ -2649,12 +2660,12 @@ class TicketsCubit extends Cubit<TicketsState> {
 
       return ReleaseDraft(
         releaseTicketId: releaseTicketId,
+        releaseKey: release.ticketId,
+        targetBranch: await gitClient.defaultBranch(rootPath),
         linkedTicketIds: linkedIds,
         changelogMarkdown: changelog,
         suggestedVersion: suggestedVersion,
-        detectedVersionFile: ProjectStackDetector().detectVersionFile(
-          rootPath,
-        ),
+        detectedVersionFile: ProjectStackDetector().detectVersionFile(rootPath),
       );
     } catch (e) {
       emit(
@@ -2674,8 +2685,10 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// fill in on `ReleaseDraftScreen`) if the model didn't include the
   /// marker line verbatim.
   (String, String) _splitChangelogAndVersion(String reply) {
-    final match = RegExp(r'^VERSION:\s*(\S+)\s*$', multiLine: true)
-        .firstMatch(reply);
+    final match = RegExp(
+      r'^VERSION:\s*(\S+)\s*$',
+      multiLine: true,
+    ).firstMatch(reply);
     if (match == null) return (reply, '');
     final changelog = reply.replaceRange(match.start, match.end, '').trim();
     return (changelog, match.group(1)!);
@@ -3268,7 +3281,11 @@ class TicketsCubit extends Cubit<TicketsState> {
       types: TicketTypeHierarchy.executableTypes,
     );
     if (children.isEmpty) {
-      return (ready: false, verifyChat: verifyChat, pendingFixesRemaining: null);
+      return (
+        ready: false,
+        verifyChat: verifyChat,
+        pendingFixesRemaining: null,
+      );
     }
     final notDoneCount = children
         .where((c) => _roleOf(c.status) != WorkflowStatusRole.done)
@@ -7337,8 +7354,11 @@ class TicketsCubit extends Cubit<TicketsState> {
         heading: '## Fixes Needed',
         childTypeLabels: const ['Task', 'Bug'],
       ))
-        (label == 'Task' ? TicketType.task : TicketType.bug, title,
-            blockedByTitle),
+        (
+          label == 'Task' ? TicketType.task : TicketType.bug,
+          title,
+          blockedByTitle,
+        ),
     ];
   }
 
@@ -7400,13 +7420,10 @@ class TicketsCubit extends Cubit<TicketsState> {
         ? TicketType.story
         : TicketType.task;
     final parsed = _parseDecomposition(reply, childType);
-    await _materializeParsedChildren(
-      parent,
-      [
-        for (final (title, blockedByTitle) in parsed)
-          (childType, title, blockedByTitle),
-      ],
-    );
+    await _materializeParsedChildren(parent, [
+      for (final (title, blockedByTitle) in parsed)
+        (childType, title, blockedByTitle),
+    ]);
   }
 
   /// Runs once per `verifying`-stage chat turn whose reply contains

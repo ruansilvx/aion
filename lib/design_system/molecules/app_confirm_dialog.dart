@@ -48,6 +48,19 @@ enum ConfirmDialogTone {
 ///
 /// [tone] selects the dialog's severity styling — see [ConfirmDialogTone].
 ///
+/// [accentColor]/[accentIcon] together override the tone-driven icon disc
+/// (color, shape, and glyph) for a consequential-but-not-destructive
+/// action that needs its own accent rather than [ConfirmDialogTone]'s
+/// binary primary/danger choice — e.g. a release accent for a tag/push
+/// confirmation. Either both must be given or neither; the tone's own
+/// action-button styling ([_ConfirmButton]) is unaffected, since design.md
+/// §4.2 keeps the confirm button `primary` regardless. [extraContent], if
+/// given, renders between [message] and the action row — e.g. a read-only
+/// details block naming exact values the confirmation is about (per
+/// design.md §4.2's tag/branch block; added for
+/// `aion-arch/changes/release-preparation-and-tagging`'s `/verify`
+/// round-1 fix-up, T18).
+///
 /// Built the same way as [AppToast] — an [OverlayEntry] inserted into the
 /// nearest [Overlay] — so it needs no `Scaffold`/`Dialog` ancestor and
 /// stays outside the banned-Material-widgets list (no
@@ -59,6 +72,9 @@ Future<bool> showAppConfirmDialog(
   required String confirmLabel,
   required ConfirmDialogTone tone,
   String? cancelLabel,
+  Color? accentColor,
+  IconData? accentIcon,
+  Widget? extraContent,
 }) {
   final t = ThemeScope.of(context);
   final c = t.colors;
@@ -92,6 +108,9 @@ Future<bool> showAppConfirmDialog(
         confirmLabel: confirmLabel,
         cancelLabel: resolvedCancelLabel,
         tone: tone,
+        accentColor: accentColor,
+        accentIcon: accentIcon,
+        extraContent: extraContent,
         onResolve: resolve,
       );
     },
@@ -129,6 +148,9 @@ class _AppConfirmDialogOverlay extends StatelessWidget {
     required this.confirmLabel,
     required this.cancelLabel,
     required this.tone,
+    this.accentColor,
+    this.accentIcon,
+    this.extraContent,
     required this.onResolve,
   });
 
@@ -139,6 +161,9 @@ class _AppConfirmDialogOverlay extends StatelessWidget {
   final String confirmLabel;
   final String cancelLabel;
   final ConfirmDialogTone tone;
+  final Color? accentColor;
+  final IconData? accentIcon;
+  final Widget? extraContent;
   final ValueChanged<bool> onResolve;
 
   @override
@@ -199,6 +224,8 @@ class _AppConfirmDialogOverlay extends StatelessWidget {
                             colors: colors,
                             isDark: isDark,
                             tone: tone,
+                            accentColor: accentColor,
+                            accentIcon: accentIcon,
                           ),
                           const SizedBox(height: AionSpacing.sp16),
                           Text(
@@ -216,6 +243,10 @@ class _AppConfirmDialogOverlay extends StatelessWidget {
                               color: colors.textSecondary,
                             ),
                           ),
+                          if (extraContent != null) ...[
+                            const SizedBox(height: AionSpacing.sp16),
+                            extraContent!,
+                          ],
                           const SizedBox(height: AionSpacing.sp24),
                           isNarrow
                               ? _NarrowActions(
@@ -252,16 +283,25 @@ class _LeadingIcon extends StatelessWidget {
     required this.colors,
     required this.isDark,
     required this.tone,
+    this.accentColor,
+    this.accentIcon,
   });
 
   final AionColors colors;
   final bool isDark;
   final ConfirmDialogTone tone;
 
+  /// Overrides the tone-driven icon color/glyph — see
+  /// [showAppConfirmDialog]'s `accentColor`/`accentIcon` dartdoc. Both
+  /// non-null together, or both null.
+  final Color? accentColor;
+  final IconData? accentIcon;
+
   @override
   Widget build(BuildContext context) {
     final isReversible = tone == ConfirmDialogTone.reversible;
-    final iconColor = isReversible ? colors.primary : colors.danger;
+    final iconColor =
+        accentColor ?? (isReversible ? colors.primary : colors.danger);
     final fillAlpha = isDark ? fillAlphaObsidian : fillAlphaArctic;
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -274,9 +314,10 @@ class _LeadingIcon extends StatelessWidget {
         height: 44,
         child: Center(
           child: PhosphorIcon(
-            isReversible
-                ? PhosphorIcons.trashLight
-                : PhosphorIcons.warningCircleLight,
+            accentIcon ??
+                (isReversible
+                    ? PhosphorIcons.trashLight
+                    : PhosphorIcons.warningCircleLight),
             size: 20,
             color: iconColor,
           ),

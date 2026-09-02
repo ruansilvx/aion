@@ -17,6 +17,8 @@ class ReleaseDraft extends Equatable {
   /// Creates a [ReleaseDraft].
   const ReleaseDraft({
     required this.releaseTicketId,
+    required this.releaseKey,
+    required this.targetBranch,
     required this.linkedTicketIds,
     required this.changelogMarkdown,
     required this.suggestedVersion,
@@ -25,6 +27,19 @@ class ReleaseDraft extends Equatable {
 
   /// Internal id of the `release` ticket this draft is for.
   final String releaseTicketId;
+
+  /// The release ticket's display id (e.g. `"AIO-51"`) — shown in
+  /// `ReleaseDraftScreen`'s header badge and scope summary strip. Distinct
+  /// from [releaseTicketId], which is the internal (non-human-facing) id.
+  final String releaseKey;
+
+  /// The branch `TicketsCubit.confirmRelease` will commit, push, and tag
+  /// against — resolved via `GitRepositoryClient.defaultBranch` at draft
+  /// time, the same call `confirmRelease` itself makes, so the branch
+  /// shown to the user during review is guaranteed to match the one
+  /// actually written to. Surfaced on the scope summary strip and in the
+  /// tag/branch confirmation dialog.
+  final String targetBranch;
 
   /// Internal ids of every `epic`/`story`/`task`/`bug` ticket
   /// `relatesTo`-linked to [releaseTicketId] at draft time — the scope
@@ -51,6 +66,8 @@ class ReleaseDraft extends Equatable {
   @override
   List<Object?> get props => [
     releaseTicketId,
+    releaseKey,
+    targetBranch,
     linkedTicketIds,
     changelogMarkdown,
     suggestedVersion,

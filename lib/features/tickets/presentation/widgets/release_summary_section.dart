@@ -1,5 +1,7 @@
 // presentation/widgets/release_summary_section.dart — ReleaseSummarySection widget (presentation layer).
 
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
@@ -83,17 +85,183 @@ class ReleaseSummarySection extends StatelessWidget {
                 onChangeType: (_, _) {},
               ),
             const SizedBox(height: AionSpacing.sp16),
-            AppButton(
-              label: preparing
-                  ? context.l10n.releaseSummaryPreparingLabel
-                  : context.l10n.releaseSummaryPrepareButton,
-              icon: preparing ? null : PhosphorIcons.tagLight,
-              isFullWidth: true,
-              onPressed: (preparing || linkedWork.isEmpty)
-                  ? null
-                  : onPrepare,
+            _PrepareReleaseButton(
+              preparing: preparing,
+              disabledByEmptyScope: !preparing && linkedWork.isEmpty,
+              onPressed: (preparing || linkedWork.isEmpty) ? null : onPrepare,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The Prepare Release trigger, wrapping [AppButton] with a hover-dwell
+/// tooltip for its disabled-by-empty-scope state (design.md §1.3.6):
+/// `"Link the work this release ships first"`, appearing after a 450ms
+/// hover dwell with a 120ms fade-in, dismissing instantly on exit. Mirrors
+/// `AgentCostHint`'s existing bare `OverlayEntry` +
+/// `CompositedTransformFollower` + dwell-`Timer` pattern
+/// (`aion/lib/features/providers/presentation/widgets/agent_cost_hint.dart`)
+/// rather than a new one. The always-visible empty-state notice (§1.4)
+/// already states the same reason for a non-hovering/keyboard user — this
+/// tooltip is a hover-only supplement, not the only place the reason is
+/// surfaced. Added for `aion-arch/changes/release-preparation-and-tagging`'s
+/// `/verify` round-1 fix-up, T19.
+class _PrepareReleaseButton extends StatefulWidget {
+  const _PrepareReleaseButton({
+    required this.preparing,
+    required this.disabledByEmptyScope,
+    required this.onPressed,
+  });
+
+  /// Whether `prepareReleaseDraft` is in flight — drives the button's
+  /// loading label/icon; the tooltip never shows in this state.
+  final bool preparing;
+
+  /// Whether the button is disabled specifically because there's nothing
+  /// linked — the condition the hover tooltip explains.
+  final bool disabledByEmptyScope;
+
+  final VoidCallback? onPressed;
+
+  @override
+  State<_PrepareReleaseButton> createState() => _PrepareReleaseButtonState();
+}
+
+class _PrepareReleaseButtonState extends State<_PrepareReleaseButton> {
+  final _link = LayerLink();
+  final ValueNotifier<bool> _visible = ValueNotifier(false);
+  OverlayEntry? _entry;
+  Timer? _hoverOpenTimer;
+
+  void _insertIfNeeded() {
+    if (_entry != null) {
+      _visible.value = true;
+      return;
+    }
+    final overlay = Overlay.maybeOf(context);
+    if (overlay == null) return;
+    _visible.value = false;
+    final entry = OverlayEntry(
+      builder: (_) => _DisabledPrepareTooltip(link: _link, visible: _visible),
+    );
+    _entry = entry;
+    overlay.insert(entry);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _visible.value = true;
+    });
+  }
+
+  void _openAfterDwell() {
+    if (!widget.disabledByEmptyScope) return;
+    _hoverOpenTimer?.cancel();
+    _hoverOpenTimer = Timer(const Duration(milliseconds: 450), _insertIfNeeded);
+  }
+
+  /// Dismisses instantly on exit, per design.md §1.3.6.
+  void _close() {
+    _hoverOpenTimer?.cancel();
+    _entry?.remove();
+    _entry = null;
+  }
+
+  @override
+  void dispose() {
+    _hoverOpenTimer?.cancel();
+    _entry?.remove();
+    _entry = null;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CompositedTransformTarget(
+      link: _link,
+      child: MouseRegion(
+        onEnter: (_) => _openAfterDwell(),
+        onExit: (_) => _close(),
+        child: AppButton(
+          label: widget.preparing
+              ? context.l10n.releaseSummaryPreparingLabel
+              : context.l10n.releaseSummaryPrepareButton,
+          icon: widget.preparing ? null : PhosphorIcons.tagLight,
+          isFullWidth: true,
+          onPressed: widget.onPressed,
+        ),
+      ),
+    );
+  }
+}
+
+/// The tooltip panel [_PrepareReleaseButtonState._insertIfNeeded] inserts
+/// into the root [Overlay] — anchored above the button, per design.md
+/// §1.3.6.
+class _DisabledPrepareTooltip extends StatelessWidget {
+  const _DisabledPrepareTooltip({required this.link, required this.visible});
+
+  final LayerLink link;
+  final ValueNotifier<bool> visible;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    // See `AgentCostHint`'s own tooltip for why `left: 0, top: 0` here is
+    // load-bearing, not decorative — it satisfies `Overlay`'s internal
+    // `_Theatre` positioning requirement without affecting the actual
+    // screen placement, which `CompositedTransformFollower` owns below.
+    return Positioned(
+      left: 0,
+      top: 0,
+      child: CompositedTransformFollower(
+        link: link,
+        showWhenUnlinked: false,
+        targetAnchor: Alignment.topCenter,
+        followerAnchor: Alignment.bottomCenter,
+        offset: const Offset(0, -8),
+        child: ExcludeSemantics(
+          child: ValueListenableBuilder<bool>(
+            valueListenable: visible,
+            builder: (context, isVisible, _) => AnimatedOpacity(
+              opacity: isVisible ? 1 : 0,
+              duration: const Duration(milliseconds: 120),
+              curve: Curves.easeOut,
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 240),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: c.surface,
+                      border: Border.all(color: c.borderStrong, width: 1),
+                      borderRadius: BorderRadius.all(AionRadius.sm),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(
+                            0xFF000000,
+                          ).withValues(alpha: t.isDark ? 0.55 : 0.16),
+                          blurRadius: 28,
+                          offset: const Offset(0, 12),
+                        ),
+                      ],
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 7,
+                      ),
+                      child: Text(
+                        context.l10n.releaseSummaryPrepareDisabledTooltip,
+                        style: AionText.bodySm.copyWith(color: c.textPrimary),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );

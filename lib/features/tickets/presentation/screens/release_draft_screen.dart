@@ -7,6 +7,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/domain/entities/release_draft.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 
 /// Semver-ish validator for the version field: `major.minor.patch`, with
@@ -128,12 +129,19 @@ class _ReleaseDraftScreenState extends State<ReleaseDraftScreen> {
     if (!_validate()) return;
 
     if (_hasVersionFile) {
+      final c = ThemeScope.of(context).colors;
       final confirmed = await showAppConfirmDialog(
         context,
         title: context.l10n.releaseDraftConfirmDialogTitle,
-        message: context.l10n.releaseDraftConfirmDialogMessage(_tagName),
+        message: context.l10n.releaseDraftConfirmDialogBody,
         confirmLabel: context.l10n.releaseDraftConfirmDialogAction,
         tone: ConfirmDialogTone.reversible,
+        accentColor: c.typeRelease,
+        accentIcon: PhosphorIcons.tagLight,
+        extraContent: _TagBranchBlock(
+          tagName: _tagName,
+          targetBranch: widget.draft.targetBranch,
+        ),
       );
       if (confirmed != true || !mounted) return;
     }
@@ -148,6 +156,8 @@ class _ReleaseDraftScreenState extends State<ReleaseDraftScreen> {
     });
     final editedDraft = ReleaseDraft(
       releaseTicketId: widget.draft.releaseTicketId,
+      releaseKey: widget.draft.releaseKey,
+      targetBranch: widget.draft.targetBranch,
       linkedTicketIds: widget.draft.linkedTicketIds,
       changelogMarkdown: _changelogController.text.trim(),
       suggestedVersion: _versionController.text.trim(),
@@ -156,10 +166,7 @@ class _ReleaseDraftScreenState extends State<ReleaseDraftScreen> {
     try {
       await context.read<TicketsCubit>().confirmRelease(editedDraft);
       if (!mounted) return;
-      AppToast.show(
-        context,
-        context.l10n.releaseDraftSuccessToast(_tagName),
-      );
+      AppToast.show(context, context.l10n.releaseDraftSuccessToast(_tagName));
       Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
@@ -196,7 +203,10 @@ class _ReleaseDraftScreenState extends State<ReleaseDraftScreen> {
       color: c.background,
       child: Column(
         children: [
-          _Header(onBack: _confirming ? null : _handleBackPressed),
+          _Header(
+            onBack: _confirming ? null : _handleBackPressed,
+            releaseKey: widget.draft.releaseKey,
+          ),
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(22, 4, 22, 20),
@@ -207,11 +217,16 @@ class _ReleaseDraftScreenState extends State<ReleaseDraftScreen> {
                     if (_errorMessage != null) ...[
                       _PushFailureBanner(
                         message: _errorMessage!,
-                        onDismiss: () =>
-                            setState(() => _errorMessage = null),
+                        onDismiss: () => setState(() => _errorMessage = null),
                       ),
                       const SizedBox(height: AionSpacing.sp20),
                     ],
+                    _ScopeSummaryStrip(
+                      itemCount: widget.draft.linkedTicketIds.length,
+                      targetBranch: widget.draft.targetBranch,
+                      onViewScope: () => Navigator.of(context).pop(),
+                    ),
+                    const SizedBox(height: AionSpacing.sp20),
                     Text(
                       context.l10n.releaseDraftChangelogLabel,
                       style: AionText.label.copyWith(color: c.textSecondary),
@@ -226,22 +241,36 @@ class _ReleaseDraftScreenState extends State<ReleaseDraftScreen> {
                     if (_showChangelogError) ...[
                       const SizedBox(height: AionSpacing.sp8),
                       _FieldError(
-                        message: context.l10n.releaseDraftChangelogRequiredError,
+                        message:
+                            context.l10n.releaseDraftChangelogRequiredError,
                       ),
                     ],
                     const SizedBox(height: AionSpacing.sp20),
                     if (_hasVersionFile) ...[
                       Text(
                         context.l10n.releaseDraftVersionLabel,
-                        style: AionText.label.copyWith(
-                          color: c.textSecondary,
-                        ),
+                        style: AionText.label.copyWith(color: c.textSecondary),
                       ),
                       const SizedBox(height: AionSpacing.sp8),
-                      AppTextField(
-                        controller: _versionController,
-                        hintText: context.l10n.releaseDraftVersionPlaceholder,
-                        isError: _showVersionError,
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          SizedBox(
+                            width: 180,
+                            child: AppTextField(
+                              controller: _versionController,
+                              hintText:
+                                  context.l10n.releaseDraftVersionPlaceholder,
+                              isError: _showVersionError,
+                              style: AionText.versionInput,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          _TagPreviewPill(
+                            tagName: _tagName,
+                            dimmed: _showVersionError,
+                          ),
+                        ],
                       ),
                       if (_showVersionError) ...[
                         const SizedBox(height: AionSpacing.sp8),
@@ -268,11 +297,16 @@ class _ReleaseDraftScreenState extends State<ReleaseDraftScreen> {
   }
 }
 
-/// The screen's header — back button, title, per design.md §3.2.
+/// The screen's header — back button, title, trailing release-key badge —
+/// per design.md §3.2.
 class _Header extends StatelessWidget {
-  const _Header({required this.onBack});
+  const _Header({required this.onBack, required this.releaseKey});
 
   final VoidCallback? onBack;
+
+  /// The release ticket's display id (e.g. `"AIO-51"`), shown as a
+  /// trailing mono badge per design.md §3.2 item 3.
+  final String releaseKey;
 
   @override
   Widget build(BuildContext context) {
@@ -316,7 +350,242 @@ class _Header extends StatelessWidget {
               style: AionText.h2.copyWith(color: c.textPrimary),
             ),
           ),
+          if (releaseKey.isNotEmpty) ...[
+            const SizedBox(width: 8),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: c.surfaceHover,
+                borderRadius: BorderRadius.circular(5),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                child: Text(
+                  releaseKey,
+                  style: AionText.key.copyWith(color: c.textSecondary),
+                ),
+              ),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+/// The tag/branch block shown inside the Tag & Push confirmation dialog's
+/// [showAppConfirmDialog] `extraContent` slot — names the exact [tagName]/
+/// [targetBranch] strings the confirmation is about, verbatim, per
+/// design.md §4.2. Added for the `/verify` round-1 fix-up's T18.
+class _TagBranchBlock extends StatelessWidget {
+  const _TagBranchBlock({required this.tagName, required this.targetBranch});
+
+  final String tagName;
+  final String targetBranch;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.background,
+        border: Border.all(color: c.border, width: 1),
+        borderRadius: BorderRadius.all(AionRadius.md),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _TagBranchRow(
+              label: context.l10n.releaseDraftConfirmDialogTagLabel,
+              value: tagName,
+              valueColor: c.typeRelease,
+            ),
+            const SizedBox(height: 9),
+            _TagBranchRow(
+              label: context.l10n.releaseDraftConfirmDialogBranchLabel,
+              value: targetBranch,
+              valueColor: c.textPrimary,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One `TAG`/`BRANCH` row inside [_TagBranchBlock].
+class _TagBranchRow extends StatelessWidget {
+  const _TagBranchRow({
+    required this.label,
+    required this.value,
+    required this.valueColor,
+  });
+
+  final String label;
+  final String value;
+  final Color valueColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        SizedBox(
+          width: 52,
+          child: Text(
+            label,
+            style: AionText.caption.copyWith(color: c.textMuted),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            value,
+            style: AionText.versionInput.copyWith(color: valueColor),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The read-only strip establishing *what* is being released, above the
+/// editable fields — release-type chip, item count, target branch, and a
+/// "View scope" link back to the release ticket. Per design.md §3.3.
+/// Added for the `/verify` round-1 fix-up's T16 (missing from the first
+/// `/apply` pass).
+class _ScopeSummaryStrip extends StatelessWidget {
+  const _ScopeSummaryStrip({
+    required this.itemCount,
+    required this.targetBranch,
+    required this.onViewScope,
+  });
+
+  /// How many tickets this release bundles (`draft.linkedTicketIds.length`).
+  final int itemCount;
+
+  /// The branch `confirmRelease` will commit/push/tag against.
+  final String targetBranch;
+
+  /// Called when "View scope" is tapped — pops back to the release
+  /// ticket's own detail screen (no new navigation route; design.md §3.3).
+  final VoidCallback onViewScope;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border.all(color: c.border, width: 1),
+        borderRadius: BorderRadius.all(AionRadius.lg),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+        child: Wrap(
+          spacing: 10,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            const TypeChip(type: TicketType.release, isRow: false),
+            Text(
+              context.l10n.releaseDraftScopeCount(itemCount),
+              style: AionText.bodySm.copyWith(color: c.textSecondary),
+            ),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: c.textMuted,
+                shape: BoxShape.circle,
+              ),
+              child: const SizedBox(width: 3, height: 3),
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                PhosphorIcon(
+                  PhosphorIcons.gitBranchLight,
+                  size: 13,
+                  color: c.textMuted,
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  targetBranch,
+                  style: AionText.key.copyWith(color: c.textSecondary),
+                ),
+              ],
+            ),
+            Semantics(
+              button: true,
+              label: context.l10n.releaseDraftViewScopeLink,
+              child: GestureDetector(
+                onTap: onViewScope,
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: Text(
+                    context.l10n.releaseDraftViewScopeLink,
+                    style: AionText.bodySm.copyWith(
+                      color: c.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The derived tag preview pill beside the version field — recomputed
+/// live from the version controller (`'v' + value.trim()`), never typed
+/// directly. Dims to `opacity: 0.45` while the version field is in its
+/// error state, keeping the last valid tag string on screen. Per
+/// design.md §3.6. Added for the `/verify` round-1 fix-up's T17.
+class _TagPreviewPill extends StatelessWidget {
+  const _TagPreviewPill({required this.tagName, required this.dimmed});
+
+  /// The derived `'v' + version` string, e.g. `"v0.8.0"`.
+  final String tagName;
+
+  /// Whether the version field is currently showing its error state.
+  final bool dimmed;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    return Opacity(
+      opacity: dimmed ? 0.45 : 1,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: c.outcomeTileFill(c.typeRelease, t.isDark),
+          border: Border.all(
+            color: c.typeRelease.withValues(alpha: t.isDark ? 0.42 : 0.30),
+          ),
+          borderRadius: BorderRadius.all(AionRadius.sm),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              PhosphorIcon(
+                PhosphorIcons.tagLight,
+                size: 14,
+                color: c.typeRelease,
+              ),
+              const SizedBox(width: 7),
+              Text(
+                tagName,
+                style: AionText.versionInput.copyWith(color: c.typeRelease),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

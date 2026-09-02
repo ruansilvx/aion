@@ -1200,12 +1200,9 @@
   "releaseDraftDiscardConfirmMessage": "Your edits to the changelog and version will be lost.",
   "releaseDraftDiscardConfirmAction": "Discard",
   "releaseDraftConfirmDialogTitle": "Tag and push this release?",
-  "releaseDraftConfirmDialogMessage": "Aion will commit the version bump, create the tag {tag}, and push it to the project's default branch.",
-  "@releaseDraftConfirmDialogMessage": {
-    "placeholders": {
-      "tag": { "type": "String" }
-    }
-  },
+  "releaseDraftConfirmDialogBody": "Aion will commit the version bump, create the tag, and push it to the remote.",
+  "releaseDraftConfirmDialogTagLabel": "TAG",
+  "releaseDraftConfirmDialogBranchLabel": "BRANCH",
   "releaseDraftConfirmDialogAction": "Tag & push",
   "releaseDraftPushFailedTitle": "Tag push failed",
   "releaseDraftSuccessToast": "Tagged {tag} and pushed",
@@ -1213,5 +1210,15 @@
     "placeholders": {
       "tag": { "type": "String" }
     }
-  }
+  },
+
+  "releaseDraftScopeCount": "{count, plural, one{1 item} other{{count} items}}",
+  "@releaseDraftScopeCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "releaseDraftViewScopeLink": "View scope",
+
+  "releaseSummaryPrepareDisabledTooltip": "Link the work this release ships first"
 }
