@@ -3330,11 +3330,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       types: TicketTypeHierarchy.executableTypes,
     );
     if (children.isEmpty) {
-      return (
-        ready: false,
-        verifyChat: verifyChat,
-        pendingFixesRemaining: null,
-      );
+      return (ready: false, verifyChat: verifyChat, pendingFixesRemaining: null);
     }
     final notDoneCount = children
         .where((c) => _roleOf(c.status) != WorkflowStatusRole.done)
@@ -7403,11 +7399,8 @@ class TicketsCubit extends Cubit<TicketsState> {
         heading: '## Fixes Needed',
         childTypeLabels: const ['Task', 'Bug'],
       ))
-        (
-          label == 'Task' ? TicketType.task : TicketType.bug,
-          title,
-          blockedByTitle,
-        ),
+        (label == 'Task' ? TicketType.task : TicketType.bug, title,
+            blockedByTitle),
     ];
   }
 
@@ -7469,10 +7462,13 @@ class TicketsCubit extends Cubit<TicketsState> {
         ? TicketType.story
         : TicketType.task;
     final parsed = _parseDecomposition(reply, childType);
-    await _materializeParsedChildren(parent, [
-      for (final (title, blockedByTitle) in parsed)
-        (childType, title, blockedByTitle),
-    ]);
+    await _materializeParsedChildren(
+      parent,
+      [
+        for (final (title, blockedByTitle) in parsed)
+          (childType, title, blockedByTitle),
+      ],
+    );
   }
 
   /// Runs once per `verifying`-stage chat turn whose reply contains
