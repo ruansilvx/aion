@@ -97,6 +97,8 @@ String ticketsErrorMessage(BuildContext context, TicketsErrorReason reason) {
     TicketsErrorReason.blockedByOpenDependency =>
       l10n.ticketBlockedByOpenDependencyError,
     TicketsErrorReason.specWriteFailed => l10n.specWriteFailedToast,
+    TicketsErrorReason.releasePreparationFailed =>
+      l10n.releasePreparationFailedToast,
   };
 }
 

@@ -43,6 +43,7 @@ class AppTextField extends StatefulWidget {
     this.obscureText = false,
     this.suffixIcon,
     this.isError = false,
+    this.style,
   });
 
   /// Controls and reads the field's text.
@@ -115,6 +116,17 @@ class AppTextField extends StatefulWidget {
   /// existing hand-rolled error-field pattern). Default `false` preserves
   /// every existing call site's rendering.
   final bool isError;
+
+  /// Overrides the field's default input text style (`AionText.body` for
+  /// multiline, `AionText.bodySm` at 14px for single-line) — e.g. a mono
+  /// face for a code/version field. `null` (default) preserves every
+  /// existing call site's rendering. `textPrimary` is still applied on
+  /// top regardless, same as the default styles, so callers only need to
+  /// specify family/size/weight. Added for
+  /// `aion-arch/changes/release-preparation-and-tagging`'s `/verify`
+  /// round-1 fix-up (T17) — the version field's mono
+  /// `AionText.versionInput` style needs a way in.
+  final TextStyle? style;
 
   @override
   State<AppTextField> createState() => _AppTextFieldState();
@@ -202,12 +214,7 @@ class _AppTextFieldState extends State<AppTextField> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.all(AionRadius.lg),
             boxShadow: widget.isError
-                ? [
-                    BoxShadow(
-                      color: c.errorRing(t.isDark),
-                      spreadRadius: 3,
-                    ),
-                  ]
+                ? [BoxShadow(color: c.errorRing(t.isDark), spreadRadius: 3)]
                 : (_isFocused ? AionShadows.focus(c, t.isDark) : const []),
           ),
           child: Material(
@@ -223,12 +230,12 @@ class _AppTextFieldState extends State<AppTextField> {
               textInputAction: widget.textInputAction,
               onSubmitted: widget.onSubmitted,
               textAlignVertical: isMultiline ? TextAlignVertical.top : null,
-              style: isMultiline
-                  ? AionText.body.copyWith(color: c.textPrimary)
-                  : AionText.bodySm.copyWith(
-                      color: c.textPrimary,
-                      fontSize: 14,
-                    ),
+              style:
+                  (widget.style ??
+                          (isMultiline
+                              ? AionText.body
+                              : AionText.bodySm.copyWith(fontSize: 14)))
+                      .copyWith(color: c.textPrimary),
               decoration: InputDecoration(
                 fillColor: c.surface,
                 filled: true,

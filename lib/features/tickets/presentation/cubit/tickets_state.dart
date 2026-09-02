@@ -247,6 +247,13 @@ enum TicketsErrorReason {
   /// `ticketsErrorMessage` / `AppToast`. Added for
   /// `aion-arch/changes/spec-ticket-type`.
   specWriteFailed,
+
+  /// `TicketsCubit.prepareReleaseDraft` failed while drafting a
+  /// `release` ticket's changelog/version proposal — the release ticket
+  /// itself is untouched regardless (see that method's dartdoc). The
+  /// widget layer reads this via `ticketsErrorMessage` / `AppToast`.
+  /// Added for `aion-arch/changes/release-preparation-and-tagging`.
+  releasePreparationFailed,
 }
 
 /// Why a Task ticket's coding-execution run was blocked from starting —

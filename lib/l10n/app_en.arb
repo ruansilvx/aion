@@ -11,6 +11,7 @@
   "commonRetry": "Retry",
   "commonNewTicket": "New ticket",
   "commonCreateTicket": "Create ticket",
+  "commonDismiss": "Dismiss",
 
   "ticketsListEyebrow": "AION · MAIN",
   "ticketsListTitle": "Tickets",
@@ -433,6 +434,11 @@
   "inboxPurposeBadgeWhatNext": "WHAT'S NEXT",
   "inboxPurposeBadgeReleasePlanning": "RELEASE",
   "inboxPurposeBadgeQa": "Q&A",
+  "inboxCutReleaseLabel": "Cut a release",
+  "inboxCutReleaseHint": "Tag a patch from everything unreleased",
+  "inboxCutReleaseInFlight": "Scanning unreleased work…",
+  "inboxCutReleaseScanFailedToast": "Couldn't scan for unreleased work.",
+  "inboxNothingToReleaseMessage": "Nothing to release — everything's already tagged.",
   "ticketDeleteMenuItem": "Delete ticket",
   "ticketDeleteConfirmTitle": "Delete this ticket?",
   "ticketDeleteConfirmAction": "Delete",
@@ -445,6 +451,7 @@
   "executionVerificationFailedToast": "Coding run failed verification — see the Task for details.",
   "sddStageAdvanceFailedToast": "Stage advance failed — see the ticket for details.",
   "specWriteFailedToast": "Couldn't write the spec ticket — you can create it by hand from the Epic instead.",
+  "releasePreparationFailedToast": "Couldn't draft the release — you can try again from the release ticket.",
 
   "ticketTrashConfirmMessage": "{total, plural, one{This ticket will move to Trash.} other{These {total} tickets will move to Trash.}} You can restore it from Trash later.",
   "@ticketTrashConfirmMessage": {
@@ -1169,5 +1176,49 @@
     "placeholders": {
       "count": { "type": "int" }
     }
-  }
+  },
+
+  "releaseSummarySectionEyebrow": "RELEASE SCOPE",
+  "releaseSummaryPrepareButton": "Prepare Release",
+  "releaseSummaryPreparingLabel": "Drafting release…",
+  "releaseSummaryEmptyMessage": "Nothing linked yet. Link the epics, stories, and tasks this release ships.",
+
+  "releaseDraftScreenTitle": "Prepare release",
+  "releaseDraftChangelogLabel": "CHANGELOG",
+  "releaseDraftChangelogPlaceholder": "Describe what ships in this release",
+  "releaseDraftChangelogRequiredError": "A changelog is required",
+  "releaseDraftVersionLabel": "VERSION",
+  "releaseDraftVersionPlaceholder": "0.0.0",
+  "releaseDraftVersionInvalidError": "Use semver, e.g. 0.8.0",
+  "releaseDraftNoVersionFileTitle": "No version file detected",
+  "releaseDraftNoVersionFileMessage": "Aion couldn't find a supported version file for this project. The changelog will be saved without a version bump or tag.",
+  "releaseDraftCancelButton": "Cancel",
+  "releaseDraftConfirmButton": "Confirm & Tag",
+  "releaseDraftSaveChangelogButton": "Save changelog",
+  "releaseDraftTaggingLabel": "Tagging…",
+  "releaseDraftDiscardConfirmTitle": "Discard this draft?",
+  "releaseDraftDiscardConfirmMessage": "Your edits to the changelog and version will be lost.",
+  "releaseDraftDiscardConfirmAction": "Discard",
+  "releaseDraftConfirmDialogTitle": "Tag and push this release?",
+  "releaseDraftConfirmDialogBody": "Aion will commit the version bump, create the tag, and push it to the remote.",
+  "releaseDraftConfirmDialogTagLabel": "TAG",
+  "releaseDraftConfirmDialogBranchLabel": "BRANCH",
+  "releaseDraftConfirmDialogAction": "Tag & push",
+  "releaseDraftPushFailedTitle": "Tag push failed",
+  "releaseDraftSuccessToast": "Tagged {tag} and pushed",
+  "@releaseDraftSuccessToast": {
+    "placeholders": {
+      "tag": { "type": "String" }
+    }
+  },
+
+  "releaseDraftScopeCount": "{count, plural, one{1 item} other{{count} items}}",
+  "@releaseDraftScopeCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "releaseDraftViewScopeLink": "View scope",
+
+  "releaseSummaryPrepareDisabledTooltip": "Link the work this release ships first"
 }
