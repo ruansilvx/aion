@@ -5578,7 +5578,11 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// `delegatedSkill` attachment can't touch the developer's real
   /// checkout. Throws (caught below, posting the usual failure comment)
   /// if constructed without a [GitRepositoryClient]/`projectRootPath` in
-  /// that case. Added for `aion-arch/changes/workflow-skill-attachments`.
+  /// that case, or if the resolved provider lacks
+  /// [AgentProvider.supportsSkillDiscovery] (see
+  /// `aion-arch/changes/delegated-skill-provider-portability/design.md`
+  /// §3a — the `SddStage` counterpart to [_fireSkillAttachment]'s own
+  /// same check). Added for `aion-arch/changes/workflow-skill-attachments`.
   /// Also calls [_recordNotification] exactly once, from the `finally`
   /// block (after worktree cleanup and the [_inFlightStageAdvanceIds]
   /// removal below, so it fires regardless of which path was taken) —
@@ -5610,6 +5614,12 @@ class TicketsCubit extends Cubit<TicketsState> {
                   ? ModelPhase.execution
                   : ModelPhase.capable),
       );
+      if (attachmentToolsEnabled && !provider.supportsSkillDiscovery) {
+        throw StateError(
+          '${provider.displayName} cannot run delegated skills — it has '
+          'no .claude/skills/ discovery capability.',
+        );
+      }
       var tools = const <AgentToolDefinition>[];
       Future<Map<String, dynamic>> Function(
         String toolCallId,
