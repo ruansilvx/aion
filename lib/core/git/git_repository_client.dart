@@ -150,6 +150,30 @@ class GitRepositoryClient {
     return ref.startsWith('origin/') ? ref.substring('origin/'.length) : ref;
   }
 
+  /// Runs `git tag -a <tagName> -m <message>` in [rootPath] — creates an
+  /// annotated tag (not a lightweight one, so it carries [message] and a
+  /// tagger identity, matching every other tag Aion's own release history
+  /// uses). Uses [_runChecked] — a tag-creation failure (e.g. [tagName]
+  /// already exists) must propagate loudly, not be silently swallowed, so
+  /// `TicketsCubit.confirmRelease` can surface it and keep the draft alive
+  /// for retry rather than reporting success it didn't earn. Added for
+  /// `aion-arch/changes/release-preparation-and-tagging`.
+  Future<void> tag(String rootPath, String tagName, String message) async {
+    await _runChecked(['tag', '-a', tagName, '-m', message], rootPath);
+  }
+
+  /// Runs `git push origin <tagName>` in [rootPath] — pushes the tag
+  /// [tag] already created locally. Uses [_runChecked], same rationale as
+  /// [tag]: `TicketsCubit.confirmRelease` calls this only after the
+  /// version-bump commit has already been pushed via [push], so a
+  /// failure here means the tag exists locally but not on `origin` yet —
+  /// [confirmRelease]'s own dartdoc covers the retry story for that
+  /// partial-failure state. Added for
+  /// `aion-arch/changes/release-preparation-and-tagging`.
+  Future<void> pushTag(String rootPath, String tagName) async {
+    await _runChecked(['push', 'origin', tagName], rootPath);
+  }
+
   Future<ProcessResult> _run(List<String> args, String rootPath) {
     return Process.run('git', args, workingDirectory: rootPath);
   }

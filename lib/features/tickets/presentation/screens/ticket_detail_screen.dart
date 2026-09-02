@@ -12,6 +12,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/data/services/active_ticket_view_registry.dart';
+import 'package:aion/features/tickets/domain/entities/release_draft.dart';
 import 'package:aion/features/tickets/domain/entities/skill_attachment.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
@@ -30,8 +31,10 @@ import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 import 'package:aion/features/tickets/presentation/widgets/chat_compose_field.dart';
 import 'package:aion/features/tickets/presentation/widgets/chat_transcript_pane.dart';
 import 'package:aion/features/tickets/presentation/widgets/comment_author_avatar.dart';
+import 'package:aion/features/tickets/presentation/widgets/release_summary_section.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_metadata_section.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_overflow_menu.dart';
+import 'package:aion/features/tickets/presentation/screens/release_draft_screen.dart';
 
 /// The `/tickets/:id` route. [TicketsCubit] is read from the root-level
 /// provider; [CommentsCubit]/[ChatCubit] are provided per-route by
@@ -52,7 +55,12 @@ import 'package:aion/features/tickets/presentation/widgets/ticket_overflow_menu.
 ///   two Documentation-section sections — Linked Tickets and Backlinks
 ///   (widened from `resource`/`bug`-only for
 ///   `aion-arch/changes/board-task-ordering-indication`) — populated
-///   via [TicketsCubit.loadDocumentRelations].
+///   via [TicketsCubit.loadDocumentRelations]. For `release` tickets,
+///   renders [ReleaseSummarySection] instead (also fed by
+///   [TicketsCubit.loadDocumentRelations]'s `linkedTickets`) — the one
+///   ticket type with its own dedicated Release section rather than the
+///   generic Documentation-mode trio. Added for
+///   `aion-arch/changes/release-preparation-and-tagging`.
 /// `page` tickets never reach either layout: since
 /// `page-content-markdown-editor`, a loaded `page` ticket immediately
 /// redirects to `PageDetailScreen` via `/workspace/pages/:id` (see the
@@ -165,6 +173,45 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   /// the ticket currently on screen). Added for
   /// `aion-arch/changes/board-execution-indicators-and-notifications`.
   bool _wasAdvancingStageForCurrentChat = false;
+
+  /// Whether a [TicketsCubit.prepareReleaseDraft] call is currently in
+  /// flight — drives [ReleaseSummarySection]'s Prepare Release button
+  /// loading state. Mirrors [_retryingDesignSync]/[_retryingVerify]'s
+  /// exact "toggle around the call" pattern. Added for
+  /// `aion-arch/changes/release-preparation-and-tagging`.
+  bool _preparingRelease = false;
+
+  /// Calls [TicketsCubit.prepareReleaseDraft] for [ticket] (a `release`
+  /// ticket), toggling [_preparingRelease] around the call. On success,
+  /// pushes [ReleaseDraftScreen] via [Navigator.push] — a transient
+  /// review step reached only from [ReleaseSummarySection], not
+  /// deep-linked to, so it stays off `go_router` (per design.md §5.3).
+  /// On failure (`null`), does nothing further here — `TicketsCubit`
+  /// already emitted a classified [TicketsError], surfaced app-wide as a
+  /// toast by `WorkspaceNavShell`. Added for
+  /// `aion-arch/changes/release-preparation-and-tagging`.
+  Future<void> _prepareRelease(Ticket ticket) async {
+    if (_preparingRelease) return;
+    setState(() => _preparingRelease = true);
+    final ReleaseDraft? draft;
+    try {
+      draft = await context.read<TicketsCubit>().prepareReleaseDraft(
+        ticket.id,
+      );
+    } finally {
+      if (mounted) setState(() => _preparingRelease = false);
+    }
+    if (draft == null || !mounted) return;
+    final resolvedDraft = draft;
+    await Navigator.of(context).push(
+      PageRouteBuilder<void>(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            ReleaseDraftScreen(draft: resolvedDraft),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+            FadeTransition(opacity: animation, child: child),
+      ),
+    );
+  }
 
   /// Calls [TicketsCubit.retryDesignSync], toggling [_retryingDesignSync]
   /// around the call so `_RetryValidationButton` can show its in-flight
@@ -409,21 +456,26 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
               ticket.type == TicketType.chat && state.isAdvancingStage;
           _currentTicket = ticket;
           _registerActiveTicket(ticket.ticketId);
-          // This type set must stay in sync with two other gates that
-          // independently decide the same thing: TicketsCubit.
-          // loadDocumentRelations's own type check (tickets_cubit.dart)
-          // and TicketMetadataSection's Linked Tickets/Backlinks render
-          // gate (ticket_metadata_section.dart) — `board-task-ordering-
-          // indication` widened both of those from resource/bug-only to
-          // also cover epic/story/task, but missed this trigger, so the
-          // section rendered (per the widget's gate) but never had data
-          // loaded for it (per this now-stale gate) for those three
-          // types. Confirmed live during a QA sweep.
+          // This type set must stay in sync with TicketsCubit.
+          // loadDocumentRelations's own type check (tickets_cubit.dart) —
+          // `board-task-ordering-indication` widened both of those from
+          // resource/bug-only to also cover epic/story/task, but missed
+          // this trigger, so the section rendered (per the widget's
+          // gate) but never had data loaded for it (per this now-stale
+          // gate) for those three types. Confirmed live during a QA
+          // sweep. `release` was added to both by
+          // `aion-arch/changes/release-preparation-and-tagging` — unlike
+          // the other five types here, `release` is NOT also added to
+          // TicketMetadataSection's own Linked Tickets/Backlinks gate
+          // (that generic section stays excluded for `release`, see that
+          // widget's own comment); its `linkedTickets` data instead feeds
+          // this file's own ReleaseSummarySection below.
           if ((ticket.type == TicketType.resource ||
                   ticket.type == TicketType.bug ||
                   ticket.type == TicketType.epic ||
                   ticket.type == TicketType.story ||
-                  ticket.type == TicketType.task) &&
+                  ticket.type == TicketType.task ||
+                  ticket.type == TicketType.release) &&
               _relationsLoadedForId != ticket.id) {
             _relationsLoadedForId = ticket.id;
             context.read<TicketsCubit>().loadDocumentRelations(ticket.id);
@@ -515,6 +567,28 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                       .read<TicketsCubit>()
                                       .retryVerifyForStoryOrEpic(ticket),
                                 ),
+                                // `ReleaseSummarySection` — the one new
+                                // type-conditional branch this screen
+                                // gains for `release` tickets; every
+                                // other type's rendering here is
+                                // untouched. Renders where `epic`/`story`
+                                // render `_SddStageSection` (inside
+                                // `TicketMetadataSection`) today — right
+                                // after the Content block, before the
+                                // pending-banner/comment-thread rest of
+                                // this Column. Added for
+                                // `aion-arch/changes/release-preparation-and-tagging`.
+                                if (ticket.type == TicketType.release)
+                                  ReleaseSummarySection(
+                                    linkedWork: state.linkedTickets,
+                                    preparing: _preparingRelease,
+                                    onPrepare: () => _prepareRelease(ticket),
+                                    onTapLinked: (id) =>
+                                        context.go('/workspace/tickets/$id'),
+                                    onRemoveLinked: (linkId) => context
+                                        .read<TicketsCubit>()
+                                        .deleteTicketLink(ticket.id, linkId),
+                                  ),
                                 // `_PendingSkillAttachmentBanner` — placed
                                 // directly under the title/type/status
                                 // block (`TicketMetadataSection`), above

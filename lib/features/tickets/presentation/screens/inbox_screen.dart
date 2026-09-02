@@ -14,14 +14,24 @@ import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/inbox_purpose.dart';
 import 'package:aion/features/tickets/presentation/cubit/inbox_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/inbox_state.dart';
+import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/widgets/inbox_empty_state.dart';
 import 'package:aion/features/tickets/presentation/widgets/inbox_history_item.dart';
 
-/// The `/workspace/inbox` route: a launcher for the four Inbox purposes
-/// (brain dump, what's next, plan a release, ask a question) plus a
-/// reverse-chronological history of past launches. [InboxCubit] is
-/// provided per-route by `appRouter`, same pattern as `DocumentationCubit`.
-/// Per `aion-arch/changes/new-project-onboarding-inbox/design.md` §2.
+/// The `/workspace/inbox` route: a launcher for five Inbox purposes/
+/// actions (brain dump, what's next, plan a release, ask a question, cut
+/// a release) plus a reverse-chronological history of past launches.
+/// [InboxCubit] is provided per-route by `appRouter`, same pattern as
+/// `DocumentationCubit`. The fifth "Cut a release" card is the one
+/// exception to the launcher grid running entirely on [InboxCubit] — it
+/// calls [TicketsCubit.autoCreateReleaseTicket] instead (read directly
+/// from this same `features/tickets/` feature, not a cross-feature
+/// violation — see `aion-arch/changes/release-preparation-and-tagging`'s
+/// proposal.md), since it spawns no chat and isn't an [InboxPurpose] at
+/// all (see [_cutReleaseAuto]'s dartdoc). Per
+/// `aion-arch/changes/new-project-onboarding-inbox/design.md` §2; the
+/// fifth card added for
+/// `aion-arch/changes/release-preparation-and-tagging/design.md` §5.4.
 class InboxScreen extends StatefulWidget {
   /// Creates an [InboxScreen].
   const InboxScreen({super.key});
@@ -38,6 +48,20 @@ class _InboxScreenState extends State<InboxScreen> {
   /// `null` when neither is. Only one may be expanded at a time (design.md
   /// §4.6).
   InboxPurpose? _expandedPurpose;
+
+  /// Whether [TicketsCubit.autoCreateReleaseTicket] is currently in
+  /// flight — drives the "Cut a release" card's in-flight state. Tracked
+  /// locally (not through [InboxState]) since it's a [TicketsCubit] call,
+  /// not an [InboxCubit] one — see [_cutReleaseAuto]'s dartdoc. Added for
+  /// `aion-arch/changes/release-preparation-and-tagging`.
+  bool _cuttingRelease = false;
+
+  /// Whether the dismissible "nothing to release" notice (design.md §7)
+  /// is currently shown below the launcher grid — set when
+  /// [TicketsCubit.autoCreateReleaseTicket] resolves `null`, cleared on
+  /// dismiss or the next "Cut a release" tap. Added for
+  /// `aion-arch/changes/release-preparation-and-tagging`.
+  bool _showNothingToRelease = false;
 
   @override
   void initState() {
@@ -64,6 +88,46 @@ class _InboxScreenState extends State<InboxScreen> {
     final id = await start();
     if (id != null && mounted) {
       context.go('/workspace/tickets/$id');
+    }
+  }
+
+  /// Auto mode's Inbox entry point (design.md §5.4/§7). Calls
+  /// [TicketsCubit.autoCreateReleaseTicket] — not [InboxCubit], since
+  /// this action spawns no chat ticket and populates a `release` ticket
+  /// directly. Three outcomes, matching the Claude Design export's §2.4
+  /// breakdown:
+  /// - **Draft ready** (non-`null` ticket): navigates to that release
+  ///   ticket's own detail route, where `ReleaseSummarySection`'s
+  ///   Prepare Release action picks up from there (this call does not
+  ///   itself call `TicketsCubit.prepareReleaseDraft` — see
+  ///   `tasks.md` T11's own wording).
+  /// - **Nothing unreleased** (`null`): shows the dismissible "nothing to
+  ///   release" notice below the launcher grid — no navigation, no toast.
+  /// - **Failure** (thrown): a local, one-off `AppToast` — distinct from
+  ///   [TicketsErrorReason.releasePreparationFailed]'s toast, since a
+  ///   scan failure here is a different, unrelated failure mode from
+  ///   `TicketsCubit.prepareReleaseDraft`'s own.
+  Future<void> _cutReleaseAuto() async {
+    if (_cuttingRelease) return;
+    setState(() {
+      _cuttingRelease = true;
+      _showNothingToRelease = false;
+    });
+    try {
+      final ticket = await context
+          .read<TicketsCubit>()
+          .autoCreateReleaseTicket();
+      if (!mounted) return;
+      setState(() => _cuttingRelease = false);
+      if (ticket == null) {
+        setState(() => _showNothingToRelease = true);
+        return;
+      }
+      context.go(ticketDetailRoute(ticket));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _cuttingRelease = false);
+      AppToast.show(context, context.l10n.inboxCutReleaseScanFailedToast);
     }
   }
 
@@ -98,6 +162,7 @@ class _InboxScreenState extends State<InboxScreen> {
                     return _LauncherGrid(
                       expandedPurpose: _expandedPurpose,
                       launchingPurpose: launching,
+                      cuttingRelease: _cuttingRelease,
                       brainDumpController: _brainDumpController,
                       qaController: _qaController,
                       onExpand: _setExpanded,
@@ -110,9 +175,17 @@ class _InboxScreenState extends State<InboxScreen> {
                           _launch(cubit.startReleasePlanning),
                       onQaSubmit: () =>
                           _launch(() => cubit.startQa(_qaController.text)),
+                      onCutReleaseTap: _cutReleaseAuto,
                     );
                   },
                 ),
+                if (_showNothingToRelease) ...[
+                  const SizedBox(height: AionSpacing.sp16),
+                  _NothingToReleaseNotice(
+                    onDismiss: () =>
+                        setState(() => _showNothingToRelease = false),
+                  ),
+                ],
                 const SizedBox(height: AionSpacing.sp32),
                 BlocBuilder<InboxCubit, InboxState>(
                   builder: (context, state) {
@@ -210,6 +283,7 @@ class _LauncherGrid extends StatelessWidget {
   const _LauncherGrid({
     required this.expandedPurpose,
     required this.launchingPurpose,
+    required this.cuttingRelease,
     required this.brainDumpController,
     required this.qaController,
     required this.onExpand,
@@ -217,10 +291,15 @@ class _LauncherGrid extends StatelessWidget {
     required this.onWhatNextTap,
     required this.onReleasePlanningTap,
     required this.onQaSubmit,
+    required this.onCutReleaseTap,
   });
 
   final InboxPurpose? expandedPurpose;
   final InboxPurpose? launchingPurpose;
+
+  /// Whether the fifth "Cut a release" card's own (non-[InboxPurpose])
+  /// launch is in flight — see [_PurposeLauncherCardState]'s dartdoc.
+  final bool cuttingRelease;
   final TextEditingController brainDumpController;
   final TextEditingController qaController;
   final ValueChanged<InboxPurpose?> onExpand;
@@ -228,13 +307,15 @@ class _LauncherGrid extends StatelessWidget {
   final VoidCallback onWhatNextTap;
   final VoidCallback onReleasePlanningTap;
   final VoidCallback onQaSubmit;
+  final VoidCallback onCutReleaseTap;
 
   static const _kWideBreakpoint = 560.0;
 
   @override
   Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
     final brainDump = _PurposeLauncherCard(
-      purpose: InboxPurpose.brainDump,
+      accent: inboxAccentFor(InboxPurpose.brainDump, c),
       icon: PhosphorIcons.brainLight,
       title: context.l10n.inboxBrainDumpLabel,
       hint: context.l10n.inboxBrainDumpHint,
@@ -251,7 +332,7 @@ class _LauncherGrid extends StatelessWidget {
       maxLines: 8,
     );
     final whatNext = _PurposeLauncherCard(
-      purpose: InboxPurpose.whatNextGuidance,
+      accent: inboxAccentFor(InboxPurpose.whatNextGuidance, c),
       icon: PhosphorIcons.compassLight,
       title: context.l10n.inboxWhatNextLabel,
       hint: context.l10n.inboxWhatNextHint,
@@ -262,7 +343,7 @@ class _LauncherGrid extends StatelessWidget {
       onCollapsedTap: onWhatNextTap,
     );
     final releasePlanning = _PurposeLauncherCard(
-      purpose: InboxPurpose.releasePlanning,
+      accent: inboxAccentFor(InboxPurpose.releasePlanning, c),
       icon: PhosphorIcons.rocketLaunchLight,
       title: context.l10n.inboxReleasePlanningLabel,
       hint: context.l10n.inboxReleasePlanningHint,
@@ -273,7 +354,7 @@ class _LauncherGrid extends StatelessWidget {
       onCollapsedTap: onReleasePlanningTap,
     );
     final qa = _PurposeLauncherCard(
-      purpose: InboxPurpose.qa,
+      accent: inboxAccentFor(InboxPurpose.qa, c),
       icon: PhosphorIcons.chatCircleTextLight,
       title: context.l10n.inboxQaLabel,
       hint: context.l10n.inboxQaHint,
@@ -288,6 +369,20 @@ class _LauncherGrid extends StatelessWidget {
       onSubmit: onQaSubmit,
       minLines: 2,
       maxLines: 6,
+    );
+    // Not backed by an `InboxPurpose` — see this file's class dartdoc and
+    // `_cutReleaseAuto`'s. Shares `releasePlanning`'s `typeRelease` accent
+    // (design.md §5.4's §2.2: "both release cards keep `typeRelease`").
+    final cutRelease = _PurposeLauncherCard(
+      accent: c.typeRelease,
+      icon: PhosphorIcons.tagLight,
+      title: context.l10n.inboxCutReleaseLabel,
+      hint: context.l10n.inboxCutReleaseHint,
+      shape: _CardShape.oneTap,
+      expanded: false,
+      launching: cuttingRelease,
+      inFlightLabel: context.l10n.inboxCutReleaseInFlight,
+      onCollapsedTap: onCutReleaseTap,
     );
 
     return LayoutBuilder(
@@ -312,6 +407,13 @@ class _LauncherGrid extends StatelessWidget {
                   Expanded(child: qa),
                 ],
               ),
+              const SizedBox(height: AionSpacing.sp16),
+              // Full-width, its own third row — not half-width beside a
+              // gap. A lone half-width card there would leave a visible
+              // hole reading as a loading slot; full-width also gives
+              // this one-tap patch path slightly more presence, matching
+              // its role. Per design.md §5.4/§2.1.
+              cutRelease,
             ],
           );
         }
@@ -324,6 +426,8 @@ class _LauncherGrid extends StatelessWidget {
             releasePlanning,
             const SizedBox(height: AionSpacing.sp12),
             qa,
+            const SizedBox(height: AionSpacing.sp12),
+            cutRelease,
           ],
         );
       },
@@ -344,10 +448,16 @@ enum _CardShape {
 
 /// A single purpose-launcher card — shared geometry/states for both
 /// [_CardShape]s (design.md §4.1), diverging into either an in-flight
-/// one-tap row or an expanded inline-input form.
+/// one-tap row or an expanded inline-input form. Takes [accent] directly
+/// rather than an [InboxPurpose] (as it did before
+/// `aion-arch/changes/release-preparation-and-tagging`) — the caller
+/// resolves it via `inboxAccentFor` for the four `InboxPurpose`-backed
+/// cards, or passes a token directly for a card with none, like "Cut a
+/// release" (deliberately not a new `InboxPurpose` value — see
+/// `InboxScreen`'s class dartdoc).
 class _PurposeLauncherCard extends StatefulWidget {
   const _PurposeLauncherCard({
-    required this.purpose,
+    required this.accent,
     required this.icon,
     required this.title,
     required this.hint,
@@ -365,7 +475,7 @@ class _PurposeLauncherCard extends StatefulWidget {
     this.maxLines,
   });
 
-  final InboxPurpose purpose;
+  final Color accent;
   final IconData icon;
   final String title;
   final String hint;
@@ -441,7 +551,7 @@ class _PurposeLauncherCardState extends State<_PurposeLauncherCard> {
   Widget build(BuildContext context) {
     final t = ThemeScope.of(context);
     final c = t.colors;
-    final accent = inboxAccentFor(widget.purpose, c);
+    final accent = widget.accent;
     final isExpanded = widget.shape == _CardShape.inlineInput && widget.expanded;
 
     final borderColor = isExpanded
@@ -853,6 +963,73 @@ class _SubmitButtonState extends State<_SubmitButton> {
               child: button,
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The dismissible "nothing to release" notice shown below
+/// [_LauncherGrid] when [TicketsCubit.autoCreateReleaseTicket] resolves
+/// `null` — a clean state, not a failure, so it reads with a success
+/// glyph rather than a warning one. Persists until dismissed or another
+/// launcher card is tapped (the caller clears
+/// [_InboxScreenState._showNothingToRelease] on every new "Cut a
+/// release" tap); not auto-timed. Per design.md §7. Added for
+/// `aion-arch/changes/release-preparation-and-tagging`.
+class _NothingToReleaseNotice extends StatelessWidget {
+  const _NothingToReleaseNotice({required this.onDismiss});
+
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.noticeFill(t.isDark),
+        border: Border.all(color: c.noticeBorder(t.isDark), width: 1),
+        borderRadius: BorderRadius.all(AionRadius.md),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(13, 11, 10, 11),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            PhosphorIcon(
+              PhosphorIcons.checkCircleLight,
+              size: 15,
+              color: c.success,
+            ),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Text(
+                context.l10n.inboxNothingToReleaseMessage,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: AionText.bodySm.copyWith(color: c.textSecondary),
+              ),
+            ),
+            Semantics(
+              button: true,
+              label: context.l10n.commonDismiss,
+              child: GestureDetector(
+                onTap: onDismiss,
+                child: SizedBox(
+                  width: 26,
+                  height: 26,
+                  child: Center(
+                    child: PhosphorIcon(
+                      PhosphorIcons.xLight,
+                      size: 13,
+                      color: c.textMuted,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

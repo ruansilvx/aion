@@ -50,6 +50,7 @@ import 'package:aion/features/tickets/domain/entities/execution_queue_entry.dart
 import 'package:aion/features/tickets/domain/entities/gap_or_question_ref.dart';
 import 'package:aion/features/tickets/domain/entities/linked_ticket_ref.dart';
 import 'package:aion/features/tickets/domain/entities/notification.dart';
+import 'package:aion/features/tickets/domain/entities/release_draft.dart';
 import 'package:aion/features/tickets/domain/entities/skill_attachment.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/entities/workflow_prompt_template.dart';
@@ -2541,6 +2542,313 @@ class TicketsCubit extends Cubit<TicketsState> {
         TicketsError(e.toString(), reason: TicketsErrorReason.specWriteFailed),
       );
     }
+  }
+
+  /// Drafts a [ReleaseDraft] for the `release` ticket [releaseTicketId]:
+  /// fetches its `relatesTo`-linked epic/story/task/bug tickets (via
+  /// [TicketLinkRepository.getLinksForTicket]), assembles their title/
+  /// type/status into a prompt — the same "context assembly" shape
+  /// [_createEpicSpec] already builds for an Epic's own Story children —
+  /// then resolves [ModelPhase.capable] (mechanical writeup of
+  /// already-decided work, not a fresh judgment call — matching
+  /// [_createEpicSpec]'s own tier rationale) and runs one non-tool
+  /// [AgentModelClient.run] call requesting changelog prose plus a
+  /// suggested semver bump. Also calls
+  /// [ProjectStackDetector.detectVersionFile] on [_projectRootPath] to
+  /// populate [ReleaseDraft.detectedVersionFile]. Returns `null` (no
+  /// error emitted — the caller shows an inline message, mirroring
+  /// [_createEpicSpec]'s own guard) if this cubit was constructed without
+  /// a [ProviderRegistry]/[TicketLinkRepository]/`projectRootPath`, or if
+  /// [releaseTicketId] doesn't resolve to a live `release`-type ticket.
+  /// On a model failure, emits `TicketsError(reason:
+  /// TicketsErrorReason.releasePreparationFailed)` and returns `null` —
+  /// the release ticket itself is untouched either way, mirroring
+  /// [_createEpicSpec]'s "the source ticket's own state never depends on
+  /// this call succeeding" behavior. Added for
+  /// `aion-arch/changes/release-preparation-and-tagging`; see that
+  /// change's design.md §4.1.
+  Future<ReleaseDraft?> prepareReleaseDraft(String releaseTicketId) async {
+    final providerRegistry = _providerRegistry;
+    final linkRepo = _linkRepository;
+    final rootPath = _projectRootPath;
+    if (providerRegistry == null || linkRepo == null || rootPath == null) {
+      return null;
+    }
+
+    final release = await _repository.getTicketById(releaseTicketId);
+    if (release == null || release.type != TicketType.release) return null;
+
+    final links = await linkRepo.getLinksForTicket(releaseTicketId);
+    final linkedIds = <String>[];
+    final linkedTickets = <Ticket>[];
+    for (final link in links) {
+      final otherId = link.sourceTicketId == releaseTicketId
+          ? link.targetTicketId
+          : link.sourceTicketId;
+      final other = await _repository.getTicketById(otherId);
+      if (other == null) continue;
+      if (other.type != TicketType.epic &&
+          other.type != TicketType.story &&
+          other.type != TicketType.task &&
+          other.type != TicketType.bug) {
+        continue;
+      }
+      linkedIds.add(other.id);
+      linkedTickets.add(other);
+    }
+
+    final buffer = StringBuffer()..writeln('# ${release.title}');
+    if (linkedTickets.isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('## Linked work');
+      for (final ticket in linkedTickets) {
+        buffer.writeln(
+          '- ${ticket.title} (${ticket.type.name}, ${ticket.status})',
+        );
+      }
+    }
+    buffer
+      ..writeln()
+      ..writeln(
+        "Draft this release's changelog entry (Keep a Changelog style "
+        'Markdown, no top-level heading) summarizing the work above for '
+        "someone reading the release notes, then on its own final line "
+        'suggest the next semver version as exactly `VERSION: x.y.z` '
+        '(patch bump for fixes only, minor for new capability, major for '
+        'a breaking change).',
+      );
+
+    try {
+      final (model, provider) = await _resolveModelAndProvider(
+        ModelPhase.capable,
+      );
+      final replyBuffer = StringBuffer();
+      final events = await provider.client.run(
+        AgentRequest(prompt: buffer.toString().trim(), model: model.modelId),
+      );
+      await for (final event in events) {
+        switch (event) {
+          case AgentTextEvent(:final text):
+            replyBuffer.write(text);
+          case AgentDoneEvent():
+          case AgentOverageDetectedEvent():
+          case AgentToolUseEvent():
+          case AgentToolCallEvent(): // never emitted — this call sends no tools
+            break;
+          case AgentErrorEvent(:final message):
+            throw StateError(message);
+          case AgentCancelledEvent(): // never emitted — this call sets no runId
+            throw StateError('Release draft cancelled.');
+        }
+      }
+
+      final (changelog, suggestedVersion) = _splitChangelogAndVersion(
+        replyBuffer.toString().trim(),
+      );
+
+      return ReleaseDraft(
+        releaseTicketId: releaseTicketId,
+        linkedTicketIds: linkedIds,
+        changelogMarkdown: changelog,
+        suggestedVersion: suggestedVersion,
+        detectedVersionFile: ProjectStackDetector().detectVersionFile(
+          rootPath,
+        ),
+      );
+    } catch (e) {
+      emit(
+        TicketsError(
+          e.toString(),
+          reason: TicketsErrorReason.releasePreparationFailed,
+        ),
+      );
+      return null;
+    }
+  }
+
+  /// Splits [reply] — [prepareReleaseDraft]'s raw model output — into its
+  /// changelog body and the trailing `VERSION: x.y.z` marker line the
+  /// prompt asked for, stripping that line out of the returned changelog.
+  /// Falls back to an empty suggested version (left blank for the user to
+  /// fill in on `ReleaseDraftScreen`) if the model didn't include the
+  /// marker line verbatim.
+  (String, String) _splitChangelogAndVersion(String reply) {
+    final match = RegExp(r'^VERSION:\s*(\S+)\s*$', multiLine: true)
+        .firstMatch(reply);
+    if (match == null) return (reply, '');
+    final changelog = reply.replaceRange(match.start, match.end, '').trim();
+    return (changelog, match.group(1)!);
+  }
+
+  /// Auto mode's ticket-population step (see `proposal.md`). Finds the
+  /// shared-base status currently holding [WorkflowStatusRole.done] (via
+  /// [_doneStatus] — a pure lookup over already-loaded config), queries
+  /// every live `epic`/`story`/`task`/`bug` ticket
+  /// ([TicketRepository.getAllTicketsByType]) at that status, then
+  /// subtracts every one already `relatesTo`-linked to *any* existing
+  /// `release` ticket ([TicketLinkRepository.getLinksByTypes] cross-
+  /// referenced against [TicketRepository.getAllTicketsByType] for
+  /// [TicketType.release]'s own ids — the same bulk-query shape
+  /// [loadDocumentRelations]'s `gapsAndOpenQuestions` computation already
+  /// uses, avoiding an N+1 query per candidate). Creates a new `release`
+  /// ticket titled `"Release — <today, yyyy-MM-dd>"` and links every
+  /// surviving candidate to it via [createTicketLink] (as
+  /// [TicketLinkType.relatesTo], the release as source — matching
+  /// `InboxCubit.handleReleasePlanningReply`'s curated-mode convention).
+  /// Returns the new ticket, or `null` (no ticket created) if nothing
+  /// unreleased qualifies — surfaced by the caller (`InboxScreen`) as
+  /// "nothing to release." No-ops (returns `null`) if constructed without
+  /// a [TicketLinkRepository]. Added for
+  /// `aion-arch/changes/release-preparation-and-tagging`; see that
+  /// change's design.md §4.2.
+  Future<Ticket?> autoCreateReleaseTicket() async {
+    final linkRepo = _linkRepository;
+    if (linkRepo == null) return null;
+
+    final doneStatus = _doneStatus;
+    final candidates = await _repository.getAllTicketsByType(const [
+      TicketType.epic,
+      TicketType.story,
+      TicketType.task,
+      TicketType.bug,
+    ]);
+    final doneCandidates = candidates
+        .where((t) => t.status == doneStatus)
+        .toList();
+    if (doneCandidates.isEmpty) return null;
+
+    final existingReleases = await _repository.getAllTicketsByType(const [
+      TicketType.release,
+    ]);
+    final releaseIds = existingReleases.map((r) => r.id).toSet();
+    final relatesToLinks = await linkRepo.getLinksByTypes(const [
+      TicketLinkType.relatesTo,
+    ]);
+    final alreadyReleased = <String>{};
+    for (final link in relatesToLinks) {
+      if (releaseIds.contains(link.sourceTicketId)) {
+        alreadyReleased.add(link.targetTicketId);
+      } else if (releaseIds.contains(link.targetTicketId)) {
+        alreadyReleased.add(link.sourceTicketId);
+      }
+    }
+
+    final unreleased = doneCandidates
+        .where((t) => !alreadyReleased.contains(t.id))
+        .toList();
+    if (unreleased.isEmpty) return null;
+
+    final now = DateTime.now();
+    final release = Ticket(
+      id: _uuid.v4(),
+      ticketId: '',
+      type: TicketType.release,
+      title: 'Release — ${_formatIsoDate(now)}',
+      status: _defaultCreationStatus,
+      createdAt: now,
+      updatedAt: now,
+    );
+    await _repository.createTicket(release);
+
+    for (final ticket in unreleased) {
+      await createTicketLink(release.id, ticket.id, TicketLinkType.relatesTo);
+    }
+
+    return release;
+  }
+
+  /// Applies a reviewed [draft] — its [ReleaseDraft.changelogMarkdown]/
+  /// [ReleaseDraft.suggestedVersion] may have been hand-edited on
+  /// `ReleaseDraftScreen` since [prepareReleaseDraft] returned it; this
+  /// call trusts the caller's copy, it does not re-fetch or re-draft.
+  /// Writes a new `## [<version>] - <date>` section into the target
+  /// project's `CHANGELOG.md` (Keep a Changelog format, created if
+  /// absent) directly under its `## [Unreleased]` heading, then — only if
+  /// [ReleaseDraft.detectedVersionFile] is non-null —
+  /// [ProjectStackDetector.writeVersion]s the bump. Stages and commits
+  /// both files ([GitRepositoryClient.add]/`.commit`,
+  /// `"chore(release): v<version>"`), then pushes the commit before
+  /// tagging and pushing the tag ([GitRepositoryClient.push], `.tag`,
+  /// `.pushTag`, in that order) — deliberately, so a failed tag push
+  /// never leaves an untagged commit stranded on `origin` with no way to
+  /// retry cleanly: a re-run of this method after a push failure
+  /// re-attempts from a clean, already-committed state rather than
+  /// re-committing on top of a half-pushed history. The commit's target/
+  /// push branch is [GitRepositoryClient.defaultBranch] — releases are
+  /// cut from the project's default branch, matching `ReleaseDraftScreen`'s
+  /// displayed target-branch confirmation. Propagates any step's failure
+  /// instead of catching it — the caller (`ReleaseDraftScreen`) keeps
+  /// [draft] alive for retry rather than discarding it, since a
+  /// mid-sequence failure (e.g. `pushTag` failing after `tag` already
+  /// succeeded locally) is exactly the "rollback plan" gap the
+  /// originating idea flagged as an open question; this method adds no
+  /// automatic rollback of its own. No-ops (writes nothing) if
+  /// constructed without a [GitRepositoryClient] or `projectRootPath`.
+  /// Added for `aion-arch/changes/release-preparation-and-tagging`; see
+  /// that change's design.md §4.3.
+  Future<void> confirmRelease(ReleaseDraft draft) async {
+    final gitClient = _gitClient;
+    final rootPath = _projectRootPath;
+    if (gitClient == null || rootPath == null) return;
+
+    final version = draft.suggestedVersion.trim();
+    final changelogFile = File(
+      '$rootPath${Platform.pathSeparator}CHANGELOG.md',
+    );
+    final section =
+        '## [$version] - ${_formatIsoDate(DateTime.now())}\n\n'
+        '${draft.changelogMarkdown.trim()}\n';
+    final existing = await changelogFile.exists()
+        ? await changelogFile.readAsString()
+        : '# Changelog\n\n## [Unreleased]\n';
+    await changelogFile.writeAsString(
+      _insertChangelogSection(existing, section),
+    );
+    await gitClient.add(rootPath, 'CHANGELOG.md');
+
+    final detected = draft.detectedVersionFile;
+    if (detected != null) {
+      await ProjectStackDetector().writeVersion(detected, version);
+      await gitClient.add(
+        rootPath,
+        p.relative(detected.file.path, from: rootPath),
+      );
+    }
+
+    final branch = await gitClient.defaultBranch(rootPath);
+    await gitClient.commit(rootPath, 'chore(release): v$version');
+    await gitClient.push(rootPath, branch);
+    await gitClient.tag(rootPath, 'v$version', draft.changelogMarkdown.trim());
+    await gitClient.pushTag(rootPath, 'v$version');
+  }
+
+  /// Inserts [section] (pre-formatted as `## [x.y.z] - date\n\n...\n`)
+  /// into [content] directly under its `## [Unreleased]` heading — Keep a
+  /// Changelog format. If no such heading exists yet, one is added (after
+  /// a top-level title, synthesizing one if [content] is otherwise
+  /// empty), so every write leaves the file in a consistently-shaped
+  /// state for the next release.
+  String _insertChangelogSection(String content, String section) {
+    const marker = '## [Unreleased]';
+    final markerIndex = content.indexOf(marker);
+    if (markerIndex == -1) {
+      final trimmed = content.trimRight();
+      final prefix = trimmed.isEmpty ? '# Changelog' : trimmed;
+      return '$prefix\n\n$marker\n\n$section';
+    }
+    final insertAt = markerIndex + marker.length;
+    return '${content.substring(0, insertAt)}\n\n'
+        '$section${content.substring(insertAt).trimLeft()}';
+  }
+
+  /// Formats [date] as `yyyy-MM-dd` — used by [autoCreateReleaseTicket]'s
+  /// ticket title and [confirmRelease]'s changelog section heading. A
+  /// small local helper rather than pulling in `intl`'s `DateFormat` for
+  /// one fixed, locale-independent pattern.
+  String _formatIsoDate(DateTime date) {
+    String pad(int n, int width) => n.toString().padLeft(width, '0');
+    return '${pad(date.year, 4)}-${pad(date.month, 2)}-${pad(date.day, 2)}';
   }
 
   /// Restores `TicketDetailLoaded` for the ticket with id [ticketId] after
@@ -8092,6 +8400,13 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// `aion-arch/changes/board-task-ordering-indication`'s widened Linked
   /// Tickets gate (`ticket_metadata_section.dart`) — those types now
   /// render the section too, and would otherwise never have it populated.
+  /// `release` was added here for
+  /// `aion-arch/changes/release-preparation-and-tagging`'s
+  /// `ReleaseSummarySection` — unlike the generic Documentation-mode
+  /// Linked Tickets section (which stays excluded for `release`, see
+  /// `TicketMetadataSection`'s own gate), that section's `linkedWork`
+  /// display is fed by this same [linkedTickets] field, just rendered by
+  /// a different, release-specific widget.
   /// No-ops (does not emit) if the ticket isn't found, isn't one of the
   /// gated types, or the cubit has since moved on to a different
   /// ticket's detail state (a stale response from an earlier
@@ -8137,7 +8452,8 @@ class TicketsCubit extends Cubit<TicketsState> {
         ticket.type != TicketType.bug &&
         ticket.type != TicketType.epic &&
         ticket.type != TicketType.story &&
-        ticket.type != TicketType.task) {
+        ticket.type != TicketType.task &&
+        ticket.type != TicketType.release) {
       return;
     }
 

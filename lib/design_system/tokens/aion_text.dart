@@ -207,4 +207,20 @@ abstract final class AionText {
     letterSpacing: 0,
     height: 1.0,
   );
+
+  /// `ReleaseDraftScreen`'s version-field input text, the derived tag
+  /// preview pill, and the tag/branch confirmation dialog's tag value — a
+  /// semver string read digit-by-digit. Distinct from [key]/[caption]/
+  /// [time] (the mono family's only other sizes, all capped at 11px):
+  /// setting a version in [bodySm] loses the digit alignment every other
+  /// identifier in Aion gets. Added for
+  /// `aion-arch/changes/release-preparation-and-tagging`; see that
+  /// change's design.md §0.3.
+  static const versionInput = TextStyle(
+    fontFamily: _mono,
+    fontSize: 15,
+    fontWeight: FontWeight.w600,
+    letterSpacing: 0.15,
+    height: 1.3,
+  );
 }
