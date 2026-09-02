@@ -2809,10 +2809,16 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// mid-sequence failure (e.g. `pushTag` failing after `tag` already
   /// succeeded locally) is exactly the "rollback plan" gap the
   /// originating idea flagged as an open question; this method adds no
-  /// automatic rollback of its own. No-ops (writes nothing) if
+  /// automatic rollback of its own. Once every git step above succeeds,
+  /// flips the release ticket's own status to the shared-base `done`-role
+  /// status and re-emits its detail state (per design.md §3.7's "whose
+  /// status flips to Done" success behavior) — never reached if an
+  /// earlier step throws. No-ops (writes nothing) if
   /// constructed without a [GitRepositoryClient] or `projectRootPath`.
   /// Added for `aion-arch/changes/release-preparation-and-tagging`; see
-  /// that change's design.md §4.3.
+  /// that change's design.md §4.3. Extended by the `/verify` round-2
+  /// fix-up (T21) to add the status flip, found missing during T14's
+  /// manual pass.
   Future<void> confirmRelease(ReleaseDraft draft) async {
     final gitClient = _gitClient;
     final rootPath = _projectRootPath;
@@ -2847,6 +2853,18 @@ class TicketsCubit extends Cubit<TicketsState> {
     await gitClient.push(rootPath, branch);
     await gitClient.tag(rootPath, 'v$version', draft.changelogMarkdown.trim());
     await gitClient.pushTag(rootPath, 'v$version');
+
+    // Per design.md §3.7's success behavior — flips only once every git
+    // step above has actually succeeded (an earlier failure throws first,
+    // propagating out before this line, so the release ticket never
+    // reads Done for a release that didn't actually land). Re-emits
+    // TicketDetailLoaded (via _restoreDocumentTicketDetail, not a bare
+    // status write) so the still-mounted TicketDetailScreen underneath
+    // ReleaseDraftScreen — which `_confirm`'s caller pops back to on
+    // success — reflects the new status immediately, without the user
+    // needing to navigate away and back.
+    await _repository.updateTicketStatus(draft.releaseTicketId, _doneStatus);
+    await _restoreDocumentTicketDetail(draft.releaseTicketId);
   }
 
   /// Inserts [section] (pre-formatted as `## [x.y.z] - date\n\n...\n`)
