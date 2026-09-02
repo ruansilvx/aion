@@ -2553,27 +2553,35 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// already-decided work, not a fresh judgment call — matching
   /// [_createEpicSpec]'s own tier rationale) and runs one non-tool
   /// [AgentModelClient.run] call requesting changelog prose plus a
-  /// suggested semver bump. Also calls
-  /// [ProjectStackDetector.detectVersionFile] on [_projectRootPath] to
-  /// populate [ReleaseDraft.detectedVersionFile], and resolves
-  /// [ReleaseDraft.targetBranch] via [GitRepositoryClient.defaultBranch]
-  /// — the same call `confirmRelease` itself makes, so the branch shown
-  /// to the user during review is guaranteed to match the one actually
-  /// written to — and [ReleaseDraft.releaseKey] from the release ticket's
-  /// own `ticketId`. Returns `null` (no
-  /// error emitted — the caller shows an inline message, mirroring
-  /// [_createEpicSpec]'s own guard) if this cubit was constructed without
-  /// a [ProviderRegistry]/[TicketLinkRepository]/[GitRepositoryClient]/
-  /// `projectRootPath`, or if
-  /// [releaseTicketId] doesn't resolve to a live `release`-type ticket.
-  /// On a model failure, emits `TicketsError(reason:
+  /// suggested semver bump. Calls
+  /// [ProjectStackDetector.detectVersionFile] on [_projectRootPath] once,
+  /// up front — its `currentVersion` (when detected) is folded into the
+  /// prompt so the model can suggest a real next version instead of a
+  /// bare `x.y.z` placeholder (found missing during T14's manual pass:
+  /// every drafted suggestion came back as a literal placeholder, since
+  /// nothing had ever told the model what the current version was), and
+  /// the same detection result populates [ReleaseDraft.detectedVersionFile]
+  /// rather than detecting a second time, so the draft's suggestion and
+  /// the version-file it would bump from can never disagree. Also
+  /// resolves [ReleaseDraft.targetBranch] via
+  /// [GitRepositoryClient.defaultBranch] — the same call `confirmRelease`
+  /// itself makes, so the branch shown to the user during review is
+  /// guaranteed to match the one actually written to — and
+  /// [ReleaseDraft.releaseKey] from the release ticket's own `ticketId`.
+  /// Returns `null` (no error emitted — the caller shows an inline
+  /// message, mirroring [_createEpicSpec]'s own guard) if this cubit was
+  /// constructed without a [ProviderRegistry]/[TicketLinkRepository]/
+  /// [GitRepositoryClient]/`projectRootPath`, or if [releaseTicketId]
+  /// doesn't resolve to a live `release`-type ticket. On a model
+  /// failure, emits `TicketsError(reason:
   /// TicketsErrorReason.releasePreparationFailed)` and returns `null` —
   /// the release ticket itself is untouched either way, mirroring
   /// [_createEpicSpec]'s "the source ticket's own state never depends on
   /// this call succeeding" behavior. Added for
   /// `aion-arch/changes/release-preparation-and-tagging`; see that
   /// change's design.md §4.1, extended by the `/verify` round-1 fix-up's
-  /// T15 to also resolve `releaseKey`/`targetBranch`.
+  /// T15 to also resolve `releaseKey`/`targetBranch`, and by T22 to feed
+  /// the current version into the prompt.
   Future<ReleaseDraft?> prepareReleaseDraft(String releaseTicketId) async {
     final providerRegistry = _providerRegistry;
     final linkRepo = _linkRepository;
@@ -2608,6 +2616,14 @@ class TicketsCubit extends Cubit<TicketsState> {
       linkedTickets.add(other);
     }
 
+    // Detected once, up front, rather than after the model call — its
+    // currentVersion (when known) is fed into the prompt below so the
+    // model can suggest a real next version instead of a placeholder;
+    // the same value is then reused for [ReleaseDraft.detectedVersionFile]
+    // rather than re-detecting, so the drafted suggestion and the field
+    // the draft screen bumps from are guaranteed to agree.
+    final detected = ProjectStackDetector().detectVersionFile(rootPath);
+
     final buffer = StringBuffer()..writeln('# ${release.title}');
     if (linkedTickets.isNotEmpty) {
       buffer
@@ -2624,8 +2640,10 @@ class TicketsCubit extends Cubit<TicketsState> {
       ..writeln(
         "Draft this release's changelog entry (Keep a Changelog style "
         'Markdown, no top-level heading) summarizing the work above for '
-        "someone reading the release notes, then on its own final line "
-        'suggest the next semver version as exactly `VERSION: x.y.z` '
+        'someone reading the release notes, then on its own final line '
+        'suggest the next semver version as exactly `VERSION: x.y.z`'
+        '${detected == null ? '' : " (the project's current version is "
+                  '`${detected.currentVersion}`)'} '
         '(patch bump for fixes only, minor for new capability, major for '
         'a breaking change).',
       );
@@ -2665,7 +2683,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         linkedTicketIds: linkedIds,
         changelogMarkdown: changelog,
         suggestedVersion: suggestedVersion,
-        detectedVersionFile: ProjectStackDetector().detectVersionFile(rootPath),
+        detectedVersionFile: detected,
       );
     } catch (e) {
       emit(
