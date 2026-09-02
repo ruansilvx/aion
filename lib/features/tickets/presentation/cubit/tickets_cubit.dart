@@ -5809,7 +5809,10 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// throws rather than silently falling back to [_projectRootPath] — is
   /// caught and posted as a "Skill attachment failed: `<e>`"
   /// [CommentAuthorType.system] comment, mirroring [_runStageChatTurn]'s
-  /// own catch-comment shape.
+  /// own catch-comment shape — the same path a resolved provider lacking
+  /// [AgentProvider.supportsSkillDiscovery] hits for a `delegatedSkill`
+  /// run (see `aion-arch/changes/delegated-skill-provider-portability/design.md`
+  /// §3).
   Future<void> _fireSkillAttachment(
     Ticket parent,
     SkillAttachment attachment,
@@ -5866,6 +5869,12 @@ class TicketsCubit extends Cubit<TicketsState> {
       final (model, provider) = await _resolveModelAndProvider(
         toolsEnabled ? ModelPhase.execution : ModelPhase.capable,
       );
+      if (toolsEnabled && !provider.supportsSkillDiscovery) {
+        throw StateError(
+          '${provider.displayName} cannot run delegated skills — it has '
+          'no .claude/skills/ discovery capability.',
+        );
+      }
       await ChatCubit.runChatTurn(
         client: provider.client,
         provider: provider,

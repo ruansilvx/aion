@@ -41,6 +41,10 @@ void main() {
       expect(provider.supportedToolAccessTiers, {ToolAccessTier.noTools});
     });
 
+    test('supportsSkillDiscovery is false', () {
+      expect(provider.supportsSkillDiscovery, isFalse);
+    });
+
     test(
       'describeOverage wraps the message in CostConsumption with a null '
       'amountUsd',

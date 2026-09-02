@@ -86,4 +86,13 @@ class ClaudeAgentSdkProvider implements AgentProvider {
   /// (near-free prompt-cache hit), even mid-turn.
   @override
   bool get supportsSessionResume => true;
+
+  /// `true` — the bundled Claude Agent SDK bridge genuinely discovers
+  /// project-local `.claude/skills/<name>` skills on disk, exactly the
+  /// mechanism a `SkillAttachmentKind.delegatedSkill` attachment's
+  /// `/<name>` prompt depends on. See
+  /// `aion-arch/changes/delegated-skill-provider-portability/design.md`
+  /// §2.
+  @override
+  bool get supportsSkillDiscovery => true;
 }
