@@ -2674,6 +2674,19 @@ class TicketsCubit extends Cubit<TicketsState> {
           reason: TicketsErrorReason.releasePreparationFailed,
         ),
       );
+      // Without this, the release ticket's own detail screen — the one
+      // the failure toast tells the user to retry from — is stuck
+      // rendering nothing: `TicketDetailScreen`'s body only renders for
+      // `TicketDetailLoaded`, and a bare `TicketsError` here is a dead
+      // end with no other emission to recover it. Confirmed live during
+      // this change's `/verify` round-1 T14 manual pass. Uses
+      // [_restoreDocumentTicketDetail] rather than the simpler
+      // [_emitTicketDetailIfFound] — `ReleaseSummarySection` reads
+      // [TicketDetailLoaded.linkedTickets], and that field isn't
+      // preserved by a bare re-emit (`TicketDetailScreen`'s own
+      // `loadDocumentRelations` trigger is guarded to fire only once per
+      // ticket id, so it wouldn't refill it on its own here).
+      await _restoreDocumentTicketDetail(releaseTicketId);
       return null;
     }
   }
