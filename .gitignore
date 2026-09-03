@@ -93,11 +93,19 @@ agent_bridge/node_modules/
 
 # Aion's own project-bookkeeping data, written by the app itself when
 # this checkout is registered as an Aion "project" root for dogfooding
-# self-iteration (ticket git-projection has no separate storage target
-# yet — see aion-arch/ideas/self-iteration-sequencing.md). Never part
-# of the app's own source. Both anchored to the repo root (`/`) —
-# unanchored `tickets/` previously matched any directory named
-# `tickets` anywhere in the tree, silently hiding new files under the
-# real source directory `lib/features/tickets/` from `git status`.
-/.aion/
-/tickets/
+# self-iteration. `/tickets/*.md` and `/.aion/manifest.json` are
+# deliberately TRACKED (not ignored) here — this project's own choice
+# to reuse its source repo for ticket-data git-projection rather than a
+# separate dedicated bookkeeping repo (the latter is the other option
+# under discussion, not yet built — see
+# aion-arch/ideas/self-iteration-sequencing.md and the follow-up
+# per-project bookkeeping-repo-strategy idea). Only `/.aion/data/`
+# (the local SQLite DB + its ad hoc backups) stays ignored: it's a
+# disposable, fully reconstructable cache of `/tickets/*.md`
+# (`TicketDbReconstructionService.reconstruct`), not a durable
+# artifact — binary, large, and churns on every write, exactly what
+# git shouldn't track. Anchored to the repo root (`/`) — unanchored
+# `tickets/` previously matched any directory named `tickets` anywhere
+# in the tree, silently hiding new files under the real source
+# directory `lib/features/tickets/` from `git status`.
+/.aion/data/
