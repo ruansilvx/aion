@@ -6,8 +6,7 @@ import 'package:aion/features/projects/domain/entities/baseline_manifest.dart';
 import 'package:aion/features/projects/domain/repositories/baseline_repository.dart';
 
 /// Writes a project's baseline overrides from [ProjectStackDetector]'s
-/// marker-file detection (the "shallow" path — see `aion-arch/ideas/
-/// project-type-aware-conventions-and-verification.md`) for the one
+/// marker-file detection (the "shallow" path — see AIO-53) for the one
 /// asset kind that mechanism can produce content for:
 /// [BaselineAssetKind.architectureConvention]. Used both at project
 /// creation ([tailorForDetectedStack], called against the version just

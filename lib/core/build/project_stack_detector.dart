@@ -43,7 +43,7 @@ class DetectedStack {
 /// version field at all. Prepare Release still tags a project on either
 /// stack — it just skips the version-bump step, surfaced by
 /// `ReleaseDraftScreen`'s "no version file detected" notice. Added for
-/// `aion-arch/changes/release-preparation-and-tagging`; see that
+/// `AIO-1782`; see that
 /// change's design.md §1.
 enum VersionFileKind {
   /// `pubspec.yaml`'s top-level `version:` field.
@@ -72,7 +72,7 @@ enum VersionFileKind {
 /// only, never read by Aion's own code, while this one backs a real read
 /// (this class) and write ([ProjectStackDetector.writeVersion]), driving
 /// `TicketsCubit.prepareReleaseDraft`/`.confirmRelease`. Added for
-/// `aion-arch/changes/release-preparation-and-tagging`.
+/// `AIO-1782`.
 class DetectedVersionFile {
   /// Creates a [DetectedVersionFile].
   const DetectedVersionFile({

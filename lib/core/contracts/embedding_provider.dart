@@ -10,7 +10,7 @@ import 'dart:typed_data';
 /// interface, never on the bundled implementation directly. Implemented by
 /// `BundledEmbeddingProvider` (`core/embeddings/bundled_embedding_provider.dart`)
 /// and provided once at the app root. See
-/// `aion-arch/changes/storage-embedding-git-sync/design.md`.
+/// `AIO-2022`.
 abstract interface class EmbeddingProvider {
   /// Generates an embedding vector for [text], serialized as raw bytes
   /// suitable for storage in a BLOB column. Never committed to git, not

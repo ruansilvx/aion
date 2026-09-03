@@ -21,7 +21,7 @@ import 'package:aion/features/tickets/domain/entities/ticket.dart';
 /// recognized tags below falls back to rendering its concatenated text
 /// content as a plain paragraph, so this widget never throws on
 /// unexpected input. Per
-/// `aion-arch/changes/page-content-markdown-editor/design.md` §2.
+/// `AIO-1350` §2.
 ///
 /// [resolveWikilink]/[onWikilinkTap]/[onCreateWikilinkTarget] add
 /// optional inline `[[Target]]`/`[[Target|Alias]]` recognition (a
@@ -30,7 +30,7 @@ import 'package:aion/features/tickets/domain/entities/ticket.dart';
 /// default to `null`, so every other consumer (comments, descriptions,
 /// anywhere Markdown renders outside a page) is unaffected: `[[...]]`
 /// text there just isn't specially recognized, identical to before. Per
-/// `aion-arch/changes/inline-wikilink-backlinks/design.md`.
+/// `AIO-963`.
 class MarkdownView extends StatelessWidget {
   /// Creates a [MarkdownView] rendering [source].
   const MarkdownView({
@@ -220,7 +220,7 @@ Widget _buildBlock(
 /// [md.Document.parse]) as a single [Text.rich] of [TextSpan] runs — bold,
 /// italic, strikethrough, inline code, links, and (when [wikilink] carries
 /// a non-`null` `resolve`) `[[...]]` wikilink spans per design.md §2.2
-/// and `aion-arch/changes/inline-wikilink-backlinks/design.md` §5/§6.
+/// and `AIO-963` §5/§6.
 Widget _buildParagraph(
   BuildContext context,
   List<md.Node> inlineNodes, {
@@ -342,7 +342,7 @@ List<InlineSpan> _buildWikilinkAwareTextSpans(
   // a `WidgetSpan`'s child doesn't inherit style from its `TextSpan`
   // ancestors, so it can't rely on `Text.rich`'s usual style-merge the
   // way every other span in this file does. Added for
-  // `aion-arch/changes/spec-ticket-type`'s `/verify` fix-up.
+  // `AIO-1998`'s `/verify` fix-up.
   TextStyle style,
   AionColors c,
   _WikilinkContext wikilink,

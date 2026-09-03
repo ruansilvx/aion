@@ -15,7 +15,7 @@ const attemptExceedsMaxDefaultNodeId = 'default-attempt-exceeds-max';
 const sessionOverageDetectedDefaultNodeId = 'default-session-overage-detected';
 
 /// The baseline `DecisionGraph`/`DecisionNode` data reproducing this
-/// codebase's pre-`aion-arch/changes/automation-decision-graphs`
+/// codebase's pre-`AIO-181`
 /// hardcoded checks — a single node per context: `attemptExceedsMax`
 /// (maxAttempts: 2) for [AutomationContext.codingExecutionRetry],
 /// `sessionOverageDetected` for [AutomationContext.codingExecution].

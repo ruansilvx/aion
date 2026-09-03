@@ -18,7 +18,7 @@ import 'package:drift/drift.dart';
 /// `core/automation/data/automation_decision_nodes_table.dart`'s exact
 /// shape, minus its `condition_params_json` column — no field here takes a
 /// parameter). See
-/// `aion-arch/changes/sddstage-transition-preconditions/design.md` §2.
+/// `AIO-1936` §2.
 @DataClassName('TransitionPreconditionNodeData')
 class TransitionPreconditionNodesTable extends Table {
   @override

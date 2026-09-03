@@ -23,7 +23,7 @@ import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 /// the trailing control (`RaiseGapOrQuestionPicker`) owns its own "+ Add"
 /// trigger button, `LayerLink`, and `Overlay`, same as `TicketLinkPicker`
 /// does for `LinkedTicketsSection`. Added for
-/// `aion-arch/changes/idea-gap-question-ticket-types`; see that change's
+/// `AIO-934`; see that change's
 /// design.md §6.1 and Component Spec §2.
 class GapsAndOpenQuestionsSection extends StatelessWidget {
   /// Creates a [GapsAndOpenQuestionsSection] listing [refs].

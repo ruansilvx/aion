@@ -23,7 +23,7 @@ String transitionOutcomeLabel(
 };
 
 /// The color token associated with [outcome] — `success`/`danger`, per
-/// `aion-arch/changes/sddstage-transition-preconditions/design.md` §0.1's
+/// `AIO-1936` §0.1's
 /// outcome color map. Distinct from `decisionOutcomeColor`'s 4-value map
 /// (`success`/`warning`/`danger`/`secondary`) — `warning`/`secondary` are
 /// deliberately unused here, since there's no "ask" or "defer" state.
@@ -34,7 +34,7 @@ Color transitionOutcomeColor(AionColors c, TransitionOutcome outcome) =>
     };
 
 /// The `CustomPaint` check/cross glyph every outcome indicator renders,
-/// per `aion-arch/changes/sddstage-transition-preconditions/design.md`
+/// per `AIO-1936`
 /// §0.1 — no icon font, so the two outcomes stay distinguishable by
 /// silhouette alone, not by hue: a closed check (`allowed`) versus an
 /// open cross (`blocked`). Shared by the canvas terminal pill (§1.3), the
@@ -42,7 +42,7 @@ Color transitionOutcomeColor(AionColors c, TransitionOutcome outcome) =>
 /// "one table, three consumers" pattern §0.1 itself calls out. Public
 /// (not module-private) since `transition_outline_list.dart` and
 /// `sddstage_precondition_editor_screen.dart` both render it too. Added
-/// for `aion-arch/changes/sddstage-transition-preconditions`'s round-2
+/// for `AIO-1936`'s round-2
 /// `/verify` follow-up — the glyph was specified but never built in the
 /// original `/apply` pass.
 class TransitionOutcomeGlyph extends StatelessWidget {
@@ -211,7 +211,7 @@ enum TransitionBranchMode {
 /// and `GraphCanvas`'s popover mount (via [TransitionNodeForm.showAsPopover]).
 /// Simpler than `DecisionNodeForm` by design — no condition-kind picker
 /// (there's only one kind), no parameter field (every field is a plain
-/// boolean). Added for `aion-arch/changes/sddstage-transition-preconditions`.
+/// boolean). Added for `AIO-1936`.
 class TransitionNodeForm extends StatefulWidget {
   /// Creates a [TransitionNodeForm]. Pass [initialFieldId]/
   /// [initialMatchedBranch]/[initialUnmatchedBranch] when editing an
@@ -312,7 +312,7 @@ class TransitionNodeForm extends StatefulWidget {
   /// disposed (dismissed, saved, or unmounted for any other reason).
   /// Backs `SddStagePreconditionEditorScreen`'s "N UNSAVED CHANGE" header
   /// indicator (design.md §4.1). `null` if the caller doesn't care. Added
-  /// for `aion-arch/changes/sddstage-transition-preconditions`'s
+  /// for `AIO-1936`'s
   /// post-`/verify` follow-up.
   final ValueChanged<bool>? onDirtyChanged;
 

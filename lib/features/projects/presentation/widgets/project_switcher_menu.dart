@@ -10,7 +10,7 @@ import 'package:aion/design_system/design_system.dart';
 /// "Switch Project" and returns the user to the Hub. Tapping it does
 /// **not** open an inline list — project selection happens on the Hub
 /// itself. See
-/// `aion-arch/changes/multi-project-hub/design.md` §5.
+/// `AIO-1174` §5.
 class ProjectSwitcherMenu extends StatefulWidget {
   /// Creates a [ProjectSwitcherMenu]. [onSwitchProject] is called when
   /// activated.

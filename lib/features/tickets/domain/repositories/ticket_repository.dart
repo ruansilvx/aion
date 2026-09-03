@@ -28,7 +28,7 @@ abstract interface class TicketRepository {
   /// it's the lookup an app-defined tool call (e.g. `add_link`'s
   /// `targetTicketId` argument) resolves against. No prior caller in this
   /// codebase needed a `ticketId`-keyed lookup before this method was
-  /// added. Added for `aion-arch/changes/ticket-crud-tool-calls`.
+  /// added. Added for `AIO-2108`.
   Future<Ticket?> getTicketByTicketId(String ticketId);
 
   /// Persists [ticket]. Implementations generate the human-readable
@@ -92,7 +92,7 @@ abstract interface class TicketRepository {
   /// lock an AI-suggested value the caller never actually touched, which
   /// would break the "editing complexity/estimate locks *that* field"
   /// guarantee (see
-  /// `aion-arch/changes/ai-assisted-complexity-and-estimate-suggestions/proposal.md`'s
+  /// `AIO-75`'s
   /// "Locking, independent per field" section). Instead:
   /// - Whenever `ticket.complexity`/`ticket.estimate` is `null`, its
   ///   companion source is unconditionally cleared to `null` too —
@@ -124,7 +124,7 @@ abstract interface class TicketRepository {
   /// would otherwise risk clobbering a concurrent edit to one of those
   /// other fields made elsewhere (the UI) between its own read and write.
   /// No-ops if [id] does not exist. Added for
-  /// `aion-arch/changes/ticket-crud-tool-calls`.
+  /// `AIO-2108`.
   Future<void> addTimeSpent(String id, int minutesDelta);
 
   /// Writes an AI-generated complexity/estimate suggestion for the ticket
@@ -266,7 +266,7 @@ abstract interface class TicketRepository {
   /// falls back to `createdAt` descending, since there is no relevance
   /// score to order by; every other field orders independent of whether
   /// [query] is set. See
-  /// `aion-arch/changes/ticket-sort-control-and-board-as-default-view`.
+  /// `AIO-2371`.
   ///
   /// [statusSortOrder] is the caller's currently-configured `WorkflowStatus`
   /// name list, already sorted by `WorkflowStatus.sortOrder` — consulted

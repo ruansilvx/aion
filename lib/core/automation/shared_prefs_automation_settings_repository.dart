@@ -23,37 +23,37 @@ class SharedPrefsAutomationSettingsRepository
       'automation_settings.coding_execution_automation';
 
   /// [AutomationContext.codingExecutionRetry]'s key. Added for
-  /// `aion-arch/changes/coding-execution-reliability-and-safety`.
+  /// `AIO-506`.
   static const _codingExecutionRetryAutomationKey =
       'automation_settings.coding_execution_retry_automation';
 
   /// [AutomationContext.chatBranching]'s key. Added for
-  /// `aion-arch/changes/mid-task-chat-branching`.
+  /// `AIO-1118`.
   static const _chatBranchingAutomationKey =
       'automation_settings.chat_branching_automation';
 
   /// [AutomationContext.codingExecutionResume]'s key. Added for
-  /// `aion-arch/changes/parallel-work`.
+  /// `AIO-1400`.
   static const _codingExecutionResumeAutomationKey =
       'automation_settings.coding_execution_resume_automation';
 
   /// [AutomationContext.ticketCreation]'s key. Added for
-  /// `aion-arch/changes/ticket-crud-tool-calls`.
+  /// `AIO-2108`.
   static const _ticketCreationAutomationKey =
       'automation_settings.ticket_creation_automation';
 
   /// [AutomationContext.ticketLinking]'s key. Added for
-  /// `aion-arch/changes/ticket-crud-tool-calls`.
+  /// `AIO-2108`.
   static const _ticketLinkingAutomationKey =
       'automation_settings.ticket_linking_automation';
 
   /// [AutomationContext.specAutoLink]'s key. Added for
-  /// `aion-arch/changes/spec-ticket-type`.
+  /// `AIO-1998`.
   static const _specAutoLinkAutomationKey =
       'automation_settings.spec_auto_link_automation';
 
   /// [AutomationContext.verifyGateRetry]'s key. Added for
-  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  /// `AIO-1905`.
   static const _verifyGateRetryAutomationKey =
       'automation_settings.verify_gate_retry_automation';
 

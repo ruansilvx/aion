@@ -28,7 +28,7 @@ import 'package:aion/features/tickets/presentation/cubit/inbox_state.dart';
 /// Launches and tracks the Inbox's four purpose-specific chats
 /// (brain-dump, what-next guidance, release planning, Q&A) and lists past
 /// launches — see
-/// `aion-arch/changes/new-project-onboarding-inbox/design.md` §5.
+/// `AIO-1300` §5.
 /// Provided fresh per route entry to `/workspace/inbox` (not root-scoped),
 /// mirroring `DocumentationCubit`'s own per-route provisioning.
 ///
@@ -81,7 +81,7 @@ class InboxCubit extends Cubit<InboxState> {
   /// (via [_modelRoutingRepository]) and that model's [AgentProvider]
   /// (via [_providerRegistry]). Shared helper so every one of the four
   /// launch methods resolves the pair identically — see
-  /// `aion-arch/changes/pluggable-provider-abstraction/design.md` §7.
+  /// `AIO-1544` §7.
   Future<(AgentModelDescriptor, AgentProvider)> _resolveModelAndProvider(
     ModelPhase phase,
   ) async {
@@ -269,7 +269,7 @@ class InboxCubit extends Cubit<InboxState> {
       type: TicketType.release,
       title: releaseName,
       // InboxCubit has no WorkflowStatusRepository of its own (out of
-      // scope for `aion-arch/changes/configurable-ticket-workflow`) — the
+      // scope for `AIO-549`) — the
       // literal mirrors `defaultWorkflowStatuses`' lowest-sortOrder base
       // status name, same as every unconfigured project's real default.
       status: 'backlog',
@@ -372,7 +372,7 @@ class InboxCubit extends Cubit<InboxState> {
       type: TicketType.chat,
       title: title,
       // InboxCubit has no WorkflowStatusRepository of its own (out of
-      // scope for `aion-arch/changes/configurable-ticket-workflow`) — the
+      // scope for `AIO-549`) — the
       // literal mirrors `defaultWorkflowStatuses`' lowest-sortOrder base
       // status name, same as every unconfigured project's real default.
       status: 'backlog',
@@ -511,7 +511,7 @@ class InboxCubit extends Cubit<InboxState> {
   /// model omitted or malformed its `TYPE:` line — a parse failure on one
   /// block shouldn't crash the rest of the reply). Renamed from
   /// `_materializeBrainDumpSignals` for
-  /// `aion-arch/changes/idea-gap-question-ticket-types`.
+  /// `AIO-934`.
   Future<void> _materializeBrainDumpIdeas(String reply) async {
     final now = DateTime.now();
     for (final block in _parseBrainDumpBlocks(reply)) {
@@ -523,7 +523,7 @@ class InboxCubit extends Cubit<InboxState> {
           title: block.title,
           description: block.description.isEmpty ? null : block.description,
           // InboxCubit has no WorkflowStatusRepository of its own (out of
-      // scope for `aion-arch/changes/configurable-ticket-workflow`) — the
+      // scope for `AIO-549`) — the
       // literal mirrors `defaultWorkflowStatuses`' lowest-sortOrder base
       // status name, same as every unconfigured project's real default.
       status: 'backlog',
@@ -543,7 +543,7 @@ class InboxCubit extends Cubit<InboxState> {
   /// advisory prose, never parsed or acted on programmatically. The prior
   /// markdown "## Known gaps" page-scanning path
   /// (`_extractKnownGapsSection`) is retired as of
-  /// `aion-arch/changes/idea-gap-question-ticket-types` — superseded by
+  /// `AIO-934` — superseded by
   /// first-class `knownGap`/`openQuestion` tickets.
   Future<String> _assembleWhatNextContext() async {
     final all = await _ticketRepository.getAllTickets();

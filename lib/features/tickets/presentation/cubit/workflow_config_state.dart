@@ -57,12 +57,12 @@ class WorkflowConfigLoaded extends WorkflowConfigState {
   /// Every configured [SkillAttachment], unfiltered — at most one per
   /// `WorkflowStatus.id`/[SddStage], enforced by
   /// [WorkflowConfigCubit.createAttachment]/[WorkflowConfigCubit.updateAttachment].
-  /// Added for `aion-arch/changes/workflow-skill-attachments`.
+  /// Added for `AIO-2650`.
   final List<SkillAttachment> attachments;
 
   /// Every configured [WorkflowPromptTemplate], unfiltered — a flat,
   /// project-wide namespace by [WorkflowPromptTemplate.name]. Added for
-  /// `aion-arch/changes/workflow-skill-attachments`.
+  /// `AIO-2650`.
   final List<WorkflowPromptTemplate> templates;
 
   /// Each precondition-bearing [SddStage]'s current transition-precondition
@@ -73,7 +73,7 @@ class WorkflowConfigLoaded extends WorkflowConfigState {
   /// `TransitionPreconditionRepository` (see [WorkflowConfigCubit]'s
   /// constructor) shows every stage as unconfigured rather than failing
   /// to load. Added for
-  /// `aion-arch/changes/sddstage-transition-preconditions`'s post-`/verify`
+  /// `AIO-1936`'s post-`/verify`
   /// follow-up.
   final Map<SddStage, int> transitionPreconditionNodeCounts;
 

@@ -32,7 +32,7 @@ import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 /// keeps the form step open and shows its inline error state (Component
 /// Spec §3.3.5) rather than closing the overlay and silently discarding
 /// the failure. Added for
-/// `aion-arch/changes/idea-gap-question-ticket-types`; see that change's
+/// `AIO-934`; see that change's
 /// design.md §6.2 and Component Spec §3.
 class RaiseGapOrQuestionPicker extends StatefulWidget {
   /// Creates a [RaiseGapOrQuestionPicker].

@@ -11,7 +11,7 @@ import 'package:aion/design_system/design_system.dart';
 /// plain, non-chat ticket comment thread) and `ChatMessageBubble` (the
 /// chat transcript) — promoted from a `TicketDetailScreen`-private
 /// `_Avatar` class to its own file so both can use it across files. Per
-/// `aion-arch/changes/chat-transcript-ux-redesign/design.md` §1.0.
+/// `AIO-482` §1.0.
 class CommentAuthorAvatar extends StatelessWidget {
   /// Creates a [CommentAuthorAvatar]. Exactly one of [isAi]/[isSystem]
   /// should be `true`, or neither (human).

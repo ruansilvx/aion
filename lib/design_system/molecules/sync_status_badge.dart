@@ -18,7 +18,7 @@ import 'package:aion/features/tickets/domain/enums/ticket_sync_status.dart';
 /// every other type has no file to fall out of sync with. Promoted from
 /// `TicketSyncStatusBadge` (per `project.md`'s Pattern 2), taking only
 /// [TicketSyncStatus] rather than a whole `Ticket`. Per
-/// `aion-arch/changes/page-content-markdown-editor/design.md` §6.
+/// `AIO-1350` §6.
 class SyncStatusBadge extends StatefulWidget {
   /// Creates a [SyncStatusBadge] for [status].
   const SyncStatusBadge({super.key, required this.status});

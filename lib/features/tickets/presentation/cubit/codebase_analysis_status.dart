@@ -9,7 +9,7 @@ import 'package:aion/features/tickets/domain/enums/summarization_depth.dart';
 /// separate from `TicketsState` — this is a transient, first-open-only
 /// concern unrelated to the ticket list's own filter/sort/pagination
 /// state. `CodebaseAnalysisBanner` subscribes to this stream directly.
-/// Added for `aion-arch/changes/new-project-onboarding`.
+/// Added for `AIO-1266`.
 sealed class CodebaseAnalysisStatus extends Equatable {
   const CodebaseAnalysisStatus();
 

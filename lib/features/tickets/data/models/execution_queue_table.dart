@@ -5,7 +5,7 @@ import 'package:drift/drift.dart';
 /// Drift table persisting `TicketsCubit`'s in-flight/queued
 /// coding-execution runs, so they survive an app restart — see
 /// `TicketsCubit.restoreExecutionQueue` and
-/// `aion-arch/changes/parallel-work/design.md` §5.3/§7. Row type is
+/// `AIO-1400` §5.3/§7. Row type is
 /// generated as `ExecutionQueueEntryData`. No FK constraints — integrity
 /// is enforced at the repository layer, matching every other table in
 /// this schema.

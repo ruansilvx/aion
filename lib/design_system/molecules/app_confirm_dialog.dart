@@ -58,7 +58,7 @@ enum ConfirmDialogTone {
 /// given, renders between [message] and the action row — e.g. a read-only
 /// details block naming exact values the confirmation is about (per
 /// design.md §4.2's tag/branch block; added for
-/// `aion-arch/changes/release-preparation-and-tagging`'s `/verify`
+/// `AIO-1782`'s `/verify`
 /// round-1 fix-up, T18).
 ///
 /// Built the same way as [AppToast] — an [OverlayEntry] inserted into the

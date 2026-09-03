@@ -19,7 +19,7 @@ import 'package:aion/features/tickets/domain/utils/embedding_similarity.dart';
 /// each comparable candidate's own historical execution-chat token totals
 /// (via [TicketRepository.getExecutionTokenTotals]) and persists the
 /// resulting min/max range. See
-/// `aion-arch/changes/token-cost-prediction/design.md` §2.
+/// `AIO-2455` §2.
 class TicketTokenPredictor {
   /// Creates a [TicketTokenPredictor] backed by [_repository].
   /// [embeddingProvider] is optional — when `null`, [suggest] silently

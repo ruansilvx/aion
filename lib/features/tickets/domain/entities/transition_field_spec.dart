@@ -10,7 +10,7 @@ import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 /// `core/automation/decision_field_catalog.dart`'s `DecisionFieldSpec`,
 /// which also carries a [DecisionFieldType] selecting an operator/value
 /// shape — nothing here needs that distinction. Added for
-/// `aion-arch/changes/sddstage-transition-preconditions`.
+/// `AIO-1936`.
 @immutable
 class TransitionFieldSpec {
   /// Creates a [TransitionFieldSpec].
@@ -97,7 +97,7 @@ const designSyncApprovedField = TransitionFieldSpec(
 
 /// Wraps `TicketsCubit._verifyGateApproved` — whether the Verifying-stage
 /// chat's most recent AI reply contains `VERIFY GATE: APPROVED`. Added for
-/// `aion-arch/changes/sdd-verify-quality-gate`.
+/// `AIO-1905`.
 const verifyGateApprovedField = TransitionFieldSpec(
   id: 'verifyGateApproved',
   displayName: 'Verification has been approved',
@@ -107,8 +107,8 @@ const verifyGateApprovedField = TransitionFieldSpec(
 /// Every field this proposal ships, regardless of stage. Exactly the 8
 /// entries reproducing the precondition-bearing stages' hardcoded checks
 /// as data — see
-/// `aion-arch/changes/sddstage-transition-preconditions/design.md` §1 and
-/// `aion-arch/changes/sdd-verify-quality-gate/design.md` §2.1.
+/// `AIO-1936` §1 and
+/// `AIO-1905` §2.1.
 const List<TransitionFieldSpec> transitionFieldCatalog = [
   mostRecentChatHasTerminalReplyField,
   hasChildrenField,

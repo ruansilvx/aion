@@ -16,7 +16,7 @@ import 'package:aion/features/tickets/presentation/widgets/banner_shell.dart';
 /// near-instant local I/O, with no separate "done" confirmation state;
 /// the version now shown wherever `Project.baselineVersion` is rendered
 /// (`ProjectCard`, the Settings "BASELINE" section) is confirmation
-/// enough. Added for `aion-arch/changes/baseline-version-upgrade-flow`.
+/// enough. Added for `AIO-297`.
 class BaselineUpgradeBanner extends StatefulWidget {
   /// Creates a [BaselineUpgradeBanner] offering to upgrade from
   /// [currentVersion] to [targetVersion]. [onDismiss] is called when the

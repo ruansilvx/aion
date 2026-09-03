@@ -59,20 +59,20 @@ class TicketsLoaded extends TicketsState {
   /// Board (`TicketBoardCard`) can look up a specific ticket's status
   /// without calling [TicketsCubit.getTicketById] per card. Recomputed by
   /// [TicketsCubit._refreshInFlightBoardState]. Added for
-  /// `aion-arch/changes/board-execution-indicators-and-notifications`.
+  /// `AIO-352`.
   final Set<String> inFlightExecutionIds;
 
   /// Task/Bug ids waiting on [TicketsCubit._executionQueue], mapped to
   /// their 1-based queue position. Recomputed by
   /// [TicketsCubit._refreshInFlightBoardState]. Added for
-  /// `aion-arch/changes/board-execution-indicators-and-notifications`.
+  /// `AIO-352`.
   final Map<String, int> executionQueuePositions;
 
   /// Epic/Story ids (and their in-flight stage chat's own id) currently
   /// mid-`advanceSddStage` — mirrors
   /// [TicketsCubit._inFlightStageAdvanceIds]. Recomputed by
   /// [TicketsCubit._refreshInFlightBoardState]. Added for
-  /// `aion-arch/changes/board-execution-indicators-and-notifications`.
+  /// `AIO-352`.
   final Set<String> inFlightAdvanceIds;
 
   /// Work-ticket (epic/story/task/bug) ids with an unresolved
@@ -82,7 +82,7 @@ class TicketsLoaded extends TicketsState {
   /// [TicketsCubit._computeBlockedTicketIds] from persisted link data
   /// (not in-memory/ephemeral, unlike [inFlightExecutionIds] and its
   /// siblings above). Drives the Board's `_BlockedBadge`. Added for
-  /// `aion-arch/changes/board-task-ordering-indication`.
+  /// `AIO-392`.
   final Set<String> blockedTicketIds;
 
   /// Interrupted coding-execution runs found on this launch under
@@ -95,7 +95,7 @@ class TicketsLoaded extends TicketsState {
   /// [TicketsCubit.restoreExecutionQueue], cleared by
   /// [TicketsCubit.resumePendingExecutions]/
   /// [TicketsCubit.dismissPendingResumePrompt]). Added for
-  /// `aion-arch/changes/parallel-work`.
+  /// `AIO-1400`.
   final List<Ticket> pendingResumePrompt;
 
   /// Task/Bug id → total coding-execution token spend recorded so far
@@ -106,7 +106,7 @@ class TicketsLoaded extends TicketsState {
   /// display precedence (see `_cardTokenLabel`) falls back to the
   /// ticket's own `predictedExecutionTokensLow`/`High` in that case.
   /// Recomputed by [TicketsCubit._refreshInFlightBoardState]. Added for
-  /// `aion-arch/changes/token-cost-prediction`.
+  /// `AIO-2455`.
   final Map<String, int> executionTokenTotals;
 
   /// Ticket id → topmost ancestor id (the root of its `parentId` chain —
@@ -126,7 +126,7 @@ class TicketsLoaded extends TicketsState {
   /// [blockedTicketIds] is) — see [TicketsCubit.searchTickets]'s dartdoc
   /// for why a live cross-cubit listener for an in-session scheduling-mode
   /// switch isn't needed on top of that. Added for
-  /// `aion-arch/changes/dependency-caching-and-ancestor-sibling-conflict`.
+  /// `AIO-722`.
   final Map<String, String> topmostAncestorId;
 
   @override
@@ -220,14 +220,14 @@ enum TicketsErrorReason {
   /// `gated` (or `auto` with its retry cap exhausted, forced to `gated`
   /// visibility) — surfaced once via `AppToast`, alongside the Task
   /// detail screen's failure banner. Added for
-  /// `aion-arch/changes/coding-execution-reliability-and-safety`.
+  /// `AIO-506`.
   executionVerificationFailed,
 
   /// A spawned SDD-stage chat's turn (see `TicketsCubit
   /// ._runStageChatTurn`) hard-failed. Informational, surfaced once via
   /// `AppToast`, alongside the Epic/Story detail screen's failure banner
   /// (`TicketDetailLoaded.sddStageFailureReason`). Added for
-  /// `aion-arch/changes/board-execution-indicators-and-notifications`.
+  /// `AIO-352`.
   sddStageAdvanceFailed,
 
   /// A ticket was rejected from moving to a status holding
@@ -236,7 +236,7 @@ enum TicketsErrorReason {
   /// `TicketsCubit._isTicketBlocked`. Applies to every ticket type,
   /// unlike [codingExecutionBlocked]. The widget layer reads this via
   /// `ticketsErrorMessage` / `AppToast`. Added for
-  /// `aion-arch/changes/blocked-ticket-transition-gate`.
+  /// `AIO-334`.
   blockedByOpenDependency,
 
   /// `TicketsCubit._createEpicSpec` failed while synthesizing an Epic's
@@ -245,14 +245,14 @@ enum TicketsErrorReason {
   /// fallback is manually creating the missing spec ticket via the
   /// ordinary New Ticket flow. The widget layer reads this via
   /// `ticketsErrorMessage` / `AppToast`. Added for
-  /// `aion-arch/changes/spec-ticket-type`.
+  /// `AIO-1998`.
   specWriteFailed,
 
   /// `TicketsCubit.prepareReleaseDraft` failed while drafting a
   /// `release` ticket's changelog/version proposal — the release ticket
   /// itself is untouched regardless (see that method's dartdoc). The
   /// widget layer reads this via `ticketsErrorMessage` / `AppToast`.
-  /// Added for `aion-arch/changes/release-preparation-and-tagging`.
+  /// Added for `AIO-1782`.
   releasePreparationFailed,
 }
 
@@ -270,7 +270,7 @@ enum CodingExecutionBlockReason {
 
 // `SddStageBlockReason` (an `epic`/`story`'s current `SddStage`
 // precondition-not-met reason) was removed for
-// `aion-arch/changes/sddstage-transition-preconditions` —
+// `AIO-1936` —
 // [TicketDetailLoaded.sddStageBlockReason] is now a plain, already-built
 // `String?` (`'Waiting on: <field display name>'`), auto-derived by
 // `TicketsCubit._sddStageAdvanceCheck` from the failing
@@ -286,7 +286,7 @@ enum CodingExecutionBlockReason {
 /// the same `relatesTo`-link proposal). Confirm/reject via
 /// `TicketsCubit.confirmPendingSpecLinkSuggestion`/
 /// `rejectPendingSpecLinkSuggestion`. Added for
-/// `aion-arch/changes/spec-ticket-type`; see
+/// `AIO-1998`; see
 /// `TicketsCubit._maybeAutoLinkToSpec`.
 class PendingSpecLinkSuggestion extends Equatable {
   /// Creates a [PendingSpecLinkSuggestion] proposing a link to the spec
@@ -449,7 +449,7 @@ class TicketDetailLoaded extends TicketsState {
   /// [TicketsCubit.loadDocumentRelations]'s dartdoc for the merge/scoping
   /// rationale and [BacklinkRef.origin]. Was `List<LinkedTicketRef>`
   /// (`TicketLink`-only) before
-  /// `aion-arch/changes/inline-wikilink-backlinks`. Empty until
+  /// `AIO-963`. Empty until
   /// [TicketsCubit.loadDocumentRelations] resolves.
   final List<BacklinkRef> backlinks;
 
@@ -459,7 +459,7 @@ class TicketDetailLoaded extends TicketsState {
   /// `linkedTickets`/`backlinks` use (`epic`/`story`/`task`/`bug`/
   /// `resource`/`page`). Empty until
   /// [TicketsCubit.loadDocumentRelations] resolves. Added for
-  /// `aion-arch/changes/idea-gap-question-ticket-types`.
+  /// `AIO-934`.
   final List<GapOrQuestionRef> gapsAndOpenQuestions;
 
   /// Whether [ticket] (an `epic`/`story`) currently satisfies the
@@ -474,7 +474,7 @@ class TicketDetailLoaded extends TicketsState {
   /// [TicketsCubit.getTicketById] alongside [canAdvanceSddStage]. An
   /// already-built, auto-derived string (`'Waiting on: <field display
   /// name>'`), not a fixed enum — see
-  /// `aion-arch/changes/sddstage-transition-preconditions/design.md` §4.
+  /// `AIO-1936` §4.
   final String? sddStageBlockReason;
 
   /// Whether [ticket] (a `story`) needs a `designBrief`/`designSync`
@@ -482,7 +482,7 @@ class TicketDetailLoaded extends TicketsState {
   /// child Tasks via `_storyNeedsDesignReview`. `null` until child Tasks
   /// exist to evaluate, or for any ticket type other than `story`. Drives
   /// `_SddStageSection`'s variable-length tracker (4 vs. 6 nodes). Added
-  /// for `aion-arch/changes/sdd-design-gate`.
+  /// for `AIO-1834`.
   final bool? needsDesignReview;
 
   /// [ticket]'s linked design Page (a `story`'s `"Design — <title>"`
@@ -491,19 +491,19 @@ class TicketDetailLoaded extends TicketsState {
   /// the same lookup `_linkedDesignPage` uses internally for the
   /// `designBrief`/`designSync` precondition checks. `null` when
   /// [needsDesignReview] isn't `true`, or the design Page hasn't been
-  /// created yet. Added for `aion-arch/changes/sdd-design-gate`.
+  /// created yet. Added for `AIO-1834`.
   final Ticket? linkedDesignPage;
 
   /// Whether [ticket] (a `task`) is the coding-execution run currently
   /// in flight. Task-only, computed by [TicketsCubit.getTicketById] from
   /// `_inFlightExecutionTaskId`. Always `false` for every other ticket
-  /// type. Added for `aion-arch/changes/task-to-coding-execution-trigger`.
+  /// type. Added for `AIO-2078`.
   final bool isExecuting;
 
   /// [ticket]'s (a `task`) 1-based position in the coding-execution FIFO
   /// queue, or `null` if it isn't queued. Task-only, computed by
   /// [TicketsCubit.getTicketById]. Added for
-  /// `aion-arch/changes/task-to-coding-execution-trigger`.
+  /// `AIO-2078`.
   final int? executionQueuePosition;
 
   /// Whether [ticket] (a `task`) has a finished coding-execution run with
@@ -511,7 +511,7 @@ class TicketDetailLoaded extends TicketsState {
   /// (`AutomationConfidence.gated`) before flipping to the status holding
   /// `WorkflowStatusRole.reviewReady`. Task-only, computed by
   /// [TicketsCubit.getTicketById]. Added for
-  /// `aion-arch/changes/task-to-coding-execution-trigger`.
+  /// `AIO-2078`.
   final bool executionAwaitingReview;
 
   /// Why [ticket] (a `task`) is showing a coding-execution failure state —
@@ -523,14 +523,14 @@ class TicketDetailLoaded extends TicketsState {
   /// most recent comment — unlike [isExecuting]/[executionQueuePosition],
   /// this survives an app restart, since it's derived from the persisted
   /// comment thread rather than in-memory queue state. Added for
-  /// `aion-arch/changes/coding-execution-reliability-and-safety`.
+  /// `AIO-506`.
   final String? executionFailureReason;
 
   /// Whether [executionFailureReason] has a retry action available —
   /// always `true` whenever [executionFailureReason] is non-`null`, kept
   /// as a separate field so the widget layer doesn't need to null-check
   /// [executionFailureReason] to decide whether to show the retry button.
-  /// Added for `aion-arch/changes/coding-execution-reliability-and-safety`.
+  /// Added for `AIO-506`.
   final bool executionCanRetry;
 
   /// A short, pre-formatted PR-metadata detail for [ticket] (a `task`)
@@ -542,7 +542,7 @@ class TicketDetailLoaded extends TicketsState {
   /// the sub-line. Computed by [TicketsCubit.getTicketById] from this
   /// ticket's most recent `NotificationKind.executionPrOpened`
   /// notification. Added for
-  /// `aion-arch/changes/pr-metadata-and-notification-center`.
+  /// `AIO-1586`.
   final String? executionPrSubLine;
 
   /// A live "Running `<tool>`..."-style status string for [ticket] (a
@@ -552,7 +552,7 @@ class TicketDetailLoaded extends TicketsState {
   /// showing), and cleared once the run finishes. `null` whenever
   /// [isExecuting] is `false`, or no tool call has happened yet. In-memory
   /// only — does not survive an app restart, like [isExecuting] itself.
-  /// Added for `aion-arch/changes/coding-execution-reliability-and-safety`.
+  /// Added for `AIO-506`.
   final String? executionLiveActivity;
 
   /// Whether [ticket] (an `epic`/`story`) has an
@@ -561,7 +561,7 @@ class TicketDetailLoaded extends TicketsState {
   /// Computed by [TicketsCubit.getTicketById] from
   /// [TicketsCubit._inFlightStageAdvanceIds]. Mirrors [isExecuting]'s
   /// shape exactly, one level up the ticket-type hierarchy. Added for
-  /// `aion-arch/changes/board-execution-indicators-and-notifications`.
+  /// `AIO-352`.
   final bool isAdvancingStage;
 
   /// Why [ticket]'s (an `epic`/`story`) most recent stage-advance
@@ -570,12 +570,12 @@ class TicketDetailLoaded extends TicketsState {
   /// comment thread, like [executionFailureReason]. Computed by
   /// [TicketsCubit.getTicketById] via
   /// [TicketsCubit._computeStageAdvanceFailure]. Added for
-  /// `aion-arch/changes/board-execution-indicators-and-notifications`.
+  /// `AIO-352`.
   final String? sddStageFailureReason;
 
   /// Whether [sddStageFailureReason] has a retry action available —
   /// always `true` whenever [sddStageFailureReason] is non-`null`. Added
-  /// for `aion-arch/changes/board-execution-indicators-and-notifications`.
+  /// for `AIO-352`.
   final bool sddStageCanRetry;
 
   /// A `branch_ticket`/`close_branch` tool call awaiting user confirmation
@@ -583,7 +583,7 @@ class TicketDetailLoaded extends TicketsState {
   /// `TicketsCubit._awaitProposalConfirmation` holds the underlying model
   /// run paused (`AutomationConfidence.gated`). `null` whenever no such
   /// call is pending. Drives `_ToolProposalBanner`. Added for
-  /// `aion-arch/changes/mid-task-chat-branching`; see that change's
+  /// `AIO-1118`; see that change's
   /// design.md §8.
   final PendingToolProposal? pendingToolProposal;
 
@@ -594,7 +594,7 @@ class TicketDetailLoaded extends TicketsState {
   /// showing [ticket]'s own `predictedExecutionTokensLow`/`High` instead.
   /// Computed by [TicketsCubit.getTicketById] from
   /// [TicketsCubit._executionTokenTotals]. Added for
-  /// `aion-arch/changes/token-cost-prediction`.
+  /// `AIO-2455`.
   final int? executionTokenTotal;
 
   /// A `SkillAttachment` (confidence `gated`) awaiting user confirmation
@@ -602,7 +602,7 @@ class TicketDetailLoaded extends TicketsState {
   /// this attachment is configured for. `null` whenever no such
   /// attachment is pending. Drives `_PendingSkillAttachmentBanner`.
   /// Mirrors [pendingToolProposal]'s exact shape. Added for
-  /// `aion-arch/changes/workflow-skill-attachments`.
+  /// `AIO-2650`.
   final SkillAttachment? pendingSkillAttachment;
 
   /// A [PendingSpecLinkSuggestion] (confidence `gated`) awaiting user
@@ -610,7 +610,7 @@ class TicketDetailLoaded extends TicketsState {
   /// match to the most relevant live `TicketType.spec` ticket. `null`
   /// whenever no such suggestion is pending. Drives
   /// `_PendingSpecLinkBanner`. Mirrors [pendingSkillAttachment]'s exact
-  /// shape. Added for `aion-arch/changes/spec-ticket-type`.
+  /// shape. Added for `AIO-1998`.
   final PendingSpecLinkSuggestion? pendingSpecLinkSuggestion;
 
   /// Whether [ticket] (an `epic`/`story`) is ready for a verify retry —
@@ -621,7 +621,7 @@ class TicketDetailLoaded extends TicketsState {
   /// [TicketsCubit._verifyRetryReadiness]. Always `false` for every
   /// other ticket type, or while fixes are still open. Drives
   /// `_SddStageSection`'s "Ready to retry verification" footer tier.
-  /// Added for `aion-arch/changes/sdd-verify-quality-gate`.
+  /// Added for `AIO-1905`.
   final bool verifyRetryReady;
 
   /// The configured [AutomationContext.verifyGateRetry] confidence,
@@ -632,7 +632,7 @@ class TicketDetailLoaded extends TicketsState {
   /// automation-confidence read already drives the "Advance to next
   /// stage" tier. `null` whenever [verifyRetryReady] is `false`, or the
   /// cubit was constructed without an `AutomationSettingsRepository`.
-  /// Added for `aion-arch/changes/sdd-verify-quality-gate`.
+  /// Added for `AIO-1905`.
   final AutomationConfidence? verifyRetryConfidence;
 
   /// How many of [ticket]'s current fix Task/Bug children (spawned by a
@@ -642,7 +642,7 @@ class TicketDetailLoaded extends TicketsState {
   /// — populated whether or not [verifyRetryReady] ends up `true`, so
   /// `_SddStageSection` can show the Component Spec §1.4 "not-ready
   /// predecessor" hint while fixes are still open. Added for
-  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  /// `AIO-1905`.
   final int? verifyPendingFixesRemaining;
 
   @override
@@ -696,7 +696,7 @@ class TicketDetailLoaded extends TicketsState {
   /// it alone takes a [TicketFieldSetter] — mirrors [Ticket.copyWith]'s
   /// own convention for the same omitted-vs-explicitly-null distinction:
   /// pass `() => null` to clear it, or omit the parameter to leave it
-  /// unchanged. Added for `aion-arch/changes/workflow-skill-attachments`.
+  /// unchanged. Added for `AIO-2650`.
   TicketDetailLoaded copyWith({
     Ticket? ticket,
     List<Ticket>? childDocs,

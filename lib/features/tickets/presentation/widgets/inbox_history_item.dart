@@ -13,7 +13,7 @@ import 'package:aion/features/tickets/domain/enums/inbox_purpose.dart';
 /// feature's presentation layer), not in `design_system/`, since it
 /// takes the feature-local [InboxPurpose] enum and `design_system/` must
 /// stay feature-agnostic per project.md's cross-feature rule. See
-/// `aion-arch/changes/new-project-onboarding-inbox/design.md` §0.3.
+/// `AIO-1300` §0.3.
 Color inboxAccentFor(InboxPurpose purpose, AionColors c) {
   return switch (purpose) {
     InboxPurpose.brainDump => c.typeIdea,

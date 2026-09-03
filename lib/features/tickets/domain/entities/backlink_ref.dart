@@ -12,7 +12,7 @@ import 'package:aion/features/tickets/domain/enums/backlink_origin.dart';
 /// past `TicketsCubit.loadDocumentRelations`/`PageTicketProviderImpl
 /// .loadPageRelations` before this, so nothing could render it
 /// differently. Per
-/// `aion-arch/changes/inline-wikilink-backlinks/design.md`.
+/// `AIO-963`.
 class BacklinkRef extends Equatable {
   /// Creates a [BacklinkRef] pairing [ticket] with how it was discovered
   /// ([origin]).

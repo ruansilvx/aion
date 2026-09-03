@@ -8,7 +8,7 @@ import 'package:aion/features/tickets/domain/repositories/notification_repositor
 /// logic here — maps [NotificationData] rows to [Notification] entities
 /// and delegates every method straight to [NotificationDao], matching
 /// [DriftExecutionQueueRepository]'s exact shape. Added for
-/// `aion-arch/changes/pr-metadata-and-notification-center`.
+/// `AIO-1586`.
 class DriftNotificationRepository implements NotificationRepository {
   /// Creates a [DriftNotificationRepository] backed by [_db].
   DriftNotificationRepository(this._db);

@@ -15,7 +15,7 @@ import 'package:aion/core/contracts/agent_session_handle.dart';
 /// trivially unit-testable. Every field is optional; a condition this
 /// proposal doesn't ship (or a context whose graph has no configured
 /// root) never reads most of them. Added for
-/// `aion-arch/changes/automation-decision-graphs`.
+/// `AIO-181`.
 @immutable
 class DecisionEvalContext {
   /// Creates a [DecisionEvalContext].
@@ -143,7 +143,7 @@ bool _evaluateRule(DecisionEvalContext input, Map<String, dynamic> params) {
 /// implementation, awaits it for the answer. `false` (unmatched) for any
 /// failure mode — no session, no way to ask, or an ambiguous/`null`
 /// answer. The one place in this file that performs real I/O — see
-/// `aion-arch/changes/decision-graph-agentjudgment-condition/design.md`
+/// `AIO-613`
 /// §5.
 Future<bool> _evaluateAgentJudgment(
   DecisionEvalContext input,
@@ -172,7 +172,7 @@ Future<bool> _evaluateAgentJudgment(
 /// describes this function as pure and needs correcting when this change
 /// is archived). A walk that never reaches an `agentJudgment` node stays
 /// exactly as fast as before — the `await` only actually suspends on that
-/// one branch. Added for `aion-arch/changes/automation-decision-graphs`.
+/// one branch. Added for `AIO-181`.
 Future<DecisionOutcome> evaluateDecisionGraph(
   DecisionGraph graph,
   Map<String, DecisionNode> nodesById,

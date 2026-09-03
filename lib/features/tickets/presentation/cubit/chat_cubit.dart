@@ -30,20 +30,20 @@ import 'package:aion/features/tickets/presentation/cubit/ticket_crud_tool_defini
 /// [CommentRepository] (the same append-only store `CommentsCubit` uses
 /// for every other ticket type — a chat ticket's comment thread already
 /// is its transcript, see
-/// `aion-arch/changes/sdd-ticket-execution/proposal.md`'s re-scoping)
+/// `AIO-1856`'s re-scoping)
 /// plus [ProviderRegistry] to resolve the [AgentProvider] that generates
 /// the AI reply. Screen-scoped — provided instead of `CommentsCubit` only
 /// when `ticket.type == TicketType.chat`.
 /// [_ticketRepository]/[_modelRoutingRepository] are used to infer which
 /// [ModelPhase] a chat belongs to (see [_phaseForChat]) so [sendMessage]
 /// can resolve the phase-appropriate model/provider itself, added for
-/// `aion-arch/changes/per-phase-tier-based-model-routing`. [_ticketRepository]
+/// `AIO-1491`. [_ticketRepository]
 /// is also used by [_toolsFor] to decide which of
 /// [branchTicketToolDefinition]/[closeBranchToolDefinition] a chat's next
 /// turn offers — [sendMessage] resolves this itself rather than depending
 /// on `TicketsCubit`, but still needs its caller to supply an `onToolCall`
 /// handler (that logic lives on `TicketsCubit`, which owns ticket-mutation
-/// domain logic). Added for `aion-arch/changes/mid-task-chat-branching`.
+/// domain logic). Added for `AIO-1118`.
 class ChatCubit extends Cubit<ChatState> {
   /// Creates a [ChatCubit] backed by [_repository], [_providerRegistry],
   /// [_ticketRepository], and [_modelRoutingRepository].
@@ -86,7 +86,7 @@ class ChatCubit extends Cubit<ChatState> {
   /// [_toolsFor], but their actual execution logic lives on
   /// `TicketsCubit` (ticket creation, automation-confidence gating), so
   /// the caller (`TicketDetailScreen`) supplies it. Added for
-  /// `aion-arch/changes/mid-task-chat-branching`.
+  /// `AIO-1118`.
   ///
   /// Generates a fresh `runId` (`const Uuid().v4()`) for this turn,
   /// threaded through to [AgentRequest.runId] via [runChatTurn] and
@@ -97,7 +97,7 @@ class ChatCubit extends Cubit<ChatState> {
   /// already persisted its own comment inside [runChatTurn] — only a
   /// cancelled turn needs the caller to do it), then reloads the thread
   /// and clears `streamingText`/`currentToolUse`/`activeRunId`. Added for
-  /// `aion-arch/changes/parallel-work`; see that change's design.md §3.
+  /// `AIO-1400`; see that change's design.md §3.
   Future<void> sendMessage({
     required String chatTicketId,
     required String content,
@@ -205,7 +205,7 @@ class ChatCubit extends Cubit<ChatState> {
   /// Resolves the same provider [sendMessage] would (via [_phaseForChat]/
   /// [_resolveModelAndProvider]) and calls
   /// [AgentModelClient.cancel] with the active run's id. Added for
-  /// `aion-arch/changes/parallel-work`; see that change's design.md §3.
+  /// `AIO-1400`; see that change's design.md §3.
   Future<void> cancelReply(String chatTicketId) async {
     final current = state;
     if (current is! ChatLoaded) return;
@@ -220,7 +220,7 @@ class ChatCubit extends Cubit<ChatState> {
   /// (via [_modelRoutingRepository]) and that model's [AgentProvider]
   /// (via [_providerRegistry]). Shared helper so every model call site
   /// resolves the pair identically — see
-  /// `aion-arch/changes/pluggable-provider-abstraction/design.md` §7.
+  /// `AIO-1544` §7.
   Future<(AgentModelDescriptor, AgentProvider)> _resolveModelAndProvider(
     ModelPhase phase,
   ) async {
@@ -232,7 +232,7 @@ class ChatCubit extends Cubit<ChatState> {
   /// Infers which [ModelPhase] governs [chatTicketId]'s model calls, via
   /// two independent resolution paths. First, and parent-independent: if
   /// the chat's own `Ticket.inboxPurpose` is set (an Inbox-spawned chat,
-  /// see `aion-arch/changes/new-project-onboarding-inbox/design.md` §1.3),
+  /// see `AIO-1300` §1.3),
   /// resolve directly from [_phaseForInboxPurpose] and return — Inbox
   /// chats are deliberately parentless (see
   /// `TicketsCubit.updateTicketParent`'s reparent guard), so the
@@ -241,7 +241,7 @@ class ChatCubit extends Cubit<ChatState> {
   /// inference: an `epic`/`story` parent's current `Ticket.sddStage` (via
   /// [SddStageModelPhase.modelPhase]), or [ModelPhase.execution] for a
   /// Task or Bug parent (see `TicketTypeHierarchy.isExecutable` —
-  /// `aion-arch/changes/bug-ticket-type` gave `bug` full coding-execution
+  /// `AIO-425` gave `bug` full coding-execution
   /// parity with `task`, so a manual chat reply on a Bug's execution
   /// transcript resolves to the same tier a Task's would). Every non-Inbox
   /// chat ticket in the app is spawned exclusively by
@@ -250,7 +250,7 @@ class ChatCubit extends Cubit<ChatState> {
   /// such a chat always has a resolvable parent in real usage — the
   /// [ModelPhase.capable] fallback below only matters defensively (a
   /// malformed/orphaned chat in tests). Added for
-  /// `aion-arch/changes/per-phase-tier-based-model-routing`.
+  /// `AIO-1491`.
   Future<ModelPhase> _phaseForChat(String chatTicketId) async {
     final chat = await _ticketRepository.getTicketById(chatTicketId);
     final inboxPurpose = chat?.inboxPurpose;
@@ -276,7 +276,7 @@ class ChatCubit extends Cubit<ChatState> {
   /// `TicketsCubit._toolsFor`'s combined-list shape (tickets_cubit.dart)
   /// exactly, so create_ticket/add_link work identically from an ordinary
   /// human-initiated chat turn as they already did from SDD-stage and
-  /// coding-execution chat turns. `aion-arch/changes/ticket-crud-tool-calls`
+  /// coding-execution chat turns. `AIO-2108`
   /// extended `TicketsCubit._toolsFor` with these two tools but missed
   /// this separate same-named method — chat_cubit.dart never picked up
   /// that change (confirmed via `git log`) — so an ordinary chat compose
@@ -284,7 +284,7 @@ class ChatCubit extends Cubit<ChatState> {
   /// ticket produced a model-fabricated "done" reply instead of ever
   /// calling a real tool. Fixed as an ad hoc bug fix, found during a live
   /// `AutomationConfidence` QA sweep. Added for
-  /// `aion-arch/changes/mid-task-chat-branching`; see that change's
+  /// `AIO-1118`; see that change's
   /// design.md §6.
   Future<List<AgentToolDefinition>> _toolsFor(String chatTicketId) async {
     final chat = await _ticketRepository.getTicketById(chatTicketId);
@@ -304,7 +304,7 @@ class ChatCubit extends Cubit<ChatState> {
 
   /// Maps an Inbox-spawned chat's [InboxPurpose] to the [ModelPhase] its
   /// human-follow-up replies resolve through, per
-  /// `aion-arch/changes/new-project-onboarding-inbox/design.md` §2:
+  /// `AIO-1300` §2:
   /// brain-dump/what-next-guidance/release-planning are judgment-heavy
   /// (`frontier`, the same weight as epic/story-level SDD decisions);
   /// Q&A is comparatively mechanical lookup/read-and-answer (`capable`).
@@ -333,10 +333,10 @@ class ChatCubit extends Cubit<ChatState> {
   /// given, once per event) and a raw `AgentErrorEvent.message` into a
   /// vendor-neutral one (via `AgentProvider.normalizeErrorMessage`) before
   /// it's persisted/returned as `failureMessage` — see
-  /// `aion-arch/changes/pluggable-provider-abstraction/design.md` §4.
+  /// `AIO-1544` §4.
   /// [onToolUse], if given, is called once per `AgentToolUseEvent` with
   /// the tool's name and short summary — added for
-  /// `aion-arch/changes/coding-execution-reliability-and-safety` so a
+  /// `AIO-506` so a
   /// long-running turn has live progress visibility. Shared by
   /// [sendMessage] and `TicketsCubit._spawnStageChat`/coding-execution
   /// (`tickets_cubit.dart`) so all call sites accumulate/persist
@@ -345,10 +345,10 @@ class ChatCubit extends Cubit<ChatState> {
   /// whichever comment (success or hard-failure) it persists — `null`/
   /// `null` if the stream never reaches a `done` event (e.g. an
   /// [AgentErrorEvent] hard failure). Added for
-  /// `aion-arch/changes/dont-spawn-new-chat-ticket-per-execution-trigger`.
+  /// `AIO-833`.
   /// [tools]/[onToolCall] are passed straight through into the underlying
   /// [AgentRequest] — empty/`null` by default, so every call site that
-  /// predates `aion-arch/changes/mid-task-chat-branching` keeps today's
+  /// predates `AIO-1118` keeps today's
   /// behavior unchanged. An `AgentToolCallEvent` the run emits is reported
   /// through [onToolUse] too (with a `null` summary), the same live-
   /// progress channel `AgentToolUseEvent` already uses — the actual
@@ -365,7 +365,7 @@ class ChatCubit extends Cubit<ChatState> {
   /// unlike the success/failure paths below, a cancelled turn's caller
   /// decides for itself whether/how to persist the partial text (see
   /// [sendMessage]/`TicketsCubit._runCodingExecution`). Added for
-  /// `aion-arch/changes/parallel-work`; see that change's design.md §3.
+  /// `AIO-1400`; see that change's design.md §3.
   ///
   /// [ticketRepository] is used to automatically log this turn's elapsed
   /// wall-clock time against [chatTicketId]'s parent ticket, via
@@ -373,7 +373,7 @@ class ChatCubit extends Cubit<ChatState> {
   /// returning, regardless of terminal outcome (success, failure, or
   /// cancellation). This replaces the model-self-reported `log_time` tool
   /// call as `timeSpent`'s source of truth. Added for
-  /// `aion-arch/changes/automatic-time-tracking-for-tickets`.
+  /// `AIO-148`.
   ///
   /// @returns a [ChatTurnResult]: [ChatTurnSuccess] or [ChatTurnFailure]
   /// once this method has already persisted the matching comment itself,
@@ -497,7 +497,7 @@ class ChatCubit extends Cubit<ChatState> {
   /// minute (ceiling-rounded) for any turn that reaches this point,
   /// regardless of terminal outcome — a failed or cancelled turn still
   /// consumed real wall-clock time. Added for
-  /// `aion-arch/changes/automatic-time-tracking-for-tickets`; replaces
+  /// `AIO-148`; replaces
   /// the model-self-reported `log_time` tool call as `timeSpent`'s
   /// source of truth — see that change's proposal.md for why.
   static Future<void> _logElapsedTime(

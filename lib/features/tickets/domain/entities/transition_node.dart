@@ -13,7 +13,7 @@ import 'package:aion/features/tickets/domain/entities/transition_branch.dart';
 /// there is no `conditionParams`/operator/value shape here, since every
 /// field this proposal ships is a plain boolean: a node is just "which
 /// field; where its `true` branch goes; where its `false` branch goes."
-/// Added for `aion-arch/changes/sddstage-transition-preconditions`.
+/// Added for `AIO-1936`.
 @immutable
 class TransitionNode {
   /// Creates a [TransitionNode].

@@ -29,7 +29,7 @@ const int _kWikilinkSuggestionCap = 20;
 /// multiline commit discipline. [onCommit] is awaited so Save can show a
 /// spinner and, on failure, an inline error row — it never calls a
 /// repository or Cubit method itself, only the caller-supplied callback.
-/// Per `aion-arch/changes/page-content-markdown-editor/design.md` §1.
+/// Per `AIO-1350` §1.
 class MarkdownEditor extends StatefulWidget {
   /// Creates a [MarkdownEditor] seeded with [initialValue].
   const MarkdownEditor({
@@ -64,7 +64,7 @@ class MarkdownEditor extends StatefulWidget {
   /// given the live in-progress query text. `null` (the default) leaves
   /// `[[` inert — plain literal characters, no overlay — every existing
   /// consumer's behavior is unaffected. Added for
-  /// `aion-arch/changes/inline-wikilink-backlinks`; see design.md §4.
+  /// `AIO-963`; see design.md §4.
   final List<WikilinkSuggestionItem> Function(String query)? wikilinkSuggestions;
 
   /// Called with the typed query when the autocomplete overlay's
@@ -73,7 +73,7 @@ class MarkdownEditor extends StatefulWidget {
   /// the same way a picked suggestion is. `null` (the default, and every
   /// consumer that doesn't supply [wikilinkSuggestions] either) leaves
   /// that affordance a no-op, per design.md §4.5. Added for
-  /// `aion-arch/changes/inline-wikilink-backlinks`.
+  /// `AIO-963`.
   final Future<WikilinkSuggestionItem?> Function(String title)? onCreatePage;
 
   /// Forwarded straight through to every internal `MarkdownView(source:

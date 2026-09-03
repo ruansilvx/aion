@@ -7,7 +7,7 @@ import 'package:equatable/equatable.dart';
 /// (`core/contracts/agent_model_client.dart`) — independent of
 /// [ToolAccessTier] (which governs the provider's own file/git/bash tool
 /// access) and `ModelPhase` (which governs reasoning weight). Added for
-/// `aion-arch/changes/mid-task-chat-branching`; see that change's
+/// `AIO-1118`; see that change's
 /// design.md §2.
 class AgentToolDefinition extends Equatable {
   /// Creates an [AgentToolDefinition] named [name], described by

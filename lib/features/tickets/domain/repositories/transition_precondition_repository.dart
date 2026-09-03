@@ -10,7 +10,7 @@ import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 /// `core/automation/decision_graph.dart`'s `DecisionGraph` shape, one level
 /// simpler (no separate condition-outcome enum to carry — `TransitionNode`
 /// itself resolves outcomes via `TransitionBranch.terminal`). Added for
-/// `aion-arch/changes/sddstage-transition-preconditions`.
+/// `AIO-1936`.
 @immutable
 class TransitionGraph {
   /// Creates a [TransitionGraph].
@@ -46,7 +46,7 @@ class TransitionGraph {
 /// not repositories). Implemented by the data layer
 /// (`DriftTransitionPreconditionRepository`); UI and domain code depend
 /// only on this interface, never on a concrete data source. Added for
-/// `aion-arch/changes/sddstage-transition-preconditions`.
+/// `AIO-1936`.
 abstract interface class TransitionPreconditionRepository {
   /// Returns [stage]'s currently-configured [TransitionGraph], defaulting
   /// to `TransitionGraph(stage: stage, rootNodeId: null)` — always
@@ -76,7 +76,7 @@ abstract interface class TransitionPreconditionRepository {
   /// yet (idempotent) — each baseline tree reproduces that stage's exact
   /// pre-existing hardcoded `TicketsCubit._sddStageAdvanceCheck` branch as
   /// data, per
-  /// `aion-arch/changes/sddstage-transition-preconditions/design.md` §3.
+  /// `AIO-1936` §3.
   /// `null`/`archived` get no seeded graph — neither has a precondition
   /// today. Called once at app startup for the active project, and by the
   /// schema migration's backfill for every pre-existing project. A no-op
@@ -99,7 +99,7 @@ abstract interface class TransitionPreconditionRepository {
   /// one batch — a stage with no graph row yet, or a graph row with a
   /// `null` root, contributes `0`. Powers `WorkflowStatusSettingsScreen`'s
   /// "Configure precondition" affordance count badge
-  /// (`aion-arch/changes/sddstage-transition-preconditions/design.md`
+  /// (`AIO-1936`
   /// §5.1/§5.2) without an N-query fan-out over the 5 precondition-bearing
   /// stages — implementations fetch every graph row and every node row
   /// once each, then walk each graph's reachable set in memory. Added for

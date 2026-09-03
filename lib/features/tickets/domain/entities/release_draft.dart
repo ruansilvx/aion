@@ -11,7 +11,7 @@ import 'package:aion/core/build/project_stack_detector.dart';
 /// the draft step and confirmation. If [confirmRelease] never runs (the
 /// user cancels), the draft is simply discarded — nothing about a
 /// rejected draft needs to survive. Added for
-/// `aion-arch/changes/release-preparation-and-tagging`; see that change's
+/// `AIO-1782`; see that change's
 /// design.md §3.
 class ReleaseDraft extends Equatable {
   /// Creates a [ReleaseDraft].

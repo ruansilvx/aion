@@ -9,7 +9,7 @@ part 'workflow_prompt_template_dao.g.dart';
 
 /// Drift accessor for [WorkflowPromptTemplatesTable]. Plain CRUD only —
 /// no seeding logic, matching [WorkflowSkillAttachmentDao]'s shape. See
-/// `aion-arch/changes/workflow-skill-attachments/design.md` §2.4.
+/// `AIO-2650` §2.4.
 @DriftAccessor(tables: [WorkflowPromptTemplatesTable])
 class WorkflowPromptTemplateDao extends DatabaseAccessor<AppDatabase>
     with _$WorkflowPromptTemplateDaoMixin {

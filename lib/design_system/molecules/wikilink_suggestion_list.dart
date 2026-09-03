@@ -38,7 +38,7 @@ class WikilinkSuggestionItem {
 /// is otherwise self-contained and reusable, following the same
 /// promotion-eligible genericness every other `design_system/` widget
 /// holds to (`items`/[onSelected] carry no domain-entity type). Per
-/// `aion-arch/changes/inline-wikilink-backlinks/design.md` §4.
+/// `AIO-963` §4.
 class WikilinkSuggestionList extends StatefulWidget {
   /// Creates a [WikilinkSuggestionList]. [items] is the already-filtered
   /// candidate set for the live [query] (empty [query] with non-empty

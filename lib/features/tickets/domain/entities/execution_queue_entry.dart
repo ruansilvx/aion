@@ -5,7 +5,7 @@ import 'package:equatable/equatable.dart';
 /// One persisted row of `TicketsCubit`'s coding-execution queue —
 /// either an in-flight run or a still-queued one — surviving an app
 /// restart via `ExecutionQueueRepository`. See
-/// `aion-arch/changes/parallel-work/design.md` §5.3.
+/// `AIO-1400` §5.3.
 class ExecutionQueueEntry extends Equatable {
   /// Creates an [ExecutionQueueEntry] for [taskId].
   const ExecutionQueueEntry({

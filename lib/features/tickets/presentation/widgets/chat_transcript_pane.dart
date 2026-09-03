@@ -26,7 +26,7 @@ import 'package:aion/features/tickets/presentation/widgets/ticket_metadata_secti
 /// message on load and on every streaming update. Replaces the old
 /// non-scrolling, `shrinkWrap` chat list embedded in the whole page's
 /// shared scroll. Per
-/// `aion-arch/changes/chat-transcript-ux-redesign/design.md` §2 and §8.
+/// `AIO-482` §2 and §8.
 class ChatTranscriptPane extends StatefulWidget {
   /// Creates a [ChatTranscriptPane] for the chat ticket [ticketId].
   const ChatTranscriptPane({
@@ -61,7 +61,7 @@ class ChatTranscriptPane extends StatefulWidget {
   /// .isAdvancingStage`, sourced from `ticket_detail_screen.dart`'s own
   /// `TicketsCubit` subscription) — drives [_WaitingForReplyIndicator]
   /// at the transcript's tail while `true`. Added for
-  /// `aion-arch/changes/board-execution-indicators-and-notifications`.
+  /// `AIO-352`.
   final bool isAdvancingStage;
 
   @override
@@ -195,7 +195,7 @@ class _TranscriptListItem extends StatelessWidget {
   /// Internal id of the chat ticket this transcript belongs to — passed
   /// through to [_StreamingBubble]'s stop button, which resolves
   /// `ChatCubit.cancelReply` against it. Added for
-  /// `aion-arch/changes/parallel-work`.
+  /// `AIO-1400`.
   final String chatTicketId;
 
   final List<TicketComment> comments;
@@ -204,7 +204,7 @@ class _TranscriptListItem extends StatelessWidget {
 
   /// The in-flight reply's `AgentRequest.runId`, or `null` when no reply
   /// is streaming — mirrors `ChatLoaded.activeRunId`. Added for
-  /// `aion-arch/changes/parallel-work`.
+  /// `AIO-1400`.
   final String? activeRunId;
   final int index;
 
@@ -442,7 +442,7 @@ class _StaticExpandedHeader extends StatelessWidget {
 /// `ticket_detail_screen.dart`'s `BlocListener` to call
 /// `ChatCubit.loadMessages`, which replaces this row with the real
 /// reply bubble). Added for
-/// `aion-arch/changes/board-execution-indicators-and-notifications`.
+/// `AIO-352`.
 class _WaitingForReplyIndicator extends StatefulWidget {
   const _WaitingForReplyIndicator();
 
@@ -536,7 +536,7 @@ class _StreamingBubble extends StatefulWidget {
 
   /// Internal id of the chat ticket this bubble belongs to — passed to
   /// `ChatCubit.cancelReply` by the stop button. Added for
-  /// `aion-arch/changes/parallel-work`.
+  /// `AIO-1400`.
   final String chatTicketId;
 
   /// The accumulated reply text so far, `null` before any text chunk
@@ -549,7 +549,7 @@ class _StreamingBubble extends StatefulWidget {
 
   /// The in-flight reply's `AgentRequest.runId` — the stop button is
   /// visible iff this is non-`null`. Added for
-  /// `aion-arch/changes/parallel-work`.
+  /// `AIO-1400`.
   final String? activeRunId;
 
   @override

@@ -7,7 +7,7 @@
 /// Exactly one shared-base [WorkflowStatus] must hold each value at all
 /// times; [WorkflowConfigCubit](../../presentation/cubit/workflow_config_cubit.dart)
 /// enforces this invariant, never the repository — see
-/// `aion-arch/changes/configurable-ticket-workflow/design.md` §1.1.
+/// `AIO-549` §1.1.
 enum WorkflowStatusRole {
   /// Fills the pre-configuration `TicketStatus.inProgress` slot: the
   /// transition that starts coding execution

@@ -13,7 +13,7 @@ import 'package:aion/features/tickets/presentation/widgets/ticket_overflow_menu.
 /// collapses into as `ChatTranscriptPane`'s transcript scrolls — back
 /// button, ticket-id badge, overflow menu, title, chat type chip, and
 /// status indicator. Per
-/// `aion-arch/changes/chat-transcript-ux-redesign/design.md` §0.1.
+/// `AIO-482` §0.1.
 class ChatMetaHeader extends StatelessWidget {
   /// Creates a [ChatMetaHeader] for [ticket].
   const ChatMetaHeader({super.key, required this.ticket, required this.onBack});

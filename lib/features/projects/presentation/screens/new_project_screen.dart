@@ -18,7 +18,7 @@ import 'package:aion/features/projects/presentation/widgets/gitignore_confirmati
 /// [project]'s `rootPath` was already a git repository — the caller
 /// should offer the opt-in codebase-summarization banner on first open
 /// (see `TicketsListScreen`). Added for
-/// `aion-arch/changes/new-project-onboarding`.
+/// `AIO-1266`.
 typedef ProjectCreatedCallback =
     void Function(Project project, {required bool offerCodebaseAnalysis});
 
@@ -29,8 +29,8 @@ typedef ProjectCreatedCallback =
 /// notice. When the chosen directory is already a git repository, an
 /// inline [GitignoreConfirmationBanner] appears between the directory
 /// picker and the baseline-version field (desktop only) — see
-/// `aion-arch/changes/new-project-onboarding/design.md` §2/§4.1. See also
-/// `aion-arch/changes/multi-project-hub/design.md` §4.
+/// `AIO-1266` §2/§4.1. See also
+/// `AIO-1174` §4.
 class NewProjectScreen extends StatefulWidget {
   /// Creates a [NewProjectScreen]. [onBack] returns to the Hub without
   /// creating; [onCreated] is called with the newly created project.

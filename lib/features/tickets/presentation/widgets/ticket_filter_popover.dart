@@ -82,7 +82,7 @@ class TicketFilterPopover extends StatefulWidget {
   /// `page`/`resource` moved to the Documentation section and no longer
   /// appear here; `idea`/`knownGap`/`openQuestion`/`release` excluded (the
   /// first three inherit `signal`'s original pre-existing-gap exclusion —
-  /// see `aion-arch/changes/idea-gap-question-ticket-types`).
+  /// see `AIO-934`).
   /// Mirrors the same hardcoded list `TicketsListScreen`'s old
   /// `AppDropdown<TicketType?>` used.
   static const typeOptions = [
@@ -124,7 +124,7 @@ class _TicketFilterPopoverState extends State<TicketFilterPopover> {
     // synchronous `markNeedsBuild()` here hits Flutter's "setState
     // called during build" assertion for a non-descendant target —
     // reproducible by tapping this trigger on a native desktop build
-    // (see `aion-arch/changes/list-board-view-and-column-visibility`'s
+    // (see `AIO-1069`'s
     // manual verification pass). `TicketSortPopover`'s own
     // `didUpdateWidget` already used this fix; this one hadn't been
     // updated to match until now.

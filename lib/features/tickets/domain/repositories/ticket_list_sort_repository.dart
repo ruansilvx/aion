@@ -13,7 +13,7 @@ import 'package:aion/features/tickets/domain/entities/ticket_list_sort.dart';
 /// constraint"; an unset sort is `null`, meaning "no explicit choice
 /// yet, use the implicit query-aware default" (see
 /// `TicketsCubit._implicitSort`). See
-/// `aion-arch/changes/ticket-sort-control-and-board-as-default-view`.
+/// `AIO-2371`.
 abstract interface class TicketListSortRepository {
   /// The persisted explicit sort for [projectId], or `null` if the user
   /// has never explicitly chosen one for this project — the implicit

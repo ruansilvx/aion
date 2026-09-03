@@ -10,7 +10,7 @@ import 'package:aion/core/contracts/agent_tool_definition.dart';
 /// this tool creates is top-level; relating it to the ticket under
 /// discussion is a separate [addLinkToolDefinition] call. Handled by
 /// `TicketsCubit._handleCreateTicketToolCall`. Added for
-/// `aion-arch/changes/ticket-crud-tool-calls`; see that change's
+/// `AIO-2108`; see that change's
 /// design.md §2.
 const createTicketToolDefinition = AgentToolDefinition(
   name: 'create_ticket',
@@ -51,7 +51,7 @@ const createTicketToolDefinition = AgentToolDefinition(
 /// Doubles as duplicate-flagging — `linkType: 'duplicates'` is an ordinary
 /// call, not a separate tool. Handled by
 /// `TicketsCubit._handleAddLinkToolCall`. Added for
-/// `aion-arch/changes/ticket-crud-tool-calls`; see that change's
+/// `AIO-2108`; see that change's
 /// design.md §2.
 const addLinkToolDefinition = AgentToolDefinition(
   name: 'add_link',

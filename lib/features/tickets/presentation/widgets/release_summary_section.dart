@@ -15,12 +15,12 @@ import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
 /// `aion-arch/specs/tickets.md`'s "Documentation-mode sections", which
 /// excludes `release`). Lists [linkedWork] via the existing
 /// `design_system` [LinkedTicketsSection] molecule, reused as-is per
-/// `aion-arch/changes/release-preparation-and-tagging/design.md` §5.1 —
+/// `AIO-1782` §5.1 —
 /// this widget contributes only the eyebrow above it and the Prepare
 /// Release trigger below it. Feature-level composition, not a
 /// `design_system/` promotion, since it's tied to `release`-ticket
 /// business logic (the Prepare Release trigger itself). Added for
-/// `aion-arch/changes/release-preparation-and-tagging`.
+/// `AIO-1782`.
 class ReleaseSummarySection extends StatelessWidget {
   /// Creates a [ReleaseSummarySection].
   const ReleaseSummarySection({
@@ -107,7 +107,7 @@ class ReleaseSummarySection extends StatelessWidget {
 /// rather than a new one. The always-visible empty-state notice (§1.4)
 /// already states the same reason for a non-hovering/keyboard user — this
 /// tooltip is a hover-only supplement, not the only place the reason is
-/// surfaced. Added for `aion-arch/changes/release-preparation-and-tagging`'s
+/// surfaced. Added for `AIO-1782`'s
 /// `/verify` round-1 fix-up, T19.
 class _PrepareReleaseButton extends StatefulWidget {
   const _PrepareReleaseButton({

@@ -22,7 +22,7 @@ import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 /// itself is just the panel body, not the overlay plumbing (that lives on
 /// the trigger's `State`, same split `TicketOverflowMenu`'s own root-menu
 /// content vs. trigger `State` uses). Added for
-/// `aion-arch/changes/pr-metadata-and-notification-center`; see that
+/// `AIO-1586`; see that
 /// change's design.md §6.2 and Component Spec §4-§7.
 class NotificationDropdownPanel extends StatefulWidget {
   /// Creates a [NotificationDropdownPanel]. [ticketsCubit] is passed in

@@ -13,7 +13,7 @@ import 'package:aion/features/providers/domain/enums/provider_connection_status.
 /// (`design_system/molecules/sync_status_badge.dart`) but stays
 /// feature-local — a one-off status readout for this screen, not yet used
 /// anywhere else, so it doesn't meet the design-system promotion bar (see
-/// `aion-arch/changes/provider-configuration/design.md` §4.3). Non-
+/// `AIO-1699` §4.3). Non-
 /// interactive (a status readout, not a control): no hover/press/focus
 /// treatment.
 ///
@@ -26,7 +26,7 @@ import 'package:aion/features/providers/domain/enums/provider_connection_status.
 /// `_AnthropicApiKeySection`'s no-key-saved presentation can show
 /// `"NO KEY"` on the `unknown` state's existing chrome instead of a new
 /// badge state. See
-/// `aion-arch/changes/anthropic-messages-api-provider/design.md`'s
+/// `AIO-110`'s
 /// Component Spec §5.2.
 class ProviderConnectionBadge extends StatelessWidget {
   /// Creates a [ProviderConnectionBadge] for [status], optionally

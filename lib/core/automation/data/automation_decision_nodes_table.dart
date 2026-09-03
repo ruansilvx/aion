@@ -14,7 +14,7 @@ import 'package:drift/drift.dart';
 /// belongs to — that's implicit via graph traversal from the root, not a
 /// stored parent pointer) — integrity is enforced at the
 /// `DecisionGraphConfigCubit` layer, matching every other table in this
-/// schema. See `aion-arch/changes/automation-decision-graphs/design.md`
+/// schema. See `AIO-181`
 /// §2.
 @DataClassName('AutomationDecisionNodeData')
 class AutomationDecisionNodesTable extends Table {

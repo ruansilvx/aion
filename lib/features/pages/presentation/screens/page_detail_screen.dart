@@ -26,9 +26,9 @@ import 'package:aion/features/tickets/presentation/widgets/ticket_parent_picker.
 /// boundaries). Builds its
 /// own [PagesCubit], backed by the workspace-scoped [PageTicketProvider]
 /// read from context. Per
-/// `aion-arch/changes/page-content-markdown-editor/design.md` §3. Widened
+/// `AIO-1350` §3. Widened
 /// to also serve [TicketType.spec] for
-/// `aion-arch/changes/spec-ticket-type` — a spec ticket is edited exactly
+/// `AIO-1998` — a spec ticket is edited exactly
 /// like a page, plus one spec-only addition: [_SpecOriginBadge] at the
 /// top of the scroll body.
 class PageDetailScreen extends StatefulWidget {
@@ -48,7 +48,7 @@ class _PageDetailScreenState extends State<PageDetailScreen> {
   /// Every live `page`/`resource` ticket, fetched once and cached here —
   /// the wikilink-autocomplete/resolution candidate list. `null` while
   /// the initial fetch is in flight. Per
-  /// `aion-arch/changes/inline-wikilink-backlinks/design.md`'s
+  /// `AIO-963`'s
   /// "no re-fetch per keystroke" precedent.
   List<Ticket>? _wikilinkCandidates;
 
@@ -244,7 +244,7 @@ class _PageDetailContent extends StatelessWidget {
                   // `if` below skips both the badge and its own sp16
                   // spacer together, rather than leaving a zero-height
                   // widget inside this spaced Column. Added for
-                  // `aion-arch/changes/spec-ticket-type`.
+                  // `AIO-1998`.
                   if (page.type == TicketType.spec) ...[
                     _SpecOriginBadge(ticket: page, relations: relations),
                     const SizedBox(height: AionSpacing.sp16),
@@ -401,7 +401,7 @@ class _PageDetailHeader extends StatelessWidget {
             if (page != null) ...[
               // `page.type` (not the hardcoded `TicketType.page`) so a
               // TicketType.spec ticket renders its own "SPEC" chip here —
-              // added for `aion-arch/changes/spec-ticket-type`.
+              // added for `AIO-1998`.
               TypeChip(type: page.type, isRow: false),
               const SizedBox(width: AionSpacing.sp12),
             ],
@@ -488,7 +488,7 @@ class _PageDetailHeader extends StatelessWidget {
 /// widget in the same fix-up rather than left as false precedent. Renders
 /// nothing (not even a zero-height box) unless [ticket.type] is
 /// [TicketType.spec] — see design.md §3.3. Added for
-/// `aion-arch/changes/spec-ticket-type`.
+/// `AIO-1998`.
 class _SpecOriginBadge extends StatelessWidget {
   /// Creates a [_SpecOriginBadge] for [ticket], resolving its origin from
   /// [relations].
@@ -577,7 +577,7 @@ class _SpecOriginBadge extends StatelessWidget {
                             // §2.4.1), via the shared `InteractiveLinkSpan`
                             // precedent — see that widget's own dartdoc.
                             // Added for
-                            // `aion-arch/changes/spec-ticket-type`'s
+                            // `AIO-1998`'s
                             // `/verify` fix-up (previously a plain static-
                             // underline `TextSpan`).
                             WidgetSpan(

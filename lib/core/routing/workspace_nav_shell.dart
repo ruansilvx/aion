@@ -17,7 +17,7 @@ import 'package:aion/features/tickets/presentation/widgets/notification_dropdown
 /// content: a left sidebar on wide layouts, a bottom tab bar on narrow
 /// ones, both offering the same three destinations (Tickets,
 /// Documentation, Inbox — see
-/// `aion-arch/changes/new-project-onboarding-inbox/design.md` §1) plus a
+/// `AIO-1300` §1) plus a
 /// shared secondary-actions trigger (Switch Project, Trash).
 ///
 /// Rendered by `WorkspaceShell` around its routed `child` — see
@@ -33,7 +33,7 @@ import 'package:aion/features/tickets/presentation/widgets/notification_dropdown
 /// Tickets, Documentation, and Settings alike, and
 /// `BlocProvider<TicketsCubit>` sits above this widget in the tree, so
 /// no new provider wiring is needed. Added for
-/// `aion-arch/changes/board-execution-indicators-and-notifications`.
+/// `AIO-352`.
 class WorkspaceNavShell extends StatelessWidget {
   /// Creates a [WorkspaceNavShell]. [currentLocation] drives which
   /// destination renders as active; [child] is the routed screen content.
@@ -112,7 +112,7 @@ enum _NavDestination {
   /// via the existing `/workspace/tickets/:id` route, so opening one from
   /// the Inbox history list resolves to [tickets], not this destination —
   /// same as any other ticket detail view. Added for
-  /// `aion-arch/changes/new-project-onboarding-inbox`.
+  /// `AIO-1300`.
   inbox,
 }
 
@@ -210,7 +210,7 @@ class _BrandHeader extends StatelessWidget {
 /// space, then [_NotificationBellTrigger] beside [_SecondaryActionsTrigger],
 /// both anchored to the bottom. Added
 /// [_NotificationBellTrigger] for
-/// `aion-arch/changes/pr-metadata-and-notification-center`; see that
+/// `AIO-1586`; see that
 /// change's design.md Component Spec §2.
 class _Sidebar extends StatelessWidget {
   /// Creates a [_Sidebar].
@@ -346,7 +346,7 @@ class _CompactShell extends StatelessWidget {
 /// The fixed-height (72px + bottom safe area) bottom tab bar rendered by
 /// [_CompactShell]: the three [_NavItem] destinations plus the
 /// [_NotificationBellTrigger] and [_SecondaryActionsTrigger]. Per
-/// `aion-arch/changes/new-project-onboarding-inbox/design.md` §1.3, the
+/// `AIO-1300` §1.3, the
 /// trigger cell is a fixed 56px [SizedBox] (not `Expanded`) — the three
 /// destinations stay equal `Expanded` thirds of the remaining space,
 /// rather than all cells splitting evenly, since a destination must
@@ -354,7 +354,7 @@ class _CompactShell extends StatelessWidget {
 /// 56px cells that never needed a full share. [_NotificationBellTrigger]
 /// gets its own fixed 56px cell, placed before
 /// [_SecondaryActionsTrigger]'s — see design.md Component Spec §3.1.
-/// Added for `aion-arch/changes/pr-metadata-and-notification-center`.
+/// Added for `AIO-1586`.
 class _BottomTabBar extends StatelessWidget {
   /// Creates a [_BottomTabBar].
   const _BottomTabBar({
@@ -607,7 +607,7 @@ enum _SecondaryAction {
   settings,
 
   /// Navigates to `/workspace/settings/workflow`. Added for
-  /// `aion-arch/changes/configurable-ticket-workflow`.
+  /// `AIO-549`.
   workflowSettings,
 }
 
@@ -726,7 +726,7 @@ class _SecondaryActionsTriggerState extends State<_SecondaryActionsTrigger> {
 /// `LayerLink`/`CompositedTransformFollower`/`mounted`-guard mechanics
 /// `TicketOverflowMenu` already uses — a fourth instance of that
 /// pattern (an action list, not a `SelectionMenu` value picker). Added
-/// for `aion-arch/changes/pr-metadata-and-notification-center`.
+/// for `AIO-1586`.
 class _NotificationBellTrigger extends StatefulWidget {
   /// Creates a [_NotificationBellTrigger]. Set [compact] `true` for the
   /// bottom-tab-bar's 56px-cell/22px-glyph variant, `false` (default) for

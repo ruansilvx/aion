@@ -11,7 +11,7 @@ import 'package:aion/features/projects/domain/entities/project.dart';
 /// feature other than `projects` that needs to know the active project
 /// depends only on this interface — never on `features/projects/`
 /// directly. See
-/// `aion-arch/changes/multi-project-hub/design.md` §4.
+/// `AIO-1174` §4.
 abstract interface class ActiveProjectProvider {
   /// The currently active project, or `null` when no project is open
   /// (i.e. the user is at the Hub).
@@ -26,7 +26,7 @@ abstract interface class ActiveProjectProvider {
   /// "created from an already-git-tracked directory" flag set — in-memory
   /// only, not persisted. Call [consumeCodebaseAnalysisOffer] once the
   /// offer has been shown (or deliberately not shown) so it never
-  /// reappears. Added for `aion-arch/changes/new-project-onboarding`.
+  /// reappears. Added for `AIO-1266`.
   bool get offerCodebaseAnalysis;
 
   /// Clears [offerCodebaseAnalysis] back to `false` for the current
@@ -42,7 +42,7 @@ abstract interface class ActiveProjectProvider {
   /// Call [consumeBaselineUpgradeOffer] once the offer has been shown
   /// (or deliberately not shown) so it doesn't reappear within the same
   /// open. Added for
-  /// `aion-arch/changes/baseline-version-upgrade-flow`.
+  /// `AIO-297`.
   bool get offerBaselineUpgrade;
 
   /// Clears [offerBaselineUpgrade] back to `false` for the current

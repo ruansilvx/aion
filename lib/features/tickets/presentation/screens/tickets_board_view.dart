@@ -37,7 +37,7 @@ const double _kColumnWidth = 280.0;
 /// `"needsRepro"` → `"Needs repro"`) for a project-renamed/added status
 /// name, so a customized project still gets a readable label rather than
 /// a crash. Was a total `switch` over the fixed `TicketStatus` enum
-/// before `aion-arch/changes/configurable-ticket-workflow`.
+/// before `AIO-549`.
 String ticketStatusLabel(BuildContext context, String status) {
   final l10n = context.l10n;
   return switch (status) {
@@ -111,11 +111,11 @@ String ticketsErrorMessage(BuildContext context, TicketsErrorReason reason) {
 /// task/story types); this widget only groups by status and applies
 /// visibility, it does not filter by type. Pins [ResumeRunsPrompt] above
 /// the columns whenever `TicketsLoaded.pendingResumePrompt` is
-/// non-empty. Added for `aion-arch/changes/parallel-work`;
+/// non-empty. Added for `AIO-1400`;
 /// [hiddenStatuses] added for
-/// `aion-arch/changes/list-board-view-and-column-visibility`; status
+/// `AIO-1069`; status
 /// order threaded through `WorkflowConfigCubit` (in place of the
-/// hardcoded default set) for `aion-arch/changes/v1-release-readiness`.
+/// hardcoded default set) for `AIO-2550`.
 class TicketBoardView extends StatelessWidget {
   /// Creates a [TicketBoardView] rendering [tickets] grouped by status,
   /// skipping every status in [hiddenStatuses].
@@ -174,10 +174,10 @@ class TicketBoardView extends StatelessWidget {
 /// The horizontal, per-status-column region of [TicketBoardView] —
 /// hoisted out so [TicketBoardView.build] can wrap it with
 /// [ResumeRunsPrompt] above without nesting the whole column list one
-/// level deeper. Added for `aion-arch/changes/parallel-work`. Renders
+/// level deeper. Added for `AIO-1400`. Renders
 /// [_NoColumnsVisibleHint] instead of the column scroller when every
 /// status is in [hiddenStatuses] — added for
-/// `aion-arch/changes/list-board-view-and-column-visibility`.
+/// `AIO-1069`.
 class _BoardColumns extends StatelessWidget {
   const _BoardColumns({required this.grouped, required this.hiddenStatuses});
 
@@ -224,7 +224,7 @@ class _BoardColumns extends StatelessWidget {
 /// column *visibility* — reachable only through deliberate user action,
 /// and just as reachable back out of via the still-available Columns
 /// trigger above. Added for
-/// `aion-arch/changes/list-board-view-and-column-visibility`; see that
+/// `AIO-1069`; see that
 /// change's design.md §6 and Component Spec §4.
 class _NoColumnsVisibleHint extends StatelessWidget {
   const _NoColumnsVisibleHint();
@@ -302,10 +302,10 @@ class _NoColumnsVisibleHint extends StatelessWidget {
 /// [TicketsLoaded.topmostAncestorId] as its grouping key — so the sibling
 /// serialization that mode enforces is visible on the Board, not just
 /// inferred from behavior; every other mode renders [tickets] in its given
-/// order unchanged. Added for `aion-arch/changes/parallel-work`; see that
+/// order unchanged. Added for `AIO-1400`; see that
 /// change's design.md §9. Generalized from direct `parentId` clustering to
 /// shared-topmost-ancestor clustering for
-/// `aion-arch/changes/dependency-caching-and-ancestor-sibling-conflict`.
+/// `AIO-722`.
 class BoardColumn extends StatelessWidget {
   /// Creates a [BoardColumn] for [status], rendering [tickets].
   const BoardColumn({super.key, required this.status, required this.tickets});
@@ -564,7 +564,7 @@ class TicketBoardCard extends StatelessWidget {
 
 /// Compact per-card status derived from [TicketsLoaded]'s in-flight
 /// fields (see
-/// `aion-arch/changes/board-execution-indicators-and-notifications/design.md`
+/// `AIO-352`
 /// §1.4) for a specific ticket. `none` when the cubit's current state
 /// isn't [TicketsLoaded] (e.g. a detail screen is the last thing that
 /// ran) or nothing about that ticket is in flight. Renders as
@@ -576,7 +576,7 @@ enum _CardExecutionState { none, running, queued, advancing }
 /// `running`/`queued`/`none`; Epic/Story cards resolve to
 /// `advancing`/`none` — the two families never co-occur on one card, so
 /// checking all three fields unconditionally is safe. Added for
-/// `aion-arch/changes/board-execution-indicators-and-notifications`.
+/// `AIO-352`.
 (_CardExecutionState, int?) _cardExecutionState(TicketsState s, Ticket t) {
   if (s is! TicketsLoaded) return (_CardExecutionState.none, null);
   if (s.inFlightExecutionIds.contains(t.id)) {
@@ -594,7 +594,7 @@ enum _CardExecutionState { none, running, queued, advancing }
 /// dependency, per [TicketsLoaded.blockedTicketIds]. `false` whenever
 /// the cubit's current state isn't [TicketsLoaded] — mirrors
 /// [_cardExecutionState]'s same no-signal-outside-`TicketsLoaded` floor.
-/// Added for `aion-arch/changes/board-task-ordering-indication`.
+/// Added for `AIO-392`.
 bool _cardIsBlocked(TicketsState s, Ticket t) =>
     s is TicketsLoaded && s.blockedTicketIds.contains(t.id);
 
@@ -608,7 +608,7 @@ bool _cardIsBlocked(TicketsState s, Ticket t) =>
 /// (Component Spec §2.4 — coding execution, and therefore token spend, is
 /// a Task/Bug-only mechanism). Implements this change's display-
 /// precedence rule
-/// (`aion-arch/changes/token-cost-prediction/design.md` §5): a running
+/// (`AIO-2455` §5): a running
 /// total (from [TicketsLoaded.executionTokenTotals]) takes precedence
 /// over the persisted prediction whenever present; otherwise, the
 /// prediction shows only if [t] isn't currently running or queued — the
@@ -651,7 +651,7 @@ bool _cardIsBlocked(TicketsState s, Ticket t) =>
 /// emission. Also renders a [RollupBadge] (right-aligned, before
 /// [_BoardCardStatusBadge]) when [ticket] has a live-children rollup —
 /// see
-/// `aion-arch/changes/estimate-timespent-rollup-for-ticket-hierarchy/design.md`
+/// `AIO-873`
 /// §2.5. Also renders a [TokenCountLabel] (right after [RollupBadge],
 /// before [_BoardCardStatusBadge]) reflecting [_cardTokenLabel] — see
 /// that helper's dartdoc for the display-precedence rule. The trailing
@@ -660,10 +660,10 @@ bool _cardIsBlocked(TicketsState s, Ticket t) =>
 /// (`spacing`/`runSpacing` 8, `Expanded` to preserve right-alignment on
 /// a single line) rather than a plain `Row`, so a busy card wraps to a
 /// second meta line instead of overflowing — Component Spec §2.3
-/// (`aion-arch/changes/token-cost-prediction/design.md`). Added for
-/// `aion-arch/changes/board-execution-indicators-and-notifications`,
-/// `aion-arch/changes/board-task-ordering-indication`, and
-/// `aion-arch/changes/token-cost-prediction`.
+/// (`AIO-2455`). Added for
+/// `AIO-352`,
+/// `AIO-392`, and
+/// `AIO-2455`.
 class _CardVisual extends StatelessWidget {
   const _CardVisual({
     required this.ticket,
@@ -854,7 +854,7 @@ class _CardVisual extends StatelessWidget {
 /// the row entirely in that case). No hover/focused/pressed/disabled/
 /// error states — the only motion is `running`'s rotating gear glyph
 /// (static under reduced motion). Per Component Spec §1
-/// (`aion-arch/changes/board-execution-indicators-and-notifications/design.md`).
+/// (`AIO-352`).
 class _BoardCardStatusBadge extends StatefulWidget {
   const _BoardCardStatusBadge({required this.status, this.queuePosition});
 
@@ -996,8 +996,8 @@ class _BoardCardStatusBadgeState extends State<_BoardCardStatusBadge>
 /// `danger` tint family, distinct from [_BoardCardStatusBadge]'s neutral
 /// `pendingTint`/`secondary` fills, since an open dependency reads as a
 /// caution state rather than an active/queued one. Per Component Spec
-/// §2 (`aion-arch/changes/board-task-ordering-indication/design.md`).
-/// Added for `aion-arch/changes/board-task-ordering-indication`.
+/// §2 (`AIO-392`).
+/// Added for `AIO-392`.
 class _BlockedBadge extends StatelessWidget {
   /// Creates a [_BlockedBadge].
   const _BlockedBadge();

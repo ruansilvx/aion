@@ -20,7 +20,7 @@ import 'package:aion/features/tickets/presentation/cubit/ticket_rollup_recompute
 /// plain-service pattern as `PageWikilinkIndexer` for the identical
 /// dual-caller shape, rather than pushing this logic down into
 /// `TicketRepository` — see
-/// `aion-arch/ideas/reconciler-applies-hand-edited-parentid-deletedat.md`.
+/// `AIO-57`.
 class TicketParentTrashService {
   /// Creates a [TicketParentTrashService] backed by [_repository].
   /// [gitProjector]/[projectRootPath] are optional, matching

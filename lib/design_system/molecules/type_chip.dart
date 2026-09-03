@@ -36,7 +36,7 @@ String ticketTypeLabel(BuildContext context, TicketType type) {
 /// .dart` (per `project.md`'s Pattern 2) so `features/pages/` can render the
 /// same "PAGE" chip `TicketDetailScreen` renders for other types, without a
 /// direct `features/tickets` presentation-layer import. Per
-/// `aion-arch/changes/page-content-markdown-editor/design.md` §0.1, §3.1.
+/// `AIO-1350` §0.1, §3.1.
 class TypeChip extends StatelessWidget {
   /// Creates a [TypeChip] for [type].
   const TypeChip({super.key, required this.type, this.isRow = true});

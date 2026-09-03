@@ -38,7 +38,7 @@ class Ticket extends Equatable {
   /// `"backlog"`, `"in_progress"`, or a project's own renamed/added
   /// status), resolved against `WorkflowStatusRepository`/
   /// `WorkflowConfigCubit` rather than a fixed enum. Prior to
-  /// `aion-arch/changes/configurable-ticket-workflow`, this field was a
+  /// `AIO-549`, this field was a
   /// fixed `TicketStatus` enum; every project now configures its own
   /// status set (see `WorkflowStatus`), seeded by default with
   /// `defaultWorkflowStatuses` so an unconfigured project behaves exactly
@@ -151,7 +151,7 @@ class Ticket extends Equatable {
   /// Where the current [complexity] value came from, or `null` if
   /// [complexity] itself is unset. Written only by `TicketRepository`'s
   /// dedicated methods — see [complexity]'s dartdoc and
-  /// `aion-arch/changes/ai-assisted-complexity-and-estimate-suggestions/design.md`
+  /// `AIO-75`
   /// §1.2. Never part of [copyWith].
   final TicketEstimationSource? complexitySource;
 
@@ -167,7 +167,7 @@ class Ticket extends Equatable {
   /// same treatment as [complexitySource]/[estimateSource] and for the
   /// same reason: a generic content edit must not be able to silently
   /// clobber a value only a dedicated write path should touch. See
-  /// `aion-arch/ideas/ticket-copywith-drops-deletedat.md` for the failure
+  /// `AIO-66` for the failure
   /// mode this precedent avoids.
   final int? predictedExecutionTokensLow;
 
@@ -269,7 +269,7 @@ class Ticket extends Equatable {
   /// call (there's no settable parameter for any of them) — only
   /// [complexity]/[estimate] themselves are settable here. `deletedAt`
   /// used to be silently dropped (reset to `null`) here instead of passed
-  /// through — see `aion-arch/ideas/ticket-copywith-drops-deletedat.md`
+  /// through — see `AIO-66`
   /// for that past failure mode, now fixed by following this same
   /// preserve-unconditionally pattern.
   Ticket copyWith({

@@ -32,7 +32,7 @@ final RegExp _semverPattern = RegExp(r'^\d+\.\d+\.\d+(-[\w.]+)?$');
 /// a version-file bump being available). On failure, stays on screen
 /// with an error banner and the same editable draft, so a retry doesn't
 /// require redrafting from scratch. Added for
-/// `aion-arch/changes/release-preparation-and-tagging`; see that
+/// `AIO-1782`; see that
 /// change's design.md §5.3.
 class ReleaseDraftScreen extends StatefulWidget {
   /// Creates a [ReleaseDraftScreen] reviewing [draft].

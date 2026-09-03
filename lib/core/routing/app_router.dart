@@ -65,7 +65,7 @@ import 'package:aion/features/tickets/tickets.dart';
 /// `/workspace/inbox`, `/workspace/pages/new`, `/workspace/pages/:id`,
 /// `/workspace/settings` (gated on an active project — see [_redirect]).
 /// See
-/// `aion-arch/changes/multi-project-hub/design.md` §9.
+/// `AIO-1174` §9.
 ///
 /// Clean (path-based, no `#`) URLs are go_router's default. Deploying the
 /// web build to Firebase Hosting requires a catch-all rewrite rule
@@ -133,7 +133,7 @@ final appRouter = GoRouter(
               ),
               // Board-only signal: whether `BoardColumn` should cluster
               // same-parent siblings adjacently (hybrid scheduling mode).
-              // See aion-arch/changes/parallel-work/design.md §9.
+              // See AIO-1400 §9.
               BlocProvider<ExecutionSchedulingCubit>(
                 create: (context) => ExecutionSchedulingCubit(
                   context.read<ExecutionSchedulingRepository>(),
@@ -344,7 +344,7 @@ final appRouter = GoRouter(
         ),
         // Reached from `WorkspaceNavShell`'s secondary-actions popover,
         // alongside `/workspace/settings`. See
-        // aion-arch/changes/configurable-ticket-workflow/design.md §5.1.
+        // AIO-549 §5.1.
         GoRoute(
           path: '/workspace/settings/workflow',
           builder: (context, state) => BlocProvider<WorkflowConfigCubit>(
@@ -368,7 +368,7 @@ final appRouter = GoRouter(
         // fresh page subtree per route, so a parent route's
         // `BlocProvider` isn't inherited here, following
         // `/workspace/settings/workflow`'s own wiring exactly. Added for
-        // `aion-arch/changes/workflow-skill-attachments`.
+        // `AIO-2650`.
         GoRoute(
           path: '/workspace/settings/workflow/templates',
           builder: (context, state) => BlocProvider<WorkflowConfigCubit>(
@@ -385,7 +385,7 @@ final appRouter = GoRouter(
         ),
         // Reached from `SettingsScreen`'s `_AutomationSection` "Configure
         // decision graph" affordance. See
-        // aion-arch/changes/automation-decision-graphs/design.md §4.
+        // AIO-181 §4.
         GoRoute(
           path: '/workspace/settings/automation/:context/graph',
           builder: (context, state) {
@@ -404,7 +404,7 @@ final appRouter = GoRouter(
         ),
         // Reached from `WorkflowStatusSettingsScreen`'s `_SddStageRenameRow`
         // "Configure precondition" affordance. See
-        // aion-arch/changes/sddstage-transition-preconditions/design.md §4.
+        // AIO-1936 §4.
         GoRoute(
           path: '/workspace/settings/workflow/sdd/:stage/precondition',
           builder: (context, state) {
@@ -510,9 +510,9 @@ Future<void> _migrateDocumentParentsOnOpen(AppDatabase database) async {
 /// disposes the old instance (closing its [AppDatabase]) and builds a
 /// fresh one — opening a new [AppDatabase] addressed to the newly active
 /// project — whenever the active project's id changes, per
-/// `aion-arch/changes/multi-project-hub/design.md` §6. Also wraps [child]
+/// `AIO-1174` §6. Also wraps [child]
 /// in [WorkspaceNavShell] (persistent Tickets/Documentation navigation
-/// chrome — see `aion-arch/changes/persistent-navigation-shell/design.md`),
+/// chrome — see `AIO-1525`),
 /// which needs [currentLocation] to know which destination is active.
 class WorkspaceShell extends StatefulWidget {
   /// Creates a [WorkspaceShell] for [project], wrapping [child] (the
@@ -600,24 +600,24 @@ class _WorkspaceShellState extends State<WorkspaceShell>
         // TicketLinkRepository above, not gated by `rootPath != null`
         // (unlike the desktop-only services below): it's a plain
         // Drift-backed repository with no file-system/git dependency.
-        // See aion-arch/changes/inline-wikilink-backlinks/design.md.
+        // See AIO-963.
         RepositoryProvider<PageWikilinkRepository>(
           create: (_) => DriftPageWikilinkRepository(_database),
         ),
         // Persisted coding-execution queue snapshot — parallel to
         // PageWikilinkRepository above, same plain Drift-backed shape.
-        // See aion-arch/changes/parallel-work/design.md §5.3/§7.
+        // See AIO-1400 §5.3/§7.
         RepositoryProvider<ExecutionQueueRepository>(
           create: (_) => DriftExecutionQueueRepository(_database),
         ),
         // Persisted coding-execution/SDD-stage-chat outcome notifications —
         // same plain Drift-backed shape as ExecutionQueueRepository above.
-        // See aion-arch/changes/pr-metadata-and-notification-center/design.md §5.
+        // See AIO-1586 §5.
         RepositoryProvider<NotificationRepository>(
           create: (_) => DriftNotificationRepository(_database),
         ),
         // Per-project ticket-list filter persistence — see
-        // aion-arch/changes/multi-select-ticket-list-filters/design.md
+        // AIO-1224
         // §1.4/§4. No dependencies of its own; scoped alongside the other
         // ticket-feature repositories above rather than main.dart's
         // global providers, since its `SharedPreferences` keys are
@@ -628,25 +628,25 @@ class _WorkspaceShellState extends State<WorkspaceShell>
         // Per-project ticket-list sort persistence — same scoping
         // rationale as TicketListFilterRepository above (project-id-
         // prefixed SharedPreferences keys, no dependencies of its own).
-        // See aion-arch/changes/ticket-sort-control-and-board-as-default-view.
+        // See AIO-2371.
         RepositoryProvider<TicketListSortRepository>(
           create: (_) => SharedPrefsTicketListSortRepository(),
         ),
         // Per-project ticket-list view-mode persistence — same scoping
         // rationale as TicketListFilterRepository/TicketListSortRepository
         // above. See
-        // aion-arch/changes/list-board-view-and-column-visibility.
+        // AIO-1069.
         RepositoryProvider<TicketListViewModeRepository>(
           create: (_) => SharedPrefsTicketListViewModeRepository(),
         ),
         // Per-project board column-visibility persistence — same scoping
         // rationale as the three ticket-list repositories above. See
-        // aion-arch/changes/list-board-view-and-column-visibility.
+        // AIO-1069.
         RepositoryProvider<TicketBoardColumnVisibilityRepository>(
           create: (_) => SharedPrefsTicketBoardColumnVisibilityRepository(),
         ),
         // Project-scoped workflow-configuration repositories — see
-        // aion-arch/changes/configurable-ticket-workflow/design.md §6.
+        // AIO-549 §6.
         // WorkflowStatusRepository is Drift-backed (per-project database,
         // like TicketRepository above); SddStageConfigRepository is
         // `shared_preferences`-backed (project-id-agnostic keys, same as
@@ -662,7 +662,7 @@ class _WorkspaceShellState extends State<WorkspaceShell>
         // Phase 2 (workflow-skill-attachments) — both Drift-backed
         // (per-project database), following WorkflowStatusRepository's
         // exact wiring precedent. See
-        // aion-arch/changes/workflow-skill-attachments/design.md §6.
+        // AIO-2650 §6.
         RepositoryProvider<WorkflowSkillAttachmentRepository>(
           create: (_) => DriftWorkflowSkillAttachmentRepository(_database),
         ),
@@ -671,13 +671,13 @@ class _WorkspaceShellState extends State<WorkspaceShell>
         ),
         // Project-scoped decision-graph configuration — same Drift-backed
         // shape as WorkflowStatusRepository above. See
-        // aion-arch/changes/automation-decision-graphs/design.md §2.
+        // AIO-181 §2.
         RepositoryProvider<DecisionGraphRepository>(
           create: (_) => DriftDecisionGraphRepository(_database),
         ),
         // Project-scoped transition-precondition configuration — same
         // Drift-backed shape as DecisionGraphRepository above. See
-        // aion-arch/changes/sddstage-transition-preconditions/design.md §2.
+        // AIO-1936 §2.
         RepositoryProvider<TransitionPreconditionRepository>(
           create: (_) => DriftTransitionPreconditionRepository(_database),
         ),
@@ -705,9 +705,8 @@ class _WorkspaceShellState extends State<WorkspaceShell>
             ),
           ),
           // Shared parentId-reparent/trash/restore domain logic — see
-          // aion-arch/changes/reconciler-applies-hand-edited-parentid-
-          // deletedat/design.md. Consumed below by both
-          // TicketMarkdownReconciler and TicketRepairService.
+          // AIO-1735. Consumed below by both TicketMarkdownReconciler and
+          // TicketRepairService.
           RepositoryProvider<TicketParentTrashService>(
             create: (context) => TicketParentTrashService(
               context.read<TicketRepository>(),
@@ -760,7 +759,7 @@ class _WorkspaceShellState extends State<WorkspaceShell>
           // can read the project's live, per-project status list instead
           // of falling back to the hardcoded `defaultWorkflowStatuses`
           // set. See
-          // aion-arch/changes/v1-release-readiness/design.md §3a.
+          // AIO-2550 §3a.
           return BlocProvider<WorkflowConfigCubit>(
             create: (context) => WorkflowConfigCubit(
               context.read<WorkflowStatusRepository>(),

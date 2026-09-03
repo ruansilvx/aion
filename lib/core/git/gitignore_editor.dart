@@ -6,7 +6,7 @@ import 'dart:io';
 /// don't get committed into an attached, already-git-tracked codebase's
 /// own history. Pure file I/O — no `git` subprocess involved, unlike
 /// [GitRepositoryClient](git_repository_client.dart). Added for
-/// `aion-arch/changes/new-project-onboarding`'s gitignore-confirmation
+/// `AIO-1266`'s gitignore-confirmation
 /// gate.
 class GitignoreEditor {
   /// Appends any of [entries] not already present (line-exact match) to

@@ -5,7 +5,7 @@
 /// `_TicketViewMode` enum to a shared domain type, since the selection is
 /// now read/written from three places (`TicketsCubit`,
 /// `TicketListViewModeRepository`, and the screen itself) instead of one.
-/// See `aion-arch/changes/list-board-view-and-column-visibility/design.md`
+/// See `AIO-1069`
 /// §2.1.
 enum TicketListViewMode {
   /// The flat, chronologically-sortable `ListView` of every ticket.

@@ -17,7 +17,7 @@ import 'package:aion/features/providers/presentation/cubit/anthropic_provider_co
 /// thin pass-through) per `project.md`'s Cubit-vs-repository split:
 /// [saveApiKey]'s trimming/clearing and [testConnection]'s no-op guards
 /// live here, not in [_repository]. See
-/// `aion-arch/changes/anthropic-messages-api-provider/design.md` §6.
+/// `AIO-110` §6.
 class AnthropicProviderConfigCubit extends Cubit<AnthropicProviderConfigState> {
   /// Creates an [AnthropicProviderConfigCubit] backed by [_repository]
   /// (API-key storage) and [_registry] (resolves the

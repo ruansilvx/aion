@@ -46,29 +46,29 @@ import 'package:aion/features/tickets/presentation/widgets/ticket_parent_picker.
 /// expected/actual behavior), description, created-on timestamp, an
 /// always-live "Updated {relative}" timestamp directly below it (ticks
 /// once a minute via `TicketsCubit.detailTick` — see
-/// `aion-arch/changes/show-last-updated-timestamp-on-each-ticket`), and —
+/// `AIO-1985`), and —
 /// for every type except `page`/`chat`/`signal`/`release` — Linked
 /// Tickets/Backlinks (widened from `resource`/`bug`-only for
-/// `aion-arch/changes/board-task-ordering-indication`; `resource` keeps
+/// `AIO-392`; `resource` keeps
 /// a single-tap `relatesTo`-only `TicketLinkPicker`, every other gated
 /// type offers the full `blocks`/`blockedBy`/`relatesTo`/`duplicates`
 /// set). The Complexity and Estimate rows also each carry an
 /// [AiSuggestionBadge] (when their value is still AI-suggested/
 /// low-confidence) or a `_RegenerateButton` (when `manual`-locked) — see
-/// `aion-arch/changes/ai-assisted-complexity-and-estimate-suggestions/design.md`
+/// `AIO-75`
 /// §5.2. Each `LinkedTicketsSection` row also supports removing its link
 /// or changing its type inline — `TicketLinkPicker.onSelected` (create),
 /// the row's remove action (delete), and its `_LinkTypeEditor` (update)
 /// all go through `TicketsCubit.createTicketLink`/`.deleteTicketLink`/
 /// `.updateTicketLinkType` rather than any of them calling
 /// `TicketLinkRepository` directly, per
-/// `aion-arch/changes/ticket-link-management-ui/design.md` §4. Extracted
+/// `AIO-2257` §4. Extracted
 /// from
 /// `TicketDetailScreen`'s single-scroll body — verbatim content, no
 /// behavior change — so it can render both in `TicketDetailScreen`'s
 /// non-chat layout and inside `ChatTranscriptPane`'s collapsing header
 /// for `chat`-type tickets (see
-/// `aion-arch/changes/chat-transcript-ux-redesign/design.md` §8.4).
+/// `AIO-482` §8.4).
 /// Re-derives every rendered field, including `ticket` itself, from its
 /// own `BlocBuilder<TicketsCubit, TicketsState>` — matching this
 /// content's original inline behavior before extraction, where `ticket`
@@ -82,7 +82,7 @@ class TicketMetadataSection extends StatelessWidget {
   /// render for this build — [ticket] has a persisted prediction, and no
   /// coding-execution chat exists yet for it. Implements this change's
   /// display-precedence rule and its queued-state carve-out
-  /// (`aion-arch/changes/token-cost-prediction/design.md` §5): a stale
+  /// (`AIO-2455` §5): a stale
   /// leftover prediction must stay hidden for the entire window between a
   /// run being triggered and its first turn completing, not just while
   /// [executionTokenTotal] happens to still be `null` for other reasons.
@@ -153,7 +153,7 @@ class TicketMetadataSection extends StatelessWidget {
   /// this whole subtree on every relevant `TicketsCubit` emission, so
   /// staleness isn't a concern). `null` means no coding-execution turn
   /// has completed yet — see [_showPredictedTokenRange]. Added for
-  /// `aion-arch/changes/token-cost-prediction`.
+  /// `AIO-2455`.
   final int? executionTokenTotal;
 
   /// Called when the "Ready to retry verification" footer tier's
@@ -163,7 +163,7 @@ class TicketMetadataSection extends StatelessWidget {
   /// any caller that never renders an `epic`/`story` [ticket] here (e.g.
   /// `ChatTranscriptPane`'s embedding, always a `chat` ticket, where the
   /// "Ready to retry verification" tier can never trigger). Added for
-  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  /// `AIO-1905`.
   final VoidCallback? onRetryVerify;
 
   /// [ActiveTicketViewRegistry] is only provided on desktop with a
@@ -386,8 +386,7 @@ class TicketMetadataSection extends StatelessWidget {
                             // — Component Spec §7's placement "after the
                             // type chip + status indicator" — falls to its
                             // own line on narrow width instead of
-                            // overflowing. `aion-arch/changes/workflow-
-                            // skill-attachments` T37.
+                            // overflowing. AIO-2650 T37.
                             Wrap(
                               spacing: AionSpacing.sp8,
                               runSpacing: AionSpacing.sp8,
@@ -996,11 +995,11 @@ class TicketMetadataSection extends StatelessWidget {
             // are also excluded — their one relationship is fixed at
             // creation, shown instead via the read-only "Raised on"
             // indicator below (see `_RaisedOnIndicator`), per
-            // `aion-arch/changes/idea-gap-question-ticket-types/design.md`
+            // `AIO-934`
             // §4.1/§4.3. `resource` keeps its original single-tap
             // `relatesTo`-only flow (see `linkTypeOptions` below);
             // `epic`/`story`/`task`/`bug` gained this section for
-            // `aion-arch/changes/board-task-ordering-indication`,
+            // `AIO-392`,
             // offering the full `blocks`/`blockedBy`/`relatesTo`/
             // `duplicates` set — `bug`'s existing use case (linking an
             // affected `release` via `relatesTo`) still works
@@ -1098,7 +1097,7 @@ class TicketMetadataSection extends StatelessWidget {
 /// [TicketsCubit.getRaisedOnTicket] rather than reusing
 /// [TicketsCubit.loadDocumentRelations] (which excludes these types from
 /// its gated list entirely). Added for
-/// `aion-arch/changes/idea-gap-question-ticket-types`; see that change's
+/// `AIO-934`; see that change's
 /// design.md §4.3/Component Spec §5.
 class _RaisedOnIndicator extends StatefulWidget {
   const _RaisedOnIndicator({required this.ticket});
@@ -1301,7 +1300,7 @@ class _RepairBanner extends StatelessWidget {
 /// under the ticket-meta row while `needsDesignReview` is `true` and the
 /// design Page exists (design.md §5). Reuses `typePage`'s accent color,
 /// the same one `TypeChip`/backlink chips already use for `page`
-/// tickets. Added for `aion-arch/changes/sdd-design-gate`.
+/// tickets. Added for `AIO-1834`.
 class _LinkedDesignPageChip extends StatelessWidget {
   const _LinkedDesignPageChip({required this.page, required this.onTap});
 
@@ -1500,7 +1499,7 @@ class _RollupIndicatorState extends State<_RollupIndicator> {
 /// [onRegenerate] is in flight. No `IconButton`/`InkWell` — built from
 /// `Focus`/`GestureDetector`/`DecoratedBox`, per this app's no-Material
 /// constraint. See
-/// `aion-arch/changes/ai-assisted-complexity-and-estimate-suggestions/design.md`
+/// `AIO-75`
 /// §2 for the full state spec.
 class _RegenerateButton extends StatefulWidget {
   const _RegenerateButton({
@@ -1651,11 +1650,11 @@ class _RegenerateButtonState extends State<_RegenerateButton>
 /// tracker (4 steps — Explore/Propose/Verify/Archive — or 6, with Design
 /// Brief/Design Sync inserted between Propose and Verify when
 /// [needsDesignReview] isn't `false`; see
-/// `aion-arch/changes/sdd-design-gate/design.md` §1), the current-stage
+/// `AIO-1834` §1), the current-stage
 /// line, and one of five mutually-exclusive, priority-ordered footers
-/// (`aion-arch/changes/board-execution-indicators-and-notifications/
+/// (`AIO-352/
 /// design.md`'s Component Spec §0 "Action-slot state resolution"
-/// table, extending `aion-arch/changes/sdd-ticket-execution/design.md`
+/// table, extending `AIO-1856`
 /// §2): [isAdvancingStage] takes priority over everything else and
 /// shows [_StageAdvancingHint] (no Advance button regardless of
 /// [automationConfidence] — a spawn is already running); otherwise
@@ -1694,7 +1693,7 @@ class _SddStageSection extends StatelessWidget {
   /// Whether [ticket] (a `story`) needs a `designBrief`/`designSync`
   /// pass — `null` while still unknown (before child Tasks exist).
   /// `false` collapses [_stages] to the original 4 nodes; `null`/`true`
-  /// show the full 6. Added for `aion-arch/changes/sdd-design-gate`.
+  /// show the full 6. Added for `AIO-1834`.
   final bool? needsDesignReview;
 
   /// Whether [ticket] has an [TicketsCubit.advanceSddStage] spawn
@@ -1702,23 +1701,23 @@ class _SddStageSection extends StatelessWidget {
   /// state (Component Spec §0's "Action-slot state resolution" table):
   /// no Advance button is offered while `true`, regardless of
   /// [automationConfidence]. Added for
-  /// `aion-arch/changes/board-execution-indicators-and-notifications`.
+  /// `AIO-352`.
   final bool isAdvancingStage;
 
   /// Why [ticket]'s most recent stage-advance attempt failed, `null` if
   /// it hasn't. Checked only when [isAdvancingStage] is `false`. Added
-  /// for `aion-arch/changes/board-execution-indicators-and-notifications`.
+  /// for `AIO-352`.
   final String? sddStageFailureReason;
 
   /// Whether [sddStageFailureReason] has a retry action available.
   /// Added for
-  /// `aion-arch/changes/board-execution-indicators-and-notifications`.
+  /// `AIO-352`.
   final bool sddStageCanRetry;
 
   /// Called when [_StageAdvanceFailureBanner]'s retry button is pressed
   /// — re-calls [TicketsCubit.advanceSddStage] for [ticket]. Only
   /// meaningful when [sddStageFailureReason] is non-`null`. Added for
-  /// `aion-arch/changes/board-execution-indicators-and-notifications`.
+  /// `AIO-352`.
   final VoidCallback? onRetryStageAdvance;
 
   /// Whether [ticket] (an `epic`/`story`) is ready for a verify retry —
@@ -1728,7 +1727,7 @@ class _SddStageSection extends StatelessWidget {
   /// §1.0's mutual-exclusivity rule) — while a `VERIFY GATE: PENDING`
   /// verdict is unresolved, advance to `archived` stays blocked, so the
   /// two tiers never both apply. Added for
-  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  /// `AIO-1905`.
   final bool verifyRetryReady;
 
   /// The configured [AutomationContext.verifyGateRetry] confidence,
@@ -1736,7 +1735,7 @@ class _SddStageSection extends StatelessWidget {
   /// of the three "Ready to retry verification" tier treatments renders
   /// (gated banner, manual button, or auto note), mirroring
   /// [automationConfidence]'s own role for the advance tier. Added for
-  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  /// `AIO-1905`.
   final AutomationConfidence? verifyRetryConfidence;
 
   /// How many of [ticket]'s current fix Task/Bug children (spawned by a
@@ -1748,14 +1747,14 @@ class _SddStageSection extends StatelessWidget {
   /// over the generic [blockReason] hint whenever it's a positive count.
   /// Computed by [TicketsCubit.getTicketById] via
   /// `TicketsCubit._verifyRetryReadiness`. Added for
-  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  /// `AIO-1905`.
   final int? verifyPendingFixesRemaining;
 
   /// Called when the "Ready to retry verification" tier's gated-confirm
   /// or manual button is pressed — re-calls `TicketsCubit.retryVerify`
   /// for [ticket]'s current Verifying-stage chat. Only meaningful when
   /// [verifyRetryReady] is `true`. Added for
-  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  /// `AIO-1905`.
   final VoidCallback? onRetryVerify;
 
   static const _fullStages = [
@@ -1887,7 +1886,7 @@ class _SddStageSection extends StatelessWidget {
           // exclusive with them in practice (§1.0), since advance to
           // `archived` stays blocked while a PENDING verdict is
           // unresolved. Added for
-          // `aion-arch/changes/sdd-verify-quality-gate`.
+          // `AIO-1905`.
           const SizedBox(height: AionSpacing.sp12),
           switch (verifyRetryConfidence!) {
             AutomationConfidence.gated => _GatedBanner(
@@ -1938,7 +1937,7 @@ class _SddStageSection extends StatelessWidget {
           // which would otherwise read as if nothing had happened yet.
           // Reuses `_NotReadyHint` verbatim — same visual treatment, per
           // spec, just different copy. Added for
-          // `aion-arch/changes/sdd-verify-quality-gate`.
+          // `AIO-1905`.
           const SizedBox(height: AionSpacing.sp12),
           _NotReadyHint(
             reason: context.l10n.ticketDetailSddStageVerifyRetryUnlocksHint(
@@ -1982,7 +1981,7 @@ class _SddStageSection extends StatelessWidget {
 /// The "Not ready" state, shown when the precondition isn't met yet and
 /// there's still a next stage to advance to — plain body copy, no enum-
 /// driven styling, no badge/chip/icon, per
-/// `aion-arch/changes/sddstage-transition-preconditions/design.md` §6:
+/// `AIO-1936` §6:
 /// [reason] (already `'Waiting on: <field display name>'`, auto-derived
 /// by `TicketsCubit._sddStageAdvanceCheck`) is displayed directly, not
 /// resolved from a fixed enum here.
@@ -2020,7 +2019,7 @@ class _NotReadyHint extends StatelessWidget {
 /// but — unlike a coding-execution run — a stage chat has no tool
 /// access, so there's no [_ExecutionLiveToolLine]-equivalent live-
 /// activity sub-line. Per Component Spec §2
-/// (`aion-arch/changes/board-execution-indicators-and-notifications/design.md`).
+/// (`AIO-352`).
 class _StageAdvancingHint extends StatefulWidget {
   const _StageAdvancingHint({required this.nextStageLabel});
 
@@ -2106,7 +2105,7 @@ class _StageAdvancingHintState extends State<_StageAdvancingHint>
 /// hover-shade fix from `/design-sync` applies here unchanged, since it
 /// lives in the shared [_ExecutionActionButton]) rather than duplicating
 /// that geometry, per Component Spec §3
-/// (`aion-arch/changes/board-execution-indicators-and-notifications/design.md`).
+/// (`AIO-352`).
 class _StageAdvanceFailureBanner extends StatelessWidget {
   const _StageAdvanceFailureBanner({
     required this.reason,
@@ -2144,7 +2143,7 @@ class _StageAdvanceFailureBanner extends StatelessWidget {
 /// only to own the horizontal-scroll fallback's [ScrollController] and
 /// jump-to-current-node-on-first-build behavior — the row itself is
 /// otherwise a pure function of [stages]/[labels]/[currentIndex]. Added
-/// for `aion-arch/changes/sdd-design-gate`, splitting this out of
+/// for `AIO-1834`, splitting this out of
 /// `_SddStageSection` (a [StatelessWidget]) so the scroll state has
 /// somewhere to live.
 class _StageTrackerRow extends StatefulWidget {
@@ -2290,7 +2289,7 @@ enum _StageNodeState { complete, current, future }
 /// One node plus label in [_SddStageSection]'s variable-length (4-or-6-step)
 /// tracker row. [width]/[fontSize] vary with the tracker's current node
 /// count (design.md §1.4's `cellW`/label-size table) — added for
-/// `aion-arch/changes/sdd-design-gate`; both default to the original
+/// `AIO-1834`; both default to the original
 /// 4-node values so this widget's own behavior is unchanged at that count.
 class _StageNode extends StatelessWidget {
   const _StageNode({
@@ -2370,7 +2369,7 @@ class _StageNode extends StatelessWidget {
 
 /// AutomationConfidence.gated "ready to advance" banner plus inline
 /// confirm button. Design-gate-aware since
-/// `aion-arch/changes/sdd-design-gate`: while [currentStage] is
+/// `AIO-1834`: while [currentStage] is
 /// [SddStage.designBrief]/[SddStage.designSync], the leading glyph
 /// switches to a `typePage`-tinted pencil (design.md §3.2) and a
 /// precondition-met sub-line appears under the title (design.md §3.3) —
@@ -2406,23 +2405,23 @@ class _GatedBanner extends StatelessWidget {
   /// verification" footer tier's `arrows-clockwise` motif in place of
   /// the stage-derived sparkle/pencil glyph (Component Spec §1.1.2).
   /// `null` falls back to the existing [currentStage]-derived
-  /// computation. Added for `aion-arch/changes/sdd-verify-quality-gate`.
+  /// computation. Added for `AIO-1905`.
   final PhosphorIconData? icon;
 
   /// Explicit banner title override, falling back to the existing
   /// `"Ready to advance to <stage>"` computed title when `null`. Added
-  /// for `aion-arch/changes/sdd-verify-quality-gate`.
+  /// for `AIO-1905`.
   final String? title;
 
   /// Explicit sub-line override, falling back to [_computedSubLine] when
   /// `null` (which itself may resolve to `null` — no sub-line — for any
   /// [currentStage]/[nextStage] pair it doesn't cover). Added for
-  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  /// `AIO-1905`.
   final String? subLine;
 
   /// Explicit confirm-button label override, falling back to the
   /// existing fixed `"Advance"` label when `null`. Added for
-  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  /// `AIO-1905`.
   final String? actionLabel;
 
   /// The sub-line text from design.md §3.3's table, or `null` for every
@@ -2551,12 +2550,12 @@ class _ManualAdvanceButton extends StatelessWidget {
   /// verification" footer tier's `arrows-clockwise` motif in place of
   /// the default caret (Component Spec §1.2). `null` falls back to
   /// [PhosphorIcons.caretRightLight]. Added for
-  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  /// `AIO-1905`.
   final PhosphorIconData? icon;
 
   /// Explicit button-label override, falling back to the existing
   /// `"Advance to <stage>"` computed label when `null`. Added for
-  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  /// `AIO-1905`.
   final String? actionLabel;
 
   @override
@@ -2606,19 +2605,19 @@ class _ManualAdvanceButton extends StatelessWidget {
 /// run shows neither this nor [_SddStageSection]. Reuses the plain-
 /// `Column`/divider framing [_SddStageSection] already establishes for
 /// this slot rather than wrapping in its own bordered container, per
-/// `aion-arch/changes/task-to-coding-execution-trigger/design.md`'s §0
+/// `AIO-2078`'s §0
 /// container spec (the surrounding divider already supplies the "top
 /// border" it describes). The `verificationFailed` state
 /// ([executionFailureReason] non-`null`) is checked before
 /// [executionAwaitingReview] — the two are mutually exclusive, a Task is
 /// never both awaiting review and showing a failure. Per
-/// `aion-arch/changes/coding-execution-reliability-and-safety/design.md`
+/// `AIO-506`
 /// §0. Also renders a running-total [TokenCountLabel] line below the
 /// state body whenever [executionTokenTotal] is non-`null` — the
 /// in-flight variant ([_InFlightTokenLine]) while [isExecuting], the
 /// settled variant otherwise — without altering this section's own
 /// overall visibility gate above. Added for
-/// `aion-arch/changes/token-cost-prediction`.
+/// `AIO-2455`.
 class _CodingExecutionSection extends StatelessWidget {
   const _CodingExecutionSection({
     required this.isExecuting,
@@ -2642,7 +2641,7 @@ class _CodingExecutionSection extends StatelessWidget {
   /// changed") shown as `_ExecutionActionBanner`'s success-tone
   /// `subLine` — see `TicketDetailLoaded.executionPrSubLine`. `null`
   /// omits the sub-line. Added for
-  /// `aion-arch/changes/pr-metadata-and-notification-center`.
+  /// `AIO-1586`.
   final String? executionPrSubLine;
   final String? executionLiveActivity;
 
@@ -2650,7 +2649,7 @@ class _CodingExecutionSection extends StatelessWidget {
   /// `null` while queued (no turn has completed yet) — the token line is
   /// gated on this being non-`null` (Component Spec §4.2), independent
   /// of the section's own overall visibility gate. Added for
-  /// `aion-arch/changes/token-cost-prediction`.
+  /// `AIO-2455`.
   final int? executionTokenTotal;
   final VoidCallback onMarkReadyForReview;
   final VoidCallback onRetry;
@@ -2658,7 +2657,7 @@ class _CodingExecutionSection extends StatelessWidget {
   /// Called when the running/queued Cancel button (see
   /// [ExecutionCancelControl]) is activated. Only rendered while
   /// [isExecuting] or [executionQueuePosition] is non-`null`. Added for
-  /// `aion-arch/changes/parallel-work`.
+  /// `AIO-1400`.
   final VoidCallback onCancel;
 
   @override
@@ -2758,7 +2757,7 @@ class _CodingExecutionSection extends StatelessWidget {
 /// `_WaitingForReplyIndicator` (`chat_transcript_pane.dart`) pairs a
 /// pulsing dot with its own waiting-for-reply caption. Static (no
 /// animation) under `MediaQuery.disableAnimations`. Added for
-/// `aion-arch/changes/token-cost-prediction`.
+/// `AIO-2455`.
 class _InFlightTokenLine extends StatefulWidget {
   const _InFlightTokenLine({required this.total});
 
@@ -2842,17 +2841,17 @@ class _InFlightTokenLineState extends State<_InFlightTokenLine>
 /// background/border/padding box) but takes an active treatment — a
 /// slowly, continuously rotating gear glyph — so it reads as "work in
 /// progress," not "blocked/waiting." Per
-/// `aion-arch/changes/task-to-coding-execution-trigger/design.md` §1.
+/// `AIO-2078` §1.
 /// Additionally renders a [_ExecutionLiveToolLine] below the gear row
 /// when [liveActivity] is non-`null` — see
-/// `aion-arch/changes/coding-execution-reliability-and-safety/design.md`
+/// `AIO-506`
 /// §2.
 class _ExecutionRunningHint extends StatefulWidget {
   const _ExecutionRunningHint({this.liveActivity});
 
   /// A live "Running `<tool>`..." status string, or `null` if no tool
   /// call has happened yet this run. Added for
-  /// `aion-arch/changes/coding-execution-reliability-and-safety`.
+  /// `AIO-506`.
   final String? liveActivity;
 
   @override
@@ -2927,7 +2926,7 @@ class _ExecutionRunningHintState extends State<_ExecutionRunningHint>
 /// `23`. A slow, low-contrast opacity pulse signals liveness without
 /// competing with the gear's own rotation — static at full opacity under
 /// reduced motion. Per
-/// `aion-arch/changes/coding-execution-reliability-and-safety/design.md`
+/// `AIO-506`
 /// §2.1.
 class _ExecutionLiveToolLine extends StatefulWidget {
   const _ExecutionLiveToolLine({required this.activity});
@@ -3064,7 +3063,7 @@ String ordinal(int n) {
 }
 
 /// The tone an [_ExecutionActionBanner] renders in. Per
-/// `aion-arch/changes/coding-execution-reliability-and-safety/design.md`
+/// `AIO-506`
 /// §5.
 enum _BannerTone {
   /// A finished run with a confirmed PR, awaiting confirmation.
@@ -3086,9 +3085,9 @@ enum _BannerTone {
 /// action button stacked full-width below the text rather than trailing
 /// inline (copy doesn't fit inline beside a two-line title at the
 /// narrowest supported phone width without crushing it to 3 lines). Per
-/// `aion-arch/changes/task-to-coding-execution-trigger/design.md` §3 (the
+/// `AIO-2078` §3 (the
 /// success tone's original spec) and
-/// `aion-arch/changes/coding-execution-reliability-and-safety/design.md`
+/// `AIO-506`
 /// §1 (the tone parameterization + new failure tone).
 class _ExecutionActionBanner extends StatelessWidget {
   const _ExecutionActionBanner({
@@ -3114,7 +3113,7 @@ class _ExecutionActionBanner extends StatelessWidget {
   /// `TicketDetailLoaded.executionPrSubLine`). Distinct from
   /// [errorDetail]'s scrollable well: this is always short (a formatted
   /// count), never raw agentic output. Added for
-  /// `aion-arch/changes/pr-metadata-and-notification-center`; see that
+  /// `AIO-1586`; see that
   /// change's design.md Component Spec §1.
   final String? subLine;
 
@@ -3218,7 +3217,7 @@ class _ExecutionActionBanner extends StatelessWidget {
 /// disclosure so the banner's height stays constant regardless of error
 /// length, and recovery-critical info stays visible with no extra tap.
 /// Per
-/// `aion-arch/changes/coding-execution-reliability-and-safety/design.md`
+/// `AIO-506`
 /// §1.4.
 class _ExecutionErrorWell extends StatelessWidget {
   const _ExecutionErrorWell({required this.text});
@@ -3289,9 +3288,9 @@ class _ExecutionErrorWell extends StatelessWidget {
 /// [AionColors.secondary] plus a leading refresh glyph — a calm recovery
 /// action, not a destructive one, at the same visual weight as the
 /// success confirm button. Per
-/// `aion-arch/changes/task-to-coding-execution-trigger/design.md`
+/// `AIO-2078`
 /// §3.4/§3.5 (the success tone's original spec) and
-/// `aion-arch/changes/coding-execution-reliability-and-safety/design.md`
+/// `AIO-506`
 /// §1.5/§1.6 (the tone parameterization + new failure tone/glyph).
 class _ExecutionActionButton extends StatefulWidget {
   const _ExecutionActionButton({
@@ -3468,10 +3467,10 @@ class _AutoAdvancedNote extends StatelessWidget {
   /// used by the "Ready to retry verification" footer tier's auto-state
   /// note (Component Spec §1.3), which reads "Verification retried
   /// automatically" instead. No new l10n key was provisioned for this
-  /// exact string (see `aion-arch/changes/sdd-verify-quality-gate/
+  /// exact string (see `AIO-1905/
   /// tasks.md` T20's l10n list), so the caller passes a plain literal
   /// rather than a `context.l10n.*` accessor. Added for
-  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  /// `AIO-1905`.
   final String? text;
 
   @override
@@ -3515,11 +3514,11 @@ class _AutoAdvancedNote extends StatelessWidget {
 
 // ---------------------------------------------------------------------
 // Skill attachments (Phase 2) — `_RunAttachedSkillButton`. See
-// `aion-arch/changes/workflow-skill-attachments/design.md`'s Component
+// `AIO-2650`'s Component
 // Spec §7 ("on the meta line of the ticket detail header block, after
 // the type chip + status indicator"). Moved here from
-// `ticket_detail_screen.dart` (`aion-arch/changes/workflow-skill-
-// attachments` T37) to reach that exact placement — the meta line's
+// `ticket_detail_screen.dart` (AIO-2650 T37) to reach that exact
+// placement — the meta line's
 // `Row` (type-chip `SelectionMenu` + status `SelectionMenu`, above)
 // became a `Wrap` so this can fall to its own line on narrow width
 // per spec, rather than overflowing.

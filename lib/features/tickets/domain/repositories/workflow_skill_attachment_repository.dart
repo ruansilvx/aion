@@ -10,7 +10,7 @@ import 'package:aion/features/tickets/domain/entities/skill_attachment.dart';
 /// Implemented by the data layer
 /// ([DriftWorkflowSkillAttachmentRepository]); UI and domain code depend
 /// only on this interface, never on a concrete data source. See
-/// `aion-arch/changes/workflow-skill-attachments/design.md` §1.5.
+/// `AIO-2650` §1.5.
 abstract interface class WorkflowSkillAttachmentRepository {
   /// Returns every persisted [SkillAttachment], unfiltered.
   Future<List<SkillAttachment>> getAll();

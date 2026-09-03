@@ -28,7 +28,7 @@ class PageCreateRouteExtra {
 /// fixed to `page`), no priority/estimate fields. Builds its own
 /// [PagesCubit], backed by the workspace-scoped [PageTicketProvider] read
 /// from context. Per
-/// `aion-arch/changes/page-content-markdown-editor/design.md` §8.
+/// `AIO-1350` §8.
 class PageCreateScreen extends StatefulWidget {
   /// Creates a [PageCreateScreen]. [initialParentId] pre-selects the
   /// parent field — used when opened from a page's "+ Add" sub-page

@@ -21,7 +21,7 @@ import 'package:aion/features/tickets/tickets.dart';
 /// edit in either pane is reflected in the other via the same
 /// [TransitionPreconditionConfigState]. Simpler than `DecisionOutlineList`
 /// — see that file's own dartdoc for the shape this mirrors. Added for
-/// `aion-arch/changes/sddstage-transition-preconditions`.
+/// `AIO-1936`.
 class TransitionOutlineList extends StatefulWidget {
   /// Creates a [TransitionOutlineList] for [stage].
   const TransitionOutlineList({
@@ -35,7 +35,7 @@ class TransitionOutlineList extends StatefulWidget {
 
   /// Forwarded to every [TransitionNodeForm] this pane mounts inline —
   /// see [TransitionNodeForm.onDirtyChanged]. Added for
-  /// `aion-arch/changes/sddstage-transition-preconditions`'s post-
+  /// `AIO-1936`'s post-
   /// `/verify` follow-up.
   final ValueChanged<bool>? onDirtyChanged;
 

@@ -6,7 +6,7 @@ import 'package:equatable/equatable.dart';
 /// [SkillAttachment](skill_attachment.dart) of kind
 /// [SkillAttachmentKind.aionNativeTemplate](../enums/skill_attachment_kind.dart)
 /// renders and runs. See
-/// `aion-arch/changes/workflow-skill-attachments/design.md` §1.3.
+/// `AIO-2650` §1.3.
 ///
 /// [name] is unique project-wide — a flat namespace, unlike
 /// `WorkflowStatus.name`'s per-scope uniqueness, since one template may be

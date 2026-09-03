@@ -33,7 +33,7 @@ int _dayDifference(DateTime from, DateTime to) {
 /// [formatTrashedAge]'s trash-specific `"Trashed ..."` phrasing. [now]
 /// defaults to [DateTime.now] and only exists as a parameter for
 /// deterministic tests. Added for
-/// `aion-arch/changes/new-project-onboarding-inbox`.
+/// `AIO-1300`.
 String formatRelativeTime(DateTime dateTime, {DateTime? now}) {
   final current = now ?? DateTime.now();
   final elapsed = current.difference(dateTime);

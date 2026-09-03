@@ -10,7 +10,7 @@ import 'package:aion/features/tickets/domain/entities/workflow_prompt_template.d
 /// Cubit-vs-repository split. Implemented by the data layer
 /// ([DriftWorkflowPromptTemplateRepository]); UI and domain code depend
 /// only on this interface, never on a concrete data source. See
-/// `aion-arch/changes/workflow-skill-attachments/design.md` §1.6.
+/// `AIO-2650` §1.6.
 abstract interface class WorkflowPromptTemplateRepository {
   /// Returns every persisted [WorkflowPromptTemplate], unfiltered.
   Future<List<WorkflowPromptTemplate>> getAll();

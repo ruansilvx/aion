@@ -9,7 +9,7 @@ import 'package:aion/features/tickets/domain/entities/default_workflow_statuses.
 part 'workflow_status_dao.g.dart';
 
 /// Drift accessor for [WorkflowStatusesTable]. See
-/// `aion-arch/changes/configurable-ticket-workflow/design.md` §2.3.
+/// `AIO-549` §2.3.
 @DriftAccessor(tables: [WorkflowStatusesTable])
 class WorkflowStatusDao extends DatabaseAccessor<AppDatabase>
     with _$WorkflowStatusDaoMixin {

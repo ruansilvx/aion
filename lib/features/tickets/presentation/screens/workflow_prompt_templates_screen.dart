@@ -18,7 +18,7 @@ import 'package:aion/features/tickets/presentation/cubit/workflow_config_state.d
 /// its template picker's "+ New template" row (both in
 /// `workflow_status_settings_screen.dart`), and from
 /// [WorkflowStatusSettingsScreen]'s own header. See
-/// `aion-arch/changes/workflow-skill-attachments/design.md`'s Component
+/// `AIO-2650`'s Component
 /// Spec §5.
 ///
 /// One deliberate simplification from the pasted Component Spec, noted

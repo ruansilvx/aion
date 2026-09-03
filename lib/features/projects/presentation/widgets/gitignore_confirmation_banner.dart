@@ -14,7 +14,7 @@ import 'package:aion/design_system/design_system.dart';
 /// `.gitignore` via a checkbox, checked by default. Informational
 /// **notice** tone throughout — this is Aion's inform-don't-block
 /// posture, never a hard warning that blocks submission. Per
-/// `aion-arch/changes/new-project-onboarding/design.md` §2.
+/// `AIO-1266` §2.
 class GitignoreConfirmationBanner extends StatelessWidget {
   /// Creates a [GitignoreConfirmationBanner] reflecting [excludeAionPaths];
   /// calls [onChanged] with the toggled value when the checkbox (or its

@@ -47,7 +47,7 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
   /// `.unique()` column, so at most one row can ever match) equals
   /// [ticketId], or `null` if none exists. Distinct from [getTicketById],
   /// which looks up the primary-key `id` instead. Added for
-  /// `aion-arch/changes/ticket-crud-tool-calls`.
+  /// `AIO-2108`.
   Future<TicketData?> getTicketByTicketId(String ticketId) {
     return (select(
       ticketsTable,
@@ -130,7 +130,7 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
   /// tool call lands) — a read-modify-write through [updateFields] would
   /// silently clobber whichever side lost the race. No-ops if [id] does
   /// not exist (the `WHERE` clause simply matches zero rows). Added for
-  /// `aion-arch/changes/ticket-crud-tool-calls`.
+  /// `AIO-2108`.
   Future<void> addTimeSpent(String id, int minutesDelta, int updatedAtMs) {
     return customUpdate(
       'UPDATE tickets SET time_spent = COALESCE(time_spent, 0) + ?, '

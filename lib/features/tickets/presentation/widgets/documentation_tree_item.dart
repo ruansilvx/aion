@@ -67,7 +67,7 @@ class DocumentationTreeItem extends StatefulWidget {
 class _DocumentationTreeItemState extends State<DocumentationTreeItem> {
   /// Deepest nesting level [DocumentationTreeItem] still visually indents
   /// past. Rows nested beyond this render flush with rows at this depth —
-  /// see `aion-arch/changes/page-nesting-depth-limit/`.
+  /// see `AIO-1393/`.
   static const int _maxIndentDepth = 6;
 
   bool _isHovered = false;

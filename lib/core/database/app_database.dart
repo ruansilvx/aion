@@ -39,7 +39,7 @@ part 'app_database.g.dart';
 
 /// Opens the platform-appropriate [QueryExecutor], addressed to [project]'s
 /// own isolated storage rather than one fixed global location — see
-/// `aion-arch/changes/multi-project-hub/design.md` §7.
+/// `AIO-1174` §7.
 ///
 /// drift_flutter's `driftDatabase` picks the right implementation per
 /// platform via conditional imports: `NativeDatabase` (dart:io) on
@@ -87,7 +87,7 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
 
 /// Aion's per-project local SQLite database. One instance exists per
 /// currently active [Project] — see
-/// `aion-arch/changes/multi-project-hub/design.md` §6, §7 — never one
+/// `AIO-1174` §6, §7 — never one
 /// fixed global instance; the project registry itself lives in the
 /// separate, non-project-scoped [RegistryDatabase]. Schema version 3,
 /// seeding [TicketIdSequenceTable] with a single `(id: 1, seq: 0)` row on
@@ -103,51 +103,51 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
 /// `TicketCommentsTable.inputTokens`/`outputTokens` — see
 /// `TicketsCubit._executionChatOverCap`. Version 8 adds
 /// `TicketsTable.suggestedType`/`inboxPurpose` — see
-/// `aion-arch/changes/new-project-onboarding-inbox/design.md` §1.4.
+/// `AIO-1300` §1.4.
 /// Version 9 adds `TicketsTable.estimateRollup`/`timeSpentRollup` and
 /// backfills them once for every existing row (see [_backfillRollups]) —
-/// see `aion-arch/changes/estimate-timespent-rollup-for-ticket-hierarchy/design.md`
+/// see `AIO-873`
 /// §1.4. Version 10 adds `TicketsTable.complexitySource`/`estimateSource`
 /// and backfills both to `'manual'` for every pre-existing row whose
 /// `complexity`/`estimate` is already set — see
-/// `aion-arch/changes/ai-assisted-complexity-and-estimate-suggestions/design.md`
+/// `AIO-75`
 /// §3.4. Version 11 adds no columns — `TicketType.signal` was split into
 /// `idea`/`knownGap`/`openQuestion`, so every pre-existing `type =
 /// 'signal'` row is blanket-reclassified to `'idea'` (the type that
 /// keeps `signal`'s exact prior behavior; not a heuristic guess at
 /// gap-vs-question-vs-idea) so the app never crashes deserializing
 /// pre-existing data — see
-/// `aion-arch/changes/idea-gap-question-ticket-types/design.md` §2.1.
+/// `AIO-934` §2.1.
 /// Version 12 adds [PageWikilinksTable] and backfills it once from every
 /// existing `page` ticket's `description` (see [_backfillWikilinks]) —
 /// see
-/// `aion-arch/changes/inline-wikilink-backlinks/design.md`. Version 13
+/// `AIO-963`. Version 13
 /// adds [ExecutionQueueTable], with no backfill — a pre-13 database has
 /// no persisted queue state to migrate; `TicketsCubit.restoreExecutionQueue`
 /// simply finds nothing to resume on its first post-upgrade launch. See
-/// `aion-arch/changes/parallel-work/design.md` §7. Version 14 adds
+/// `AIO-1400` §7. Version 14 adds
 /// `TicketsTable.predictedExecutionTokensLow`/`predictedExecutionTokensHigh`,
 /// with no backfill — a pre-14 database has no recorded predictions to
 /// migrate; `TicketTokenPredictor` simply produces its first estimate for
 /// each not-yet-executed `task`/`bug` ticket the next time it's created or
-/// updated. See `aion-arch/changes/token-cost-prediction/design.md` §1.2.
+/// updated. See `AIO-2455` §1.2.
 /// Version 15 adds [WorkflowStatusesTable], seeded with
 /// `defaultWorkflowStatuses` for both a fresh install and a backfill of
 /// every pre-existing project (via [WorkflowStatusDao.seedDefaultsIfEmpty]),
 /// reproducing the exact hardcoded status set/roles a pre-15 database
 /// already behaved with. No `tickets.status` column change — it was
 /// already a raw `TextColumn`. See
-/// `aion-arch/changes/configurable-ticket-workflow/design.md` §2.2.
+/// `AIO-549` §2.2.
 /// Version 16 adds [WorkflowSkillAttachmentsTable] and
 /// [WorkflowPromptTemplatesTable], with no seed/backfill — an empty
 /// attachment/template table is the correct starting state for both a
 /// fresh install and a pre-existing project, since nothing fires
 /// automatically today outside the already-unconditional SDD-stage flow.
-/// See `aion-arch/changes/workflow-skill-attachments/design.md` §2.3.
+/// See `AIO-2650` §2.3.
 /// Version 17 adds [NotificationsTable], with no backfill — a pre-17
 /// database has no notification history to migrate; the center simply
 /// starts empty on first launch after upgrade. See
-/// `aion-arch/changes/pr-metadata-and-notification-center/design.md` §3.
+/// `AIO-1586` §3.
 /// Version 18 adds [AutomationDecisionGraphsTable]/
 /// [AutomationDecisionNodesTable], seeded with a baseline
 /// `DecisionGraph`/`DecisionNode` row per `AutomationContext` (via
@@ -156,7 +156,7 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
 /// hardcoded `_effectiveCodingExecutionRetryConfidence`/
 /// `_effectiveCodingExecutionConfidence` ad hoc checks a pre-18 database
 /// already behaved with. See
-/// `aion-arch/changes/automation-decision-graphs/design.md` §2. Version 19
+/// `AIO-181` §2. Version 19
 /// adds [TransitionPreconditionGraphsTable]/
 /// [TransitionPreconditionNodesTable], seeded with a baseline transition-
 /// precondition graph for each of the 5 `SddStage` values that has a real
@@ -165,7 +165,7 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
 /// install and a backfill of every pre-existing project — reproducing the
 /// exact hardcoded `TicketsCubit._sddStageAdvanceCheck` branches a pre-19
 /// database already behaved with. See
-/// `aion-arch/changes/sddstage-transition-preconditions/design.md` §2/§3.
+/// `AIO-1936` §2/§3.
 @DriftDatabase(
   tables: [
     TicketsTable,
@@ -326,7 +326,7 @@ class AppDatabase extends _$AppDatabase {
         // precondition graph to the new two-node `verifyGateApproved`
         // shape `seedDefaultsIfEmpty` now seeds directly for a fresh
         // install — see
-        // `aion-arch/changes/sdd-verify-quality-gate/design.md` §3.2.
+        // `AIO-1905` §3.2.
         await transitionPreconditionDao.upgradeVerifyingGraphIfDefault();
       }
     },

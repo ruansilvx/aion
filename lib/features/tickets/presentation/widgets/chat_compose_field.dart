@@ -18,7 +18,7 @@ import 'package:aion/design_system/design_system.dart';
 /// shape, neither of which fits a compose bar that should start at one
 /// line — this wraps `TextField` directly instead, the same sanctioned
 /// exception to the no-Material-widgets rule [AppTextField] relies on.
-/// Per `aion-arch/changes/chat-transcript-ux-redesign/design.md` §3.
+/// Per `AIO-482` §3.
 class ChatComposeField extends StatefulWidget {
   /// Creates a [ChatComposeField] backed by [controller], calling
   /// [onSend] when the user sends the current text.

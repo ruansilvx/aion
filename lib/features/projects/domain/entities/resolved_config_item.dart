@@ -15,7 +15,7 @@ enum ConfigSource {
 /// merging a [BaselineManifest](baseline_manifest.dart) with whatever
 /// [ProjectOverride](project_override.dart)s exist for a project,
 /// override-wins by matching key. See
-/// `aion-arch/changes/multi-project-hub/design.md` §2 — no
+/// `AIO-1174` §2 — no
 /// override-authoring UI consumes this yet in this change; it exists so
 /// future "effective config" surfaces (e.g. which skills are available)
 /// have a settled shape to build on.

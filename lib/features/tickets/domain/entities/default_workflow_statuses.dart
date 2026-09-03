@@ -11,7 +11,7 @@ import 'package:aion/features/tickets/domain/enums/workflow_status_role.dart';
 /// did before this change. Fixed ids (rather than freshly-generated UUIDs)
 /// so every fresh install and every upgraded pre-existing database seeds
 /// byte-identical rows. See
-/// `aion-arch/changes/configurable-ticket-workflow/design.md` §1.3.
+/// `AIO-549` §1.3.
 const List<WorkflowStatus> defaultWorkflowStatuses = [
   WorkflowStatus(
     id: '9c3f9b0a-8e0e-4a7c-9d1e-000000000001',

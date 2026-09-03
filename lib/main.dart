@@ -27,7 +27,7 @@ import 'package:aion/features/providers/providers.dart';
 /// App entry point. No [AppDatabase] is opened here — it no longer has
 /// one fixed global location; each project opens its own instance once
 /// active (see `WorkspaceShell` in `core/routing/app_router.dart`, and
-/// `aion-arch/changes/multi-project-hub/design.md` §6, §7). Only the
+/// `AIO-1174` §6, §7). Only the
 /// non-project-scoped [RegistryDatabase] (owned by [AionApp]) exists at
 /// launch.
 void main() {
@@ -104,20 +104,20 @@ class _AionAppState extends State<AionApp> with WidgetsBindingObserver {
           create: (_) => BundledEmbeddingProvider(),
         ),
         // Provider identity/model selection is a global (not per-project)
-        // setting — see aion-arch/changes/provider-configuration/design.md
+        // setting — see AIO-1699
         // §5. Desktop-only (ClaudeAgentSdkClient spawns a Node subprocess);
         // still safe to construct on any platform, since construction
         // itself does no I/O. ProviderRegistry is where a second provider
         // gets registered — see
-        // aion-arch/changes/pluggable-provider-abstraction/design.md §1, §8
-        // and aion-arch/changes/anthropic-messages-api-provider/design.md §10.
+        // AIO-1544 §1, §8
+        // and AIO-110 §10.
         RepositoryProvider<AgentBridgeLocator>(
           create: (_) => AgentBridgeLocator(),
         ),
         // The Anthropic Messages API provider's own dependencies — a
         // plain shared `Dio` instance, and the secure-storage-backed API
         // key repository. See
-        // aion-arch/changes/anthropic-messages-api-provider/design.md §10.
+        // AIO-110 §10.
         RepositoryProvider<Dio>(create: (_) => Dio()),
         RepositoryProvider<AnthropicApiKeyRepository>(
           create: (_) => SecureStorageAnthropicApiKeyRepository(
@@ -141,18 +141,18 @@ class _AionAppState extends State<AionApp> with WidgetsBindingObserver {
         ),
         // The coding-execution context-window handoff cap override — also
         // global, mirroring ModelRoutingRepository's own scope. Added for
-        // aion-arch/changes/dont-spawn-new-chat-ticket-per-execution-trigger.
+        // AIO-833.
         RepositoryProvider<ExecutionContextCapRepository>(
           create: (_) => SharedPrefsExecutionContextCapRepository(),
         ),
         // The coding-execution scheduling mode/concurrency-ceiling
         // choice — also global, mirroring ExecutionContextCapRepository's
-        // own scope. Added for `aion-arch/changes/parallel-work`.
+        // own scope. Added for `AIO-1400`.
         RepositoryProvider<ExecutionSchedulingRepository>(
           create: (_) => SharedPrefsExecutionSchedulingRepository(),
         ),
         // Global (not per-project) SDD-stage-triggering confidence
-        // setting — see aion-arch/changes/sdd-ticket-execution/design.md.
+        // setting — see AIO-1856.
         RepositoryProvider<AutomationSettingsRepository>(
           create: (_) => SharedPrefsAutomationSettingsRepository(),
         ),
@@ -173,7 +173,7 @@ class _AionAppState extends State<AionApp> with WidgetsBindingObserver {
           // Pattern 1 without importing features/projects/ directly —
           // BlocProvider<ActiveProjectCubit> alone only registers under
           // the concrete ActiveProjectCubit type. Added for
-          // aion-arch/changes/new-project-onboarding.
+          // AIO-1266.
           create: (context) => context.read<ActiveProjectCubit>(),
           child: ThemeScope(
             theme: _theme,

@@ -11,7 +11,7 @@ import 'package:aion/features/providers/presentation/cubit/execution_scheduling_
 /// ceiling and persists changes to either. Kept separate from
 /// `ExecutionContextCapCubit`/`AutomationSettingsCubit` — one cubit per
 /// concern, per `project.md`'s Cubit-vs-repository split. Added for
-/// `aion-arch/changes/parallel-work`; see that change's design.md §6.
+/// `AIO-1400`; see that change's design.md §6.
 class ExecutionSchedulingCubit extends Cubit<ExecutionSchedulingState> {
   /// Creates an [ExecutionSchedulingCubit] backed by [_repository].
   ExecutionSchedulingCubit(this._repository)

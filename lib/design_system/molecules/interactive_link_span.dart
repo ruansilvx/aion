@@ -6,7 +6,7 @@ import 'package:flutter/widgets.dart';
 /// hover/focused/pressed interaction states a plain [TextSpan] +
 /// `TapGestureRecognizer` can't express on its own (a [TextSpan] carries
 /// a tap recognizer but has no hover/focus concept at all). Implements
-/// `aion-arch/changes/spec-ticket-type/design.md` §2.4.1's Epic-link
+/// `AIO-1998` §2.4.1's Epic-link
 /// state table — mirrors `OverlayMenuItem`'s `MouseRegion` →
 /// `FocusableActionDetector` → `GestureDetector` nesting and its
 /// `onShowFocusHighlight`-based real keyboard-vs-pointer focus split
@@ -16,7 +16,7 @@ import 'package:flutter/widgets.dart';
 /// resolved-wikilink span — both previously used their own inert,
 /// static-underline `TextSpan`, each citing the other as "precedent" for
 /// skipping interactivity; this widget is the real one. Added for
-/// `aion-arch/changes/spec-ticket-type`'s `/verify` fix-up.
+/// `AIO-1998`'s `/verify` fix-up.
 ///
 /// One deliberate deviation from design.md §2.4.1's literal table: the
 /// underline renders in every state, including `Default`/`Focused`

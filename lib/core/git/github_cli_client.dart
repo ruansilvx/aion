@@ -10,7 +10,7 @@ import 'dart:io';
 /// real, non-idempotent side effect — creating a live pull request
 /// against a real GitHub remote — so it can't be exercised the same way;
 /// tests inject a fake [ProcessRunner] instead. Added for
-/// `aion-arch/changes/pr-metadata-and-notification-center`.
+/// `AIO-1586`.
 typedef ProcessRunner =
     Future<ProcessResult> Function(
       String executable,
@@ -24,7 +24,7 @@ typedef ProcessRunner =
 /// implementation, no `core/contracts/` interface, since it has no
 /// feature-specific logic to invert. Desktop-only, same scope as
 /// [GitRepositoryClient]. Added for
-/// `aion-arch/changes/coding-execution-reliability-and-safety` so a
+/// `AIO-506` so a
 /// coding-execution run's PR is opened by Aion itself, only after its
 /// verification gate passes — never by the model's own tool calls.
 class GitHubCliClient {
@@ -32,7 +32,7 @@ class GitHubCliClient {
   /// [Process.run] — pass a fake in tests (see [ProcessRunner]'s
   /// dartdoc for why this class needs that seam at all, unlike
   /// [GitRepositoryClient]). Added for
-  /// `aion-arch/changes/pr-metadata-and-notification-center`.
+  /// `AIO-1586`.
   GitHubCliClient({ProcessRunner? processRunner})
     : _processRunner =
           processRunner ??
@@ -59,7 +59,7 @@ class GitHubCliClient {
   /// number is intentionally unguarded — if `gh`'s URL format ever changes
   /// shape, this should fail loudly (caught by that same surrounding
   /// `catch`) rather than silently produce a wrong number. Added for
-  /// `aion-arch/changes/pr-metadata-and-notification-center`.
+  /// `AIO-1586`.
   Future<({String url, int number})> openPullRequest({
     required String rootPath,
     required String branch,

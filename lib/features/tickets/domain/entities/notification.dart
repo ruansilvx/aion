@@ -6,7 +6,7 @@ import 'package:equatable/equatable.dart';
 /// states `TicketsCubit._runCodingExecution`/`_runStageChatTurn` already
 /// post system comments for — a notification is written alongside each
 /// comment, not derived from it later. See
-/// `aion-arch/changes/pr-metadata-and-notification-center/design.md` §2.1.
+/// `AIO-1586` §2.1.
 enum NotificationKind {
   /// A coding-execution run finished with a confirmed, opened PR.
   executionPrOpened,
@@ -29,11 +29,11 @@ enum NotificationKind {
 /// outcome, surfaced via the notification-center dropdown
 /// (`WorkspaceNavShell`'s `_NotificationBellTrigger`) so a human who
 /// wasn't looking at the right ticket at the right moment can still
-/// catch up. See `aion-arch/changes/pr-metadata-and-notification-center/design.md`
+/// catch up. See `AIO-1586`
 /// §2-§3.
 ///
 /// Named `Notification`, not e.g. `AionNotification` — matches
-/// `aion-arch/changes/pr-metadata-and-notification-center/design.md`
+/// `AIO-1586`
 /// §2.1's exact naming. This collides with `package:flutter/widgets.dart`'s
 /// own `Notification` class, so any file importing both must `hide
 /// Notification` on the Flutter import (see `notification_dropdown.dart`,

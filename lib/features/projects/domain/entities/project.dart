@@ -6,7 +6,7 @@ import 'package:equatable/equatable.dart';
 /// switches between. Each project has its own drift database and
 /// (desktop only) its own git repository, addressed by [storageKey]/
 /// [rootPath] rather than one global path. See
-/// `aion-arch/changes/multi-project-hub/design.md` §2 for the full
+/// `AIO-1174` §2 for the full
 /// per-project storage model this entity backs.
 class Project extends Equatable {
   /// Internal UUID v4 primary key.

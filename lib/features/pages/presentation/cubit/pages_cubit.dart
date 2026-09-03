@@ -12,13 +12,13 @@ import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 /// `TicketsCubit`'s detail/create flows, but scoped to `page`/`spec`
 /// tickets only and built entirely on [PageTicketProvider] — never on
 /// `TicketsCubit` or `TicketRepository` directly. Per
-/// `aion-arch/changes/page-content-markdown-editor/design.md`. This
+/// `AIO-1350`. This
 /// cubit itself has no `ticket.type` branch of its own — every method
 /// here just forwards to [PageTicketProvider], whose concrete
 /// implementation (`PageTicketProviderImpl`) is where "is this ticket
 /// mine to render" is actually decided (see [PageTicketProvider.getPage]).
 /// Widened to also serve [TicketType.spec] for
-/// `aion-arch/changes/spec-ticket-type` — a spec ticket is an ordinary
+/// `AIO-1998` — a spec ticket is an ordinary
 /// editable document once created, with the same content-editing shape
 /// a `page` already has.
 class PagesCubit extends Cubit<PagesState> {
@@ -141,7 +141,7 @@ class PagesCubit extends Cubit<PagesState> {
   /// as `getValidParentCandidates`/`getAllTickets`-shaped reads elsewhere
   /// in this codebase. Delegates straight to
   /// [PageTicketProvider.getWikilinkCandidates] — no business logic here.
-  /// Added for `aion-arch/changes/inline-wikilink-backlinks`.
+  /// Added for `AIO-963`.
   Future<List<Ticket>> loadWikilinkCandidates() =>
       _provider.getWikilinkCandidates();
 
@@ -155,7 +155,7 @@ class PagesCubit extends Cubit<PagesState> {
   /// still reloaded either way, since a rejected creation may still have
   /// changed nothing worth diverging the reload for. Otherwise same
   /// emit/no-op shape as [deleteLink]/[updateLinkType]. Added for
-  /// `aion-arch/changes/idea-gap-question-ticket-types`.
+  /// `AIO-934`.
   Future<bool> createGapOrQuestion(
     String pageId,
     TicketType type, {

@@ -26,13 +26,13 @@ import 'package:aion/core/contracts/provider_id.dart';
 /// the initial request line) so a `"tool_call_request"` line from the
 /// bridge can be answered with a matching reply line — see
 /// [_handleToolCallRequest] and
-/// `aion-arch/changes/mid-task-chat-branching/design.md` §3.
+/// `AIO-1118` §3.
 ///
 /// Supports cancellation (see [cancel]): every [AgentRequest] carrying a
 /// non-null [AgentRequest.runId] has its spawned [Process] tracked in
 /// [_activeRuns] for the run's duration, escalating from `SIGTERM` to
 /// `SIGKILL` if the process hasn't exited shortly after the first signal.
-/// Added for `aion-arch/changes/parallel-work`; see that change's
+/// Added for `AIO-1400`; see that change's
 /// design.md §2.
 ///
 /// When [AgentRequest.resumeSessionId] is set, the outgoing request JSON
@@ -43,7 +43,7 @@ import 'package:aion/core/contracts/provider_id.dart';
 /// stream first carries one — captured per-[run] call so
 /// [_handleToolCallRequest] can hand a resumable [AgentSessionHandle] to
 /// [AgentRequest.onToolCall]. See
-/// `aion-arch/changes/decision-graph-agentjudgment-condition/design.md` §3.
+/// `AIO-613` §3.
 class ClaudeAgentSdkClient implements AgentModelClient {
   /// Creates a [ClaudeAgentSdkClient] that resolves the bridge script's
   /// path via [bridgeLocator].
@@ -224,7 +224,7 @@ class ClaudeAgentSdkClient implements AgentModelClient {
   /// writes the matching `{"toolCallId":...,"result":...}` reply line to
   /// [process]'s stdin so the bridge — and the model's in-progress turn —
   /// can continue. See
-  /// `aion-arch/changes/mid-task-chat-branching/design.md` §3.
+  /// `AIO-1118` §3.
   ///
   /// [sessionId] is [run]'s locally-captured session id at the moment this
   /// call fires — `null` if no `"session"` line has arrived yet (defensive;
@@ -233,7 +233,7 @@ class ClaudeAgentSdkClient implements AgentModelClient {
   /// firing before it is parsed is not a crash, just a missed opportunity
   /// for that one call). Wrapped into an [AgentSessionHandle] and passed as
   /// [AgentRequest.onToolCall]'s 4th argument. See
-  /// `aion-arch/changes/decision-graph-agentjudgment-condition/design.md`
+  /// `AIO-613`
   /// §3.
   Future<void> _handleToolCallRequest(
     Map<String, dynamic> json,

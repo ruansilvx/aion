@@ -10,7 +10,7 @@ import 'package:aion/features/tickets/domain/repositories/sdd_stage_config_repos
 /// `SharedPrefsAutomationSettingsRepository`'s exact key-naming/
 /// serialization pattern: one key for the `designStagesEnabled` bool, and
 /// one key per [SddStage] value for its display-name override. See
-/// `aion-arch/changes/configurable-ticket-workflow/design.md` §2.5.
+/// `AIO-549` §2.5.
 class SharedPrefsSddStageConfigRepository implements SddStageConfigRepository {
   /// Key for the design-stages-required bool.
   static const _designStagesEnabledKey =

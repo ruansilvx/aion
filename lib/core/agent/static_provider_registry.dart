@@ -8,7 +8,7 @@ import 'package:aion/core/contracts/provider_registry.dart';
 /// `List<AgentProvider>` supplied at construction — no dynamic
 /// registration, no I/O. Constructed once in `main.dart` with every
 /// provider Aion ships. See
-/// `aion-arch/changes/pluggable-provider-abstraction/design.md` §1.
+/// `AIO-1544` §1.
 class StaticProviderRegistry implements ProviderRegistry {
   /// Creates a [StaticProviderRegistry] backed by [availableProviders].
   const StaticProviderRegistry(this.availableProviders);

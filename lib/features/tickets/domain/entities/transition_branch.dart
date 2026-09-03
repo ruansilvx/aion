@@ -9,9 +9,9 @@ import 'package:aion/features/tickets/domain/enums/transition_outcome.dart';
 /// walk in a terminal [TransitionOutcome] ([TransitionBranch.terminal]).
 /// Structurally identical in shape to `core/automation/decision_node.dart`'s
 /// `DecisionBranch` but a separate type — see
-/// `aion-arch/changes/sddstage-transition-preconditions/proposal.md`'s "Why
+/// `AIO-1936`'s "Why
 /// parallel types, not shared ones." Added for
-/// `aion-arch/changes/sddstage-transition-preconditions`.
+/// `AIO-1936`.
 @immutable
 sealed class TransitionBranch {
   const TransitionBranch();

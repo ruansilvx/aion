@@ -76,7 +76,7 @@ class CreateProjectSuccess extends CreateProjectState {
   /// gitignore-decline warning toast and the downstream
   /// codebase-analysis offer without re-deriving the check
   /// [CreateProjectCubit.submit] already ran. Added for
-  /// `aion-arch/changes/new-project-onboarding`.
+  /// `AIO-1266`.
   final bool wasExistingGitRepo;
 
   @override

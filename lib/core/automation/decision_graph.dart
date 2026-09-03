@@ -8,7 +8,7 @@ import 'package:aion/core/automation/automation_context.dart';
 /// strict binary tree of [DecisionNode]s (`decision_node.dart`), only
 /// ever consulted once that context's persisted `AutomationConfidence`
 /// has already resolved to `AutomationConfidence.auto`. Added for
-/// `aion-arch/changes/automation-decision-graphs`.
+/// `AIO-181`.
 @immutable
 class DecisionGraph {
   /// Creates a [DecisionGraph].

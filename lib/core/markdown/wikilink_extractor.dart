@@ -27,7 +27,7 @@ class WikilinkMatch {
 /// [WikilinkMatch.target] against live tickets) is deliberately not this
 /// class's job — it has no database access — see `TicketsCubit`/
 /// `PageWikilinkIndexer`/`PageTicketProviderImpl` for that. Per
-/// `aion-arch/changes/inline-wikilink-backlinks/design.md`'s "Resolution
+/// `AIO-963`'s "Resolution
 /// model".
 abstract final class WikilinkExtractor {
   /// Matches `[[Target]]` or `[[Target|Alias]]`. Neither `Target` nor

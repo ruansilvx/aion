@@ -12,7 +12,7 @@ import 'package:aion/core/automation/decision_node.dart';
 /// Cubits, not repositories). Implemented by the data layer
 /// (`DriftDecisionGraphRepository`); UI and domain code depend only on
 /// this interface, never on a concrete data source. Added for
-/// `aion-arch/changes/automation-decision-graphs`.
+/// `AIO-181`.
 abstract interface class DecisionGraphRepository {
   /// Returns [context]'s currently-configured [DecisionGraph], defaulting
   /// to `DecisionGraph(context: context, rootNodeId: null)` — always

@@ -9,7 +9,7 @@ import 'package:aion/core/automation/automation_context.dart';
 /// more kinds are added here as new conditions are added to
 /// [decisionConditionsFor]'s catalog — a catalog entry plus a matching
 /// `decision_graph_evaluator.dart` case, no schema change. Added for
-/// `aion-arch/changes/automation-decision-graphs`.
+/// `AIO-181`.
 enum DecisionConditionParameterType {
   /// A whole-number field, rendered as a digits-only numeric input.
   integer,
@@ -17,7 +17,7 @@ enum DecisionConditionParameterType {
 
 /// One parameter a [DecisionConditionSpec] accepts, driving
 /// `DecisionNodeForm`'s typed parameter field. Added for
-/// `aion-arch/changes/automation-decision-graphs`.
+/// `AIO-181`.
 @immutable
 class DecisionConditionParameterSpec {
   /// Creates a [DecisionConditionParameterSpec].
@@ -42,7 +42,7 @@ class DecisionConditionParameterSpec {
 /// picker: its identity ([id], referenced by `DecisionNode.conditionId`),
 /// its display copy, which [AutomationContext] values it's valid for, and
 /// what parameters it takes (empty for a flag-only condition). Added for
-/// `aion-arch/changes/automation-decision-graphs`.
+/// `AIO-181`.
 @immutable
 class DecisionConditionSpec {
   /// Creates a [DecisionConditionSpec].
@@ -124,7 +124,7 @@ List<DecisionConditionSpec> decisionConditionsFor(AutomationContext context) {
 /// for [spec] starts with, whether authored as a graph's root or chained
 /// onto an existing node's branch via `DecisionNodeForm`'s "continue to
 /// condition" mode. Added for
-/// `aion-arch/changes/automation-decision-graphs` (`/verify` fix pass).
+/// `AIO-181` (`/verify` fix pass).
 Map<String, dynamic> defaultConditionParams(DecisionConditionSpec spec) => {
   for (final param in spec.parameterSpecs) param.name: param.defaultValue,
 };
@@ -134,7 +134,7 @@ Map<String, dynamic> defaultConditionParams(DecisionConditionSpec spec) => {
 /// lookup so `DecisionNodeForm`/`DecisionOutlineList`/
 /// `DecisionGraphEditorScreen` don't each repeat their own
 /// `decisionConditionCatalog.where(...).firstOrNull`. Added for
-/// `aion-arch/changes/automation-decision-graphs` (`/verify` fix pass).
+/// `AIO-181` (`/verify` fix pass).
 DecisionConditionSpec? decisionConditionSpecById(String conditionId) {
   for (final spec in decisionConditionCatalog) {
     if (spec.id == conditionId) return spec;
@@ -145,7 +145,7 @@ DecisionConditionSpec? decisionConditionSpecById(String conditionId) {
 /// A short display summary of [conditionParams] for [spec] — e.g. `> 3`
 /// for [attemptExceedsMaxCondition]'s `maxAttempts` — shown as the
 /// parameter chip on both `GraphCanvas`'s condition-node chrome
-/// (`aion-arch/changes/automation-decision-graphs/design.md` §1.2) and
+/// (`AIO-181` §1.2) and
 /// `DecisionOutlineList`'s row chrome (§2.1), so a project author can see
 /// a condition's actual threshold without opening its form. `null` for a
 /// flag-only condition ([DecisionConditionSpec.parameterSpecs] empty) —
@@ -156,7 +156,7 @@ DecisionConditionSpec? decisionConditionSpecById(String conditionId) {
 /// semantic (e.g. "below") added later should extend this switch rather
 /// than have every call site reimplement its own summary. Only the first
 /// parameter is summarized — every condition this catalog ships takes at
-/// most one. Added for `aion-arch/changes/automation-decision-graphs`
+/// most one. Added for `AIO-181`
 /// (`/verify` fix pass 2).
 String? conditionParameterSummary(
   DecisionConditionSpec spec,

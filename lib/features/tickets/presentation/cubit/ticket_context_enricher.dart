@@ -21,7 +21,7 @@ import 'package:aion/features/tickets/domain/utils/ticket_link_direction.dart';
 /// `TicketsCubit._assembleStageContext` (the latter also covers
 /// `retryDesignSync`'s re-assembly, since it calls
 /// `_assembleStageContext` directly). See
-/// `aion-arch/changes/ticket-graph-and-embedding-context-enrichment/design.md`
+/// `AIO-2229`
 /// §1.
 class TicketContextEnricher {
   /// Creates a [TicketContextEnricher] backed by [_repository].

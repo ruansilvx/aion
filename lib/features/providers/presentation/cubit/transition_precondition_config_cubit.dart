@@ -16,7 +16,7 @@ import 'package:aion/features/tickets/domain/repositories/transition_preconditio
 /// not repositories, per this project's Cubit-vs-repository split. Backs
 /// both `PreconditionGraphCanvas`/`GraphCanvas<TransitionNode>` and
 /// `TransitionOutlineList`. Mirrors `DecisionGraphConfigCubit`'s exact
-/// shape — see `aion-arch/changes/sddstage-transition-preconditions/design.md`
+/// shape — see `AIO-1936`
 /// §5 — with rejection messages built directly as plain strings rather
 /// than a classified reason enum, since this cubit has no
 /// `BuildContext`-resolvable widget-layer error-message function of its
@@ -31,7 +31,7 @@ import 'package:aion/features/tickets/domain/repositories/transition_preconditio
 /// [updateNode] reject an edit that would violate either rule, emitting
 /// [TransitionPreconditionConfigError] and leaving the prior
 /// [TransitionPreconditionConfigLoaded] state's tree untouched. Added for
-/// `aion-arch/changes/sddstage-transition-preconditions`.
+/// `AIO-1936`.
 class TransitionPreconditionConfigCubit
     extends Cubit<TransitionPreconditionConfigState> {
   /// Creates a [TransitionPreconditionConfigCubit] backed by

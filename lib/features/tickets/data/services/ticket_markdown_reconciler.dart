@@ -67,7 +67,7 @@ class TicketMarkdownReconciler {
   /// reindex/rename-cascade `TicketsCubit.updateTicket` triggers for an
   /// in-app edit (same content-changed gate as that trigger), through the
   /// same shared [PageWikilinkIndexer] rather than a second, duplicated
-  /// implementation — see `aion-arch/changes/inline-wikilink-backlinks
+  /// implementation — see `AIO-963
   /// /design.md`. [_parentTrashService] is likewise optional (`null` in
   /// every construction site except `app_router.dart`, and in this
   /// class's own existing tests that don't need it) — when supplied, a

@@ -19,7 +19,7 @@ import 'package:aion/core/database/app_database.dart';
 /// entities and delegates every method straight to
 /// [AutomationDecisionDao], matching every other `Drift*Repository` in
 /// this codebase. Added for
-/// `aion-arch/changes/automation-decision-graphs`.
+/// `AIO-181`.
 class DriftDecisionGraphRepository implements DecisionGraphRepository {
   /// Creates a [DriftDecisionGraphRepository] backed by [_db].
   DriftDecisionGraphRepository(this._db);

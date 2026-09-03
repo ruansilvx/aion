@@ -12,7 +12,7 @@ import 'package:aion/core/contracts/tool_access_tier.dart';
 /// pure text-mapping functions that keep vendor-specific detail out of
 /// [AgentModelClient]'s already-shipped, unchanged event shapes. Looked
 /// up by [ProviderId] via a `ProviderRegistry`. See
-/// `aion-arch/changes/pluggable-provider-abstraction/design.md` §1.
+/// `AIO-1544` §1.
 abstract interface class AgentProvider {
   /// This provider's identity.
   ProviderId get id;
@@ -42,7 +42,7 @@ abstract interface class AgentProvider {
 
   /// Whether this provider's [client] can resume/fork an existing
   /// session cheaply enough for a mid-turn side-question (see
-  /// `aion-arch/changes/decision-graph-agentjudgment-condition/design.md`
+  /// `AIO-613`
   /// §1). `false` means an `agentJudgment` decision-graph condition
   /// always resolves to its unmatched branch when evaluated under this
   /// provider — never a crash, never a block.
@@ -63,7 +63,7 @@ abstract interface class AgentProvider {
   /// that have no skill-discovery dependency), while this capability is
   /// specific to the one `delegatedSkill` call site. Same
   /// per-call-site-capability shape as [supportsSessionResume], above.
-  /// See `aion-arch/changes/delegated-skill-provider-portability/design.md`
+  /// See `AIO-702`
   /// §1.
   bool get supportsSkillDiscovery;
 }

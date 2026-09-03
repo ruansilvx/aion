@@ -3,7 +3,7 @@
 /// The tool-access axis a provider declares support for — independent of
 /// `ModelPhase`'s reasoning-weight axis (`features/providers/domain/enums/model_phase.dart`).
 /// A stage's tool access and its model tier are configured separately.
-/// See `aion-arch/changes/pluggable-provider-abstraction/design.md` §1.
+/// See `AIO-1544` §1.
 enum ToolAccessTier {
   /// No tool access — a plain text-only turn.
   noTools,

@@ -6,7 +6,7 @@ import 'package:equatable/equatable.dart';
 /// [BaselineAsset](baseline_asset.dart) by matching [assetKey]. Desktop
 /// only in this change — mobile/web projects have no local filesystem
 /// override surface (see
-/// `aion-arch/changes/multi-project-hub/design.md` §2).
+/// `AIO-1174` §2).
 class ProjectOverride extends Equatable {
   /// The [Project.id](project.dart) this override belongs to.
   final String projectId;

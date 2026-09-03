@@ -41,14 +41,14 @@ class CreateTicketRouteExtra {
 /// `TicketType.values` position (last, after [TicketType.bug] — enum
 /// declaration order, since [TicketType.spec] was appended after `bug`)
 /// to immediately follow [TicketType.resource], per
-/// `aion-arch/changes/spec-ticket-type/design.md` §4.1 ("after Page,
+/// `AIO-1998` §4.1 ("after Page,
 /// before Idea," grouped with the other document-like kinds — `page`
 /// itself sat directly after `resource` before it was excluded from this
 /// list, so `spec` takes that same slot). Every other type keeps its
 /// natural enum-declaration position, so a future addition still appears
 /// without this list needing an update — only `spec`'s placement is
 /// special-cased. A `/verify` fix-up for
-/// `aion-arch/changes/spec-ticket-type`: the first `/apply` pass used a
+/// `AIO-1998`: the first `/apply` pass used a
 /// bare `TicketType.values.where(...)`, which put `spec` last instead.
 List<TicketType> _dropdownTypes() {
   final types = <TicketType>[];
@@ -77,7 +77,7 @@ List<TicketType> _dropdownTypes() {
 /// Priority/Complexity row itself is hidden instead — a spec shows the
 /// same field set as a `page` (Title, Type, optional Parent,
 /// Description), since neither is a work item. Added for
-/// `aion-arch/changes/spec-ticket-type`. Reads [TicketsCubit] from the
+/// `AIO-1998`. Reads [TicketsCubit] from the
 /// root-level provider and navigates back to `/tickets` on success.
 class CreateTicketScreen extends StatefulWidget {
   /// Creates a [CreateTicketScreen]. [initialType]/[initialParentId] seed
@@ -290,7 +290,7 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
                       // as `page` — Title, Type, optional Parent,
                       // content — no Priority/Complexity/Severity/
                       // Estimate). Added for
-                      // `aion-arch/changes/spec-ticket-type`.
+                      // `AIO-1998`.
                       AnimatedSize(
                         duration: const Duration(milliseconds: 150),
                         curve: Curves.easeOut,

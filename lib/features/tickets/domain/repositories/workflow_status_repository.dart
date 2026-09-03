@@ -9,7 +9,7 @@ import 'package:aion/features/tickets/domain/entities/workflow_status.dart';
 /// split (validation/invariant logic lives in Cubits, not repositories).
 /// Implemented by the data layer ([DriftWorkflowStatusRepository]); UI and
 /// domain code depend only on this interface, never on a concrete data
-/// source. See `aion-arch/changes/configurable-ticket-workflow/design.md`
+/// source. See `AIO-549`
 /// §1.6.
 abstract interface class WorkflowStatusRepository {
   /// Returns every persisted [WorkflowStatus] — both the shared-base set
@@ -49,6 +49,6 @@ abstract interface class WorkflowStatusRepository {
   /// stay consistent through the repository layer rather than holding a
   /// direct reference to each other — Aion's Cubits communicate through
   /// shared repositories, never each other directly. See
-  /// `aion-arch/changes/configurable-ticket-workflow/design.md` §3.
+  /// `AIO-549` §3.
   Stream<void> get onChanged;
 }

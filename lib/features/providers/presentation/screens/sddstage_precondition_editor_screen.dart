@@ -31,7 +31,7 @@ String sddStagePreconditionStageLabel(BuildContext context, SddStage stage) =>
 /// their `_sddStageAdvanceCheck` advancement order — `null`/[SddStage
 /// .archived] are excluded, since neither has a precondition. Backs
 /// [_Header]'s "Stage N of 5" position chip (design.md §4.1). Added for
-/// `aion-arch/changes/sddstage-transition-preconditions`'s post-
+/// `AIO-1936`'s post-
 /// `/verify` follow-up.
 const _preconditionBearingStagesInOrder = [
   SddStage.exploring,
@@ -84,7 +84,7 @@ class _TerminalCanvasNode extends _CanvasNode {
 /// screen's own dartdoc — with a `PreconditionGraphCanvas`-configured
 /// canvas (no parameter chip, 2-value terminal) in place of DG's
 /// condition/4-outcome canvas. Added for
-/// `aion-arch/changes/sddstage-transition-preconditions`.
+/// `AIO-1936`.
 class SddStagePreconditionEditorScreen extends StatefulWidget {
   /// Creates a [SddStagePreconditionEditorScreen] for [stage].
   const SddStagePreconditionEditorScreen({super.key, required this.stage});
@@ -98,8 +98,7 @@ class SddStagePreconditionEditorScreen extends StatefulWidget {
 }
 
 /// Which pane is visible below design.md §4.4's `760`px single-pane
-/// breakpoint. Added for `aion-arch/changes/sddstage-transition-
-/// preconditions`'s post-`/verify` follow-up.
+/// breakpoint. Added for AIO-1936's post-`/verify` follow-up.
 enum _PaneMode {
   /// `PreconditionGraphCanvas`.
   graph,
@@ -243,7 +242,7 @@ class _Header extends StatelessWidget {
 
   /// [_SddStagePreconditionEditorScreenState._dirty] — feeds the "N
   /// UNSAVED CHANGE" indicator (design.md §4.1). Added for
-  /// `aion-arch/changes/sddstage-transition-preconditions`'s post-
+  /// `AIO-1936`'s post-
   /// `/verify` follow-up.
   final ValueNotifier<bool> dirty;
 
@@ -399,7 +398,7 @@ class _Header extends StatelessWidget {
 
 /// Design.md §4.1's read-only "Stage N of 5" chip — [stage]'s 1-based
 /// position in [_preconditionBearingStagesInOrder]. Added for
-/// `aion-arch/changes/sddstage-transition-preconditions`'s post-
+/// `AIO-1936`'s post-
 /// `/verify` follow-up.
 class _StagePositionChip extends StatelessWidget {
   const _StagePositionChip({required this.stage});
@@ -445,8 +444,8 @@ class _StagePositionChip extends StatelessWidget {
 /// Design.md §4.1's "N UNSAVED CHANGE" indicator — shown by [_Header]
 /// only while [_SddStagePreconditionEditorScreenState._dirty] is `true`.
 /// Only ever one form can be open at a time (single-selection outline/
-/// canvas), so the count is always `1`. Added for `aion-arch/changes/
-/// sddstage-transition-preconditions`'s post-`/verify` follow-up.
+/// canvas), so the count is always `1`. Added for AIO-1936's
+/// post-`/verify` follow-up.
 class _DirtyIndicator extends StatelessWidget {
   const _DirtyIndicator();
 
@@ -473,7 +472,7 @@ class _DirtyIndicator extends StatelessWidget {
 /// The Graph/Outline two-segment control shown in [_Header] below the
 /// `760`px single-pane breakpoint — same two-segment shape as
 /// `_BranchModeToggle` (`transition_node_form.dart`). Added for
-/// `aion-arch/changes/sddstage-transition-preconditions`'s post-
+/// `AIO-1936`'s post-
 /// `/verify` follow-up.
 class _PaneModeToggle extends StatelessWidget {
   const _PaneModeToggle({required this.mode, required this.onChanged});
@@ -576,7 +575,7 @@ class _CanvasPane extends StatefulWidget {
 
   /// Forwarded to [TransitionNodeForm.showAsPopover] — see
   /// [TransitionNodeForm.onDirtyChanged]. Added for
-  /// `aion-arch/changes/sddstage-transition-preconditions`'s post-
+  /// `AIO-1936`'s post-
   /// `/verify` follow-up.
   final ValueChanged<bool>? onDirtyChanged;
 

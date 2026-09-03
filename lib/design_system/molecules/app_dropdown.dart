@@ -14,7 +14,7 @@ import 'package:aion/design_system/tokens/theme_scope.dart';
 /// widget or overlay involvement. [itemRowBuilder] is an additive,
 /// default-`null` param letting a caller render richer, multi-run item-row
 /// content (e.g. a provider-name prefix) in the open panel only — see
-/// `aion-arch/changes/anthropic-messages-api-provider/design.md` §8.
+/// `AIO-110` §8.
 class AppDropdown<T> extends StatefulWidget {
   /// Creates an [AppDropdown].
   const AppDropdown({

@@ -5,7 +5,7 @@ import 'package:drift/drift.dart';
 /// Drift table backing [Notification]. Row type generated as
 /// `NotificationData`. No FK constraints — matches every other table in
 /// this schema (integrity enforced at the repository layer). Added for
-/// `aion-arch/changes/pr-metadata-and-notification-center`.
+/// `AIO-1586`.
 @DataClassName('NotificationData')
 class NotificationsTable extends Table {
   @override

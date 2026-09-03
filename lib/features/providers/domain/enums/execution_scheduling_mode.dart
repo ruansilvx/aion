@@ -4,7 +4,7 @@
 /// moving to `TicketStatus.inProgress`) against each other. Persisted via
 /// `ExecutionSchedulingRepository`, defaulting to [strictFifo] — today's
 /// shipped, unchanged behavior. See
-/// `aion-arch/changes/parallel-work/design.md` §1.
+/// `AIO-1400` §1.
 enum ExecutionSchedulingMode {
   /// One coding-execution run at a time, FIFO — today's shipped behavior.
   /// Every other queued Task/Bug waits regardless of scheduling capacity.

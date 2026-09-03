@@ -10,7 +10,7 @@ import 'provider_id.dart';
 /// conversation via a second, forked [AgentModelClient.run] call. `null`
 /// wherever the underlying provider has no session concept
 /// ([AgentProvider.supportsSessionResume] `false`) or [AgentRequest.tools]
-/// is empty. See `aion-arch/changes/decision-graph-agentjudgment-condition/
+/// is empty. See `AIO-613/
 /// design.md` §4.
 class AgentSessionHandle extends Equatable {
   /// Creates an [AgentSessionHandle] for [sessionId] on [providerId],

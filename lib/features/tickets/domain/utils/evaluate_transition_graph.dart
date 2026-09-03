@@ -15,7 +15,7 @@ import 'package:aion/features/tickets/domain/repositories/transition_preconditio
 /// "bundled by the caller, not fetched here" convention, one field per
 /// `transitionFieldCatalog` entry. Every field is optional; a stage's
 /// evaluation only ever reads the fields valid for it. Added for
-/// `aion-arch/changes/sddstage-transition-preconditions`.
+/// `AIO-1936`.
 @immutable
 class TransitionEvalContext {
   /// Creates a [TransitionEvalContext].
@@ -89,7 +89,7 @@ final Map<String, bool? Function(TransitionEvalContext input)> _fieldAccessors =
 /// [blockingFieldDisplayName] carries the failing node's field's
 /// `TransitionFieldSpec.displayName`, so the call site can build `'Waiting
 /// on: $blockingFieldDisplayName'` without a second lookup. Pure — no I/O.
-/// Added for `aion-arch/changes/sddstage-transition-preconditions`.
+/// Added for `AIO-1936`.
 ({TransitionOutcome outcome, String? blockingFieldDisplayName})
 evaluateTransitionGraph(
   TransitionGraph graph,

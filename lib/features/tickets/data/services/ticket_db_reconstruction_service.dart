@@ -55,7 +55,7 @@ class TicketReconstructionReport {
 /// reflects which tickets were trashed as of the last commit touching
 /// each file. Before `deletedAt` was part of
 /// [TicketMarkdownSerializer]'s frontmatter (added by
-/// `aion-arch/changes/git-projection-commit-visibility`), every
+/// `AIO-918`), every
 /// reconstructed ticket silently came back non-trashed regardless of its
 /// real state, since [_buildTicket] never set the field at all.
 class TicketDbReconstructionService {

@@ -9,7 +9,7 @@ import 'package:aion/features/tickets/data/models/notification_table.dart';
 part 'notification_dao.g.dart';
 
 /// Drift accessor for [NotificationsTable]. See
-/// `aion-arch/changes/pr-metadata-and-notification-center/design.md` §2.
+/// `AIO-1586` §2.
 @DriftAccessor(tables: [NotificationsTable])
 class NotificationDao extends DatabaseAccessor<AppDatabase>
     with _$NotificationDaoMixin {

@@ -15,7 +15,7 @@ import 'package:aion/design_system/tokens/theme_scope.dart';
 /// Complexity/Estimate rows). Informational and monochrome, deliberately
 /// reusing the same neutral "quiet chrome" tint the estimate/timeSpent
 /// rollup indicator already uses, rather than `primarySubtle` — see
-/// `aion-arch/changes/ai-assisted-complexity-and-estimate-suggestions/design.md`
+/// `AIO-75`
 /// §0.1 for why `primarySubtle` is rejected here. Has no hover/focus/
 /// press/disabled states of its own. See that change's design.md §1 for
 /// the full visual spec.

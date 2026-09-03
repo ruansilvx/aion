@@ -14,7 +14,7 @@ import 'package:aion/features/tickets/domain/entities/ticket.dart';
 /// e.g. rendering "Open question — on Login Flow (Story)" when viewed
 /// from an Epic two levels up, vs. just the title when
 /// `raisedOn.id == ticket.id`. Mirrors [LinkedTicketRef]'s shape. Added
-/// for `aion-arch/changes/idea-gap-question-ticket-types`; populated by
+/// for `AIO-934`; populated by
 /// `TicketsCubit.loadDocumentRelations`.
 typedef GapOrQuestionRef = ({
   Ticket ticket,

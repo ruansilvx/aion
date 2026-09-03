@@ -8,7 +8,7 @@ import 'package:meta/meta.dart';
 /// `TicketListTile`/`TicketBoardCard` row — those read
 /// `Ticket.estimateRollup`/`.timeSpentRollup` directly instead, with no
 /// count. See
-/// `aion-arch/changes/estimate-timespent-rollup-for-ticket-hierarchy/design.md`
+/// `AIO-873`
 /// §0.3.
 @immutable
 class TicketRollupCounts {

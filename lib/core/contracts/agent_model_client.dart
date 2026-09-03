@@ -9,14 +9,14 @@ import 'agent_tool_definition.dart';
 ///
 /// Per `project.md`'s Pattern 1 (dependency inversion via `core`), any
 /// feature needing a model call depends only on this interface, never on a
-/// concrete provider directly — see `aion-arch/changes/provider-configuration/design.md`
+/// concrete provider directly — see `AIO-1699`
 /// §1. The sole implementation for this MVP is `ClaudeAgentSdkClient`
 /// (`core/agent/claude_agent_sdk_client.dart`).
 ///
 /// A run may emit any number of [AgentToolCallEvent]s before its terminal
 /// event — each one non-terminal, reporting an [AgentRequest.tools] call
 /// the implementation is awaiting [AgentRequest.onToolCall] for. See
-/// `aion-arch/changes/mid-task-chat-branching/design.md` §2.
+/// `AIO-1118` §2.
 abstract interface class AgentModelClient {
   /// Starts a model run for [request], returning a stream of incremental
   /// [AgentEvent]s. The returned stream is finished by exactly one
@@ -31,7 +31,7 @@ abstract interface class AgentModelClient {
   /// currently active run — already finished, never started, or unknown
   /// to this client instance — so a caller racing a cancel against a
   /// run's own natural completion never needs to guard the call itself.
-  /// Added for `aion-arch/changes/parallel-work`; see that change's
+  /// Added for `AIO-1400`; see that change's
   /// design.md §2.
   void cancel(String runId);
 }
@@ -81,7 +81,7 @@ class AgentRequest extends Equatable {
   /// App-defined tools the model may call mid-run, independent of
   /// [toolsEnabled] (which governs the provider's own file/git/bash tool
   /// set, not app-defined tools). Empty for every call site that predates
-  /// this change. Added for `aion-arch/changes/mid-task-chat-branching`;
+  /// this change. Added for `AIO-1118`;
   /// see that change's design.md §2.
   final List<AgentToolDefinition> tools;
 
@@ -103,7 +103,7 @@ class AgentRequest extends Equatable {
   /// line) and the underlying provider supports resumption
   /// ([AgentProvider.supportsSessionResume]); `null` otherwise, including
   /// for every provider with no session concept at all. See
-  /// `aion-arch/changes/decision-graph-agentjudgment-condition/design.md`
+  /// `AIO-613`
   /// §4.
   final Future<Map<String, dynamic>> Function(
     String toolCallId,
@@ -117,7 +117,7 @@ class AgentRequest extends Equatable {
   /// [AgentModelClient.cancel] to cancel it mid-flight. `null` (the
   /// default) for every call site that has no cancellation UI wired to
   /// it — a run with no [runId] simply can't be cancelled. Added for
-  /// `aion-arch/changes/parallel-work`; see that change's design.md §2.
+  /// `AIO-1400`; see that change's design.md §2.
   final String? runId;
 
   /// When set, this run resumes and forks [resumeSessionId] rather than
@@ -192,7 +192,7 @@ class AgentErrorEvent extends AgentEvent {
 
 /// The bridge process reported a plan usage-window / rate-limit signal
 /// (e.g. Claude Code's opt-in overage prompt). Informational only — see
-/// `aion-arch/changes/provider-configuration/proposal.md`'s Non-goals for
+/// `AIO-1699`'s Non-goals for
 /// why this doesn't gate anything yet. May be followed by further
 /// [AgentTextEvent]s if the underlying call still completed, or by
 /// [AgentErrorEvent] if it didn't.
@@ -210,7 +210,7 @@ class AgentOverageDetectedEvent extends AgentEvent {
 
 /// A tool call the model made mid-run (file edit, git, bash, MCP). Purely
 /// informational — never a terminal event. Added for
-/// `aion-arch/changes/coding-execution-reliability-and-safety` to give a
+/// `AIO-506` to give a
 /// long-running coding-execution turn live progress visibility.
 class AgentToolUseEvent extends AgentEvent {
   /// Creates an [AgentToolUseEvent] carrying [toolName] and an optional
@@ -233,7 +233,7 @@ class AgentToolUseEvent extends AgentEvent {
 /// **not** a failure — distinct from [AgentErrorEvent], which always
 /// represents something going wrong. Always the last event on a
 /// cancelled stream; no [AgentDoneEvent]/[AgentErrorEvent] follows.
-/// Added for `aion-arch/changes/parallel-work`; see that change's
+/// Added for `AIO-1400`; see that change's
 /// design.md §2.
 class AgentCancelledEvent extends AgentEvent {
   /// Creates an [AgentCancelledEvent].
@@ -249,7 +249,7 @@ class AgentCancelledEvent extends AgentEvent {
 /// execution and result round-trip happens via [AgentRequest.onToolCall],
 /// awaited internally by the client implementation before it emits any
 /// further events. Never terminal. Added for
-/// `aion-arch/changes/mid-task-chat-branching`; see that change's
+/// `AIO-1118`; see that change's
 /// design.md §2.
 class AgentToolCallEvent extends AgentEvent {
   /// Creates an [AgentToolCallEvent] for a call to [toolName], identified

@@ -46,7 +46,7 @@ abstract final class AionShadows {
   /// Focus ring for text fields and dropdowns — a solid 3px spread with no
   /// blur, not a soft glow. [color] defaults to [AionColors.primary];
   /// pass an explicit accent (e.g. a launcher card's own accent-colored
-  /// ring — `aion-arch/changes/new-project-onboarding-inbox/design.md`
+  /// ring — `AIO-1300`
   /// §4.1.1) to tint the ring with something other than `primary`. Every
   /// existing caller (which omits [color]) is unaffected.
   static List<BoxShadow> focus(AionColors c, bool isDark, {Color? color}) {

@@ -35,16 +35,16 @@ import 'package:aion/features/providers/presentation/widgets/provider_connection
 /// connection status (auto-checked on open, with a manual "Test
 /// Connection" action), a model picker, a coding-execution scheduling
 /// picker (`_ExecutionSchedulingSection`, mode + conditional concurrency
-/// ceiling — see `aion-arch/changes/parallel-work/design.md` §6/§8),
+/// ceiling — see `AIO-1400` §6/§8),
 /// automation-confidence pickers (now five, including "Resume After
 /// Restart" — `AutomationContext.codingExecutionResume`), an "OVERRIDES"
 /// section linking to `OverridesListScreen`, and a "BASELINE" section
 /// (`_BaselineUpgradeSection`) offering a manual baseline-version
 /// upgrade — always available regardless of whether
 /// `BaselineUpgradeBanner` has already been shown/declined this session
-/// (see `aion-arch/changes/baseline-version-upgrade-flow/design.md` §2).
+/// (see `AIO-297` §2).
 /// Reached from `WorkspaceNavShell`'s secondary-actions popover. Per
-/// `aion-arch/changes/provider-configuration/design.md`'s Settings Screen
+/// `AIO-1699`'s Settings Screen
 /// Component Spec §2.
 ///
 /// The back button returns to `/workspace/tickets`, matching `TrashScreen`'s
@@ -229,7 +229,7 @@ class SettingsScreen extends StatelessWidget {
 /// today's `settingsProviderSubline` copy for `claudeAgentSdk`, and adds
 /// `anthropicMessagesApi`'s own copy — both now conditional instead of a
 /// single hardcoded string, per
-/// `aion-arch/changes/anthropic-messages-api-provider/design.md` §7.
+/// `AIO-110` §7.
 String _providerSubline(BuildContext context, ProviderId providerId) =>
     switch (providerId) {
       ProviderId.claudeAgentSdk => context.l10n.settingsProviderSubline,
@@ -325,7 +325,7 @@ String _confidenceSubLabel(
   },
   // No `_AutomationSection` instance renders this context yet — a
   // dedicated Settings row is a reasonable follow-up, not required for
-  // `aion-arch/changes/spec-ticket-type` to be useful — but this switch
+  // `AIO-1998` to be useful — but this switch
   // must stay exhaustive over every `AutomationContext` value regardless
   // of which ones are currently surfaced in the UI.
   AutomationContext.specAutoLink => switch (confidence) {
@@ -339,7 +339,7 @@ String _confidenceSubLabel(
   // No `_AutomationSection` instance renders this context yet — mirrors
   // `specAutoLink`'s own "no dedicated Settings row yet" precedent
   // immediately above; reachable via the generic decision-graph editor
-  // route only. Added for `aion-arch/changes/sdd-verify-quality-gate`.
+  // route only. Added for `AIO-1905`.
   AutomationContext.verifyGateRetry => switch (confidence) {
     AutomationConfidence.auto =>
       context.l10n.settingsAutomationVerifyGateRetryAutoSubLabel,
@@ -444,7 +444,7 @@ class _AutomationSection extends StatelessWidget {
 /// [AutomationConfidence.auto] — a decision graph is only ever consulted
 /// once a context has already resolved to `auto`); disabled otherwise,
 /// with an explanatory tooltip. Per design.md §5.1/§5.2. Added for
-/// `aion-arch/changes/automation-decision-graphs`.
+/// `AIO-181`.
 class _DecisionGraphAffordance extends StatefulWidget {
   const _DecisionGraphAffordance({
     required this.automationContext,
@@ -469,7 +469,7 @@ class _DecisionGraphAffordanceState extends State<_DecisionGraphAffordance> {
   /// screen owns its own `DecisionGraphConfigCubit` instance, so this
   /// widget's [initState]-only load previously never re-ran on return
   /// navigation, leaving a stale count on screen). Found via manual QA of
-  /// `aion-arch/changes/automation-decision-graphs`.
+  /// `AIO-181`.
   StreamSubscription<void>? _changesSubscription;
 
   @override
@@ -690,8 +690,8 @@ class _AutomationMenuRow extends StatelessWidget {
 /// `ModelRoutingReady.availableModels[phase]` (provider-aware, filtered
 /// by `ModelPhaseToolAccess.requiredToolAccessTier`) instead of a fixed
 /// enum — see
-/// `aion-arch/changes/pluggable-provider-abstraction/design.md` §3.
-/// Added for `aion-arch/changes/per-phase-tier-based-model-routing`.
+/// `AIO-1544` §3.
+/// Added for `AIO-1491`.
 class _ModelPhaseSection extends StatelessWidget {
   const _ModelPhaseSection({
     required this.phase,
@@ -823,7 +823,7 @@ class _ModelDropdownRow extends StatelessWidget {
 /// existing `needsRepairTint`/`needsRepairBorderTint` for the clamp
 /// chip's fill/border (not new `warningTint`/`warningBorderTint`
 /// helpers — see proposal.md's design gate). Added for
-/// `aion-arch/changes/dont-spawn-new-chat-ticket-per-execution-trigger`.
+/// `AIO-833`.
 class _ExecutionContextCapSection extends StatefulWidget {
   /// Creates an [_ExecutionContextCapSection].
   const _ExecutionContextCapSection();
@@ -951,7 +951,7 @@ class _ExecutionContextCapSectionState
 /// vs. [limit] (design.md §2.4/§6.1): neutral (no override), an
 /// `OVERRIDE`-tagged effective-cap line (a valid override), or a caution
 /// chip (the live entry would be clamped). Added for
-/// `aion-arch/changes/dont-spawn-new-chat-ticket-per-execution-trigger`.
+/// `AIO-833`.
 class _ExecutionContextCapHelperRow extends StatelessWidget {
   /// Creates an [_ExecutionContextCapHelperRow] for the live field
   /// [text]/[parsed] against the model's real [limit], with [isClamped]
@@ -1102,7 +1102,7 @@ class _ExecutionContextCapHelperRow extends StatelessWidget {
 /// [ExecutionSchedulingMode.hybrid] reads `primary` (still concurrent,
 /// but with the AI-adjacent "smart serialization" framing `primary`
 /// already carries elsewhere in this app). Per the Claude Design export's
-/// design.md §1. Added for `aion-arch/changes/parallel-work`.
+/// design.md §1. Added for `AIO-1400`.
 Color _schedulingModeDotColor(AionColors c, ExecutionSchedulingMode mode) =>
     switch (mode) {
       ExecutionSchedulingMode.strictFifo => c.secondary,
@@ -1148,7 +1148,7 @@ String _schedulingModeSubLabel(
 /// there). Mirrors [_AutomationSection]'s mode-dot `SelectionMenu` shape
 /// and [_ExecutionContextCapSection]'s numeric-field shape. Per the Claude
 /// Design export's design.md §1. Added for
-/// `aion-arch/changes/parallel-work`.
+/// `AIO-1400`.
 class _ExecutionSchedulingSection extends StatefulWidget {
   /// Creates an [_ExecutionSchedulingSection].
   const _ExecutionSchedulingSection();
@@ -1785,7 +1785,7 @@ class _OverridesSummarySection extends StatelessWidget {
 /// action, mirroring [_OverridesSummarySection]'s shape. Always present
 /// regardless of whether `BaselineUpgradeBanner` has already been
 /// shown/declined this session. Added for
-/// `aion-arch/changes/baseline-version-upgrade-flow`.
+/// `AIO-297`.
 class _BaselineUpgradeSection extends StatelessWidget {
   const _BaselineUpgradeSection();
 

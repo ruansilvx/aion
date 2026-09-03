@@ -24,7 +24,7 @@ import 'package:aion/design_system/design_system.dart';
 /// re-tones the glyph/ring to `primary` and opens the tooltip
 /// immediately; a tap/touch toggles a sticky `primaryWash`-filled open
 /// state that persists until the next tap anywhere (via [TapRegion]).
-/// Added for `aion-arch/changes/decision-graph-agentjudgment-condition`;
+/// Added for `AIO-613`;
 /// see that change's design.md §5.
 class AgentCostHint extends StatefulWidget {
   /// Creates an [AgentCostHint]. [showLatencyLine] adds the canvas card's
@@ -286,7 +286,7 @@ class _AgentCostHintTooltip extends StatelessWidget {
     // entire app window instead of its requested 240×~50, and remained
     // stretched even after a first attempt with a geometry-less
     // `Positioned`) while fixing
-    // `aion-arch/changes/decision-graph-agentjudgment-condition`'s
+    // `AIO-613`'s
     // `/verify` findings — pre-existing since that change's original
     // `/apply`, not introduced by this pass.
     return Positioned(

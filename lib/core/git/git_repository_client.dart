@@ -20,7 +20,7 @@ class GitRepositoryClient {
   /// "already a repo" for this check's purposes; it doesn't distinguish
   /// between them since neither should have `git init`/bookkeeping
   /// written over it. Added for
-  /// `aion-arch/changes/new-project-onboarding` — lets
+  /// `AIO-1266` — lets
   /// `CreateProjectCubit` skip re-`init`ing an already-git-tracked
   /// directory and gate its gitignore-confirmation banner.
   Future<bool> isGitRepository(String rootPath) async {
@@ -60,7 +60,7 @@ class GitRepositoryClient {
   /// at [worktreePath] — the branch starts from [rootPath]'s current HEAD.
   /// Throws if `worktreePath` already exists or `branchName` is already
   /// checked out elsewhere. Added for
-  /// `aion-arch/changes/coding-execution-reliability-and-safety` — isolates
+  /// `AIO-506` — isolates
   /// a coding-execution run from the developer's real checkout.
   Future<void> createWorktree(
     String rootPath,
@@ -90,7 +90,7 @@ class GitRepositoryClient {
   /// attempt that never reached a real push). Callers must ensure no
   /// worktree still has [branchName] checked out first ([removeWorktree]
   /// before this) — `git branch -D` refuses otherwise. Added for
-  /// `aion-arch/changes/coding-execution-reliability-and-safety`'s branch-
+  /// `AIO-506`'s branch-
   /// naming scheme (`aion/task-<id>`, stable per task, never per attempt)
   /// combined with [removeWorktree] deliberately not deleting the branch
   /// itself: without this, a failed attempt's branch survived forever,
@@ -117,7 +117,7 @@ class GitRepositoryClient {
   /// the worktree already has everything needed on disk. Called just
   /// before `push` in `TicketsCubit._runCodingExecution`, from inside the
   /// worktree `push` itself already runs from. Added for
-  /// `aion-arch/changes/pr-metadata-and-notification-center`.
+  /// `AIO-1586`.
   Future<int> changedFileCount(
     String worktreePath,
     String baseBranch,
@@ -139,7 +139,7 @@ class GitRepositoryClient {
   /// `'main'` if the command fails (a shallow clone or a repo with no
   /// `origin/HEAD` set) — matching `gh pr create`'s own base-branch
   /// resolution fallback (repository's configured default branch). Added
-  /// for `aion-arch/changes/pr-metadata-and-notification-center`.
+  /// for `AIO-1586`.
   Future<String> defaultBranch(String rootPath) async {
     final result = await _run(
       ['rev-parse', '--abbrev-ref', 'origin/HEAD'],
@@ -157,7 +157,7 @@ class GitRepositoryClient {
   /// already exists) must propagate loudly, not be silently swallowed, so
   /// `TicketsCubit.confirmRelease` can surface it and keep the draft alive
   /// for retry rather than reporting success it didn't earn. Added for
-  /// `aion-arch/changes/release-preparation-and-tagging`.
+  /// `AIO-1782`.
   Future<void> tag(String rootPath, String tagName, String message) async {
     await _runChecked(['tag', '-a', tagName, '-m', message], rootPath);
   }
@@ -169,7 +169,7 @@ class GitRepositoryClient {
   /// failure here means the tag exists locally but not on `origin` yet —
   /// [confirmRelease]'s own dartdoc covers the retry story for that
   /// partial-failure state. Added for
-  /// `aion-arch/changes/release-preparation-and-tagging`.
+  /// `AIO-1782`.
   Future<void> pushTag(String rootPath, String tagName) async {
     await _runChecked(['push', 'origin', tagName], rootPath);
   }
@@ -188,7 +188,7 @@ class GitRepositoryClient {
   /// temp directory, which it escaped by finding and committing to the
   /// developer's real checkout instead of throwing loudly and aborting.
   /// A `/verify` follow-up fix for
-  /// `aion-arch/changes/coding-execution-reliability-and-safety`.
+  /// `AIO-506`.
   Future<ProcessResult> _runChecked(List<String> args, String rootPath) async {
     final result = await _run(args, rootPath);
     if (result.exitCode != 0) {

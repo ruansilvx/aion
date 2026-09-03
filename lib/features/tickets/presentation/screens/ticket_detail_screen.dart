@@ -45,7 +45,7 @@ import 'package:aion/features/tickets/presentation/screens/release_draft_screen.
 ///   (metadata content collapsing into a compact `ChatMetaHeader` as
 ///   the transcript scrolls) replaces it — plus a [ChatComposeField]
 ///   pinned at the bottom. See
-///   `aion-arch/changes/chat-transcript-ux-redesign/design.md` §8.
+///   `AIO-482` §8.
 /// - **Every other type** keeps the original layout: a screen-level
 ///   [AppHeader], [TicketMetadataSection] (ticket meta, and for
 ///   `epic`/`story` an SDD-stage section, for `task` a coding-execution
@@ -54,13 +54,13 @@ import 'package:aion/features/tickets/presentation/screens/release_draft_screen.
 ///   For `epic`/`story`/`task`/`resource`/`bug` tickets, also renders
 ///   two Documentation-section sections — Linked Tickets and Backlinks
 ///   (widened from `resource`/`bug`-only for
-///   `aion-arch/changes/board-task-ordering-indication`) — populated
+///   `AIO-392`) — populated
 ///   via [TicketsCubit.loadDocumentRelations]. For `release` tickets,
 ///   renders [ReleaseSummarySection] instead (also fed by
 ///   [TicketsCubit.loadDocumentRelations]'s `linkedTickets`) — the one
 ///   ticket type with its own dedicated Release section rather than the
 ///   generic Documentation-mode trio. Added for
-///   `aion-arch/changes/release-preparation-and-tagging`.
+///   `AIO-1782`.
 /// `page` tickets never reach either layout: since
 /// `page-content-markdown-editor`, a loaded `page` ticket immediately
 /// redirects to `PageDetailScreen` via `/workspace/pages/:id` (see the
@@ -76,7 +76,7 @@ import 'package:aion/features/tickets/presentation/screens/release_draft_screen.
 /// `executionBudgetOverageDetected`/etc.) are no longer shown from this
 /// screen's listener at all — they're now handled app-wide by
 /// `WorkspaceNavShell`. Added for
-/// `aion-arch/changes/board-execution-indicators-and-notifications`.
+/// `AIO-352`.
 class TicketDetailScreen extends StatefulWidget {
   /// Creates a [TicketDetailScreen] for the ticket with internal id [ticketId].
   const TicketDetailScreen({super.key, required this.ticketId});
@@ -114,7 +114,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
 
   /// The persisted SDD-stage-triggering [AutomationConfidence], loaded
   /// once per screen instance (no polling) — see
-  /// `aion-arch/changes/sdd-ticket-execution/design.md`'s
+  /// `AIO-1856`'s
   /// "Precondition check on ticket-detail load" section.
   AutomationConfidence? _automationConfidence;
 
@@ -129,7 +129,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   /// resolves `auto`, or when [AutomationContext.sddStage]'s graph has no
   /// configured root — the seeded baseline, so this is a structural
   /// change with no behavior change until a project edits that graph.
-  /// Added for `aion-arch/changes/automation-decision-graphs`.
+  /// Added for `AIO-181`.
   DecisionOutcome? _sddStageDecisionOutcome;
 
   /// `'<ticketId>:<sddStage>'` key of the last ticket+stage this screen
@@ -143,12 +143,12 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   /// flight — drives `_RetryValidationButton`'s disabled/spinning state
   /// (design.md §4.3) so a second tap can't fire a concurrent retry
   /// while the first is still running. Added for
-  /// `aion-arch/changes/sdd-design-gate`.
+  /// `AIO-1834`.
   bool _retryingDesignSync = false;
 
   /// Whether a [TicketsCubit.retryVerify] call is currently in flight —
   /// mirrors [_retryingDesignSync]'s exact purpose, one stage later.
-  /// Added for `aion-arch/changes/sdd-verify-quality-gate`.
+  /// Added for `AIO-1905`.
   bool _retryingVerify = false;
 
   /// [SddStage.verifying]'s override-aware display name (via
@@ -158,7 +158,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   /// Verifying-stage retry bar's title match falls back to the
   /// hardcoded `'Verifying'` literal so the bar isn't silently hidden
   /// during that brief window. Added for
-  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  /// `AIO-1905`.
   String? _verifyingStagePresentName;
 
   /// Whether the top-level [BlocListener]'s most recently seen
@@ -171,14 +171,14 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   /// implicitly whenever a different ticket loads (its id doesn't match
   /// [_currentTicket] anymore, so the flip check is naturally scoped to
   /// the ticket currently on screen). Added for
-  /// `aion-arch/changes/board-execution-indicators-and-notifications`.
+  /// `AIO-352`.
   bool _wasAdvancingStageForCurrentChat = false;
 
   /// Whether a [TicketsCubit.prepareReleaseDraft] call is currently in
   /// flight — drives [ReleaseSummarySection]'s Prepare Release button
   /// loading state. Mirrors [_retryingDesignSync]/[_retryingVerify]'s
   /// exact "toggle around the call" pattern. Added for
-  /// `aion-arch/changes/release-preparation-and-tagging`.
+  /// `AIO-1782`.
   bool _preparingRelease = false;
 
   /// Calls [TicketsCubit.prepareReleaseDraft] for [ticket] (a `release`
@@ -189,7 +189,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   /// On failure (`null`), does nothing further here — `TicketsCubit`
   /// already emitted a classified [TicketsError], surfaced app-wide as a
   /// toast by `WorkspaceNavShell`. Added for
-  /// `aion-arch/changes/release-preparation-and-tagging`.
+  /// `AIO-1782`.
   Future<void> _prepareRelease(Ticket ticket) async {
     if (_preparingRelease) return;
     setState(() => _preparingRelease = true);
@@ -230,7 +230,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   /// the call so `_RetryValidationButton` can show its in-flight state
   /// and ignore further taps until this one resolves. Mirrors
   /// [_retryDesignSync] exactly. Added for
-  /// `aion-arch/changes/sdd-verify-quality-gate`.
+  /// `AIO-1905`.
   Future<void> _retryVerify(Ticket verifyingChat) async {
     if (_retryingVerify) return;
     setState(() => _retryingVerify = true);
@@ -327,7 +327,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   /// ticket once it exists — an intentional user action, unlike
   /// [_maybeAutoAdvanceSddStage]'s passive auto-advance, which never
   /// yanks the user off the screen they're already viewing. Since
-  /// `aion-arch/changes/board-execution-indicators-and-notifications`,
+  /// `AIO-352`,
   /// [TicketsCubit.advanceSddStage] resolves once the chat ticket is
   /// created, **not** once its first AI reply lands — the destination
   /// screen shows a "Waiting for reply…" indicator (see
@@ -396,7 +396,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   /// offers itself (see [ChatCubit.sendMessage]'s dartdoc) but can't
   /// execute a `branch_ticket`/`close_branch` call itself, since that
   /// logic lives on [TicketsCubit]. Added for
-  /// `aion-arch/changes/mid-task-chat-branching`.
+  /// `AIO-1118`.
   void _sendComment() {
     final content = _commentController.text.trim();
     if (content.isEmpty) return;
@@ -464,7 +464,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
           // gate) but never had data loaded for it (per this now-stale
           // gate) for those three types. Confirmed live during a QA
           // sweep. `release` was added to both by
-          // `aion-arch/changes/release-preparation-and-tagging` — unlike
+          // `AIO-1782` — unlike
           // the other five types here, `release` is NOT also added to
           // TicketMetadataSection's own Linked Tickets/Backlinks gate
           // (that generic section stays excluded for `release`, see that
@@ -491,7 +491,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                 // A `chat` ticket renders its own compact/collapsing
                 // header (`ChatMetaHeader`, inside `ChatTranscriptPane`)
                 // in place of this screen-level header — see
-                // `aion-arch/changes/chat-transcript-ux-redesign`.
+                // `AIO-482`.
                 if (state is TicketDetailLoaded &&
                     state.ticket.type == TicketType.chat) {
                   return const SizedBox.shrink();
@@ -577,7 +577,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                 // after the Content block, before the
                                 // pending-banner/comment-thread rest of
                                 // this Column. Added for
-                                // `aion-arch/changes/release-preparation-and-tagging`.
+                                // `AIO-1782`.
                                 if (ticket.type == TicketType.release)
                                   ReleaseSummarySection(
                                     linkedWork: state.linkedTickets,
@@ -600,7 +600,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                 // `TicketMetadataSection`'s own meta line,
                                 // per Component Spec §7 — see that
                                 // widget's doc comment.) Added for
-                                // `aion-arch/changes/workflow-skill-attachments`.
+                                // `AIO-2650`.
                                 Padding(
                                   padding: const EdgeInsets.fromLTRB(
                                     20,
@@ -619,7 +619,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                 // their own pending value is `null`, so
                                 // stacking the two Paddings costs nothing
                                 // when neither is pending). Added for
-                                // `aion-arch/changes/spec-ticket-type`.
+                                // `AIO-1998`.
                                 Padding(
                                   padding: const EdgeInsets.fromLTRB(
                                     20,
@@ -697,7 +697,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                   // "Retry validation" bar (design.md §4) — shown only for
                   // a "Design Sync — <Story>" chat whose most recent AI
                   // reply says PENDING. Added for
-                  // aion-arch/changes/sdd-design-gate. AnimatedSize per
+                  // AIO-1834. AnimatedSize per
                   // design.md §4.1 — the bar grows/shrinks in rather than
                   // popping instantly as the gate flips.
                   AnimatedSize(
@@ -749,7 +749,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                   // one stage later. Shown only for a
                   // "<Verifying present name> — <Story>" chat whose most
                   // recent AI reply says PENDING. Added for
-                  // aion-arch/changes/sdd-verify-quality-gate; see
+                  // AIO-1905; see
                   // design.md §5.1 and the Component Spec §2.
                   AnimatedSize(
                     duration: const Duration(milliseconds: 160),
@@ -803,7 +803,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                   // awaits confirmation (AutomationConfidence.gated).
                   // AnimatedSize per the same grow/shrink treatment the
                   // retry-validation bar above uses. Added for
-                  // aion-arch/changes/mid-task-chat-branching.
+                  // AIO-1118.
                   AnimatedSize(
                     duration: const Duration(milliseconds: 160),
                     alignment: Alignment.topCenter,
@@ -1159,7 +1159,7 @@ class CommentTile extends StatelessWidget {
 /// verdict — styled like [_ManualAdvanceButton] (no banner framing,
 /// since this is a recovery utility, not a proactive suggestion), with
 /// a refresh glyph instead of a caret. See design.md §4. Added for
-/// `aion-arch/changes/sdd-design-gate`.
+/// `AIO-1834`.
 class _RetryValidationButton extends StatefulWidget {
   const _RetryValidationButton({required this.onRetry, this.isLoading = false});
 
@@ -1168,7 +1168,7 @@ class _RetryValidationButton extends StatefulWidget {
   /// Disabled/spinning-glyph state (design.md §4.3) while a retry is
   /// already in flight — `IgnorePointer`, `0.45` opacity, `textMuted`
   /// glyph/text, glyph spinning via a 900ms linear loop. Added for
-  /// `aion-arch/changes/sdd-design-gate`.
+  /// `AIO-1834`.
   final bool isLoading;
 
   @override
@@ -1253,7 +1253,7 @@ class _RetryValidationButtonState extends State<_RetryValidationButton>
 
 /// Content variant [_ToolProposalBanner] renders — maps 1:1 to the two
 /// app-defined tools (`branch_ticket`/`close_branch`). Added for
-/// `aion-arch/changes/mid-task-chat-branching`; see that change's
+/// `AIO-1118`; see that change's
 /// design.md's Component Spec §7.
 enum ToolProposalKind {
   /// `branch_ticket` awaiting confirm — the proposed-child well (§3.1).
@@ -1263,12 +1263,12 @@ enum ToolProposalKind {
   close,
 
   /// `create_ticket` awaiting confirm — the new-ticket preview well.
-  /// Added for `aion-arch/changes/ticket-crud-tool-calls`; see that
+  /// Added for `AIO-2108`; see that
   /// change's design.md §1/§3.1.
   createTicket,
 
   /// `add_link` awaiting confirm — the directional relationship well.
-  /// Added for `aion-arch/changes/ticket-crud-tool-calls`; see that
+  /// Added for `AIO-2108`; see that
   /// change's design.md §1/§3.2.
   addLink,
 }
@@ -1282,7 +1282,7 @@ enum ToolProposalKind {
 /// headline weight, and a full-width action row, none of which a chat
 /// message bubble has. Placement mirrors the existing Design Sync
 /// retry-validation bar (`_RetryValidationButton`). Added for
-/// `aion-arch/changes/mid-task-chat-branching`; see that change's
+/// `AIO-1118`; see that change's
 /// design.md's Component Spec §1–§4.
 class _ToolProposalBanner extends StatefulWidget {
   /// Creates a [_ToolProposalBanner] for [kind], with
@@ -1321,25 +1321,25 @@ class _ToolProposalBanner extends StatefulWidget {
   final String? summary;
 
   /// The proposed new ticket's type — [ToolProposalKind.createTicket]
-  /// only. Added for `aion-arch/changes/ticket-crud-tool-calls`.
+  /// only. Added for `AIO-2108`.
   final TicketType? newTicketType;
 
   /// The current chat's own ticket key (e.g. `"AIO-88"`) —
   /// [ToolProposalKind.addLink] only. Added for
-  /// `aion-arch/changes/ticket-crud-tool-calls`.
+  /// `AIO-2108`.
   final String? currentTicketKey;
 
   /// How the current ticket would relate to the target —
   /// [ToolProposalKind.addLink] only. Added for
-  /// `aion-arch/changes/ticket-crud-tool-calls`.
+  /// `AIO-2108`.
   final TicketLinkType? linkType;
 
   /// The target ticket's key (e.g. `"AIO-42"`) — [ToolProposalKind.addLink]
-  /// only. Added for `aion-arch/changes/ticket-crud-tool-calls`.
+  /// only. Added for `AIO-2108`.
   final String? targetTicketKey;
 
   /// The target ticket's title — [ToolProposalKind.addLink] only. Added
-  /// for `aion-arch/changes/ticket-crud-tool-calls`.
+  /// for `AIO-2108`.
   final String? targetTicketTitle;
 
   /// Called on a Confirm tap. `null` disables the Confirm button (a
@@ -1475,13 +1475,13 @@ class _ToolProposalHeader extends StatelessWidget {
 
   /// [ToolProposalKind.createTicket]'s headline data — see
   /// `_ToolProposalBanner`'s matching fields. Added for
-  /// `aion-arch/changes/ticket-crud-tool-calls`.
+  /// `AIO-2108`.
   final TicketType? newTicketType;
   final String? proposedTitle;
 
   /// [ToolProposalKind.addLink]'s headline data — see
   /// `_ToolProposalBanner`'s matching fields. Added for
-  /// `aion-arch/changes/ticket-crud-tool-calls`.
+  /// `AIO-2108`.
   final TicketLinkType? linkType;
   final String? targetTicketKey;
   final String? targetTicketTitle;
@@ -1785,7 +1785,7 @@ class _CloseProposalWell extends StatelessWidget {
 /// [ToolProposalKind.createTicket]'s content well — a recessed preview of
 /// the ticket about to be created (a [TypeChip] + a title + optional
 /// description), echoing an Aion ticket row. Per design.md §3.1. Added
-/// for `aion-arch/changes/ticket-crud-tool-calls`.
+/// for `AIO-2108`.
 class _CreateTicketProposalWell extends StatelessWidget {
   const _CreateTicketProposalWell({
     required this.type,
@@ -1848,7 +1848,7 @@ class _CreateTicketProposalWell extends StatelessWidget {
 /// diagram (source ticket key → relationship glyph → target ticket key),
 /// so the relationship reads at a glance without repeating the target
 /// title (already in the headline). Per design.md §3.2. Added for
-/// `aion-arch/changes/ticket-crud-tool-calls`.
+/// `AIO-2108`.
 class _AddLinkProposalWell extends StatelessWidget {
   const _AddLinkProposalWell({
     required this.currentTicketKey,
@@ -2253,7 +2253,7 @@ class _RejectButtonFace extends StatelessWidget {
 
 // ---------------------------------------------------------------------
 // Skill attachments (Phase 2) — `_PendingSkillAttachmentBanner`. See
-// `aion-arch/changes/workflow-skill-attachments/design.md`'s Component
+// `AIO-2650`'s Component
 // Spec §6. (`_RunAttachedSkillButton`, Component Spec §7, lives in
 // `ticket_metadata_section.dart` instead — its meta line is where §7
 // places it.)
@@ -2484,7 +2484,7 @@ class _PendingSkillAttachmentBannerState
 // ---------------------------------------------------------------------
 // Spec auto-linking — `_PendingSpecLinkBanner`. Gated by
 // `AutomationContext.specAutoLink`. See
-// `aion-arch/changes/spec-ticket-type/design.md`'s design-gate notes —
+// `AIO-1998`'s design-gate notes —
 // this banner mirrors `_PendingSkillAttachmentBanner`'s exact shell
 // (itself a reuse of `_ToolProposalBanner`'s identity palette), swapping
 // its `typeChat` accent for `typeSpec` and dropping the kind-glyph/
@@ -2498,7 +2498,7 @@ class _PendingSkillAttachmentBannerState
 /// Confirm/Reject call
 /// [TicketsCubit.confirmPendingSpecLinkSuggestion]/
 /// [TicketsCubit.rejectPendingSpecLinkSuggestion]. Added for
-/// `aion-arch/changes/spec-ticket-type`.
+/// `AIO-1998`.
 class _PendingSpecLinkBanner extends StatelessWidget {
   const _PendingSpecLinkBanner({required this.ticket, required this.pending});
 

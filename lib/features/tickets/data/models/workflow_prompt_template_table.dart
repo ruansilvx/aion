@@ -8,7 +8,7 @@ import 'package:drift/drift.dart';
 /// `aionNativeTemplate` renders. Row type is generated as
 /// `WorkflowPromptTemplateData`. No FK constraints, matching
 /// `WorkflowStatusesTable`'s own precedent. See
-/// `aion-arch/changes/workflow-skill-attachments/design.md` §2.2.
+/// `AIO-2650` §2.2.
 @DataClassName('WorkflowPromptTemplateData')
 class WorkflowPromptTemplatesTable extends Table {
   @override

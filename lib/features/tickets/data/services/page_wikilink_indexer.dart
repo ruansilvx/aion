@@ -16,7 +16,7 @@ import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart
 /// `TicketMarkdownReconciler` (external file-edit reconciles) — the two
 /// content-change surfaces that can change a `page` ticket's Markdown, so
 /// neither one duplicates this extraction/resolution logic inline. Per
-/// `aion-arch/changes/inline-wikilink-backlinks/design.md`'s
+/// `AIO-963`'s
 /// `TicketsCubit` pseudocode, factored out to a shared seam per that
 /// change's `tasks.md` T14.
 class PageWikilinkIndexer {

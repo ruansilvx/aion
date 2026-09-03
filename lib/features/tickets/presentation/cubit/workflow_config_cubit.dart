@@ -22,7 +22,7 @@ import 'package:aion/features/tickets/presentation/cubit/workflow_config_state.d
 /// settings, enforcing the invariants `TicketsCubit` itself never checks —
 /// domain/invariant logic lives in Cubits, not repositories, per this
 /// project's Cubit-vs-repository split. Backs `WorkflowStatusSettingsScreen`.
-/// See `aion-arch/changes/configurable-ticket-workflow/design.md` §4.
+/// See `AIO-549` §4.
 ///
 /// Two enforced invariants, both applied within the shared-base scope
 /// only (a per-type extension status never holds a role, so neither
@@ -45,7 +45,7 @@ import 'package:aion/features/tickets/presentation/cubit/workflow_config_state.d
 /// currently sits at — Phase 1 has no migration story for reassigning a
 /// deleted status's tickets (see proposal.md's Non-goals).
 ///
-/// Phase 2 (`aion-arch/changes/workflow-skill-attachments`) adds
+/// Phase 2 (`AIO-2650`) adds
 /// [SkillAttachment]/[WorkflowPromptTemplate] CRUD alongside the above,
 /// enforcing two more invariants the same way: [createAttachment]/
 /// [updateAttachment] reject a second attachment on a target
@@ -77,15 +77,15 @@ class WorkflowConfigCubit extends Cubit<WorkflowConfigState> {
   final TicketRepository _ticketRepository;
 
   /// Persists [SkillAttachment]s. Added for
-  /// `aion-arch/changes/workflow-skill-attachments`.
+  /// `AIO-2650`.
   final WorkflowSkillAttachmentRepository _attachmentRepository;
 
   /// Persists [WorkflowPromptTemplate]s. Added for
-  /// `aion-arch/changes/workflow-skill-attachments`.
+  /// `AIO-2650`.
   final WorkflowPromptTemplateRepository _templateRepository;
 
   /// Source of [WorkflowConfigLoaded.transitionPreconditionNodeCounts].
-  /// Added for `aion-arch/changes/sddstage-transition-preconditions`'s
+  /// Added for `AIO-1936`'s
   /// post-`/verify` follow-up.
   final TransitionPreconditionRepository? _transitionPreconditionRepository;
 
@@ -270,7 +270,7 @@ class WorkflowConfigCubit extends Cubit<WorkflowConfigState> {
   /// [_attachmentInvariantViolation]), or if its target
   /// ([SkillAttachment.workflowStatusId]/[SkillAttachment.sddStage])
   /// already holds a different attachment — at most one per target. See
-  /// `aion-arch/changes/workflow-skill-attachments/design.md` §4.
+  /// `AIO-2650` §4.
   Future<void> createAttachment(SkillAttachment attachment) async {
     final loaded = _requireLoaded();
     if (loaded == null) return;
@@ -477,7 +477,7 @@ class WorkflowConfigCubit extends Cubit<WorkflowConfigState> {
   /// Checks [candidate] against [SkillAttachment]'s own two either/or
   /// invariants — documented on that entity as enforced here, never by
   /// the repository or the entity itself (see
-  /// `aion-arch/changes/workflow-skill-attachments/design.md` §1.2):
+  /// `AIO-2650` §1.2):
   /// exactly one of [SkillAttachment.workflowStatusId]/
   /// [SkillAttachment.sddStage] must be set (what it's *for*), and
   /// exactly one of [SkillAttachment.templateId]/[SkillAttachment.skillName]

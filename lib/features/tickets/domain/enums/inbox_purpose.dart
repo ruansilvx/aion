@@ -4,7 +4,7 @@
 /// [Ticket](../entities/ticket.dart) of type `chat`. Set exactly once, at
 /// creation, on `Ticket.inboxPurpose` — `null` for every ticket not spawned
 /// by the Inbox, including every other `chat`. See
-/// `aion-arch/changes/new-project-onboarding-inbox/design.md` §1.3.
+/// `AIO-1300` §1.3.
 enum InboxPurpose {
   /// Classifies pasted/typed raw notes into one or more `signal` tickets,
   /// each tagged with a suggested promotion type (epic or bug).

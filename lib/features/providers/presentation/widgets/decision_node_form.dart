@@ -43,7 +43,7 @@ Color decisionOutcomeColor(AionColors c, DecisionOutcome outcome) =>
 /// own `catalog` parameter) the chained-branch picker, so a branch can
 /// chain into a fresh rule-builder condition exactly like it can chain
 /// into a fixed catalog one. Added for
-/// `aion-arch/changes/decision-graph-rule-builder`.
+/// `AIO-661`.
 List<DecisionConditionSpec> _catalogFor(AutomationContext context) => [
   ...decisionConditionsFor(context),
   ?ruleBuilderConditionSpec(context),
@@ -58,9 +58,9 @@ List<DecisionConditionSpec> _catalogFor(AutomationContext context) => [
 /// `is`) — that helper lives in the domain layer and can't depend on this
 /// presentation-layer one, so the two are separate, deliberately
 /// consistent mappings rather than one shared function. Per
-/// `aion-arch/changes/decision-graph-rule-builder/design.md`'s Component
+/// `AIO-661`'s Component
 /// Spec §1.2 Operator catalog. Added for
-/// `aion-arch/changes/decision-graph-rule-builder`.
+/// `AIO-661`.
 String _ruleOperatorLabel(
   DecisionRuleOperator operator,
   DecisionFieldType type,
@@ -93,7 +93,7 @@ String _ruleOperatorLabel(
 /// `decision_graph_evaluator.dart` gives it at evaluation time). Shared
 /// by `DecisionOutlineList` and `DecisionGraphEditorScreen`'s canvas pane
 /// so the two panes can't resolve this differently. Added for
-/// `aion-arch/changes/automation-decision-graphs` (`/verify` fix pass).
+/// `AIO-181` (`/verify` fix pass).
 String? chainedChildConditionLabel(
   DecisionBranch branch,
   Map<String, DecisionNode> nodesById,
@@ -108,7 +108,7 @@ String? chainedChildConditionLabel(
 /// terminates in an outcome, or continues the strict tree into another
 /// condition — the form-local mirror of [DecisionBranch]'s two variants,
 /// driving the two-segment control design.md §3.3/§3.4 specifies. Added
-/// for `aion-arch/changes/automation-decision-graphs` (`/verify` fix
+/// for `AIO-181` (`/verify` fix
 /// pass — this mode was previously unreachable from the form, capping
 /// every graph at one node).
 enum DecisionBranchMode {
@@ -143,7 +143,7 @@ enum DecisionBranchMode {
 /// than deleting it, the same dangling-reference tolerance
 /// `decision_graph_evaluator.dart` and `DecisionGraphConfigCubit
 /// .deleteNode` already document). Added for
-/// `aion-arch/changes/automation-decision-graphs`; see that change's
+/// `AIO-181`; see that change's
 /// design.md §3.
 class DecisionNodeForm extends StatefulWidget {
   /// Creates a [DecisionNodeForm]. Pass [initialConditionId]/
@@ -377,7 +377,7 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
   /// The rule trio's local state — mirrors `_condition`'s own pattern,
   /// populated only while `_condition?.id == ruleBuilderConditionId`. See
   /// [_seedRuleState]. Added for
-  /// `aion-arch/changes/decision-graph-rule-builder`.
+  /// `AIO-661`.
   DecisionFieldSpec? _ruleField;
   DecisionRuleOperator? _ruleOperator;
   TextEditingController? _ruleIntValueController;
@@ -390,7 +390,7 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
   /// it in the error state per design.md §2.4/§2.5.5 — tracked here
   /// rather than derived, since "untouched" and "touched-then-emptied"
   /// render differently (§2.4's table). Added for
-  /// `aion-arch/changes/decision-graph-agentjudgment-condition`.
+  /// `AIO-613`.
   TextEditingController? _agentPromptController;
   bool _agentPromptShowError = false;
 
@@ -398,7 +398,7 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
   /// can attach [_onAgentPromptFocusChange] — the mechanism behind
   /// design.md §2.4's "focus + blur while empty" error trigger, alongside
   /// [_save]'s own save-attempt trigger. Added for
-  /// `aion-arch/changes/decision-graph-agentjudgment-condition`.
+  /// `AIO-613`.
   FocusNode? _agentPromptFocusNode;
 
   late DecisionBranchMode _matchedMode;
@@ -508,7 +508,7 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
   /// shape (an unrecognized `field`/`operator` falls back to the first
   /// valid option, matching this context's own rule-builder field/
   /// operator vocabulary). Added for
-  /// `aion-arch/changes/decision-graph-rule-builder`.
+  /// `AIO-661`.
   void _seedRuleState(Map<String, dynamic> params) {
     _ruleIntValueController?.dispose();
     _ruleIntValueController = null;
@@ -562,7 +562,7 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
   /// `agentJudgment` condition — the field isn't rendered in that case,
   /// but keeping a stale controller around would leak into a later save.
   /// Never throws on a missing/malformed `params` shape. Added for
-  /// `aion-arch/changes/decision-graph-agentjudgment-condition`.
+  /// `AIO-613`.
   void _seedAgentJudgmentState(Map<String, dynamic> params) {
     _agentPromptController?.dispose();
     _agentPromptController = null;
@@ -587,7 +587,7 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
   /// error — §2.4's "before any interaction" row) and does nothing once
   /// [_agentPromptShowError] is already `true` (avoids a redundant
   /// rebuild). Added for
-  /// `aion-arch/changes/decision-graph-agentjudgment-condition`.
+  /// `AIO-613`.
   void _onAgentPromptFocusChange() {
     final focusNode = _agentPromptFocusNode;
     if (focusNode == null || focusNode.hasFocus || _agentPromptShowError) {
@@ -883,8 +883,8 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
   /// operator picker over `operatorsFor(field.type)`, and a value control
   /// (digits-only [AppTextField] for `integer`, a `True`/`False` picker
   /// for `boolean`). Per
-  /// `aion-arch/changes/decision-graph-rule-builder/design.md` §3. Added
-  /// for `aion-arch/changes/decision-graph-rule-builder`.
+  /// `AIO-661` §3. Added
+  /// for `AIO-661`.
   Widget _buildRuleTrio(BuildContext context, AionColors c) {
     final fields = decisionFieldsFor(widget.automationContext);
     final field = _ruleField;
@@ -990,14 +990,14 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
   /// (`AgentPromptField`), rendered in place of both the generic
   /// per-catalog-parameter loop and the rule trio when
   /// `_condition?.id == agentJudgmentConditionId`. Per
-  /// `aion-arch/changes/decision-graph-agentjudgment-condition/design.md`
+  /// `AIO-613`
   /// §2 — label + required marker, placeholder example question, a
   /// default two-sentence helper (states the yes/no branch semantics,
   /// per §2.2's "the one place this is stated"), a `n/240` counter once
   /// the prompt reaches 180 characters, and the error treatment (§2.5.5)
   /// once [_agentPromptShowError] is set (a save attempt, or blurring
   /// while empty — see [_save]/[_onAgentPromptFocusChange]). Added
-  /// for `aion-arch/changes/decision-graph-agentjudgment-condition`.
+  /// for `AIO-613`.
   Widget _buildAgentPromptField(BuildContext context, AionColors c) {
     final controller = _agentPromptController!;
     final length = controller.text.length;
@@ -1057,7 +1057,7 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
 /// into the same instance as a real spec. Used as [_ConditionPicker]'s
 /// `SelectionMenu.currentValue` when nothing is chosen yet — see that
 /// picker's own comment for why. Added for
-/// `aion-arch/changes/automation-decision-graphs` (`/verify` fix pass 2).
+/// `AIO-181` (`/verify` fix pass 2).
 final _unselectedConditionSentinel = DecisionConditionSpec(
   id: '__unselected__',
   displayName: '',
@@ -1157,7 +1157,7 @@ class _ConditionPicker extends StatelessWidget {
 /// single-item [items] would otherwise open onto an empty overlay; this
 /// is expected for today's field picker, whose two contexts each expose
 /// exactly one field. Added for
-/// `aion-arch/changes/decision-graph-rule-builder`.
+/// `AIO-661`.
 class _RulePicker<T> extends StatelessWidget {
   const _RulePicker({
     required this.items,
@@ -1223,7 +1223,7 @@ class _RulePicker<T> extends StatelessWidget {
 /// and either a terminal-outcome [SelectionMenu] ([DecisionBranchMode
 /// .endHere]) or a chaining condition picker/label
 /// ([DecisionBranchMode.continueToCondition]). Added for
-/// `aion-arch/changes/automation-decision-graphs` (`/verify` fix pass —
+/// `AIO-181` (`/verify` fix pass —
 /// this control was previously missing entirely, so every branch could
 /// only ever end in a terminal outcome).
 class _BranchSection extends StatelessWidget {
@@ -1328,7 +1328,7 @@ class _BranchSection extends StatelessWidget {
 
 /// The design.md §3.3/§3.4 two-segment "End here / Continue to
 /// condition" control. Added for
-/// `aion-arch/changes/automation-decision-graphs` (`/verify` fix pass).
+/// `AIO-181` (`/verify` fix pass).
 class _BranchModeToggle extends StatelessWidget {
   const _BranchModeToggle({required this.mode, required this.onChanged});
 

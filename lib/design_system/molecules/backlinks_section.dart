@@ -22,8 +22,8 @@ import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 /// this widget. Promoted from `DocumentationBacklinksSection` (per
 /// `project.md`'s Pattern 2) — already fully generic (only
 /// `List<BacklinkRef>` + callback), so promoted as-is. Per
-/// `aion-arch/changes/page-content-markdown-editor/design.md` §5 and
-/// `aion-arch/changes/inline-wikilink-backlinks/design.md` §2–§3 (the
+/// `AIO-1350` §5 and
+/// `AIO-963` §2–§3 (the
 /// wikilink-origin row variant).
 class BacklinksSection extends StatelessWidget {
   /// Creates a [BacklinksSection] listing [backlinks]. Renders nothing

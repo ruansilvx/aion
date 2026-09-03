@@ -14,7 +14,7 @@ import 'package:aion/core/contracts/tool_access_tier.dart';
 /// this provider has none of. Text-only: declares
 /// [ToolAccessTier.noTools] only, so `ModelPhaseToolAccess`'s filter never
 /// offers this provider's models to the Execution tier. See
-/// `aion-arch/changes/anthropic-messages-api-provider/design.md` §3.
+/// `AIO-110` §3.
 class AnthropicMessagesApiProvider implements AgentProvider {
   /// Creates an [AnthropicMessagesApiProvider] running requests through
   /// [client].
@@ -123,7 +123,7 @@ class AnthropicMessagesApiProvider implements AgentProvider {
   /// declaration makes that exclusion explicit on the capability that
   /// actually applies, rather than leaving it an accidental side effect
   /// of a different, coarser filter. See
-  /// `aion-arch/changes/delegated-skill-provider-portability/design.md`
+  /// `AIO-702`
   /// §2.
   @override
   bool get supportsSkillDiscovery => false;

@@ -4,7 +4,7 @@
 /// graph (see `decision_graph_evaluator.dart`) once a context's persisted
 /// [AutomationConfidence] has already resolved to
 /// `AutomationConfidence.auto`. Added for
-/// `aion-arch/changes/automation-decision-graphs`.
+/// `AIO-181`.
 enum DecisionOutcome {
   /// Apply the decision silently, exactly as plain `auto` confidence
   /// always has — no user interaction.

@@ -23,7 +23,7 @@ import 'package:aion/design_system/tokens/theme_scope.dart';
 /// field (e.g. an API key) can mask its value with a reveal toggle and
 /// show a validation-error border, without a bespoke widget; every
 /// existing call site is unaffected. See
-/// `aion-arch/changes/anthropic-messages-api-provider/design.md` §9.
+/// `AIO-110` §9.
 class AppTextField extends StatefulWidget {
   /// Creates an [AppTextField].
   const AppTextField({
@@ -123,7 +123,7 @@ class AppTextField extends StatefulWidget {
   /// existing call site's rendering. `textPrimary` is still applied on
   /// top regardless, same as the default styles, so callers only need to
   /// specify family/size/weight. Added for
-  /// `aion-arch/changes/release-preparation-and-tagging`'s `/verify`
+  /// `AIO-1782`'s `/verify`
   /// round-1 fix-up (T17) — the version field's mono
   /// `AionText.versionInput` style needs a way in.
   final TextStyle? style;
@@ -170,7 +170,7 @@ class _AppTextFieldState extends State<AppTextField> {
     // [effectiveMaxLines] itself when that's fewer than 5 — `TextField`
     // asserts `minLines <= maxLines`, so a caller-supplied [maxLines] below
     // 5 (e.g. `AgentPromptField`'s 4-line prompt, per
-    // `aion-arch/changes/decision-graph-agentjudgment-condition/design.md`
+    // `AIO-613`
     // §2.1) must not be handed a fixed `minLines: 5` — that combination
     // throws immediately. Fixed as part of that change's `/verify` pass;
     // pre-existing bare `AppTextField(maxLines: 3)` call sites

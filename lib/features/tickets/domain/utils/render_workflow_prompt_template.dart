@@ -18,7 +18,7 @@ import 'package:aion/features/tickets/domain/entities/workflow_prompt_template.d
 /// No loops, conditionals, or nested lookups — deliberately the simplest
 /// substitution that satisfies the idea file's "Aion-native
 /// prompt/workflow template" want. See
-/// `aion-arch/changes/workflow-skill-attachments/design.md` §1.4.
+/// `AIO-2650` §1.4.
 String renderWorkflowPromptTemplate(
   WorkflowPromptTemplate template,
   Ticket ticket,

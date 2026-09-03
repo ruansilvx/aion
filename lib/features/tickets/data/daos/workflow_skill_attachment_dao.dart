@@ -11,7 +11,7 @@ part 'workflow_skill_attachment_dao.g.dart';
 /// no seeding logic, matching [WorkflowStatusDao]'s shape minus its
 /// `seedDefaultsIfEmpty` method (an empty attachment table is the correct
 /// starting state — see `app_database.dart`'s version-16 dartdoc). See
-/// `aion-arch/changes/workflow-skill-attachments/design.md` §2.4.
+/// `AIO-2650` §2.4.
 @DriftAccessor(tables: [WorkflowSkillAttachmentsTable])
 class WorkflowSkillAttachmentDao extends DatabaseAccessor<AppDatabase>
     with _$WorkflowSkillAttachmentDaoMixin {

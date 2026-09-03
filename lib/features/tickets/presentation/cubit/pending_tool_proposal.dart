@@ -11,9 +11,9 @@ import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 /// `TicketsCubit._awaitProposalConfirmation` keeps the underlying model
 /// run paused (`AutomationConfidence.gated`). Rendered by
 /// `_ToolProposalBanner`. Added for
-/// `aion-arch/changes/mid-task-chat-branching`; see that change's
+/// `AIO-1118`; see that change's
 /// design.md §8. `CreateTicketProposal`/`AddLinkProposal` added for
-/// `aion-arch/changes/ticket-crud-tool-calls`; see that change's design.md
+/// `AIO-2108`; see that change's design.md
 /// §5.
 sealed class PendingToolProposal extends Equatable {
   /// Creates a [PendingToolProposal].
@@ -76,7 +76,7 @@ class CloseBranchProposal extends PendingToolProposal {
 
 /// A pending `create_ticket` call, proposing a new top-level ticket of
 /// [type] titled [title] (with an optional [description]). Added for
-/// `aion-arch/changes/ticket-crud-tool-calls`.
+/// `AIO-2108`.
 class CreateTicketProposal extends PendingToolProposal {
   /// Creates a [CreateTicketProposal] for [title]/[type]/[description].
   const CreateTicketProposal({
@@ -102,7 +102,7 @@ class CreateTicketProposal extends PendingToolProposal {
 /// A pending `add_link` call, proposing to relate the current ticket to
 /// the ticket identified by [targetTicketId] (titled [targetTicketTitle],
 /// resolved once by the handler before this proposal is constructed) via
-/// [linkType]. Added for `aion-arch/changes/ticket-crud-tool-calls`.
+/// [linkType]. Added for `AIO-2108`.
 class AddLinkProposal extends PendingToolProposal {
   /// Creates an [AddLinkProposal] for [targetTicketId]/[targetTicketTitle]/
   /// [linkType].

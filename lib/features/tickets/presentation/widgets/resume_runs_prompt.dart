@@ -25,7 +25,7 @@ import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 /// shared shell's fixed padding/single-color border doesn't match this
 /// banner's `primaryWash` fill + distinct `primary`-alpha border, and its
 /// action row has no equivalent elsewhere to reuse. Added for
-/// `aion-arch/changes/parallel-work`; see that change's design.md §3.
+/// `AIO-1400`; see that change's design.md §3.
 class ResumeRunsPrompt extends StatelessWidget {
   /// Creates a [ResumeRunsPrompt] listing [tickets] — the interrupted
   /// runs awaiting a Resume/Dismiss decision.

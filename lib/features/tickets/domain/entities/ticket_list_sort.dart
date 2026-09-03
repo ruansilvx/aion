@@ -9,7 +9,7 @@ import 'package:aion/features/tickets/domain/enums/ticket_sort_field.dart';
 /// [field] with one [direction] — mirrors [TicketListFilters]' shape,
 /// but a single value rather than a `Set` per field, since sort has no
 /// multi-select/OR semantics. See
-/// `aion-arch/changes/ticket-sort-control-and-board-as-default-view`.
+/// `AIO-2371`.
 class TicketListSort extends Equatable {
   /// Creates a [TicketListSort] with [field] ordered by [direction].
   const TicketListSort({required this.field, required this.direction});

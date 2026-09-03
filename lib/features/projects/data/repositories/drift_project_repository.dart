@@ -10,7 +10,7 @@ import 'package:aion/features/projects/domain/repositories/project_repository.da
 /// Drift-backed implementation of [ProjectRepository], backed by
 /// [RegistryDatabase] — the single, non-project-scoped database listing
 /// every known project (see
-/// `aion-arch/changes/multi-project-hub/design.md` §3). Plain reads/
+/// `AIO-1174` §3). Plain reads/
 /// writes only, no validation — invariants (unique name, path already in
 /// use, etc.) are owned by `CreateProjectCubit`, not this class.
 class DriftProjectRepository implements ProjectRepository {

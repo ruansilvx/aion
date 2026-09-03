@@ -24,10 +24,10 @@ import 'package:aion/features/tickets/presentation/widgets/status_dot.dart';
 /// `_GroupDivider` — a single group needs neither). Like
 /// `TicketFilterPopover`, toggling a row never closes the panel — only
 /// tapping outside or pressing `Escape` dismisses it. See
-/// `aion-arch/changes/list-board-view-and-column-visibility/design.md`
+/// `AIO-1069`
 /// §7.1 and that change's Component Spec §3; status order/dot color
 /// threaded through `WorkflowConfigCubit` (in place of the hardcoded
-/// 6-status default) for `aion-arch/changes/v1-release-readiness`.
+/// 6-status default) for `AIO-2550`.
 class TicketColumnsPopover extends StatefulWidget {
   /// Creates a [TicketColumnsPopover] wrapping [trigger].
   const TicketColumnsPopover({

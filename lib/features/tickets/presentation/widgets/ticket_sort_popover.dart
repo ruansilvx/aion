@@ -19,7 +19,7 @@ import 'package:aion/features/tickets/domain/enums/ticket_sort_field.dart';
 /// Structurally mirrors `TicketFilterPopover`'s `LayerLink`/
 /// `CompositedTransformFollower`/`OverlayEntry` mechanics and
 /// `Escape`-to-dismiss `Shortcuts`/`Actions` wiring. See
-/// `aion-arch/changes/ticket-sort-control-and-board-as-default-view`.
+/// `AIO-2371`.
 class TicketSortPopover extends StatefulWidget {
   /// Creates a [TicketSortPopover] wrapping [trigger].
   const TicketSortPopover({

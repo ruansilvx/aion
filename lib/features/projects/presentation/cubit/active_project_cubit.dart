@@ -12,7 +12,7 @@ import 'package:aion/features/projects/presentation/cubit/active_project_state.d
 
 /// Tracks which [Project] is currently active and drives the live,
 /// no-restart project switch described in
-/// `aion-arch/changes/multi-project-hub/design.md` §6: the workspace
+/// `AIO-1174` §6: the workspace
 /// subtree in `main.dart` is keyed on `ValueKey(activeProject.id)`, so
 /// emitting a new [ActiveProjectOpen] with a different project id causes
 /// Flutter to dispose the old subtree (closing its [AppDatabase]
@@ -102,7 +102,7 @@ class ActiveProjectCubit extends Cubit<ActiveProjectState>
   /// never reappears on a later rebuild within the same session. No-ops
   /// if the current state isn't [ActiveProjectOpen], or the flag is
   /// already `false`. Added for
-  /// `aion-arch/changes/new-project-onboarding`.
+  /// `AIO-1266`.
   @override
   void consumeCodebaseAnalysisOffer() {
     final current = state;
@@ -124,7 +124,7 @@ class ActiveProjectCubit extends Cubit<ActiveProjectState>
   /// (or decided not to show) the baseline-upgrade offer banner. No-ops
   /// if the current state isn't [ActiveProjectOpen], or the flag is
   /// already `false`. Added for
-  /// `aion-arch/changes/baseline-version-upgrade-flow`.
+  /// `AIO-297`.
   @override
   void consumeBaselineUpgradeOffer() {
     final current = state;
@@ -150,7 +150,7 @@ class ActiveProjectCubit extends Cubit<ActiveProjectState>
   /// already pinned to the latest version. Re-emits [ActiveProjectOpen]
   /// with the bumped project and [ActiveProjectOpen.offerBaselineUpgrade]
   /// cleared. Added for
-  /// `aion-arch/changes/baseline-version-upgrade-flow`.
+  /// `AIO-297`.
   @override
   Future<void> acceptBaselineUpgrade() async {
     final current = state;

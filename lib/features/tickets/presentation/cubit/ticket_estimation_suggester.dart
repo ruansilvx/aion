@@ -21,7 +21,7 @@ import 'package:aion/features/tickets/domain/utils/embedding_similarity.dart';
 /// Cubit-owns-domain-logic convention keeps out of the repository/service
 /// layer. `TicketsCubit` constructs one instance in its own constructor
 /// body, next to `_rollupRecomputer`. See
-/// `aion-arch/changes/ai-assisted-complexity-and-estimate-suggestions/design.md`
+/// `AIO-75`
 /// §2.1–§2.2.
 class TicketEstimationSuggester {
   /// Creates a [TicketEstimationSuggester] backed by [_repository].

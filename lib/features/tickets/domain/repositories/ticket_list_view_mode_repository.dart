@@ -11,7 +11,7 @@ import 'package:aion/features/tickets/domain/entities/ticket_list_view_mode.dart
 /// choice yet" semantics: an unset value means the fixed
 /// [TicketListViewMode.board] starting default still applies, not `null`
 /// treated as an arbitrary fallback. See
-/// `aion-arch/changes/list-board-view-and-column-visibility/design.md`
+/// `AIO-1069`
 /// §2.3.
 abstract interface class TicketListViewModeRepository {
   /// The persisted explicit view mode for [projectId], or `null` if the

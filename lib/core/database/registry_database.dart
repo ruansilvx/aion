@@ -43,7 +43,7 @@ class ProjectsTable extends Table {
 /// Opens the platform-appropriate [QueryExecutor] for the registry
 /// database — always at one fixed location per platform, unlike
 /// [AppDatabase] which is addressed per-[Project] (see
-/// `aion-arch/changes/multi-project-hub/design.md` §7). The registry
+/// `AIO-1174` §7). The registry
 /// must be readable before any project is picked, so it cannot itself
 /// be project-scoped.
 QueryExecutor _openRegistryConnection() {
@@ -58,7 +58,7 @@ QueryExecutor _openRegistryConnection() {
 
 /// Aion's project registry database — the single piece of drift state
 /// that is not per-project (see
-/// `aion-arch/changes/multi-project-hub/design.md` §3, §7). Lists every
+/// `AIO-1174` §3, §7). Lists every
 /// known [Project] and its metadata; consulted by the Hub before any
 /// project-scoped [AppDatabase] connection exists.
 @DriftDatabase(tables: [ProjectsTable])

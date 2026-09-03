@@ -20,7 +20,7 @@ import 'package:aion/features/tickets/domain/repositories/ticket_board_column_vi
 /// repository performs no validation at all, per this project's
 /// Cubit-vs-repository split (was a `TicketStatus.values.where(...)`
 /// enum round-trip before
-/// `aion-arch/changes/configurable-ticket-workflow`).
+/// `AIO-549`).
 class SharedPrefsTicketBoardColumnVisibilityRepository
     implements TicketBoardColumnVisibilityRepository {
   String _key(String projectId) =>

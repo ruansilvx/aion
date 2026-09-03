@@ -11,7 +11,7 @@ import 'package:aion/core/contracts/tool_access_tier.dart';
 
 /// The sole [AgentProvider] implementation for this MVP — wraps the
 /// existing [ClaudeAgentSdkClient] unchanged. See
-/// `aion-arch/changes/pluggable-provider-abstraction/design.md` §2.
+/// `AIO-1544` §2.
 class ClaudeAgentSdkProvider implements AgentProvider {
   /// Creates a [ClaudeAgentSdkProvider], internally building a
   /// [ClaudeAgentSdkClient] from [bridgeLocator].
@@ -91,7 +91,7 @@ class ClaudeAgentSdkProvider implements AgentProvider {
   /// project-local `.claude/skills/<name>` skills on disk, exactly the
   /// mechanism a `SkillAttachmentKind.delegatedSkill` attachment's
   /// `/<name>` prompt depends on. See
-  /// `aion-arch/changes/delegated-skill-provider-portability/design.md`
+  /// `AIO-702`
   /// §2.
   @override
   bool get supportsSkillDiscovery => true;

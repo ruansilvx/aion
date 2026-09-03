@@ -75,7 +75,7 @@ class GraphCanvasEdge {
 /// The side of a 24px lattice cell nearest [value] — shared by
 /// [GraphCanvas]'s own node-drag snapping and available to callers that
 /// want to pre-snap a manually-set position before storing it. Added for
-/// `aion-arch/changes/automation-decision-graphs` (`/verify` fix pass 2).
+/// `AIO-181` (`/verify` fix pass 2).
 double snapToGraphCanvasLattice(double value) => (value / 24).round() * 24.0;
 
 /// Aion's pan/zoom/node-graph primitive — `InteractiveViewer` (pan/zoom)
@@ -87,7 +87,7 @@ double snapToGraphCanvasLattice(double value) => (value / 24).round() * 24.0;
 /// import. Generic over a node/edge model and a per-node content builder —
 /// not specific to `DecisionNode`, so it can be reused by any future
 /// node-graph feature. Added for
-/// `aion-arch/changes/automation-decision-graphs`; see that change's
+/// `AIO-181`; see that change's
 /// design.md §1/§5 (`/verify` fix pass 2 added the dot grid, cursor
 /// states, drag-settle animation, and the zoom cluster's shadow/readout/
 /// keyboard-zoom/double-tap-fit/disabled-at-bounds states — see
@@ -374,7 +374,7 @@ class _GraphCanvasState<T> extends State<GraphCanvas<T>>
 /// a node's drag area. Split out of [_GraphCanvasState.build] purely so
 /// hover state (`MouseRegion.onEnter`/`.onExit`) doesn't force the whole
 /// canvas to rebuild on every node hover change. Added for
-/// `aion-arch/changes/automation-decision-graphs` (`/verify` fix pass 2).
+/// `AIO-181` (`/verify` fix pass 2).
 class _CanvasNodeGesture<T> extends StatefulWidget {
   const _CanvasNodeGesture({
     required this.node,
@@ -439,7 +439,7 @@ class _CanvasNodeGestureState<T> extends State<_CanvasNodeGesture<T>> {
 /// Paints the 24px dot-grid lattice beneath every [GraphCanvas] node/edge,
 /// in canvas space (so it pans/zooms with the plane) — design.md §1.1.
 /// Hidden below `scale < 0.6`, since the dots alias into noise at low
-/// zoom. Added for `aion-arch/changes/automation-decision-graphs`
+/// zoom. Added for `AIO-181`
 /// (`/verify` fix pass 2).
 class _GridPainter extends CustomPainter {
   const _GridPainter({

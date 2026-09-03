@@ -19,7 +19,7 @@ import 'package:aion/features/providers/presentation/widgets/decision_node_form.
 /// Reads/writes through [DecisionGraphConfigCubit] — the same source of
 /// truth `GraphCanvas` renders from, so a selection or edit in either
 /// pane is reflected in the other via the same [DecisionGraphConfigState].
-/// Added for `aion-arch/changes/automation-decision-graphs`; see that
+/// Added for `AIO-181`; see that
 /// change's design.md §2. (`/verify` fix pass — this pane previously only
 /// ever rendered the graph's root node, since `DecisionNodeForm` had no
 /// way to author a chained branch; see that form's own dartdoc.)
@@ -278,7 +278,7 @@ class _NodeRowState extends State<_NodeRow> {
   /// affordance (design.md §2.3) is tapped, forcing that branch's mode
   /// straight to "Continue to condition" when the form expands — see
   /// [DecisionNodeForm.forceMatchedContinue]/`.forceUnmatchedContinue`.
-  /// Added for `aion-arch/changes/automation-decision-graphs` (`/verify`
+  /// Added for `AIO-181` (`/verify`
   /// fix pass 2).
   bool _forceMatchedContinue = false;
   bool _forceUnmatchedContinue = false;
@@ -647,7 +647,7 @@ class _AddConditionAffordance extends StatelessWidget {
 /// `x = 24 * d + 19` relative to this row's own left edge, full row
 /// height. Shared by [_NodeRow] and [_BranchChild] so the rail lines up
 /// identically for a row's own content and its `MATCHED`/`UNMATCHED`
-/// label. Added for `aion-arch/changes/automation-decision-graphs`
+/// label. Added for `AIO-181`
 /// (`/verify` fix pass 2).
 class _GuideRailIndent extends StatelessWidget {
   const _GuideRailIndent({required this.depth, required this.child});
@@ -689,7 +689,7 @@ class _GuideRailIndent extends StatelessWidget {
 /// exception, re-toning the whole badge to `danger` for an incomplete
 /// (empty-prompt) node, mirroring `_QuestionChip`'s own `isError` handling
 /// on the canvas card (design.md §4.3). Added for
-/// `aion-arch/changes/decision-graph-agentjudgment-condition`.
+/// `AIO-613`.
 class _AskBadge extends StatelessWidget {
   const _AskBadge({this.isError = false});
 
@@ -745,15 +745,15 @@ class _AskBadge extends StatelessWidget {
 /// `DecisionGraphEditorScreen`'s own private `_ParameterChip` (not
 /// shared across files, consistent with this codebase's existing
 /// per-file small-private-widget convention). Added for
-/// `aion-arch/changes/automation-decision-graphs` (`/verify` fix pass 2).
+/// `AIO-181` (`/verify` fix pass 2).
 /// [bordered] renders a 1px `AionColors.border` hairline and one point
 /// less vertical padding — the rule-builder node's one visual difference
 /// from a preset node's chip, mirroring the canvas pane's own
 /// `_ParameterChip.bordered`, per
-/// `aion-arch/changes/decision-graph-rule-builder/design.md`'s Component
+/// `AIO-661`'s Component
 /// Spec §4.2. Defaults to `false`, preserving every preset-condition call
 /// site's unbordered rendering. Added for
-/// `aion-arch/changes/decision-graph-rule-builder`.
+/// `AIO-661`.
 class _ParameterChip extends StatelessWidget {
   const _ParameterChip({required this.text, this.bordered = false});
 

@@ -74,7 +74,7 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
   /// the reclassify target picker currently showing, or `null` when the
   /// overlay is showing the root action list (or the promote chooser)
   /// instead. Reset to `null` whenever the overlay closes. Added for
-  /// `aion-arch/changes/idea-gap-question-ticket-types`.
+  /// `AIO-934`.
   TicketType? _reclassifyTargetType;
 
   @override
@@ -328,7 +328,7 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
 /// The root action-list content ("Promote to Epic"/"Promote to Bug" and
 /// "Change to Known Gap"/"Change to Open Question", for `idea` tickets
 /// only, then Delete ticket). Per design.md §7.1 Widened "Promote" menu
-/// and `aion-arch/changes/idea-gap-question-ticket-types/design.md` §4.
+/// and `AIO-934` §4.
 class _RootMenu extends StatelessWidget {
   const _RootMenu({
     required this.ticketType,
@@ -353,7 +353,7 @@ class _RootMenu extends StatelessWidget {
 
   /// Called with [TicketType.knownGap] or [TicketType.openQuestion] when
   /// the corresponding reclassify row is tapped. Added for
-  /// `aion-arch/changes/idea-gap-question-ticket-types`.
+  /// `AIO-934`.
   final ValueChanged<TicketType> onReclassifyTap;
 
   /// Called when "Delete ticket" is tapped.
@@ -684,7 +684,7 @@ class _PromoteChooser extends StatelessWidget {
 }
 
 /// The "Change to Known Gap"/"Change to Open Question" target picker
-/// (`aion-arch/changes/idea-gap-question-ticket-types/design.md` §4.2): a
+/// (`AIO-934` §4.2): a
 /// back header, then a single "Pick target ticket" row embedding
 /// [TicketLinkPicker] as a searchable existing-ticket picker. Unlike
 /// [_PromoteChooser], there is no "create new" option — a reclassification
@@ -692,7 +692,7 @@ class _PromoteChooser extends StatelessWidget {
 /// supplied by [_TicketOverflowMenuState._showOverlay] using its own
 /// `context` — this widget itself never reads `TicketsCubit`, same
 /// rationale as [_PromoteChooser]. Added for
-/// `aion-arch/changes/idea-gap-question-ticket-types`.
+/// `AIO-934`.
 class _ReclassifyChooser extends StatelessWidget {
   const _ReclassifyChooser({
     required this.targetType,

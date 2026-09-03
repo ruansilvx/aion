@@ -14,7 +14,7 @@ sealed class ActiveProjectState extends Equatable {
 
 /// No project is open — the user is at the Hub. The initial state, and
 /// gates every `/workspace/*` route (see
-/// `aion-arch/changes/multi-project-hub/design.md` §9) to redirect to
+/// `AIO-1174` §9) to redirect to
 /// `/hub`.
 class ActiveProjectNone extends ActiveProjectState {
   /// Creates an [ActiveProjectNone] state.
@@ -66,7 +66,7 @@ class ActiveProjectOpen extends ActiveProjectState {
   /// creation" rather than a standing flag.
   /// [ActiveProjectCubit.consumeCodebaseAnalysisOffer] clears it back to
   /// `false` once the screen has read it. Added for
-  /// `aion-arch/changes/new-project-onboarding`.
+  /// `AIO-1266`.
   final bool offerCodebaseAnalysis;
 
   /// Whether `TicketsListScreen` should show the baseline-upgrade offer
@@ -79,7 +79,7 @@ class ActiveProjectOpen extends ActiveProjectState {
   /// version remains available.
   /// [ActiveProjectCubit.consumeBaselineUpgradeOffer] clears it back to
   /// `false` once the screen has read it. Added for
-  /// `aion-arch/changes/baseline-version-upgrade-flow`.
+  /// `AIO-297`.
   final bool offerBaselineUpgrade;
 
   @override

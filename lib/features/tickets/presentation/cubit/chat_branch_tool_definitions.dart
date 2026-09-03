@@ -7,7 +7,7 @@ import 'package:aion/core/contracts/agent_tool_definition.dart';
 /// `ChatCubit._toolsFor`/`TicketsCubit._canBranch`), to split a blocking
 /// sub-issue off into its own child `chat` ticket. Handled by
 /// `TicketsCubit._handleBranchToolCall`. Added for
-/// `aion-arch/changes/mid-task-chat-branching`; see that change's
+/// `AIO-1118`; see that change's
 /// design.md §6.
 const branchTicketToolDefinition = AgentToolDefinition(
   name: 'branch_ticket',
@@ -47,7 +47,7 @@ const branchTicketToolDefinition = AgentToolDefinition(
 /// to fold a summary of the resolution back into the parent chat's
 /// transcript and close the branch. Handled by
 /// `TicketsCubit._handleCloseBranchToolCall`. Added for
-/// `aion-arch/changes/mid-task-chat-branching`; see that change's
+/// `AIO-1118`; see that change's
 /// design.md §6.
 const closeBranchToolDefinition = AgentToolDefinition(
   name: 'close_branch',

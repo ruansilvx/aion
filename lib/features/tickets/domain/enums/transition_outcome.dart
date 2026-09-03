@@ -5,9 +5,9 @@
 /// unconditional structural gate, evaluated regardless of any
 /// `AutomationConfidence` setting. Deliberately a two-value outcome, unlike
 /// `core/automation/decision_outcome.dart`'s four-value `DecisionOutcome` —
-/// see `aion-arch/changes/sddstage-transition-preconditions/proposal.md`'s
+/// see `AIO-1936`'s
 /// "Why parallel types, not shared ones." Added for
-/// `aion-arch/changes/sddstage-transition-preconditions`.
+/// `AIO-1936`.
 enum TransitionOutcome {
   /// The stage transition may proceed.
   allowed,

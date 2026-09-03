@@ -2,7 +2,7 @@
 
 /// Which of the two Phase 2 attachment mechanisms a
 /// [SkillAttachment](../entities/skill_attachment.dart) uses. See
-/// `aion-arch/changes/workflow-skill-attachments/design.md` §1.1.
+/// `AIO-2650` §1.1.
 enum SkillAttachmentKind {
   /// Renders a project-authored
   /// [WorkflowPromptTemplate](../entities/workflow_prompt_template.dart)
@@ -16,7 +16,7 @@ enum SkillAttachmentKind {
   /// (`AgentRequest.toolsEnabled: true`), so the underlying coding
   /// agent's own discovered `.claude/skills/<skillName>` skill executes.
   /// Confirmed viable by the 2026-08-19 CLI-delegation spike documented
-  /// in `aion-arch/ideas/configurable-workflow-and-automation-engine.md`'s
+  /// in `AIO-18`'s
   /// "Explore findings" section.
   delegatedSkill,
 }

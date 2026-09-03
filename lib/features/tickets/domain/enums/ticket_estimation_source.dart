@@ -5,7 +5,7 @@
 /// background estimator (`TicketEstimationSuggester`) is still allowed to
 /// silently replace it, and whether the UI shows an `AiSuggestionBadge` or
 /// a Regenerate action next to the field. See
-/// `aion-arch/changes/ai-assisted-complexity-and-estimate-suggestions/design.md`
+/// `AIO-75`
 /// §1.1.
 ///
 /// `complexity == null`/`estimate == null` always implies its companion

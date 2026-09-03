@@ -12,7 +12,7 @@ import 'package:aion/features/projects/domain/entities/project.dart';
 /// destructive Remove action. Tapping the card body (anywhere except the
 /// overflow trigger and the Open button) opens the project — identical
 /// to pressing [onOpen]. See
-/// `aion-arch/changes/multi-project-hub/design.md` §1, §6, §7.
+/// `AIO-1174` §1, §6, §7.
 class ProjectCard extends StatefulWidget {
   /// Creates a [ProjectCard] for [project].
   const ProjectCard({

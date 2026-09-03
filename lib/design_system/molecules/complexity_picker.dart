@@ -18,7 +18,7 @@ import 'package:aion/features/tickets/domain/enums/ticket_complexity.dart';
 /// genuinely optional with no "unset" sentinel value (unlike
 /// `TicketPriority.none`) — `AppDropdown.value` is non-nullable and
 /// can't represent that. Per
-/// `aion-arch/changes/sdd-ticket-execution/design.md` §1.
+/// `AIO-1856` §1.
 class ComplexityPicker extends StatelessWidget {
   /// Creates a [ComplexityPicker] showing [labelText] above a trigger
   /// reflecting [value], calling [onSelected] when the user picks a new

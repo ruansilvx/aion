@@ -17,7 +17,7 @@ import 'package:aion/features/tickets/domain/entities/ticket.dart';
 /// `project.md`'s Pattern 2) so `PageDetailScreen` can reuse it too — no
 /// `Ticket`-type-specific business logic beyond a `List<Ticket>` and
 /// callbacks. Per
-/// `aion-arch/changes/page-content-markdown-editor/design.md` §4.
+/// `AIO-1350` §4.
 class PageSubPagesSection extends StatelessWidget {
   /// Creates a [PageSubPagesSection] listing [childDocs].
   const PageSubPagesSection({

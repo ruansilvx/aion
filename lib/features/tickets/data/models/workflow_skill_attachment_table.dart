@@ -8,7 +8,7 @@ import 'package:drift/drift.dart';
 /// type is generated as `WorkflowSkillAttachmentData`. No FK constraints
 /// — integrity is enforced at the `WorkflowConfigCubit` layer, matching
 /// `WorkflowStatusesTable`'s own precedent. See
-/// `aion-arch/changes/workflow-skill-attachments/design.md` §2.1.
+/// `AIO-2650` §2.1.
 @DataClassName('WorkflowSkillAttachmentData')
 class WorkflowSkillAttachmentsTable extends Table {
   @override

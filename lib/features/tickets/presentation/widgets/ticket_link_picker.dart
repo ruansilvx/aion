@@ -23,7 +23,7 @@ import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
 /// [onSelected] is responsible for actually creating the `TicketLink`
 /// and refreshing whatever state depends on it. Added
 /// `linkTypeOptions`/the link-type selector for
-/// `aion-arch/changes/board-task-ordering-indication` — previously this
+/// `AIO-392` — previously this
 /// picker always implied `TicketLinkType.relatesTo`.
 class TicketLinkPicker extends StatefulWidget {
   /// Creates a [TicketLinkPicker].
@@ -280,7 +280,7 @@ class _TicketLinkPickerState extends State<TicketLinkPicker> {
 /// (§1.6). Defaults to [TicketLinkType.relatesTo] via
 /// [_TicketLinkPickerState._selectedLinkType]'s own initializer/reset,
 /// not this widget. Added for
-/// `aion-arch/changes/board-task-ordering-indication`.
+/// `AIO-392`.
 class _LinkTypeSelectorRow extends StatefulWidget {
   /// Creates a [_LinkTypeSelectorRow] offering [options], currently
   /// showing [value], calling [onChanged] when the user picks another.

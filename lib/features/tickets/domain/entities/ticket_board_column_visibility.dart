@@ -8,7 +8,7 @@ import 'package:equatable/equatable.dart';
 /// exists so `TicketBoardColumnVisibilityRepository` has one type to
 /// read/write instead of a bare `Set<String>`, and so `TicketsCubit` has
 /// one type to pass to/from it. See
-/// `aion-arch/changes/list-board-view-and-column-visibility/design.md`
+/// `AIO-1069`
 /// §2.2.
 class TicketBoardColumnVisibility extends Equatable {
   /// Creates a [TicketBoardColumnVisibility]. [hiddenStatuses] defaults to
@@ -21,7 +21,7 @@ class TicketBoardColumnVisibility extends Equatable {
   /// same "empty = no constraint" convention
   /// [TicketListFilters](ticket_list_filters.dart) already uses for its
   /// three fields. Was `Set<TicketStatus>` before
-  /// `aion-arch/changes/configurable-ticket-workflow` — a status is now a
+  /// `AIO-549` — a status is now a
   /// project-defined name, not a fixed enum.
   final Set<String> hiddenStatuses;
 

@@ -20,12 +20,12 @@ import 'package:aion/features/tickets/presentation/widgets/banner_shell.dart';
 /// progress readout ([CodebaseAnalysisRunning]), a success summary
 /// ([CodebaseAnalysisDone]), or a failure message
 /// ([CodebaseAnalysisFailed]). Per
-/// `aion-arch/changes/new-project-onboarding/design.md` §3.
+/// `AIO-1266` §3.
 ///
 /// The running state's "Hide" control does not stop the in-flight scan —
 /// `AgentModelClient` exposes no cancellation — it only removes the
 /// banner from view; any tickets the run drafts still appear in the list
-/// once it finishes. Added for `aion-arch/changes/new-project-onboarding`.
+/// once it finishes. Added for `AIO-1266`.
 class CodebaseAnalysisBanner extends StatelessWidget {
   /// Creates a [CodebaseAnalysisBanner]. [onDismiss] is called whenever
   /// the banner's dismiss control (× in the offer/done/failed states,

@@ -6,7 +6,7 @@
 /// Trimming/empty-string handling is the consuming Cubit's job
 /// (`AnthropicProviderConfigCubit.saveApiKey`), per `project.md`'s
 /// Cubit-domain-logic split. See
-/// `aion-arch/changes/anthropic-messages-api-provider/design.md` §5.
+/// `AIO-110` §5.
 abstract interface class AnthropicApiKeyRepository {
   /// Returns the currently stored API key, or `null` if none is stored.
   Future<String?> getApiKey();

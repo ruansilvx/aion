@@ -85,7 +85,7 @@ class SelectionMenu<T> extends StatefulWidget {
   /// plain [itemLabel] text row — used by pickers whose design (e.g. the
   /// Complexity meter/sub-hint, the Automation-Confidence mode dot/
   /// sub-label, per
-  /// `aion-arch/changes/sdd-ticket-execution/design.md` §1.4/§6.3) needs
+  /// `AIO-1856` §1.4/§6.3) needs
   /// more than a label per row. Every pre-existing caller omits this and
   /// keeps the plain-text row unchanged.
   final Widget Function(BuildContext context, AionColors c, T item)?

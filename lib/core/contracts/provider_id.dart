@@ -5,8 +5,8 @@
 /// `main.dart`'s `ProviderRegistry`) to add a new provider — nothing else
 /// in this file changes. Two values today: the bundled Claude Agent SDK
 /// bridge, and the Anthropic Messages API called directly over HTTP. See
-/// `aion-arch/changes/pluggable-provider-abstraction/design.md` §1 and
-/// `aion-arch/changes/anthropic-messages-api-provider/design.md` §1.
+/// `AIO-1544` §1 and
+/// `AIO-110` §1.
 enum ProviderId {
   /// The bundled Claude Agent SDK Node.js bridge — see
   /// `core/agent/claude_agent_sdk_provider.dart`.

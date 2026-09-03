@@ -28,7 +28,7 @@ class TicketsTable extends Table {
 
   /// A project-defined `WorkflowStatus.name` string (see
   /// `Ticket.status`'s dartdoc) — was `TicketStatus.name` before
-  /// `aion-arch/changes/configurable-ticket-workflow`.
+  /// `AIO-549`.
   TextColumn get status => text()();
 
   /// `TicketPriority.name` string. Defaults to `'none'`.

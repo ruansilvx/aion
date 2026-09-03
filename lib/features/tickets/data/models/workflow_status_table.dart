@@ -7,7 +7,7 @@ import 'package:drift/drift.dart';
 /// replacement for the fixed `TicketStatus` enum. Row type is generated as
 /// `WorkflowStatusData`. No FK constraints — integrity is enforced at the
 /// `WorkflowConfigCubit` layer, matching every other table in this schema.
-/// See `aion-arch/changes/configurable-ticket-workflow/design.md` §2.1.
+/// See `AIO-549` §2.1.
 @DataClassName('WorkflowStatusData')
 class WorkflowStatusesTable extends Table {
   @override

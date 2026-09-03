@@ -17,7 +17,7 @@ import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 /// Per `project.md`'s Pattern 1 (dependency inversion via `core`),
 /// `features/pages/` depends only on this interface — never on
 /// `features/tickets/` directly. See
-/// `aion-arch/changes/page-content-markdown-editor/design.md`.
+/// `AIO-1350`.
 abstract interface class PageTicketProvider {
   /// Fetches a single `page` ticket by id, or `null` if not found/not a page.
   Future<Ticket?> getPage(String id);
@@ -75,7 +75,7 @@ abstract interface class PageTicketProvider {
   /// uses. Returns `true` on success, `false` if rejected/failed — the
   /// creation popover's caller awaits this to decide whether to close or
   /// show its inline error state. Added for
-  /// `aion-arch/changes/idea-gap-question-ticket-types`.
+  /// `AIO-934`.
   Future<bool> createGapOrQuestion(
     TicketType type, {
     required String title,
@@ -88,7 +88,7 @@ abstract interface class PageTicketProvider {
   /// target a resource too (see design.md's "Resource participation,
   /// widened"). No self/descendant exclusion — unlike parent-candidate
   /// queries, a wikilink reference has no cycle constraint. Added for
-  /// `aion-arch/changes/inline-wikilink-backlinks`.
+  /// `AIO-963`.
   Future<List<Ticket>> getWikilinkCandidates();
 }
 
@@ -117,7 +117,7 @@ class PageRelations extends Equatable {
   /// Other `page`/`resource` tickets that reference this page, either via
   /// an explicit `TicketLink` or an inline `[[wikilink]]` — see
   /// [BacklinkRef.origin]. Was `List<LinkedTicketRef>` (`TicketLink`-only)
-  /// before `aion-arch/changes/inline-wikilink-backlinks`.
+  /// before `AIO-963`.
   final List<BacklinkRef> backlinks;
 
   /// Every `knownGap`/`openQuestion` ticket `relatesTo`-linked to this
@@ -125,7 +125,7 @@ class PageRelations extends Equatable {
   /// see [GapOrQuestionRef]. Mirrors
   /// `TicketsCubit.loadDocumentRelations`'s same aggregation for the
   /// shared `TicketDetailScreen`. Added for
-  /// `aion-arch/changes/idea-gap-question-ticket-types`.
+  /// `AIO-934`.
   final List<GapOrQuestionRef> gapsAndOpenQuestions;
 
   @override

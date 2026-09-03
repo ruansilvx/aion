@@ -10,7 +10,7 @@ import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 /// files). Implemented by the data layer
 /// ([SharedPrefsSddStageConfigRepository]); UI and domain code depend only
 /// on this interface, never on a concrete data source. See
-/// `aion-arch/changes/configurable-ticket-workflow/design.md` §1.5.
+/// `AIO-549` §1.5.
 abstract interface class SddStageConfigRepository {
   /// Whether Epics/Stories must clear the `designBrief`/`designSync` stage
   /// cycle before execution. Defaults to `true` — matches today's

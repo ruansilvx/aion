@@ -163,29 +163,29 @@ class AionColors {
   final Color typePage;
 
   /// Base accent color for [TicketType.idea] chips. Renamed from
-  /// `typeSignal` for `aion-arch/changes/idea-gap-question-ticket-types` —
+  /// `typeSignal` for `AIO-934` —
   /// same values, since the rename is value-preserving.
   final Color typeIdea;
 
   /// Base accent color for [TicketType.knownGap] chips. Added for
-  /// `aion-arch/changes/idea-gap-question-ticket-types`.
+  /// `AIO-934`.
   final Color typeKnownGap;
 
   /// Base accent color for [TicketType.openQuestion] chips. Added for
-  /// `aion-arch/changes/idea-gap-question-ticket-types`.
+  /// `AIO-934`.
   final Color typeOpenQuestion;
 
   /// Base accent color for [TicketType.release] chips.
   final Color typeRelease;
 
   /// Base accent color for [TicketType.chat] chips. Added for
-  /// `aion-arch/changes/sdd-ticket-execution` — completes the seven-type
+  /// `AIO-1856` — completes the seven-type
   /// palette so `TypeChip`/`LinkedTicketsSection` no longer fall back to
   /// [typeTask] for `chat` tickets.
   final Color typeChat;
 
   /// Base accent color for [TicketType.bug] chips. Added for
-  /// `aion-arch/changes/bug-ticket-type`.
+  /// `AIO-425`.
   final Color typeBug;
 
   /// Base accent color for [TicketType.spec] chips/badges. NOTE:
@@ -193,12 +193,12 @@ class AionColors {
   /// in [obsidian] — because [typeTask] follows [primary] from blue to
   /// violet in the dark theme, swapping which hue band sits free for a
   /// tenth type accent. Do not "correct" one theme's value to match the
-  /// other's hue. Added for `aion-arch/changes/spec-ticket-type`.
+  /// other's hue. Added for `AIO-1998`.
   final Color typeSpec;
 
   /// The four-level severity badge palette for this theme, for
   /// [TicketType.bug] tickets. Added for
-  /// `aion-arch/changes/bug-ticket-type`.
+  /// `AIO-425`.
   final AionSeverityColors severity;
 
   /// Creates an [AionColors] palette. All fields are required.
@@ -362,7 +362,7 @@ const double fillAlphaObsidian = 0.16;
 /// [AionColors] fields — not stored as separate palette entries since
 /// their only variation across themes is opacity, not hue. Added for the
 /// multi-project Hub (`features/projects/`); see
-/// `aion-arch/changes/multi-project-hub/design.md` §0.
+/// `AIO-1174` §0.
 extension AionColorsHubTokens on AionColors {
   /// `EmptyHubState` emblem halo glow.
   Color emblemGlow(bool isDark) =>
@@ -426,7 +426,7 @@ extension AionColorsHubTokens on AionColors {
       success.withValues(alpha: isDark ? 0.24 : 0.18);
 
   // success family — ProviderConnectionBadge, connected state. Added for
-  // provider-configuration; see aion-arch/changes/provider-configuration/design.md.
+  // provider-configuration; see AIO-1699.
   /// `ProviderConnectionBadge` fill in the `connected` state.
   Color connectedTint(bool isDark) =>
       success.withValues(alpha: isDark ? 0.20 : 0.14);
@@ -525,7 +525,7 @@ extension AionColorsHubTokens on AionColors {
   // idea family — CodebaseAnalysisBanner's identity accent (typeIdea),
   // since a scan's output is `idea` tickets. Renamed from the
   // `signal*`/`typeSignal` family (value-preserving) for
-  // `aion-arch/changes/idea-gap-question-ticket-types`. Originally added
+  // `AIO-934`. Originally added
   // for new-project-onboarding; see that change's design.md §1.2.
   /// `CodebaseAnalysisBanner`'s `offer`-state fill.
   Color ideaFill(bool isDark) =>
@@ -645,7 +645,7 @@ extension AionColorsHubTokens on AionColors {
   // already established, but at the stronger chip-fill alpha
   // ([fillAlphaArctic]/[fillAlphaObsidian]) rather than [accentTint]'s
   // fainter "whisper" alpha. Added for
-  // `aion-arch/changes/pr-metadata-and-notification-center`; see that
+  // `AIO-1586`; see that
   // change's design.md Component Spec §0.1.
   /// The notification dropdown row's leading outcome-icon tile fill —
   /// [accent] at the standard chip alpha ([fillAlphaArctic]/

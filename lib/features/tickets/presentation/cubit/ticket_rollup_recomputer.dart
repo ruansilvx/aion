@@ -11,7 +11,7 @@ import 'package:aion/features/tickets/domain/utils/ticket_rollup_calculator.dart
 /// duplicate the walk — both cubits construct one instance (wired to the
 /// same [TicketRepository]/optional [TicketGitProjector]/root path they
 /// already hold) instead of each carrying a full copy of this logic. See
-/// `aion-arch/changes/estimate-timespent-rollup-for-ticket-hierarchy/design.md`
+/// `AIO-873`
 /// §2.1.
 class TicketRollupRecomputer {
   /// Creates a [TicketRollupRecomputer] backed by [_repository].

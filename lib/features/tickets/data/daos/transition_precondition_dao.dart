@@ -12,7 +12,7 @@ part 'transition_precondition_dao.g.dart';
 
 /// Drift accessor for [TransitionPreconditionGraphsTable]/
 /// [TransitionPreconditionNodesTable]. See
-/// `aion-arch/changes/sddstage-transition-preconditions/design.md` §2/§3.
+/// `AIO-1936` §2/§3.
 @DriftAccessor(
   tables: [TransitionPreconditionGraphsTable, TransitionPreconditionNodesTable],
 )
@@ -88,7 +88,7 @@ class TransitionPreconditionDao extends DatabaseAccessor<AppDatabase>
   /// hardcoded `TicketsCubit._sddStageAdvanceCheck` branch as data, per
   /// design.md §3. [SddStage.exploring] gets a single-node tree shape;
   /// [SddStage.verifying] gets its own two-node tree (see below, per
-  /// `aion-arch/changes/sdd-verify-quality-gate/design.md` §3.1); `null`/
+  /// `AIO-1905` §3.1); `null`/
   /// [SddStage.archived] get no seeded graph.
   Future<void> seedDefaultsIfEmpty() async {
     final existing = await select(transitionPreconditionGraphsTable).get();
@@ -237,7 +237,7 @@ class TransitionPreconditionDao extends DatabaseAccessor<AppDatabase>
   /// `core/database/app_database.dart`'s `onUpgrade`) — upgrades an
   /// existing project's [SddStage.verifying] graph to the new two-node
   /// shape [seedDefaultsIfEmpty] now seeds directly for a fresh install,
-  /// per `aion-arch/changes/sdd-verify-quality-gate/design.md` §3.2.
+  /// per `AIO-1905` §3.2.
   ///
   /// Only touches the graph if its root node still carries the exact
   /// original single-node default's fingerprint — `fieldId ==

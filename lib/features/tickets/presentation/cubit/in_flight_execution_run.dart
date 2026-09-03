@@ -8,7 +8,7 @@ import 'package:aion/core/contracts/agent_provider.dart';
 /// [AgentProvider] it's running against, so `TicketsCubit
 /// .cancelCodingExecution` can resolve `provider.client.cancel(runId)`
 /// without re-deriving either from scratch. See
-/// `aion-arch/changes/parallel-work/design.md` §5.1.
+/// `AIO-1400` §5.1.
 class InFlightExecutionRun {
   /// Creates an [InFlightExecutionRun] pairing [runId] with [provider].
   InFlightExecutionRun(this.runId, this.provider);

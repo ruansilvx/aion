@@ -29,7 +29,7 @@ class TrashCubit extends Cubit<TrashState> {
   /// with no persisted sort applied; real usage (`app_router.dart`)
   /// always supplies both, mirroring `TicketsCubit`'s own
   /// `sortRepository`/`projectId`. Added for
-  /// `aion-arch/changes/ticket-sort-control-and-board-as-default-view`.
+  /// `AIO-2371`.
   TrashCubit(
     this._repository, {
     TicketGitProjector? gitProjector,
@@ -67,7 +67,7 @@ class TrashCubit extends Cubit<TrashState> {
   /// before emitting. Sorts `roots` per this project's persisted sort
   /// (see [_resolveSort]) so Trash's ticket order matches the ticket
   /// list's — see
-  /// `aion-arch/changes/ticket-sort-control-and-board-as-default-view/design.md`
+  /// `AIO-2371`
   /// §4. Emits [TrashLoading] then [TrashLoaded] on success, or
   /// [TrashError] if the repository call throws.
   Future<void> load() async {

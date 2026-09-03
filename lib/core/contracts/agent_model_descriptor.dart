@@ -7,7 +7,7 @@ import 'package:aion/core/contracts/provider_id.dart';
 /// A provider-scoped model. Replaces the old `AgentModel` enum as the
 /// value object every model selection/routing surface uses — a model is
 /// no longer implicitly "the one provider's model." See
-/// `aion-arch/changes/pluggable-provider-abstraction/design.md` §1.
+/// `AIO-1544` §1.
 class AgentModelDescriptor extends Equatable {
   /// Creates an [AgentModelDescriptor].
   const AgentModelDescriptor({

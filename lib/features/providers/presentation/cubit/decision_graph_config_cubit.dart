@@ -23,7 +23,7 @@ import 'package:aion/features/providers/presentation/cubit/decision_graph_config
 /// [updateNode] reject an edit that would violate either rule, emitting
 /// [DecisionGraphConfigError] and leaving the prior [DecisionGraphConfigLoaded]
 /// state's tree untouched. See
-/// `aion-arch/changes/automation-decision-graphs/design.md` §3.
+/// `AIO-181` §3.
 class DecisionGraphConfigCubit extends Cubit<DecisionGraphConfigState> {
   /// Creates a [DecisionGraphConfigCubit] backed by [_repository].
   DecisionGraphConfigCubit(this._repository)
@@ -70,7 +70,7 @@ class DecisionGraphConfigCubit extends Cubit<DecisionGraphConfigState> {
   /// [DecisionGraphConfigErrorReason.danglingBranchTarget]/`nodeNotFound`,
   /// discarding the edit. Fixed by re-merging the new orphan node into
   /// the reloaded state whenever the reload didn't already pick it up —
-  /// found via manual QA of `aion-arch/changes/automation-decision-graphs`
+  /// found via manual QA of `AIO-181`
   /// (`/verify` follow-up), see that change's `tasks.md` for the
   /// reproduction. An orphan that's never subsequently attached (the user
   /// abandons the edit) simply stays in this merged-in state until the
@@ -153,7 +153,7 @@ class DecisionGraphConfigCubit extends Cubit<DecisionGraphConfigState> {
   /// this actually performs it rather than leaving descendants orphaned
   /// in the repository (unreachable from the root, but never actually
   /// removed). Fixed via manual QA of
-  /// `aion-arch/changes/automation-decision-graphs` — the previous
+  /// `AIO-181` — the previous
   /// single-node delete left every descendant as leaked, permanently
   /// unreachable rows.
   Future<void> deleteNode(String id) async {
@@ -251,7 +251,7 @@ class DecisionGraphConfigCubit extends Cubit<DecisionGraphConfigState> {
   /// wired into a mutual loop before either is attached as anyone's
   /// branch target or set as the root — is rejected too, not just a
   /// cycle already reachable from the root. Added for
-  /// `aion-arch/changes/automation-decision-graphs` (`/verify` fix
+  /// `AIO-181` (`/verify` fix
   /// pass 2 — the previous root-only walk missed exactly this case).
   bool _detectCycle(Map<String, DecisionNode> nodesById) {
     final visited = <String>{};

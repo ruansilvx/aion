@@ -12,7 +12,7 @@ import 'package:aion/features/projects/presentation/cubit/baseline_upgrade_state
 /// (via [ActiveProjectProvider]); this cubit only merges "current
 /// version" and "latest available version" into a UI-ready state and
 /// forwards the accept call. Added for
-/// `aion-arch/changes/baseline-version-upgrade-flow`.
+/// `AIO-297`.
 class BaselineUpgradeCubit extends Cubit<BaselineUpgradeState> {
   /// Creates a [BaselineUpgradeCubit] backed by [_baselineRepository] and
   /// [_activeProjectProvider].

@@ -9,7 +9,7 @@ import 'package:aion/core/contracts/provider_id.dart';
 /// Flutter app means: adding provider #2 is one new class + one enum
 /// value + one entry in the registry's construction list — nothing else
 /// in `main.dart` or any consuming cubit changes. See
-/// `aion-arch/changes/pluggable-provider-abstraction/design.md` §1.
+/// `AIO-1544` §1.
 abstract interface class ProviderRegistry {
   /// Every registered provider.
   List<AgentProvider> get availableProviders;

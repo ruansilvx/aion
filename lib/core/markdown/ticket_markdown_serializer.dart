@@ -128,7 +128,7 @@ class TicketMarkdownSerializer {
         // the project has actually configured is validated at the
         // `TicketsCubit`/`WorkflowConfigCubit` layer, not this pure-Dart
         // parser. Was a `TicketStatus.values` membership check before
-        // `aion-arch/changes/configurable-ticket-workflow`.
+        // `AIO-549`.
         return value is String && value.isNotEmpty ? (value,) : null;
       case TicketMarkdownTemplate.priority:
         for (final p in TicketPriority.values) {

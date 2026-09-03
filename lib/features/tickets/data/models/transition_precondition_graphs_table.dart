@@ -10,7 +10,7 @@ import 'package:drift/drift.dart';
 /// every other table in this schema (mirrors
 /// `core/automation/data/automation_decision_graphs_table.dart`'s exact
 /// shape). See
-/// `aion-arch/changes/sddstage-transition-preconditions/design.md` §2.
+/// `AIO-1936` §2.
 @DataClassName('TransitionPreconditionGraphData')
 class TransitionPreconditionGraphsTable extends Table {
   @override

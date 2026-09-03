@@ -6,7 +6,7 @@ import 'package:equatable/equatable.dart';
 /// usage signal maps onto, via `AgentProvider.describeOverage`. Replaces
 /// the bare `VoidCallback` overage signal `ChatCubit.runChatTurn` used to
 /// expose. See
-/// `aion-arch/changes/pluggable-provider-abstraction/design.md` §1, §4.
+/// `AIO-1544` §1, §4.
 sealed class ConsumptionSignal extends Equatable {
   /// Creates a [ConsumptionSignal] carrying a human-readable [message].
   const ConsumptionSignal(this.message);

@@ -12,7 +12,7 @@ import 'dart:typed_data';
 /// search) and `TicketEstimationSuggester` (complexity/estimate
 /// calibration) — the only piece of similarity-scan logic the two features
 /// genuinely share. See
-/// `aion-arch/changes/ai-assisted-complexity-and-estimate-suggestions/design.md`
+/// `AIO-75`
 /// §1.3.
 double cosineSimilarity(Uint8List a, Uint8List b) {
   final vecA = a.buffer.asFloat32List(a.offsetInBytes, a.lengthInBytes ~/ 4);

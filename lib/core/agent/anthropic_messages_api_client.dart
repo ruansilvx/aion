@@ -50,7 +50,7 @@ typedef _PassResult = ({
 /// bridge's NDJSON stdout. Unlike that client, this one never spawns a
 /// process — a plain [Dio]-backed HTTP call, authenticated via
 /// [_getApiKey] rather than the user's Claude plan. See
-/// `aion-arch/changes/anthropic-messages-api-provider/design.md` §2.
+/// `AIO-110` §2.
 ///
 /// When [AgentRequest.tools] is non-empty, a run may issue more than one
 /// POST: the Messages API's native `tool_use`/`tool_result` loop is
@@ -60,7 +60,7 @@ typedef _PassResult = ({
 /// with a `tool_result` continuation, repeating until a pass ends some
 /// other way. `inputTokens`/`outputTokens` on the final [AgentDoneEvent]
 /// are summed across every POST in the loop. See
-/// `aion-arch/changes/mid-task-chat-branching/design.md` §4.
+/// `AIO-1118` §4.
 class AnthropicMessagesApiClient implements AgentModelClient {
   /// Creates an [AnthropicMessagesApiClient] using [_dio] for the HTTP
   /// call, resolving the API key on each [run] via [_getApiKey] (so a key
@@ -77,7 +77,7 @@ class AnthropicMessagesApiClient implements AgentModelClient {
   /// One [CancelToken] per run, shared across every POST in that run's
   /// tool-calling re-POST loop, so cancelling mid-loop takes effect on
   /// whichever pass is currently in flight. Added for
-  /// `aion-arch/changes/parallel-work`; see that change's design.md §2.
+  /// `AIO-1400`; see that change's design.md §2.
   final _cancelTokens = <String, CancelToken>{};
 
   @override

@@ -14,7 +14,7 @@ enum AutomationContext {
   /// Coding-execution verify-gate retry — whether a failed agentic
   /// verify turn feeds back for an automatic corrective turn, asks
   /// first, or waits for a manual retry. Added for
-  /// `aion-arch/changes/coding-execution-reliability-and-safety`; see
+  /// `AIO-506`; see
   /// `TicketsCubit._runCodingExecution`.
   codingExecutionRetry,
 
@@ -22,7 +22,7 @@ enum AutomationContext {
   /// `close_branch` tool calls run immediately, wait for user
   /// confirmation, or are declined outright. Governs both tools
   /// symmetrically (one setting, not two). Added for
-  /// `aion-arch/changes/mid-task-chat-branching`; see
+  /// `AIO-1118`; see
   /// `TicketsCubit._handleBranchToolCall`/`_handleCloseBranchToolCall`.
   chatBranching,
 
@@ -32,14 +32,14 @@ enum AutomationContext {
   /// ([AutomationConfidence.gated]), or is left for the existing
   /// orphaned/stalled failure-banner retry path
   /// ([AutomationConfidence.manual]). Added for
-  /// `aion-arch/changes/parallel-work`; see
+  /// `AIO-1400`; see
   /// `TicketsCubit.restoreExecutionQueue`.
   codingExecutionResume,
 
   /// Model-initiated ticket creation via the `create_ticket` tool call —
   /// whether a new top-level `story`/`task`/`bug` is created immediately,
   /// asks for confirmation first, or is declined outright. Added for
-  /// `aion-arch/changes/ticket-crud-tool-calls`; see
+  /// `AIO-2108`; see
   /// `TicketsCubit._handleCreateTicketToolCall`.
   ticketCreation,
 
@@ -47,7 +47,7 @@ enum AutomationContext {
   /// (including duplicate-flagging, expressed as `linkType: duplicates`)
   /// — whether the link is created immediately, asks for confirmation
   /// first, or is declined outright. Added for
-  /// `aion-arch/changes/ticket-crud-tool-calls`; see
+  /// `AIO-2108`; see
   /// `TicketsCubit._handleAddLinkToolCall`.
   ticketLinking,
 
@@ -56,7 +56,7 @@ enum AutomationContext {
   /// ticket — whether the link is created immediately, asks for
   /// confirmation first, or is declined outright (a manual "Link to
   /// spec" action remains available regardless). Added for
-  /// `aion-arch/changes/spec-ticket-type`; see
+  /// `AIO-1998`; see
   /// `TicketsCubit._maybeAutoLinkToSpec`.
   specAutoLink,
 
@@ -66,7 +66,7 @@ enum AutomationContext {
   /// existing manual "Retry validation" action. Distinct from [sddStage]
   /// (which governs advancing *once already eligible*, not re-attempting
   /// an unmet gate). Added for
-  /// `aion-arch/changes/sdd-verify-quality-gate`; see
+  /// `AIO-1905`; see
   /// `TicketsCubit._maybeRetryPendingVerify`.
   verifyGateRetry,
 }

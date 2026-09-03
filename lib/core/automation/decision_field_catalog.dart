@@ -10,7 +10,7 @@ import 'package:aion/core/automation/decision_node.dart';
 /// The data type of one [DecisionFieldSpec] — selects which
 /// [DecisionRuleOperator]s [operatorsFor] offers and which value control
 /// `DecisionNodeForm`'s rule trio renders. Added for
-/// `aion-arch/changes/decision-graph-rule-builder`.
+/// `AIO-661`.
 enum DecisionFieldType {
   /// A whole-number field, rendered as a digits-only numeric input.
   integer,
@@ -23,7 +23,7 @@ enum DecisionFieldType {
 /// vocabulary `DecisionNodeForm`'s "Custom rule" field picker offers.
 /// Mirrors [DecisionConditionSpec]'s shape (`id`, `displayName`,
 /// `contexts`) plus a [type] selecting its operator/value-control kind.
-/// Added for `aion-arch/changes/decision-graph-rule-builder`.
+/// Added for `AIO-661`.
 @immutable
 class DecisionFieldSpec {
   /// Creates a [DecisionFieldSpec].
@@ -75,7 +75,7 @@ const sessionOverageDetectedField = DecisionFieldSpec(
 
 /// Every field a rule-builder condition can be built from, regardless of
 /// context. Exactly the two entries above — see
-/// `aion-arch/changes/decision-graph-rule-builder/tasks.md`'s domain task
+/// `AIO-661`'s domain task
 /// scope note for why this doesn't yet cover every `AutomationContext`.
 const List<DecisionFieldSpec> decisionFieldCatalog = [
   attemptField,
@@ -95,7 +95,7 @@ List<DecisionFieldSpec> decisionFieldsFor(AutomationContext context) {
 /// [DecisionFieldSpec]'s current value and an authored value.
 /// [operatorsFor] narrows this to the subset valid for a given
 /// [DecisionFieldType]. Added for
-/// `aion-arch/changes/decision-graph-rule-builder`.
+/// `AIO-661`.
 enum DecisionRuleOperator {
   /// The field's value equals the authored value.
   equals,
@@ -182,7 +182,7 @@ Map<String, dynamic> defaultRuleConditionParams(AutomationContext context) {
 /// enum/field, since "has a live session at evaluation time" isn't a
 /// property any other part of this system currently models — this list
 /// is this change's own source of truth for it. Added for
-/// `aion-arch/changes/decision-graph-agentjudgment-condition`.
+/// `AIO-613`.
 const _agentJudgmentEligibleContexts = {
   AutomationContext.ticketCreation,
   AutomationContext.ticketLinking,
@@ -193,7 +193,7 @@ const _agentJudgmentEligibleContexts = {
 /// picker appends after the rule-builder entry (if any) — `null` if
 /// [context] isn't one of the 3 contexts a live session can ever be
 /// available for. Added for
-/// `aion-arch/changes/decision-graph-agentjudgment-condition`.
+/// `AIO-613`.
 DecisionConditionSpec? agentJudgmentConditionSpec(AutomationContext context) {
   if (!_agentJudgmentEligibleContexts.contains(context)) return null;
   return DecisionConditionSpec(
@@ -207,7 +207,7 @@ DecisionConditionSpec? agentJudgmentConditionSpec(AutomationContext context) {
 /// The `conditionParams` a freshly created `agentJudgment` [DecisionNode]
 /// starts with: an empty, unauthored prompt. Mirrors
 /// [defaultRuleConditionParams]'s role for the rule-builder kind. Added
-/// for `aion-arch/changes/decision-graph-agentjudgment-condition`.
+/// for `AIO-613`.
 Map<String, dynamic> defaultAgentJudgmentConditionParams(
   AutomationContext context,
 ) => const {'prompt': ''};

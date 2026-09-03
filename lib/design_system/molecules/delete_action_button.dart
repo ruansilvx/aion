@@ -18,7 +18,7 @@ import 'package:aion/design_system/tokens/theme_scope.dart';
 /// Pattern 2) — `TicketOverflowMenu` itself is left untouched in
 /// `features/tickets`, since it reads `TicketsCubit` directly and isn't
 /// generic. Per
-/// `aion-arch/changes/page-content-markdown-editor/design.md` §7.
+/// `AIO-1350` §7.
 class DeleteActionButton extends StatefulWidget {
   /// Creates a [DeleteActionButton].
   const DeleteActionButton({

@@ -4,7 +4,7 @@
 /// attached, already-git-tracked codebase before drafting starting
 /// `signal` tickets. UI-facing, user-selected — not persisted anywhere,
 /// and not a structural property of any `Ticket`. Added for
-/// `aion-arch/changes/new-project-onboarding`.
+/// `AIO-1266`.
 enum SummarizationDepth {
   /// A single non-tool-enabled model turn given the detected stack
   /// (`ProjectStackDetector`) and a depth-limited directory listing

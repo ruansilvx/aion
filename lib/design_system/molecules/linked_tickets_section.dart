@@ -24,10 +24,10 @@ import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 /// caller/[trailing] widget, not here. Each row also carries a remove
 /// action ([onRemove]) and, unless it's read-only (see [linkTypeOptions]/
 /// `_LinkRow._editable`), an inline type-change control ([onChangeType])
-/// — added for `aion-arch/changes/ticket-link-management-ui` on top of
+/// — added for `AIO-2257` on top of
 /// the original read-only row promoted from
 /// `DocumentationLinkedTicketsSection` (per `project.md`'s Pattern 2).
-/// Per `aion-arch/changes/ticket-link-management-ui/design.md`
+/// Per `AIO-2257`
 /// ("Aion — Linked Ticket Relationships" Component Spec).
 class LinkedTicketsSection extends StatelessWidget {
   /// Creates a [LinkedTicketsSection] listing [links].
@@ -154,7 +154,7 @@ class LinkedTicketsSection extends StatelessWidget {
 // `TypeChip`'s own switch. `spec` is listed proactively (not left to the
 // catch-all) so it never silently falls through to `typeTask` the way
 // `signal`/`release`/`chat` initially did — see
-// `aion-arch/changes/sdd-ticket-execution`'s bug-fix note. Kept as a
+// `AIO-1856`'s bug-fix note. Kept as a
 // top-level function (rather than `_LinkRowState`-private) so
 // `_LinkTypeEditor`'s use elsewhere in this file doesn't need a second
 // copy.

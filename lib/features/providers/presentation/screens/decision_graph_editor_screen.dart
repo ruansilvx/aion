@@ -56,7 +56,7 @@ class _ConditionCanvasNode extends _CanvasNode {
 
   /// Whether this node is the graph's `rootNodeId` — drives the design.md
   /// §1.5 root-marker chip. Added for
-  /// `aion-arch/changes/automation-decision-graphs` (`/verify` fix pass 2).
+  /// `AIO-181` (`/verify` fix pass 2).
   final bool isRoot;
 
   /// Whether this node is invalid: `node.conditionId` doesn't resolve via
@@ -64,12 +64,12 @@ class _ConditionCanvasNode extends _CanvasNode {
   /// fixed catalog nor the rule builder), or either branch is a dangling
   /// [ToNodeBranch] whose target is missing from the loaded node set —
   /// design.md §1.2.1's "Error" node state. Added for
-  /// `aion-arch/changes/automation-decision-graphs` (`/verify` fix pass 2);
+  /// `AIO-181` (`/verify` fix pass 2);
   /// no longer carries its own resolved `DecisionConditionSpec` — title/
   /// summary rendering reads `node` directly via `decisionNodeTitle`/
   /// `decisionNodeSummary`, which also cover the rule-builder case a bare
   /// `decisionConditionSpecById` lookup can't. Added for
-  /// `aion-arch/changes/decision-graph-rule-builder`.
+  /// `AIO-661`.
   final bool isError;
 }
 
@@ -84,7 +84,7 @@ class _TerminalCanvasNode extends _CanvasNode {
 /// same [DecisionGraphConfigCubit] so a selection or edit in either pane
 /// is reflected in the other. Reached from `SettingsScreen`'s
 /// `_AutomationSection` "Configure decision graph" affordance. Added for
-/// `aion-arch/changes/automation-decision-graphs`; see that change's
+/// `AIO-181`; see that change's
 /// design.md §4/§5. (`/verify` fix pass — the canvas pane previously only
 /// ever rendered the root node plus its two direct terminal branches, and
 /// node-tap only selected rather than opening `DecisionNodeForm
@@ -259,7 +259,7 @@ class _Header extends StatelessWidget {
 /// popover's own [OverlayEntry] renders from the app's root `Overlay`,
 /// outside that subtree, so it can't safely `context.read` the cubit
 /// itself (see [DecisionNodeForm.showAsPopover]'s own dartdoc). Added for
-/// `aion-arch/changes/automation-decision-graphs`; `/verify` fix pass —
+/// `AIO-181`; `/verify` fix pass —
 /// previously this only ever positioned the root node plus its two direct
 /// terminal branches, and node-tap only selected rather than editing.
 class _CanvasPane extends StatefulWidget {
@@ -412,7 +412,7 @@ class _CanvasPaneState extends State<_CanvasPane> {
 /// parent's branch anchor"). A dangling [ToNodeBranch] (target missing
 /// from `nodesById`) renders nothing for that branch — the same
 /// defensive treatment `decision_graph_evaluator.dart` gives it at
-/// evaluation time. Added for `aion-arch/changes/automation-decision-graphs`
+/// evaluation time. Added for `AIO-181`
 /// (`/verify` fix pass).
 class _TreeLayout {
   _TreeLayout(
@@ -638,7 +638,7 @@ class _CanvasNodeContent extends StatelessWidget {
     // is a third, fixed eyebrow (never parameterized by a field/preset
     // name, since an `agentJudgment` node's question is prose, not a
     // symbol) — added for
-    // `aion-arch/changes/decision-graph-agentjudgment-condition`; see
+    // `AIO-613`; see
     // that change's design.md §3.
     final eyebrowText = isAgentJudgment
         ? (isError
@@ -761,14 +761,14 @@ class _CanvasNodeContent extends StatelessWidget {
 }
 
 /// The condition box's parameter chip (design.md §1.2 "Parameter chip") —
-/// e.g. `> 3`. Added for `aion-arch/changes/automation-decision-graphs`
+/// e.g. `> 3`. Added for `AIO-181`
 /// (`/verify` fix pass 2). [bordered] renders a 1px `AionColors.border`
 /// hairline and one point less vertical padding — the rule-builder node's
 /// one visual difference from a preset node's chip, per
-/// `aion-arch/changes/decision-graph-rule-builder/design.md`'s Component
+/// `AIO-661`'s Component
 /// Spec §4.1. Defaults to `false`, preserving every preset-condition call
 /// site's unbordered rendering. Added for
-/// `aion-arch/changes/decision-graph-rule-builder`.
+/// `AIO-661`.
 class _ParameterChip extends StatelessWidget {
   const _ParameterChip({required this.text, this.bordered = false});
 
@@ -801,7 +801,7 @@ class _ParameterChip extends StatelessWidget {
 /// outline row's own equivalent badge. [color] follows the eyebrow's own
 /// color (`primary` normally, `danger` when the node is incomplete) so
 /// the two stay in lockstep. Added for
-/// `aion-arch/changes/decision-graph-agentjudgment-condition`.
+/// `AIO-613`.
 class _AskDiamond extends StatelessWidget {
   const _AskDiamond({required this.color});
 
@@ -825,7 +825,7 @@ class _AskDiamond extends StatelessWidget {
 /// (`AionText.bodySm`), not a symbol — deliberately distinct from
 /// [_ParameterChip]'s compact key/value styling. [isError] re-tones it
 /// for the empty-prompt/incomplete state, per design.md §3.3. Added for
-/// `aion-arch/changes/decision-graph-agentjudgment-condition`.
+/// `AIO-613`.
 class _QuestionChip extends StatelessWidget {
   const _QuestionChip({required this.text, required this.isError});
 
@@ -869,7 +869,7 @@ class _QuestionChip extends StatelessWidget {
 
 /// The root-node marker chip pinned above the graph's entry-point node —
 /// design.md §1.5. Non-interactive. Added for
-/// `aion-arch/changes/automation-decision-graphs` (`/verify` fix pass 2).
+/// `AIO-181` (`/verify` fix pass 2).
 class _RootMarker extends StatelessWidget {
   const _RootMarker();
 
@@ -900,7 +900,7 @@ class _RootMarker extends StatelessWidget {
 /// One matched/unmatched anchor dot on a condition node's bottom edge —
 /// design.md §1.2 "Anchor dots". Not interactive in v1 (edges are
 /// authored in the form, not dragged), same as design.md notes. Added for
-/// `aion-arch/changes/automation-decision-graphs` (`/verify` fix pass 2).
+/// `AIO-181` (`/verify` fix pass 2).
 class _AnchorDot extends StatelessWidget {
   const _AnchorDot({required this.color});
 

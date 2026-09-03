@@ -17,7 +17,7 @@ import 'package:aion/features/tickets/presentation/widgets/comment_author_avatar
 /// "via `<model>`" caption) but with per-author alignment and a capped
 /// content width for human/AI, instead of `CommentTile`'s uniform
 /// left-aligned, full-width, plain-text, always-bubbled rendering. Per
-/// `aion-arch/changes/chat-transcript-ux-redesign/design.md` §1/§9 (§9
+/// `AIO-482` §1/§9 (§9
 /// supersedes §1.2/§1.3's bubble treatment for `ai`/`system`).
 class ChatMessageBubble extends StatelessWidget {
   /// Creates a [ChatMessageBubble] rendering [comment].
