@@ -31,20 +31,33 @@
 //      schema has no field for `id` at all (only the human-readable
 //      `ticketId`) for TicketDbReconstructionService to recover it from —
 //      see MigrationLinkRow's dartdoc for the same constraint stated from
-//      the link side. Registering directly is what makes every `parentId`
-//      this run wrote resolve to the *actual* persisted `id` of its
-//      parent, rather than TicketDbReconstructionService.reconstruct's own
-//      `existing?.id ?? Uuid().v4()` fallback minting an unrelated fresh
-//      id for a ticketId it has never seen before.
-//   2. Calls TicketDbReconstructionService.reconstruct(<aion-project-root>)
+//      the link side. While doing so, this step builds `realIdOf`: a map
+//      from every ticket's *this-run-only* generated `id` to whatever its
+//      real persisted `id` turns out to be (the pre-existing row's `id`
+//      when the ticket already existed, or its own freshly-minted `id`
+//      when it's genuinely new).
+//   2. Re-resolves and writes every non-null `parentId` through `realIdOf`
+//      — never a ticket's raw `parentId` field, which is always *this
+//      run's own* generated id for its parent, not necessarily the
+//      parent's real persisted id. This step is what actually makes every
+//      Epic→Story→Task `parentId` this migration writes resolve to the
+//      parent's actual persisted `id`, on a fresh run or a re-run alike —
+//      see this file's "Idempotency" note below for the corruption a
+//      naive per-ticket write (resolving only a ticket's own identity,
+//      not what its `parentId` points at) caused before this step
+//      existed, found and fixed by a /verify pass and its follow-up
+//      corrective data-repair script.
+//   3. Calls TicketDbReconstructionService.reconstruct(<aion-project-root>)
 //      per design.md — unmodified, exactly as it's used elsewhere. Since
 //      every ticketId this run produced already exists in the DB by this
 //      point (step 1), this is a benign, idempotent self-consistency pass
 //      re-reading the same files, plus the (best-effort, see below)
 //      embedding backfill for the newly imported rows.
-//   3. Reads .migration-links.json and calls
+//   4. Reads .migration-links.json and calls
 //      TicketLinkRepository.createLink for every row not already present
-//      (checked via getLinksForTicket first).
+//      (checked via getLinksForTicket first) — resolving each row's
+//      source/target through the same `realIdOf` map step 1 built, for
+//      the identical reason step 2 resolves `parentId` through it.
 //
 // Embedding caveat: BundledEmbeddingProvider (the app's real
 // EmbeddingProvider) depends on `flutter/services.dart` (asset loading),
@@ -61,7 +74,23 @@
 // Idempotency: Phase A is always safe to re-run — it only ever overwrites
 // its own generated `tickets/*.md`/`.migration-links.json` output.
 // `--import` is safe to re-run *against the same already-written generated
-// files* (ticketId-keyed upsert throughout, matching design.md).
+// files* (ticketId-keyed upsert throughout, matching design.md), and — as
+// of the `realIdOf` fix in steps 1/2/4 above — also safe to re-run against
+// a *freshly regenerated* Phase A output, unlike an earlier version of this
+// file. Before that fix, a re-run's own registration step correctly
+// re-pointed each ticket's own `id` back to its already-persisted value,
+// but wrote every `parentId`/link reference using the raw, this-run-only
+// generated id of the ticket it pointed at — which, for any parent/target
+// that *also* already existed and got remapped, was never actually
+// persisted anywhere. A real run of this migration hit exactly that: a
+// /verify pass found 2,363 of 2,366 migrated `parentId`s and 325 of 575
+// `ticket_links` rows dangling in the live database, root-caused to this
+// exact gap, and fixed with a one-off corrective script (not this file —
+// see that finding's write-up for the data-repair approach, which is the
+// same `realIdOf`-style resolution now built into steps 1/2/4 above). A
+// future re-run of `--import` no longer needs a repair pass for this
+// reason; it still isn't safe to run without first regenerating Phase A
+// output that reflects current `aion-arch/` source content, same as ever.
 //
 // Phase A itself is NOT safe to invoke a second time against a
 // `tickets/` directory that already holds this migration's own prior
@@ -451,13 +480,12 @@ Future<void> _import(String aionProjectRoot, _GenerationResult result) async {
     final ticketRepository = DriftTicketRepository(db);
     final linkRepository = DriftTicketLinkRepository(db);
 
-    // Step 1: register every generated ticket directly, preserving its
-    // exact `id` (and therefore every `parentId` reference to it) — see
-    // this file's header comment for why this can't be left to
-    // TicketDbReconstructionService alone.
+    // Step 1: register every generated ticket's own identity/content
+    // directly — see this file's header comment for why this can't be
+    // left to TicketDbReconstructionService alone.
     //
     // A re-run against a ticketId that already has a row (see this
-    // file's header comment's Idempotency caveat — deliberately not the
+    // file's header comment's Idempotency note — deliberately not the
     // common path, but still handled correctly) cannot just call
     // `updateTicket(ticket)` with this run's own freshly-generated
     // `ticket.id`: `importTicket`/`updateTicket` address a row by `id`,
@@ -469,10 +497,22 @@ Future<void> _import(String aionProjectRoot, _GenerationResult result) async {
     // and `parentId` (see its own dartdoc), both fields this migration
     // sets and a re-run might have corrected. So: substitute the
     // existing row's `id`, call `updateTicket` for the fields it does
-    // cover, then `updateTicketStatus`/`updateTicketParent` explicitly
-    // for the two it doesn't.
+    // cover, then `updateTicketStatus` explicitly for the one it
+    // doesn't. `parentId` is deliberately *not* written here — see step
+    // 2 below for why resolving it requires every ticket in this batch
+    // to have already been registered first.
+    //
+    // While doing so, builds `realIdOf`: this run's own generated
+    // `ticket.id` -> the ticket's real persisted `id` (the existing
+    // row's `id` when remapped, or the ticket's own `id` when it was
+    // genuinely new). Every other reference to a ticket generated in
+    // this pass — a sibling's `parentId`, a link row's source/target —
+    // must be resolved through this map before being written, never
+    // used raw; see this file's header comment's Idempotency note for
+    // the corruption that skipping this step caused.
     final existing = await ticketRepository.getAllTickets();
     final existingByTicketId = {for (final t in existing) t.ticketId: t};
+    final realIdOf = <String, String>{};
     var registeredCount = 0;
     for (final ticket in result.tickets) {
       final existingTicket = existingByTicketId[ticket.ticketId];
@@ -483,18 +523,43 @@ Future<void> _import(String aionProjectRoot, _GenerationResult result) async {
           existingTicket.id,
           ticket.status,
         );
-        await ticketRepository.updateTicketParent(
-          existingTicket.id,
-          ticket.parentId,
-        );
+        realIdOf[ticket.id] = existingTicket.id;
       } else {
         await ticketRepository.importTicket(ticket);
+        realIdOf[ticket.id] = ticket.id;
       }
       registeredCount++;
     }
     stdout.writeln('registered $registeredCount tickets directly.');
 
-    // Step 2: TicketDbReconstructionService.reconstruct, per design.md —
+    // Step 2: now that every ticket in this batch has a known real id,
+    // re-resolve and write every non-null `parentId` through `realIdOf`
+    // — never a ticket's raw `parentId` field, which is always *this
+    // run's own* generated id for its parent, not necessarily the
+    // parent's real persisted id. Skips the write when the resolved
+    // value already matches what's persisted, so a genuine no-op re-run
+    // doesn't bump every migrated ticket's `updatedAt`.
+    var parentFixCount = 0;
+    for (final ticket in result.tickets) {
+      if (ticket.parentId == null) continue;
+      final childRealId = realIdOf[ticket.id]!;
+      final parentRealId = realIdOf[ticket.parentId];
+      if (parentRealId == null) {
+        throw StateError(
+          'Ticket ${ticket.ticketId} has parentId ${ticket.parentId} that '
+          'does not resolve to any ticket generated in this same pass — '
+          'this should be impossible, since every parentId this migration '
+          'writes comes from a sibling ticket generated alongside it.',
+        );
+      }
+      final currentParentId = existingByTicketId[ticket.ticketId]?.parentId;
+      if (currentParentId == parentRealId) continue;
+      await ticketRepository.updateTicketParent(childRealId, parentRealId);
+      parentFixCount++;
+    }
+    stdout.writeln('parentId: $parentFixCount set/corrected.');
+
+    // Step 3: TicketDbReconstructionService.reconstruct, per design.md —
     // unmodified. Every ticketId already exists by this point, so this is
     // an idempotent self-consistency pass (plus the embedding backfill).
     final reconstructionService = TicketDbReconstructionService(
@@ -508,22 +573,34 @@ Future<void> _import(String aionProjectRoot, _GenerationResult result) async {
       '${report.skippedPaths.length} skipped.',
     );
 
-    // Step 3: link backfill.
+    // Step 4: link backfill. Resolves each row's source/target through
+    // the same `realIdOf` map step 1 built, for the identical reason
+    // step 2 resolves `parentId` through it — `row.sourceTicketId`/
+    // `targetTicketId` are always this run's own generated ids, never
+    // valid to pass to the repository directly.
     var createdLinkCount = 0;
     for (final row in result.links) {
+      final sourceRealId = realIdOf[row.sourceTicketId];
+      final targetRealId = realIdOf[row.targetTicketId];
+      if (sourceRealId == null || targetRealId == null) {
+        throw StateError(
+          'Link row does not resolve within this generation pass: '
+          '${row.sourceTicketId} -> ${row.targetTicketId} (${row.type.name})',
+        );
+      }
       final existingLinks = await linkRepository.getLinksForTicket(
-        row.sourceTicketId,
+        sourceRealId,
       );
       final alreadyExists = existingLinks.any(
         (l) =>
-            l.sourceTicketId == row.sourceTicketId &&
-            l.targetTicketId == row.targetTicketId &&
+            l.sourceTicketId == sourceRealId &&
+            l.targetTicketId == targetRealId &&
             l.linkType == row.type.name,
       );
       if (alreadyExists) continue;
       await linkRepository.createLink(
-        sourceTicketId: row.sourceTicketId,
-        targetTicketId: row.targetTicketId,
+        sourceTicketId: sourceRealId,
+        targetTicketId: targetRealId,
         linkType: row.type,
       );
       createdLinkCount++;
