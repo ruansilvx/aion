@@ -3,9 +3,8 @@
 import 'package:drift/drift.dart';
 
 /// Drift table backing [Notification]. Row type generated as
-/// `NotificationData`. No FK constraints — matches every other table in
-/// this schema (integrity enforced at the repository layer). Added for
-/// `AIO-1586`.
+/// `NotificationData`. No FK constraints — matches every other table in this
+/// schema (integrity enforced at the repository layer). Added for `AIO-1586`.
 @DataClassName('NotificationData')
 class NotificationsTable extends Table {
   @override
@@ -17,10 +16,10 @@ class NotificationsTable extends Table {
   /// The Task/Bug/Epic/Story ticket this notification concerns.
   TextColumn get ticketId => text().named('ticket_id')();
 
-  /// [ticketId]'s human-readable key (e.g. `"AIO-42"`), snapshotted at
-  /// write time — `Ticket.ticketId`, not to be confused with this
-  /// column's own [ticketId] (the internal UUID). Feeds the dropdown
-  /// row's leading mono key segment (Component Spec §6.4).
+  /// [ticketId]'s human-readable key (e.g. `"AIO-42"`), snapshotted at write
+  /// time — `Ticket.ticketId`, not to be confused with this column's own
+  /// [ticketId] (the internal UUID). Feeds the dropdown row's leading mono key
+  /// segment (Component Spec §6.4).
   TextColumn get ticketKey => text().named('ticket_key')();
 
   /// [ticketId]'s title, snapshotted at write time.

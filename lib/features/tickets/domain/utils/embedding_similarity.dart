@@ -9,11 +9,9 @@ import 'dart:typed_data';
 /// dividing by zero.
 ///
 /// Shared by `TicketDocumentSearchService` (page/resource documentation
-/// search) and `TicketEstimationSuggester` (complexity/estimate
-/// calibration) — the only piece of similarity-scan logic the two features
-/// genuinely share. See
-/// `AIO-75`
-/// §1.3.
+/// search) and `TicketEstimationSuggester` (complexity/estimate calibration) —
+/// the only piece of similarity-scan logic the two features genuinely share.
+/// See `AIO-75` §1.3.
 double cosineSimilarity(Uint8List a, Uint8List b) {
   final vecA = a.buffer.asFloat32List(a.offsetInBytes, a.lengthInBytes ~/ 4);
   final vecB = b.buffer.asFloat32List(b.offsetInBytes, b.lengthInBytes ~/ 4);

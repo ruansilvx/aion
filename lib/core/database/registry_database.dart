@@ -40,12 +40,10 @@ class ProjectsTable extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-/// Opens the platform-appropriate [QueryExecutor] for the registry
-/// database — always at one fixed location per platform, unlike
-/// [AppDatabase] which is addressed per-[Project] (see
-/// `AIO-1174` §7). The registry
-/// must be readable before any project is picked, so it cannot itself
-/// be project-scoped.
+/// Opens the platform-appropriate [QueryExecutor] for the registry database —
+/// always at one fixed location per platform, unlike [AppDatabase] which is
+/// addressed per-[Project] (see `AIO-1174` §7). The registry must be readable
+/// before any project is picked, so it cannot itself be project-scoped.
 QueryExecutor _openRegistryConnection() {
   return driftDatabase(
     name: 'aion_registry',
@@ -56,11 +54,10 @@ QueryExecutor _openRegistryConnection() {
   );
 }
 
-/// Aion's project registry database — the single piece of drift state
-/// that is not per-project (see
-/// `AIO-1174` §3, §7). Lists every
-/// known [Project] and its metadata; consulted by the Hub before any
-/// project-scoped [AppDatabase] connection exists.
+/// Aion's project registry database — the single piece of drift state that is
+/// not per-project (see `AIO-1174` §3, §7). Lists every known [Project] and
+/// its metadata; consulted by the Hub before any project-scoped [AppDatabase]
+/// connection exists.
 @DriftDatabase(tables: [ProjectsTable])
 class RegistryDatabase extends _$RegistryDatabase {
   /// Creates a [RegistryDatabase]. Pass [executor] to use a custom

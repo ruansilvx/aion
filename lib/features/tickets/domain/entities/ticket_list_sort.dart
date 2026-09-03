@@ -5,11 +5,10 @@ import 'package:equatable/equatable.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sort_direction.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sort_field.dart';
 
-/// The ticket list's single-active-key sort selection: exactly one
-/// [field] with one [direction] — mirrors [TicketListFilters]' shape,
-/// but a single value rather than a `Set` per field, since sort has no
-/// multi-select/OR semantics. See
-/// `AIO-2371`.
+/// The ticket list's single-active-key sort selection: exactly one [field]
+/// with one [direction] — mirrors [TicketListFilters]' shape, but a single
+/// value rather than a `Set` per field, since sort has no multi-select/OR
+/// semantics. See `AIO-2371`.
 class TicketListSort extends Equatable {
   /// Creates a [TicketListSort] with [field] ordered by [direction].
   const TicketListSort({required this.field, required this.direction});

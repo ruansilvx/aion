@@ -12,20 +12,18 @@ import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/widgets/banner_shell.dart';
 
 /// Once-only, dismissible banner offering an opt-in codebase-summarization
-/// scan — shown on `TicketsListScreen` immediately after a project is
-/// created from an already-git-tracked directory (see
-/// `ActiveProjectCubit.consumeCodebaseAnalysisOffer`). Subscribes directly
-/// to `TicketsCubit.codebaseAnalysisStatus` and renders one of four
-/// states: the depth-choice offer ([CodebaseAnalysisIdle]), a live
-/// progress readout ([CodebaseAnalysisRunning]), a success summary
-/// ([CodebaseAnalysisDone]), or a failure message
-/// ([CodebaseAnalysisFailed]). Per
-/// `AIO-1266` §3.
+/// scan — shown on `TicketsListScreen` immediately after a project is created
+/// from an already-git-tracked directory (see
+/// `ActiveProjectCubit.consumeCodebaseAnalysisOffer`). Subscribes directly to
+/// `TicketsCubit.codebaseAnalysisStatus` and renders one of four states: the
+/// depth-choice offer ([CodebaseAnalysisIdle]), a live progress readout
+/// ([CodebaseAnalysisRunning]), a success summary ([CodebaseAnalysisDone]), or
+/// a failure message ([CodebaseAnalysisFailed]). Per `AIO-1266` §3.
 ///
 /// The running state's "Hide" control does not stop the in-flight scan —
-/// `AgentModelClient` exposes no cancellation — it only removes the
-/// banner from view; any tickets the run drafts still appear in the list
-/// once it finishes. Added for `AIO-1266`.
+/// `AgentModelClient` exposes no cancellation — it only removes the banner
+/// from view; any tickets the run drafts still appear in the list once it
+/// finishes. Added for `AIO-1266`.
 class CodebaseAnalysisBanner extends StatelessWidget {
   /// Creates a [CodebaseAnalysisBanner]. [onDismiss] is called whenever
   /// the banner's dismiss control (× in the offer/done/failed states,
@@ -536,7 +534,7 @@ class _DoneBanner extends StatelessWidget {
 }
 
 /// The [CodebaseAnalysisFailed] state: a soft failure message — no retry
-/// in v1 (see design.md §3.4).
+/// in v1 (see its linked Documentation page, §3.4).
 class _FailedBanner extends StatelessWidget {
   const _FailedBanner({required this.message, required this.onDismiss});
 

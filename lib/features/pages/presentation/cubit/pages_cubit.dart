@@ -9,18 +9,16 @@ import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
 /// UI-orchestration Cubit for the `pages` feature. Mirrors the shape of
-/// `TicketsCubit`'s detail/create flows, but scoped to `page`/`spec`
-/// tickets only and built entirely on [PageTicketProvider] — never on
-/// `TicketsCubit` or `TicketRepository` directly. Per
-/// `AIO-1350`. This
-/// cubit itself has no `ticket.type` branch of its own — every method
-/// here just forwards to [PageTicketProvider], whose concrete
-/// implementation (`PageTicketProviderImpl`) is where "is this ticket
-/// mine to render" is actually decided (see [PageTicketProvider.getPage]).
-/// Widened to also serve [TicketType.spec] for
-/// `AIO-1998` — a spec ticket is an ordinary
-/// editable document once created, with the same content-editing shape
-/// a `page` already has.
+/// `TicketsCubit`'s detail/create flows, but scoped to `page`/`spec` tickets
+/// only and built entirely on [PageTicketProvider] — never on `TicketsCubit`
+/// or `TicketRepository` directly. Per `AIO-1350`. This cubit itself has no
+/// `ticket.type` branch of its own — every method here just forwards to
+/// [PageTicketProvider], whose concrete implementation
+/// (`PageTicketProviderImpl`) is where "is this ticket mine to render" is
+/// actually decided (see [PageTicketProvider.getPage]). Widened to also serve
+/// [TicketType.spec] for `AIO-1998` — a spec ticket is an ordinary editable
+/// document once created, with the same content-editing shape a `page` already
+/// has.
 class PagesCubit extends Cubit<PagesState> {
   /// Creates a [PagesCubit] backed by [_provider].
   PagesCubit(this._provider) : super(const PagesInitial());
@@ -137,25 +135,24 @@ class PagesCubit extends Cubit<PagesState> {
 
   /// Returns every live `page`/`resource` ticket, for
   /// `MarkdownEditor.wikilinkSuggestions`/`MarkdownView.resolveWikilink`'s
-  /// candidate list. Query-only — does not emit a state, same precedent
-  /// as `getValidParentCandidates`/`getAllTickets`-shaped reads elsewhere
-  /// in this codebase. Delegates straight to
+  /// candidate list. Query-only — does not emit a state, same precedent as
+  /// `getValidParentCandidates`/`getAllTickets`-shaped reads elsewhere in this
+  /// codebase. Delegates straight to
   /// [PageTicketProvider.getWikilinkCandidates] — no business logic here.
   /// Added for `AIO-963`.
   Future<List<Ticket>> loadWikilinkCandidates() =>
       _provider.getWikilinkCandidates();
 
-  /// Creates a [type] (`knownGap`/`openQuestion` only) ticket titled
-  /// [title] with optional [description], linked to [pageId], then
-  /// reloads [pageId]'s relations. Returns the provider's own success
-  /// flag (`false` if the creation was rejected/failed) — propagated
-  /// straight through so [RaiseGapOrQuestionPicker]'s caller can await it
-  /// and show the popover's inline error state on a rejected creation,
-  /// same contract as `TicketsCubit.createGapOrQuestion`. Relations are
-  /// still reloaded either way, since a rejected creation may still have
-  /// changed nothing worth diverging the reload for. Otherwise same
-  /// emit/no-op shape as [deleteLink]/[updateLinkType]. Added for
-  /// `AIO-934`.
+  /// Creates a [type] (`knownGap`/`openQuestion` only) ticket titled [title]
+  /// with optional [description], linked to [pageId], then reloads [pageId]'s
+  /// relations. Returns the provider's own success flag (`false` if the
+  /// creation was rejected/failed) — propagated straight through so
+  /// [RaiseGapOrQuestionPicker]'s caller can await it and show the popover's
+  /// inline error state on a rejected creation, same contract as
+  /// `TicketsCubit.createGapOrQuestion`. Relations are still reloaded either
+  /// way, since a rejected creation may still have changed nothing worth
+  /// diverging the reload for. Otherwise same emit/no-op shape as
+  /// [deleteLink]/[updateLinkType]. Added for `AIO-934`.
   Future<bool> createGapOrQuestion(
     String pageId,
     TicketType type, {

@@ -14,26 +14,24 @@ import 'package:aion/design_system/tokens/aion_text.dart';
 import 'package:aion/design_system/tokens/theme_scope.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
-/// A "+ Add" ghost-button trigger that opens
-/// [GapsAndOpenQuestionsSection]'s creation popover: a small overlay
-/// offering "Raise a known gap" / "Raise an open question", which swaps
-/// in a compact title/description form on selection. Follows the same
+/// A "+ Add" ghost-button trigger that opens [GapsAndOpenQuestionsSection]'s
+/// creation popover: a small overlay offering "Raise a known gap" / "Raise an
+/// open question", which swaps in a compact title/description form on
+/// selection. Follows the same
 /// `Overlay`/`LayerLink`/`CompositedTransformFollower` two-step mechanics
 /// `TicketOverflowMenu`'s promote chooser uses — a compact overlay, not a
-/// screen navigation, per this project's "no Material `Dialog`"
-/// convention. This widget performs no repository writes itself —
-/// [onCreate] is responsible for that (and any state refresh it implies),
-/// mirroring `TicketLinkPicker.onSelected`'s contract; kept
-/// callback-based (rather than reading `TicketsCubit` directly) so this
-/// design-system-layer widget stays feature-agnostic per project.md's
-/// cross-feature rule. [onCreate] returns whether the creation succeeded
-/// — a rejected creation (the hard-rule validation in
-/// `TicketsCubit.createGapOrQuestion` failing, or the write throwing)
-/// keeps the form step open and shows its inline error state (Component
-/// Spec §3.3.5) rather than closing the overlay and silently discarding
-/// the failure. Added for
-/// `AIO-934`; see that change's
-/// design.md §6.2 and Component Spec §3.
+/// screen navigation, per this project's "no Material `Dialog`" convention.
+/// This widget performs no repository writes itself — [onCreate] is
+/// responsible for that (and any state refresh it implies), mirroring
+/// `TicketLinkPicker.onSelected`'s contract; kept callback-based (rather than
+/// reading `TicketsCubit` directly) so this design-system-layer widget stays
+/// feature-agnostic per project.md's cross-feature rule. [onCreate] returns
+/// whether the creation succeeded — a rejected creation (the hard-rule
+/// validation in `TicketsCubit.createGapOrQuestion` failing, or the write
+/// throwing) keeps the form step open and shows its inline error state
+/// (Component Spec §3.3.5) rather than closing the overlay and silently
+/// discarding the failure. Added for `AIO-934`; see its linked Documentation
+/// page, §6.2 and Component Spec §3.
 class RaiseGapOrQuestionPicker extends StatefulWidget {
   /// Creates a [RaiseGapOrQuestionPicker].
   const RaiseGapOrQuestionPicker({super.key, required this.onCreate});

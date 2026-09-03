@@ -9,9 +9,8 @@ import 'provider_id.dart';
 /// tool-call handler can ask a scoped side-question inside the same
 /// conversation via a second, forked [AgentModelClient.run] call. `null`
 /// wherever the underlying provider has no session concept
-/// ([AgentProvider.supportsSessionResume] `false`) or [AgentRequest.tools]
-/// is empty. See `AIO-613/
-/// design.md` §4.
+/// ([AgentProvider.supportsSessionResume] `false`) or [AgentRequest.tools] is
+/// empty. See `AIO-613/ design.md` §4.
 class AgentSessionHandle extends Equatable {
   /// Creates an [AgentSessionHandle] for [sessionId] on [providerId],
   /// running [modelId].

@@ -22,13 +22,13 @@ abstract interface class TicketRepository {
   Future<Ticket?> getTicketById(String id);
 
   /// Returns the ticket whose human-readable [Ticket.ticketId] (e.g.
-  /// `"TASK-42"`) equals [ticketId], or `null` if none exists. Distinct
-  /// from [getTicketById], which resolves the internal uuid `id` instead
-  /// — this is what a model sees in projected ticket files/context, so
-  /// it's the lookup an app-defined tool call (e.g. `add_link`'s
-  /// `targetTicketId` argument) resolves against. No prior caller in this
-  /// codebase needed a `ticketId`-keyed lookup before this method was
-  /// added. Added for `AIO-2108`.
+  /// `"TASK-42"`) equals [ticketId], or `null` if none exists. Distinct from
+  /// [getTicketById], which resolves the internal uuid `id` instead — this is
+  /// what a model sees in projected ticket files/context, so it's the lookup
+  /// an app-defined tool call (e.g. `add_link`'s `targetTicketId` argument)
+  /// resolves against. No prior caller in this codebase needed a
+  /// `ticketId`-keyed lookup before this method was added. Added for
+  /// `AIO-2108`.
   Future<Ticket?> getTicketByTicketId(String ticketId);
 
   /// Persists [ticket]. Implementations generate the human-readable
@@ -85,14 +85,12 @@ abstract interface class TicketRepository {
   /// `ticketId`. Throws if `ticket.id` does not exist.
   ///
   /// `complexitySource`/`estimateSource` are handled separately from every
-  /// other field, since `updateTicket` is called for *any* field edit
-  /// (title, priority, description, ...) and `ticket.complexity`/
-  /// `ticket.estimate` are usually just carried through unchanged on those
-  /// calls — stamping unconditionally off non-null-ness would silently
-  /// lock an AI-suggested value the caller never actually touched, which
-  /// would break the "editing complexity/estimate locks *that* field"
-  /// guarantee (see
-  /// `AIO-75`'s
+  /// other field, since `updateTicket` is called for *any* field edit (title,
+  /// priority, description, ...) and `ticket.complexity`/ `ticket.estimate`
+  /// are usually just carried through unchanged on those calls — stamping
+  /// unconditionally off non-null-ness would silently lock an AI-suggested
+  /// value the caller never actually touched, which would break the "editing
+  /// complexity/estimate locks *that* field" guarantee (see `AIO-75`'s
   /// "Locking, independent per field" section). Instead:
   /// - Whenever `ticket.complexity`/`ticket.estimate` is `null`, its
   ///   companion source is unconditionally cleared to `null` too —
@@ -115,16 +113,15 @@ abstract interface class TicketRepository {
     bool estimateEdited = false,
   });
 
-  /// Adds [minutesDelta] to the `timeSpent` of the ticket with id [id], as
-  /// an atomic SQL increment (`timeSpent = timeSpent + ?`) rather than a
+  /// Adds [minutesDelta] to the `timeSpent` of the ticket with id [id], as an
+  /// atomic SQL increment (`timeSpent = timeSpent + ?`) rather than a
   /// [updateTicket]-style read-modify-write of the whole [Ticket] object.
   /// [updateTicket] persists every one of `title`/`description`/
-  /// `priority`/`type`/`estimate`/`timeSpent`/`complexity` at once — a
-  /// caller that only means to log time (e.g. the `log_time` tool call)
-  /// would otherwise risk clobbering a concurrent edit to one of those
-  /// other fields made elsewhere (the UI) between its own read and write.
-  /// No-ops if [id] does not exist. Added for
-  /// `AIO-2108`.
+  /// `priority`/`type`/`estimate`/`timeSpent`/`complexity` at once — a caller
+  /// that only means to log time (e.g. the `log_time` tool call) would
+  /// otherwise risk clobbering a concurrent edit to one of those other fields
+  /// made elsewhere (the UI) between its own read and write. No-ops if [id]
+  /// does not exist. Added for `AIO-2108`.
   Future<void> addTimeSpent(String id, int minutesDelta);
 
   /// Writes an AI-generated complexity/estimate suggestion for the ticket
@@ -257,16 +254,14 @@ abstract interface class TicketRepository {
   /// tickets starting after the first [offset] matches, plus whether
   /// further matches exist beyond this page.
   ///
-  /// Ordered per `sort.field`/`sort.direction` — [sort] is `required`
-  /// (not defaulted), since the caller (`TicketsCubit`) always has a
-  /// concrete resolved value to pass, leaving no ambiguous "no sort" case
-  /// at this layer to default around. `sort.field ==
-  /// TicketSortField.relevance` orders by BM25 match score and requires
-  /// [query] to be non-empty — passing it with an empty/null [query]
-  /// falls back to `createdAt` descending, since there is no relevance
-  /// score to order by; every other field orders independent of whether
-  /// [query] is set. See
-  /// `AIO-2371`.
+  /// Ordered per `sort.field`/`sort.direction` — [sort] is `required` (not
+  /// defaulted), since the caller (`TicketsCubit`) always has a concrete
+  /// resolved value to pass, leaving no ambiguous "no sort" case at this layer
+  /// to default around. `sort.field == TicketSortField.relevance` orders by
+  /// BM25 match score and requires [query] to be non-empty — passing it with
+  /// an empty/null [query] falls back to `createdAt` descending, since there
+  /// is no relevance score to order by; every other field orders independent
+  /// of whether [query] is set. See `AIO-2371`.
   ///
   /// [statusSortOrder] is the caller's currently-configured `WorkflowStatus`
   /// name list, already sorted by `WorkflowStatus.sortOrder` — consulted

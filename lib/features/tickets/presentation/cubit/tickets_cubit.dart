@@ -112,18 +112,17 @@ import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 import 'package:aion/l10n/generated/app_localizations_en.dart';
 
 /// Loads, lists, and creates tickets via [TicketRepository]. Root-scoped —
-/// provided once at the app root, not per-screen. Every list-shaped
-/// repository query also resolves and passes a [TicketListSort] (see
-/// [currentSort]/[setSort]/[_lastSort]) — an explicit user choice if one
-/// has been made, otherwise an implicit query-aware default — so the
-/// list, board, and Trash all render in the same order. See
-/// `AIO-2371`.
+/// provided once at the app root, not per-screen. Every list-shaped repository
+/// query also resolves and passes a [TicketListSort] (see
+/// [currentSort]/[setSort]/[_lastSort]) — an explicit user choice if one has
+/// been made, otherwise an implicit query-aware default — so the list, board,
+/// and Trash all render in the same order. See `AIO-2371`.
 class TicketsCubit extends Cubit<TicketsState> {
   /// Creates a [TicketsCubit] backed by [_repository]. [_embeddingProvider],
   /// [_gitProjector], [_projectRootPath], [_providerRegistry], and
-  /// [_commentRepository] are optional — when any is `null` (the
-  /// default, and every existing call site/test), the embedding-regen,
-  /// git-projection, and stage-chat-spawning side effects documented on
+  /// [_commentRepository] are optional — when any is `null` (the default, and
+  /// every existing call site/test), the embedding-regen, git-projection, and
+  /// stage-chat-spawning side effects documented on
   /// [createTicket]/[updateTicket]/[updateTicketStatus]/
   /// [changeTicketStatus]/[trashTicket]/[trashTickets]/[advanceSddStage]
   /// simply no-op, rather than requiring every one of ~40 existing
@@ -132,120 +131,104 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [_commentRepository] so [advanceSddStage] always spawns its chat.
   /// [_automationSettingsRepository] follows the same optional-dependency
   /// pattern — `null` leaves a finished coding-execution run's status
-  /// untouched (never auto-flips to `inReview`) until a caller supplies
-  /// one; real usage (`app_router.dart`) always does.
-  /// [_modelRoutingRepository] follows the same optional-dependency
-  /// pattern too — `null` makes every stage-chat/coding-execution model
-  /// resolution fall back to the first registered provider's first model
-  /// (see [_resolveModel]), today's pre-per-phase-routing default; real
-  /// usage (`app_router.dart`) always supplies one.
-  /// [_gitClient]/[_gitHubClient] follow the same optional-dependency
-  /// pattern too — `null` makes [_runCodingExecution] no-op entirely
-  /// (same guard as [_providerRegistry]/[_commentRepository]), since a
-  /// worktree-isolated, verify-gated run can't proceed without them;
-  /// real usage (`app_router.dart`) always supplies them. Added for
-  /// `AIO-506`.
-  /// [_baselineRepository]/[_projectId]/[_baselineVersion] follow the
-  /// same pattern again — `null` on any of them also no-ops
-  /// [_runCodingExecution], since resolving the effective `skills/
-  /// verify`/`conventions/architecture-conventions` content
-  /// ([_effectiveAssetContent]) needs all three; real usage always
-  /// supplies them too. Added for AIO-1654 (replaces the prior
-  /// `FlutterVerifier`-based mechanical verify gate with an agentic one
-  /// — see [_assembleVerificationContext]).
-  /// [_projectName] follows the same optional-dependency pattern once
-  /// more — `null` falls back to a generic title in
-  /// [runCodebaseSummarization]'s spawned run ticket; real usage
+  /// untouched (never auto-flips to `inReview`) until a caller supplies one;
+  /// real usage (`app_router.dart`) always does. [_modelRoutingRepository]
+  /// follows the same optional-dependency pattern too — `null` makes every
+  /// stage-chat/coding-execution model resolution fall back to the first
+  /// registered provider's first model (see [_resolveModel]), today's
+  /// pre-per-phase-routing default; real usage (`app_router.dart`) always
+  /// supplies one. [_gitClient]/[_gitHubClient] follow the same
+  /// optional-dependency pattern too — `null` makes [_runCodingExecution]
+  /// no-op entirely (same guard as [_providerRegistry]/[_commentRepository]),
+  /// since a worktree-isolated, verify-gated run can't proceed without them;
+  /// real usage (`app_router.dart`) always supplies them. Added for `AIO-506`.
+  /// [_baselineRepository]/[_projectId]/[_baselineVersion] follow the same
+  /// pattern again — `null` on any of them also no-ops [_runCodingExecution],
+  /// since resolving the effective
+  /// `skills/ verify`/`conventions/architecture-conventions` content
+  /// ([_effectiveAssetContent]) needs all three; real usage always supplies
+  /// them too. Added for AIO-1654 (replaces the prior `FlutterVerifier`-based
+  /// mechanical verify gate with an agentic one — see
+  /// [_assembleVerificationContext]). [_projectName] follows the same
+  /// optional-dependency pattern once more — `null` falls back to a generic
+  /// title in [runCodebaseSummarization]'s spawned run ticket; real usage
   /// (`app_router.dart`) supplies the active `Project.name`. Added for
-  /// `AIO-1266`.
-  /// [_executionContextCapRepository] follows the same optional-dependency
-  /// pattern once more — `null` (every existing construction site except
-  /// `app_router.dart`) makes [_effectiveExecutionContextCap] always
-  /// resolve to the execution-phase model's real
-  /// `AgentModelDescriptor.contextWindowTokens` with no user override
-  /// available — the handoff mechanism itself still works, only the
-  /// user-configurable lowering of the threshold doesn't. Added for
-  /// `AIO-833`.
+  /// `AIO-1266`. [_executionContextCapRepository] follows the same
+  /// optional-dependency pattern once more — `null` (every existing
+  /// construction site except `app_router.dart`) makes
+  /// [_effectiveExecutionContextCap] always resolve to the execution-phase
+  /// model's real `AgentModelDescriptor.contextWindowTokens` with no user
+  /// override available — the handoff mechanism itself still works, only the
+  /// user-configurable lowering of the threshold doesn't. Added for `AIO-833`.
   /// [_filterRepository] follows the same optional-dependency pattern once
   /// more — `null` makes [toggleStatusFilter]/[toggleTypeFilter]/
   /// [togglePriorityFilter] skip persistence (the in-memory toggle and
   /// re-search still work) and [loadPersistedFilters] a no-op; real usage
-  /// (`app_router.dart`) always supplies one. Added for
-  /// `AIO-1224`.
-  /// [_sortRepository] follows the same optional-dependency pattern once
-  /// more — `null` makes [setSort] skip persistence (the in-memory
-  /// override still works) and [loadPersistedSort] a no-op; real usage
-  /// (`app_router.dart`) always supplies one, alongside the existing
-  /// [_filterRepository]/[_projectId]. Added for
-  /// `AIO-2371`.
-  /// [pageWikilinkRepository] follows the same optional-dependency
-  /// pattern once more — `null` (every existing construction site except
-  /// `app_router.dart`) makes [updateTicket]'s wikilink reindex/rename-
-  /// cascade step and [loadDocumentRelations]'s wikilink-origin backlinks
-  /// merge both no-op; real usage (`app_router.dart`) always supplies
-  /// one. [activeTicketViewRegistry] is the *existing* desktop-only
-  /// registry `TicketMarkdownWatcherService`/`TicketRepairCubit` already
-  /// use — reused here (not a second instance) to defer, rather than
-  /// clobber, a rename-triggered rewrite of a page the user currently has
-  /// open; `null` on mobile/web, where that deferral simply never
-  /// triggers (no separate file-watcher write path to race against
-  /// there). Both added for `AIO-963`.
+  /// (`app_router.dart`) always supplies one. Added for `AIO-1224`.
+  /// [_sortRepository] follows the same optional-dependency pattern once more
+  /// — `null` makes [setSort] skip persistence (the in-memory override still
+  /// works) and [loadPersistedSort] a no-op; real usage (`app_router.dart`)
+  /// always supplies one, alongside the existing
+  /// [_filterRepository]/[_projectId]. Added for `AIO-2371`.
+  /// [pageWikilinkRepository] follows the same optional-dependency pattern
+  /// once more — `null` (every existing construction site except
+  /// `app_router.dart`) makes [updateTicket]'s wikilink reindex/rename-cascade
+  /// step and [loadDocumentRelations]'s wikilink-origin backlinks merge both
+  /// no-op; real usage (`app_router.dart`) always supplies one.
+  /// [activeTicketViewRegistry] is the *existing* desktop-only registry
+  /// `TicketMarkdownWatcherService`/`TicketRepairCubit` already use — reused
+  /// here (not a second instance) to defer, rather than clobber, a
+  /// rename-triggered rewrite of a page the user currently has open; `null` on
+  /// mobile/web, where that deferral simply never triggers (no separate
+  /// file-watcher write path to race against there). Both added for `AIO-963`.
   /// [executionSchedulingRepository]/[executionQueueRepository] follow the
-  /// same optional-dependency pattern once more — `null`
-  /// (every existing construction site except `app_router.dart`) makes
+  /// same optional-dependency pattern once more — `null` (every existing
+  /// construction site except `app_router.dart`) makes
   /// [_effectiveConcurrencyCeiling] always resolve
   /// [ExecutionSchedulingMode.strictFifo] (today's unchanged behavior) and
-  /// [restoreExecutionQueue]/[_persistExecutionQueueSnapshot] both no-op;
-  /// real usage (`app_router.dart`) always supplies both. Added for
-  /// `AIO-1400`.
+  /// [restoreExecutionQueue]/[_persistExecutionQueueSnapshot] both no-op; real
+  /// usage (`app_router.dart`) always supplies both. Added for `AIO-1400`.
   /// [workflowStatusRepository]/[sddStageConfigRepository] follow the same
-  /// optional-dependency pattern once more, deliberately — unlike every
-  /// other new dependency listed above, these two back *every* gate/
-  /// trigger this cubit already performs on ticket status (see
+  /// optional-dependency pattern once more, deliberately — unlike every other
+  /// new dependency listed above, these two back *every* gate/ trigger this
+  /// cubit already performs on ticket status (see
   /// [_workflowStatuses]/[_resolveStatus]/[_roleOf]), so making them
-  /// `required` would force every one of ~40 existing construction sites
-  /// (most of them tests unrelated to workflow configuration) to start
-  /// supplying both just to compile. `null` (every existing construction
-  /// site except `app_router.dart`) makes [_workflowStatuses] stay pinned
-  /// to [defaultWorkflowStatuses] and [_designStagesEnabled] always
-  /// resolve `true` — exactly the pre-configuration hardcoded behavior
-  /// every gate/trigger already had, so an unconfigured/test cubit is
-  /// unaffected. Real usage (`app_router.dart`) always supplies both. Added
-  /// for `AIO-549`.
+  /// `required` would force every one of ~40 existing construction sites (most
+  /// of them tests unrelated to workflow configuration) to start supplying
+  /// both just to compile. `null` (every existing construction site except
+  /// `app_router.dart`) makes [_workflowStatuses] stay pinned to
+  /// [defaultWorkflowStatuses] and [_designStagesEnabled] always resolve
+  /// `true` — exactly the pre-configuration hardcoded behavior every
+  /// gate/trigger already had, so an unconfigured/test cubit is unaffected.
+  /// Real usage (`app_router.dart`) always supplies both. Added for `AIO-549`.
   /// [workflowSkillAttachmentRepository]/[workflowPromptTemplateRepository]
-  /// follow the same optional-dependency convention once more — `null`
-  /// (every existing construction site except `app_router.dart`) pins
+  /// follow the same optional-dependency convention once more — `null` (every
+  /// existing construction site except `app_router.dart`) pins
   /// [_skillAttachments] to `const []` forever, so
-  /// [_attachmentForStatus]/[_attachmentForStage] always resolve `null`
-  /// and no attachment ever fires — exactly Phase 1's behavior, byte for
-  /// byte. Real usage (`app_router.dart`) always supplies both. Added for
-  /// `AIO-2650`.
-  /// [notificationRepository] follows the same optional-dependency
-  /// pattern once more — `null` (every existing construction site except
+  /// [_attachmentForStatus]/[_attachmentForStage] always resolve `null` and no
+  /// attachment ever fires — exactly Phase 1's behavior, byte for byte. Real
+  /// usage (`app_router.dart`) always supplies both. Added for `AIO-2650`.
+  /// [notificationRepository] follows the same optional-dependency pattern
+  /// once more — `null` (every existing construction site except
   /// `app_router.dart`) makes [_recordNotification]/
   /// [loadUnreadNotificationCount] no-op and
   /// [getRecentNotifications]/[markNotificationRead]/
   /// [markAllNotificationsRead] all no-op or return empty/zero defaults,
   /// mirroring [_commentRepository]'s exact guard shape. Real usage
-  /// (`app_router.dart`) always supplies one. Added for
-  /// `AIO-1586`.
+  /// (`app_router.dart`) always supplies one. Added for `AIO-1586`.
   /// [dependencyCacheService] follows the same optional-dependency pattern
-  /// once more, mirroring [_gitClient]/[_gitHubClient] exactly — `null`
-  /// (every existing construction site except `app_router.dart`) makes
-  /// [_runCodingExecution]'s Node.js dependency-caching step a no-op
-  /// (today's unchanged behavior: a worktree starts with zero installed
-  /// dependencies); real usage (`app_router.dart`) always supplies one.
-  /// Added for
-  /// `AIO-722`.
-  /// [decisionGraphRepository] follows the same optional-dependency
-  /// pattern once more — `null` (every existing construction site except
+  /// once more, mirroring [_gitClient]/[_gitHubClient] exactly — `null` (every
+  /// existing construction site except `app_router.dart`) makes
+  /// [_runCodingExecution]'s Node.js dependency-caching step a no-op (today's
+  /// unchanged behavior: a worktree starts with zero installed dependencies);
+  /// real usage (`app_router.dart`) always supplies one. Added for `AIO-722`.
+  /// [decisionGraphRepository] follows the same optional-dependency pattern
+  /// once more — `null` (every existing construction site except
   /// `app_router.dart`) makes [_evaluateDecisionGraph] fall back to
-  /// [defaultDecisionGraphFor]/[defaultDecisionNodesById] (see that
-  /// method's own dartdoc), pinning every `AutomationContext`'s `case
-  /// auto:` behavior to exactly what plain `auto` confidence already did
-  /// before this proposal. Real usage (`app_router.dart`) always
-  /// supplies one. Added for
-  /// `AIO-181`.
+  /// [defaultDecisionGraphFor]/[defaultDecisionNodesById] (see that method's
+  /// own dartdoc), pinning every `AutomationContext`'s `case auto:` behavior
+  /// to exactly what plain `auto` confidence already did before this proposal.
+  /// Real usage (`app_router.dart`) always supplies one. Added for `AIO-181`.
   // The public param names below (embeddingProvider/gitProjector/
   // projectRootPath/providerRegistry/commentRepository/
   // automationSettingsRepository/modelRoutingRepository/gitClient/
@@ -397,29 +380,26 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// Deterministic pre-execution token-cost prediction orchestrator — see
   /// [TicketTokenPredictor]. Wired to the same [_repository]/
   /// [_embeddingProvider] this cubit already holds, constructed alongside
-  /// [_estimationSuggester]. Added for
-  /// `AIO-2455`.
+  /// [_estimationSuggester]. Added for `AIO-2455`.
   late final TicketTokenPredictor _tokenPredictor;
 
-  /// Task/Bug id → total coding-execution token spend recorded so far —
-  /// the in-memory running-total cache backing
+  /// Task/Bug id → total coding-execution token spend recorded so far — the
+  /// in-memory running-total cache backing
   /// [TicketsLoaded.executionTokenTotals]/
-  /// [TicketDetailLoaded.executionTokenTotal]. Fully reconstructable at
-  /// any time from [TicketRepository.getExecutionTokenTotals] (this is a
-  /// cache, not the source of truth — the persisted comment rows are),
-  /// which is exactly what [loadTickets]/[loadMoreTickets]/
-  /// [getTicketById] do to batch-seed any not-yet-cached id. Once seeded,
-  /// an entry is only ever incremented in place by
-  /// [_runCodingExecution]'s own turn-completion points — never
-  /// recomputed from scratch on every read, the same "seed once, update
-  /// incrementally" shape [_inFlightExecutionIds] and its siblings
-  /// already use. Deliberately untouched by
-  /// [_refreshInFlightBoardState]'s own recompute walk — that method
-  /// mirrors this cache's *current* contents into every fresh
-  /// [TicketsLoaded] emission, but never mutates it, so a scheduling-only
-  /// event (a run starting/stopping) can't accidentally reset a token
-  /// total that has nothing to do with scheduling. Added for
-  /// `AIO-2455`.
+  /// [TicketDetailLoaded.executionTokenTotal]. Fully reconstructable at any
+  /// time from [TicketRepository.getExecutionTokenTotals] (this is a cache,
+  /// not the source of truth — the persisted comment rows are), which is
+  /// exactly what [loadTickets]/[loadMoreTickets]/ [getTicketById] do to
+  /// batch-seed any not-yet-cached id. Once seeded, an entry is only ever
+  /// incremented in place by [_runCodingExecution]'s own turn-completion
+  /// points — never recomputed from scratch on every read, the same "seed
+  /// once, update incrementally" shape [_inFlightExecutionIds] and its
+  /// siblings already use. Deliberately untouched by
+  /// [_refreshInFlightBoardState]'s own recompute walk — that method mirrors
+  /// this cache's *current* contents into every fresh [TicketsLoaded]
+  /// emission, but never mutates it, so a scheduling-only event (a run
+  /// starting/stopping) can't accidentally reset a token total that has
+  /// nothing to do with scheduling. Added for `AIO-2455`.
   final Map<String, int> _executionTokenTotals = {};
 
   /// Shared related-tickets context-assembly walk — see
@@ -441,12 +421,11 @@ class TicketsCubit extends Cubit<TicketsState> {
   late final TicketListFilterRepository? _filterRepository;
   late final TicketListSortRepository? _sortRepository;
 
-  /// Backs [currentViewMode]/[setViewMode]/[loadPersistedViewMode] — see
-  /// those methods. `null` (the default, and every existing test/call
-  /// site) makes [setViewMode] skip persistence (the in-memory override
-  /// still works) and [loadPersistedViewMode] a no-op; real usage
-  /// (`app_router.dart`) always supplies one. Added for
-  /// `AIO-1069`.
+  /// Backs [currentViewMode]/[setViewMode]/[loadPersistedViewMode] — see those
+  /// methods. `null` (the default, and every existing test/call site) makes
+  /// [setViewMode] skip persistence (the in-memory override still works) and
+  /// [loadPersistedViewMode] a no-op; real usage (`app_router.dart`) always
+  /// supplies one. Added for `AIO-1069`.
   late final TicketListViewModeRepository? _viewModeRepository;
 
   /// Backs [hiddenBoardColumns]/[toggleBoardColumnVisibility]/
@@ -458,18 +437,16 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   late final PageWikilinkRepository? _pageWikilinkRepository;
 
-  /// Persists the user's coding-execution scheduling mode/concurrency
-  /// ceiling — see [_effectiveConcurrencyCeiling]. `null` (every existing
-  /// construction site except `app_router.dart`) makes scheduling always
-  /// resolve [ExecutionSchedulingMode.strictFifo]. Added for
-  /// `AIO-1400`.
+  /// Persists the user's coding-execution scheduling mode/concurrency ceiling
+  /// — see [_effectiveConcurrencyCeiling]. `null` (every existing construction
+  /// site except `app_router.dart`) makes scheduling always resolve
+  /// [ExecutionSchedulingMode.strictFifo]. Added for `AIO-1400`.
   late final ExecutionSchedulingRepository? _executionSchedulingRepository;
 
-  /// Persists the in-flight/queued coding-execution snapshot across an
-  /// app restart — see [restoreExecutionQueue]/
-  /// [_persistExecutionQueueSnapshot]. `null` (every existing construction
-  /// site except `app_router.dart`) makes both no-op. Added for
-  /// `AIO-1400`.
+  /// Persists the in-flight/queued coding-execution snapshot across an app
+  /// restart — see [restoreExecutionQueue]/ [_persistExecutionQueueSnapshot].
+  /// `null` (every existing construction site except `app_router.dart`) makes
+  /// both no-op. Added for `AIO-1400`.
   late final ExecutionQueueRepository? _executionQueueRepository;
 
   /// Shared inline-wikilink reindex/rename-cascade logic — see
@@ -478,41 +455,37 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// dependency service field above.
   late final PageWikilinkIndexer? _wikilinkIndexer;
 
-  /// Persists the project's configured [WorkflowStatus] set. `null`
-  /// (every existing construction site except `app_router.dart`) pins
+  /// Persists the project's configured [WorkflowStatus] set. `null` (every
+  /// existing construction site except `app_router.dart`) pins
   /// [_workflowStatuses] to [defaultWorkflowStatuses] forever — see the
-  /// constructor's own dartdoc. Added for
-  /// `AIO-549`.
+  /// constructor's own dartdoc. Added for `AIO-549`.
   late final WorkflowStatusRepository? _workflowStatusRepository;
 
   /// Persists the project's `SddStage` configuration. `null` makes
-  /// [_designStagesEnabled] always resolve `true` and the stage
-  /// display-name resolution point always fall back to each stage's own
-  /// hardcoded name. Added for
-  /// `AIO-549`.
+  /// [_designStagesEnabled] always resolve `true` and the stage display-name
+  /// resolution point always fall back to each stage's own hardcoded name.
+  /// Added for `AIO-549`.
   late final SddStageConfigRepository? _sddStageConfigRepository;
 
-  /// Persists the project's configured [SkillAttachment] set. `null`
-  /// (every existing construction site except `app_router.dart`) pins
-  /// [_skillAttachments] to `const []` forever — see the constructor's
-  /// own dartdoc. Added for `AIO-2650`.
+  /// Persists the project's configured [SkillAttachment] set. `null` (every
+  /// existing construction site except `app_router.dart`) pins
+  /// [_skillAttachments] to `const []` forever — see the constructor's own
+  /// dartdoc. Added for `AIO-2650`.
   late final WorkflowSkillAttachmentRepository?
   _workflowSkillAttachmentRepository;
 
   /// Persists the project's [WorkflowPromptTemplate] set, consulted by
   /// [_promptFor] to render an [SkillAttachmentKind.aionNativeTemplate]
-  /// attachment's prompt. `null` makes [_promptFor] fall back to a
-  /// defensive placeholder for that kind (see its own dartdoc). Added for
-  /// `AIO-2650`.
+  /// attachment's prompt. `null` makes [_promptFor] fall back to a defensive
+  /// placeholder for that kind (see its own dartdoc). Added for `AIO-2650`.
   late final WorkflowPromptTemplateRepository?
   _workflowPromptTemplateRepository;
 
-  /// Persists coding-execution/SDD-stage-chat outcome notifications —
-  /// see [_recordNotification]. `null` (every existing construction site
-  /// except `app_router.dart`) makes notification-writing/-reading no-op
-  /// or return empty/zero defaults, mirroring [_commentRepository]'s
-  /// exact optional-dependency guard shape. Added for
-  /// `AIO-1586`.
+  /// Persists coding-execution/SDD-stage-chat outcome notifications — see
+  /// [_recordNotification]. `null` (every existing construction site except
+  /// `app_router.dart`) makes notification-writing/-reading no-op or return
+  /// empty/zero defaults, mirroring [_commentRepository]'s exact
+  /// optional-dependency guard shape. Added for `AIO-1586`.
   late final NotificationRepository? _notificationRepository;
 
   /// Seeds/writes-back a Node.js worktree's `node_modules` cache — see
@@ -520,62 +493,55 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// existing construction site except `app_router.dart`) makes the
   /// dependency-caching step of [_runCodingExecution] a no-op, mirroring
   /// [_gitClient]/[_gitHubClient]'s exact optional-dependency guard shape.
-  /// Added for
-  /// `AIO-722`.
+  /// Added for `AIO-722`.
   late final DependencyCacheService? _dependencyCache;
 
   /// Persists every `AutomationContext`'s configured [DecisionGraph]. Backs
   /// [_evaluateDecisionGraph] — see [_decisionGraphsByContext]/
-  /// [_decisionNodesById]'s own dartdocs. `null` (every existing
-  /// construction site except `app_router.dart`) makes
-  /// [_evaluateDecisionGraph] fall back to [defaultDecisionGraphFor]/
-  /// [defaultDecisionNodesById] instead of reading a cache. Added for
-  /// `AIO-181`.
+  /// [_decisionNodesById]'s own dartdocs. `null` (every existing construction
+  /// site except `app_router.dart`) makes [_evaluateDecisionGraph] fall back
+  /// to [defaultDecisionGraphFor]/ [defaultDecisionNodesById] instead of
+  /// reading a cache. Added for `AIO-181`.
   late final DecisionGraphRepository? _decisionGraphRepository;
 
   /// Persists every precondition-bearing `SddStage`'s configured
   /// `TransitionGraph`. Backs [_sddStageAdvanceCheck] — see
-  /// [_transitionGraphsByStage]/[_transitionNodesById]'s own dartdocs.
-  /// `null` (every existing construction site except `app_router.dart`)
-  /// pins every stage to `TransitionOutcome.allowed` — **not** today's
-  /// hardcoded checks; a construction site that needs
-  /// `_sddStageAdvanceCheck`'s real precondition logic must supply one
-  /// seeded with the baseline graphs (design.md §3). Added for
-  /// `AIO-1936`.
+  /// [_transitionGraphsByStage]/[_transitionNodesById]'s own dartdocs. `null`
+  /// (every existing construction site except `app_router.dart`) pins every
+  /// stage to `TransitionOutcome.allowed` — **not** today's hardcoded checks;
+  /// a construction site that needs `_sddStageAdvanceCheck`'s real
+  /// precondition logic must supply one seeded with the baseline graphs
+  /// (design.md §3). Added for `AIO-1936`.
   late final TransitionPreconditionRepository?
   _transitionPreconditionRepository;
 
   /// English-only [AppLocalizationsEn] instance used to build
   /// [_recordNotification]'s persisted `message` strings and
-  /// [_runCodingExecution]/[_runStageChatTurn]'s notification copy —
-  /// both constructed outside any widget `BuildContext`, so
-  /// `context.l10n`'s usual resolution path isn't available here.
-  /// `TicketsCubit` had no pre-existing non-widget localization
-  /// mechanism (confirmed during `/apply` — no other method in this
-  /// cubit resolves `AppLocalizations` at all); since English is
-  /// currently this app's only generated locale
+  /// [_runCodingExecution]/[_runStageChatTurn]'s notification copy — both
+  /// constructed outside any widget `BuildContext`, so `context.l10n`'s usual
+  /// resolution path isn't available here. `TicketsCubit` had no pre-existing
+  /// non-widget localization mechanism (confirmed during `/apply` — no other
+  /// method in this cubit resolves `AppLocalizations` at all); since English
+  /// is currently this app's only generated locale
   /// (`lib/l10n/app_en.arb`/`lib/l10n/generated/app_localizations_en.dart`),
-  /// constructing [AppLocalizationsEn] directly here is a real
-  /// localization resolution, not a hardcoded-string fallback — it will
-  /// need to become locale-aware (e.g. threading a `Locale` through the
-  /// constructor) if a second locale is ever added. Added for
-  /// `AIO-1586`.
+  /// constructing [AppLocalizationsEn] directly here is a real localization
+  /// resolution, not a hardcoded-string fallback — it will need to become
+  /// locale-aware (e.g. threading a `Locale` through the constructor) if a
+  /// second locale is ever added. Added for `AIO-1586`.
   final AppLocalizationsEn _l10n = AppLocalizationsEn();
 
-  /// The project's currently-configured [WorkflowStatus] set — every
-  /// scope, shared base and every per-type extension together. Loaded
-  /// once at construction ([_loadWorkflowStatuses], fired from the
-  /// constructor body without being awaited — a cubit is usable
-  /// immediately with [defaultWorkflowStatuses] as its baseline, then
-  /// silently upgrades to the real configured set once the async load
-  /// resolves) and refreshed every time [_workflowStatusRepository]
-  /// fires [WorkflowStatusRepository.onChanged] (i.e. whenever
-  /// `WorkflowConfigCubit` persists an edit) — the two Cubits stay
-  /// consistent through the shared repository, never a direct reference
-  /// to each other. Every place that used to gate on a literal
-  /// `TicketStatus` value now resolves through [_resolveStatus]/[_roleOf]
-  /// against this list instead. See
-  /// `AIO-549` §3.
+  /// The project's currently-configured [WorkflowStatus] set — every scope,
+  /// shared base and every per-type extension together. Loaded once at
+  /// construction ([_loadWorkflowStatuses], fired from the constructor body
+  /// without being awaited — a cubit is usable immediately with
+  /// [defaultWorkflowStatuses] as its baseline, then silently upgrades to the
+  /// real configured set once the async load resolves) and refreshed every
+  /// time [_workflowStatusRepository] fires
+  /// [WorkflowStatusRepository.onChanged] (i.e. whenever `WorkflowConfigCubit`
+  /// persists an edit) — the two Cubits stay consistent through the shared
+  /// repository, never a direct reference to each other. Every place that used
+  /// to gate on a literal `TicketStatus` value now resolves through
+  /// [_resolveStatus]/[_roleOf] against this list instead. See `AIO-549` §3.
   List<WorkflowStatus> _workflowStatuses = defaultWorkflowStatuses;
 
   /// Subscription driving [_workflowStatuses]'s live refresh — see that
@@ -614,17 +580,16 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// `.inReview`/`.done` comparison this cubit used to perform.
   WorkflowStatusRole? _roleOf(String status) => _resolveStatus(status)?.role;
 
-  /// The project's currently-configured [SkillAttachment] set. Loaded
-  /// once at construction ([_loadSkillAttachments], fired from the
-  /// constructor body without being awaited, mirroring
-  /// [_workflowStatuses]'s own load-then-upgrade shape) and refreshed
-  /// every time [_workflowSkillAttachmentRepository] fires
+  /// The project's currently-configured [SkillAttachment] set. Loaded once at
+  /// construction ([_loadSkillAttachments], fired from the constructor body
+  /// without being awaited, mirroring [_workflowStatuses]'s own
+  /// load-then-upgrade shape) and refreshed every time
+  /// [_workflowSkillAttachmentRepository] fires
   /// [WorkflowSkillAttachmentRepository.onChanged] (i.e. whenever
   /// `WorkflowConfigCubit` persists an attachment edit). Defaults to
-  /// `const []` — the correct empty baseline (unlike
-  /// [_workflowStatuses]'s `defaultWorkflowStatuses` fallback, there is
-  /// no pre-configuration attachment behavior to reproduce). See
-  /// `AIO-2650` §3.1.
+  /// `const []` — the correct empty baseline (unlike [_workflowStatuses]'s
+  /// `defaultWorkflowStatuses` fallback, there is no pre-configuration
+  /// attachment behavior to reproduce). See `AIO-2650` §3.1.
   List<SkillAttachment> _skillAttachments = const [];
 
   /// Subscription driving [_skillAttachments]'s live refresh — see that
@@ -658,16 +623,15 @@ class TicketsCubit extends Cubit<TicketsState> {
   SkillAttachment? _attachmentForStage(SddStage stage) =>
       _skillAttachments.where((a) => a.sddStage == stage).firstOrNull;
 
-  /// Every [AutomationContext]'s currently-configured [DecisionGraph].
-  /// Loaded once at construction ([_loadDecisionGraphs], fired from the
-  /// constructor body without being awaited, mirroring
-  /// [_workflowStatuses]'s own load-then-upgrade shape) and refreshed
-  /// every time [_decisionGraphRepository] fires
-  /// [DecisionGraphRepository.onChanged] (i.e. whenever
-  /// `DecisionGraphConfigCubit` persists an edit). Empty (every context
-  /// resolves via [DecisionGraph]'s `null`-`rootNodeId` default inside
-  /// [_evaluateDecisionGraph]) until the first load resolves. See
-  /// `AIO-181` §4.
+  /// Every [AutomationContext]'s currently-configured [DecisionGraph]. Loaded
+  /// once at construction ([_loadDecisionGraphs], fired from the constructor
+  /// body without being awaited, mirroring [_workflowStatuses]'s own
+  /// load-then-upgrade shape) and refreshed every time
+  /// [_decisionGraphRepository] fires [DecisionGraphRepository.onChanged]
+  /// (i.e. whenever `DecisionGraphConfigCubit` persists an edit). Empty (every
+  /// context resolves via [DecisionGraph]'s `null`-`rootNodeId` default inside
+  /// [_evaluateDecisionGraph]) until the first load resolves. See `AIO-181`
+  /// §4.
   Map<AutomationContext, DecisionGraph> _decisionGraphsByContext = const {};
 
   /// Every [DecisionNode] belonging to any context's graph, keyed by
@@ -702,35 +666,32 @@ class TicketsCubit extends Cubit<TicketsState> {
     _decisionNodesById = nodesById;
   }
 
-  /// Consults [context]'s configured [DecisionGraph] against [input].
-  /// When [context]'s cached graph has a `null` root (no graph
-  /// configured — the seeded baseline for six of the eight contexts),
-  /// resolves [DecisionOutcome.proceed], reproducing exactly what plain
-  /// `AutomationConfidence.auto` already did before this proposal. When
-  /// this cubit was constructed without a [DecisionGraphRepository] at
-  /// all, falls back to [defaultDecisionGraphFor]/
-  /// [defaultDecisionNodesById] — the same baseline data
-  /// `AutomationDecisionDao.seedDefaultsIfEmpty` persists — rather than a
-  /// blanket [DecisionOutcome.proceed]: unlike every other optional
-  /// dependency on this cubit, [AutomationContext.codingExecutionRetry]/
+  /// Consults [context]'s configured [DecisionGraph] against [input]. When
+  /// [context]'s cached graph has a `null` root (no graph configured — the
+  /// seeded baseline for six of the eight contexts), resolves
+  /// [DecisionOutcome.proceed], reproducing exactly what plain
+  /// `AutomationConfidence.auto` already did before this proposal. When this
+  /// cubit was constructed without a [DecisionGraphRepository] at all, falls
+  /// back to [defaultDecisionGraphFor]/ [defaultDecisionNodesById] — the same
+  /// baseline data `AutomationDecisionDao.seedDefaultsIfEmpty` persists —
+  /// rather than a blanket [DecisionOutcome.proceed]: unlike every other
+  /// optional dependency on this cubit,
+  /// [AutomationContext.codingExecutionRetry]/
   /// [AutomationContext.codingExecution]'s baseline graphs enforce a real
   /// safety cap (the former hardcoded `attempt > _maxVerifyRetries`/
-  /// `_overageDetectedThisSession` checks) that must still hold for a
-  /// cubit with no repository — omitting one must reproduce old
-  /// behavior, not silently remove a retry cap and risk an unbounded
-  /// `_runCodingExecution` retry loop. Every `AutomationContext` call
-  /// site's `case AutomationConfidence.auto:` branch calls this before
-  /// proceeding — see
-  /// `AIO-181` §4.
+  /// `_overageDetectedThisSession` checks) that must still hold for a cubit
+  /// with no repository — omitting one must reproduce old behavior, not
+  /// silently remove a retry cap and risk an unbounded `_runCodingExecution`
+  /// retry loop. Every `AutomationContext` call site's
+  /// `case AutomationConfidence.auto:` branch calls this before proceeding —
+  /// see `AIO-181` §4.
   ///
   /// [session], when non-null, is merged into [input] as
   /// `DecisionEvalContext.session`/`.askAgentJudgment` (the latter always
   /// [_askAgentJudgment]) — only the 3 live-session call sites
-  /// (`ticketCreation`/`ticketLinking`/`chatBranching`) ever pass a
-  /// non-null [session]; every other call site's `input` is used exactly
-  /// as constructed. See
-  /// `AIO-613`
-  /// §7.
+  /// (`ticketCreation`/`ticketLinking`/`chatBranching`) ever pass a non-null
+  /// [session]; every other call site's `input` is used exactly as
+  /// constructed. See `AIO-613` §7.
   Future<DecisionOutcome> _evaluateDecisionGraph(
     AutomationContext context,
     DecisionEvalContext input, {
@@ -757,15 +718,13 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Every precondition-bearing `SddStage`'s currently-configured
-  /// `TransitionGraph`. Loaded once at construction
-  /// ([_loadTransitionGraphs], fired from the constructor body without
-  /// being awaited, mirroring [_decisionGraphsByContext]'s own
-  /// load-then-upgrade shape) and refreshed every time
-  /// [_transitionPreconditionRepository] fires
+  /// `TransitionGraph`. Loaded once at construction ([_loadTransitionGraphs],
+  /// fired from the constructor body without being awaited, mirroring
+  /// [_decisionGraphsByContext]'s own load-then-upgrade shape) and refreshed
+  /// every time [_transitionPreconditionRepository] fires
   /// `TransitionPreconditionRepository.onChanged` (i.e. whenever
-  /// `TransitionPreconditionConfigCubit` persists an edit). Empty until
-  /// the first load resolves. See
-  /// `AIO-1936` §4.
+  /// `TransitionPreconditionConfigCubit` persists an edit). Empty until the
+  /// first load resolves. See `AIO-1936` §4.
   Map<SddStage, TransitionGraph> _transitionGraphsByStage = const {};
 
   /// Every `TransitionNode` belonging to any stage's graph, keyed by
@@ -814,16 +773,14 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// [DecisionEvalContext.askAgentJudgment]'s real implementation — resolves
-  /// [session]'s provider via [_providerRegistry], issues a forked,
-  /// resumed [AgentModelClient.run] call asking [prompt] as a scoped
-  /// yes/no question, and parses the answer. Returns `null` (not `false`)
-  /// for every failure mode — no provider registered, the run errors, or
-  /// the response doesn't clearly parse as yes/no — so
-  /// [evaluateDecisionGraph]'s `answer ?? false` fallback is the single
-  /// place that turns "couldn't get a clear answer" into "unmatched",
-  /// rather than this method silently conflating "no" with "couldn't
-  /// ask". Added for
-  /// `AIO-613`.
+  /// [session]'s provider via [_providerRegistry], issues a forked, resumed
+  /// [AgentModelClient.run] call asking [prompt] as a scoped yes/no question,
+  /// and parses the answer. Returns `null` (not `false`) for every failure
+  /// mode — no provider registered, the run errors, or the response doesn't
+  /// clearly parse as yes/no — so [evaluateDecisionGraph]'s `answer ?? false`
+  /// fallback is the single place that turns "couldn't get a clear answer"
+  /// into "unmatched", rather than this method silently conflating "no" with
+  /// "couldn't ask". Added for `AIO-613`.
   Future<bool?> _askAgentJudgment(
     AgentSessionHandle session,
     String prompt,
@@ -915,12 +872,11 @@ class TicketsCubit extends Cubit<TicketsState> {
       'done';
 
   /// Every configured status name, ordered by [WorkflowStatus.sortOrder]
-  /// ascending (first occurrence wins on a name collision across scopes)
-  /// — passed to [TicketRepository.searchTickets] as `statusSortOrder` so
+  /// ascending (first occurrence wins on a name collision across scopes) —
+  /// passed to [TicketRepository.searchTickets] as `statusSortOrder` so
   /// `TicketSortField.status` orders by each ticket's resolved
-  /// `WorkflowStatus.sortOrder` rather than a fixed enum declaration
-  /// order. See `AIO-549`
-  /// §5.2.
+  /// `WorkflowStatus.sortOrder` rather than a fixed enum declaration order.
+  /// See `AIO-549` §5.2.
   List<String> get _statusSortOrder {
     final sorted = [..._workflowStatuses]
       ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
@@ -944,12 +900,11 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   static const _uuid = Uuid();
 
-  /// Broadcasts [CodebaseAnalysisStatus] updates as
-  /// [runCodebaseSummarization] progresses. A broadcast controller (not
-  /// tied to [state]) since `CodebaseAnalysisBanner` is the only
-  /// subscriber and this is a transient, first-open-only concern
-  /// unrelated to the ticket list's own filter/sort/pagination state.
-  /// Added for `AIO-1266`.
+  /// Broadcasts [CodebaseAnalysisStatus] updates as [runCodebaseSummarization]
+  /// progresses. A broadcast controller (not tied to [state]) since
+  /// `CodebaseAnalysisBanner` is the only subscriber and this is a transient,
+  /// first-open-only concern unrelated to the ticket list's own
+  /// filter/sort/pagination state. Added for `AIO-1266`.
   final _codebaseAnalysisController =
       StreamController<CodebaseAnalysisStatus>.broadcast();
 
@@ -985,22 +940,20 @@ class TicketsCubit extends Cubit<TicketsState> {
     });
   }
 
-  /// Stops the [detailTick] pulse started by [startDetailTicker]. Called
-  /// by [TicketDetailScreen.dispose] so the timer doesn't keep firing
-  /// into an empty stream once no detail screen is mounted to consume
-  /// it — [TicketsCubit] is a single app-wide instance (see
-  /// `AIO-38`), so
-  /// nothing else would stop it otherwise.
+  /// Stops the [detailTick] pulse started by [startDetailTicker]. Called by
+  /// [TicketDetailScreen.dispose] so the timer doesn't keep firing into an
+  /// empty stream once no detail screen is mounted to consume it —
+  /// [TicketsCubit] is a single app-wide instance (see `AIO-38`), so nothing
+  /// else would stop it otherwise.
   void stopDetailTicker() {
     _detailTickTimer?.cancel();
     _detailTickTimer = null;
   }
 
-  /// The active project's display name, if this cubit was constructed
-  /// with one (`app_router.dart` always supplies it). Read by
-  /// `CodebaseAnalysisBanner` to name the codebase in its offer copy —
-  /// `null` falls back to generic wording. Added for
-  /// `AIO-1266`.
+  /// The active project's display name, if this cubit was constructed with one
+  /// (`app_router.dart` always supplies it). Read by `CodebaseAnalysisBanner`
+  /// to name the codebase in its offer copy — `null` falls back to generic
+  /// wording. Added for `AIO-1266`.
   String? get projectName => _projectName;
 
   @override
@@ -1019,16 +972,15 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// Live unread-notification count, exposed outside the Bloc `state`
   /// machinery so `WorkspaceNavShell`'s bell badge can render from every
   /// `/workspace/*` route regardless of which [TicketsState] variant is
-  /// currently active — retrofitting this onto every existing state
-  /// subclass ([TicketsLoaded], [TicketDetailLoaded], [TicketsError], …)
-  /// would touch far more surface than the badge's own scope justifies.
-  /// Loaded via [loadUnreadNotificationCount] (chained onto construction
-  /// in `app_router.dart`, mirroring `..restoreExecutionQueue()`'s
-  /// existing precedent) and refreshed at every [_recordNotification]
-  /// call and every [markNotificationRead]/[markAllNotificationsRead]
-  /// call. `0` if constructed without a [NotificationRepository].
-  /// Disposed in [close]. Added for
-  /// `AIO-1586`.
+  /// currently active — retrofitting this onto every existing state subclass
+  /// ([TicketsLoaded], [TicketDetailLoaded], [TicketsError], …) would touch
+  /// far more surface than the badge's own scope justifies. Loaded via
+  /// [loadUnreadNotificationCount] (chained onto construction in
+  /// `app_router.dart`, mirroring `..restoreExecutionQueue()`'s existing
+  /// precedent) and refreshed at every [_recordNotification] call and every
+  /// [markNotificationRead]/[markAllNotificationsRead] call. `0` if
+  /// constructed without a [NotificationRepository]. Disposed in [close].
+  /// Added for `AIO-1586`.
   final ValueNotifier<int> unreadNotificationCount = ValueNotifier(0);
 
   /// Loads the current unread count from [_notificationRepository] into
@@ -1041,21 +993,19 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Writes one [Notification] for [ticketId] and refreshes
-  /// [unreadNotificationCount]. The single call site every terminal
-  /// branch of [_runCodingExecution]/[_runStageChatTurn] goes through,
-  /// rather than each duplicating insert-plus-refresh logic — mirrors
-  /// `board-execution-indicators-and-notifications`'s own precedent of
-  /// "one background-execution pattern serves both" consumers, applied
-  /// here to notification-writing. No-ops if constructed without a
-  /// [NotificationRepository] (mirrors [_commentRepository]'s guard
-  /// shape) — a coding-execution/stage-advance run's own outcome is
-  /// still fully surfaced via its existing system comment either way,
-  /// so a missing repository degrades gracefully rather than breaking
-  /// the run itself. [message] is expected to already be fully formatted
-  /// (built by the caller via [_l10n] — see that field's dartdoc for why
-  /// [TicketsCubit] resolves localization this way outside a widget
-  /// `BuildContext`). Added for
-  /// `AIO-1586`.
+  /// [unreadNotificationCount]. The single call site every terminal branch of
+  /// [_runCodingExecution]/[_runStageChatTurn] goes through, rather than each
+  /// duplicating insert-plus-refresh logic — mirrors
+  /// `board-execution-indicators-and-notifications`'s own precedent of "one
+  /// background-execution pattern serves both" consumers, applied here to
+  /// notification-writing. No-ops if constructed without a
+  /// [NotificationRepository] (mirrors [_commentRepository]'s guard shape) — a
+  /// coding-execution/stage-advance run's own outcome is still fully surfaced
+  /// via its existing system comment either way, so a missing repository
+  /// degrades gracefully rather than breaking the run itself. [message] is
+  /// expected to already be fully formatted (built by the caller via [_l10n] —
+  /// see that field's dartdoc for why [TicketsCubit] resolves localization
+  /// this way outside a widget `BuildContext`). Added for `AIO-1586`.
   Future<void> _recordNotification({
     required String ticketId,
     required NotificationKind kind,
@@ -1078,18 +1028,16 @@ class TicketsCubit extends Cubit<TicketsState> {
     unreadNotificationCount.value = await repo.getUnreadCount();
   }
 
-  /// Returns the most recent notifications for the dropdown. Empty list
-  /// if constructed without a [NotificationRepository]. Added for
-  /// `AIO-1586`.
+  /// Returns the most recent notifications for the dropdown. Empty list if
+  /// constructed without a [NotificationRepository]. Added for `AIO-1586`.
   Future<List<Notification>> getRecentNotifications({int limit = 20}) async {
     final repo = _notificationRepository;
     if (repo == null) return const [];
     return repo.getRecent(limit: limit);
   }
 
-  /// Marks [id] read and refreshes [unreadNotificationCount]. No-op
-  /// without a [NotificationRepository]. Added for
-  /// `AIO-1586`.
+  /// Marks [id] read and refreshes [unreadNotificationCount]. No-op without a
+  /// [NotificationRepository]. Added for `AIO-1586`.
   Future<void> markNotificationRead(String id) async {
     final repo = _notificationRepository;
     if (repo == null) return;
@@ -1099,9 +1047,8 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Marks every unread notification read and refreshes
   /// [unreadNotificationCount] (sets it to `0` directly rather than
-  /// re-querying — cheaper, and correct since `markAllRead` is
-  /// unconditional). No-op without a [NotificationRepository]. Added for
-  /// `AIO-1586`.
+  /// re-querying — cheaper, and correct since `markAllRead` is unconditional).
+  /// No-op without a [NotificationRepository]. Added for `AIO-1586`.
   Future<void> markAllNotificationsRead() async {
     final repo = _notificationRepository;
     if (repo == null) return;
@@ -1109,14 +1056,13 @@ class TicketsCubit extends Cubit<TicketsState> {
     unreadNotificationCount.value = 0;
   }
 
-  /// Task/Bug ids with a coding-execution run currently in flight —
-  /// replaces the single-slot `_inFlightExecutionTaskId` this cubit used
-  /// before `AIO-1400` to support
+  /// Task/Bug ids with a coding-execution run currently in flight — replaces
+  /// the single-slot `_inFlightExecutionTaskId` this cubit used before
+  /// `AIO-1400` to support
   /// [ExecutionSchedulingMode.parallel]/[ExecutionSchedulingMode.hybrid]'s
-  /// concurrent runs. Persisted (see [_persistExecutionQueueSnapshot])
-  /// but rebuilt from scratch on every app launch via
-  /// [restoreExecutionQueue] — this in-memory field itself does not
-  /// survive a restart.
+  /// concurrent runs. Persisted (see [_persistExecutionQueueSnapshot]) but
+  /// rebuilt from scratch on every app launch via [restoreExecutionQueue] —
+  /// this in-memory field itself does not survive a restart.
   final Set<String> _inFlightExecutionIds = {};
 
   /// Each entry in [_inFlightExecutionIds]'s currently-active model turn,
@@ -1147,29 +1093,26 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [resumePendingExecutions]/[dismissPendingResumePrompt] clears it.
   List<Ticket>? _pendingResumeTickets;
 
-  /// Epic/Story ids currently mid-advance (their [advanceSddStage] chat
-  /// spawn hasn't finished its stage-chat turn yet), plus — once known —
-  /// the id of the chat ticket that spawn is running against. Both ids
-  /// for the same in-flight advance are added/removed together, so
-  /// [getTicketById] can compute `isAdvancingStage` uniformly whether the
-  /// currently loaded ticket is the Epic/Story itself or its freshly
-  /// spawned stage chat. Unlike [_inFlightExecutionTaskId], this is a
-  /// `Set`, not a single nullable id plus a FIFO queue — stage chats
-  /// share no exclusive resource (no git worktree, unlike
-  /// coding-execution), so multiple Epic/Story advances can run fully
-  /// concurrently. In-memory only, does not survive an app restart
-  /// (mirrors [_inFlightExecutionTaskId]). Added for
-  /// `AIO-352`.
+  /// Epic/Story ids currently mid-advance (their [advanceSddStage] chat spawn
+  /// hasn't finished its stage-chat turn yet), plus — once known — the id of
+  /// the chat ticket that spawn is running against. Both ids for the same
+  /// in-flight advance are added/removed together, so [getTicketById] can
+  /// compute `isAdvancingStage` uniformly whether the currently loaded ticket
+  /// is the Epic/Story itself or its freshly spawned stage chat. Unlike
+  /// [_inFlightExecutionTaskId], this is a `Set`, not a single nullable id
+  /// plus a FIFO queue — stage chats share no exclusive resource (no git
+  /// worktree, unlike coding-execution), so multiple Epic/Story advances can
+  /// run fully concurrently. In-memory only, does not survive an app restart
+  /// (mirrors [_inFlightExecutionTaskId]). Added for `AIO-352`.
   final Set<String> _inFlightStageAdvanceIds = {};
 
   /// Epic/Story ids currently mid-automatic-verify-retry (an
-  /// [AutomationContext.verifyGateRetry] `auto`-confidence
-  /// [retryVerify] call [_maybeRetryPendingVerify] fired hasn't finished
-  /// yet). Mirrors [_inFlightStageAdvanceIds]'s exact purpose — guards
-  /// against a concurrent re-entrant retry — but scoped separately, since
-  /// a verify retry isn't itself a stage advance. In-memory only, does
-  /// not survive an app restart. Added for
-  /// `AIO-1905`.
+  /// [AutomationContext.verifyGateRetry] `auto`-confidence [retryVerify] call
+  /// [_maybeRetryPendingVerify] fired hasn't finished yet). Mirrors
+  /// [_inFlightStageAdvanceIds]'s exact purpose — guards against a concurrent
+  /// re-entrant retry — but scoped separately, since a verify retry isn't
+  /// itself a stage advance. In-memory only, does not survive an app restart.
+  /// Added for `AIO-1905`.
   final Set<String> _inFlightVerifyRetryIds = {};
 
   /// Whether an `AgentOverageDetectedEvent` has fired during any
@@ -1194,8 +1137,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// The user's explicit sort choice for this project, once made — `null`
   /// means no explicit choice yet, so every search resolves the sort
   /// implicitly from [_implicitSort] instead. Loaded once via
-  /// [loadPersistedSort], updated by [setSort]. See
-  /// `AIO-2371`.
+  /// [loadPersistedSort], updated by [setSort]. See `AIO-2371`.
   TicketListSort? _explicitSort;
 
   /// The [TicketListSort] actually used by the most recent [searchTickets]
@@ -1383,13 +1325,12 @@ class TicketsCubit extends Cubit<TicketsState> {
     _explicitSort = await repo.getSort(projectId);
   }
 
-  /// The ticket list's current view mode — `board` until an explicit
-  /// choice is made or restored via [loadPersistedViewMode]. Plain state,
-  /// not part of [TicketsState]: switching view mode never changes which
-  /// tickets are loaded, only which widget renders the already-loaded
-  /// list, so it doesn't belong in the list-loading lifecycle states
-  /// [TicketsState] models — same reasoning [selectedStatuses]/
-  /// [currentSort] already follow. See
+  /// The ticket list's current view mode — `board` until an explicit choice is
+  /// made or restored via [loadPersistedViewMode]. Plain state, not part of
+  /// [TicketsState]: switching view mode never changes which tickets are
+  /// loaded, only which widget renders the already-loaded list, so it doesn't
+  /// belong in the list-loading lifecycle states [TicketsState] models — same
+  /// reasoning [selectedStatuses]/ [currentSort] already follow. See
   /// `AIO-1069`.
   TicketListViewMode _viewMode = TicketListViewMode.board;
 
@@ -1432,12 +1373,11 @@ class TicketsCubit extends Cubit<TicketsState> {
     if (mode != null) _viewMode = mode;
   }
 
-  /// The status names whose board column is currently hidden — empty
-  /// means every column is visible. Plain state, not part of
-  /// [TicketsState], for the same reason [_viewMode] isn't: hiding a
-  /// column never changes which tickets are loaded, only which
-  /// `BoardColumn`s `TicketBoardView` renders. See
-  /// `AIO-1069`.
+  /// The status names whose board column is currently hidden — empty means
+  /// every column is visible. Plain state, not part of [TicketsState], for the
+  /// same reason [_viewMode] isn't: hiding a column never changes which
+  /// tickets are loaded, only which `BoardColumn`s `TicketBoardView` renders.
+  /// See `AIO-1069`.
   Set<String> _hiddenColumns = const {};
 
   /// The board's currently hidden status columns. Read by
@@ -1585,15 +1525,14 @@ class TicketsCubit extends Cubit<TicketsState> {
           blockedTicketIds: blockedTicketIds,
           // Seeded from the cubit's own in-memory scheduling/stage-advance
           // state — _refreshInFlightBoardState only ever *updates* an
-          // already-emitted TicketsLoaded (it no-ops otherwise), so this
-          // fresh emission is the sole place that ever seeds these fields
-          // for a just-opened/just-filtered Board. Without this, a Task
-          // already running/queued at the moment the Board loads (e.g.
-          // right after restoreExecutionQueue's auto/gated resume, or
-          // simply navigating back to the Board mid-run) shows no
-          // Running/Queued badge and no cancel affordance until some
-          // unrelated mutation happens to call _refreshInFlightBoardState.
-          // Fixed for `AIO-1400` post-/verify.
+          // already-emitted TicketsLoaded (it no-ops otherwise), so this fresh
+          // emission is the sole place that ever seeds these fields for a
+          // just-opened/just-filtered Board. Without this, a Task already
+          // running/queued at the moment the Board loads (e.g. right after
+          // restoreExecutionQueue's auto/gated resume, or simply navigating
+          // back to the Board mid-run) shows no Running/Queued badge and no
+          // cancel affordance until some unrelated mutation happens to call
+          // _refreshInFlightBoardState. Fixed for `AIO-1400` post-/verify.
           inFlightExecutionIds: Set.unmodifiable(_inFlightExecutionIds),
           executionQueuePositions: {
             for (var i = 0; i < _executionQueue.length; i++)
@@ -1715,21 +1654,19 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// fire-and-forget [_tokenPredictor] call, alongside
   /// [_triggerEmbeddingRegen] — always, on every create, same condition as
   /// embedding regen — so a freshly created ticket's unset `complexity`/
-  /// `estimate` get an AI first guess, and (for a `task`/`bug`) a
-  /// token-cost prediction, without blocking this save. The
-  /// [_estimationSuggester] call chains
-  /// [_refreshDetailIfOpenAndAffected] onto its completion, so a
-  /// suggestion that lands while the same ticket's detail screen is
-  /// already open (e.g. the user navigated there right after creating it)
+  /// `estimate` get an AI first guess, and (for a `task`/`bug`) a token-cost
+  /// prediction, without blocking this save. The [_estimationSuggester] call
+  /// chains [_refreshDetailIfOpenAndAffected] onto its completion, so a
+  /// suggestion that lands while the same ticket's detail screen is already
+  /// open (e.g. the user navigated there right after creating it)
   /// live-refreshes instead of waiting for a manual reload. Added for
   /// `AIO-1103`.
   ///
-  /// Independently of that chain, also fires
-  /// [_refreshDetailIfOpenAndAffected] immediately after the write (not
-  /// waiting on the suggester), so a parent Story's or Epic's
-  /// already-open detail screen live-refreshes the moment [parentId]
-  /// gains a new child — its `canAdvanceSddStage` precondition (e.g.
-  /// "at least one child exists") can flip right away, independent of
+  /// Independently of that chain, also fires [_refreshDetailIfOpenAndAffected]
+  /// immediately after the write (not waiting on the suggester), so a parent
+  /// Story's or Epic's already-open detail screen live-refreshes the moment
+  /// [parentId] gains a new child — its `canAdvanceSddStage` precondition
+  /// (e.g. "at least one child exists") can flip right away, independent of
   /// whether an AI suggestion ever lands for the new ticket. Added for
   /// `AIO-905`.
   Future<Ticket> createTicket({
@@ -1822,51 +1759,45 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
   }
 
-  /// Moves ticket [id] to [status]. Emits [TicketStatusUpdating] (carrying
-  /// the list with [id]'s status optimistically replaced) immediately,
-  /// then [TicketStatusUpdated] (carrying the re-fetched page) once the
-  /// repository call succeeds, or [TicketsError] if it throws. The
-  /// refresh re-applies the filters [searchTickets] was last called with
-  /// and requests at least as many tickets as were already loaded, so a
-  /// background status update (e.g. a board drag) never collapses an
-  /// infinite-scrolled list back down to one page. Moving [id] to
-  /// an `executionTrigger`-role status first runs
-  /// [_interceptBlockedDependencyTrigger] — every ticket type is
-  /// rejected if it has an unresolved `blocks`/`blockedBy` dependency —
-  /// then, if [id] is a Task or Bug (see
-  /// `TicketTypeHierarchy.isExecutable`), [_interceptTaskExecutionTrigger].
-  /// A rejection from either skips the write entirely (emitting the
-  /// classified error + a re-emitted detail state instead of the usual
-  /// list-shaped states); an allowed transition proceeds as normal, then
-  /// [_triggerOrQueueCodingExecution] starts (or queues) the
+  /// Moves ticket [id] to [status]. Emits [TicketStatusUpdating] (carrying the
+  /// list with [id]'s status optimistically replaced) immediately, then
+  /// [TicketStatusUpdated] (carrying the re-fetched page) once the repository
+  /// call succeeds, or [TicketsError] if it throws. The refresh re-applies the
+  /// filters [searchTickets] was last called with and requests at least as
+  /// many tickets as were already loaded, so a background status update (e.g.
+  /// a board drag) never collapses an infinite-scrolled list back down to one
+  /// page. Moving [id] to an `executionTrigger`-role status first runs
+  /// [_interceptBlockedDependencyTrigger] — every ticket type is rejected if
+  /// it has an unresolved `blocks`/`blockedBy` dependency — then, if [id] is a
+  /// Task or Bug (see `TicketTypeHierarchy.isExecutable`),
+  /// [_interceptTaskExecutionTrigger]. A rejection from either skips the write
+  /// entirely (emitting the classified error + a re-emitted detail state
+  /// instead of the usual list-shaped states); an allowed transition proceeds
+  /// as normal, then [_triggerOrQueueCodingExecution] starts (or queues) the
   /// coding-execution run once the write succeeds. Also calls
   /// [_refreshBlockedBoardState] on success, since [id] may be another
   /// ticket's blocker, and fires a fire-and-forget
-  /// [_refreshDetailIfOpenAndAffected] call so a Story's already-open
-  /// detail screen live-refreshes [TicketDetailLoaded.canAdvanceSddStage]
-  /// when [id] is one of its direct Task/Bug children. Added for
-  /// `AIO-1103`. On a
+  /// [_refreshDetailIfOpenAndAffected] call so a Story's already-open detail
+  /// screen live-refreshes [TicketDetailLoaded.canAdvanceSddStage] when [id]
+  /// is one of its direct Task/Bug children. Added for `AIO-1103`. On a
   /// successful write, also resolves [status] to its configured
-  /// `WorkflowStatus.id` and looks up [_attachmentForStatus]; if one is
-  /// found, fires it via [_resolveAndFireAttachment] — symmetric to, and
-  /// independent of, the `executionTrigger`-role check above. Added for
-  /// `AIO-2650`.
+  /// `WorkflowStatus.id` and looks up [_attachmentForStatus]; if one is found,
+  /// fires it via [_resolveAndFireAttachment] — symmetric to, and independent
+  /// of, the `executionTrigger`-role check above. Added for `AIO-2650`.
   ///
-  /// Also fires a fire-and-forget [_maybeAutoLinkToSpec] call whenever
-  /// [id] is a [TicketType.bug] and [status] resolves to a
-  /// [WorkflowStatusRole.done] role — a Task's completion is already
-  /// structurally traceable to its Epic's spec via its `parentId` chain,
-  /// so only a Bug (which may be filed and resolved with no structural
-  /// relationship to the Epic whose spec it actually invalidates) needs
-  /// this similarity-based path. Added for
+  /// Also fires a fire-and-forget [_maybeAutoLinkToSpec] call whenever [id] is
+  /// a [TicketType.bug] and [status] resolves to a [WorkflowStatusRole.done]
+  /// role — a Task's completion is already structurally traceable to its
+  /// Epic's spec via its `parentId` chain, so only a Bug (which may be filed
+  /// and resolved with no structural relationship to the Epic whose spec it
+  /// actually invalidates) needs this similarity-based path. Added for
   /// `AIO-1998`.
   ///
-  /// Also fires a fire-and-forget [_maybeRetryPendingVerify] call
-  /// whenever [id]'s ticket is executable ([TicketTypeHierarchy
-  /// .isExecutable]) and [status] resolves to a [WorkflowStatusRole.done]
-  /// role — covers a fix Task/Bug spawned by a `VERIFY GATE: PENDING`
-  /// verdict reaching Done. Added for
-  /// `AIO-1905`.
+  /// Also fires a fire-and-forget [_maybeRetryPendingVerify] call whenever
+  /// [id]'s ticket is executable ([TicketTypeHierarchy .isExecutable]) and
+  /// [status] resolves to a [WorkflowStatusRole.done] role — covers a fix
+  /// Task/Bug spawned by a `VERIFY GATE: PENDING` verdict reaching Done. Added
+  /// for `AIO-1905`.
   Future<void> updateTicketStatus(String id, String status) async {
     // Only fetch the ticket up front when the status holds the
     // executionTrigger role — every other transition returns true
@@ -1940,13 +1871,12 @@ class TicketsCubit extends Cubit<TicketsState> {
       emit(TicketStatusUpdated(page.tickets, hasMore: page.hasMore));
       unawaited(_refreshBlockedBoardState());
       // The attachment-firing call is chained *after*
-      // _refreshDetailIfOpenAndAffected resolves, not run alongside it —
-      // both are unawaited, but a `gated` attachment's own
-      // TicketDetailLoaded(pendingSkillAttachment: ...) emission must be
-      // the truly final one for this write, not clobbered by
+      // _refreshDetailIfOpenAndAffected resolves, not run alongside it — both
+      // are unawaited, but a `gated` attachment's own
+      // TicketDetailLoaded(pendingSkillAttachment: ...) emission must be the
+      // truly final one for this write, not clobbered by
       // _refreshDetailIfOpenAndAffected's own (pending-attachment-less)
-      // re-emission landing afterward. Added for
-      // `AIO-2650`.
+      // re-emission landing afterward. Added for `AIO-2650`.
       unawaited(
         _refreshDetailIfOpenAndAffected({
           id,
@@ -1991,11 +1921,10 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// condition, so a content edit gets a fresh AI complexity/estimate
   /// suggestion for whichever field isn't `manual`-locked, and (for a
   /// `task`/`bug` not yet executing) a fresh token-cost prediction. The
-  /// [_estimationSuggester] call chains [_refreshDetailIfOpenAndAffected]
-  /// onto its completion, so a passive suggestion that lands while
-  /// [refreshed]'s own detail screen is still open live-refreshes instead
-  /// of waiting for a manual reload. Added for
-  /// `AIO-1103`.
+  /// [_estimationSuggester] call chains [_refreshDetailIfOpenAndAffected] onto
+  /// its completion, so a passive suggestion that lands while [refreshed]'s
+  /// own detail screen is still open live-refreshes instead of waiting for a
+  /// manual reload. Added for `AIO-1103`.
   ///
   /// [complexityEdited]/[estimateEdited] tell [TicketRepository.updateTicket]
   /// whether *this specific call* is the Complexity picker's `onSelected`
@@ -2102,24 +2031,23 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
   }
 
-  /// Changes [ticket]'s status from the ticket-detail screen. Persists via
-  /// the same [TicketRepository.updateTicketStatus] the board's drag/
+  /// Changes [ticket]'s status from the ticket-detail screen. Persists via the
+  /// same [TicketRepository.updateTicketStatus] the board's drag/
   /// `MoveToStatusMenu` path calls, then re-fetches and emits
   /// [TicketDetailLoaded] with the refreshed ticket — unlike
-  /// [updateTicketStatus], which emits list-shaped optimistic states built
-  /// for the board and would fall through `TicketDetailScreen`'s state
-  /// switch. Emits [TicketsError] on failure. Moving [ticket] to
-  /// an `executionTrigger`-role status first runs
-  /// [_interceptBlockedDependencyTrigger] — every ticket type is
-  /// rejected if it has an unresolved `blocks`/`blockedBy` dependency —
-  /// then, if [ticket] is a Task or Bug (see
-  /// `TicketTypeHierarchy.isExecutable`), [_interceptTaskExecutionTrigger].
-  /// A rejection from either skips the write entirely; an allowed
-  /// transition proceeds as normal, then [_triggerOrQueueCodingExecution]
-  /// starts (or queues) the coding-execution run once the write succeeds.
-  /// Also fires a fire-and-forget [_maybeRetryPendingVerify] call under
-  /// the same executable/`done`-role condition [updateTicketStatus] uses
-  /// — see its dartdoc. Added for
+  /// [updateTicketStatus], which emits list-shaped optimistic states built for
+  /// the board and would fall through `TicketDetailScreen`'s state switch.
+  /// Emits [TicketsError] on failure. Moving [ticket] to an
+  /// `executionTrigger`-role status first runs
+  /// [_interceptBlockedDependencyTrigger] — every ticket type is rejected if
+  /// it has an unresolved `blocks`/`blockedBy` dependency — then, if [ticket]
+  /// is a Task or Bug (see `TicketTypeHierarchy.isExecutable`),
+  /// [_interceptTaskExecutionTrigger]. A rejection from either skips the write
+  /// entirely; an allowed transition proceeds as normal, then
+  /// [_triggerOrQueueCodingExecution] starts (or queues) the coding-execution
+  /// run once the write succeeds. Also fires a fire-and-forget
+  /// [_maybeRetryPendingVerify] call under the same executable/`done`-role
+  /// condition [updateTicketStatus] uses — see its dartdoc. Added for
   /// `AIO-1905`.
   Future<void> changeTicketStatus(Ticket ticket, String status) async {
     if (!(await _interceptBlockedDependencyTrigger(ticket, status))) return;
@@ -2198,21 +2126,18 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// directly.
   ///
   /// On success, also fires a fire-and-forget
-  /// [_refreshDetailIfOpenAndAffected] call for [ticket]'s id — covers
-  /// the *new*-parent direction: if a Story's or Epic's already-open
-  /// detail screen is the ticket's new parent, that screen
-  /// live-refreshes. The *old*-parent direction (a Story's or Epic's
-  /// already-open detail screen loses a child) needs a second, separate
-  /// check: [_refreshDetailIfOpenAndAffected] infers a written ticket's
-  /// parent by re-fetching its *current* `parentId`, which after this
-  /// write is always the *new* parent — the old parent is structurally
-  /// undiscoverable that way, since nothing about the post-write ticket
-  /// still points at it. [ticket]'s `parentId` *before* this call is the
-  /// only place that information exists, so it's captured
-  /// (`oldParentId`) and checked directly against
-  /// [_liveRefreshDependents] and the state open when this call started.
-  /// Added for
-  /// `AIO-905`.
+  /// [_refreshDetailIfOpenAndAffected] call for [ticket]'s id — covers the
+  /// *new*-parent direction: if a Story's or Epic's already-open detail screen
+  /// is the ticket's new parent, that screen live-refreshes. The *old*-parent
+  /// direction (a Story's or Epic's already-open detail screen loses a child)
+  /// needs a second, separate check: [_refreshDetailIfOpenAndAffected] infers
+  /// a written ticket's parent by re-fetching its *current* `parentId`, which
+  /// after this write is always the *new* parent — the old parent is
+  /// structurally undiscoverable that way, since nothing about the post-write
+  /// ticket still points at it. [ticket]'s `parentId` *before* this call is
+  /// the only place that information exists, so it's captured (`oldParentId`)
+  /// and checked directly against [_liveRefreshDependents] and the state open
+  /// when this call started. Added for `AIO-905`.
   Future<void> updateTicketParent(Ticket ticket, String? newParentId) async {
     // Captured before this call's own emissions below overwrite `state`
     // — see _refreshDetailIfOpenAndAffected's dartdoc for why a live
@@ -2293,41 +2218,35 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// starting a second concurrent spawn) if [ticket.id] is already in
   /// [_inFlightStageAdvanceIds] — a double-tap/rebuild race.
   ///
-  /// @returns the spawned chat ticket's id once it has been persisted,
-  /// so a caller (`TicketDetailScreen`'s Advance button handlers) can
-  /// navigate straight to it; `null` when nothing was spawned (the new
-  /// stage is [SddStage.archived]) or nothing to advance (a rejection
-  /// already emitted [TicketsError]). Unlike before
-  /// `AIO-352`,
-  /// this now resolves once the chat ticket exists — **not** once its
-  /// first AI reply has landed; [isAdvancingStage] stays `true` on both
-  /// the Epic/Story and the freshly created chat ticket until
-  /// [_runStageChatTurn] finishes. When [nextStage] has a configured
-  /// [_attachmentForStage], the spawned chat's opening comment is
-  /// [_promptFor]'s output instead of [_assembleStageContext]'s (see
-  /// [_createStageChat]), and whether/when [_runStageChatTurn] actually
+  /// @returns the spawned chat ticket's id once it has been persisted, so a
+  /// caller (`TicketDetailScreen`'s Advance button handlers) can navigate
+  /// straight to it; `null` when nothing was spawned (the new stage is
+  /// [SddStage.archived]) or nothing to advance (a rejection already emitted
+  /// [TicketsError]). Unlike before `AIO-352`, this now resolves once the chat
+  /// ticket exists — **not** once its first AI reply has landed;
+  /// [isAdvancingStage] stays `true` on both the Epic/Story and the freshly
+  /// created chat ticket until [_runStageChatTurn] finishes. When [nextStage]
+  /// has a configured [_attachmentForStage], the spawned chat's opening
+  /// comment is [_promptFor]'s output instead of [_assembleStageContext]'s
+  /// (see [_createStageChat]), and whether/when [_runStageChatTurn] actually
   /// runs on it is gated by the attachment's own confidence via
-  /// [_resolveAndFireAttachment] rather than firing unconditionally —
-  /// `auto` behaves identically to the no-attachment path;
-  /// `gated`/`manual` create the chat but leave [isAdvancingStage] `false`
-  /// again immediately, surfacing a pending-confirmation banner or a
-  /// manual "Run" control instead. Added for
-  /// `AIO-2650`.
+  /// [_resolveAndFireAttachment] rather than firing unconditionally — `auto`
+  /// behaves identically to the no-attachment path; `gated`/`manual` create
+  /// the chat but leave [isAdvancingStage] `false` again immediately,
+  /// surfacing a pending-confirmation banner or a manual "Run" control
+  /// instead. Added for `AIO-2650`.
   ///
-  /// Also fires a fire-and-forget [_refreshDetailIfOpenAndAffected] call
-  /// right after the write is confirmed, so a parent Epic's already-open
-  /// detail screen live-refreshes when [ticket] is one of its direct
-  /// Story children and this call just advanced that Story's `sddStage`.
-  /// Added for
-  /// `AIO-905`.
+  /// Also fires a fire-and-forget [_refreshDetailIfOpenAndAffected] call right
+  /// after the write is confirmed, so a parent Epic's already-open detail
+  /// screen live-refreshes when [ticket] is one of its direct Story children
+  /// and this call just advanced that Story's `sddStage`. Added for `AIO-905`.
   ///
   /// When [nextStage] is [SddStage.archived] and [ticket.type] is
-  /// [TicketType.epic] specifically (not [TicketType.story] — a Story
-  /// reaching `archived` is the routine precondition for its own parent
-  /// Epic's `proposed → verifying` transition, and does not itself get a
-  /// spec), also fires a fire-and-forget [_createEpicSpec] call to
-  /// synthesize and create the Epic's `TicketType.spec` ticket. Added for
-  /// `AIO-1998`.
+  /// [TicketType.epic] specifically (not [TicketType.story] — a Story reaching
+  /// `archived` is the routine precondition for its own parent Epic's
+  /// `proposed → verifying` transition, and does not itself get a spec), also
+  /// fires a fire-and-forget [_createEpicSpec] call to synthesize and create
+  /// the Epic's `TicketType.spec` ticket. Added for `AIO-1998`.
   Future<String?> advanceSddStage(Ticket ticket) async {
     // Captured before this call's own emissions below (including the
     // guard-clause emits from _emitSddStagePreconditionNotMet) overwrite
@@ -2357,12 +2276,10 @@ class TicketsCubit extends Cubit<TicketsState> {
       await _repository.updateTicketSddStage(ticket.id, nextStage);
       final refreshed = await _repository.getTicketById(ticket.id);
       if (refreshed == null) return null;
-      // Fired once, right after the persisted sddStage write is
-      // confirmed, rather than duplicated in every branch below — a
-      // parent Epic's precondition only cares that a child Story's
-      // sddStage has changed, not which branch this call subsequently
-      // takes. Added for
-      // `AIO-905`.
+      // Fired once, right after the persisted sddStage write is confirmed,
+      // rather than duplicated in every branch below — a parent Epic's
+      // precondition only cares that a child Story's sddStage has changed, not
+      // which branch this call subsequently takes. Added for `AIO-905`.
       unawaited(
         _refreshDetailIfOpenAndAffected({
           ticket.id,
@@ -2437,30 +2354,27 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [TicketRepository.getTicketsByParent]) and assembles the same kind of
   /// context [_assembleStageContext] already builds for the `verifying`/
   /// `archived` transitions (epic title/description + each child Story's
-  /// title/status), then resolves the model via
-  /// [_resolveModelAndProvider] using [ModelPhase.capable] — matching
-  /// `SddStageModelPhase.archived`'s existing tier, since writing up a
-  /// finished Epic is comparatively mechanical work, not a fresh judgment
-  /// call. Runs a single text-only [AgentModelClient.run] call (mirrors
-  /// [TicketEstimationSuggester]'s own one-shot, non-chat call shape,
-  /// accumulating [AgentTextEvent]s into the spec body) — no `chat`-type
-  /// ticket is spawned for this, consistent with the pre-existing
-  /// "nothing to spawn after Archival" behavior [advanceSddStage]'s
-  /// `archived` branch already had before this change. Creates a
-  /// [TicketType.spec] ticket titled `"Spec — <epic.title>"` with the
-  /// model's reply as its content, then links it to [epic] via
-  /// [TicketLinkRepository.createLink] ([TicketLinkType.relatesTo]). A
-  /// failure anywhere in this call — including an [AgentErrorEvent] —
-  /// is caught and emits `TicketsError(reason:
-  /// TicketsErrorReason.specWriteFailed)`; the Epic itself stays
-  /// `archived` regardless (that write already persisted several lines
-  /// before this call starts — see [advanceSddStage]). The fallback for a
-  /// failed write is manually creating the missing spec ticket via the
-  /// ordinary New Ticket flow, since [TicketType.spec] is generically
-  /// creatable there. No-ops silently (no ticket created, no error
-  /// emitted) if this cubit was constructed without a [ProviderRegistry]
-  /// or [TicketLinkRepository]. Added for
-  /// `AIO-1998`.
+  /// title/status), then resolves the model via [_resolveModelAndProvider]
+  /// using [ModelPhase.capable] — matching `SddStageModelPhase.archived`'s
+  /// existing tier, since writing up a finished Epic is comparatively
+  /// mechanical work, not a fresh judgment call. Runs a single text-only
+  /// [AgentModelClient.run] call (mirrors [TicketEstimationSuggester]'s own
+  /// one-shot, non-chat call shape, accumulating [AgentTextEvent]s into the
+  /// spec body) — no `chat`-type ticket is spawned for this, consistent with
+  /// the pre-existing "nothing to spawn after Archival" behavior
+  /// [advanceSddStage]'s `archived` branch already had before this change.
+  /// Creates a [TicketType.spec] ticket titled `"Spec — <epic.title>"` with
+  /// the model's reply as its content, then links it to [epic] via
+  /// [TicketLinkRepository.createLink] ([TicketLinkType.relatesTo]). A failure
+  /// anywhere in this call — including an [AgentErrorEvent] — is caught and
+  /// emits `TicketsError(reason: TicketsErrorReason.specWriteFailed)`; the
+  /// Epic itself stays `archived` regardless (that write already persisted
+  /// several lines before this call starts — see [advanceSddStage]). The
+  /// fallback for a failed write is manually creating the missing spec ticket
+  /// via the ordinary New Ticket flow, since [TicketType.spec] is generically
+  /// creatable there. No-ops silently (no ticket created, no error emitted) if
+  /// this cubit was constructed without a [ProviderRegistry] or
+  /// [TicketLinkRepository]. Added for `AIO-1998`.
   Future<void> _createEpicSpec(Ticket epic) async {
     final providerRegistry = _providerRegistry;
     final linkRepo = _linkRepository;
@@ -2547,40 +2461,36 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// fetches its `relatesTo`-linked epic/story/task/bug tickets (via
   /// [TicketLinkRepository.getLinksForTicket]), assembles their title/
   /// type/status into a prompt — the same "context assembly" shape
-  /// [_createEpicSpec] already builds for an Epic's own Story children —
-  /// then resolves [ModelPhase.capable] (mechanical writeup of
-  /// already-decided work, not a fresh judgment call — matching
-  /// [_createEpicSpec]'s own tier rationale) and runs one non-tool
-  /// [AgentModelClient.run] call requesting changelog prose plus a
-  /// suggested semver bump. Calls
-  /// [ProjectStackDetector.detectVersionFile] on [_projectRootPath] once,
-  /// up front — its `currentVersion` (when detected) is folded into the
-  /// prompt so the model can suggest a real next version instead of a
-  /// bare `x.y.z` placeholder (found missing during T14's manual pass:
-  /// every drafted suggestion came back as a literal placeholder, since
-  /// nothing had ever told the model what the current version was), and
-  /// the same detection result populates [ReleaseDraft.detectedVersionFile]
-  /// rather than detecting a second time, so the draft's suggestion and
-  /// the version-file it would bump from can never disagree. Also
-  /// resolves [ReleaseDraft.targetBranch] via
-  /// [GitRepositoryClient.defaultBranch] — the same call `confirmRelease`
-  /// itself makes, so the branch shown to the user during review is
-  /// guaranteed to match the one actually written to — and
-  /// [ReleaseDraft.releaseKey] from the release ticket's own `ticketId`.
-  /// Returns `null` (no error emitted — the caller shows an inline
-  /// message, mirroring [_createEpicSpec]'s own guard) if this cubit was
-  /// constructed without a [ProviderRegistry]/[TicketLinkRepository]/
-  /// [GitRepositoryClient]/`projectRootPath`, or if [releaseTicketId]
-  /// doesn't resolve to a live `release`-type ticket. On a model
-  /// failure, emits `TicketsError(reason:
-  /// TicketsErrorReason.releasePreparationFailed)` and returns `null` —
-  /// the release ticket itself is untouched either way, mirroring
-  /// [_createEpicSpec]'s "the source ticket's own state never depends on
-  /// this call succeeding" behavior. Added for
-  /// `AIO-1782`; see that
-  /// change's design.md §4.1, extended by the `/verify` round-1 fix-up's
-  /// T15 to also resolve `releaseKey`/`targetBranch`, and by T22 to feed
-  /// the current version into the prompt.
+  /// [_createEpicSpec] already builds for an Epic's own Story children — then
+  /// resolves [ModelPhase.capable] (mechanical writeup of already-decided
+  /// work, not a fresh judgment call — matching [_createEpicSpec]'s own tier
+  /// rationale) and runs one non-tool [AgentModelClient.run] call requesting
+  /// changelog prose plus a suggested semver bump. Calls
+  /// [ProjectStackDetector.detectVersionFile] on [_projectRootPath] once, up
+  /// front — its `currentVersion` (when detected) is folded into the prompt so
+  /// the model can suggest a real next version instead of a bare `x.y.z`
+  /// placeholder (found missing during T14's manual pass: every drafted
+  /// suggestion came back as a literal placeholder, since nothing had ever
+  /// told the model what the current version was), and the same detection
+  /// result populates [ReleaseDraft.detectedVersionFile] rather than detecting
+  /// a second time, so the draft's suggestion and the version-file it would
+  /// bump from can never disagree. Also resolves [ReleaseDraft.targetBranch]
+  /// via [GitRepositoryClient.defaultBranch] — the same call `confirmRelease`
+  /// itself makes, so the branch shown to the user during review is guaranteed
+  /// to match the one actually written to — and [ReleaseDraft.releaseKey] from
+  /// the release ticket's own `ticketId`. Returns `null` (no error emitted —
+  /// the caller shows an inline message, mirroring [_createEpicSpec]'s own
+  /// guard) if this cubit was constructed without a
+  /// [ProviderRegistry]/[TicketLinkRepository]/
+  /// [GitRepositoryClient]/`projectRootPath`, or if [releaseTicketId] doesn't
+  /// resolve to a live `release`-type ticket. On a model failure, emits
+  /// `TicketsError(reason: TicketsErrorReason.releasePreparationFailed)` and
+  /// returns `null` — the release ticket itself is untouched either way,
+  /// mirroring [_createEpicSpec]'s "the source ticket's own state never
+  /// depends on this call succeeding" behavior. Added for `AIO-1782`; see that
+  /// change's design.md §4.1, extended by the `/verify` round-1 fix-up's T15
+  /// to also resolve `releaseKey`/`targetBranch`, and by T22 to feed the
+  /// current version into the prompt.
   Future<ReleaseDraft?> prepareReleaseDraft(String releaseTicketId) async {
     final providerRegistry = _providerRegistry;
     final linkRepo = _linkRepository;
@@ -2726,25 +2636,23 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Auto mode's ticket-population step (see `proposal.md`). Finds the
   /// shared-base status currently holding [WorkflowStatusRole.done] (via
-  /// [_doneStatus] — a pure lookup over already-loaded config), queries
-  /// every live `epic`/`story`/`task`/`bug` ticket
-  /// ([TicketRepository.getAllTicketsByType]) at that status, then
-  /// subtracts every one already `relatesTo`-linked to *any* existing
-  /// `release` ticket ([TicketLinkRepository.getLinksByTypes] cross-
-  /// referenced against [TicketRepository.getAllTicketsByType] for
-  /// [TicketType.release]'s own ids — the same bulk-query shape
-  /// [loadDocumentRelations]'s `gapsAndOpenQuestions` computation already
-  /// uses, avoiding an N+1 query per candidate). Creates a new `release`
-  /// ticket titled `"Release — <today, yyyy-MM-dd>"` and links every
-  /// surviving candidate to it via [createTicketLink] (as
-  /// [TicketLinkType.relatesTo], the release as source — matching
-  /// `InboxCubit.handleReleasePlanningReply`'s curated-mode convention).
-  /// Returns the new ticket, or `null` (no ticket created) if nothing
-  /// unreleased qualifies — surfaced by the caller (`InboxScreen`) as
-  /// "nothing to release." No-ops (returns `null`) if constructed without
-  /// a [TicketLinkRepository]. Added for
-  /// `AIO-1782`; see that
-  /// change's design.md §4.2.
+  /// [_doneStatus] — a pure lookup over already-loaded config), queries every
+  /// live `epic`/`story`/`task`/`bug` ticket
+  /// ([TicketRepository.getAllTicketsByType]) at that status, then subtracts
+  /// every one already `relatesTo`-linked to *any* existing `release` ticket
+  /// ([TicketLinkRepository.getLinksByTypes] cross-referenced against
+  /// [TicketRepository.getAllTicketsByType] for [TicketType.release]'s own ids
+  /// — the same bulk-query shape [loadDocumentRelations]'s
+  /// `gapsAndOpenQuestions` computation already uses, avoiding an N+1 query
+  /// per candidate). Creates a new `release` ticket titled
+  /// `"Release — <today, yyyy-MM-dd>"` and links every surviving candidate to
+  /// it via [createTicketLink] (as [TicketLinkType.relatesTo], the release as
+  /// source — matching `InboxCubit.handleReleasePlanningReply`'s curated-mode
+  /// convention). Returns the new ticket, or `null` (no ticket created) if
+  /// nothing unreleased qualifies — surfaced by the caller (`InboxScreen`) as
+  /// "nothing to release." No-ops (returns `null`) if constructed without a
+  /// [TicketLinkRepository]. Added for `AIO-1782`; see its linked
+  /// Documentation page, §4.2.
   Future<Ticket?> autoCreateReleaseTicket() async {
     final linkRepo = _linkRepository;
     if (linkRepo == null) return null;
@@ -2803,39 +2711,36 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Applies a reviewed [draft] — its [ReleaseDraft.changelogMarkdown]/
   /// [ReleaseDraft.suggestedVersion] may have been hand-edited on
-  /// `ReleaseDraftScreen` since [prepareReleaseDraft] returned it; this
-  /// call trusts the caller's copy, it does not re-fetch or re-draft.
-  /// Writes a new `## [<version>] - <date>` section into the target
-  /// project's `CHANGELOG.md` (Keep a Changelog format, created if
-  /// absent) directly under its `## [Unreleased]` heading, then — only if
+  /// `ReleaseDraftScreen` since [prepareReleaseDraft] returned it; this call
+  /// trusts the caller's copy, it does not re-fetch or re-draft. Writes a new
+  /// `## [<version>] - <date>` section into the target project's
+  /// `CHANGELOG.md` (Keep a Changelog format, created if absent) directly
+  /// under its `## [Unreleased]` heading, then — only if
   /// [ReleaseDraft.detectedVersionFile] is non-null —
-  /// [ProjectStackDetector.writeVersion]s the bump. Stages and commits
-  /// both files ([GitRepositoryClient.add]/`.commit`,
-  /// `"chore(release): v<version>"`), then pushes the commit before
-  /// tagging and pushing the tag ([GitRepositoryClient.push], `.tag`,
-  /// `.pushTag`, in that order) — deliberately, so a failed tag push
-  /// never leaves an untagged commit stranded on `origin` with no way to
-  /// retry cleanly: a re-run of this method after a push failure
-  /// re-attempts from a clean, already-committed state rather than
-  /// re-committing on top of a half-pushed history. The commit's target/
-  /// push branch is [GitRepositoryClient.defaultBranch] — releases are
-  /// cut from the project's default branch, matching `ReleaseDraftScreen`'s
-  /// displayed target-branch confirmation. Propagates any step's failure
-  /// instead of catching it — the caller (`ReleaseDraftScreen`) keeps
-  /// [draft] alive for retry rather than discarding it, since a
-  /// mid-sequence failure (e.g. `pushTag` failing after `tag` already
-  /// succeeded locally) is exactly the "rollback plan" gap the
+  /// [ProjectStackDetector.writeVersion]s the bump. Stages and commits both
+  /// files ([GitRepositoryClient.add]/`.commit`,
+  /// `"chore(release): v<version>"`), then pushes the commit before tagging
+  /// and pushing the tag ([GitRepositoryClient.push], `.tag`, `.pushTag`, in
+  /// that order) — deliberately, so a failed tag push never leaves an untagged
+  /// commit stranded on `origin` with no way to retry cleanly: a re-run of
+  /// this method after a push failure re-attempts from a clean,
+  /// already-committed state rather than re-committing on top of a half-pushed
+  /// history. The commit's target/ push branch is
+  /// [GitRepositoryClient.defaultBranch] — releases are cut from the project's
+  /// default branch, matching `ReleaseDraftScreen`'s displayed target-branch
+  /// confirmation. Propagates any step's failure instead of catching it — the
+  /// caller (`ReleaseDraftScreen`) keeps [draft] alive for retry rather than
+  /// discarding it, since a mid-sequence failure (e.g. `pushTag` failing after
+  /// `tag` already succeeded locally) is exactly the "rollback plan" gap the
   /// originating idea flagged as an open question; this method adds no
-  /// automatic rollback of its own. Once every git step above succeeds,
-  /// flips the release ticket's own status to the shared-base `done`-role
-  /// status and re-emits its detail state (per design.md §3.7's "whose
-  /// status flips to Done" success behavior) — never reached if an
-  /// earlier step throws. No-ops (writes nothing) if
-  /// constructed without a [GitRepositoryClient] or `projectRootPath`.
-  /// Added for `AIO-1782`; see
-  /// that change's design.md §4.3. Extended by the `/verify` round-2
-  /// fix-up (T21) to add the status flip, found missing during T14's
-  /// manual pass.
+  /// automatic rollback of its own. Once every git step above succeeds, flips
+  /// the release ticket's own status to the shared-base `done`-role status and
+  /// re-emits its detail state (per design.md §3.7's "whose status flips to
+  /// Done" success behavior) — never reached if an earlier step throws. No-ops
+  /// (writes nothing) if constructed without a [GitRepositoryClient] or
+  /// `projectRootPath`. Added for `AIO-1782`; see its linked Documentation
+  /// page, §4.3. Extended by the `/verify` round-2 fix-up (T21) to add the
+  /// status flip, found missing during T14's manual pass.
   Future<void> confirmRelease(ReleaseDraft draft) async {
     final gitClient = _gitClient;
     final rootPath = _projectRootPath;
@@ -2912,14 +2817,13 @@ class TicketsCubit extends Cubit<TicketsState> {
     return '${pad(date.year, 4)}-${pad(date.month, 2)}-${pad(date.day, 2)}';
   }
 
-  /// Restores `TicketDetailLoaded` for the ticket with id [ticketId] after
-  /// a guard-clause [TicketsError] — so a rejected `promoteIdea`/
-  /// `reclassifyIdea` call doesn't leave the Cubit stuck on a bare error
-  /// state indefinitely (the whole ticket-detail panel is one
-  /// `BlocBuilder` switching on [TicketsState], so a lingering
-  /// [TicketsError] blanks out the entire screen, not just the action
-  /// that failed). No-ops if [ticketId] no longer resolves to a ticket —
-  /// nothing to restore to. Added for
+  /// Restores `TicketDetailLoaded` for the ticket with id [ticketId] after a
+  /// guard-clause [TicketsError] — so a rejected `promoteIdea`/
+  /// `reclassifyIdea` call doesn't leave the Cubit stuck on a bare error state
+  /// indefinitely (the whole ticket-detail panel is one `BlocBuilder`
+  /// switching on [TicketsState], so a lingering [TicketsError] blanks out the
+  /// entire screen, not just the action that failed). No-ops if [ticketId] no
+  /// longer resolves to a ticket — nothing to restore to. Added for
   /// `AIO-934`'s `/verify` fix-up.
   Future<void> _emitTicketDetailIfFound(String ticketId) async {
     final ticket = await _repository.getTicketById(ticketId);
@@ -2931,9 +2835,8 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// Same recovery as [_emitTicketDetailIfFound], for a guard clause on a
   /// Documentation-mode ticket (`createGapOrQuestion`'s [targetTicketId])
   /// whose detail screen also depends on [loadDocumentRelations] for its
-  /// Linked Tickets/Backlinks/Gaps & Open Questions sections — restores
-  /// those too, not just the bare ticket. Added for
-  /// `AIO-934`'s `/verify` fix-up.
+  /// Linked Tickets/Backlinks/Gaps & Open Questions sections — restores those
+  /// too, not just the bare ticket. Added for `AIO-934`'s `/verify` fix-up.
   Future<void> _restoreDocumentTicketDetail(String ticketId) async {
     final ticket = await _repository.getTicketById(ticketId);
     if (ticket == null) return;
@@ -2945,20 +2848,18 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [existingTicketId] is given, links [idea] to that ticket via
   /// [TicketLinkRepository.createLink] (as [TicketLinkType.relatesTo]);
   /// otherwise creates a new [targetType] ticket copying
-  /// `idea.title`/`description`, then links the two the same way. Does
-  /// not delete or change [idea]'s own type or status — promotion is a
-  /// link, not a conversion, consistent with `release`'s existing
-  /// cross-cutting-link precedent. Emits [TicketsError] (raw message, no
-  /// classified reason — these guards are defensive, since the UI only
-  /// ever calls this for an `idea` ticket with [targetType] set to
-  /// [TicketType.epic] or [TicketType.bug]) if `idea.type` isn't
-  /// [TicketType.idea], or if [targetType] is neither
-  /// [TicketType.epic] nor [TicketType.bug] — either guard then calls
-  /// [_emitTicketDetailIfFound] to recover the screen. No-ops (does not
-  /// touch the repository) if constructed without a
+  /// `idea.title`/`description`, then links the two the same way. Does not
+  /// delete or change [idea]'s own type or status — promotion is a link, not a
+  /// conversion, consistent with `release`'s existing cross-cutting-link
+  /// precedent. Emits [TicketsError] (raw message, no classified reason —
+  /// these guards are defensive, since the UI only ever calls this for an
+  /// `idea` ticket with [targetType] set to [TicketType.epic] or
+  /// [TicketType.bug]) if `idea.type` isn't [TicketType.idea], or if
+  /// [targetType] is neither [TicketType.epic] nor [TicketType.bug] — either
+  /// guard then calls [_emitTicketDetailIfFound] to recover the screen. No-ops
+  /// (does not touch the repository) if constructed without a
   /// [TicketLinkRepository] (see the constructor's dartdoc). Renamed from
-  /// `promoteSignal` for `AIO-934`
-  /// — behavior is otherwise unchanged.
+  /// `promoteSignal` for `AIO-934` — behavior is otherwise unchanged.
   Future<void> promoteIdea(
     Ticket idea, {
     required TicketType targetType,
@@ -3011,31 +2912,28 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
   }
 
-  /// Creates a [type] (`knownGap`/`openQuestion` only) ticket titled
-  /// [title] with optional [description], linked
-  /// ([TicketLinkType.relatesTo]) to [targetTicketId] in the same
-  /// operation. Returns `true` on success, `false` if rejected or if the
-  /// creation/link write throws — [RaiseGapOrQuestionPicker] awaits this
-  /// to decide whether to close its overlay or show its inline error
-  /// state instead of assuming success. Emits [TicketsError] and refuses
-  /// to create anything if [type] isn't `knownGap`/`openQuestion`, or if
-  /// [targetTicketId] doesn't resolve to an existing ticket — the hard
-  /// rule that a known-gap/open-question can never exist without its
-  /// target lives here, not as a UI-layer convention. Every failure path
-  /// calls [_restoreDocumentTicketDetail] so [targetTicketId]'s detail
-  /// screen (and its Gaps & Open Questions section) recovers instead of
-  /// staying stuck on a bare [TicketsError]. Returns `false` without
-  /// emitting if constructed without a [TicketLinkRepository]. Added for
-  /// `AIO-934`; see that
-  /// change's design.md §3.2.
+  /// Creates a [type] (`knownGap`/`openQuestion` only) ticket titled [title]
+  /// with optional [description], linked ([TicketLinkType.relatesTo]) to
+  /// [targetTicketId] in the same operation. Returns `true` on success,
+  /// `false` if rejected or if the creation/link write throws —
+  /// [RaiseGapOrQuestionPicker] awaits this to decide whether to close its
+  /// overlay or show its inline error state instead of assuming success. Emits
+  /// [TicketsError] and refuses to create anything if [type] isn't
+  /// `knownGap`/`openQuestion`, or if [targetTicketId] doesn't resolve to an
+  /// existing ticket — the hard rule that a known-gap/open-question can never
+  /// exist without its target lives here, not as a UI-layer convention. Every
+  /// failure path calls [_restoreDocumentTicketDetail] so [targetTicketId]'s
+  /// detail screen (and its Gaps & Open Questions section) recovers instead of
+  /// staying stuck on a bare [TicketsError]. Returns `false` without emitting
+  /// if constructed without a [TicketLinkRepository]. Added for `AIO-934`; see
+  /// its linked Documentation page, §3.2.
   ///
-  /// Also fires a fire-and-forget [_maybeAutoLinkToSpec] call on the
-  /// newly created ticket, right after its mandatory target link
-  /// succeeds — additive, not a replacement: the created ticket can end
-  /// up with two `relatesTo` links, one to [targetTicketId] (mandatory)
-  /// and one to whatever spec it's most semantically relevant to
-  /// (auto-discovered, best-effort). Added for
-  /// `AIO-1998`.
+  /// Also fires a fire-and-forget [_maybeAutoLinkToSpec] call on the newly
+  /// created ticket, right after its mandatory target link succeeds —
+  /// additive, not a replacement: the created ticket can end up with two
+  /// `relatesTo` links, one to [targetTicketId] (mandatory) and one to
+  /// whatever spec it's most semantically relevant to (auto-discovered,
+  /// best-effort). Added for `AIO-1998`.
   Future<bool> createGapOrQuestion(
     TicketType type, {
     required String title,
@@ -3087,21 +2985,19 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
   }
 
-  /// Converts an existing `idea` ticket into a `knownGap`/`openQuestion`
-  /// (per [targetType]), linking it to [targetTicketId] in the same
-  /// operation — the manual-reclassification path for a misclassified
-  /// idea, or for a pre-`idea-gap-question-ticket-types` `signal` ticket
-  /// migrated to `idea` by the schema-11 default (see
-  /// `AppDatabase`'s migration). Same target-existence/type validation as
-  /// [createGapOrQuestion]; additionally refuses if [idea]'s type isn't
-  /// [TicketType.idea]. Every failure path calls
-  /// [_emitTicketDetailIfFound] to recover [idea]'s own detail screen
-  /// instead of leaving the Cubit stuck on a bare [TicketsError]. Mutates
-  /// the ticket's stored `type` via [TicketRepository.updateTicket] —
-  /// never deletes/recreates it, so its id, ticketId, createdAt, and any
-  /// comments/chat children survive the reclassification. Added for
-  /// `AIO-934`; see that
-  /// change's design.md §3.3.
+  /// Converts an existing `idea` ticket into a `knownGap`/`openQuestion` (per
+  /// [targetType]), linking it to [targetTicketId] in the same operation — the
+  /// manual-reclassification path for a misclassified idea, or for a
+  /// pre-`idea-gap-question-ticket-types` `signal` ticket migrated to `idea`
+  /// by the schema-11 default (see `AppDatabase`'s migration). Same
+  /// target-existence/type validation as [createGapOrQuestion]; additionally
+  /// refuses if [idea]'s type isn't [TicketType.idea]. Every failure path
+  /// calls [_emitTicketDetailIfFound] to recover [idea]'s own detail screen
+  /// instead of leaving the Cubit stuck on a bare [TicketsError]. Mutates the
+  /// ticket's stored `type` via [TicketRepository.updateTicket] — never
+  /// deletes/recreates it, so its id, ticketId, createdAt, and any
+  /// comments/chat children survive the reclassification. Added for `AIO-934`;
+  /// see its linked Documentation page, §3.3.
   Future<void> reclassifyIdea(
     Ticket idea, {
     required TicketType targetType,
@@ -3146,18 +3042,17 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
   }
 
-  /// Re-runs [SddStage.designSync]'s validation in place, after the
-  /// human has edited the linked design Page to address a `DESIGN GATE:
-  /// PENDING` verdict. Re-assembles fresh context (the Page's *current*
-  /// content — unlike a plain user chat reply, which wouldn't
-  /// automatically pick up an edit made outside the chat) and posts
-  /// another turn to the existing [designSyncChat], via the same
-  /// [ChatCubit.runChatTurn] helper [_spawnStageChat] uses. No-ops
-  /// (returns without posting) if [designSyncChat] isn't a `chat`
-  /// ticket, its parent isn't at [SddStage.designSync], or the cubit was
-  /// constructed without a [ProviderRegistry]/[CommentRepository] (see
-  /// the constructor's dartdoc). Added for
-  /// `AIO-1834`.
+  /// Re-runs [SddStage.designSync]'s validation in place, after the human has
+  /// edited the linked design Page to address a `DESIGN GATE: PENDING`
+  /// verdict. Re-assembles fresh context (the Page's *current* content —
+  /// unlike a plain user chat reply, which wouldn't automatically pick up an
+  /// edit made outside the chat) and posts another turn to the existing
+  /// [designSyncChat], via the same [ChatCubit.runChatTurn] helper
+  /// [_spawnStageChat] uses. No-ops (returns without posting) if
+  /// [designSyncChat] isn't a `chat` ticket, its parent isn't at
+  /// [SddStage.designSync], or the cubit was constructed without a
+  /// [ProviderRegistry]/[CommentRepository] (see the constructor's dartdoc).
+  /// Added for `AIO-1834`.
   Future<void> retryDesignSync(Ticket designSyncChat) async {
     if (designSyncChat.type != TicketType.chat) return;
     final providerRegistry = _providerRegistry;
@@ -3194,22 +3089,20 @@ class TicketsCubit extends Cubit<TicketsState> {
     );
   }
 
-  /// Re-runs [SddStage.verifying]'s validation in place, after a `VERIFY
-  /// GATE: PENDING` verdict's fix Tasks/Bugs have been addressed.
+  /// Re-runs [SddStage.verifying]'s validation in place, after a
+  /// `VERIFY GATE: PENDING` verdict's fix Tasks/Bugs have been addressed.
   /// Re-assembles fresh context and posts another turn to the existing
   /// [verifyingChat], via the same [ChatCubit.runChatTurn] helper
-  /// [_spawnStageChat] uses. Mirrors [retryDesignSync] exactly — same
-  /// guard shape, same [_assembleStageContext] re-context, same model/
-  /// provider resolution via [SddStage.verifying]'s
-  /// [SddStageModelPhase.modelPhase]. No-ops (returns without posting) if
-  /// [verifyingChat] isn't a `chat` ticket, its parent isn't at
-  /// [SddStage.verifying], or the cubit was constructed without a
-  /// [ProviderRegistry]/[CommentRepository] (see the constructor's
-  /// dartdoc). Reentrancy for the *automatic* trigger
-  /// ([_maybeRetryPendingVerify]) is guarded there, not here — this
-  /// method itself stays a plain, repeatable action, the same way
-  /// [retryDesignSync] is. Added for
-  /// `AIO-1905`.
+  /// [_spawnStageChat] uses. Mirrors [retryDesignSync] exactly — same guard
+  /// shape, same [_assembleStageContext] re-context, same model/ provider
+  /// resolution via [SddStage.verifying]'s [SddStageModelPhase.modelPhase].
+  /// No-ops (returns without posting) if [verifyingChat] isn't a `chat`
+  /// ticket, its parent isn't at [SddStage.verifying], or the cubit was
+  /// constructed without a [ProviderRegistry]/[CommentRepository] (see the
+  /// constructor's dartdoc). Reentrancy for the *automatic* trigger
+  /// ([_maybeRetryPendingVerify]) is guarded there, not here — this method
+  /// itself stays a plain, repeatable action, the same way [retryDesignSync]
+  /// is. Added for `AIO-1905`.
   Future<void> retryVerify(Ticket verifyingChat) async {
     if (verifyingChat.type != TicketType.chat) return;
     final providerRegistry = _providerRegistry;
@@ -3246,47 +3139,45 @@ class TicketsCubit extends Cubit<TicketsState> {
     );
   }
 
-  /// Public wrapper resolving [storyOrEpic]'s current Verifying-stage
-  /// chat (via [_mostRecentVerifyChat]) and calling [retryVerify] on it
-  /// — lets presentation-layer code (`TicketDetailScreen`'s "Ready to
-  /// retry verification" footer-tier wiring, via
+  /// Public wrapper resolving [storyOrEpic]'s current Verifying-stage chat
+  /// (via [_mostRecentVerifyChat]) and calling [retryVerify] on it — lets
+  /// presentation-layer code (`TicketDetailScreen`'s "Ready to retry
+  /// verification" footer-tier wiring, via
   /// `TicketMetadataSection.onRetryVerify`) trigger a retry from the
-  /// Epic/Story ticket itself, without needing to know which chat
-  /// ticket that resolves to. No-ops if no Verifying-stage chat exists
-  /// yet. Added for `AIO-1905`.
+  /// Epic/Story ticket itself, without needing to know which chat ticket that
+  /// resolves to. No-ops if no Verifying-stage chat exists yet. Added for
+  /// `AIO-1905`.
   Future<void> retryVerifyForStoryOrEpic(Ticket storyOrEpic) async {
     final verifyChat = await _mostRecentVerifyChat(storyOrEpic.id);
     if (verifyChat == null) return;
     await retryVerify(verifyChat);
   }
 
-  /// Pure readiness check for a verify retry on [parent] (an
-  /// `epic`/`story` ticket) — no side effects, so it's safe for
-  /// [getTicketById] to call on every fetch. `ready` is `true` only when
-  /// *all* hold: (1) [parent.sddStage] is [SddStage.verifying]; (2)
-  /// [_verifyGateApproved] on [parent] is still `false` — nothing to
-  /// retry once already approved; (3) [parent]'s current Verifying-stage
-  /// chat (via [_mostRecentVerifyChat]) has a most recent comment that's
-  /// an [CommentAuthorType.ai] reply containing `VERIFY GATE: PENDING` —
-  /// an explicit pending verdict, not merely still running or never
-  /// started; (4) every one of [parent]'s current Task/Bug children has
-  /// reached [WorkflowStatusRole.done] (via [_allChildrenComplete]) —
-  /// more fixes still outstanding otherwise. `verifyChat` carries the
-  /// found chat whenever one exists (even if `ready` is `false`), so a
-  /// caller that only needs the chat (not the full readiness gate) can
-  /// reuse this same lookup. `pendingFixesRemaining` is the count of
-  /// [parent]'s current Task/Bug children not yet [WorkflowStatusRole
-  /// .done], computed only once a genuine `PENDING` verdict is confirmed
-  /// (step 3) — `null` before that point (nothing to report), or when
-  /// [parent] has no Task/Bug children at all (a `PENDING` reply with no
-  /// `## Fixes Needed` block; see [_materializeVerifyFixes]'s dartdoc —
-  /// there's no fix-task count to report on in that case either, and the
-  /// manual "Retry validation" bar covers it instead). Drives the
-  /// Component Spec §1.4 "not-ready predecessor" hint. Shared by
-  /// [_maybeRetryPendingVerify] (which additionally resolves confidence
-  /// and may fire [retryVerify]) and [getTicketById]'s `verifyRetryReady`
-  /// /`verifyPendingFixesRemaining` computation. Added for
-  /// `AIO-1905`.
+  /// Pure readiness check for a verify retry on [parent] (an `epic`/`story`
+  /// ticket) — no side effects, so it's safe for [getTicketById] to call on
+  /// every fetch. `ready` is `true` only when *all* hold: (1)
+  /// [parent.sddStage] is [SddStage.verifying]; (2) [_verifyGateApproved] on
+  /// [parent] is still `false` — nothing to retry once already approved; (3)
+  /// [parent]'s current Verifying-stage chat (via [_mostRecentVerifyChat]) has
+  /// a most recent comment that's an [CommentAuthorType.ai] reply containing
+  /// `VERIFY GATE: PENDING` — an explicit pending verdict, not merely still
+  /// running or never started; (4) every one of [parent]'s current Task/Bug
+  /// children has reached [WorkflowStatusRole.done] (via
+  /// [_allChildrenComplete]) — more fixes still outstanding otherwise.
+  /// `verifyChat` carries the found chat whenever one exists (even if `ready`
+  /// is `false`), so a caller that only needs the chat (not the full readiness
+  /// gate) can reuse this same lookup. `pendingFixesRemaining` is the count of
+  /// [parent]'s current Task/Bug children not yet [WorkflowStatusRole .done],
+  /// computed only once a genuine `PENDING` verdict is confirmed (step 3) —
+  /// `null` before that point (nothing to report), or when [parent] has no
+  /// Task/Bug children at all (a `PENDING` reply with no `## Fixes Needed`
+  /// block; see [_materializeVerifyFixes]'s dartdoc — there's no fix-task
+  /// count to report on in that case either, and the manual "Retry validation"
+  /// bar covers it instead). Drives the Component Spec §1.4 "not-ready
+  /// predecessor" hint. Shared by [_maybeRetryPendingVerify] (which
+  /// additionally resolves confidence and may fire [retryVerify]) and
+  /// [getTicketById]'s `verifyRetryReady` /`verifyPendingFixesRemaining`
+  /// computation. Added for `AIO-1905`.
   Future<({bool ready, Ticket? verifyChat, int? pendingFixesRemaining})>
   _verifyRetryReadiness(Ticket parent) async {
     if (parent.sddStage != SddStage.verifying) {
@@ -3341,25 +3232,23 @@ class TicketsCubit extends Cubit<TicketsState> {
     );
   }
 
-  /// Fires [retryVerify] automatically once every fix Task/Bug a `VERIFY
-  /// GATE: PENDING` verdict spawned has reached `done` — called
-  /// `unawaited` from [updateTicketStatus]/[changeTicketStatus]'s
-  /// post-write side effects whenever [task] is a Task/Bug reaching a
+  /// Fires [retryVerify] automatically once every fix Task/Bug a
+  /// `VERIFY GATE: PENDING` verdict spawned has reached `done` — called
+  /// `unawaited` from [updateTicketStatus]/[changeTicketStatus]'s post-write
+  /// side effects whenever [task] is a Task/Bug reaching a
   /// [WorkflowStatusRole.done]-role status, alongside the existing
-  /// [_maybeAutoLinkToSpec] call. No-ops (silently) unless [task
-  /// .parentId] resolves to an `epic`/`story` ticket and
-  /// [_verifyRetryReadiness] on that parent reports `ready: true` (see
-  /// its dartdoc for the exact precondition chain). Once ready, resolves
-  /// [AutomationContext.verifyGateRetry]'s confidence via
-  /// [_automationSettingsRepository] (a `null` repository, or an unset
-  /// value, no-ops the same way every other optional-repository context
-  /// does): `auto` guards against concurrent re-entrancy with
+  /// [_maybeAutoLinkToSpec] call. No-ops (silently) unless [task .parentId]
+  /// resolves to an `epic`/`story` ticket and [_verifyRetryReadiness] on that
+  /// parent reports `ready: true` (see its dartdoc for the exact precondition
+  /// chain). Once ready, resolves [AutomationContext.verifyGateRetry]'s
+  /// confidence via [_automationSettingsRepository] (a `null` repository, or
+  /// an unset value, no-ops the same way every other optional-repository
+  /// context does): `auto` guards against concurrent re-entrancy with
   /// [_inFlightVerifyRetryIds] and calls [retryVerify] `unawaited`;
   /// `gated`/`manual` take no direct action here — the "ready to retry
-  /// verification" footer tier (`ticket_metadata_section.dart`) renders
-  /// for both, differing only in whether its action is a confirm banner
-  /// or a plain button. Added for
-  /// `AIO-1905`.
+  /// verification" footer tier (`ticket_metadata_section.dart`) renders for
+  /// both, differing only in whether its action is a confirm banner or a plain
+  /// button. Added for `AIO-1905`.
   Future<void> _maybeRetryPendingVerify(Ticket task) async {
     final parentId = task.parentId;
     if (parentId == null) return;
@@ -3408,15 +3297,14 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
   }
 
-  /// The next [SddStage] after [ticket]'s current one, or `null` if
-  /// already [SddStage.archived] (nothing further to advance to). Async
-  /// because the `proposed → ?` branch must inspect [ticket]'s child
-  /// Tasks (via [TicketRepository.getTicketsByParent]) to decide between
-  /// [SddStage.designBrief] and [SddStage.verifying] for a `story` —
-  /// see [_storyNeedsDesignReview]. An `epic` always skips straight to
-  /// [SddStage.verifying], since [SddStage.designBrief]/
-  /// [SddStage.designSync] only ever apply to `story` tickets. Added for
-  /// `AIO-1834`.
+  /// The next [SddStage] after [ticket]'s current one, or `null` if already
+  /// [SddStage.archived] (nothing further to advance to). Async because the
+  /// `proposed → ?` branch must inspect [ticket]'s child Tasks (via
+  /// [TicketRepository.getTicketsByParent]) to decide between
+  /// [SddStage.designBrief] and [SddStage.verifying] for a `story` — see
+  /// [_storyNeedsDesignReview]. An `epic` always skips straight to
+  /// [SddStage.verifying], since [SddStage.designBrief]/ [SddStage.designSync]
+  /// only ever apply to `story` tickets. Added for `AIO-1834`.
   Future<SddStage?> _nextSddStage(Ticket ticket) async {
     switch (ticket.sddStage) {
       case null:
@@ -3446,19 +3334,18 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// Whether any of [tasks] indicates UI work, using the same keyword
   /// heuristic `/propose`'s own design-gate block already applies to a
   /// change's touched files — here applied to each Task/Bug's title +
-  /// description instead of a file path. Case-insensitive substring
-  /// match against: "widget", "screen", "component", "ui". Computed
-  /// fresh every time, not persisted — mirrors how the existing
-  /// `proposed` precondition already re-fetches children on every check
-  /// rather than caching. Added for `AIO-1834`.
+  /// description instead of a file path. Case-insensitive substring match
+  /// against: "widget", "screen", "component", "ui". Computed fresh every
+  /// time, not persisted — mirrors how the existing `proposed` precondition
+  /// already re-fetches children on every check rather than caching. Added for
+  /// `AIO-1834`.
   ///
   /// Short-circuits to `false` before that heuristic runs at all when
-  /// [_designStagesEnabled] resolves `false` — a project that's turned
-  /// off design-review stages project-wide never routes a Story through
-  /// `designBrief`/`designSync`, regardless of what its Tasks look like.
-  /// When design stages are enabled (the default), this per-Story
-  /// heuristic is completely unchanged. Added for
-  /// `AIO-549`.
+  /// [_designStagesEnabled] resolves `false` — a project that's turned off
+  /// design-review stages project-wide never routes a Story through
+  /// `designBrief`/`designSync`, regardless of what its Tasks look like. When
+  /// design stages are enabled (the default), this per-Story heuristic is
+  /// completely unchanged. Added for `AIO-549`.
   Future<bool> _storyNeedsDesignReview(List<Ticket> tasks) async {
     if (!(await _designStagesEnabled())) return false;
     const keywords = ['widget', 'screen', 'component', 'ui'];
@@ -3468,22 +3355,21 @@ class TicketsCubit extends Cubit<TicketsState> {
     });
   }
 
-  /// Whether [children] is non-empty — [hasChildrenField]'s value.
-  /// Extracted from `_sddStageAdvanceCheck`'s former inline `proposed`
-  /// logic. Added for `AIO-1936`.
+  /// Whether [children] is non-empty — [hasChildrenField]'s value. Extracted
+  /// from `_sddStageAdvanceCheck`'s former inline `proposed` logic. Added for
+  /// `AIO-1936`.
   bool _hasChildren(List<Ticket> children) => children.isNotEmpty;
 
   /// Whether every ticket in [children] has reached a terminal state at
-  /// [nextRank] — `WorkflowStatusRole.done` for [TicketType.task] (a
-  /// Task/Bug child), or [SddStage.archived] for any other [nextRank] (a
-  /// Story child of an Epic). `false` when [children] is empty — an empty
-  /// list is never "complete," matching `_sddStageAdvanceCheck`'s
-  /// pre-existing `children.isNotEmpty && children.every(...)` guard.
+  /// [nextRank] — `WorkflowStatusRole.done` for [TicketType.task] (a Task/Bug
+  /// child), or [SddStage.archived] for any other [nextRank] (a Story child of
+  /// an Epic). `false` when [children] is empty — an empty list is never
+  /// "complete," matching `_sddStageAdvanceCheck`'s pre-existing
+  /// `children.isNotEmpty && children.every(...)` guard.
   /// [allChildrenCompleteField]'s value for `proposed`,
   /// [allTasksCompleteField]'s for `designSync` (called with
-  /// `nextRank: TicketType.task`). Extracted from
-  /// `_sddStageAdvanceCheck`'s former inline `proposed`/`designSync`
-  /// logic. Added for `AIO-1936`.
+  /// `nextRank: TicketType.task`). Extracted from `_sddStageAdvanceCheck`'s
+  /// former inline `proposed`/`designSync` logic. Added for `AIO-1936`.
   bool _allChildrenComplete(List<Ticket> children, TicketType nextRank) {
     if (children.isEmpty) return false;
     return children.every(
@@ -3495,23 +3381,21 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Whether [page] exists and has non-empty pasted content —
   /// [linkedDesignPageHasContentField]'s value, folding "page exists" and
-  /// "description non-empty" into one field since both failure modes
-  /// produced the same outcome today. Extracted from
-  /// `_sddStageAdvanceCheck`'s former inline `designBrief` logic. Added
-  /// for `AIO-1936`.
+  /// "description non-empty" into one field since both failure modes produced
+  /// the same outcome today. Extracted from `_sddStageAdvanceCheck`'s former
+  /// inline `designBrief` logic. Added for `AIO-1936`.
   bool _linkedDesignPageHasContent(Ticket? page) =>
       page != null && (page.description?.trim().isNotEmpty ?? false);
 
-  /// Resolves [stage]'s currently-cached `TransitionGraph` against [input]
-  /// via `evaluateTransitionGraph`, translating the result into
-  /// `_sddStageAdvanceCheck`'s `(canAdvance, blockReason)` shape. Falls
-  /// back to `canAdvance: true` (never gating) when [stage]'s graph hasn't
-  /// loaded yet — either this cubit was constructed without a
-  /// [TransitionPreconditionRepository] at all, or
-  /// [_loadTransitionGraphs]'s first load hasn't resolved yet — mirroring
-  /// [_transitionPreconditionRepository]'s own documented "no repository,
-  /// no gate" contract. Added for
-  /// `AIO-1936`.
+  /// Resolves [stage]'s currently-cached `TransitionGraph` against [input] via
+  /// `evaluateTransitionGraph`, translating the result into
+  /// `_sddStageAdvanceCheck`'s `(canAdvance, blockReason)` shape. Falls back
+  /// to `canAdvance: true` (never gating) when [stage]'s graph hasn't loaded
+  /// yet — either this cubit was constructed without a
+  /// [TransitionPreconditionRepository] at all, or [_loadTransitionGraphs]'s
+  /// first load hasn't resolved yet — mirroring
+  /// [_transitionPreconditionRepository]'s own documented "no repository, no
+  /// gate" contract. Added for `AIO-1936`.
   ({bool canAdvance, String? blockReason}) _resolveTransition(
     SddStage stage,
     TransitionEvalContext input,
@@ -3527,19 +3411,18 @@ class TicketsCubit extends Cubit<TicketsState> {
     );
   }
 
-  /// Whether [advanceSddStage] would currently succeed for [ticket],
-  /// alongside — when it wouldn't — why, as an auto-derived hint string
-  /// for the "Not ready" hint row (`_SddStageSection`, see
-  /// `AIO-1936` §4/
-  /// §6). Shared by [advanceSddStage]'s own check and [getTicketById]'s
+  /// Whether [advanceSddStage] would currently succeed for [ticket], alongside
+  /// — when it wouldn't — why, as an auto-derived hint string for the "Not
+  /// ready" hint row (`_SddStageSection`, see `AIO-1936` §4/ §6). Shared by
+  /// [advanceSddStage]'s own check and [getTicketById]'s
   /// [TicketDetailLoaded.canAdvanceSddStage]/
-  /// [TicketDetailLoaded.sddStageBlockReason] computation, so the two
-  /// can't disagree. `canAdvance` is `false` with `blockReason: null` for
-  /// any type other than [TicketType.epic]/[TicketType.story], or once
+  /// [TicketDetailLoaded.sddStageBlockReason] computation, so the two can't
+  /// disagree. `canAdvance` is `false` with `blockReason: null` for any type
+  /// other than [TicketType.epic]/[TicketType.story], or once
   /// [SddStage.archived] is reached (nothing left to advance to, not a
   /// "blocked" state). Each of the 5 precondition-bearing branches below
-  /// builds a [TransitionEvalContext] from the same signals the pre-
-  /// `sddstage-transition-preconditions` hardcoded checks used, then
+  /// builds a [TransitionEvalContext] from the same signals the
+  /// pre-`sddstage-transition-preconditions` hardcoded checks used, then
   /// consults [stage]'s project-configured `TransitionGraph` via
   /// [_resolveTransition] rather than a fixed rule — see that change's
   /// design.md §4.
@@ -3563,12 +3446,11 @@ class TicketsCubit extends Cubit<TicketsState> {
           TransitionEvalContext(mostRecentChatHasTerminalReply: ready),
         );
       case SddStage.verifying:
-        // Also requires the Verifying-stage chat's most recent AI reply
-        // to carry `VERIFY GATE: APPROVED` — mirrors `designSync`'s own
-        // approved-content gate. `approved` short-circuits to `false`
-        // when there's no reply yet at all, avoiding a redundant chat-
-        // content lookup; see
-        // `AIO-1905` §4.2.
+        // Also requires the Verifying-stage chat's most recent AI reply to
+        // carry `VERIFY GATE: APPROVED` — mirrors `designSync`'s own
+        // approved-content gate. `approved` short-circuits to `false` when
+        // there's no reply yet at all, avoiding a redundant chat-content
+        // lookup; see `AIO-1905` §4.2.
         final ready = await _mostRecentChatHasTerminalReply(ticket.id);
         final approved = ready ? await _verifyGateApproved(ticket.id) : false;
         return _resolveTransition(
@@ -3637,12 +3519,11 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// The `page`-type ticket linked to [storyId] whose title matches the
-  /// deterministic `"Design — <title>"` naming [_spawnStageChat] gives
-  /// it — identified by naming convention rather than a dedicated schema
-  /// field, since no other relationship in the codebase needs one.
-  /// Returns `null` if constructed without a [TicketLinkRepository]
-  /// (see the constructor's dartdoc), or if no such link exists yet.
-  /// Added for `AIO-1834`.
+  /// deterministic `"Design — <title>"` naming [_spawnStageChat] gives it —
+  /// identified by naming convention rather than a dedicated schema field,
+  /// since no other relationship in the codebase needs one. Returns `null` if
+  /// constructed without a [TicketLinkRepository] (see the constructor's
+  /// dartdoc), or if no such link exists yet. Added for `AIO-1834`.
   Future<Ticket?> _linkedDesignPage(String storyId) async {
     final linkRepo = _linkRepository;
     if (linkRepo == null) return null;
@@ -3661,20 +3542,18 @@ class TicketsCubit extends Cubit<TicketsState> {
     return null;
   }
 
-  /// Whether [storyId]'s Design-Sync-stage chat's most recent comment is
-  /// an [CommentAuthorType.ai] reply whose content contains the literal
-  /// line `DESIGN GATE: APPROVED` — mirrors `/design-sync`'s own
-  /// final-summary line format. Unlike [_mostRecentChatHasTerminalReply]
-  /// (any AI reply unlocks advancement), this checks the reply's
-  /// *content*, since a `DESIGN GATE: PENDING` verdict must not unblock
-  /// advancement — see [retryDesignSync] for how a fresh verdict gets
-  /// produced after a `PENDING` result. The chat-title prefix is
-  /// resolved through [_stagePresentName] rather than hardcoded, so a
-  /// project that has overridden [SddStage.designSync]'s display name
-  /// (via `SddStageConfigRepository`) still finds its own chat — fixed
-  /// alongside [_verifyGateApproved] per
-  /// `AIO-1905` §4.1. Added
-  /// for `AIO-1834`.
+  /// Whether [storyId]'s Design-Sync-stage chat's most recent comment is an
+  /// [CommentAuthorType.ai] reply whose content contains the literal line
+  /// `DESIGN GATE: APPROVED` — mirrors `/design-sync`'s own final-summary line
+  /// format. Unlike [_mostRecentChatHasTerminalReply] (any AI reply unlocks
+  /// advancement), this checks the reply's *content*, since a
+  /// `DESIGN GATE: PENDING` verdict must not unblock advancement — see
+  /// [retryDesignSync] for how a fresh verdict gets produced after a `PENDING`
+  /// result. The chat-title prefix is resolved through [_stagePresentName]
+  /// rather than hardcoded, so a project that has overridden
+  /// [SddStage.designSync]'s display name (via `SddStageConfigRepository`)
+  /// still finds its own chat — fixed alongside [_verifyGateApproved] per
+  /// `AIO-1905` §4.1. Added for `AIO-1834`.
   Future<bool> _designSyncApproved(String storyId) async {
     final commentRepo = _commentRepository;
     if (commentRepo == null) return false;
@@ -3698,13 +3577,12 @@ class TicketsCubit extends Cubit<TicketsState> {
         mostRecent.content.contains('DESIGN GATE: APPROVED');
   }
 
-  /// The Story/Epic [storyOrEpicId]'s current Verifying-stage chat — its
-  /// most recently created chat child whose title starts with
-  /// `'${await _stagePresentName(SddStage.verifying)} — '`. `null` if
-  /// none exists yet. Mirrors [_mostRecentExecutionChat]'s own factored-
-  /// lookup shape; shared by [_verifyGateApproved] and
-  /// [_maybeRetryPendingVerify]. Added for
-  /// `AIO-1905`.
+  /// The Story/Epic [storyOrEpicId]'s current Verifying-stage chat — its most
+  /// recently created chat child whose title starts with
+  /// `'${await _stagePresentName(SddStage.verifying)} — '`. `null` if none
+  /// exists yet. Mirrors [_mostRecentExecutionChat]'s own factored-lookup
+  /// shape; shared by [_verifyGateApproved] and [_maybeRetryPendingVerify].
+  /// Added for `AIO-1905`.
   Future<Ticket?> _mostRecentVerifyChat(String storyOrEpicId) async {
     final prefix = '${await _stagePresentName(SddStage.verifying)} — ';
     final chats = await _repository.getTicketsByParent(
@@ -3716,16 +3594,14 @@ class TicketsCubit extends Cubit<TicketsState> {
     return verifyChats.isEmpty ? null : verifyChats.first;
   }
 
-  /// Whether [storyOrEpicId]'s Verifying-stage chat's most recent comment
-  /// is an [CommentAuthorType.ai] reply whose content contains the
-  /// literal line `VERIFY GATE: APPROVED` — mirrors [_designSyncApproved]
-  /// field-for-field, built on [_mostRecentVerifyChat]. Unlike
-  /// [_mostRecentChatHasTerminalReply] (any AI reply unlocks
-  /// advancement), this checks the reply's *content*, since a `VERIFY
-  /// GATE: PENDING` verdict must not unblock advancement — see
-  /// [retryVerify] for how a fresh verdict gets produced after a
-  /// `PENDING` result. Added for
-  /// `AIO-1905`.
+  /// Whether [storyOrEpicId]'s Verifying-stage chat's most recent comment is
+  /// an [CommentAuthorType.ai] reply whose content contains the literal line
+  /// `VERIFY GATE: APPROVED` — mirrors [_designSyncApproved] field-for-field,
+  /// built on [_mostRecentVerifyChat]. Unlike
+  /// [_mostRecentChatHasTerminalReply] (any AI reply unlocks advancement),
+  /// this checks the reply's *content*, since a `VERIFY GATE: PENDING` verdict
+  /// must not unblock advancement — see [retryVerify] for how a fresh verdict
+  /// gets produced after a `PENDING` result. Added for `AIO-1905`.
   Future<bool> _verifyGateApproved(String storyOrEpicId) async {
     final commentRepo = _commentRepository;
     if (commentRepo == null) return false;
@@ -3815,25 +3691,23 @@ class TicketsCubit extends Cubit<TicketsState> {
       emit(TicketDetailLoaded(task));
       return false;
     }
-    // Captured immediately before the caller's own inProgress status
-    // write, so cancelCodingExecution knows which status to revert to.
-    // Added for `AIO-1400`.
+    // Captured immediately before the caller's own inProgress status write, so
+    // cancelCodingExecution knows which status to revert to. Added for
+    // `AIO-1400`.
     _preExecutionStatus[task.id] = task.status;
     return true;
   }
 
   /// Gate on a ticket's move to an `executionTrigger`-role status: rejects the
-  /// transition if [ticket] currently has an unresolved `blocks`/
-  /// `blockedBy` dependency ([_isTicketBlocked]). Unlike
-  /// [_interceptTaskExecutionTrigger], applies to every ticket type —
-  /// the Board's `_BlockedBadge` this enforces is itself type-agnostic.
-  /// `true` means the transition may proceed (not blocked, or [status]
-  /// isn't `inProgress` — not a gated transition). On rejection, emits
-  /// [TicketsErrorReason.blockedByOpenDependency] then a re-emitted
-  /// unchanged [TicketDetailLoaded], mirroring
+  /// transition if [ticket] currently has an unresolved `blocks`/ `blockedBy`
+  /// dependency ([_isTicketBlocked]). Unlike [_interceptTaskExecutionTrigger],
+  /// applies to every ticket type — the Board's `_BlockedBadge` this enforces
+  /// is itself type-agnostic. `true` means the transition may proceed (not
+  /// blocked, or [status] isn't `inProgress` — not a gated transition). On
+  /// rejection, emits [TicketsErrorReason.blockedByOpenDependency] then a
+  /// re-emitted unchanged [TicketDetailLoaded], mirroring
   /// [_interceptTaskExecutionTrigger]'s exact reject shape, and returns
-  /// `false` so the caller skips the write entirely. Added for
-  /// `AIO-334`.
+  /// `false` so the caller skips the write entirely. Added for `AIO-334`.
   Future<bool> _interceptBlockedDependencyTrigger(
     Ticket ticket,
     String status,
@@ -3866,9 +3740,9 @@ class TicketsCubit extends Cubit<TicketsState> {
     unawaited(_tryStartNextQueuedExecutions());
   }
 
-  /// Re-emits the current list-shaped state (`TicketsLoaded` only — a
-  /// no-op while a detail screen or a mutation-in-flight state is
-  /// active, since there's no Board to refresh in that case) with
+  /// Re-emits the current list-shaped state (`TicketsLoaded` only — a no-op
+  /// while a detail screen or a mutation-in-flight state is active, since
+  /// there's no Board to refresh in that case) with
   /// [TicketsLoaded.inFlightExecutionIds]/
   /// [TicketsLoaded.executionQueuePositions]/
   /// [TicketsLoaded.inFlightAdvanceIds]/[TicketsLoaded.pendingResumePrompt]
@@ -3879,17 +3753,14 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [_runCodingExecution]'s completion and catch-path clears, every
   /// [_inFlightStageAdvanceIds] mutation in [advanceSddStage]/
   /// [_runStageChatTurn], and [resumePendingExecutions]/
-  /// [dismissPendingResumePrompt] — so `TicketBoardCard` never needs to
-  /// poll. Added for
-  /// `AIO-352`.
-  /// Also re-mirrors [TicketsLoaded.executionTokenTotals] from
-  /// [_executionTokenTotals]'s current contents — a mirror, not a
+  /// [dismissPendingResumePrompt] — so `TicketBoardCard` never needs to poll.
+  /// Added for `AIO-352`. Also re-mirrors [TicketsLoaded.executionTokenTotals]
+  /// from [_executionTokenTotals]'s current contents — a mirror, not a
   /// mutation; this method never writes to that cache itself. Added for
-  /// `AIO-2455`. Carries
-  /// [TicketsLoaded.topmostAncestorId] forward unchanged — like
-  /// [TicketsLoaded.blockedTicketIds], it's derived from persisted
-  /// data (an ancestor-chain walk, not in-memory scheduling state), so
-  /// this synchronous method never recomputes it; only [searchTickets]/
+  /// `AIO-2455`. Carries [TicketsLoaded.topmostAncestorId] forward unchanged —
+  /// like [TicketsLoaded.blockedTicketIds], it's derived from persisted data
+  /// (an ancestor-chain walk, not in-memory scheduling state), so this
+  /// synchronous method never recomputes it; only [searchTickets]/
   /// [loadMoreTickets] do. Added for AIO-722.
   void _refreshInFlightBoardState() {
     final current = state;
@@ -3914,22 +3785,21 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Re-emits [TicketDetailLoaded] with `isExecuting`/
   /// `executionQueuePosition` recomputed from [_inFlightExecutionIds]/
-  /// [_executionQueue] — but only when the cubit's current `state` is
-  /// still [TicketDetailLoaded], and only if either value actually
-  /// changed (avoids an unnecessary rebuild on every unrelated
-  /// scheduling mutation). Every other field is copied unchanged from
-  /// the current state. Needed because [_refreshInFlightBoardState]
-  /// only refreshes a list-shaped `TicketsLoaded` state and is a no-op
-  /// while a detail screen is showing — without this, a Task's own
-  /// already-open detail screen (its cancel button, its "Queued #N"
-  /// hint) never reflects a scheduling change that happens while it's
-  /// open — e.g. triggering it from that very screen, or a sibling's
-  /// scheduling decision shifting its queue position — until the user
-  /// navigates away and back. Called from the same coding-execution
-  /// scheduling mutation sites as [_refreshInFlightBoardState]
-  /// (SDD-stage-advance's own [_inFlightStageAdvanceIds] mutations don't
-  /// call this — [TicketDetailLoaded] has no equivalent field for those).
-  /// Fixed for `AIO-1400` post-/verify.
+  /// [_executionQueue] — but only when the cubit's current `state` is still
+  /// [TicketDetailLoaded], and only if either value actually changed (avoids
+  /// an unnecessary rebuild on every unrelated scheduling mutation). Every
+  /// other field is copied unchanged from the current state. Needed because
+  /// [_refreshInFlightBoardState] only refreshes a list-shaped `TicketsLoaded`
+  /// state and is a no-op while a detail screen is showing — without this, a
+  /// Task's own already-open detail screen (its cancel button, its "Queued #N"
+  /// hint) never reflects a scheduling change that happens while it's open —
+  /// e.g. triggering it from that very screen, or a sibling's scheduling
+  /// decision shifting its queue position — until the user navigates away and
+  /// back. Called from the same coding-execution scheduling mutation sites as
+  /// [_refreshInFlightBoardState] (SDD-stage-advance's own
+  /// [_inFlightStageAdvanceIds] mutations don't call this —
+  /// [TicketDetailLoaded] has no equivalent field for those). Fixed for
+  /// `AIO-1400` post-/verify.
   void _refreshTaskDetailIfShowing() {
     final current = state;
     if (current is! TicketDetailLoaded) return;
@@ -3966,17 +3836,16 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// exists, is live, and is not a `done`-role status. Queries
   /// [TicketLinkRepository.getLinksByTypes] once for every live
   /// `blocks`/`blockedBy` row app-wide, resolves each row's blockee/blocker
-  /// pair via [relativeLinkType] — the ticket whose relative reading of
-  /// the row is [TicketLinkType.blockedBy] is the blockee, the other side
-  /// is the blocker — then looks up each blocker's current status from
-  /// [allTickets] (already loaded for the Board, no extra per-ticket
-  /// fetch). A blocker missing from [allTickets] (trashed, or simply not
-  /// loaded on this page) is treated as *not* blocking, consistent with
+  /// pair via [relativeLinkType] — the ticket whose relative reading of the
+  /// row is [TicketLinkType.blockedBy] is the blockee, the other side is the
+  /// blocker — then looks up each blocker's current status from [allTickets]
+  /// (already loaded for the Board, no extra per-ticket fetch). A blocker
+  /// missing from [allTickets] (trashed, or simply not loaded on this page) is
+  /// treated as *not* blocking, consistent with
   /// [TicketLinkDao](../../data/daos/ticket_link_dao.dart)
-  /// `.getLinksByTypes`'s live-only join. Returns `{}` if
-  /// constructed without a [TicketLinkRepository]. Called by
-  /// [searchTickets]/[loadMoreTickets]'s [TicketsLoaded] emission and by
-  /// [_refreshBlockedBoardState]. Added for
+  /// `.getLinksByTypes`'s live-only join. Returns `{}` if constructed without
+  /// a [TicketLinkRepository]. Called by [searchTickets]/[loadMoreTickets]'s
+  /// [TicketsLoaded] emission and by [_refreshBlockedBoardState]. Added for
   /// `AIO-392`.
   Future<Set<String>> _computeBlockedTicketIds(List<Ticket> allTickets) async {
     final linkRepo = _linkRepository;
@@ -4007,15 +3876,14 @@ class TicketsCubit extends Cubit<TicketsState> {
     return blocked;
   }
 
-  /// Batch-seeds [_executionTokenTotals] for every id in [ids] not
-  /// already cached — one [TicketRepository.getExecutionTokenTotals]
-  /// call for the whole not-yet-cached subset, never one query per id.
-  /// Merges results with a compare-and-keep-max against any existing
-  /// in-memory value, so a batch read that resolves after a concurrent
-  /// [_runCodingExecution] increment can never clobber it with a staler
-  /// total. Called by [searchTickets]/[loadMoreTickets]/[getTicketById]
-  /// for whichever ids they just loaded. Added for
-  /// `AIO-2455`.
+  /// Batch-seeds [_executionTokenTotals] for every id in [ids] not already
+  /// cached — one [TicketRepository.getExecutionTokenTotals] call for the
+  /// whole not-yet-cached subset, never one query per id. Merges results with
+  /// a compare-and-keep-max against any existing in-memory value, so a batch
+  /// read that resolves after a concurrent [_runCodingExecution] increment can
+  /// never clobber it with a staler total. Called by
+  /// [searchTickets]/[loadMoreTickets]/[getTicketById] for whichever ids they
+  /// just loaded. Added for `AIO-2455`.
   Future<void> _seedExecutionTokenTotals(Iterable<String> ids) async {
     final uncached = [
       for (final id in ids)
@@ -4032,17 +3900,16 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Whether [ticket] currently has an unresolved `blocks`/`blockedBy`
-  /// dependency — i.e. a live link whose [relativeLinkType] from
-  /// [ticket]'s own side is [TicketLinkType.blockedBy], and whose other
-  /// side either doesn't exist or isn't a `done`-role status. Mirrors
+  /// dependency — i.e. a live link whose [relativeLinkType] from [ticket]'s
+  /// own side is [TicketLinkType.blockedBy], and whose other side either
+  /// doesn't exist or isn't a `done`-role status. Mirrors
   /// [_computeBlockedTicketIds]'s row-resolution (via the same
   /// [relativeLinkType] helper) but scoped to a single ticket via
-  /// [TicketLinkRepository.getLinksForTicket] rather than the board-wide
-  /// bulk query, since this runs once per `inProgress` transition
-  /// attempt rather than once per board load. Returns `false` if
-  /// constructed without a [TicketLinkRepository] (mirrors
-  /// [_computeBlockedTicketIds]'s same fallback). Added for
-  /// `AIO-334`.
+  /// [TicketLinkRepository.getLinksForTicket] rather than the board-wide bulk
+  /// query, since this runs once per `inProgress` transition attempt rather
+  /// than once per board load. Returns `false` if constructed without a
+  /// [TicketLinkRepository] (mirrors [_computeBlockedTicketIds]'s same
+  /// fallback). Added for `AIO-334`.
   Future<bool> _isTicketBlocked(Ticket ticket) async {
     final linkRepo = _linkRepository;
     if (linkRepo == null) return false;
@@ -4064,16 +3931,15 @@ class TicketsCubit extends Cubit<TicketsState> {
     return false;
   }
 
-  /// Re-emits the current list-shaped state (`TicketsLoaded` only — a
-  /// no-op while a detail screen or a mutation-in-flight state is active)
-  /// with [TicketsLoaded.blockedTicketIds] recomputed via
+  /// Re-emits the current list-shaped state (`TicketsLoaded` only — a no-op
+  /// while a detail screen or a mutation-in-flight state is active) with
+  /// [TicketsLoaded.blockedTicketIds] recomputed via
   /// [_computeBlockedTicketIds] against the state's own [TicketsLoaded
   /// .tickets] — unlike [_refreshInFlightBoardState]'s in-memory-only
   /// recomputation, this reads persisted link/status data. Called after
-  /// [updateTicketStatus] (a blocker's status may have just changed) and
-  /// after a `blocks`/`blockedBy` link is created via the widened
-  /// `TicketLinkPicker` (`ticket_metadata_section.dart`). Added for
-  /// `AIO-392`.
+  /// [updateTicketStatus] (a blocker's status may have just changed) and after
+  /// a `blocks`/`blockedBy` link is created via the widened `TicketLinkPicker`
+  /// (`ticket_metadata_section.dart`). Added for `AIO-392`.
   Future<void> _refreshBlockedBoardState() async {
     final current = state;
     if (current is! TicketsLoaded) return;
@@ -4095,26 +3961,24 @@ class TicketsCubit extends Cubit<TicketsState> {
     );
   }
 
-  /// Public wrapper around [_refreshBlockedBoardState], for callers
-  /// outside this cubit that just created (or removed) a `blocks`/
-  /// `blockedBy` link and need the Board's blocked-badge state
-  /// recomputed — the widened `TicketLinkPicker` call site in
-  /// `ticket_metadata_section.dart` is the only caller today. Added for
-  /// `AIO-392`.
+  /// Public wrapper around [_refreshBlockedBoardState], for callers outside
+  /// this cubit that just created (or removed) a `blocks`/ `blockedBy` link
+  /// and need the Board's blocked-badge state recomputed — the widened
+  /// `TicketLinkPicker` call site in `ticket_metadata_section.dart` is the
+  /// only caller today. Added for `AIO-392`.
   Future<void> refreshBlockedBoardState() => _refreshBlockedBoardState();
 
-  /// Resolves which chat [task]'s next implement/verify turn(s) post to:
-  /// its existing execution chat (see [_mostRecentExecutionChat]), reused
-  /// as-is; a handoff (see [_handoffExecutionChat]) to a new one if that
-  /// chat has crossed [_handoffThresholdRatio] of its effective cap
-  /// ([_effectiveExecutionContextCap]); or a brand-new one if [task] has
-  /// no execution chat at all yet. Returns `(chat, handoffSummary)` —
-  /// `handoffSummary` is non-null only right after a handoff just
-  /// happened, for the caller to feed into [_assembleExecutionContext].
-  /// `(null, null)` only when constructed without an [AgentModelClient]/
-  /// [CommentRepository] (mirrors every other chat-spawning path's guard)
-  /// or a create write fails to persist. Added for
-  /// `AIO-833`.
+  /// Resolves which chat [task]'s next implement/verify turn(s) post to: its
+  /// existing execution chat (see [_mostRecentExecutionChat]), reused as-is; a
+  /// handoff (see [_handoffExecutionChat]) to a new one if that chat has
+  /// crossed [_handoffThresholdRatio] of its effective cap
+  /// ([_effectiveExecutionContextCap]); or a brand-new one if [task] has no
+  /// execution chat at all yet. Returns `(chat, handoffSummary)` —
+  /// `handoffSummary` is non-null only right after a handoff just happened,
+  /// for the caller to feed into [_assembleExecutionContext]. `(null, null)`
+  /// only when constructed without an [AgentModelClient]/ [CommentRepository]
+  /// (mirrors every other chat-spawning path's guard) or a create write fails
+  /// to persist. Added for `AIO-833`.
   Future<(Ticket?, String?)> _resolveExecutionChat(Ticket task) async {
     final existing = await _mostRecentExecutionChat(task.id);
     if (existing == null) {
@@ -4131,10 +3995,9 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Creates a new `chat` child ticket titled [title] under [task], and
-  /// re-fetches it as persisted. `null` if the create write fails to
-  /// persist. Shared by [_resolveExecutionChat] (first-ever trigger) and
-  /// [_handoffExecutionChat] (a continuation chat). Added for
-  /// `AIO-833`.
+  /// re-fetches it as persisted. `null` if the create write fails to persist.
+  /// Shared by [_resolveExecutionChat] (first-ever trigger) and
+  /// [_handoffExecutionChat] (a continuation chat). Added for `AIO-833`.
   Future<Ticket?> _createExecutionChat(Ticket task, String title) async {
     final now = DateTime.now();
     final chat = Ticket(
@@ -4151,14 +4014,14 @@ class TicketsCubit extends Cubit<TicketsState> {
     return _repository.getTicketById(chat.id);
   }
 
-  /// `"Coding Execution — <taskTitle>"`, or a numbered `"(continued
-  /// N)"`-suffixed variant per [continuationIndex] (0 = the original,
-  /// unsuffixed; 1 = the first handoff, suffixed `"(continued)"` with no
-  /// number; 2+ = `"(continued 2)"`, `"(continued 3)"`, ...) — resolves
-  /// open question #3 from `dont-spawn-new-chat-ticket-per-execution-
-  /// trigger.md`: unlike a bare repeated `"(continued)"`, a third+
-  /// continuation stays distinguishable from the second. Added for
-  /// `AIO-833`.
+  /// `"Coding Execution — <taskTitle>"`, or a numbered
+  /// `"(continued N)"`-suffixed variant per [continuationIndex] (0 = the
+  /// original, unsuffixed; 1 = the first handoff, suffixed `"(continued)"`
+  /// with no number; 2+ = `"(continued 2)"`, `"(continued 3)"`, ...) —
+  /// resolves open question #3 from
+  /// `dont-spawn-new-chat-ticket-per-execution-trigger.md`: unlike a bare
+  /// repeated `"(continued)"`, a third+ continuation stays distinguishable
+  /// from the second. Added for `AIO-833`.
   String _executionChatTitle(String taskTitle, [int continuationIndex = 0]) {
     final base = 'Coding Execution — $taskTitle';
     if (continuationIndex <= 0) return base;
@@ -4167,9 +4030,9 @@ class TicketsCubit extends Cubit<TicketsState> {
         : '$base (continued $continuationIndex)';
   }
 
-  /// How many `"Coding Execution — "`-prefixed children [taskId] already
-  /// has — the next one's [_executionChatTitle] continuation index. Added
-  /// for AIO-833.
+  /// How many `"Coding Execution — "`-prefixed children [taskId] already has —
+  /// the next one's [_executionChatTitle] continuation index. Added for
+  /// AIO-833.
   Future<int> _executionChatCount(String taskId) async {
     final chats = await _repository.getTicketsByParent(
       taskId,
@@ -4180,9 +4043,9 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Whether [chat]'s accumulated token usage (every comment's
   /// `inputTokens + outputTokens`, `0` for a comment with neither — a
-  /// human/system comment, or an ai comment predating this change) has
-  /// crossed [_handoffThresholdRatio] of [_effectiveExecutionContextCap].
-  /// Added for AIO-833.
+  /// human/system comment, or an ai comment predating this change) has crossed
+  /// [_handoffThresholdRatio] of [_effectiveExecutionContextCap]. Added for
+  /// AIO-833.
   Future<bool> _executionChatOverCap(Ticket chat) async {
     final commentRepo = _commentRepository;
     if (commentRepo == null) return false;
@@ -4197,14 +4060,13 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// The execution-phase model's real
   /// `AgentModelDescriptor.contextWindowTokens`, lowered to
-  /// [_executionContextCapRepository]'s persisted override
-  /// when one is set and it's a smaller, positive value — an override can
-  /// never raise the cap past the model's real limit
-  /// ([ExecutionContextCapCubit] enforces the same ceiling when
-  /// persisting one, this is defense in depth). Falls back to the
-  /// model's real limit with no override available when constructed
-  /// without an [ExecutionContextCapRepository] (see the constructor's
-  /// dartdoc). Added for AIO-833.
+  /// [_executionContextCapRepository]'s persisted override when one is set and
+  /// it's a smaller, positive value — an override can never raise the cap past
+  /// the model's real limit ([ExecutionContextCapCubit] enforces the same
+  /// ceiling when persisting one, this is defense in depth). Falls back to the
+  /// model's real limit with no override available when constructed without an
+  /// [ExecutionContextCapRepository] (see the constructor's dartdoc). Added
+  /// for AIO-833.
   Future<int> _effectiveExecutionContextCap() async {
     final model = await _resolveModel(ModelPhase.execution);
     final override = await _executionContextCapRepository
@@ -4218,10 +4080,10 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Fraction of [_effectiveExecutionContextCap] an execution chat's
-  /// accumulated usage must cross before [_resolveExecutionChat] hands
-  /// off to a new chat (see [_executionChatOverCap]). Not user-
-  /// configurable (proposal.md's Out of scope) — only the cap it's a
-  /// fraction of is. Added for AIO-833.
+  /// accumulated usage must cross before [_resolveExecutionChat] hands off to
+  /// a new chat (see [_executionChatOverCap]). Not user-configurable
+  /// (proposal.md's Out of scope) — only the cap it's a fraction of is. Added
+  /// for AIO-833.
   static const _handoffThresholdRatio = 0.9;
 
   /// Retires [oldChat] and starts a new linked one for [task]: one
@@ -4242,12 +4104,11 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// for [_computeExecutionFailure]'s "ended without a clear result"
   /// stalled case.
   ///
-  /// The summary turn's own usage is recorded on [oldChat]'s total (it's
-  /// just another comment there) but can never trigger a second,
-  /// recursive handoff — [oldChat] is retired unconditionally once this
-  /// runs, regardless of that comment's size. Resolves open question #2
-  /// from `dont-spawn-new-chat-ticket-per-execution-trigger.md`. Added
-  /// for AIO-833.
+  /// The summary turn's own usage is recorded on [oldChat]'s total (it's just
+  /// another comment there) but can never trigger a second, recursive handoff
+  /// — [oldChat] is retired unconditionally once this runs, regardless of that
+  /// comment's size. Resolves open question #2 from
+  /// `dont-spawn-new-chat-ticket-per-execution-trigger.md`. Added for AIO-833.
   Future<(Ticket?, String?)> _handoffExecutionChat(
     Ticket task,
     Ticket oldChat,
@@ -4300,8 +4161,8 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Renders [comments] (a chat's full history, oldest first — matches
   /// [CommentRepository.getCommentsForTicket]'s own ordering) as a plain
-  /// transcript for the handoff-summary prompt: one `[authorType]` line
-  /// per comment followed by its content, blank-line separated. Added for
+  /// transcript for the handoff-summary prompt: one `[authorType]` line per
+  /// comment followed by its content, blank-line separated. Added for
   /// `AIO-833`.
   String _assembleChatTranscript(List<TicketComment> comments) {
     final buffer = StringBuffer();
@@ -4314,11 +4175,11 @@ class TicketsCubit extends Cubit<TicketsState> {
     return buffer.toString().trim();
   }
 
-  /// The handoff-summary turn's prompt: [transcript] plus an instruction
-  /// to summarize what's done/left/decided for whoever picks this Task up
-  /// next in a new chat, explicitly told not to use any tools — there is
-  /// no worktree for this turn to act in (see [_handoffExecutionChat]'s
-  /// dartdoc). Added for AIO-833.
+  /// The handoff-summary turn's prompt: [transcript] plus an instruction to
+  /// summarize what's done/left/decided for whoever picks this Task up next in
+  /// a new chat, explicitly told not to use any tools — there is no worktree
+  /// for this turn to act in (see [_handoffExecutionChat]'s dartdoc). Added
+  /// for AIO-833.
   String _assembleHandoffContext(String transcript) {
     return 'This coding-execution chat is nearing its model context '
         'limit, and a new chat will continue this Task\'s work from here. '
@@ -4331,68 +4192,64 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Runs [task]'s coding-execution turn end to end: creates an isolated
   /// `git worktree` (via [GitRepositoryClient.createWorktree]) on a fresh
-  /// `aion/task-<id>` branch, finds-or-creates-or-hands-off [task]'s
-  /// execution chat (see [_resolveExecutionChat]), posts the assembled
-  /// context (see [_assembleExecutionContext]) as a [CommentAuthorType.system]
-  /// comment, then loops an implement-then-verify pair of **model**
-  /// turns: an implement [ChatCubit.runChatTurn] (model resolved via
+  /// `aion/task-<id>` branch, finds-or-creates-or-hands-off [task]'s execution
+  /// chat (see [_resolveExecutionChat]), posts the assembled context (see
+  /// [_assembleExecutionContext]) as a [CommentAuthorType.system] comment,
+  /// then loops an implement-then-verify pair of **model** turns: an implement
+  /// [ChatCubit.runChatTurn] (model resolved via
   /// [_resolveModel]/[ModelPhase.execution], `toolsEnabled: true`,
   /// `workingDirectory` pointed at the worktree — never [_projectRootPath]
-  /// itself, so the developer's real checkout is never touched), then —
-  /// if that succeeded — a second `runChatTurn` in the same chat/
-  /// worktree fed [_assembleVerificationContext]'s prompt (the
-  /// project's effective `skills/verify` content), asking the model to
-  /// check its own work using whatever tooling fits this codebase and
-  /// end with a `VERIFICATION: PASSED`/`FAILED` terminal line — parsed
-  /// by [_verificationFailureReason] (fail-closed: only an explicit
-  /// `PASSED` line counts). On a pass, resolves the changed-file count
+  /// itself, so the developer's real checkout is never touched), then — if
+  /// that succeeded — a second `runChatTurn` in the same chat/ worktree fed
+  /// [_assembleVerificationContext]'s prompt (the project's effective
+  /// `skills/verify` content), asking the model to check its own work using
+  /// whatever tooling fits this codebase and end with a
+  /// `VERIFICATION: PASSED`/`FAILED` terminal line — parsed by
+  /// [_verificationFailureReason] (fail-closed: only an explicit `PASSED` line
+  /// counts). On a pass, resolves the changed-file count
   /// ([GitRepositoryClient.defaultBranch]/[GitRepositoryClient.changedFileCount])
-  /// before pushing the branch ([GitRepositoryClient.push]) and opening
-  /// the PR itself ([GitHubCliClient.openPullRequest], no model call),
-  /// posting a system comment ending `EXECUTION: PR_OPENED <url>` (the same
-  /// terminal-signal convention [_executionSucceededWithPr] already
-  /// looks for). If either `runChatTurn` call reports a hard failure
-  /// (already persisting its own `"Execution failed: ..."` comment), the
-  /// loop stops immediately — there's nothing to verify (or nothing
-  /// verified) if a turn never actually completed. On a verification
-  /// failure, the effective [AutomationContext.codingExecutionRetry]
-  /// confidence (see [_effectiveCodingExecutionRetryConfidence]), further
-  /// narrowed by [_evaluateDecisionGraph] once resolved `auto`, decides
-  /// whether a corrective turn (same chat, fed
-  /// [_assembleCorrectiveContext]'s prompt) runs automatically; the
-  /// seeded baseline `AutomationContext.codingExecutionRetry` graph
-  /// forces `gated` once an `attemptExceedsMax` node's threshold is
-  /// exceeded — once retries are exhausted this way, or the confidence
-  /// was never `auto`, posts a final
-  /// `"Execution failed verification: ..."` comment and stops — no PR.
-  /// A `catch` around the whole worktree-setup-through-PR sequence posts
-  /// an `"Execution failed: ..."` comment (same shape/detection as
-  /// [ChatCubit.runChatTurn]'s own hard-error comments) for any
-  /// infra-level failure —
+  /// before pushing the branch ([GitRepositoryClient.push]) and opening the PR
+  /// itself ([GitHubCliClient.openPullRequest], no model call), posting a
+  /// system comment ending `EXECUTION: PR_OPENED <url>` (the same
+  /// terminal-signal convention [_executionSucceededWithPr] already looks
+  /// for). If either `runChatTurn` call reports a hard failure (already
+  /// persisting its own `"Execution failed: ..."` comment), the loop stops
+  /// immediately — there's nothing to verify (or nothing verified) if a turn
+  /// never actually completed. On a verification failure, the effective
+  /// [AutomationContext.codingExecutionRetry] confidence (see
+  /// [_effectiveCodingExecutionRetryConfidence]), further narrowed by
+  /// [_evaluateDecisionGraph] once resolved `auto`, decides whether a
+  /// corrective turn (same chat, fed [_assembleCorrectiveContext]'s prompt)
+  /// runs automatically; the seeded baseline
+  /// `AutomationContext.codingExecutionRetry` graph forces `gated` once an
+  /// `attemptExceedsMax` node's threshold is exceeded — once retries are
+  /// exhausted this way, or the confidence was never `auto`, posts a final
+  /// `"Execution failed verification: ..."` comment and stops — no PR. A
+  /// `catch` around the whole worktree-setup-through-PR sequence posts an
+  /// `"Execution failed: ..."` comment (same shape/detection as
+  /// [ChatCubit.runChatTurn]'s own hard-error comments) for any infra-level
+  /// failure —
   /// [GitRepositoryClient.createWorktree]/[GitHubCliClient.openPullRequest]/
   /// etc. throwing — so the exception can't propagate out of this
-  /// `unawaited`-run method and permanently wedge
-  /// [_inFlightExecutionIds]. The worktree is always removed in a
-  /// `finally`, success or failure — itself wrapped in its own
-  /// try/catch, since a worktree that was never actually created has
-  /// nothing to remove. The branch itself is also deleted in that same
-  /// `finally`, **unless** the run was cancelled (see
-  /// [_handleExecutionCancelled] — its work is deliberately preserved
-  /// for possible inspection/resume) or the branch was already pushed
-  /// (`push` succeeding, even if a later step like [GitHubCliClient.
-  /// openPullRequest] then throws) — a genuine hard/verification
-  /// failure's never-pushed branch is otherwise simply abandoned, and
-  /// since [branchName] is stable per task (not per attempt), every
-  /// subsequent retry of the same task — [retryCodingExecution] or an
-  /// `auto`/`gated` [AutomationContext.codingExecutionResume] — would
-  /// otherwise fail identically forever with `git worktree add -b`'s "a
-  /// branch already exists" error, confirmed via live reproduction; see
+  /// `unawaited`-run method and permanently wedge [_inFlightExecutionIds]. The
+  /// worktree is always removed in a `finally`, success or failure — itself
+  /// wrapped in its own try/catch, since a worktree that was never actually
+  /// created has nothing to remove. The branch itself is also deleted in that
+  /// same `finally`, **unless** the run was cancelled (see
+  /// [_handleExecutionCancelled] — its work is deliberately preserved for
+  /// possible inspection/resume) or the branch was already pushed (`push`
+  /// succeeding, even if a later step like [GitHubCliClient. openPullRequest]
+  /// then throws) — a genuine hard/verification failure's never-pushed branch
+  /// is otherwise simply abandoned, and since [branchName] is stable per task
+  /// (not per attempt), every subsequent retry of the same task —
+  /// [retryCodingExecution] or an `auto`/`gated`
+  /// [AutomationContext.codingExecutionResume] — would otherwise fail
+  /// identically forever with `git worktree add -b`'s "a branch already
+  /// exists" error, confirmed via live reproduction; see
   /// [GitRepositoryClient.deleteBranch]'s dartdoc. Each of these three
-  /// terminal branches (PR opened, verification failed, hard infra
-  /// failure) also calls [_recordNotification] alongside its own system
-  /// comment — see
-  /// `AIO-1586`
-  /// §4.4.
+  /// terminal branches (PR opened, verification failed, hard infra failure)
+  /// also calls [_recordNotification] alongside its own system comment — see
+  /// `AIO-1586` §4.4.
   ///
   /// If a PR was confirmed (see [_executionSucceededWithPr]) and
   /// [_automationSettingsRepository] is configured, flips [task] straight
@@ -4415,36 +4272,33 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// `projectRootPath` (see the constructor's dartdoc).
   ///
   /// Every implement/verify turn below gets a fresh `runId`, tracked in
-  /// [_inFlightRuns] for the run's duration — [cancelCodingExecution]
-  /// resolves it from there. On a `ChatTurnCancelled` result from either
-  /// turn (see [ChatCubit.runChatTurn]), persists the accumulated text (if
-  /// any) as one [CommentAuthorType.ai] comment, posts an `"Execution
-  /// cancelled."` [CommentAuthorType.system] comment, reverts [task]'s
-  /// status to whatever [_preExecutionStatus] captured before the trigger,
-  /// and stops the loop entirely — no verify turn, no PR. The worktree is
-  /// still always removed in the `finally` block below (the branch/commits
-  /// already pushed to it are not) — cancellation doesn't change that.
-  /// Added for `AIO-1400`; see that change's
-  /// design.md §5.4/§5.5.
+  /// [_inFlightRuns] for the run's duration — [cancelCodingExecution] resolves
+  /// it from there. On a `ChatTurnCancelled` result from either turn (see
+  /// [ChatCubit.runChatTurn]), persists the accumulated text (if any) as one
+  /// [CommentAuthorType.ai] comment, posts an `"Execution cancelled."`
+  /// [CommentAuthorType.system] comment, reverts [task]'s status to whatever
+  /// [_preExecutionStatus] captured before the trigger, and stops the loop
+  /// entirely — no verify turn, no PR. The worktree is still always removed in
+  /// the `finally` block below (the branch/commits already pushed to it are
+  /// not) — cancellation doesn't change that. Added for `AIO-1400`; see that
+  /// change's design.md §5.4/§5.5.
   ///
-  /// Also updates [_executionTokenTotals] (via [_addExecutionTokens])
-  /// right after each implement/verify turn's `ai` comment is persisted —
-  /// see `TicketsLoaded.executionTokenTotals`'s dartdoc for how that
-  /// running total then surfaces. Added for
-  /// `AIO-2455`.
+  /// Also updates [_executionTokenTotals] (via [_addExecutionTokens]) right
+  /// after each implement/verify turn's `ai` comment is persisted — see
+  /// `TicketsLoaded.executionTokenTotals`'s dartdoc for how that running total
+  /// then surfaces. Added for `AIO-2455`.
   ///
   /// Right after the worktree is created and before the implement turn's
   /// prompt is assembled, detects the project's stack via
-  /// [ProjectStackDetector.detect] (called fresh at execution time, not
-  /// the onboarding-time advisory text `BaselineTailoringService` writes)
-  /// and, for a Node.js project (and only when constructed with a
-  /// [_dependencyCache]), mechanically seeds the worktree's
-  /// `node_modules` from [DependencyCacheService.cacheDirFor]'s per-project
-  /// cache directory, runs `npm install` via
-  /// [DependencyCacheService.installDependencies], and writes the result
-  /// back to the cache on a successful install — so the next run against
-  /// the same project starts warm. A failed install is not fatal to the
-  /// run; see the inline comment at that call site. Added for
+  /// [ProjectStackDetector.detect] (called fresh at execution time, not the
+  /// onboarding-time advisory text `BaselineTailoringService` writes) and, for
+  /// a Node.js project (and only when constructed with a [_dependencyCache]),
+  /// mechanically seeds the worktree's `node_modules` from
+  /// [DependencyCacheService.cacheDirFor]'s per-project cache directory, runs
+  /// `npm install` via [DependencyCacheService.installDependencies], and
+  /// writes the result back to the cache on a successful install — so the next
+  /// run against the same project starts warm. A failed install is not fatal
+  /// to the run; see the inline comment at that call site. Added for
   /// `AIO-722`.
   Future<void> _runCodingExecution(Ticket task) async {
     final providerRegistry = _providerRegistry;
@@ -4854,16 +4708,15 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Handles a `ChatTurnCancelled` result from either of
-  /// [_runCodingExecution]'s implement/verify turns: persists
-  /// [result]'s accumulated text as one [CommentAuthorType.ai] comment on
-  /// [chat] if non-empty (`runChatTurn` persists nothing itself for a
-  /// cancelled turn — see [ChatCubit.runChatTurn]'s dartdoc), posts an
-  /// `"Execution cancelled."` [CommentAuthorType.system] comment so the
-  /// ticket doesn't look untouched, then reverts [task]'s status to
-  /// whatever [_preExecutionStatus] captured immediately before the
-  /// trigger that started this run (a no-op if nothing was captured —
-  /// defensive only, every real trigger path captures one). Added for
-  /// `AIO-1400`; see that change's design.md §5.4.
+  /// [_runCodingExecution]'s implement/verify turns: persists [result]'s
+  /// accumulated text as one [CommentAuthorType.ai] comment on [chat] if
+  /// non-empty (`runChatTurn` persists nothing itself for a cancelled turn —
+  /// see [ChatCubit.runChatTurn]'s dartdoc), posts an `"Execution cancelled."`
+  /// [CommentAuthorType.system] comment so the ticket doesn't look untouched,
+  /// then reverts [task]'s status to whatever [_preExecutionStatus] captured
+  /// immediately before the trigger that started this run (a no-op if nothing
+  /// was captured — defensive only, every real trigger path captures one).
+  /// Added for `AIO-1400`; see its linked Documentation page, §5.4.
   Future<void> _handleExecutionCancelled(
     Ticket task,
     Ticket chat,
@@ -4898,34 +4751,31 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Re-enters the coding-execution flow for [task] from scratch in the
-  /// worktree/branch sense only — a fresh `git worktree` and branch,
-  /// exactly as a first attempt would (a prior failed attempt's worktree
-  /// is already removed by [_runCodingExecution] itself, and its
-  /// never-pushed branch is simply abandoned). The chat itself is *not*
-  /// started fresh: [_runCodingExecution] resolves it via
-  /// [_resolveExecutionChat], which reuses [task]'s existing execution
-  /// chat (or hands off to a new, linked one — see
-  /// [_handoffExecutionChat] — if it's crossed its context-window cap)
-  /// exactly as any other trigger would. The failure banner's
-  /// manual-retry action, and what the `gated`/exhausted-`auto` toast
-  /// (see [TicketsErrorReason.executionVerificationFailed]) links to.
-  /// Added for `AIO-506`;
-  /// dartdoc updated for AIO-833.
+  /// worktree/branch sense only — a fresh `git worktree` and branch, exactly
+  /// as a first attempt would (a prior failed attempt's worktree is already
+  /// removed by [_runCodingExecution] itself, and its never-pushed branch is
+  /// simply abandoned). The chat itself is *not* started fresh:
+  /// [_runCodingExecution] resolves it via [_resolveExecutionChat], which
+  /// reuses [task]'s existing execution chat (or hands off to a new, linked
+  /// one — see [_handoffExecutionChat] — if it's crossed its context-window
+  /// cap) exactly as any other trigger would. The failure banner's
+  /// manual-retry action, and what the `gated`/exhausted-`auto` toast (see
+  /// [TicketsErrorReason.executionVerificationFailed]) links to. Added for
+  /// `AIO-506`; dartdoc updated for AIO-833.
   Future<void> retryCodingExecution(Ticket task) async {
     await _triggerOrQueueCodingExecution(task);
   }
 
-  /// Cancels [task]'s coding-execution run — covers both the still-queued
-  /// case (simply drops [task.id] from [_executionQueue] and reverts its
-  /// status) and the in-flight case (signals
-  /// [AgentModelClient.cancel] on the run's current turn via
-  /// [_inFlightRuns]; the actual comment-persist/status-revert/cleanup
-  /// sequence happens once that turn's stream actually terminates with
-  /// `ChatTurnCancelled`, inside [_runCodingExecution] itself — see
-  /// [_handleExecutionCancelled]). No-op if [task.id] is neither queued
-  /// nor in flight. Called by the Board badge/detail-screen cancel
-  /// affordances and `ExecutionCancelControl`. Added for
-  /// `AIO-1400`; see that change's design.md §5.4.
+  /// Cancels [task]'s coding-execution run — covers both the still-queued case
+  /// (simply drops [task.id] from [_executionQueue] and reverts its status)
+  /// and the in-flight case (signals [AgentModelClient.cancel] on the run's
+  /// current turn via [_inFlightRuns]; the actual
+  /// comment-persist/status-revert/cleanup sequence happens once that turn's
+  /// stream actually terminates with `ChatTurnCancelled`, inside
+  /// [_runCodingExecution] itself — see [_handleExecutionCancelled]). No-op if
+  /// [task.id] is neither queued nor in flight. Called by the Board
+  /// badge/detail-screen cancel affordances and `ExecutionCancelControl`.
+  /// Added for `AIO-1400`; see its linked Documentation page, §5.4.
   Future<void> cancelCodingExecution(Ticket task) async {
     if (_executionQueue.remove(task.id)) {
       final previousStatus = _preExecutionStatus.remove(task.id);
@@ -4934,11 +4784,11 @@ class TicketsCubit extends Cubit<TicketsState> {
       }
       // Posted on a best-effort basis — _resolveExecutionChat may itself
       // create the chat ticket if this is the queued entry's very first
-      // trigger, so a comment repository is still required; a
-      // constructor without one (or a chat-resolution failure) simply
-      // skips the note rather than blocking the cancel itself. Matches
-      // design.md §5.4. Fixed for `AIO-1400`
-      // post-/verify — this comment was missing entirely.
+      // trigger, so a comment repository is still required; a constructor
+      // without one (or a chat-resolution failure) simply skips the note
+      // rather than blocking the cancel itself. Matches `AIO-1400`'s linked
+      // Documentation page, §5.4. Fixed for `AIO-1400` post-/verify — this
+      // comment was missing entirely.
       final commentRepo = _commentRepository;
       if (commentRepo != null) {
         final (chat, _) = await _resolveExecutionChat(task);
@@ -4966,13 +4816,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Re-emits [TicketDetailLoaded] with `executionLiveActivity` set to
-  /// [activity] — a live "Running `<tool>`..." status string, or `null`
-  /// to clear it — but only when [wasShowingTaskDetail] is `true` and the
-  /// cubit's current `state` is still [TicketDetailLoaded] for [taskId]
-  /// (the run's owning Task may no longer be the screen showing by the
-  /// time a mid-run tool-use/text event fires). Every other field is
-  /// copied unchanged from the current state. Added for
-  /// `AIO-506`.
+  /// [activity] — a live "Running `<tool>`..." status string, or `null` to
+  /// clear it — but only when [wasShowingTaskDetail] is `true` and the cubit's
+  /// current `state` is still [TicketDetailLoaded] for [taskId] (the run's
+  /// owning Task may no longer be the screen showing by the time a mid-run
+  /// tool-use/text event fires). Every other field is copied unchanged from
+  /// the current state. Added for `AIO-506`.
   void _emitLiveExecutionActivity(
     String taskId,
     bool wasShowingTaskDetail,
@@ -5004,19 +4853,17 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// [automationRepo]'s persisted [AutomationContext.codingExecutionRetry]
-  /// confidence. Falls back to [AutomationConfidence.gated] (the safe
-  /// default for a recovery action that re-spawns a tool-enabled run)
-  /// when constructed without an [AutomationSettingsRepository]. Added
-  /// for `AIO-506`.
-  /// [attempt]'s former `attempt > _maxVerifyRetries`-forces-`gated`
-  /// hardcoded override was removed for
-  /// `AIO-181` — the equivalent
-  /// behavior is now expressed as [AutomationContext.codingExecutionRetry]'s
-  /// seeded baseline decision graph (an `attemptExceedsMax` node),
-  /// consulted separately via [_evaluateDecisionGraph] once this function
-  /// itself resolves `auto` — [attempt] is still accepted (and still
-  /// passed through by every call site) purely so it can be forwarded
-  /// into that graph consultation's `DecisionEvalContext`.
+  /// confidence. Falls back to [AutomationConfidence.gated] (the safe default
+  /// for a recovery action that re-spawns a tool-enabled run) when constructed
+  /// without an [AutomationSettingsRepository]. Added for `AIO-506`.
+  /// [attempt]'s former `attempt > _maxVerifyRetries`-forces-`gated` hardcoded
+  /// override was removed for `AIO-181` — the equivalent behavior is now
+  /// expressed as [AutomationContext.codingExecutionRetry]'s seeded baseline
+  /// decision graph (an `attemptExceedsMax` node), consulted separately via
+  /// [_evaluateDecisionGraph] once this function itself resolves `auto` —
+  /// [attempt] is still accepted (and still passed through by every call site)
+  /// purely so it can be forwarded into that graph consultation's
+  /// `DecisionEvalContext`.
   Future<AutomationConfidence> _effectiveCodingExecutionRetryConfidence(
     AutomationSettingsRepository? automationRepo,
     int attempt,
@@ -5026,17 +4873,16 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// [automationRepo]'s persisted [AutomationContext.codingExecution]
-  /// confidence — shared by [_runCodingExecution]'s completion-flip
-  /// decision and [getTicketById]'s `executionAwaitingReview` computation
-  /// so the two can't disagree about whether a run counts as gated (both
-  /// also separately consult [_evaluateDecisionGraph] once this function
-  /// resolves `auto`, so the two stay in agreement about a
-  /// decision-graph-forced `gated` outcome too — see either call site).
-  /// [_overageDetectedThisSession]'s former forces-`gated` hardcoded
-  /// override was removed for
-  /// `AIO-181` — the equivalent
-  /// behavior is now expressed as [AutomationContext.codingExecution]'s
-  /// seeded baseline decision graph (a `sessionOverageDetected` node).
+  /// confidence — shared by [_runCodingExecution]'s completion-flip decision
+  /// and [getTicketById]'s `executionAwaitingReview` computation so the two
+  /// can't disagree about whether a run counts as gated (both also separately
+  /// consult [_evaluateDecisionGraph] once this function resolves `auto`, so
+  /// the two stay in agreement about a decision-graph-forced `gated` outcome
+  /// too — see either call site). [_overageDetectedThisSession]'s former
+  /// forces-`gated` hardcoded override was removed for `AIO-181` — the
+  /// equivalent behavior is now expressed as
+  /// [AutomationContext.codingExecution]'s seeded baseline decision graph (a
+  /// `sessionOverageDetected` node).
   Future<AutomationConfidence> _effectiveCodingExecutionConfidence(
     AutomationSettingsRepository automationRepo,
   ) async {
@@ -5045,24 +4891,24 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// The user's persisted coding-execution scheduling mode, defaulting to
   /// [ExecutionSchedulingMode.strictFifo] when constructed without an
-  /// [ExecutionSchedulingRepository] — today's unchanged behavior. Added
-  /// for `AIO-1400`.
+  /// [ExecutionSchedulingRepository] — today's unchanged behavior. Added for
+  /// `AIO-1400`.
   Future<ExecutionSchedulingMode> _effectiveSchedulingMode() async {
     final repo = _executionSchedulingRepository;
     if (repo == null) return ExecutionSchedulingMode.strictFifo;
     return repo.getMode();
   }
 
-  /// The number of coding-execution runs allowed in flight at once for
-  /// [mode]: always `1` under [ExecutionSchedulingMode.strictFifo]
-  /// (ignoring whatever concurrency ceiling is persisted); otherwise the
-  /// persisted [ExecutionSchedulingRepository.getConcurrencyCeiling]
-  /// (defaulting to `2` without a repository), additionally capped to `1`
-  /// for the rest of the session once [_overageDetectedThisSession] is
-  /// `true` — the same reactive-only budget-handling precedent
+  /// The number of coding-execution runs allowed in flight at once for [mode]:
+  /// always `1` under [ExecutionSchedulingMode.strictFifo] (ignoring whatever
+  /// concurrency ceiling is persisted); otherwise the persisted
+  /// [ExecutionSchedulingRepository.getConcurrencyCeiling] (defaulting to `2`
+  /// without a repository), additionally capped to `1` for the rest of the
+  /// session once [_overageDetectedThisSession] is `true` — the same
+  /// reactive-only budget-handling precedent
   /// [_effectiveCodingExecutionConfidence]'s overage-forces-`gated` check
-  /// already established, applied here to concurrency instead of
-  /// automation confidence. Added for `AIO-1400`.
+  /// already established, applied here to concurrency instead of automation
+  /// confidence. Added for `AIO-1400`.
   Future<int> _effectiveConcurrencyCeiling(ExecutionSchedulingMode mode) async {
     if (mode == ExecutionSchedulingMode.strictFifo) return 1;
     if (_overageDetectedThisSession) return 1;
@@ -5072,16 +4918,15 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Walks [ticketId]'s `parentId` chain via [_repository]'s
-  /// [TicketRepository.getTicketById] until reaching a ticket with no
-  /// parent, returning every ancestor id encountered (not including
-  /// [ticketId] itself). Bounded naturally by Aion's Epic→Story→Task/Bug
-  /// hierarchy — a Task/Bug's parent may be a Story *or* an Epic directly
-  /// (`TicketTypeHierarchy.canParent` allows any strictly-higher-rank
-  /// parent, not only the immediately-next rank), so this is not always
-  /// exactly two hops, but always terminates the first time `parentId` is
-  /// `null`. Shared by [_nextEligibleForHybrid] and [topmostAncestorIds] so
-  /// both use one identical chain-walking definition. Added for
-  /// `AIO-722`.
+  /// [TicketRepository.getTicketById] until reaching a ticket with no parent,
+  /// returning every ancestor id encountered (not including [ticketId]
+  /// itself). Bounded naturally by Aion's Epic→Story→Task/Bug hierarchy — a
+  /// Task/Bug's parent may be a Story *or* an Epic directly
+  /// (`TicketTypeHierarchy.canParent` allows any strictly-higher-rank parent,
+  /// not only the immediately-next rank), so this is not always exactly two
+  /// hops, but always terminates the first time `parentId` is `null`. Shared
+  /// by [_nextEligibleForHybrid] and [topmostAncestorIds] so both use one
+  /// identical chain-walking definition. Added for `AIO-722`.
   Future<List<String>> _ancestorIds(String ticketId) async {
     final ancestors = <String>[];
     var current = await _repository.getTicketById(ticketId);
@@ -5093,26 +4938,25 @@ class TicketsCubit extends Cubit<TicketsState> {
     return ancestors;
   }
 
-  /// Under [ExecutionSchedulingMode.hybrid], returns the first still-
-  /// queued Task/Bug id (FIFO order) that shares no ancestor with any
-  /// ticket already represented among [_inFlightExecutionIds]'s own
-  /// tickets — generalized (via [_ancestorIds]) from direct `parentId`
-  /// equality to "shares any ancestor," so two Tasks under different
-  /// Stories of the same Epic conflict just as much as direct same-parent
-  /// siblings do, matching `parallel-work.md`'s own Hybrid-mode rationale
-  /// ("siblings likely touch overlapping code") one level up. Each
-  /// candidate's own id is included in its ancestor-comparison set
-  /// alongside its ancestors, so direct same-parent siblings (the
-  /// pre-existing case) still conflict exactly as before — the shared
-  /// element is the common parent id, found in both sets' ancestor
-  /// portions. An unrelated queued ticket may still start ahead of one
-  /// that's blocked this way. Returns the id of a queued ticket that no
+  /// Under [ExecutionSchedulingMode.hybrid], returns the first still-queued
+  /// Task/Bug id (FIFO order) that shares no ancestor with any ticket already
+  /// represented among [_inFlightExecutionIds]'s own tickets — generalized
+  /// (via [_ancestorIds]) from direct `parentId` equality to "shares any
+  /// ancestor," so two Tasks under different Stories of the same Epic conflict
+  /// just as much as direct same-parent siblings do, matching
+  /// `parallel-work.md`'s own Hybrid-mode rationale ("siblings likely touch
+  /// overlapping code") one level up. Each candidate's own id is included in
+  /// its ancestor-comparison set alongside its ancestors, so direct
+  /// same-parent siblings (the pre-existing case) still conflict exactly as
+  /// before — the shared element is the common parent id, found in both sets'
+  /// ancestor portions. An unrelated queued ticket may still start ahead of
+  /// one that's blocked this way. Returns the id of a queued ticket that no
   /// longer resolves (stale — defensive, not expected in practice)
-  /// immediately, so the caller can skip and retry rather than stalling
-  /// the whole queue behind it. Returns `null` only when every remaining
-  /// queued id shares an ancestor with an in-flight ticket — nothing
-  /// eligible to start right now. Added for AIO-1400; generalized for
-  /// AIO-722; see AIO-722 §2.2.
+  /// immediately, so the caller can skip and retry rather than stalling the
+  /// whole queue behind it. Returns `null` only when every remaining queued id
+  /// shares an ancestor with an in-flight ticket — nothing eligible to start
+  /// right now. Added for AIO-1400; generalized for AIO-722; see AIO-722's
+  /// linked Documentation page, §2.2.
   Future<String?> _nextEligibleForHybrid() async {
     final inFlightAncestorSets = <String, Set<String>>{};
     for (final id in _inFlightExecutionIds) {
@@ -5130,17 +4974,16 @@ class TicketsCubit extends Cubit<TicketsState> {
     return null; // every queued ticket is sibling-blocked.
   }
 
-  /// Returns a map from each of [ticketIds] to its topmost ancestor id
-  /// (the root of its `parentId` chain — an Epic, for a well-formed
-  /// Task/Bug/Story; the ticket's own id if it has no parent at all). Used
-  /// by `BoardColumn` to precompute `clusterSiblingsAdjacently`'s grouping
-  /// key — a batch method rather than N individual `getTicketById` calls
-  /// from the widget layer, and async (unlike `clusterSiblingsAdjacently`
-  /// itself) because the Board is paginated: a Task/Bug column's own
-  /// [TicketsLoaded.tickets] very often does not already include the
-  /// Story/Epic tickets needed to resolve full ancestor chains. Added for
-  /// `AIO-722`;
-  /// see that change's design.md §2.3.
+  /// Returns a map from each of [ticketIds] to its topmost ancestor id (the
+  /// root of its `parentId` chain — an Epic, for a well-formed Task/Bug/Story;
+  /// the ticket's own id if it has no parent at all). Used by `BoardColumn` to
+  /// precompute `clusterSiblingsAdjacently`'s grouping key — a batch method
+  /// rather than N individual `getTicketById` calls from the widget layer, and
+  /// async (unlike `clusterSiblingsAdjacently` itself) because the Board is
+  /// paginated: a Task/Bug column's own [TicketsLoaded.tickets] very often
+  /// does not already include the Story/Epic tickets needed to resolve full
+  /// ancestor chains. Added for `AIO-722`; see its linked Documentation page,
+  /// §2.3.
   Future<Map<String, String>> topmostAncestorIds(List<String> ticketIds) async {
     final result = <String, String>{};
     for (final id in ticketIds) {
@@ -5151,22 +4994,21 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// [topmostAncestorIds] for [tickets], gated to
-  /// [ExecutionSchedulingMode.hybrid] — every other mode returns `{}`
-  /// without walking a single ancestor chain, since `BoardColumn` is the
-  /// only reader and only consults [TicketsLoaded.topmostAncestorId] under
-  /// Hybrid (mirroring `BoardColumn`'s own existing Hybrid-only gate on
-  /// calling `clusterSiblingsAdjacently` at all). Called from
-  /// [searchTickets]/[loadMoreTickets] on every fresh/appended load — the
-  /// same "recomputed on every load" lifecycle [_computeBlockedTicketIds]
-  /// already has, which is also what makes an in-session scheduling-mode
-  /// switch into Hybrid resolve correctly without a dedicated cross-cubit
-  /// listener: `TicketsListScreen` re-`searchTickets`es on every
-  /// navigation back to the Board (see its own `initState` dartdoc), the
-  /// same navigation that already gives `BoardColumn`'s `context.select`
-  /// on `ExecutionSchedulingCubit` a freshly reloaded mode — so both halves
-  /// of the Hybrid-clustering signal (the mode flag and this map) become
-  /// current at the same moment, with no separate listener needed. Added
-  /// for `AIO-722`.
+  /// [ExecutionSchedulingMode.hybrid] — every other mode returns `{}` without
+  /// walking a single ancestor chain, since `BoardColumn` is the only reader
+  /// and only consults [TicketsLoaded.topmostAncestorId] under Hybrid
+  /// (mirroring `BoardColumn`'s own existing Hybrid-only gate on calling
+  /// `clusterSiblingsAdjacently` at all). Called from
+  /// [searchTickets]/[loadMoreTickets] on every fresh/appended load — the same
+  /// "recomputed on every load" lifecycle [_computeBlockedTicketIds] already
+  /// has, which is also what makes an in-session scheduling-mode switch into
+  /// Hybrid resolve correctly without a dedicated cross-cubit listener:
+  /// `TicketsListScreen` re-`searchTickets`es on every navigation back to the
+  /// Board (see its own `initState` dartdoc), the same navigation that already
+  /// gives `BoardColumn`'s `context.select` on `ExecutionSchedulingCubit` a
+  /// freshly reloaded mode — so both halves of the Hybrid-clustering signal
+  /// (the mode flag and this map) become current at the same moment, with no
+  /// separate listener needed. Added for `AIO-722`.
   Future<Map<String, String>> _topmostAncestorIdIfHybrid(
     List<Ticket> tickets,
   ) async {
@@ -5176,19 +5018,18 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Starts as many queued Task/Bug runs as [_effectiveConcurrencyCeiling]
-  /// currently allows, replacing the old single-slot `_dequeueNext`.
-  /// Under [ExecutionSchedulingMode.strictFifo] this only ever starts one
-  /// (the loop's own `_inFlightExecutionIds.length < ceiling` condition
-  /// stops after the first, exactly like the old single-slot behavior);
-  /// under [ExecutionSchedulingMode.parallel] it pops [_executionQueue]'s
-  /// own FIFO head each time; under [ExecutionSchedulingMode.hybrid] it
-  /// resolves each pick via [_nextEligibleForHybrid] instead, so a
-  /// same-parent sibling never starts ahead of its already-in-flight
-  /// counterpart, while an unrelated queued ticket still starts
-  /// immediately. Skips (and refreshes past) any queued id that no longer
-  /// resolves to a ticket. Called from every trigger/completion/cancel
-  /// site that might have freed up scheduling capacity. Added for
-  /// `AIO-1400`; see that change's design.md §5.2.
+  /// currently allows, replacing the old single-slot `_dequeueNext`. Under
+  /// [ExecutionSchedulingMode.strictFifo] this only ever starts one (the
+  /// loop's own `_inFlightExecutionIds.length < ceiling` condition stops after
+  /// the first, exactly like the old single-slot behavior); under
+  /// [ExecutionSchedulingMode.parallel] it pops [_executionQueue]'s own FIFO
+  /// head each time; under [ExecutionSchedulingMode.hybrid] it resolves each
+  /// pick via [_nextEligibleForHybrid] instead, so a same-parent sibling never
+  /// starts ahead of its already-in-flight counterpart, while an unrelated
+  /// queued ticket still starts immediately. Skips (and refreshes past) any
+  /// queued id that no longer resolves to a ticket. Called from every
+  /// trigger/completion/cancel site that might have freed up scheduling
+  /// capacity. Added for `AIO-1400`; see its linked Documentation page, §5.2.
   Future<void> _tryStartNextQueuedExecutions() async {
     final mode = await _effectiveSchedulingMode();
     final ceiling = await _effectiveConcurrencyCeiling(mode);
@@ -5217,13 +5058,13 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
   }
 
-  /// Persists the current [_inFlightExecutionIds]/[_executionQueue]
-  /// snapshot via [_executionQueueRepository] — a no-op without one.
-  /// Called (`unawaited`) from every mutation site of those two:
+  /// Persists the current [_inFlightExecutionIds]/[_executionQueue] snapshot
+  /// via [_executionQueueRepository] — a no-op without one. Called
+  /// (`unawaited`) from every mutation site of those two:
   /// [_triggerOrQueueCodingExecution], [_tryStartNextQueuedExecutions],
   /// [cancelCodingExecution], and [_runCodingExecution]'s completion and
-  /// early-return guard paths. Added for `AIO-1400`;
-  /// see that change's design.md §5.3.
+  /// early-return guard paths. Added for `AIO-1400`; see its linked
+  /// Documentation page, §5.3.
   Future<void> _persistExecutionQueueSnapshot() async {
     final repo = _executionQueueRepository;
     if (repo == null) return;
@@ -5254,13 +5095,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// back to [AutomationConfidence.gated] without one):
   ///
   /// - [AutomationConfidence.auto]: further narrowed by
-  ///   [_evaluateDecisionGraph] once resolved `auto` (added for
-  ///   `AIO-181`) — a `proceed`/
-  ///   `modelJudgment` outcome re-enqueues every surviving entry and
-  ///   calls [_tryStartNextQueuedExecutions] immediately, exactly as
-  ///   plain `auto` always has; `gated` routes through this same
-  ///   context's own gated surface below; `decline` clears the
-  ///   persisted snapshot, the same as `manual` does.
+  ///   [_evaluateDecisionGraph] once resolved `auto` (added for `AIO-181`) — a
+  ///   `proceed`/ `modelJudgment` outcome re-enqueues every surviving entry
+  ///   and calls [_tryStartNextQueuedExecutions] immediately, exactly as plain
+  ///   `auto` always has; `gated` routes through this same context's own gated
+  ///   surface below; `decline` clears the persisted snapshot, the same as
+  ///   `manual` does.
   /// - [AutomationConfidence.gated]: surfaces the surviving tickets via
   ///   [_pendingResumeTickets]/[TicketsLoaded.pendingResumePrompt] for
   ///   `ResumeRunsPrompt` to render — [resumePendingExecutions]/
@@ -5271,8 +5111,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   ///
   /// Called once, immediately after construction, by whichever call site
   /// constructs this cubit's project-scoped instance (`app_router.dart`).
-  /// Added for `AIO-1400`; see that change's
-  /// design.md §5.3.
+  /// Added for `AIO-1400`; see its linked Documentation page, §5.3.
   Future<void> restoreExecutionQueue() async {
     final queueRepo = _executionQueueRepository;
     if (queueRepo == null) return;
@@ -5332,13 +5171,12 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
   }
 
-  /// Resumes every ticket [restoreExecutionQueue]'s `gated` branch
-  /// surfaced via [_pendingResumeTickets]/[TicketsLoaded.pendingResumePrompt]
-  /// — re-enqueues each, clears the prompt, and calls
-  /// [_tryStartNextQueuedExecutions], mirroring [restoreExecutionQueue]'s
-  /// own `auto` branch. No-op if nothing is pending. Called by
-  /// `ResumeRunsPrompt`'s Resume action. Added for
-  /// `AIO-1400`.
+  /// Resumes every ticket [restoreExecutionQueue]'s `gated` branch surfaced
+  /// via [_pendingResumeTickets]/[TicketsLoaded.pendingResumePrompt] —
+  /// re-enqueues each, clears the prompt, and calls
+  /// [_tryStartNextQueuedExecutions], mirroring [restoreExecutionQueue]'s own
+  /// `auto` branch. No-op if nothing is pending. Called by
+  /// `ResumeRunsPrompt`'s Resume action. Added for `AIO-1400`.
   Future<void> resumePendingExecutions() async {
     final pending = _pendingResumeTickets;
     if (pending == null) return;
@@ -5348,13 +5186,12 @@ class TicketsCubit extends Cubit<TicketsState> {
     unawaited(_tryStartNextQueuedExecutions());
   }
 
-  /// Dismisses [restoreExecutionQueue]'s `gated`-branch resume prompt
-  /// without resuming anything — clears [_pendingResumeTickets] and the
-  /// persisted snapshot, falling back to [AutomationConfidence.manual]'s
-  /// own behavior (the existing orphaned/stalled
-  /// [_computeExecutionFailure] retry banner is still available per
-  /// ticket). Called by `ResumeRunsPrompt`'s Dismiss action. Added for
-  /// `AIO-1400`.
+  /// Dismisses [restoreExecutionQueue]'s `gated`-branch resume prompt without
+  /// resuming anything — clears [_pendingResumeTickets] and the persisted
+  /// snapshot, falling back to [AutomationConfidence.manual]'s own behavior
+  /// (the existing orphaned/stalled [_computeExecutionFailure] retry banner is
+  /// still available per ticket). Called by `ResumeRunsPrompt`'s Dismiss
+  /// action. Added for `AIO-1400`.
   Future<void> dismissPendingResumePrompt() async {
     if (_pendingResumeTickets == null) return;
     _pendingResumeTickets = null;
@@ -5366,16 +5203,15 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// active project — its local `ProjectOverride` content if one exists,
   /// otherwise the bundled default for the project's pinned
   /// [_baselineVersion]. Returns `null` if any of [_baselineRepository]/
-  /// [_projectId]/[_baselineVersion] is unset, or if [assetKey] isn't
-  /// present in the pinned manifest at all (e.g. a project pinned to
-  /// `0.1.0`/`0.2.0`, which predate the `conventions/
-  /// architecture-conventions` key). Callers treat a `null` return as
-  /// "no guidance available," not an error. Added for AIO-1654 — the
-  /// narrowly-scoped mechanism
-  /// [_assembleExecutionContext]/[_assembleVerificationContext] use to
-  /// read `conventions/architecture-conventions`/`skills/verify`
-  /// content into a coding-execution prompt; no other prompt in this
-  /// class consults [_baselineRepository].
+  /// [_projectId]/[_baselineVersion] is unset, or if [assetKey] isn't present
+  /// in the pinned manifest at all (e.g. a project pinned to `0.1.0`/`0.2.0`,
+  /// which predate the `conventions/ architecture-conventions` key). Callers
+  /// treat a `null` return as "no guidance available," not an error. Added for
+  /// AIO-1654 — the narrowly-scoped mechanism
+  /// [_assembleExecutionContext]/[_assembleVerificationContext] use to read
+  /// `conventions/architecture-conventions`/`skills/verify` content into a
+  /// coding-execution prompt; no other prompt in this class consults
+  /// [_baselineRepository].
   Future<String?> _effectiveAssetContent(String assetKey) async {
     final baselineRepo = _baselineRepository;
     final projectId = _projectId;
@@ -5403,31 +5239,28 @@ class TicketsCubit extends Cubit<TicketsState> {
     return baselineRepo.readBundledContent(asset);
   }
 
-  /// Assembles the plain-text context a spawned coding-execution chat
-  /// opens with: [task]'s title/description, a `## Related tickets`
-  /// section from [_contextEnricher] (see
-  /// [TicketContextEnricher.relatedTicketsSection] — omitted entirely
-  /// when it returns `''`), the project's effective `conventions/
-  /// architecture-conventions` content (see [_effectiveAssetContent]) if
-  /// any, plus an instruction to implement the task using the available
-  /// file, git, and bash tools, commit the result, and end the reply with
-  /// exactly one line, `IMPLEMENTATION: DONE`. This no longer instructs
-  /// the model to push or open a PR
-  /// itself — that only happens after [_runCodingExecution]'s own
-  /// agentic verify turn passes (see [_assembleVerificationContext]/
-  /// [_assembleCorrectiveContext] for the retry-turn prompt used instead
-  /// when that turn reports a failure). The explicit "commit your
-  /// changes" instruction was added after a real manual pass caught the
-  /// model finishing `IMPLEMENTATION: DONE` having only edited files on
-  /// disk without ever running `git commit` — verification doesn't
+  /// Assembles the plain-text context a spawned coding-execution chat opens
+  /// with: [task]'s title/description, a `## Related tickets` section from
+  /// [_contextEnricher] (see [TicketContextEnricher.relatedTicketsSection] —
+  /// omitted entirely when it returns `''`), the project's effective
+  /// `conventions/ architecture-conventions` content (see
+  /// [_effectiveAssetContent]) if any, plus an instruction to implement the
+  /// task using the available file, git, and bash tools, commit the result,
+  /// and end the reply with exactly one line, `IMPLEMENTATION: DONE`. This no
+  /// longer instructs the model to push or open a PR itself — that only
+  /// happens after [_runCodingExecution]'s own agentic verify turn passes (see
+  /// [_assembleVerificationContext]/ [_assembleCorrectiveContext] for the
+  /// retry-turn prompt used instead when that turn reports a failure). The
+  /// explicit "commit your changes" instruction was added after a real manual
+  /// pass caught the model finishing `IMPLEMENTATION: DONE` having only edited
+  /// files on disk without ever running `git commit` — verification doesn't
   /// inherently care about git state, so it passed anyway, Aion pushed a
-  /// branch with nothing new, and `gh pr create` correctly rejected it
-  /// with "No commits between main and ...", losing the edit entirely
-  /// once the worktree was torn down. When [handoffSummary] is non-null
-  /// (a handoff — see [_handoffExecutionChat] — just seeded this chat),
-  /// it's prepended so the new chat's opening context makes clear this
-  /// Task is being picked up mid-flight rather than started fresh. Added
-  /// for AIO-833.
+  /// branch with nothing new, and `gh pr create` correctly rejected it with
+  /// "No commits between main and ...", losing the edit entirely once the
+  /// worktree was torn down. When [handoffSummary] is non-null (a handoff —
+  /// see [_handoffExecutionChat] — just seeded this chat), it's prepended so
+  /// the new chat's opening context makes clear this Task is being picked up
+  /// mid-flight rather than started fresh. Added for AIO-833.
   Future<String> _assembleExecutionContext(
     Ticket task, {
     String? handoffSummary,
@@ -5487,16 +5320,15 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Assembles the verify-turn prompt run immediately after a successful
-  /// implement turn (see [_runCodingExecution]) — the project's
-  /// effective `skills/verify` content (see [_effectiveAssetContent]),
-  /// which is written as operative instructions (see `assets/baseline/
-  /// 0.3.0/skills/verify.md`), plus a one-line reminder of what's being
-  /// verified. Runs in the same chat/worktree as the implement turn, so
-  /// the model still has the diff it just produced in context; this
+  /// implement turn (see [_runCodingExecution]) — the project's effective
+  /// `skills/verify` content (see [_effectiveAssetContent]), which is written
+  /// as operative instructions (see
+  /// `assets/baseline/ 0.3.0/skills/verify.md`), plus a one-line reminder of
+  /// what's being verified. Runs in the same chat/worktree as the implement
+  /// turn, so the model still has the diff it just produced in context; this
   /// reminder is cheap insurance against that continuity, not a full
   /// re-statement of the task. Added for AIO-1654 — replaces the
-  /// `FlutterVerifier`-based mechanical verify gate with this agentic
-  /// one.
+  /// `FlutterVerifier`-based mechanical verify gate with this agentic one.
   Future<String> _assembleVerificationContext(Ticket task) async {
     final verifySkill = await _effectiveAssetContent('skills/verify');
     final buffer = StringBuffer();
@@ -5512,13 +5344,12 @@ class TicketsCubit extends Cubit<TicketsState> {
     return buffer.toString().trim();
   }
 
-  /// Returns [chatTicketId]'s most recently created comment's raw
-  /// content, or `null` if it has none. Used by [_runCodingExecution] to
-  /// read back the verify turn's own reply — mirrors
-  /// [_executionSucceededWithPr]'s existing "find the most recent
-  /// comment" lookup, simplified since the caller already has the
-  /// chat's id directly rather than needing to look it up from a Task
-  /// id. Added for AIO-1654.
+  /// Returns [chatTicketId]'s most recently created comment's raw content, or
+  /// `null` if it has none. Used by [_runCodingExecution] to read back the
+  /// verify turn's own reply — mirrors [_executionSucceededWithPr]'s existing
+  /// "find the most recent comment" lookup, simplified since the caller
+  /// already has the chat's id directly rather than needing to look it up from
+  /// a Task id. Added for AIO-1654.
   Future<String?> _lastCommentContent(String chatTicketId) async {
     final commentRepo = _commentRepository;
     if (commentRepo == null) return null;
@@ -5532,15 +5363,14 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Adds [chatTicketId]'s most recently persisted comment's
   /// `inputTokens + outputTokens` (each treated as `0` when `null`) onto
-  /// [_executionTokenTotals]`[taskId]`. Called by [_runCodingExecution]
-  /// right after each implement/verify `ChatCubit.runChatTurn` call
-  /// returns [ChatTurnSuccess] — at that point the turn's `ai` comment
-  /// has already been persisted (by `runChatTurn` itself), so the most
-  /// recent comment for [chatTicketId] is exactly the one this turn just
-  /// wrote. Mirrors [_lastCommentContent]'s own "find the most recent
-  /// comment" lookup. No-ops if constructed without a [CommentRepository]
-  /// (mirrors [_lastCommentContent]'s same fallback). Added for
-  /// `AIO-2455`.
+  /// [_executionTokenTotals]`[taskId]`. Called by [_runCodingExecution] right
+  /// after each implement/verify `ChatCubit.runChatTurn` call returns
+  /// [ChatTurnSuccess] — at that point the turn's `ai` comment has already
+  /// been persisted (by `runChatTurn` itself), so the most recent comment for
+  /// [chatTicketId] is exactly the one this turn just wrote. Mirrors
+  /// [_lastCommentContent]'s own "find the most recent comment" lookup. No-ops
+  /// if constructed without a [CommentRepository] (mirrors
+  /// [_lastCommentContent]'s same fallback). Added for `AIO-2455`.
   Future<void> _addExecutionTokens(String taskId, String chatTicketId) async {
     final commentRepo = _commentRepository;
     if (commentRepo == null) return;
@@ -5555,16 +5385,16 @@ class TicketsCubit extends Cubit<TicketsState> {
         (_executionTokenTotals[taskId] ?? 0) + tokens;
   }
 
-  /// Parses a verify turn's reply ([reply], from [_lastCommentContent])
-  /// for its terminal `VERIFICATION:` line. Returns `null` **only**
-  /// when [reply] contains the literal `VERIFICATION: PASSED` line — an
-  /// explicit `VERIFICATION: FAILED — <reason>` line returns that
-  /// reason; anything else (a missing terminal line, or a `null` reply)
-  /// fails closed, returning a generic reason. This "fail closed"
-  /// behavior is what preserves `coding-execution-reliability-and-
-  /// safety`'s actual safety property — a run must never open a PR on
-  /// an ambiguous or missing verification result, even though pass/fail
-  /// is no longer determined by an exit code. Added for AIO-1654.
+  /// Parses a verify turn's reply ([reply], from [_lastCommentContent]) for
+  /// its terminal `VERIFICATION:` line. Returns `null` **only** when [reply]
+  /// contains the literal `VERIFICATION: PASSED` line — an explicit
+  /// `VERIFICATION: FAILED — <reason>` line returns that reason; anything else
+  /// (a missing terminal line, or a `null` reply) fails closed, returning a
+  /// generic reason. This "fail closed" behavior is what preserves
+  /// `coding-execution-reliability-and-safety`'s actual safety property — a
+  /// run must never open a PR on an ambiguous or missing verification result,
+  /// even though pass/fail is no longer determined by an exit code. Added for
+  /// AIO-1654.
   String? _verificationFailureReason(String? reply) {
     if (reply == null) {
       return 'The verification turn produced no reply.';
@@ -5581,11 +5411,10 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// Assembles the corrective-turn prompt fed back to the model when
   /// [_verificationFailureReason] reports a failure and the effective
   /// `AutomationContext.codingExecutionRetry` confidence is
-  /// [AutomationConfidence.auto] — the verify turn's own failure
-  /// [reason], plus a repeat of [_assembleExecutionContext]'s commit +
+  /// [AutomationConfidence.auto] — the verify turn's own failure [reason],
+  /// plus a repeat of [_assembleExecutionContext]'s commit +
   /// `IMPLEMENTATION: DONE` completion-signal instruction. Added for
-  /// `AIO-506`;
-  /// retyped from `FlutterVerifyResult` to a plain `String` for
+  /// `AIO-506`; retyped from `FlutterVerifyResult` to a plain `String` for
   /// AIO-1654.
   String _assembleCorrectiveContext(String reason) {
     return 'Verification reported:\n\n'
@@ -5595,15 +5424,14 @@ class TicketsCubit extends Cubit<TicketsState> {
         '"IMPLEMENTATION: DONE".';
   }
 
-  /// The Task/Bug [taskId]'s current coding-execution chat — its most
-  /// recently created `"Coding Execution — "`-prefixed child. Covers a
-  /// `"(continued)"` handoff descendant (see [_handoffExecutionChat])
-  /// automatically: it shares the same prefix and is simply created
-  /// later, so it naturally sorts first. `null` if [taskId] has no
-  /// execution chat yet. Shared by [_executionSucceededWithPr],
-  /// [_computeExecutionFailure], and [_resolveExecutionChat]. Added for
-  /// `AIO-833`
-  /// (extracted from what were previously two duplicated inline lookups).
+  /// The Task/Bug [taskId]'s current coding-execution chat — its most recently
+  /// created `"Coding Execution — "`-prefixed child. Covers a `"(continued)"`
+  /// handoff descendant (see [_handoffExecutionChat]) automatically: it shares
+  /// the same prefix and is simply created later, so it naturally sorts first.
+  /// `null` if [taskId] has no execution chat yet. Shared by
+  /// [_executionSucceededWithPr], [_computeExecutionFailure], and
+  /// [_resolveExecutionChat]. Added for `AIO-833` (extracted from what were
+  /// previously two duplicated inline lookups).
   Future<Ticket?> _mostRecentExecutionChat(String taskId) async {
     final chats = await _repository.getTicketsByParent(
       taskId,
@@ -5617,18 +5445,17 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Whether [taskId]'s most recently created `"Coding Execution — "`-
   /// prefixed `chat` child's most recent comment contains the literal
-  /// `EXECUTION: PR_OPENED` line — mirrors [_designSyncApproved]'s own
-  /// lookup shape exactly (that one takes the *Story's* id and finds its
-  /// `"Design Sync — "`-prefixed chat; this takes the *Task's* id and
-  /// finds its `"Coding Execution — "`-prefixed chat via
+  /// `EXECUTION: PR_OPENED` line — mirrors [_designSyncApproved]'s own lookup
+  /// shape exactly (that one takes the *Story's* id and finds its
+  /// `"Design Sync — "`-prefixed chat; this takes the *Task's* id and finds
+  /// its `"Coding Execution — "`-prefixed chat via
   /// [_mostRecentExecutionChat]), so both [_runCodingExecution] and
   /// [getTicketById] can call it identically without needing to know the
   /// spawned chat's own id. Accepts either [CommentAuthorType.ai] or
-  /// [CommentAuthorType.system] as the comment's author — before
-  /// `AIO-506`, only
-  /// the model itself (`ai`) ever posted this line; now Aion posts it
-  /// itself (`system`) once its own verify-then-push-then-PR sequence
-  /// succeeds (see [_runCodingExecution]).
+  /// [CommentAuthorType.system] as the comment's author — before `AIO-506`,
+  /// only the model itself (`ai`) ever posted this line; now Aion posts it
+  /// itself (`system`) once its own verify-then-push-then-PR sequence succeeds
+  /// (see [_runCodingExecution]).
   Future<bool> _executionSucceededWithPr(String taskId) async {
     final commentRepo = _commentRepository;
     if (commentRepo == null) return false;
@@ -5645,21 +5472,20 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Computes the `(executionFailureReason, executionCanRetry)` pair for
-  /// [taskId] once its coding-execution run has finished without a
-  /// confirmed PR (see [_executionSucceededWithPr]) — used by
-  /// [getTicketById]. Finds the Task's most recent `"Coding Execution —
-  /// "`-prefixed chat via [_mostRecentExecutionChat] (mirrors
-  /// [_executionSucceededWithPr]'s own lookup) and inspects its most
-  /// recent comment: an `"Execution failed verification: ..."` or
-  /// `"Execution failed: ..."` system/ai comment (posted by
-  /// [_runCodingExecution]/[ChatCubit.runChatTurn] respectively) surfaces
-  /// that content verbatim; anything else — including no comments at all,
-  /// which can happen after an app restart mid-run — surfaces a fixed
-  /// "ended without a clear result" message. Either case always pairs
-  /// with `canRetry: true`. Returns `(null, false)` only when no
-  /// execution chat exists at all yet (a Task moved to `inProgress` a
-  /// moment before its chat is spawned). Added for
-  /// `AIO-506`.
+  /// [taskId] once its coding-execution run has finished without a confirmed
+  /// PR (see [_executionSucceededWithPr]) — used by [getTicketById]. Finds the
+  /// Task's most recent `"Coding Execution — "`-prefixed chat via
+  /// [_mostRecentExecutionChat] (mirrors [_executionSucceededWithPr]'s own
+  /// lookup) and inspects its most recent comment: an
+  /// `"Execution failed verification: ..."` or `"Execution failed: ..."`
+  /// system/ai comment (posted by
+  /// [_runCodingExecution]/[ChatCubit.runChatTurn] respectively) surfaces that
+  /// content verbatim; anything else — including no comments at all, which can
+  /// happen after an app restart mid-run — surfaces a fixed "ended without a
+  /// clear result" message. Either case always pairs with `canRetry: true`.
+  /// Returns `(null, false)` only when no execution chat exists at all yet (a
+  /// Task moved to `inProgress` a moment before its chat is spawned). Added
+  /// for `AIO-506`.
   Future<(String?, bool)> _computeExecutionFailure(String taskId) async {
     final commentRepo = _commentRepository;
     if (commentRepo == null) return (null, false);
@@ -5700,11 +5526,10 @@ class TicketsCubit extends Cubit<TicketsState> {
   ///   `(null, false)`.
   /// - Anything else while [epicOrStoryId] is **not** in
   ///   [_inFlightStageAdvanceIds] (orphaned — most likely an app restart
-  ///   happened mid-turn) → a fixed "ended without a clear result"
-  ///   message, `canRetry: true`, mirroring [_computeExecutionFailure]'s
-  ///   own orphaned/stalled fallback. While still in-flight, `(null,
-  ///   false)` — the turn just hasn't produced a terminal comment yet.
-  /// Added for `AIO-352`.
+  ///   happened mid-turn) → a fixed "ended without a clear result" message,
+  ///   `canRetry: true`, mirroring [_computeExecutionFailure]'s own
+  ///   orphaned/stalled fallback. While still in-flight, `(null, false)` — the
+  ///   turn just hasn't produced a terminal comment yet. Added for `AIO-352`.
   Future<(String?, bool)> _computeStageAdvanceFailure(
     String epicOrStoryId,
   ) async {
@@ -5761,11 +5586,11 @@ class TicketsCubit extends Cubit<TicketsState> {
     return comments.any((c) => c.authorType == CommentAuthorType.ai);
   }
 
-  /// Resolves [phase] to its currently configured [AgentModelDescriptor],
-  /// via [_modelRoutingRepository]. Falls back to the first registered
-  /// provider's first model — the closest available equivalent to the
-  /// hardcoded `AgentModel.sonnet` default every call site used before
-  /// per-phase routing existed — when the cubit was constructed without a
+  /// Resolves [phase] to its currently configured [AgentModelDescriptor], via
+  /// [_modelRoutingRepository]. Falls back to the first registered provider's
+  /// first model — the closest available equivalent to the hardcoded
+  /// `AgentModel.sonnet` default every call site used before per-phase routing
+  /// existed — when the cubit was constructed without a
   /// [ModelRoutingRepository] (see the constructor's dartdoc). Added for
   /// `AIO-1491`.
   Future<AgentModelDescriptor> _resolveModel(ModelPhase phase) async {
@@ -5783,13 +5608,11 @@ class TicketsCubit extends Cubit<TicketsState> {
     );
   }
 
-  /// Resolves [phase] to its currently configured [AgentModelDescriptor]
-  /// (via [_resolveModel]) and that model's [AgentProvider] (via
-  /// [_providerRegistry]). Shared helper so every model call site
-  /// resolves the pair identically — see
-  /// `AIO-1544` §7.
-  /// Only called from call sites already gated on [_providerRegistry]
-  /// being non-null.
+  /// Resolves [phase] to its currently configured [AgentModelDescriptor] (via
+  /// [_resolveModel]) and that model's [AgentProvider] (via
+  /// [_providerRegistry]). Shared helper so every model call site resolves the
+  /// pair identically — see `AIO-1544` §7. Only called from call sites already
+  /// gated on [_providerRegistry] being non-null.
   Future<(AgentModelDescriptor, AgentProvider)> _resolveModelAndProvider(
     ModelPhase phase,
   ) async {
@@ -5798,21 +5621,19 @@ class TicketsCubit extends Cubit<TicketsState> {
     return (model, provider);
   }
 
-  /// Creates a `chat`-type child ticket for [stage] under [parent] and
-  /// posts an auto-assembled [CommentAuthorType.system] context comment
-  /// (see [_assembleStageContext]) — the `await`ed half of what used to
-  /// be a single blocking `_spawnStageChat` call before
-  /// `AIO-352`
-  /// split it so [advanceSddStage] no longer blocks on the chat's AI
-  /// reply (see [_runStageChatTurn] for that half). Returns the
-  /// persisted chat ticket's id, or `null` if constructed without a
-  /// [ProviderRegistry]/[CommentRepository] (see the constructor's
-  /// dartdoc) — real usage (`app_router.dart`) always supplies both. For
-  /// [SddStage.designBrief] specifically, also creates a `page`-type
-  /// design ticket (`"Design — <parent.title>"`) and links it to
-  /// [parent] via [TicketLinkRepository.createLink] before the chat
-  /// itself is created — see [_linkedDesignPage]. Added for
-  /// `AIO-1834`. When [stage] has a configured
+  /// Creates a `chat`-type child ticket for [stage] under [parent] and posts
+  /// an auto-assembled [CommentAuthorType.system] context comment (see
+  /// [_assembleStageContext]) — the `await`ed half of what used to be a single
+  /// blocking `_spawnStageChat` call before `AIO-352` split it so
+  /// [advanceSddStage] no longer blocks on the chat's AI reply (see
+  /// [_runStageChatTurn] for that half). Returns the persisted chat ticket's
+  /// id, or `null` if constructed without a
+  /// [ProviderRegistry]/[CommentRepository] (see the constructor's dartdoc) —
+  /// real usage (`app_router.dart`) always supplies both. For
+  /// [SddStage.designBrief] specifically, also creates a `page`-type design
+  /// ticket (`"Design — <parent.title>"`) and links it to [parent] via
+  /// [TicketLinkRepository.createLink] before the chat itself is created — see
+  /// [_linkedDesignPage]. Added for `AIO-1834`. When [stage] has a configured
   /// [_attachmentForStage], the posted comment is [_promptFor]'s output
   /// instead of [_assembleStageContext]'s — the attachment overrides the
   /// stage's hardcoded prompt, but chat creation itself (including the
@@ -5883,66 +5704,56 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Runs [chatId]'s stage-advance AI turn for [parent]/[stage] — the
-  /// `unawaited` half of what used to be a single blocking
-  /// `_spawnStageChat` call (see [_createStageChat] for the `await`ed
-  /// chat-creation half). Calls the resolved [AgentProvider]'s client and
-  /// persists the streamed reply via [ChatCubit.runChatTurn] — the same
-  /// accumulate-then-persist logic [ChatCubit.sendMessage] uses, so the
-  /// spawn path and the user-message path can't drift apart. The model
-  /// is resolved via [_resolveModel] using [stage]'s
-  /// [SddStageModelPhase.modelPhase] (see
-  /// `AIO-1491`). Re-runs
-  /// [_assembleStageContext] to get [chatId]'s turn prompt (cheap —
-  /// local ticket/comment reads only, no network) rather than threading
-  /// [_createStageChat]'s already-computed context through an extra
-  /// parameter. A hard error escaping [ChatCubit.runChatTurn] — this
-  /// method runs `unawaited`, so nothing else would ever observe it — is
-  /// caught, posts a `"Stage advance failed: <e>"` system comment
-  /// (mirrors [_runCodingExecution]'s own `"Execution failed: ..."`
-  /// catch-comment shape) and emits
-  /// [TicketsErrorReason.sddStageAdvanceFailed] so the failure surfaces
-  /// in the chat transcript and as a one-shot toast instead of silently
-  /// vanishing into a discarded `unawaited` future. On completion
+  /// `unawaited` half of what used to be a single blocking `_spawnStageChat`
+  /// call (see [_createStageChat] for the `await`ed chat-creation half). Calls
+  /// the resolved [AgentProvider]'s client and persists the streamed reply via
+  /// [ChatCubit.runChatTurn] — the same accumulate-then-persist logic
+  /// [ChatCubit.sendMessage] uses, so the spawn path and the user-message path
+  /// can't drift apart. The model is resolved via [_resolveModel] using
+  /// [stage]'s [SddStageModelPhase.modelPhase] (see `AIO-1491`). Re-runs
+  /// [_assembleStageContext] to get [chatId]'s turn prompt (cheap — local
+  /// ticket/comment reads only, no network) rather than threading
+  /// [_createStageChat]'s already-computed context through an extra parameter.
+  /// A hard error escaping [ChatCubit.runChatTurn] — this method runs
+  /// `unawaited`, so nothing else would ever observe it — is caught, posts a
+  /// `"Stage advance failed: <e>"` system comment (mirrors
+  /// [_runCodingExecution]'s own `"Execution failed: ..."` catch-comment
+  /// shape) and emits [TicketsErrorReason.sddStageAdvanceFailed] so the
+  /// failure surfaces in the chat transcript and as a one-shot toast instead
+  /// of silently vanishing into a discarded `unawaited` future. On completion
   /// (success or failure), removes both [parent]'s id and [chatId] from
-  /// [_inFlightStageAdvanceIds] and calls [_refreshInFlightBoardState].
-  /// When `stage == SddStage.proposed` and the turn succeeds, also reads
-  /// [chatId]'s most recent comment back via
-  /// [CommentRepository.getCommentsForTicket] (mirrors
-  /// [_designSyncApproved]'s own read-back pattern — no change to
+  /// [_inFlightStageAdvanceIds] and calls [_refreshInFlightBoardState]. When
+  /// `stage == SddStage.proposed` and the turn succeeds, also reads [chatId]'s
+  /// most recent comment back via [CommentRepository.getCommentsForTicket]
+  /// (mirrors [_designSyncApproved]'s own read-back pattern — no change to
   /// [ChatCubit.runChatTurn]'s shared return contract) and passes it to
-  /// [_materializeDecomposition]. Similarly, when `stage ==
-  /// SddStage.verifying` and the turn succeeds, reads the reply back and
-  /// — only if it contains `VERIFY GATE: PENDING` — passes it to
-  /// [_materializeVerifyFixes] (added for
-  /// `AIO-1905`). Added for
-  /// `AIO-352`
-  /// and `AIO-392`. When [stage]
-  /// has a configured [_attachmentForStage], re-derives [_promptFor]'s
-  /// output instead of [_assembleStageContext]'s, resolves the model via
-  /// [attachment.kind]'s [ModelPhase] (mirroring [_fireSkillAttachment]'s
-  /// own selection: [ModelPhase.capable] for `aionNativeTemplate`,
-  /// [ModelPhase.execution] for `delegatedSkill`) instead of [stage
-  /// .modelPhase], sets `toolsEnabled`/`workingDirectory` per
-  /// [attachment.kind] instead of always text-only, and offers no
-  /// app-defined `tools` (skips [_toolCallParamsFor] — see
-  /// proposal.md's Non-goals). When `attachmentToolsEnabled`, runs
-  /// inside a fresh isolated `git worktree` (via
-  /// [GitRepositoryClient.createWorktree]/`.removeWorktree`) exactly
-  /// like [_runCodingExecution] — never [_projectRootPath] itself, so a
-  /// `delegatedSkill` attachment can't touch the developer's real
-  /// checkout. Throws (caught below, posting the usual failure comment)
-  /// if constructed without a [GitRepositoryClient]/`projectRootPath` in
-  /// that case, or if the resolved provider lacks
-  /// [AgentProvider.supportsSkillDiscovery] (see
-  /// `AIO-702`
-  /// §3a — the `SddStage` counterpart to [_fireSkillAttachment]'s own
-  /// same check). Added for `AIO-2650`.
-  /// Also calls [_recordNotification] exactly once, from the `finally`
-  /// block (after worktree cleanup and the [_inFlightStageAdvanceIds]
-  /// removal below, so it fires regardless of which path was taken) —
-  /// [NotificationKind.stageAdvanceCompleted] or `.stageAdvanceFailed`
-  /// depending on whether the `catch` block ran. Added for
-  /// `AIO-1586`.
+  /// [_materializeDecomposition]. Similarly, when
+  /// `stage == SddStage.verifying` and the turn succeeds, reads the reply back
+  /// and — only if it contains `VERIFY GATE: PENDING` — passes it to
+  /// [_materializeVerifyFixes] (added for `AIO-1905`). Added for `AIO-352` and
+  /// `AIO-392`. When [stage] has a configured [_attachmentForStage],
+  /// re-derives [_promptFor]'s output instead of [_assembleStageContext]'s,
+  /// resolves the model via [attachment.kind]'s [ModelPhase] (mirroring
+  /// [_fireSkillAttachment]'s own selection: [ModelPhase.capable] for
+  /// `aionNativeTemplate`, [ModelPhase.execution] for `delegatedSkill`)
+  /// instead of [stage .modelPhase], sets `toolsEnabled`/`workingDirectory`
+  /// per [attachment.kind] instead of always text-only, and offers no
+  /// app-defined `tools` (skips [_toolCallParamsFor] — see proposal.md's
+  /// Non-goals). When `attachmentToolsEnabled`, runs inside a fresh isolated
+  /// `git worktree` (via
+  /// [GitRepositoryClient.createWorktree]/`.removeWorktree`) exactly like
+  /// [_runCodingExecution] — never [_projectRootPath] itself, so a
+  /// `delegatedSkill` attachment can't touch the developer's real checkout.
+  /// Throws (caught below, posting the usual failure comment) if constructed
+  /// without a [GitRepositoryClient]/`projectRootPath` in that case, or if the
+  /// resolved provider lacks [AgentProvider.supportsSkillDiscovery] (see
+  /// `AIO-702` §3a — the `SddStage` counterpart to [_fireSkillAttachment]'s
+  /// own same check). Added for `AIO-2650`. Also calls [_recordNotification]
+  /// exactly once, from the `finally` block (after worktree cleanup and the
+  /// [_inFlightStageAdvanceIds] removal below, so it fires regardless of which
+  /// path was taken) — [NotificationKind.stageAdvanceCompleted] or
+  /// `.stageAdvanceFailed` depending on whether the `catch` block ran. Added
+  /// for `AIO-1586`.
   Future<void> _runStageChatTurn(
     Ticket parent,
     SddStage stage,
@@ -6097,23 +5908,21 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   // ---------------------------------------------------------------------
-  // Skill attachments — generalizes _createStageChat/_runStageChatTurn's
-  // shape (above) to any SkillAttachment, whether it's attached to a
-  // WorkflowStatus or an SddStage. See
-  // AIO-2650 §3.
+  // Skill attachments — generalizes _createStageChat/_runStageChatTurn's shape
+  // (above) to any SkillAttachment, whether it's attached to a WorkflowStatus
+  // or an SddStage. See AIO-2650 §3.
   // ---------------------------------------------------------------------
 
   /// Builds [attachment]'s run prompt against [parent]:
   /// [SkillAttachmentKind.aionNativeTemplate] renders the referenced
-  /// [WorkflowPromptTemplate] via [renderWorkflowPromptTemplate] (falling
-  /// back to a defensive `"(template not found)"` placeholder if
-  /// [_workflowPromptTemplateRepository] is `null` or [attachment
-  /// .templateId] no longer resolves — a since-deleted template, or a
-  /// cubit constructed without one); [SkillAttachmentKind.delegatedSkill]
-  /// returns the literal `/<skillName>` slash-command text, chosen over a
-  /// natural-language description match because an automation feature
-  /// needs a deterministic trigger. See
-  /// `AIO-2650` §3.2.
+  /// [WorkflowPromptTemplate] via [renderWorkflowPromptTemplate] (falling back
+  /// to a defensive `"(template not found)"` placeholder if
+  /// [_workflowPromptTemplateRepository] is `null` or [attachment .templateId]
+  /// no longer resolves — a since-deleted template, or a cubit constructed
+  /// without one); [SkillAttachmentKind.delegatedSkill] returns the literal
+  /// `/<skillName>` slash-command text, chosen over a natural-language
+  /// description match because an automation feature needs a deterministic
+  /// trigger. See `AIO-2650` §3.2.
   Future<String> _promptFor(SkillAttachment attachment, Ticket parent) async {
     switch (attachment.kind) {
       case SkillAttachmentKind.aionNativeTemplate:
@@ -6161,22 +5970,20 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// unattended (`auto`-confidence) attachment run.
   ///
   /// The model is resolved via [_resolveModelAndProvider] using
-  /// [ModelPhase.capable] for `aionNativeTemplate` (comparatively
-  /// mechanical, text-only work — the same tier `designBrief`/`designSync`
-  /// use) and [ModelPhase.execution] for `delegatedSkill` (the only other
-  /// tool-enabled phase, [ModelPhaseToolAccess.requiredToolAccessTier]
-  /// being [ToolAccessTier.full] for both). No app-defined `tools` are
-  /// offered (see proposal.md's Non-goals). No-ops if constructed without
-  /// a [ProviderRegistry]/[CommentRepository] (see the constructor's
-  /// dartdoc). A hard error — including a `delegatedSkill` run
-  /// constructed without a [GitRepositoryClient]/`projectRootPath`, which
-  /// throws rather than silently falling back to [_projectRootPath] — is
-  /// caught and posted as a "Skill attachment failed: `<e>`"
-  /// [CommentAuthorType.system] comment, mirroring [_runStageChatTurn]'s
-  /// own catch-comment shape — the same path a resolved provider lacking
-  /// [AgentProvider.supportsSkillDiscovery] hits for a `delegatedSkill`
-  /// run (see `AIO-702`
-  /// §3).
+  /// [ModelPhase.capable] for `aionNativeTemplate` (comparatively mechanical,
+  /// text-only work — the same tier `designBrief`/`designSync` use) and
+  /// [ModelPhase.execution] for `delegatedSkill` (the only other tool-enabled
+  /// phase, [ModelPhaseToolAccess.requiredToolAccessTier] being
+  /// [ToolAccessTier.full] for both). No app-defined `tools` are offered (see
+  /// proposal.md's Non-goals). No-ops if constructed without a
+  /// [ProviderRegistry]/[CommentRepository] (see the constructor's dartdoc). A
+  /// hard error — including a `delegatedSkill` run constructed without a
+  /// [GitRepositoryClient]/`projectRootPath`, which throws rather than
+  /// silently falling back to [_projectRootPath] — is caught and posted as a
+  /// "Skill attachment failed: `<e>`" [CommentAuthorType.system] comment,
+  /// mirroring [_runStageChatTurn]'s own catch-comment shape — the same path a
+  /// resolved provider lacking [AgentProvider.supportsSkillDiscovery] hits for
+  /// a `delegatedSkill` run (see `AIO-702` §3).
   Future<void> _fireSkillAttachment(
     Ticket parent,
     SkillAttachment attachment,
@@ -6279,14 +6086,13 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Pending `SkillAttachment`s (confidence `gated`) awaiting user
   /// confirmation, keyed by the *parent* ticket id that just entered the
-  /// attachment's target status/stage — mirrors [_pendingProposals]'
-  /// shape, one level simpler (no [Completer] to resolve, since firing a
-  /// skill attachment doesn't pause an in-flight model turn the way a
-  /// `branch_ticket` tool call does). Each entry pairs the
-  /// [SkillAttachment] shown by [TicketDetailLoaded.pendingSkillAttachment]
-  /// with the actual fire action to run on confirm — see
-  /// [_resolveAndFireAttachment]'s `fire` parameter for why this isn't
-  /// always [_fireSkillAttachment]. Cleared by
+  /// attachment's target status/stage — mirrors [_pendingProposals]' shape,
+  /// one level simpler (no [Completer] to resolve, since firing a skill
+  /// attachment doesn't pause an in-flight model turn the way a
+  /// `branch_ticket` tool call does). Each entry pairs the [SkillAttachment]
+  /// shown by [TicketDetailLoaded.pendingSkillAttachment] with the actual fire
+  /// action to run on confirm — see [_resolveAndFireAttachment]'s `fire`
+  /// parameter for why this isn't always [_fireSkillAttachment]. Cleared by
   /// [confirmPendingSkillAttachment]/[rejectPendingSkillAttachment]. See
   /// `AIO-2650` §3.3.
   final Map<
@@ -6390,16 +6196,15 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Minimum cosine similarity for [_maybeAutoLinkToSpec] to treat a
   /// `TicketType.spec` ticket as a match — same bar
-  /// `TicketContextEnricher`/`TicketEstimationSuggester` already use for
-  /// their own embedding-similarity passes. Added for
-  /// `AIO-1998`.
+  /// `TicketContextEnricher`/`TicketEstimationSuggester` already use for their
+  /// own embedding-similarity passes. Added for `AIO-1998`.
   static const _specAutoLinkThreshold = 0.75;
 
-  /// Pending [PendingSpecLinkSuggestion]s (confidence `gated`) awaiting
-  /// user confirmation, keyed by the ticket id the suggested link would
-  /// attach to. Mirrors [_pendingSkillAttachments]'s shape, one level
-  /// simpler (no fire action to record — confirming always means
-  /// "create this exact `relatesTo` link"). Cleared by
+  /// Pending [PendingSpecLinkSuggestion]s (confidence `gated`) awaiting user
+  /// confirmation, keyed by the ticket id the suggested link would attach to.
+  /// Mirrors [_pendingSkillAttachments]'s shape, one level simpler (no fire
+  /// action to record — confirming always means "create this exact `relatesTo`
+  /// link"). Cleared by
   /// [confirmPendingSpecLinkSuggestion]/[rejectPendingSpecLinkSuggestion].
   /// Added for `AIO-1998`.
   final Map<String, PendingSpecLinkSuggestion> _pendingSpecLinkSuggestions = {};
@@ -6408,26 +6213,25 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// `TicketType.spec` ticket, gated by
   /// [AutomationSettingsRepository.getConfidence] on
   /// [AutomationContext.specAutoLink]. Reuses
-  /// `domain/utils/embedding_similarity.dart`'s [cosineSimilarity] the
-  /// same way [TicketContextEnricher]'s embedding-similarity pass does
+  /// `domain/utils/embedding_similarity.dart`'s [cosineSimilarity] the same
+  /// way [TicketContextEnricher]'s embedding-similarity pass does
   /// (`ticket.title`+`ticket.description` as the query,
-  /// [_specAutoLinkThreshold], unchanged) but takes only the single best
-  /// match above threshold rather than a top-K list — this creates a
-  /// real `relatesTo` link, not enrichment prose, so a lower bar for
-  /// "worth mentioning" doesn't apply. `auto`: creates the link
-  /// immediately via [TicketLinkRepository.createLink]. `gated`: creates
-  /// no link yet; records the match in [_pendingSpecLinkSuggestions] and,
-  /// if [ticket]'s detail screen is currently open, re-emits
-  /// [TicketDetailLoaded] via [TicketDetailLoaded.copyWith] carrying
+  /// [_specAutoLinkThreshold], unchanged) but takes only the single best match
+  /// above threshold rather than a top-K list — this creates a real
+  /// `relatesTo` link, not enrichment prose, so a lower bar for "worth
+  /// mentioning" doesn't apply. `auto`: creates the link immediately via
+  /// [TicketLinkRepository.createLink]. `gated`: creates no link yet; records
+  /// the match in [_pendingSpecLinkSuggestions] and, if [ticket]'s detail
+  /// screen is currently open, re-emits [TicketDetailLoaded] via
+  /// [TicketDetailLoaded.copyWith] carrying
   /// [TicketDetailLoaded.pendingSpecLinkSuggestion] — mirrors
-  /// [_resolveAndFireAttachment]'s own `gated` branch. `manual`: no
-  /// proactive surfacing (this method is the only trigger currently
-  /// wired; a standalone manual "Link to spec" action is a reasonable
-  /// follow-up, not attempted here). No-ops silently (no link, no
-  /// banner, no error) if [ticket] is itself a [TicketType.spec], if
-  /// nothing clears [_specAutoLinkThreshold], or if this cubit was
-  /// constructed without an [EmbeddingProvider]/[TicketLinkRepository].
-  /// Added for `AIO-1998`.
+  /// [_resolveAndFireAttachment]'s own `gated` branch. `manual`: no proactive
+  /// surfacing (this method is the only trigger currently wired; a standalone
+  /// manual "Link to spec" action is a reasonable follow-up, not attempted
+  /// here). No-ops silently (no link, no banner, no error) if [ticket] is
+  /// itself a [TicketType.spec], if nothing clears [_specAutoLinkThreshold],
+  /// or if this cubit was constructed without an
+  /// [EmbeddingProvider]/[TicketLinkRepository]. Added for `AIO-1998`.
   Future<void> _maybeAutoLinkToSpec(Ticket ticket) async {
     if (ticket.type == TicketType.spec) return;
     final embeddingProvider = _embeddingProvider;
@@ -6503,15 +6307,14 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Confirms [ticketId]'s pending [PendingSpecLinkSuggestion] (if any):
-  /// removes it from [_pendingSpecLinkSuggestions] and creates the
-  /// suggested `relatesTo` link, `unawaited` (mirrors
-  /// [_maybeAutoLinkToSpec]'s own `auto` branch). If [ticketId]'s detail
-  /// screen is currently open, re-emits [TicketDetailLoaded] via
-  /// [TicketDetailLoaded.copyWith] with
+  /// removes it from [_pendingSpecLinkSuggestions] and creates the suggested
+  /// `relatesTo` link, `unawaited` (mirrors [_maybeAutoLinkToSpec]'s own
+  /// `auto` branch). If [ticketId]'s detail screen is currently open, re-emits
+  /// [TicketDetailLoaded] via [TicketDetailLoaded.copyWith] with
   /// [TicketDetailLoaded.pendingSpecLinkSuggestion] cleared. No-ops if
   /// [ticketId] has no pending suggestion, or if constructed without a
-  /// [TicketLinkRepository]. Mirrors [confirmPendingSkillAttachment]'s
-  /// shape. Added for `AIO-1998`.
+  /// [TicketLinkRepository]. Mirrors [confirmPendingSkillAttachment]'s shape.
+  /// Added for `AIO-1998`.
   Future<void> confirmPendingSpecLinkSuggestion(String ticketId) async {
     final pending = _pendingSpecLinkSuggestions.remove(ticketId);
     final linkRepo = _linkRepository;
@@ -6529,14 +6332,13 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
   }
 
-  /// Rejects [ticketId]'s pending [PendingSpecLinkSuggestion]: removes it
-  /// from [_pendingSpecLinkSuggestions] without ever creating the link.
-  /// If [ticketId]'s detail screen is currently open, re-emits
+  /// Rejects [ticketId]'s pending [PendingSpecLinkSuggestion]: removes it from
+  /// [_pendingSpecLinkSuggestions] without ever creating the link. If
+  /// [ticketId]'s detail screen is currently open, re-emits
   /// [TicketDetailLoaded] via [TicketDetailLoaded.copyWith] with
   /// [TicketDetailLoaded.pendingSpecLinkSuggestion] cleared. No-ops if
   /// [ticketId] has no pending suggestion. Mirrors
-  /// [rejectPendingSkillAttachment]'s shape. Added for
-  /// `AIO-1998`.
+  /// [rejectPendingSkillAttachment]'s shape. Added for `AIO-1998`.
   Future<void> rejectPendingSpecLinkSuggestion(String ticketId) async {
     final pending = _pendingSpecLinkSuggestions.remove(ticketId);
     if (pending == null) return;
@@ -6546,11 +6348,11 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
   }
 
-  /// A human-readable name for [attachment] — the delegated skill's
-  /// literal name, or its referenced `WorkflowPromptTemplate`'s name
-  /// (falling back to a defensive placeholder if it no longer resolves,
-  /// or if constructed without a [WorkflowPromptTemplateRepository]).
-  /// Exposed for `_PendingSkillAttachmentBanner`/`_RunAttachedSkillButton`
+  /// A human-readable name for [attachment] — the delegated skill's literal
+  /// name, or its referenced `WorkflowPromptTemplate`'s name (falling back to
+  /// a defensive placeholder if it no longer resolves, or if constructed
+  /// without a [WorkflowPromptTemplateRepository]). Exposed for
+  /// `_PendingSkillAttachmentBanner`/`_RunAttachedSkillButton`
   /// (`ticket_detail_screen.dart`), which have no direct
   /// `WorkflowPromptTemplateRepository` access of their own. Added for
   /// `AIO-2650`.
@@ -6568,15 +6370,13 @@ class TicketsCubit extends Cubit<TicketsState> {
         '(deleted template)';
   }
 
-  /// Resolves [ticket]'s current status/stage [SkillAttachment], or
-  /// `null` — status takes precedence (a ticket's status and `sddStage`
-  /// are independent axes, but only one is meaningful for a non-epic/
-  /// story ticket). Shared by [runAttachedSkillManually] (which further
-  /// filters on `confidence == manual` before firing) and exposed
-  /// publicly, read-only, so `_RunAttachedSkillButton`
-  /// (`ticket_detail_screen.dart`) can decide its own visibility without
-  /// duplicating this resolution. Added for
-  /// `AIO-2650`.
+  /// Resolves [ticket]'s current status/stage [SkillAttachment], or `null` —
+  /// status takes precedence (a ticket's status and `sddStage` are independent
+  /// axes, but only one is meaningful for a non-epic/ story ticket). Shared by
+  /// [runAttachedSkillManually] (which further filters on
+  /// `confidence == manual` before firing) and exposed publicly, read-only, so
+  /// `_RunAttachedSkillButton` (`ticket_detail_screen.dart`) can decide its
+  /// own visibility without duplicating this resolution. Added for `AIO-2650`.
   SkillAttachment? resolveCurrentAttachment(Ticket ticket) {
     final statusId = _resolveStatus(ticket.status)?.id;
     return (statusId != null ? _attachmentForStatus(statusId) : null) ??
@@ -6601,20 +6401,17 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   // ---------------------------------------------------------------------
-  // Mid-task/issue chat branching — branch_ticket/close_branch tool
-  // handlers, gated by AutomationContext.chatBranching. See
-  // AIO-1118 §6.
+  // Mid-task/issue chat branching — branch_ticket/close_branch tool handlers,
+  // gated by AutomationContext.chatBranching. See AIO-1118 §6.
   // ---------------------------------------------------------------------
 
   /// Pending `branch_ticket`/`close_branch` proposals awaiting user
-  /// confirmation (`AutomationConfidence.gated`), keyed by the chat
-  /// ticket id whose turn is paused. Each entry pairs the
-  /// [PendingToolProposal] shown by [TicketDetailLoaded.pendingToolProposal]
-  /// with the [Completer] [AgentRequest.onToolCall] is awaiting and the
-  /// action to run on confirm. Cleared by
-  /// [confirmPendingToolProposal]/[rejectPendingToolProposal]. Added for
-  /// `AIO-1118`; see that change's
-  /// design.md §6.
+  /// confirmation (`AutomationConfidence.gated`), keyed by the chat ticket id
+  /// whose turn is paused. Each entry pairs the [PendingToolProposal] shown by
+  /// [TicketDetailLoaded.pendingToolProposal] with the [Completer]
+  /// [AgentRequest.onToolCall] is awaiting and the action to run on confirm.
+  /// Cleared by [confirmPendingToolProposal]/[rejectPendingToolProposal].
+  /// Added for `AIO-1118`; see its linked Documentation page, §6.
   final Map<
     String,
     ({
@@ -6628,14 +6425,13 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// Tools offered on [chatTicketId]'s next turn — this cubit's own copy of
   /// [ChatCubit._toolsFor], mirroring its shape independently rather than
   /// sharing an implementation across cubits. The `branch_ticket`/
-  /// `close_branch` choice is still exactly one of the two (mutually
-  /// exclusive on its own, per [ChatCubit._toolsFor]'s dartdoc), but
+  /// `close_branch` choice is still exactly one of the two (mutually exclusive
+  /// on its own, per [ChatCubit._toolsFor]'s dartdoc), but
   /// [createTicketToolDefinition]/[addLinkToolDefinition] are appended
-  /// unconditionally on top of it — every chat this method serves offers
-  /// both regardless of branch depth or structural position. Added for
-  /// `AIO-1118`; see that change's
-  /// design.md §6. Extended for `AIO-2108`;
-  /// see that change's design.md §3.1.
+  /// unconditionally on top of it — every chat this method serves offers both
+  /// regardless of branch depth or structural position. Added for `AIO-1118`;
+  /// see its linked Documentation page, §6. Extended for `AIO-2108`; see its
+  /// linked Documentation page, §3.1.
   Future<List<AgentToolDefinition>> _toolsFor(String chatTicketId) async {
     final chat = await _repository.getTicketById(chatTicketId);
     final parentId = chat?.parentId;
@@ -6657,14 +6453,13 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// holding the chat [Ticket] in hand (`_runStageChatTurn`,
   /// `_runCodingExecution`'s execution-chat turns) — `tools` empty and
   /// `onToolCall` `null` together if [chatTicketId] can't be read back,
-  /// keeping [AgentRequest]'s own "non-empty tools needs onToolCall"
-  /// invariant honest rather than assumed (it should never actually be
-  /// unreadable at these call sites). `retryDesignSync` does *not* call
-  /// this: it already has its chat ticket as a parameter, so it inlines the
-  /// equivalent `_toolsFor`/`_onToolCallFor` pair directly rather than
-  /// paying for a redundant [TicketRepository.getTicketById] this helper's
-  /// own lookup would otherwise duplicate. Added for
-  /// `AIO-1118`.
+  /// keeping [AgentRequest]'s own "non-empty tools needs onToolCall" invariant
+  /// honest rather than assumed (it should never actually be unreadable at
+  /// these call sites). `retryDesignSync` does *not* call this: it already has
+  /// its chat ticket as a parameter, so it inlines the equivalent
+  /// `_toolsFor`/`_onToolCallFor` pair directly rather than paying for a
+  /// redundant [TicketRepository.getTicketById] this helper's own lookup would
+  /// otherwise duplicate. Added for `AIO-1118`.
   Future<
     (
       List<AgentToolDefinition> tools,
@@ -6684,16 +6479,14 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Builds the `onToolCall` handler for [chat]'s next turn: a name-keyed
-  /// dispatch over every tool [_toolsFor] can offer, each bound to [chat],
-  /// the same ticket [_toolsFor] resolved tools for at this call site.
-  /// `branch_ticket` stays the unnamed `_` default case — [_toolsFor]
-  /// never offers both `branch_ticket` and `close_branch` at once, so
-  /// "not `close_branch`/`create_ticket`/`add_link`" still means
-  /// `branch_ticket` unambiguously, exactly as before this method grew
-  /// from a binary ternary into a real `switch`. Added for
-  /// `AIO-1118`. Extended for
-  /// `AIO-2108`; see that change's
-  /// design.md §3.2.
+  /// dispatch over every tool [_toolsFor] can offer, each bound to [chat], the
+  /// same ticket [_toolsFor] resolved tools for at this call site.
+  /// `branch_ticket` stays the unnamed `_` default case — [_toolsFor] never
+  /// offers both `branch_ticket` and `close_branch` at once, so "not
+  /// `close_branch`/`create_ticket`/`add_link`" still means `branch_ticket`
+  /// unambiguously, exactly as before this method grew from a binary ternary
+  /// into a real `switch`. Added for `AIO-1118`. Extended for `AIO-2108`; see
+  /// its linked Documentation page, §3.2.
   Future<Map<String, dynamic>> Function(
     String toolCallId,
     String toolName,
@@ -6723,14 +6516,13 @@ class TicketsCubit extends Cubit<TicketsState> {
     };
   }
 
-  /// Public entry point for a `chat` ticket's `branch_ticket`/
-  /// `close_branch` tool calls, for callers outside this cubit that can't
-  /// reach the private [_handleBranchToolCall]/[_handleCloseBranchToolCall]
-  /// handlers directly — `TicketDetailScreen` wires this in as
-  /// [ChatCubit.sendMessage]'s `onToolCall` for a human-initiated follow-up
-  /// turn, since `ChatCubit` doesn't depend on this cubit (see
-  /// [ChatCubit.sendMessage]'s dartdoc). Dispatches via [_onToolCallFor].
-  /// Added for `AIO-1118`.
+  /// Public entry point for a `chat` ticket's `branch_ticket`/ `close_branch`
+  /// tool calls, for callers outside this cubit that can't reach the private
+  /// [_handleBranchToolCall]/[_handleCloseBranchToolCall] handlers directly —
+  /// `TicketDetailScreen` wires this in as [ChatCubit.sendMessage]'s
+  /// `onToolCall` for a human-initiated follow-up turn, since `ChatCubit`
+  /// doesn't depend on this cubit (see [ChatCubit.sendMessage]'s dartdoc).
+  /// Dispatches via [_onToolCallFor]. Added for `AIO-1118`.
   Future<Map<String, dynamic>> handleChatToolCall(
     Ticket chat,
     String toolCallId,
@@ -6741,12 +6533,11 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Whether [chat] (a `chat` ticket) may currently be branched via
   /// `branch_ticket` — instance-level depth-cap check, deliberately not on
-  /// [TicketTypeHierarchy] (see that extension's `canParent` dartdoc for
-  /// why): `false` if [chat] has no parent (an Inbox-spawned chat stays
-  /// parentless) or its parent is itself a `chat` (a branch is a true
-  /// leaf — no branch-of-a-branch). Added for
-  /// `AIO-1118`; see that change's
-  /// design.md §6.
+  /// [TicketTypeHierarchy] (see that extension's `canParent` dartdoc for why):
+  /// `false` if [chat] has no parent (an Inbox-spawned chat stays parentless)
+  /// or its parent is itself a `chat` (a branch is a true leaf — no
+  /// branch-of-a-branch). Added for `AIO-1118`; see its linked Documentation
+  /// page, §6.
   Future<bool> _canBranch(Ticket chat) async {
     final parentId = chat.parentId;
     if (parentId == null) return false;
@@ -6755,14 +6546,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Creates a child `chat` ticket titled [title] (with optional
-  /// [description]) under [chat] — mirrors [_createStageChat]'s direct-
-  /// repository-create shape rather than the list-oriented public
-  /// [createTicket]. Posts no comment on the new branch chat itself; its
-  /// next turn (triggered separately, once navigated to or otherwise
-  /// addressed) opens it like any other freshly created chat. Returns the
-  /// persisted child's id. Added for
-  /// `AIO-1118`; see that change's
-  /// design.md §6.
+  /// [description]) under [chat] — mirrors [_createStageChat]'s
+  /// direct-repository-create shape rather than the list-oriented public
+  /// [createTicket]. Posts no comment on the new branch chat itself; its next
+  /// turn (triggered separately, once navigated to or otherwise addressed)
+  /// opens it like any other freshly created chat. Returns the persisted
+  /// child's id. Added for `AIO-1118`; see its linked Documentation page, §6.
   Future<String> _createBranchChat(
     Ticket chat,
     String title,
@@ -6784,16 +6573,14 @@ class TicketsCubit extends Cubit<TicketsState> {
     return branchChat.id;
   }
 
-  /// Folds [branchChat]'s resolution back into its parent ([parentId]):
-  /// flips [branchChat]'s own status to a `done`-role status and posts one
-  /// [CommentAuthorType.system] comment carrying [summary] onto
-  /// [parentId]'s transcript — the "fold into documentation" `project.md`
-  /// §2 describes, adapted to a chat ticket's comment-thread-as-content
-  /// shape. No-ops the comment (but still closes [branchChat]) if
-  /// constructed without a [CommentRepository] — real usage
-  /// (`app_router.dart`) always supplies one. Added for
-  /// `AIO-1118`; see that change's
-  /// design.md §6.
+  /// Folds [branchChat]'s resolution back into its parent ([parentId]): flips
+  /// [branchChat]'s own status to a `done`-role status and posts one
+  /// [CommentAuthorType.system] comment carrying [summary] onto [parentId]'s
+  /// transcript — the "fold into documentation" `project.md` §2 describes,
+  /// adapted to a chat ticket's comment-thread-as-content shape. No-ops the
+  /// comment (but still closes [branchChat]) if constructed without a
+  /// [CommentRepository] — real usage (`app_router.dart`) always supplies one.
+  /// Added for `AIO-1118`; see its linked Documentation page, §6.
   Future<void> _closeBranch(
     Ticket branchChat,
     String parentId,
@@ -6813,18 +6600,17 @@ class TicketsCubit extends Cubit<TicketsState> {
     );
   }
 
-  /// Registers [proposal] as [chat]'s pending tool-call confirmation,
-  /// emits [TicketDetailLoaded] carrying it (driving `_ToolProposalBanner`),
-  /// and returns a [Future] that resolves once
+  /// Registers [proposal] as [chat]'s pending tool-call confirmation, emits
+  /// [TicketDetailLoaded] carrying it (driving `_ToolProposalBanner`), and
+  /// returns a [Future] that resolves once
   /// [confirmPendingToolProposal]/[rejectPendingToolProposal] is called for
   /// [chat]'s id — the underlying model run stays paused on the awaited
   /// [AgentRequest.onToolCall] until then, per that field's "no timeout"
-  /// contract (see proposal.md's Non-goals). [onConfirm] runs only if the
-  /// user confirms, and its result becomes the resolved map; a reject
-  /// resolves with a fixed decline map instead — see
+  /// contract (see proposal.md's Non-goals). [onConfirm] runs only if the user
+  /// confirms, and its result becomes the resolved map; a reject resolves with
+  /// a fixed decline map instead — see
   /// [confirmPendingToolProposal]/[rejectPendingToolProposal]. Added for
-  /// `AIO-1118`; see that change's
-  /// design.md §6.
+  /// `AIO-1118`; see its linked Documentation page, §6.
   Future<Map<String, dynamic>> _awaitProposalConfirmation(
     Ticket chat,
     PendingToolProposal proposal, {
@@ -6841,20 +6627,18 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// The `branch_ticket` tool's [AgentRequest.onToolCall] implementation:
-  /// resolves [AutomationContext.chatBranching]'s confidence and switches
-  /// on it — `manual` declines outright (never surfaces proactively, per
+  /// resolves [AutomationContext.chatBranching]'s confidence and switches on
+  /// it — `manual` declines outright (never surfaces proactively, per
   /// proposal.md's Non-goals), `auto` creates the branch immediately via
   /// [_createBranchChat], `gated` surfaces a [BranchProposal] via
-  /// [_awaitProposalConfirmation] and waits. [chat] must satisfy
-  /// [_canBranch] or this declines with a depth-cap reason before ever
-  /// checking automation confidence. [session], when non-null, is the
-  /// in-flight run's resumable session — threaded to [_evaluateDecisionGraph]
-  /// so an `agentJudgment` condition on [AutomationContext.chatBranching]'s
-  /// graph can ask its scoped side-question. Added for
-  /// `AIO-1118`; see that change's
-  /// design.md §6. `session` param added for
-  /// `AIO-613`; see that
-  /// change's design.md §4.
+  /// [_awaitProposalConfirmation] and waits. [chat] must satisfy [_canBranch]
+  /// or this declines with a depth-cap reason before ever checking automation
+  /// confidence. [session], when non-null, is the in-flight run's resumable
+  /// session — threaded to [_evaluateDecisionGraph] so an `agentJudgment`
+  /// condition on [AutomationContext.chatBranching]'s graph can ask its scoped
+  /// side-question. Added for `AIO-1118`; see its linked Documentation page,
+  /// §6. `session` param added for `AIO-613`; see its linked Documentation
+  /// page, §4.
   Future<Map<String, dynamic>> _handleBranchToolCall(
     Ticket chat,
     Map<String, dynamic> arguments,
@@ -6908,19 +6692,16 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// The `close_branch` tool's [AgentRequest.onToolCall] implementation —
-  /// symmetric to [_handleBranchToolCall]. Declines unless [chat]'s own
-  /// parent is itself a `chat` (i.e. [chat] actually is a branch);
-  /// resolves [AutomationContext.chatBranching]'s confidence the same way,
-  /// folding via [_closeBranch] on `auto`, or surfacing a
-  /// [CloseBranchProposal] via [_awaitProposalConfirmation] on `gated`.
-  /// Added for `AIO-1118`; see that
-  /// change's design.md §6. [session] is accepted for signature symmetry
-  /// with the other three `_onToolCallFor`-dispatched handlers but
-  /// deliberately unused: `AutomationContext.chatBranching`'s
-  /// `agentJudgment`-eligible graph is only actually consulted from
-  /// [_handleBranchToolCall]'s call in a given turn (see design.md §4's
-  /// note). Added for
-  /// `AIO-613`.
+  /// symmetric to [_handleBranchToolCall]. Declines unless [chat]'s own parent
+  /// is itself a `chat` (i.e. [chat] actually is a branch); resolves
+  /// [AutomationContext.chatBranching]'s confidence the same way, folding via
+  /// [_closeBranch] on `auto`, or surfacing a [CloseBranchProposal] via
+  /// [_awaitProposalConfirmation] on `gated`. Added for `AIO-1118`; see that
+  /// change's design.md §6. [session] is accepted for signature symmetry with
+  /// the other three `_onToolCallFor`-dispatched handlers but deliberately
+  /// unused: `AutomationContext.chatBranching`'s `agentJudgment`-eligible
+  /// graph is only actually consulted from [_handleBranchToolCall]'s call in a
+  /// given turn (see design.md §4's note). Added for `AIO-613`.
   Future<Map<String, dynamic>> _handleCloseBranchToolCall(
     Ticket chat,
     Map<String, dynamic> arguments,
@@ -6981,14 +6762,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// `manual` declines outright, `auto` creates the ticket immediately,
   /// `gated` surfaces a [CreateTicketProposal] via
   /// [_awaitProposalConfirmation] and waits. The created ticket is always
-  /// top-level (`parentId: null`) — this tool never accepts a
-  /// model-supplied parent; see proposal.md's Non-goals. Added for
-  /// `AIO-2108`; see that change's
-  /// design.md §3.3. [session], when non-null, is threaded to
+  /// top-level (`parentId: null`) — this tool never accepts a model-supplied
+  /// parent; see proposal.md's Non-goals. Added for `AIO-2108`; see that
+  /// change's design.md §3.3. [session], when non-null, is threaded to
   /// [_evaluateDecisionGraph] so an `agentJudgment` condition on
   /// [AutomationContext.ticketCreation]'s graph can ask its scoped
-  /// side-question — added for
-  /// `AIO-613`.
+  /// side-question — added for `AIO-613`.
   Future<Map<String, dynamic>> _handleCreateTicketToolCall(
     Ticket chat,
     Map<String, dynamic> arguments,
@@ -7066,23 +6845,21 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
   }
 
-  /// The `add_link` tool's [AgentRequest.onToolCall] implementation:
-  /// resolves `targetTicketId` via [TicketRepository.getTicketByTicketId]
-  /// (declining with a reason string if it doesn't resolve), validates
-  /// `linkType`, resolves [AutomationContext.ticketLinking]'s confidence,
-  /// and switches on it — `manual` declines outright, `auto` creates the
-  /// link immediately via [TicketLinkRepository.createLink] (source is
-  /// always [chat]'s own parent — the ticket the current chat is attached
-  /// to — never a model-supplied source), `gated` surfaces an
-  /// [AddLinkProposal] via [_awaitProposalConfirmation] and waits. This is
-  /// also how duplicate-flagging works — `linkType: 'duplicates'` is an
-  /// ordinary call, not a separate tool. Added for
-  /// `AIO-2108`; see that change's
-  /// design.md §3.3. [session], when non-null, is threaded to
+  /// The `add_link` tool's [AgentRequest.onToolCall] implementation: resolves
+  /// `targetTicketId` via [TicketRepository.getTicketByTicketId] (declining
+  /// with a reason string if it doesn't resolve), validates `linkType`,
+  /// resolves [AutomationContext.ticketLinking]'s confidence, and switches on
+  /// it — `manual` declines outright, `auto` creates the link immediately via
+  /// [TicketLinkRepository.createLink] (source is always [chat]'s own parent —
+  /// the ticket the current chat is attached to — never a model-supplied
+  /// source), `gated` surfaces an [AddLinkProposal] via
+  /// [_awaitProposalConfirmation] and waits. This is also how
+  /// duplicate-flagging works — `linkType: 'duplicates'` is an ordinary call,
+  /// not a separate tool. Added for `AIO-2108`; see its linked Documentation
+  /// page, §3.3. [session], when non-null, is threaded to
   /// [_evaluateDecisionGraph] so an `agentJudgment` condition on
   /// [AutomationContext.ticketLinking]'s graph can ask its scoped
-  /// side-question — added for
-  /// `AIO-613`.
+  /// side-question — added for `AIO-613`.
   Future<Map<String, dynamic>> _handleAddLinkToolCall(
     Ticket chat,
     Map<String, dynamic> arguments,
@@ -7175,12 +6952,11 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Confirms [chatId]'s pending proposal (if any): runs its `onConfirm`
-  /// action and resolves the held [AgentRequest.onToolCall] future with
-  /// the result, letting the paused model run continue. Re-emits
-  /// [TicketDetailLoaded] for [chatId] (with no `pendingToolProposal`)
-  /// once resolved. No-ops if [chatId] has no pending proposal. Added for
-  /// `AIO-1118`; see that change's
-  /// design.md §6.
+  /// action and resolves the held [AgentRequest.onToolCall] future with the
+  /// result, letting the paused model run continue. Re-emits
+  /// [TicketDetailLoaded] for [chatId] (with no `pendingToolProposal`) once
+  /// resolved. No-ops if [chatId] has no pending proposal. Added for
+  /// `AIO-1118`; see its linked Documentation page, §6.
   Future<void> confirmPendingToolProposal(String chatId) async {
     final pending = _pendingProposals.remove(chatId);
     if (pending == null) return;
@@ -7192,12 +6968,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Rejects [chatId]'s pending proposal: resolves the held
-  /// [AgentRequest.onToolCall] future with `{'accepted': false, 'reason':
-  /// 'Declined by user.'}` — the model continues its turn knowing the
-  /// branch/close didn't happen. Re-emits [TicketDetailLoaded] for
-  /// [chatId] (with no `pendingToolProposal`). No-ops if [chatId] has no
-  /// pending proposal. Added for `AIO-1118`;
-  /// see that change's design.md §6.
+  /// [AgentRequest.onToolCall] future with
+  /// `{'accepted': false, 'reason': 'Declined by user.'}` — the model
+  /// continues its turn knowing the branch/close didn't happen. Re-emits
+  /// [TicketDetailLoaded] for [chatId] (with no `pendingToolProposal`). No-ops
+  /// if [chatId] has no pending proposal. Added for `AIO-1118`; see its linked
+  /// Documentation page, §6.
   Future<void> rejectPendingToolProposal(String chatId) async {
     final pending = _pendingProposals.remove(chatId);
     if (pending == null) return;
@@ -7211,25 +6987,23 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Assembles the plain-text context a spawned stage chat opens with:
   /// [parent]'s title/description, a `## Related tickets` section from
-  /// [_contextEnricher] (see
-  /// [TicketContextEnricher.relatedTicketsSection] — omitted entirely
-  /// when it returns `''`), and — for [SddStage.verifying]/
-  /// [SddStage.archived] — its direct children's titles and statuses
-  /// (plus, for [SddStage.verifying] specifically, instructions to end
-  /// the reply with `VERIFY GATE: APPROVED`/`PENDING` and, on `PENDING`,
-  /// optionally a fenced `## Fixes Needed` block — parsed by
-  /// [_materializeVerifyFixes] once the turn completes, per
-  /// `AIO-1905` §4.3), or —
-  /// for [SddStage.designBrief]/[SddStage.designSync] — the existing
-  /// design-token file contents (see [_readTokenFilesForContext]) and,
-  /// for [SddStage.designSync] specifically, the linked design Page's
-  /// pasted content (see [_linkedDesignPage]), or — for
-  /// [SddStage.proposed] — instructions to end the reply with a fenced
-  /// `## Decomposition` block (parsed by [_parseDecomposition] once the
-  /// turn completes, see [_materializeDecomposition]). Shared by
-  /// [_createStageChat], [_runStageChatTurn], and [retryDesignSync]/
-  /// [retryVerify] (which call this method directly, so the related-
-  /// tickets walk automatically re-runs on retry too).
+  /// [_contextEnricher] (see [TicketContextEnricher.relatedTicketsSection] —
+  /// omitted entirely when it returns `''`), and — for [SddStage.verifying]/
+  /// [SddStage.archived] — its direct children's titles and statuses (plus,
+  /// for [SddStage.verifying] specifically, instructions to end the reply with
+  /// `VERIFY GATE: APPROVED`/`PENDING` and, on `PENDING`, optionally a fenced
+  /// `## Fixes Needed` block — parsed by [_materializeVerifyFixes] once the
+  /// turn completes, per `AIO-1905` §4.3), or — for
+  /// [SddStage.designBrief]/[SddStage.designSync] — the existing design-token
+  /// file contents (see [_readTokenFilesForContext]) and, for
+  /// [SddStage.designSync] specifically, the linked design Page's pasted
+  /// content (see [_linkedDesignPage]), or — for [SddStage.proposed] —
+  /// instructions to end the reply with a fenced `## Decomposition` block
+  /// (parsed by [_parseDecomposition] once the turn completes, see
+  /// [_materializeDecomposition]). Shared by [_createStageChat],
+  /// [_runStageChatTurn], and [retryDesignSync]/ [retryVerify] (which call
+  /// this method directly, so the related-tickets walk automatically re-runs
+  /// on retry too).
   Future<String> _assembleStageContext(Ticket parent, SddStage stage) async {
     final buffer = StringBuffer()..writeln('# ${parent.title}');
     final description = parent.description;
@@ -7338,18 +7112,17 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Parses [reply]'s trailing `"## Decomposition"` fenced block (see
-  /// [_assembleStageContext]'s [SddStage.proposed] prompt) into an
-  /// ordered list of `(title, blockedByTitle)` pairs — `blockedByTitle`
-  /// is `null` when the line has no `(blockedBy: ...)` suffix. Matched
-  /// only against the block's content: the text between `"##
-  /// Decomposition"` and the next blank line or the end of [reply].
-  /// Regex per line: `^- (Story|Task): (.+?)(?: \(blockedBy:
-  /// (.+)\))?$`; [childType] picks which of `Story`/`Task` is accepted —
-  /// a line whose literal doesn't match [childType] is skipped, not an
-  /// error. Returns an empty list if no `"## Decomposition"` block is
-  /// found, or no line matches at all — parse failure is silent, not an
-  /// error (see proposal.md's fail-open note). Added for
-  /// `AIO-392`.
+  /// [_assembleStageContext]'s [SddStage.proposed] prompt) into an ordered
+  /// list of `(title, blockedByTitle)` pairs — `blockedByTitle` is `null` when
+  /// the line has no `(blockedBy: ...)` suffix. Matched only against the
+  /// block's content: the text between `"## Decomposition"` and the next blank
+  /// line or the end of [reply]. Regex per line:
+  /// `^- (Story|Task): (.+?)(?: \(blockedBy: (.+)\))?$`; [childType] picks
+  /// which of `Story`/`Task` is accepted — a line whose literal doesn't match
+  /// [childType] is skipped, not an error. Returns an empty list if no
+  /// `"## Decomposition"` block is found, or no line matches at all — parse
+  /// failure is silent, not an error (see proposal.md's fail-open note). Added
+  /// for `AIO-392`.
   List<(String title, String? blockedByTitle)> _parseDecomposition(
     String reply,
     TicketType childType,
@@ -7366,15 +7139,14 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Parses [reply]'s trailing `"## Fixes Needed"` fenced block (see
-  /// [_assembleStageContext]'s [SddStage.verifying] prompt) into an
-  /// ordered list of `(childType, title, blockedByTitle)` triples — the
-  /// `Task`/`Bug` line prefix maps directly to [TicketType.task]/
-  /// [TicketType.bug], unlike [_parseDecomposition] (whose single
-  /// [TicketType] is fixed by the parent's own type, not per-line).
-  /// Returns an empty list if no `"## Fixes Needed"` block is found, or
-  /// no line matches at all — parse failure is silent, not an error, the
-  /// same fail-open posture [_parseDecomposition] already has. Added for
-  /// `AIO-1905`.
+  /// [_assembleStageContext]'s [SddStage.verifying] prompt) into an ordered
+  /// list of `(childType, title, blockedByTitle)` triples — the `Task`/`Bug`
+  /// line prefix maps directly to [TicketType.task]/ [TicketType.bug], unlike
+  /// [_parseDecomposition] (whose single [TicketType] is fixed by the parent's
+  /// own type, not per-line). Returns an empty list if no `"## Fixes Needed"`
+  /// block is found, or no line matches at all — parse failure is silent, not
+  /// an error, the same fail-open posture [_parseDecomposition] already has.
+  /// Added for `AIO-1905`.
   List<(TicketType childType, String title, String? blockedByTitle)>
   _parseVerifyFixes(String reply) {
     return [
@@ -7389,16 +7161,14 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Shared line-parsing core behind [_parseDecomposition]/
-  /// [_parseVerifyFixes]: finds [heading] in [reply], takes the block of
-  /// text between it and the next blank line (or the end of [reply]),
-  /// and matches every `"- label: title"` line whose label is one of
-  /// [childTypeLabels] — optionally suffixed with an exact-title
-  /// `" (blockedBy: ...)"` reference to an earlier line in the same
-  /// block. Regex per line:
+  /// [_parseVerifyFixes]: finds [heading] in [reply], takes the block of text
+  /// between it and the next blank line (or the end of [reply]), and matches
+  /// every `"- label: title"` line whose label is one of [childTypeLabels] —
+  /// optionally suffixed with an exact-title `" (blockedBy: ...)"` reference
+  /// to an earlier line in the same block. Regex per line:
   /// `^- (label1|label2|...): (.+?)(?: \(blockedBy: (.+)\))?$`. Added for
-  /// `AIO-1905` (extracted from
-  /// [_parseDecomposition], which previously inlined this logic fixed to
-  /// `"## Decomposition"`/`Story|Task`).
+  /// `AIO-1905` (extracted from [_parseDecomposition], which previously
+  /// inlined this logic fixed to `"## Decomposition"`/`Story|Task`).
   List<(String label, String title, String? blockedByTitle)>
   _parseFencedChildLines({
     required String reply,
@@ -7426,21 +7196,19 @@ class TicketsCubit extends Cubit<TicketsState> {
     ];
   }
 
-  /// Runs once per `proposed`-stage chat turn (called from
-  /// [_runStageChatTurn] immediately after a successful turn, only when
-  /// `stage == SddStage.proposed`): parses [reply] via
-  /// [_parseDecomposition], creates one child ticket per parsed line
-  /// under [parent] (via [TicketRepository.createTicket]), then — for
-  /// every line whose `blockedByTitle` exact-matches (case-insensitive)
-  /// another parsed line's title — creates a `blockedBy` link from the
-  /// new child to its blocker sibling (via
-  /// [TicketLinkRepository.createLink]). An unresolved `blockedByTitle`
-  /// (no matching sibling title) is skipped for the link only — the
-  /// child ticket itself is still created. No block, a block with no
-  /// parseable lines, or no [TicketLinkRepository] configured is a
-  /// silent no-op: today's exact behavior (a human creates children by
-  /// hand) is preserved, not treated as a failure. Added for
-  /// `AIO-392`.
+  /// Runs once per `proposed`-stage chat turn (called from [_runStageChatTurn]
+  /// immediately after a successful turn, only when
+  /// `stage == SddStage.proposed`): parses [reply] via [_parseDecomposition],
+  /// creates one child ticket per parsed line under [parent] (via
+  /// [TicketRepository.createTicket]), then — for every line whose
+  /// `blockedByTitle` exact-matches (case-insensitive) another parsed line's
+  /// title — creates a `blockedBy` link from the new child to its blocker
+  /// sibling (via [TicketLinkRepository.createLink]). An unresolved
+  /// `blockedByTitle` (no matching sibling title) is skipped for the link only
+  /// — the child ticket itself is still created. No block, a block with no
+  /// parseable lines, or no [TicketLinkRepository] configured is a silent
+  /// no-op: today's exact behavior (a human creates children by hand) is
+  /// preserved, not treated as a failure. Added for `AIO-392`.
   Future<void> _materializeDecomposition(Ticket parent, String reply) async {
     final childType = parent.type == TicketType.epic
         ? TicketType.story
@@ -7456,33 +7224,31 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Runs once per `verifying`-stage chat turn whose reply contains
-  /// `VERIFY GATE: PENDING` (called from [_runStageChatTurn] immediately
-  /// after such a turn): parses [reply] via [_parseVerifyFixes], creates
-  /// one `task`/`bug` child ticket per parsed line under [parent] (via
+  /// `VERIFY GATE: PENDING` (called from [_runStageChatTurn] immediately after
+  /// such a turn): parses [reply] via [_parseVerifyFixes], creates one
+  /// `task`/`bug` child ticket per parsed line under [parent] (via
   /// [_materializeParsedChildren], the same child-creation/`blockedBy`-
-  /// linking core [_materializeDecomposition] uses). A `PENDING` reply
-  /// with no `"## Fixes Needed"` block is valid and materializes
-  /// nothing — the manual "Retry validation" bar still covers that case;
-  /// only the automatic retry tier ([_maybeRetryPendingVerify]) depends
-  /// on fix Tasks/Bugs existing at all, since it triggers off "all
-  /// children done." Added for `AIO-1905`.
+  /// linking core [_materializeDecomposition] uses). A `PENDING` reply with no
+  /// `"## Fixes Needed"` block is valid and materializes nothing — the manual
+  /// "Retry validation" bar still covers that case; only the automatic retry
+  /// tier ([_maybeRetryPendingVerify]) depends on fix Tasks/Bugs existing at
+  /// all, since it triggers off "all children done." Added for `AIO-1905`.
   Future<void> _materializeVerifyFixes(Ticket parent, String reply) async {
     await _materializeParsedChildren(parent, _parseVerifyFixes(reply));
   }
 
   /// Shared child-creation core behind [_materializeDecomposition]/
-  /// [_materializeVerifyFixes]: creates one ticket per [parsed] entry
-  /// under [parent] (default creation status via [_defaultCreationStatus]),
-  /// then — for every entry whose `blockedByTitle` exact-matches (case-
-  /// insensitive) another entry's title — creates a `blockedBy` link from
-  /// the new child to its blocker sibling (via
-  /// [TicketLinkRepository.createLink]). An unresolved `blockedByTitle`
-  /// (no matching sibling title) is skipped for the link only — the
-  /// child ticket itself is still created. An empty [parsed] list, or no
-  /// [TicketLinkRepository] configured, is a silent no-op. Added for
-  /// `AIO-1905` (extracted from
-  /// [_materializeDecomposition], which previously inlined this logic
-  /// fixed to a single [TicketType] per call).
+  /// [_materializeVerifyFixes]: creates one ticket per [parsed] entry under
+  /// [parent] (default creation status via [_defaultCreationStatus]), then —
+  /// for every entry whose `blockedByTitle` exact-matches (case-insensitive)
+  /// another entry's title — creates a `blockedBy` link from the new child to
+  /// its blocker sibling (via [TicketLinkRepository.createLink]). An
+  /// unresolved `blockedByTitle` (no matching sibling title) is skipped for
+  /// the link only — the child ticket itself is still created. An empty
+  /// [parsed] list, or no [TicketLinkRepository] configured, is a silent
+  /// no-op. Added for `AIO-1905` (extracted from [_materializeDecomposition],
+  /// which previously inlined this logic fixed to a single [TicketType] per
+  /// call).
   Future<void> _materializeParsedChildren(
     Ticket parent,
     List<(TicketType childType, String title, String? blockedByTitle)> parsed,
@@ -7521,19 +7287,17 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
   }
 
-  /// Reads `aion_colors.dart`/`aion_text.dart`/`aion_radius.dart`'s
-  /// contents off disk for inclusion as plain-text context — the same
-  /// static-injection approach `/design-brief`/`/design-sync`'s own
-  /// `SKILL.md` `cat`s these files for, ported to Dart
-  /// `File.readAsString`. No tool access involved; this is [TicketsCubit]
-  /// reading files for context assembly, the same category of
-  /// desktop-only capability [_gitProjector]/[_projectRootPath] already
-  /// gates. Returns an empty string (not an error) if [_projectRootPath]
-  /// is unset or a file is missing — mobile/web has neither a filesystem
-  /// root nor UI Story design-gate stages triggering in practice
+  /// Reads `aion_colors.dart`/`aion_text.dart`/`aion_radius.dart`'s contents
+  /// off disk for inclusion as plain-text context — the same static-injection
+  /// approach `/design-brief`/`/design-sync`'s own `SKILL.md` `cat`s these
+  /// files for, ported to Dart `File.readAsString`. No tool access involved;
+  /// this is [TicketsCubit] reading files for context assembly, the same
+  /// category of desktop-only capability [_gitProjector]/[_projectRootPath]
+  /// already gates. Returns an empty string (not an error) if
+  /// [_projectRootPath] is unset or a file is missing — mobile/web has neither
+  /// a filesystem root nor UI Story design-gate stages triggering in practice
   /// (Task/Story execution is desktop-only already), so this degrades
-  /// gracefully rather than throwing. Added for
-  /// `AIO-1834`.
+  /// gracefully rather than throwing. Added for `AIO-1834`.
   Future<String> _readTokenFilesForContext() async {
     final root = _projectRootPath;
     if (root == null) return '';
@@ -7556,13 +7320,12 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Display name for [stage], used in a spawned chat ticket's title —
   /// present-progressive for every stage except [SddStage.designBrief]/
-  /// [SddStage.designSync], which read naturally as their plain node
-  /// name instead (design.md §1.3). Resolves through
-  /// [_sddStageConfigRepository]'s persisted display-name override first
-  /// (`null` when this cubit was constructed without one, or when the
-  /// project hasn't overridden [stage]), falling back to
-  /// [_stageHardcodedPresentName] — today's exact hardcoded literal —
-  /// otherwise. Added for `AIO-549`.
+  /// [SddStage.designSync], which read naturally as their plain node name
+  /// instead (design.md §1.3). Resolves through [_sddStageConfigRepository]'s
+  /// persisted display-name override first (`null` when this cubit was
+  /// constructed without one, or when the project hasn't overridden [stage]),
+  /// falling back to [_stageHardcodedPresentName] — today's exact hardcoded
+  /// literal — otherwise. Added for `AIO-549`.
   Future<String> _stagePresentName(SddStage stage) async {
     final override = await _sddStageConfigRepository?.getDisplayNameOverride(
       stage,
@@ -7570,12 +7333,11 @@ class TicketsCubit extends Cubit<TicketsState> {
     return override ?? _stageHardcodedPresentName(stage);
   }
 
-  /// Public wrapper around [_stagePresentName], for presentation-layer
-  /// code (e.g. `TicketDetailScreen`'s Verifying-stage-chat title match)
-  /// that needs the same override-aware display name a spawned stage
-  /// chat is titled with, without duplicating [_sddStageConfigRepository]
-  /// resolution logic outside this cubit. Added for
-  /// `AIO-1905`.
+  /// Public wrapper around [_stagePresentName], for presentation-layer code
+  /// (e.g. `TicketDetailScreen`'s Verifying-stage-chat title match) that needs
+  /// the same override-aware display name a spawned stage chat is titled with,
+  /// without duplicating [_sddStageConfigRepository] resolution logic outside
+  /// this cubit. Added for `AIO-1905`.
   Future<String> stagePresentName(SddStage stage) => _stagePresentName(stage);
 
   /// [stage]'s own hardcoded present-progressive name — the fallback
@@ -7633,10 +7395,9 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// provided (see the constructor's dartdoc) — desktop-only in
   /// practice, since `WorkspaceShell` only supplies these on desktop.
   ///
-  /// The `'restored'` trigger event lives on `TrashCubit` instead — see
-  /// its own `_triggerGitProjection` (added by
-  /// `AIO-2509`, which closed the
-  /// gap this dartdoc used to flag here).
+  /// The `'restored'` trigger event lives on `TrashCubit` instead — see its
+  /// own `_triggerGitProjection` (added by `AIO-2509`, which closed the gap
+  /// this dartdoc used to flag here).
   Future<void> _triggerGitProjection(Ticket ticket, String eventLabel) async {
     final projector = _gitProjector;
     final rootPath = _projectRootPath;
@@ -7663,25 +7424,21 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// state (`TicketDetailLoaded.canAdvanceSddStage`/`sddStageBlockReason`,
   /// computed from `getTicketsByParent` — see [getTicketById]'s dartdoc)
   /// depends on. Checked by [_refreshDetailIfOpenAndAffected]: whenever a
-  /// write touches a ticket whose `(parent.type, ticket.type)` pair
-  /// appears here, the parent's open detail screen (if that's what's
-  /// currently shown) is silently re-fetched. Generalizes the single
-  /// hardcoded `story → task/bug` case from
-  /// `AIO-1103` — extend
-  /// this map, not the surrounding method, if a third dependency is ever
-  /// discovered. Added for
+  /// write touches a ticket whose `(parent.type, ticket.type)` pair appears
+  /// here, the parent's open detail screen (if that's what's currently shown)
+  /// is silently re-fetched. Generalizes the single hardcoded
+  /// `story → task/bug` case from `AIO-1103` — extend this map, not the
+  /// surrounding method, if a third dependency is ever discovered. Added for
   /// `AIO-905`.
   static const Map<TicketType, Set<TicketType>> _liveRefreshDependents = {
     TicketType.story: {TicketType.task, TicketType.bug},
     TicketType.epic: {TicketType.story},
   };
 
-  /// Re-fetches and silently re-emits [TicketDetailLoaded] for the
-  /// currently open ticket detail screen when a background write may have
-  /// changed data it depends on. Originally added for
-  /// `AIO-1103`;
-  /// generalized to a set of ids and a declarative dependency table
-  /// ([_liveRefreshDependents]) by
+  /// Re-fetches and silently re-emits [TicketDetailLoaded] for the currently
+  /// open ticket detail screen when a background write may have changed data
+  /// it depends on. Originally added for `AIO-1103`; generalized to a set of
+  /// ids and a declarative dependency table ([_liveRefreshDependents]) by
   /// `AIO-905`.
   ///
   /// Two cases trigger a refresh, checked against every id in
@@ -7824,80 +7581,67 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [TicketDetailLoaded] on success, or [TicketsError] if not found or the
   /// repository call throws — unless the current state is already
   /// [TicketDetailLoaded] for this exact [id], in which case the
-  /// [TicketsLoading] emission is skipped (mirrors [searchTickets]'s
-  /// existing no-flash-over-content-already-shown precedent, scoped
-  /// per-id instead of per-list) and the refreshed [TicketDetailLoaded]
-  /// carries forward that previous state's [TicketDetailLoaded.childDocs]/
+  /// [TicketsLoading] emission is skipped (mirrors [searchTickets]'s existing
+  /// no-flash-over-content-already-shown precedent, scoped per-id instead of
+  /// per-list) and the refreshed [TicketDetailLoaded] carries forward that
+  /// previous state's [TicketDetailLoaded.childDocs]/
   /// [TicketDetailLoaded.linkedTickets]/[TicketDetailLoaded.backlinks]/
   /// [TicketDetailLoaded.gapsAndOpenQuestions]/
-  /// [TicketDetailLoaded.pendingToolProposal] unchanged, since this
-  /// method's own fetch never recomputes those Documentation-section/
-  /// chat-branching fields (only [loadDocumentRelations] does) and a
-  /// same-id re-fetch shouldn't silently blow them away. Added for
-  /// `AIO-1103`, so
+  /// [TicketDetailLoaded.pendingToolProposal] unchanged, since this method's
+  /// own fetch never recomputes those Documentation-section/ chat-branching
+  /// fields (only [loadDocumentRelations] does) and a same-id re-fetch
+  /// shouldn't silently blow them away. Added for `AIO-1103`, so
   /// [_refreshDetailIfOpenAndAffected]'s silent background refresh lands
   /// invisibly instead of flickering the screen or dropping already-loaded
   /// relations — and, as a side effect, every pre-existing same-id
   /// re-fetch-via-[getTicketById] call site (e.g. [updateTicket],
-  /// [changeTicketStatus], [regenerateComplexitySuggestion], the
-  /// post-run coding-execution refresh, the post-stage-advance refresh)
-  /// is quietly smoothed too, none of which depended on a
-  /// [TicketsLoading] flash occurring. For an `epic`/`story` ticket, also fetches
-  /// its direct children and evaluates [advanceSddStage]'s precondition
-  /// for the ticket's current stage, populating
-  /// [TicketDetailLoaded.canAdvanceSddStage] and, when that's `false`,
-  /// [TicketDetailLoaded.sddStageBlockReason]. For a `story` ticket
-  /// specifically, also computes [TicketDetailLoaded.needsDesignReview]
-  /// via [_storyNeedsDesignReview] against its current child Tasks
-  /// (`null` if none exist yet), and — when that's `true` —
-  /// [TicketDetailLoaded.linkedDesignPage] via [_linkedDesignPage].
-  /// Added for `AIO-1834`. For a `task` ticket,
-  /// also computes [TicketDetailLoaded.isExecuting],
+  /// [changeTicketStatus], [regenerateComplexitySuggestion], the post-run
+  /// coding-execution refresh, the post-stage-advance refresh) is quietly
+  /// smoothed too, none of which depended on a [TicketsLoading] flash
+  /// occurring. For an `epic`/`story` ticket, also fetches its direct children
+  /// and evaluates [advanceSddStage]'s precondition for the ticket's current
+  /// stage, populating [TicketDetailLoaded.canAdvanceSddStage] and, when
+  /// that's `false`, [TicketDetailLoaded.sddStageBlockReason]. For a `story`
+  /// ticket specifically, also computes [TicketDetailLoaded.needsDesignReview]
+  /// via [_storyNeedsDesignReview] against its current child Tasks (`null` if
+  /// none exist yet), and — when that's `true` —
+  /// [TicketDetailLoaded.linkedDesignPage] via [_linkedDesignPage]. Added for
+  /// `AIO-1834`. For a `task` ticket, also computes
+  /// [TicketDetailLoaded.isExecuting],
   /// [TicketDetailLoaded.executionQueuePosition], and
   /// [TicketDetailLoaded.executionAwaitingReview] from the in-memory
-  /// coding-execution queue state. Added for
-  /// `AIO-2078`. When the run
-  /// finished without a confirmed PR, also computes
+  /// coding-execution queue state. Added for `AIO-2078`. When the run finished
+  /// without a confirmed PR, also computes
   /// [TicketDetailLoaded.executionFailureReason]/
-  /// [TicketDetailLoaded.executionCanRetry] via
-  /// [_computeExecutionFailure]. Added for
-  /// `AIO-506`. Also
-  /// computes [TicketDetailLoaded.isAdvancingStage] from
-  /// [_inFlightStageAdvanceIds] for **any** ticket type — `true` for an
-  /// `epic`/`story` with an [advanceSddStage] chat spawn in flight, or
-  /// for a `chat` ticket that *is* that in-flight spawn's own chat
-  /// ticket. For an `epic`/`story` with a current [Ticket.sddStage] that
-  /// isn't mid-advance, also computes
-  /// [TicketDetailLoaded.sddStageFailureReason]/
-  /// [TicketDetailLoaded.sddStageCanRetry] via
-  /// [_computeStageAdvanceFailure]. Added for
-  /// `AIO-352`.
-  /// Also batch-seeds [_executionTokenTotals] for [id] (see
-  /// [_seedExecutionTokenTotals]) and populates
-  /// [TicketDetailLoaded.executionTokenTotal] from it. Added for
-  /// `AIO-2455`. Carries forward
-  /// [TicketDetailLoaded.pendingSkillAttachment] unchanged from
-  /// [previousDetail], mirroring [pendingToolProposal]'s own carry-forward
-  /// — this method never recomputes it, only
+  /// [TicketDetailLoaded.executionCanRetry] via [_computeExecutionFailure].
+  /// Added for `AIO-506`. Also computes [TicketDetailLoaded.isAdvancingStage]
+  /// from [_inFlightStageAdvanceIds] for **any** ticket type — `true` for an
+  /// `epic`/`story` with an [advanceSddStage] chat spawn in flight, or for a
+  /// `chat` ticket that *is* that in-flight spawn's own chat ticket. For an
+  /// `epic`/`story` with a current [Ticket.sddStage] that isn't mid-advance,
+  /// also computes [TicketDetailLoaded.sddStageFailureReason]/
+  /// [TicketDetailLoaded.sddStageCanRetry] via [_computeStageAdvanceFailure].
+  /// Added for `AIO-352`. Also batch-seeds [_executionTokenTotals] for [id]
+  /// (see [_seedExecutionTokenTotals]) and populates
+  /// [TicketDetailLoaded.executionTokenTotal] from it. Added for `AIO-2455`.
+  /// Carries forward [TicketDetailLoaded.pendingSkillAttachment] unchanged
+  /// from [previousDetail], mirroring [pendingToolProposal]'s own
+  /// carry-forward — this method never recomputes it, only
   /// [_resolveAndFireAttachment]/[confirmPendingSkillAttachment]/
-  /// [rejectPendingSkillAttachment] do. Added for
-  /// `AIO-2650`. When
-  /// [TicketDetailLoaded.executionAwaitingReview] is `true`, also
-  /// computes [TicketDetailLoaded.executionPrSubLine] from this ticket's
-  /// most recent [NotificationKind.executionPrOpened] notification (via
-  /// [_notificationRepository] — `null` when constructed without one, or
-  /// when no matching notification exists yet) rather than re-parsing
-  /// the comment thread a second time. Added for
-  /// `AIO-1586`. For an
-  /// `epic`/`story` ticket, also computes
-  /// [TicketDetailLoaded.verifyRetryReady] and
+  /// [rejectPendingSkillAttachment] do. Added for `AIO-2650`. When
+  /// [TicketDetailLoaded.executionAwaitingReview] is `true`, also computes
+  /// [TicketDetailLoaded.executionPrSubLine] from this ticket's most recent
+  /// [NotificationKind.executionPrOpened] notification (via
+  /// [_notificationRepository] — `null` when constructed without one, or when
+  /// no matching notification exists yet) rather than re-parsing the comment
+  /// thread a second time. Added for `AIO-1586`. For an `epic`/`story` ticket,
+  /// also computes [TicketDetailLoaded.verifyRetryReady] and
   /// [TicketDetailLoaded.verifyPendingFixesRemaining] via
-  /// [_verifyRetryReadiness] (a pure read reusing
-  /// [_maybeRetryPendingVerify]'s own precondition chain) and, when
-  /// `verifyRetryReady` is `true`,
+  /// [_verifyRetryReadiness] (a pure read reusing [_maybeRetryPendingVerify]'s
+  /// own precondition chain) and, when `verifyRetryReady` is `true`,
   /// [TicketDetailLoaded.verifyRetryConfidence] from
-  /// [AutomationContext.verifyGateRetry]'s configured confidence. Added
-  /// for `AIO-1905`.
+  /// [AutomationContext.verifyGateRetry]'s configured confidence. Added for
+  /// `AIO-1905`.
   Future<void> getTicketById(String id) async {
     final current = state;
     final previousDetail =
@@ -8069,35 +7813,31 @@ class TicketsCubit extends Cubit<TicketsState> {
     return _repository.previewTrashCount(ids);
   }
 
-  /// Moves ticket [id] to trash via [TicketParentTrashService.trash]
-  /// (which carries [TicketRepository.trashTicket]'s descendant-cascade
-  /// write plus the same git-projection/rollup-recompute side effects
-  /// this method used to trigger inline — see [_parentTrashService]).
-  /// Context-aware on the state active before the call: if it was
-  /// [TicketDetailLoaded] **for [id] itself** (the caller is
-  /// `TicketDetailScreen` trashing the ticket it's showing), emits
-  /// [TicketTrashed] on success so the screen navigates away; any other
-  /// previous state — list/board-shaped, or [TicketDetailLoaded] for a
-  /// *different* ticket (e.g. an agent trashing a Task while a human has
-  /// some other ticket's detail screen open) — re-fetches (re-applying
-  /// the filters [searchTickets] was last called with, requesting at
-  /// least as many tickets as were already loaded) and emits
-  /// [TicketsLoaded] instead, so `TicketsListScreen`/`TicketBoardView`
-  /// never fall into a blank state. The id-equality check (not just "was
-  /// *a* detail screen open") was added by
-  /// `AIO-905`
-  /// — previously this branched on [TicketDetailLoaded] alone, which
-  /// mishandled the different-ticket case by navigating away from
-  /// whichever detail screen happened to be open regardless of which
-  /// ticket was actually trashed. Trash never fails except on a genuine
-  /// unexpected repository error, which emits [TicketsError].
+  /// Moves ticket [id] to trash via [TicketParentTrashService.trash] (which
+  /// carries [TicketRepository.trashTicket]'s descendant-cascade write plus
+  /// the same git-projection/rollup-recompute side effects this method used to
+  /// trigger inline — see [_parentTrashService]). Context-aware on the state
+  /// active before the call: if it was [TicketDetailLoaded] **for [id]
+  /// itself** (the caller is `TicketDetailScreen` trashing the ticket it's
+  /// showing), emits [TicketTrashed] on success so the screen navigates away;
+  /// any other previous state — list/board-shaped, or [TicketDetailLoaded] for
+  /// a *different* ticket (e.g. an agent trashing a Task while a human has
+  /// some other ticket's detail screen open) — re-fetches (re-applying the
+  /// filters [searchTickets] was last called with, requesting at least as many
+  /// tickets as were already loaded) and emits [TicketsLoaded] instead, so
+  /// `TicketsListScreen`/`TicketBoardView` never fall into a blank state. The
+  /// id-equality check (not just "was *a* detail screen open") was added by
+  /// `AIO-905` — previously this branched on [TicketDetailLoaded] alone, which
+  /// mishandled the different-ticket case by navigating away from whichever
+  /// detail screen happened to be open regardless of which ticket was actually
+  /// trashed. Trash never fails except on a genuine unexpected repository
+  /// error, which emits [TicketsError].
   ///
   /// Whenever the trashed ticket is *not* the one currently open (the
-  /// list/board case, or the different-ticket-open case above), also
-  /// fires a fire-and-forget [_refreshDetailIfOpenAndAffected] call so a
-  /// different, already-open Story's or Epic's detail screen
-  /// live-refreshes when [id] is one of its direct children. Added for
-  /// `AIO-905`.
+  /// list/board case, or the different-ticket-open case above), also fires a
+  /// fire-and-forget [_refreshDetailIfOpenAndAffected] call so a different,
+  /// already-open Story's or Epic's detail screen live-refreshes when [id] is
+  /// one of its direct children. Added for `AIO-905`.
   Future<void> trashTicket(String id) async {
     _searchGeneration++;
     final previousState = state;
@@ -8164,13 +7904,11 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// underlying git client's add/commit steps and can silently coalesce
   /// separate logical commits into one mislabeled commit.
   ///
-  /// Also fires a fire-and-forget [_refreshDetailIfOpenAndAffected] call
-  /// for the explicitly-passed [ids] (not their cascaded descendants,
-  /// same documented scope simplification as the git-projection side
-  /// effect above), so a Story's or Epic's already-open detail screen
-  /// live-refreshes when this bulk trash touches one of its direct
-  /// children. Added for
-  /// `AIO-905`.
+  /// Also fires a fire-and-forget [_refreshDetailIfOpenAndAffected] call for
+  /// the explicitly-passed [ids] (not their cascaded descendants, same
+  /// documented scope simplification as the git-projection side effect above),
+  /// so a Story's or Epic's already-open detail screen live-refreshes when
+  /// this bulk trash touches one of its direct children. Added for `AIO-905`.
   Future<void> trashTickets(List<String> ids) async {
     // Captured before this call's own TicketsBatchTrashing/
     // TicketsBatchTrashed emissions below overwrite `state` — see
@@ -8235,34 +7973,32 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// surfaces the aggregate via [TicketsBatchStatusUpdated.skippedCount].
   ///
   /// Emits [TicketsBatchStatusUpdating] immediately, then
-  /// [TicketsBatchStatusUpdated] (refreshed page + how many were written +
-  /// how many were skipped) on success, or [TicketsError] on an unexpected
-  /// failure. For every successfully-written ticket: triggers git
-  /// projection (`'status-changed'`, same event [updateTicketStatus]
-  /// triggers), and — for a Task/Bug moving to an `executionTrigger`-role status —
-  /// starts or queues its coding-execution run via
-  /// [_triggerOrQueueCodingExecution], identical to [updateTicketStatus]'s
-  /// own post-write side effects. Also calls [_refreshBlockedBoardState]
-  /// on completion, since a written ticket may be another ticket's
-  /// blocker. For every successfully-written ticket, also fires
-  /// [status]'s configured [_attachmentForStatus] (if any) via
+  /// [TicketsBatchStatusUpdated] (refreshed page + how many were written + how
+  /// many were skipped) on success, or [TicketsError] on an unexpected
+  /// failure. For every successfully-written ticket: triggers git projection
+  /// (`'status-changed'`, same event [updateTicketStatus] triggers), and — for
+  /// a Task/Bug moving to an `executionTrigger`-role status — starts or queues
+  /// its coding-execution run via [_triggerOrQueueCodingExecution], identical
+  /// to [updateTicketStatus]'s own post-write side effects. Also calls
+  /// [_refreshBlockedBoardState] on completion, since a written ticket may be
+  /// another ticket's blocker. For every successfully-written ticket, also
+  /// fires [status]'s configured [_attachmentForStatus] (if any) via
   /// [_resolveAndFireAttachment] — same hook [updateTicketStatus] gained.
   /// Added for `AIO-2650`.
   ///
   /// Also fires a fire-and-forget [_refreshDetailIfOpenAndAffected] call,
-  /// passing every successfully-written id at once, so a Story's or
-  /// Epic's already-open detail screen live-refreshes when this bulk
-  /// write touches one of its direct children — the bulk counterpart of
-  /// [updateTicketStatus]'s own single-ticket live-refresh. The
-  /// per-ticket [_attachmentForStatus] loop above is chained onto this
-  /// call's completion (`.then()`, mirroring [updateTicketStatus]'s own
-  /// chaining), not run alongside it, so a `gated` attachment's
-  /// [TicketDetailLoaded.pendingSkillAttachment] emission is guaranteed
-  /// to land after — and not be silently overwritten by —
-  /// [_refreshDetailIfOpenAndAffected]'s own re-emission. Added for
-  /// `AIO-905`;
-  /// the chaining was a `/verify`-time fix — see that change's `tasks.md`
-  /// task 3 correction note.
+  /// passing every successfully-written id at once, so a Story's or Epic's
+  /// already-open detail screen live-refreshes when this bulk write touches
+  /// one of its direct children — the bulk counterpart of
+  /// [updateTicketStatus]'s own single-ticket live-refresh. The per-ticket
+  /// [_attachmentForStatus] loop above is chained onto this call's completion
+  /// (`.then()`, mirroring [updateTicketStatus]'s own chaining), not run
+  /// alongside it, so a `gated` attachment's
+  /// [TicketDetailLoaded.pendingSkillAttachment] emission is guaranteed to
+  /// land after — and not be silently overwritten by —
+  /// [_refreshDetailIfOpenAndAffected]'s own re-emission. Added for `AIO-905`;
+  /// the chaining was a `/verify`-time fix — see that change's `tasks.md` task
+  /// 3 correction note.
   Future<void> updateStatusForTickets(List<String> ids, String status) async {
     // Captured before this call's own TicketsBatchStatusUpdating/
     // TicketsBatchStatusUpdated emissions below overwrite `state` — see
@@ -8294,9 +8030,8 @@ class TicketsCubit extends Cubit<TicketsState> {
             final check = await _codingExecutionGateCheck(ticket);
             if (!check.canStart) continue;
             // Mirrors _interceptTaskExecutionTrigger's own capture, for
-            // cancelCodingExecution's status-revert on this batch-
-            // triggered path too. Added for
-            // `AIO-1400`.
+            // cancelCodingExecution's status-revert on this batch-triggered
+            // path too. Added for `AIO-1400`.
             _preExecutionStatus[id] = ticket.status;
           }
           writableIds.add(id);
@@ -8305,10 +8040,9 @@ class TicketsCubit extends Cubit<TicketsState> {
         writableIds.addAll(ids);
       }
 
-      // Deferred until after this method's own final emit below — see
-      // that emit's own comment for why a `gated` attachment's pending
-      // emission must not land before it. Added for
-      // `AIO-2650`.
+      // Deferred until after this method's own final emit below — see that
+      // emit's own comment for why a `gated` attachment's pending emission
+      // must not land before it. Added for `AIO-2650`.
       final pendingAttachmentFires = <(Ticket, SkillAttachment)>[];
       if (writableIds.isNotEmpty) {
         await _repository.updateStatusForIds(writableIds, status);
@@ -8351,21 +8085,20 @@ class TicketsCubit extends Cubit<TicketsState> {
       // The attachment-firing loop is chained *after*
       // _refreshDetailIfOpenAndAffected resolves, not run alongside it —
       // mirrors updateTicketStatus's own .then() chaining, for the same
-      // reason: both are otherwise-unawaited, but a `gated` attachment's
-      // own TicketDetailLoaded(pendingSkillAttachment: ...) emission must
-      // be the truly final one for this write. A same-statement-order
-      // "refresh call, then loop below it" is NOT equivalent to that —
-      // getTicketById captures its own `previousDetail` synchronously,
-      // before this method ever yields control to the loop (calling an
-      // async function runs synchronously up to its own first internal
-      // `await`), so an un-chained loop still races: attachment's
-      // synchronous gated-branch emission (no internal `await`) lands
-      // first, then refresh's later re-emission carries forward the
+      // reason: both are otherwise-unawaited, but a `gated` attachment's own
+      // TicketDetailLoaded(pendingSkillAttachment: ...) emission must be the
+      // truly final one for this write. A same-statement-order "refresh call,
+      // then loop below it" is NOT equivalent to that — getTicketById captures
+      // its own `previousDetail` synchronously, before this method ever yields
+      // control to the loop (calling an async function runs synchronously up
+      // to its own first internal `await`), so an un-chained loop still races:
+      // attachment's synchronous gated-branch emission (no internal `await`)
+      // lands first, then refresh's later re-emission carries forward the
       // *stale*, pre-attachment `previousDetail?.pendingSkillAttachment`,
       // silently clobbering the banner the loop just set. Found during
-      // `/verify` on `AIO-905`
-      // — the original un-chained placement (still visible in tasks.md's
-      // task 3) looked ordered correctly by statement position but wasn't.
+      // `/verify` on `AIO-905` — the original un-chained placement (still
+      // visible in tasks.md's task 3) looked ordered correctly by statement
+      // position but wasn't.
       unawaited(
         _refreshDetailIfOpenAndAffected(
           writableIds.toSet(),
@@ -8432,64 +8165,54 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Loads the Documentation-section relations for the `page`/`resource`/
-  /// `bug` ticket with id [ticketId] — its direct sub-page/resource
-  /// children (if it's a `page`) and its `TicketLink`s, grouped into
-  /// [linkedTickets]
+  /// `bug` ticket with id [ticketId] — its direct sub-page/resource children
+  /// (if it's a `page`) and its `TicketLink`s, grouped into [linkedTickets]
   /// (the other side is a board type: epic/story/task/bug/chat) and
-  /// [backlinks] (the other side is itself `page`/`resource`) — then
-  /// re-emits [TicketDetailLoaded] with those fields populated. `bug` was
-  /// added here for `AIO-425`'s widened Linked
-  /// Tickets/Backlinks gate — a Bug's `relatesTo` link to a `release`
-  /// ticket would otherwise never be reflected in the loaded state, even
-  /// though the link itself was created successfully. `epic`/`story`/
-  /// `task` were added here for
-  /// `AIO-392`'s widened Linked
-  /// Tickets gate (`ticket_metadata_section.dart`) — those types now
-  /// render the section too, and would otherwise never have it populated.
-  /// `release` was added here for
-  /// `AIO-1782`'s
-  /// `ReleaseSummarySection` — unlike the generic Documentation-mode
-  /// Linked Tickets section (which stays excluded for `release`, see
-  /// `TicketMetadataSection`'s own gate), that section's `linkedWork`
-  /// display is fed by this same [linkedTickets] field, just rendered by
-  /// a different, release-specific widget.
-  /// No-ops (does not emit) if the ticket isn't found, isn't one of the
-  /// gated types, or the cubit has since moved on to a different
-  /// ticket's detail state (a stale response from an earlier
-  /// navigation). Only actually populates [linkedTickets]/[backlinks]
-  /// when constructed with a [TicketLinkRepository] — every other call
-  /// site is unaffected by this optional dependency, same rationale as
-  /// [_embeddingProvider]/[_gitProjector]/[_projectRootPath]. Each
-  /// populated [LinkedTicketRef.relativeType] is resolved via
-  /// [relativeLinkType] against [ticketId] itself, so it always reads
-  /// correctly from this ticket's own point of view regardless of which
-  /// side of the underlying row it is.
+  /// [backlinks] (the other side is itself `page`/`resource`) — then re-emits
+  /// [TicketDetailLoaded] with those fields populated. `bug` was added here
+  /// for `AIO-425`'s widened Linked Tickets/Backlinks gate — a Bug's
+  /// `relatesTo` link to a `release` ticket would otherwise never be reflected
+  /// in the loaded state, even though the link itself was created
+  /// successfully. `epic`/`story`/ `task` were added here for `AIO-392`'s
+  /// widened Linked Tickets gate (`ticket_metadata_section.dart`) — those
+  /// types now render the section too, and would otherwise never have it
+  /// populated. `release` was added here for `AIO-1782`'s
+  /// `ReleaseSummarySection` — unlike the generic Documentation-mode Linked
+  /// Tickets section (which stays excluded for `release`, see
+  /// `TicketMetadataSection`'s own gate), that section's `linkedWork` display
+  /// is fed by this same [linkedTickets] field, just rendered by a different,
+  /// release-specific widget. No-ops (does not emit) if the ticket isn't
+  /// found, isn't one of the gated types, or the cubit has since moved on to a
+  /// different ticket's detail state (a stale response from an earlier
+  /// navigation). Only actually populates [linkedTickets]/[backlinks] when
+  /// constructed with a [TicketLinkRepository] — every other call site is
+  /// unaffected by this optional dependency, same rationale as
+  /// [_embeddingProvider]/[_gitProjector]/[_projectRootPath]. Each populated
+  /// [LinkedTicketRef.relativeType] is resolved via [relativeLinkType] against
+  /// [ticketId] itself, so it always reads correctly from this ticket's own
+  /// point of view regardless of which side of the underlying row it is.
   ///
-  /// Also populates `gapsAndOpenQuestions`: every `knownGap`/
-  /// `openQuestion` ticket `relatesTo`-linked to [ticketId] itself or to
-  /// any descendant of it, recursively — an Epic's section shows
-  /// everything raised anywhere in its subtree, however deep, each entry
-  /// naming the specific subtree member ([GapOrQuestionRef.raisedOn]) it
-  /// was raised on. Built from the same bulk
-  /// [TicketLinkRepository.getLinksByTypes] shape
-  /// `_refreshBlockedBoardState` already uses for `blocks`/`blockedBy` —
-  /// one app-wide query, no N+1 across the subtree. Sorted per Component
-  /// Spec §2.4: directly-raised entries (raised on [ticketId] itself)
-  /// before rolled-up ones (raised on a descendant), each group ordered
-  /// by descending `createdAt`. Added for
-  /// `AIO-934`; see that
-  /// change's design.md §3.4.
+  /// Also populates `gapsAndOpenQuestions`: every `knownGap`/ `openQuestion`
+  /// ticket `relatesTo`-linked to [ticketId] itself or to any descendant of
+  /// it, recursively — an Epic's section shows everything raised anywhere in
+  /// its subtree, however deep, each entry naming the specific subtree member
+  /// ([GapOrQuestionRef.raisedOn]) it was raised on. Built from the same bulk
+  /// [TicketLinkRepository.getLinksByTypes] shape `_refreshBlockedBoardState`
+  /// already uses for `blocks`/`blockedBy` — one app-wide query, no N+1 across
+  /// the subtree. Sorted per Component Spec §2.4: directly-raised entries
+  /// (raised on [ticketId] itself) before rolled-up ones (raised on a
+  /// descendant), each group ordered by descending `createdAt`. Added for
+  /// `AIO-934`; see its linked Documentation page, §3.4.
   ///
-  /// [backlinks] merges two sources into one [BacklinkRef] list, each
-  /// mapped to its [BacklinkOrigin]: `TicketLink` rows where the other
-  /// side is `page`/`resource` ([BacklinkOrigin.explicitLink], as
-  /// before), plus — when [ticketId]'s own type is `page`/`resource`
-  /// **and** this cubit was constructed with a [PageWikilinkRepository] —
-  /// every page whose content resolves an inline `[[...]]` reference to
-  /// [ticketId] ([BacklinkOrigin.wikilink]). A page linked via both
-  /// mechanisms produces two separate rows — each represents a distinct,
-  /// independently-true relationship, not deduplicated. Added for
-  /// `AIO-963`.
+  /// [backlinks] merges two sources into one [BacklinkRef] list, each mapped
+  /// to its [BacklinkOrigin]: `TicketLink` rows where the other side is
+  /// `page`/`resource` ([BacklinkOrigin.explicitLink], as before), plus — when
+  /// [ticketId]'s own type is `page`/`resource` **and** this cubit was
+  /// constructed with a [PageWikilinkRepository] — every page whose content
+  /// resolves an inline `[[...]]` reference to [ticketId]
+  /// ([BacklinkOrigin.wikilink]). A page linked via both mechanisms produces
+  /// two separate rows — each represents a distinct, independently-true
+  /// relationship, not deduplicated. Added for `AIO-963`.
   Future<void> loadDocumentRelations(String ticketId) async {
     final ticket = await _repository.getTicketById(ticketId);
     if (ticket == null) return;
@@ -8613,18 +8336,16 @@ class TicketsCubit extends Cubit<TicketsState> {
     );
   }
 
-  /// Resolves the `knownGap`/`openQuestion` ticket [gapOrQuestionId]'s
-  /// single outgoing `relatesTo` link to the target ticket it was raised
-  /// on — the "Raised on" indicator's data source. `knownGap`/
-  /// `openQuestion` are excluded from [loadDocumentRelations]'s gated
-  /// type list (their one relationship is fixed at creation, never a
-  /// generic Linked Tickets use case), so this is a narrow, standalone
-  /// query rather than reusing that method's broader aggregation. Returns
-  /// `null` if [gapOrQuestionId] doesn't exist, has no outgoing
-  /// `relatesTo` link, or was constructed without a
-  /// [TicketLinkRepository]. Added for
-  /// `AIO-934`; see that
-  /// change's design.md §4.3.
+  /// Resolves the `knownGap`/`openQuestion` ticket [gapOrQuestionId]'s single
+  /// outgoing `relatesTo` link to the target ticket it was raised on — the
+  /// "Raised on" indicator's data source. `knownGap`/ `openQuestion` are
+  /// excluded from [loadDocumentRelations]'s gated type list (their one
+  /// relationship is fixed at creation, never a generic Linked Tickets use
+  /// case), so this is a narrow, standalone query rather than reusing that
+  /// method's broader aggregation. Returns `null` if [gapOrQuestionId] doesn't
+  /// exist, has no outgoing `relatesTo` link, or was constructed without a
+  /// [TicketLinkRepository]. Added for `AIO-934`; see its linked Documentation
+  /// page, §4.3.
   Future<Ticket?> getRaisedOnTicket(String gapOrQuestionId) async {
     final linkRepo = _linkRepository;
     if (linkRepo == null) return null;
@@ -8749,12 +8470,11 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// what this explicit, user-triggered call already represents.
   ///
   /// Progress is reported on [codebaseAnalysisStatus], not [state]:
-  /// [CodebaseAnalysisRunning] immediately, then either
-  /// [CodebaseAnalysisDone] (carrying the created-ticket count, `0` if
-  /// the model reported no findings) or [CodebaseAnalysisFailed]. No-ops
-  /// into an immediate [CodebaseAnalysisFailed] if constructed without
-  /// `projectRootPath`. Added for
-  /// `AIO-1266`.
+  /// [CodebaseAnalysisRunning] immediately, then either [CodebaseAnalysisDone]
+  /// (carrying the created-ticket count, `0` if the model reported no
+  /// findings) or [CodebaseAnalysisFailed]. No-ops into an immediate
+  /// [CodebaseAnalysisFailed] if constructed without `projectRootPath`. Added
+  /// for `AIO-1266`.
   Future<void> runCodebaseSummarization({
     required SummarizationDepth depth,
   }) async {
@@ -8996,13 +8716,12 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
   }
 
-  /// Returns a newline-joined, depth-limited (default 2 levels) listing
-  /// of [rootPath]'s entries (directories suffixed `/`), skipping Aion's
-  /// own bookkeeping (`.aion/`, `tickets/`) and `.git/` — names only, no
-  /// file content. Capped at [maxEntries] total entries so a very large
-  /// repository can't blow out [_shallowSummaryPrompt]'s token cost.
-  /// Unreadable subdirectories are silently skipped. Added for
-  /// `AIO-1266`.
+  /// Returns a newline-joined, depth-limited (default 2 levels) listing of
+  /// [rootPath]'s entries (directories suffixed `/`), skipping Aion's own
+  /// bookkeeping (`.aion/`, `tickets/`) and `.git/` — names only, no file
+  /// content. Capped at [maxEntries] total entries so a very large repository
+  /// can't blow out [_shallowSummaryPrompt]'s token cost. Unreadable
+  /// subdirectories are silently skipped. Added for `AIO-1266`.
   Future<String> _shallowDirectoryListing(
     String rootPath, {
     int maxDepth = 2,
@@ -9033,11 +8752,10 @@ class TicketsCubit extends Cubit<TicketsState> {
     return entries.join('\n');
   }
 
-  /// Assembles [_runShallowSummarization]'s prompt: [detected]'s stack
-  /// (if any) plus [listing] (from [_shallowDirectoryListing]),
-  /// instructing the model to reply with one or more `FINDING:`-prefixed
-  /// entries terminated by a `SUMMARY: DONE` line — parsed by
-  /// [_parseSummaryFindings]. Added for
+  /// Assembles [_runShallowSummarization]'s prompt: [detected]'s stack (if
+  /// any) plus [listing] (from [_shallowDirectoryListing]), instructing the
+  /// model to reply with one or more `FINDING:`-prefixed entries terminated by
+  /// a `SUMMARY: DONE` line — parsed by [_parseSummaryFindings]. Added for
   /// `AIO-1266`.
   String _shallowSummaryPrompt(DetectedStack? detected, String listing) {
     final buffer = StringBuffer()
@@ -9067,16 +8785,14 @@ class TicketsCubit extends Cubit<TicketsState> {
     return buffer.toString().trim();
   }
 
-  /// Assembles [_runFullSummarization]'s prompt for the analysis run
-  /// titled [runTitle] — asks the model to explore the project's actual
-  /// files with the available read tools and reply in the same
-  /// `FINDING:`/`SUMMARY: DONE` format [_shallowSummaryPrompt] uses, so
-  /// [_parseSummaryFindings] handles both depths identically.
-  /// Explicitly read-only: unlike [_assembleExecutionContext], this
-  /// never instructs the model to edit, commit, or push — the worktree
-  /// is discarded, never pushed, once this turn finishes (see
-  /// [_runFullSummarization]). Added for
-  /// `AIO-1266`.
+  /// Assembles [_runFullSummarization]'s prompt for the analysis run titled
+  /// [runTitle] — asks the model to explore the project's actual files with
+  /// the available read tools and reply in the same `FINDING:`/`SUMMARY: DONE`
+  /// format [_shallowSummaryPrompt] uses, so [_parseSummaryFindings] handles
+  /// both depths identically. Explicitly read-only: unlike
+  /// [_assembleExecutionContext], this never instructs the model to edit,
+  /// commit, or push — the worktree is discarded, never pushed, once this turn
+  /// finishes (see [_runFullSummarization]). Added for `AIO-1266`.
   String _fullSummaryPrompt(String runTitle) {
     return 'You are exploring an existing codebase ("$runTitle") to help '
         'draft a starting project-management backlog for it. Read '
@@ -9092,13 +8808,12 @@ class TicketsCubit extends Cubit<TicketsState> {
         'End your reply with exactly one line: "SUMMARY: DONE".';
   }
 
-  /// Parses a summarization reply (from either
-  /// [_runShallowSummarization] or [_runFullSummarization]) into
-  /// `(title, description)` finding pairs — every `FINDING: <title>`
-  /// line starts a new finding; every line until the next `FINDING:` or
-  /// the terminal `SUMMARY: DONE` line becomes that finding's
-  /// description. A finding with an empty title is dropped. Added for
-  /// `AIO-1266`.
+  /// Parses a summarization reply (from either [_runShallowSummarization] or
+  /// [_runFullSummarization]) into `(title, description)` finding pairs —
+  /// every `FINDING: <title>` line starts a new finding; every line until the
+  /// next `FINDING:` or the terminal `SUMMARY: DONE` line becomes that
+  /// finding's description. A finding with an empty title is dropped. Added
+  /// for `AIO-1266`.
   List<({String title, String description})> _parseSummaryFindings(
     String reply,
   ) {
@@ -9138,9 +8853,9 @@ class TicketsCubit extends Cubit<TicketsState> {
     return findings;
   }
 
-  /// Returns the last non-empty line of [text], or `null` if [text] has
-  /// none — a short live-status snippet for [CodebaseAnalysisRunning].
-  /// Added for `AIO-1266`.
+  /// Returns the last non-empty line of [text], or `null` if [text] has none —
+  /// a short live-status snippet for [CodebaseAnalysisRunning]. Added for
+  /// `AIO-1266`.
   String? _lastLine(String text) {
     final lines = text.split('\n').where((l) => l.trim().isNotEmpty).toList();
     return lines.isEmpty ? null : lines.last.trim();

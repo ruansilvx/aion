@@ -11,8 +11,7 @@ import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 part 'transition_precondition_dao.g.dart';
 
 /// Drift accessor for [TransitionPreconditionGraphsTable]/
-/// [TransitionPreconditionNodesTable]. See
-/// `AIO-1936` §2/§3.
+/// [TransitionPreconditionNodesTable]. See `AIO-1936` §2/§3.
 @DriftAccessor(
   tables: [TransitionPreconditionGraphsTable, TransitionPreconditionNodesTable],
 )
@@ -81,14 +80,13 @@ class TransitionPreconditionDao extends DatabaseAccessor<AppDatabase>
   }
 
   /// Seeds a graph+node baseline for each of the 5 precondition-bearing
-  /// `SddStage` values iff the graph table is currently empty — checked
-  /// first so this is safe (idempotent, no duplication) to call
-  /// unconditionally from both `onCreate` and every `onUpgrade` branch.
-  /// Every seeded tree reproduces that stage's exact pre-existing
-  /// hardcoded `TicketsCubit._sddStageAdvanceCheck` branch as data, per
-  /// design.md §3. [SddStage.exploring] gets a single-node tree shape;
-  /// [SddStage.verifying] gets its own two-node tree (see below, per
-  /// `AIO-1905` §3.1); `null`/
+  /// `SddStage` values iff the graph table is currently empty — checked first
+  /// so this is safe (idempotent, no duplication) to call unconditionally from
+  /// both `onCreate` and every `onUpgrade` branch. Every seeded tree
+  /// reproduces that stage's exact pre-existing hardcoded
+  /// `TicketsCubit._sddStageAdvanceCheck` branch as data, per design.md §3.
+  /// [SddStage.exploring] gets a single-node tree shape; [SddStage.verifying]
+  /// gets its own two-node tree (see below, per `AIO-1905` §3.1); `null`/
   /// [SddStage.archived] get no seeded graph.
   Future<void> seedDefaultsIfEmpty() async {
     final existing = await select(transitionPreconditionGraphsTable).get();
@@ -234,10 +232,10 @@ class TransitionPreconditionDao extends DatabaseAccessor<AppDatabase>
   }
 
   /// One-time migration helper for schema version 20 (see
-  /// `core/database/app_database.dart`'s `onUpgrade`) — upgrades an
-  /// existing project's [SddStage.verifying] graph to the new two-node
-  /// shape [seedDefaultsIfEmpty] now seeds directly for a fresh install,
-  /// per `AIO-1905` §3.2.
+  /// `core/database/app_database.dart`'s `onUpgrade`) — upgrades an existing
+  /// project's [SddStage.verifying] graph to the new two-node shape
+  /// [seedDefaultsIfEmpty] now seeds directly for a fresh install, per
+  /// `AIO-1905` §3.2.
   ///
   /// Only touches the graph if its root node still carries the exact
   /// original single-node default's fingerprint — `fieldId ==

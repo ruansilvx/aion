@@ -9,11 +9,10 @@ import 'package:aion/features/tickets/domain/entities/transition_branch.dart';
 /// `TransitionFieldSpec.id` from `transition_field_spec.dart`.
 /// [matchedBranch]/[unmatchedBranch] are each a [TransitionBranch] — either
 /// continues the tree or terminates in a `TransitionOutcome`. Simpler than
-/// `core/automation/decision_node.dart`'s `DecisionNode` deliberately —
-/// there is no `conditionParams`/operator/value shape here, since every
-/// field this proposal ships is a plain boolean: a node is just "which
-/// field; where its `true` branch goes; where its `false` branch goes."
-/// Added for `AIO-1936`.
+/// `core/automation/decision_node.dart`'s `DecisionNode` deliberately — there
+/// is no `conditionParams`/operator/value shape here, since every field this
+/// proposal ships is a plain boolean: a node is just "which field; where its
+/// `true` branch goes; where its `false` branch goes." Added for `AIO-1936`.
 @immutable
 class TransitionNode {
   /// Creates a [TransitionNode].

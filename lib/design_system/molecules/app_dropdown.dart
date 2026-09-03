@@ -9,12 +9,11 @@ import 'package:aion/design_system/tokens/aion_shadows.dart';
 import 'package:aion/design_system/tokens/aion_text.dart';
 import 'package:aion/design_system/tokens/theme_scope.dart';
 
-/// Aion's dropdown/select primitive — replaces `DropdownButton` with a
-/// tap target that opens an [OverlayEntry] of selectable items. No Material
-/// widget or overlay involvement. [itemRowBuilder] is an additive,
-/// default-`null` param letting a caller render richer, multi-run item-row
-/// content (e.g. a provider-name prefix) in the open panel only — see
-/// `AIO-110` §8.
+/// Aion's dropdown/select primitive — replaces `DropdownButton` with a tap
+/// target that opens an [OverlayEntry] of selectable items. No Material widget
+/// or overlay involvement. [itemRowBuilder] is an additive, default-`null`
+/// param letting a caller render richer, multi-run item-row content (e.g. a
+/// provider-name prefix) in the open panel only — see `AIO-110` §8.
 class AppDropdown<T> extends StatefulWidget {
   /// Creates an [AppDropdown].
   const AppDropdown({

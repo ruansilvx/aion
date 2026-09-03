@@ -10,15 +10,14 @@ import 'package:aion/design_system/tokens/aion_text.dart';
 import 'package:aion/design_system/tokens/theme_scope.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sync_status.dart';
 
-/// A small icon+label indicator in a ticket detail header's trailing
-/// cluster, showing a `resource`/`page` ticket's [TicketSyncStatus].
-/// Non-interactive except for a hover tooltip — a status readout, not a
-/// control (the actual repair action lives in a separate repair-banner
-/// widget). Callers only render this for `resource`/`page` tickets;
-/// every other type has no file to fall out of sync with. Promoted from
-/// `TicketSyncStatusBadge` (per `project.md`'s Pattern 2), taking only
-/// [TicketSyncStatus] rather than a whole `Ticket`. Per
-/// `AIO-1350` §6.
+/// A small icon+label indicator in a ticket detail header's trailing cluster,
+/// showing a `resource`/`page` ticket's [TicketSyncStatus]. Non-interactive
+/// except for a hover tooltip — a status readout, not a control (the actual
+/// repair action lives in a separate repair-banner widget). Callers only
+/// render this for `resource`/`page` tickets; every other type has no file to
+/// fall out of sync with. Promoted from `TicketSyncStatusBadge` (per
+/// `project.md`'s Pattern 2), taking only [TicketSyncStatus] rather than a
+/// whole `Ticket`. Per `AIO-1350` §6.
 class SyncStatusBadge extends StatefulWidget {
   /// Creates a [SyncStatusBadge] for [status].
   const SyncStatusBadge({super.key, required this.status});

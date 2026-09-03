@@ -5,14 +5,13 @@ import 'package:flutter/widgets.dart';
 import 'package:aion/design_system/tokens/theme_scope.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_complexity.dart';
 
-/// A small 3-bar ascending meter rendering [complexity] as a size
-/// progression (1/2/3 bars filled for small/medium/large) rather than an
-/// arbitrary color — used by the Complexity picker's trigger and menu
-/// rows (`CreateTicketScreen`, `TicketDetailScreen`). Deliberately
-/// monochrome (`primary`/`borderStrong`), never a priority hue, since
-/// complexity is a neutral, non-priority dimension distinct from
-/// `PriorityBadge`'s colored scale. Per
-/// `AIO-1856` §1.1.
+/// A small 3-bar ascending meter rendering [complexity] as a size progression
+/// (1/2/3 bars filled for small/medium/large) rather than an arbitrary color —
+/// used by the Complexity picker's trigger and menu rows
+/// (`CreateTicketScreen`, `TicketDetailScreen`). Deliberately monochrome
+/// (`primary`/`borderStrong`), never a priority hue, since complexity is a
+/// neutral, non-priority dimension distinct from `PriorityBadge`'s colored
+/// scale. Per `AIO-1856` §1.1.
 class ComplexityMeter extends StatelessWidget {
   /// Creates a [ComplexityMeter] for [complexity]. `null` renders all
   /// three bars empty — used by the picker trigger's unset state.

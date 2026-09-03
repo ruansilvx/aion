@@ -22,8 +22,7 @@ class TicketListFilters extends Equatable {
   });
 
   /// The selected project-defined status names. Empty means no status
-  /// constraint. Was `Set<TicketStatus>` before
-  /// `AIO-549`.
+  /// constraint. Was `Set<TicketStatus>` before `AIO-549`.
   final Set<String> statuses;
 
   /// The selected [TicketType] values. Empty means no type constraint.

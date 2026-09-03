@@ -52,12 +52,11 @@ class TicketReconstructionReport {
 ///
 /// `deletedAt` round-trips through reconstruction the same way
 /// `parentId`/`estimate`/`timeSpent` already do — a rebuilt DB correctly
-/// reflects which tickets were trashed as of the last commit touching
-/// each file. Before `deletedAt` was part of
-/// [TicketMarkdownSerializer]'s frontmatter (added by
-/// `AIO-918`), every
-/// reconstructed ticket silently came back non-trashed regardless of its
-/// real state, since [_buildTicket] never set the field at all.
+/// reflects which tickets were trashed as of the last commit touching each
+/// file. Before `deletedAt` was part of [TicketMarkdownSerializer]'s
+/// frontmatter (added by `AIO-918`), every reconstructed ticket silently came
+/// back non-trashed regardless of its real state, since [_buildTicket] never
+/// set the field at all.
 class TicketDbReconstructionService {
   /// Creates a [TicketDbReconstructionService] using [_repository],
   /// [_serializer], and [_embeddingProvider] (for the post-import bulk

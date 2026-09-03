@@ -16,19 +16,17 @@ import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 /// [TicketSortField.relevance] (handled separately by the caller).
 ///
 /// [TicketSortField.status] is deliberately absent from this map — since
-/// `AIO-549`, a ticket's status is
-/// a project-configured [WorkflowStatus](../entities/workflow_status.dart)
-/// name, not a fixed enum, so its ordinal comes from the project's live
-/// `WorkflowStatus.sortOrder` list (a `statusOrder` parameter both
-/// [ticketSortComparator] and `TicketDao`'s SQL builder now take), not
-/// this compile-time lookup.
+/// `AIO-549`, a ticket's status is a project-configured
+/// [WorkflowStatus](../entities/workflow_status.dart) name, not a fixed enum,
+/// so its ordinal comes from the project's live `WorkflowStatus.sortOrder`
+/// list (a `statusOrder` parameter both [ticketSortComparator] and
+/// `TicketDao`'s SQL builder now take), not this compile-time lookup.
 ///
-/// A single shared lookup, indexed into by both [ticketSortComparator]
-/// below (the in-memory Dart path, used by `TrashCubit`) and
-/// `TicketDao`'s `_enumOrdinalCaseSql` (the SQL path, used by
+/// A single shared lookup, indexed into by both [ticketSortComparator] below
+/// (the in-memory Dart path, used by `TrashCubit`) and `TicketDao`'s
+/// `_enumOrdinalCaseSql` (the SQL path, used by
 /// `TicketRepository.searchTickets`) — keeping the ordinal mapping in one
-/// place means the two orderings can't silently drift apart. See
-/// `AIO-2371`
+/// place means the two orderings can't silently drift apart. See `AIO-2371`
 /// §4.3.
 final Map<TicketSortField, List<Enum>?> ticketFieldEnumValues = {
   TicketSortField.relevance: null,

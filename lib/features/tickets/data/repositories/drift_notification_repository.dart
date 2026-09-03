@@ -4,11 +4,10 @@ import 'package:aion/core/core.dart';
 import 'package:aion/features/tickets/domain/entities/notification.dart';
 import 'package:aion/features/tickets/domain/repositories/notification_repository.dart';
 
-/// Drift-backed implementation of [NotificationRepository]. No business
-/// logic here — maps [NotificationData] rows to [Notification] entities
-/// and delegates every method straight to [NotificationDao], matching
-/// [DriftExecutionQueueRepository]'s exact shape. Added for
-/// `AIO-1586`.
+/// Drift-backed implementation of [NotificationRepository]. No business logic
+/// here — maps [NotificationData] rows to [Notification] entities and
+/// delegates every method straight to [NotificationDao], matching
+/// [DriftExecutionQueueRepository]'s exact shape. Added for `AIO-1586`.
 class DriftNotificationRepository implements NotificationRepository {
   /// Creates a [DriftNotificationRepository] backed by [_db].
   DriftNotificationRepository(this._db);

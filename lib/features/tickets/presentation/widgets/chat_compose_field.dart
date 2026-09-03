@@ -9,16 +9,15 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 
-/// The chat compose field — an auto-expanding multiline text input
-/// (starts at one line, grows to a capped height, then scrolls
-/// internally) with Enter-to-send / Shift+Enter-for-newline on hardware
-/// keyboards, replacing the fixed single-line pill used for plain
-/// ticket comments. Not built on [AppTextField]: that widget's
-/// multiline mode forces a 5-line minimum height and an outlined-box
-/// shape, neither of which fits a compose bar that should start at one
-/// line — this wraps `TextField` directly instead, the same sanctioned
-/// exception to the no-Material-widgets rule [AppTextField] relies on.
-/// Per `AIO-482` §3.
+/// The chat compose field — an auto-expanding multiline text input (starts at
+/// one line, grows to a capped height, then scrolls internally) with
+/// Enter-to-send / Shift+Enter-for-newline on hardware keyboards, replacing
+/// the fixed single-line pill used for plain ticket comments. Not built on
+/// [AppTextField]: that widget's multiline mode forces a 5-line minimum height
+/// and an outlined-box shape, neither of which fits a compose bar that should
+/// start at one line — this wraps `TextField` directly instead, the same
+/// sanctioned exception to the no-Material-widgets rule [AppTextField] relies
+/// on. Per `AIO-482` §3.
 class ChatComposeField extends StatefulWidget {
   /// Creates a [ChatComposeField] backed by [controller], calling
   /// [onSend] when the user sends the current text.

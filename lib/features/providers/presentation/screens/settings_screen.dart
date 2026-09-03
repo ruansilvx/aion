@@ -31,21 +31,18 @@ import 'package:aion/features/providers/presentation/cubit/provider_settings_cub
 import 'package:aion/features/providers/presentation/cubit/provider_settings_state.dart';
 import 'package:aion/features/providers/presentation/widgets/provider_connection_badge.dart';
 
-/// The `/workspace/settings` route: shows the configured provider's
-/// connection status (auto-checked on open, with a manual "Test
-/// Connection" action), a model picker, a coding-execution scheduling
-/// picker (`_ExecutionSchedulingSection`, mode + conditional concurrency
-/// ceiling — see `AIO-1400` §6/§8),
-/// automation-confidence pickers (now five, including "Resume After
-/// Restart" — `AutomationContext.codingExecutionResume`), an "OVERRIDES"
-/// section linking to `OverridesListScreen`, and a "BASELINE" section
-/// (`_BaselineUpgradeSection`) offering a manual baseline-version
-/// upgrade — always available regardless of whether
-/// `BaselineUpgradeBanner` has already been shown/declined this session
-/// (see `AIO-297` §2).
-/// Reached from `WorkspaceNavShell`'s secondary-actions popover. Per
-/// `AIO-1699`'s Settings Screen
-/// Component Spec §2.
+/// The `/workspace/settings` route: shows the configured provider's connection
+/// status (auto-checked on open, with a manual "Test Connection" action), a
+/// model picker, a coding-execution scheduling picker
+/// (`_ExecutionSchedulingSection`, mode + conditional concurrency ceiling —
+/// see `AIO-1400` §6/§8), automation-confidence pickers (now five, including
+/// "Resume After Restart" — `AutomationContext.codingExecutionResume`), an
+/// "OVERRIDES" section linking to `OverridesListScreen`, and a "BASELINE"
+/// section (`_BaselineUpgradeSection`) offering a manual baseline-version
+/// upgrade — always available regardless of whether `BaselineUpgradeBanner`
+/// has already been shown/declined this session (see `AIO-297` §2). Reached
+/// from `WorkspaceNavShell`'s secondary-actions popover. Per `AIO-1699`'s
+/// Settings Screen Component Spec §2.
 ///
 /// The back button returns to `/workspace/tickets`, matching `TrashScreen`'s
 /// existing back-button convention (a fixed destination, not a dynamic
@@ -223,13 +220,12 @@ class SettingsScreen extends StatelessWidget {
   }
 }
 
-/// [_ProviderStatusCard]'s subline for [providerId] — a small switch on
-/// the resolved provider's [ProviderId], mirroring [_confidenceLabel]'s
-/// existing per-enum switch pattern elsewhere in this same file. Reuses
-/// today's `settingsProviderSubline` copy for `claudeAgentSdk`, and adds
+/// [_ProviderStatusCard]'s subline for [providerId] — a small switch on the
+/// resolved provider's [ProviderId], mirroring [_confidenceLabel]'s existing
+/// per-enum switch pattern elsewhere in this same file. Reuses today's
+/// `settingsProviderSubline` copy for `claudeAgentSdk`, and adds
 /// `anthropicMessagesApi`'s own copy — both now conditional instead of a
-/// single hardcoded string, per
-/// `AIO-110` §7.
+/// single hardcoded string, per `AIO-110` §7.
 String _providerSubline(BuildContext context, ProviderId providerId) =>
     switch (providerId) {
       ProviderId.claudeAgentSdk => context.l10n.settingsProviderSubline,
@@ -323,11 +319,11 @@ String _confidenceSubLabel(
     AutomationConfidence.manual =>
       context.l10n.settingsAutomationTicketLinkingManualSubLabel,
   },
-  // No `_AutomationSection` instance renders this context yet — a
-  // dedicated Settings row is a reasonable follow-up, not required for
-  // `AIO-1998` to be useful — but this switch
-  // must stay exhaustive over every `AutomationContext` value regardless
-  // of which ones are currently surfaced in the UI.
+  // No `_AutomationSection` instance renders this context yet — a dedicated
+  // Settings row is a reasonable follow-up, not required for `AIO-1998` to be
+  // useful — but this switch must stay exhaustive over every
+  // `AutomationContext` value regardless of which ones are currently surfaced
+  // in the UI.
   AutomationContext.specAutoLink => switch (confidence) {
     AutomationConfidence.auto =>
       context.l10n.settingsAutomationSpecAutoLinkAutoSubLabel,
@@ -337,9 +333,9 @@ String _confidenceSubLabel(
       context.l10n.settingsAutomationSpecAutoLinkManualSubLabel,
   },
   // No `_AutomationSection` instance renders this context yet — mirrors
-  // `specAutoLink`'s own "no dedicated Settings row yet" precedent
-  // immediately above; reachable via the generic decision-graph editor
-  // route only. Added for `AIO-1905`.
+  // `specAutoLink`'s own "no dedicated Settings row yet" precedent immediately
+  // above; reachable via the generic decision-graph editor route only. Added
+  // for `AIO-1905`.
   AutomationContext.verifyGateRetry => switch (confidence) {
     AutomationConfidence.auto =>
       context.l10n.settingsAutomationVerifyGateRetryAutoSubLabel,
@@ -439,12 +435,11 @@ class _AutomationSection extends StatelessWidget {
 
 /// The "Configure decision graph" affordance appended to
 /// [_AutomationSection]'s trailing cluster — navigates to
-/// `DecisionGraphEditorScreen` for [automationContext]. Only enabled
-/// while [enabled] (i.e. that context's confidence is
-/// [AutomationConfidence.auto] — a decision graph is only ever consulted
-/// once a context has already resolved to `auto`); disabled otherwise,
-/// with an explanatory tooltip. Per design.md §5.1/§5.2. Added for
-/// `AIO-181`.
+/// `DecisionGraphEditorScreen` for [automationContext]. Only enabled while
+/// [enabled] (i.e. that context's confidence is [AutomationConfidence.auto] —
+/// a decision graph is only ever consulted once a context has already resolved
+/// to `auto`); disabled otherwise, with an explanatory tooltip. Per design.md
+/// §5.1/§5.2. Added for `AIO-181`.
 class _DecisionGraphAffordance extends StatefulWidget {
   const _DecisionGraphAffordance({
     required this.automationContext,
@@ -463,13 +458,12 @@ class _DecisionGraphAffordanceState extends State<_DecisionGraphAffordance> {
   int? _configuredCount;
 
   /// Reloads [_configuredCount] whenever the repository's node/graph data
-  /// changes anywhere — not just on this widget's own initial mount —
-  /// so the count stays live when the user edits the graph via
-  /// `DecisionGraphEditorScreen` and comes back to this screen (that
-  /// screen owns its own `DecisionGraphConfigCubit` instance, so this
-  /// widget's [initState]-only load previously never re-ran on return
-  /// navigation, leaving a stale count on screen). Found via manual QA of
-  /// `AIO-181`.
+  /// changes anywhere — not just on this widget's own initial mount — so the
+  /// count stays live when the user edits the graph via
+  /// `DecisionGraphEditorScreen` and comes back to this screen (that screen
+  /// owns its own `DecisionGraphConfigCubit` instance, so this widget's
+  /// [initState]-only load previously never re-ran on return navigation,
+  /// leaving a stale count on screen). Found via manual QA of `AIO-181`.
   StreamSubscription<void>? _changesSubscription;
 
   @override
@@ -678,20 +672,16 @@ class _AutomationMenuRow extends StatelessWidget {
 }
 
 /// One "MODELS" section row — a labeled description followed by an
-/// `AppDropdown<AgentModelDescriptor>` picking which model handles
-/// [phase]'s model calls, backed by [ModelRoutingCubit]. Rendered three
-/// times on [SettingsScreen] — once per [ModelPhase] — under one shared
-/// "MODELS" eyebrow, mirroring how [_AutomationSection] is rendered
-/// twice under "AUTOMATION". Reuses the plain
-/// `AppDropdown<AgentModelDescriptor>` the old single-model picker
-/// already used — no mode-dot treatment, unlike
-/// [_AutomationTrigger]/[_AutomationMenuRow], since a model has no mode
-/// color. The dropdown's item source is
-/// `ModelRoutingReady.availableModels[phase]` (provider-aware, filtered
-/// by `ModelPhaseToolAccess.requiredToolAccessTier`) instead of a fixed
-/// enum — see
-/// `AIO-1544` §3.
-/// Added for `AIO-1491`.
+/// `AppDropdown<AgentModelDescriptor>` picking which model handles [phase]'s
+/// model calls, backed by [ModelRoutingCubit]. Rendered three times on
+/// [SettingsScreen] — once per [ModelPhase] — under one shared "MODELS"
+/// eyebrow, mirroring how [_AutomationSection] is rendered twice under
+/// "AUTOMATION". Reuses the plain `AppDropdown<AgentModelDescriptor>` the old
+/// single-model picker already used — no mode-dot treatment, unlike
+/// [_AutomationTrigger]/[_AutomationMenuRow], since a model has no mode color.
+/// The dropdown's item source is `ModelRoutingReady.availableModels[phase]`
+/// (provider-aware, filtered by `ModelPhaseToolAccess.requiredToolAccessTier`)
+/// instead of a fixed enum — see `AIO-1544` §3. Added for `AIO-1491`.
 class _ModelPhaseSection extends StatelessWidget {
   const _ModelPhaseSection({
     required this.phase,
@@ -807,23 +797,21 @@ class _ModelDropdownRow extends StatelessWidget {
 
 /// The "MODELS" group's fourth row — a numeric override for the
 /// coding-execution context-window handoff cap, backed by
-/// [ExecutionContextCapCubit]. Rendered once, directly below the
-/// Execution Model [_ModelPhaseSection] row (same shared "MODELS"
-/// eyebrow). Its label/description geometry is byte-identical to
-/// [_ModelPhaseSection]'s so it reads as one more MODELS row; its input
-/// is the existing [AppTextField] atom (digits-only, numeric keyboard);
-/// its helper line below the field is the field's sole feedback channel
-/// — neutral ("Effective cap: N tokens"), an `OVERRIDE` pill when a valid
-/// override is set, or a caution chip when the live entry would be
-/// clamped to just under the model's real limit. Per design.md
-/// "Execution Context Cap: Settings Component Spec" §1-§2 (some spacing
-/// values below are not multiples of 4, per the design gate's explicit
-/// note in proposal.md — implemented as specified rather than rounded to
-/// the nearest [AionSpacing] token). Uses [AionColorsHubTokens]'s
-/// existing `needsRepairTint`/`needsRepairBorderTint` for the clamp
-/// chip's fill/border (not new `warningTint`/`warningBorderTint`
-/// helpers — see proposal.md's design gate). Added for
-/// `AIO-833`.
+/// [ExecutionContextCapCubit]. Rendered once, directly below the Execution
+/// Model [_ModelPhaseSection] row (same shared "MODELS" eyebrow). Its
+/// label/description geometry is byte-identical to [_ModelPhaseSection]'s so
+/// it reads as one more MODELS row; its input is the existing [AppTextField]
+/// atom (digits-only, numeric keyboard); its helper line below the field is
+/// the field's sole feedback channel — neutral ("Effective cap: N tokens"), an
+/// `OVERRIDE` pill when a valid override is set, or a caution chip when the
+/// live entry would be clamped to just under the model's real limit. Per
+/// design.md "Execution Context Cap: Settings Component Spec" §1-§2 (some
+/// spacing values below are not multiples of 4, per the design gate's explicit
+/// note in proposal.md — implemented as specified rather than rounded to the
+/// nearest [AionSpacing] token). Uses [AionColorsHubTokens]'s existing
+/// `needsRepairTint`/`needsRepairBorderTint` for the clamp chip's fill/border
+/// (not new `warningTint`/`warningBorderTint` helpers — see proposal.md's
+/// design gate). Added for `AIO-833`.
 class _ExecutionContextCapSection extends StatefulWidget {
   /// Creates an [_ExecutionContextCapSection].
   const _ExecutionContextCapSection();
@@ -947,11 +935,10 @@ class _ExecutionContextCapSectionState
 }
 
 /// The dynamic helper row below [_ExecutionContextCapSection]'s field —
-/// exactly one of three variants per build, chosen from [text]/[isClamped]
-/// vs. [limit] (design.md §2.4/§6.1): neutral (no override), an
-/// `OVERRIDE`-tagged effective-cap line (a valid override), or a caution
-/// chip (the live entry would be clamped). Added for
-/// `AIO-833`.
+/// exactly one of three variants per build, chosen from [text]/[isClamped] vs.
+/// [limit] (design.md §2.4/§6.1): neutral (no override), an `OVERRIDE`-tagged
+/// effective-cap line (a valid override), or a caution chip (the live entry
+/// would be clamped). Added for `AIO-833`.
 class _ExecutionContextCapHelperRow extends StatelessWidget {
   /// Creates an [_ExecutionContextCapHelperRow] for the live field
   /// [text]/[parsed] against the model's real [limit], with [isClamped]
@@ -1097,12 +1084,11 @@ class _ExecutionContextCapHelperRow extends StatelessWidget {
 
 /// Mode-dot tone for [mode], mirroring [_confidenceDotColor]'s shape:
 /// [ExecutionSchedulingMode.strictFifo] (today's unchanged default) reads
-/// neutral/`secondary`, [ExecutionSchedulingMode.parallel] reads
-/// `success` (more throughput, a positive framing), and
-/// [ExecutionSchedulingMode.hybrid] reads `primary` (still concurrent,
-/// but with the AI-adjacent "smart serialization" framing `primary`
-/// already carries elsewhere in this app). Per the Claude Design export's
-/// design.md §1. Added for `AIO-1400`.
+/// neutral/`secondary`, [ExecutionSchedulingMode.parallel] reads `success`
+/// (more throughput, a positive framing), and [ExecutionSchedulingMode.hybrid]
+/// reads `primary` (still concurrent, but with the AI-adjacent "smart
+/// serialization" framing `primary` already carries elsewhere in this app).
+/// Per the Claude Design export's design.md §1. Added for `AIO-1400`.
 Color _schedulingModeDotColor(AionColors c, ExecutionSchedulingMode mode) =>
     switch (mode) {
       ExecutionSchedulingMode.strictFifo => c.secondary,
@@ -1143,12 +1129,10 @@ String _schedulingModeSubLabel(
 /// [ExecutionSchedulingMode], backed by [ExecutionSchedulingCubit], plus a
 /// conditional numeric concurrency-ceiling [AppTextField] shown only under
 /// [ExecutionSchedulingMode.parallel]/[ExecutionSchedulingMode.hybrid]
-/// (hidden, not disabled, under
-/// [ExecutionSchedulingMode.strictFifo] — the ceiling is meaningless
-/// there). Mirrors [_AutomationSection]'s mode-dot `SelectionMenu` shape
-/// and [_ExecutionContextCapSection]'s numeric-field shape. Per the Claude
-/// Design export's design.md §1. Added for
-/// `AIO-1400`.
+/// (hidden, not disabled, under [ExecutionSchedulingMode.strictFifo] — the
+/// ceiling is meaningless there). Mirrors [_AutomationSection]'s mode-dot
+/// `SelectionMenu` shape and [_ExecutionContextCapSection]'s numeric-field
+/// shape. Per the Claude Design export's design.md §1. Added for `AIO-1400`.
 class _ExecutionSchedulingSection extends StatefulWidget {
   /// Creates an [_ExecutionSchedulingSection].
   const _ExecutionSchedulingSection();
@@ -1781,11 +1765,10 @@ class _OverridesSummarySection extends StatelessWidget {
 }
 
 /// "BASELINE" section on [SettingsScreen] — a description, the active
-/// project's currently pinned baseline version, and a manual upgrade
-/// action, mirroring [_OverridesSummarySection]'s shape. Always present
-/// regardless of whether `BaselineUpgradeBanner` has already been
-/// shown/declined this session. Added for
-/// `AIO-297`.
+/// project's currently pinned baseline version, and a manual upgrade action,
+/// mirroring [_OverridesSummarySection]'s shape. Always present regardless of
+/// whether `BaselineUpgradeBanner` has already been shown/declined this
+/// session. Added for `AIO-297`.
 class _BaselineUpgradeSection extends StatelessWidget {
   const _BaselineUpgradeSection();
 

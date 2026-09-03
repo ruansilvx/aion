@@ -8,10 +8,9 @@ import 'package:aion/design_system/design_system.dart';
 /// A comment/message's leading avatar disc — a sparkle glyph square for
 /// AI-authored content, a quiet neutral hexagon-glyph square for system
 /// content, a "U" initial circle otherwise. Shared by `CommentTile` (the
-/// plain, non-chat ticket comment thread) and `ChatMessageBubble` (the
-/// chat transcript) — promoted from a `TicketDetailScreen`-private
-/// `_Avatar` class to its own file so both can use it across files. Per
-/// `AIO-482` §1.0.
+/// plain, non-chat ticket comment thread) and `ChatMessageBubble` (the chat
+/// transcript) — promoted from a `TicketDetailScreen`-private `_Avatar` class
+/// to its own file so both can use it across files. Per `AIO-482` §1.0.
 class CommentAuthorAvatar extends StatelessWidget {
   /// Creates a [CommentAuthorAvatar]. Exactly one of [isAi]/[isSystem]
   /// should be `true`, or neither (human).

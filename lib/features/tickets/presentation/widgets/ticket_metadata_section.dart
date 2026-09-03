@@ -38,53 +38,45 @@ import 'package:aion/features/tickets/presentation/widgets/ticket_link_picker.da
 import 'package:aion/features/tickets/presentation/widgets/ticket_needs_repair_banner.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_parent_picker.dart';
 
-/// A ticket's metadata content: priority/complexity/title/type/status
-/// row, parent picker, estimate/time-spent fields, an optional linked-
-/// design-page chip, the SDD-stage tracker (`epic`/`story`) or coding-
-/// execution section (`task`/`bug` — see `TicketTypeHierarchy.isExecutable`),
-/// a "Bug details" section (`bug` only: severity, steps to reproduce,
-/// expected/actual behavior), description, created-on timestamp, an
-/// always-live "Updated {relative}" timestamp directly below it (ticks
-/// once a minute via `TicketsCubit.detailTick` — see
-/// `AIO-1985`), and —
-/// for every type except `page`/`chat`/`signal`/`release` — Linked
-/// Tickets/Backlinks (widened from `resource`/`bug`-only for
-/// `AIO-392`; `resource` keeps
-/// a single-tap `relatesTo`-only `TicketLinkPicker`, every other gated
-/// type offers the full `blocks`/`blockedBy`/`relatesTo`/`duplicates`
-/// set). The Complexity and Estimate rows also each carry an
-/// [AiSuggestionBadge] (when their value is still AI-suggested/
-/// low-confidence) or a `_RegenerateButton` (when `manual`-locked) — see
-/// `AIO-75`
-/// §5.2. Each `LinkedTicketsSection` row also supports removing its link
-/// or changing its type inline — `TicketLinkPicker.onSelected` (create),
-/// the row's remove action (delete), and its `_LinkTypeEditor` (update)
-/// all go through `TicketsCubit.createTicketLink`/`.deleteTicketLink`/
+/// A ticket's metadata content: priority/complexity/title/type/status row,
+/// parent picker, estimate/time-spent fields, an optional linked-design-page
+/// chip, the SDD-stage tracker (`epic`/`story`) or coding-execution section
+/// (`task`/`bug` — see `TicketTypeHierarchy.isExecutable`), a "Bug details"
+/// section (`bug` only: severity, steps to reproduce, expected/actual
+/// behavior), description, created-on timestamp, an always-live "Updated
+/// {relative}" timestamp directly below it (ticks once a minute via
+/// `TicketsCubit.detailTick` — see `AIO-1985`), and — for every type except
+/// `page`/`chat`/`signal`/`release` — Linked Tickets/Backlinks (widened from
+/// `resource`/`bug`-only for `AIO-392`; `resource` keeps a single-tap
+/// `relatesTo`-only `TicketLinkPicker`, every other gated type offers the full
+/// `blocks`/`blockedBy`/`relatesTo`/`duplicates` set). The Complexity and
+/// Estimate rows also each carry an [AiSuggestionBadge] (when their value is
+/// still AI-suggested/ low-confidence) or a `_RegenerateButton` (when
+/// `manual`-locked) — see `AIO-75` §5.2. Each `LinkedTicketsSection` row also
+/// supports removing its link or changing its type inline —
+/// `TicketLinkPicker.onSelected` (create), the row's remove action (delete),
+/// and its `_LinkTypeEditor` (update) all go through
+/// `TicketsCubit.createTicketLink`/`.deleteTicketLink`/
 /// `.updateTicketLinkType` rather than any of them calling
-/// `TicketLinkRepository` directly, per
-/// `AIO-2257` §4. Extracted
-/// from
-/// `TicketDetailScreen`'s single-scroll body — verbatim content, no
-/// behavior change — so it can render both in `TicketDetailScreen`'s
-/// non-chat layout and inside `ChatTranscriptPane`'s collapsing header
-/// for `chat`-type tickets (see
-/// `AIO-482` §8.4).
-/// Re-derives every rendered field, including `ticket` itself, from its
-/// own `BlocBuilder<TicketsCubit, TicketsState>` — matching this
-/// content's original inline behavior before extraction, where `ticket`
+/// `TicketLinkRepository` directly, per `AIO-2257` §4. Extracted from
+/// `TicketDetailScreen`'s single-scroll body — verbatim content, no behavior
+/// change — so it can render both in `TicketDetailScreen`'s non-chat layout
+/// and inside `ChatTranscriptPane`'s collapsing header for `chat`-type tickets
+/// (see `AIO-482` §8.4). Re-derives every rendered field, including `ticket`
+/// itself, from its own `BlocBuilder<TicketsCubit, TicketsState>` — matching
+/// this content's original inline behavior before extraction, where `ticket`
 /// came from a `TicketDetailLoaded` pattern match in the same position.
-/// [ticket] is a required constructor field so callers (and Flutter's
-/// element diffing) have a stable identity for which ticket this
-/// section is for, but the body always renders from the freshest
-/// `TicketsCubit` state rather than this field directly.
+/// [ticket] is a required constructor field so callers (and Flutter's element
+/// diffing) have a stable identity for which ticket this section is for, but
+/// the body always renders from the freshest `TicketsCubit` state rather than
+/// this field directly.
 class TicketMetadataSection extends StatelessWidget {
-  /// Whether the predicted-token-range line (Component Spec §3) should
-  /// render for this build — [ticket] has a persisted prediction, and no
+  /// Whether the predicted-token-range line (Component Spec §3) should render
+  /// for this build — [ticket] has a persisted prediction, and no
   /// coding-execution chat exists yet for it. Implements this change's
-  /// display-precedence rule and its queued-state carve-out
-  /// (`AIO-2455` §5): a stale
-  /// leftover prediction must stay hidden for the entire window between a
-  /// run being triggered and its first turn completing, not just while
+  /// display-precedence rule and its queued-state carve-out (`AIO-2455` §5): a
+  /// stale leftover prediction must stay hidden for the entire window between
+  /// a run being triggered and its first turn completing, not just while
   /// [executionTokenTotal] happens to still be `null` for other reasons.
   /// [executionAwaitingReview]/[executionFailureReason] cover the
   /// completed-without-a-fresh-total and failed-run cases respectively —
@@ -144,23 +136,22 @@ class TicketMetadataSection extends StatelessWidget {
   /// owning screen, not this stateless section.
   final void Function(Ticket ticket, bool canAdvance) onMaybeAutoAdvance;
 
-  /// [ticket]'s (a `task`/`bug`) total coding-execution token spend
-  /// recorded so far — passed down from the owning screen's own
-  /// `TicketDetailLoaded.executionTokenTotal`, the same "loaded by the
-  /// caller, passed down" pattern [automationConfidence] already uses,
-  /// rather than re-derived from this widget's own internal
-  /// `BlocBuilder` (the caller's outer `BlocBuilder` already rebuilds
-  /// this whole subtree on every relevant `TicketsCubit` emission, so
-  /// staleness isn't a concern). `null` means no coding-execution turn
-  /// has completed yet — see [_showPredictedTokenRange]. Added for
-  /// `AIO-2455`.
+  /// [ticket]'s (a `task`/`bug`) total coding-execution token spend recorded
+  /// so far — passed down from the owning screen's own
+  /// `TicketDetailLoaded.executionTokenTotal`, the same "loaded by the caller,
+  /// passed down" pattern [automationConfidence] already uses, rather than
+  /// re-derived from this widget's own internal `BlocBuilder` (the caller's
+  /// outer `BlocBuilder` already rebuilds this whole subtree on every relevant
+  /// `TicketsCubit` emission, so staleness isn't a concern). `null` means no
+  /// coding-execution turn has completed yet — see [_showPredictedTokenRange].
+  /// Added for `AIO-2455`.
   final int? executionTokenTotal;
 
-  /// Called when the "Ready to retry verification" footer tier's
-  /// gated-confirm or manual button is pressed for an `epic`/`story`
-  /// [ticket] — see `TicketDetailScreen`'s wiring via
-  /// `TicketsCubit.retryVerifyForStoryOrEpic`. `null` (the default) for
-  /// any caller that never renders an `epic`/`story` [ticket] here (e.g.
+  /// Called when the "Ready to retry verification" footer tier's gated-confirm
+  /// or manual button is pressed for an `epic`/`story` [ticket] — see
+  /// `TicketDetailScreen`'s wiring via
+  /// `TicketsCubit.retryVerifyForStoryOrEpic`. `null` (the default) for any
+  /// caller that never renders an `epic`/`story` [ticket] here (e.g.
   /// `ChatTranscriptPane`'s embedding, always a `chat` ticket, where the
   /// "Ready to retry verification" tier can never trigger). Added for
   /// `AIO-1905`.
@@ -383,10 +374,10 @@ class TicketMetadataSection extends StatelessWidget {
                             ),
                             const SizedBox(height: AionSpacing.sp12),
                             // `Wrap` (not `Row`) so `_RunAttachedSkillButton`
-                            // — Component Spec §7's placement "after the
-                            // type chip + status indicator" — falls to its
-                            // own line on narrow width instead of
-                            // overflowing. AIO-2650 T37.
+                            // — Component Spec §7's placement "after the type
+                            // chip + status indicator" — falls to its own line
+                            // on narrow width instead of overflowing. AIO-2650
+                            // T37.
                             Wrap(
                               spacing: AionSpacing.sp8,
                               runSpacing: AionSpacing.sp8,
@@ -983,27 +974,25 @@ class TicketMetadataSection extends StatelessWidget {
               return const SizedBox.shrink();
             }
             final ticket = state.ticket;
-            // `page` tickets never reach this far — the
-            // `TicketDetailLoaded` listener above redirects
-            // them to `PageDetailScreen` first. Every other type
-            // except `chat`/`idea`/`knownGap`/`openQuestion`/`release`
-            // (no `TicketLink` use case) renders Linked Tickets/
-            // Backlinks/Gaps & Open Questions here (sub-pages moved to
-            // `PageDetailScreen` entirely, since only `page` tickets have
-            // sub-pages). `idea` keeps `signal`'s original exclusion
-            // (freestanding, nothing to link); `knownGap`/`openQuestion`
-            // are also excluded — their one relationship is fixed at
-            // creation, shown instead via the read-only "Raised on"
-            // indicator below (see `_RaisedOnIndicator`), per
-            // `AIO-934`
-            // §4.1/§4.3. `resource` keeps its original single-tap
-            // `relatesTo`-only flow (see `linkTypeOptions` below);
-            // `epic`/`story`/`task`/`bug` gained this section for
-            // `AIO-392`,
-            // offering the full `blocks`/`blockedBy`/`relatesTo`/
-            // `duplicates` set — `bug`'s existing use case (linking an
-            // affected `release` via `relatesTo`) still works
-            // unchanged, just with more options available alongside it.
+            // `page` tickets never reach this far — the `TicketDetailLoaded`
+            // listener above redirects them to `PageDetailScreen` first. Every
+            // other type except
+            // `chat`/`idea`/`knownGap`/`openQuestion`/`release` (no
+            // `TicketLink` use case) renders Linked Tickets/ Backlinks/Gaps &
+            // Open Questions here (sub-pages moved to `PageDetailScreen`
+            // entirely, since only `page` tickets have sub-pages). `idea`
+            // keeps `signal`'s original exclusion (freestanding, nothing to
+            // link); `knownGap`/`openQuestion` are also excluded — their one
+            // relationship is fixed at creation, shown instead via the
+            // read-only "Raised on" indicator below (see
+            // `_RaisedOnIndicator`), per `AIO-934` §4.1/§4.3. `resource` keeps
+            // its original single-tap `relatesTo`-only flow (see
+            // `linkTypeOptions` below); `epic`/`story`/`task`/`bug` gained
+            // this section for `AIO-392`, offering the full
+            // `blocks`/`blockedBy`/`relatesTo`/ `duplicates` set — `bug`'s
+            // existing use case (linking an affected `release` via
+            // `relatesTo`) still works unchanged, just with more options
+            // available alongside it.
             if (ticket.type == TicketType.chat ||
                 ticket.type == TicketType.idea ||
                 ticket.type == TicketType.knownGap ||
@@ -1086,19 +1075,16 @@ class TicketMetadataSection extends StatelessWidget {
 }
 
 /// A `knownGap`/`openQuestion` ticket's own detail-screen "Raised on"
-/// indicator — a read-only, tap-to-navigate row naming the specific
-/// ticket this gap/question was raised against, shown below the type
-/// chip/status row in place of the generic Linked Tickets/Backlinks
-/// block (those never render for these two types — see
-/// [TicketMetadataSection]'s Documentation-mode gate). There is no
-/// "unlink" affordance: a `knownGap`/`openQuestion` can never exist
-/// without its target, so the relationship is immutable from this
-/// screen. Resolves its target once via
-/// [TicketsCubit.getRaisedOnTicket] rather than reusing
-/// [TicketsCubit.loadDocumentRelations] (which excludes these types from
-/// its gated list entirely). Added for
-/// `AIO-934`; see that change's
-/// design.md §4.3/Component Spec §5.
+/// indicator — a read-only, tap-to-navigate row naming the specific ticket
+/// this gap/question was raised against, shown below the type chip/status row
+/// in place of the generic Linked Tickets/Backlinks block (those never render
+/// for these two types — see [TicketMetadataSection]'s Documentation-mode
+/// gate). There is no "unlink" affordance: a `knownGap`/`openQuestion` can
+/// never exist without its target, so the relationship is immutable from this
+/// screen. Resolves its target once via [TicketsCubit.getRaisedOnTicket]
+/// rather than reusing [TicketsCubit.loadDocumentRelations] (which excludes
+/// these types from its gated list entirely). Added for `AIO-934`; see that
+/// change's design.md §4.3/Component Spec §5.
 class _RaisedOnIndicator extends StatefulWidget {
   const _RaisedOnIndicator({required this.ticket});
 
@@ -1296,11 +1282,11 @@ class _RepairBanner extends StatelessWidget {
   }
 }
 
-/// A compact link chip to a Story's linked design Page, shown directly
-/// under the ticket-meta row while `needsDesignReview` is `true` and the
-/// design Page exists (design.md §5). Reuses `typePage`'s accent color,
-/// the same one `TypeChip`/backlink chips already use for `page`
-/// tickets. Added for `AIO-1834`.
+/// A compact link chip to a Story's linked design Page, shown directly under
+/// the ticket-meta row while `needsDesignReview` is `true` and the design Page
+/// exists (design.md §5). Reuses `typePage`'s accent color, the same one
+/// `TypeChip`/backlink chips already use for `page` tickets. Added for
+/// `AIO-1834`.
 class _LinkedDesignPageChip extends StatelessWidget {
   const _LinkedDesignPageChip({required this.page, required this.onTap});
 
@@ -1492,15 +1478,13 @@ class _RollupIndicatorState extends State<_RollupIndicator> {
 /// A small, icon-only, keyboard-focusable button shown next to a
 /// `manual`-locked Complexity/Estimate value in [TicketMetadataSection],
 /// letting the user explicitly request a fresh AI suggestion for that one
-/// field, overriding the lock. Ghost by default, gaining fill/glyph
-/// weight on hover/press/focus, and switching to a spinning in-flight
-/// state (a fresh [AnimationController] created on entering it and
-/// disposed on leaving it — never left repeating in the background) while
-/// [onRegenerate] is in flight. No `IconButton`/`InkWell` — built from
+/// field, overriding the lock. Ghost by default, gaining fill/glyph weight on
+/// hover/press/focus, and switching to a spinning in-flight state (a fresh
+/// [AnimationController] created on entering it and disposed on leaving it —
+/// never left repeating in the background) while [onRegenerate] is in flight.
+/// No `IconButton`/`InkWell` — built from
 /// `Focus`/`GestureDetector`/`DecoratedBox`, per this app's no-Material
-/// constraint. See
-/// `AIO-75`
-/// §2 for the full state spec.
+/// constraint. See `AIO-75` §2 for the full state spec.
 class _RegenerateButton extends StatefulWidget {
   const _RegenerateButton({
     required this.semanticsLabel,
@@ -1646,26 +1630,22 @@ class _RegenerateButtonState extends State<_RegenerateButton>
 }
 
 /// The SDD-stage section shown on epic/story ticket detail, below the
-/// ticket-meta row and above the Description block: a variable-length
-/// tracker (4 steps — Explore/Propose/Verify/Archive — or 6, with Design
-/// Brief/Design Sync inserted between Propose and Verify when
-/// [needsDesignReview] isn't `false`; see
-/// `AIO-1834` §1), the current-stage
-/// line, and one of five mutually-exclusive, priority-ordered footers
-/// (`AIO-352/
-/// design.md`'s Component Spec §0 "Action-slot state resolution"
-/// table, extending `AIO-1856`
-/// §2): [isAdvancingStage] takes priority over everything else and
+/// ticket-meta row and above the Description block: a variable-length tracker
+/// (4 steps — Explore/Propose/Verify/Archive — or 6, with Design Brief/Design
+/// Sync inserted between Propose and Verify when [needsDesignReview] isn't
+/// `false`; see `AIO-1834` §1), the current-stage line, and one of five
+/// mutually-exclusive, priority-ordered footers (`AIO-352/ design.md`'s
+/// Component Spec §0 "Action-slot state resolution" table, extending
+/// `AIO-1856` §2): [isAdvancingStage] takes priority over everything else and
 /// shows [_StageAdvancingHint] (no Advance button regardless of
 /// [automationConfidence] — a spawn is already running); otherwise
 /// [sddStageFailureReason] non-null shows [_StageAdvanceFailureBanner];
-/// otherwise, when [canAdvance] is `true`, an
-/// [automationConfidence]-dependent control (gated banner, plain manual
-/// button, or a silent auto-note — see proposal.md's
-/// AutomationConfidence semantics section); when it's `false` and
-/// [blockReason] is non-null, the "Not ready" hint row (§2.2) explaining
-/// what's still pending; otherwise (nothing left to advance to) none of
-/// the five renders.
+/// otherwise, when [canAdvance] is `true`, an [automationConfidence]-dependent
+/// control (gated banner, plain manual button, or a silent auto-note — see
+/// proposal.md's AutomationConfidence semantics section); when it's `false`
+/// and [blockReason] is non-null, the "Not ready" hint row (§2.2) explaining
+/// what's still pending; otherwise (nothing left to advance to) none of the
+/// five renders.
 class _SddStageSection extends StatelessWidget {
   const _SddStageSection({
     required this.ticket,
@@ -1690,71 +1670,62 @@ class _SddStageSection extends StatelessWidget {
   final AutomationConfidence? automationConfidence;
   final VoidCallback onAdvance;
 
-  /// Whether [ticket] (a `story`) needs a `designBrief`/`designSync`
-  /// pass — `null` while still unknown (before child Tasks exist).
-  /// `false` collapses [_stages] to the original 4 nodes; `null`/`true`
-  /// show the full 6. Added for `AIO-1834`.
+  /// Whether [ticket] (a `story`) needs a `designBrief`/`designSync` pass —
+  /// `null` while still unknown (before child Tasks exist). `false` collapses
+  /// [_stages] to the original 4 nodes; `null`/`true` show the full 6. Added
+  /// for `AIO-1834`.
   final bool? needsDesignReview;
 
-  /// Whether [ticket] has an [TicketsCubit.advanceSddStage] spawn
-  /// currently in flight — takes priority over every other action-slot
-  /// state (Component Spec §0's "Action-slot state resolution" table):
-  /// no Advance button is offered while `true`, regardless of
-  /// [automationConfidence]. Added for
+  /// Whether [ticket] has an [TicketsCubit.advanceSddStage] spawn currently in
+  /// flight — takes priority over every other action-slot state (Component
+  /// Spec §0's "Action-slot state resolution" table): no Advance button is
+  /// offered while `true`, regardless of [automationConfidence]. Added for
   /// `AIO-352`.
   final bool isAdvancingStage;
 
-  /// Why [ticket]'s most recent stage-advance attempt failed, `null` if
-  /// it hasn't. Checked only when [isAdvancingStage] is `false`. Added
-  /// for `AIO-352`.
+  /// Why [ticket]'s most recent stage-advance attempt failed, `null` if it
+  /// hasn't. Checked only when [isAdvancingStage] is `false`. Added for
+  /// `AIO-352`.
   final String? sddStageFailureReason;
 
-  /// Whether [sddStageFailureReason] has a retry action available.
-  /// Added for
+  /// Whether [sddStageFailureReason] has a retry action available. Added for
   /// `AIO-352`.
   final bool sddStageCanRetry;
 
-  /// Called when [_StageAdvanceFailureBanner]'s retry button is pressed
-  /// — re-calls [TicketsCubit.advanceSddStage] for [ticket]. Only
-  /// meaningful when [sddStageFailureReason] is non-`null`. Added for
-  /// `AIO-352`.
+  /// Called when [_StageAdvanceFailureBanner]'s retry button is pressed —
+  /// re-calls [TicketsCubit.advanceSddStage] for [ticket]. Only meaningful
+  /// when [sddStageFailureReason] is non-`null`. Added for `AIO-352`.
   final VoidCallback? onRetryStageAdvance;
 
-  /// Whether [ticket] (an `epic`/`story`) is ready for a verify retry —
-  /// see `TicketsCubit._verifyRetryReadiness`'s dartdoc for the exact
-  /// precondition chain. Takes priority over the generic
-  /// `canAdvance`/[_NotReadyHint] tiers when `true` (Component Spec
-  /// §1.0's mutual-exclusivity rule) — while a `VERIFY GATE: PENDING`
-  /// verdict is unresolved, advance to `archived` stays blocked, so the
-  /// two tiers never both apply. Added for
-  /// `AIO-1905`.
+  /// Whether [ticket] (an `epic`/`story`) is ready for a verify retry — see
+  /// `TicketsCubit._verifyRetryReadiness`'s dartdoc for the exact precondition
+  /// chain. Takes priority over the generic `canAdvance`/[_NotReadyHint] tiers
+  /// when `true` (Component Spec §1.0's mutual-exclusivity rule) — while a
+  /// `VERIFY GATE: PENDING` verdict is unresolved, advance to `archived` stays
+  /// blocked, so the two tiers never both apply. Added for `AIO-1905`.
   final bool verifyRetryReady;
 
-  /// The configured [AutomationContext.verifyGateRetry] confidence,
-  /// meaningful only when [verifyRetryReady] is `true` — selects which
-  /// of the three "Ready to retry verification" tier treatments renders
-  /// (gated banner, manual button, or auto note), mirroring
-  /// [automationConfidence]'s own role for the advance tier. Added for
-  /// `AIO-1905`.
+  /// The configured [AutomationContext.verifyGateRetry] confidence, meaningful
+  /// only when [verifyRetryReady] is `true` — selects which of the three
+  /// "Ready to retry verification" tier treatments renders (gated banner,
+  /// manual button, or auto note), mirroring [automationConfidence]'s own role
+  /// for the advance tier. Added for `AIO-1905`.
   final AutomationConfidence? verifyRetryConfidence;
 
   /// How many of [ticket]'s current fix Task/Bug children (spawned by a
-  /// `VERIFY GATE: PENDING` verdict) haven't yet reached `done`, or
-  /// `null` when there's no unresolved `PENDING` verdict to report on at
-  /// all (already approved, no verdict posted yet, or [verifyRetryReady]
-  /// is already `true` — nothing left to wait for). Drives the
-  /// Component Spec §1.4 "not-ready predecessor" hint, taking priority
-  /// over the generic [blockReason] hint whenever it's a positive count.
-  /// Computed by [TicketsCubit.getTicketById] via
-  /// `TicketsCubit._verifyRetryReadiness`. Added for
-  /// `AIO-1905`.
+  /// `VERIFY GATE: PENDING` verdict) haven't yet reached `done`, or `null`
+  /// when there's no unresolved `PENDING` verdict to report on at all (already
+  /// approved, no verdict posted yet, or [verifyRetryReady] is already `true`
+  /// — nothing left to wait for). Drives the Component Spec §1.4 "not-ready
+  /// predecessor" hint, taking priority over the generic [blockReason] hint
+  /// whenever it's a positive count. Computed by [TicketsCubit.getTicketById]
+  /// via `TicketsCubit._verifyRetryReadiness`. Added for `AIO-1905`.
   final int? verifyPendingFixesRemaining;
 
-  /// Called when the "Ready to retry verification" tier's gated-confirm
-  /// or manual button is pressed — re-calls `TicketsCubit.retryVerify`
-  /// for [ticket]'s current Verifying-stage chat. Only meaningful when
-  /// [verifyRetryReady] is `true`. Added for
-  /// `AIO-1905`.
+  /// Called when the "Ready to retry verification" tier's gated-confirm or
+  /// manual button is pressed — re-calls `TicketsCubit.retryVerify` for
+  /// [ticket]'s current Verifying-stage chat. Only meaningful when
+  /// [verifyRetryReady] is `true`. Added for `AIO-1905`.
   final VoidCallback? onRetryVerify;
 
   static const _fullStages = [
@@ -1880,12 +1851,11 @@ class _SddStageSection extends StatelessWidget {
             onRetry: onRetryStageAdvance,
           ),
         ] else if (verifyRetryReady && verifyRetryConfidence != null) ...[
-          // "Ready to retry verification" footer tier — Component Spec
-          // §1. More specific/actionable than the generic canAdvance/
-          // _NotReadyHint tiers below, so it preempts both; mutually
-          // exclusive with them in practice (§1.0), since advance to
-          // `archived` stays blocked while a PENDING verdict is
-          // unresolved. Added for
+          // "Ready to retry verification" footer tier — Component Spec §1.
+          // More specific/actionable than the generic canAdvance/
+          // _NotReadyHint tiers below, so it preempts both; mutually exclusive
+          // with them in practice (§1.0), since advance to `archived` stays
+          // blocked while a PENDING verdict is unresolved. Added for
           // `AIO-1905`.
           const SizedBox(height: AionSpacing.sp12),
           switch (verifyRetryConfidence!) {
@@ -1929,14 +1899,13 @@ class _SddStageSection extends StatelessWidget {
         ] else if (!canAdvance &&
             verifyPendingFixesRemaining != null &&
             verifyPendingFixesRemaining! > 0) ...[
-          // Component Spec §1.4 "not-ready predecessor" — while a
-          // PENDING verdict's fix Tasks/Bugs are still open, this takes
-          // priority over the generic blockReason hint below: it names
-          // the actual precondition (fix tasks reaching Done) rather
-          // than the transition graph's generic "Waiting on: ..." text,
-          // which would otherwise read as if nothing had happened yet.
-          // Reuses `_NotReadyHint` verbatim — same visual treatment, per
-          // spec, just different copy. Added for
+          // Component Spec §1.4 "not-ready predecessor" — while a PENDING
+          // verdict's fix Tasks/Bugs are still open, this takes priority over
+          // the generic blockReason hint below: it names the actual
+          // precondition (fix tasks reaching Done) rather than the transition
+          // graph's generic "Waiting on: ..." text, which would otherwise read
+          // as if nothing had happened yet. Reuses `_NotReadyHint` verbatim —
+          // same visual treatment, per spec, just different copy. Added for
           // `AIO-1905`.
           const SizedBox(height: AionSpacing.sp12),
           _NotReadyHint(
@@ -1979,12 +1948,11 @@ class _SddStageSection extends StatelessWidget {
 }
 
 /// The "Not ready" state, shown when the precondition isn't met yet and
-/// there's still a next stage to advance to — plain body copy, no enum-
-/// driven styling, no badge/chip/icon, per
-/// `AIO-1936` §6:
-/// [reason] (already `'Waiting on: <field display name>'`, auto-derived
-/// by `TicketsCubit._sddStageAdvanceCheck`) is displayed directly, not
-/// resolved from a fixed enum here.
+/// there's still a next stage to advance to — plain body copy, no enum-driven
+/// styling, no badge/chip/icon, per `AIO-1936` §6: [reason] (already
+/// `'Waiting on: <field display name>'`, auto-derived by
+/// `TicketsCubit._sddStageAdvanceCheck`) is displayed directly, not resolved
+/// from a fixed enum here.
 class _NotReadyHint extends StatelessWidget {
   const _NotReadyHint({required this.reason});
 
@@ -2013,13 +1981,12 @@ class _NotReadyHint extends StatelessWidget {
 }
 
 /// Shown in [_SddStageSection]'s action slot while an
-/// [TicketsCubit.advanceSddStage] chat spawn is running for the
-/// section's ticket. Mirrors [_ExecutionRunningHint]'s informational-row
-/// shape (rotating gear glyph + text, no background/border/padding box)
-/// but — unlike a coding-execution run — a stage chat has no tool
-/// access, so there's no [_ExecutionLiveToolLine]-equivalent live-
-/// activity sub-line. Per Component Spec §2
-/// (`AIO-352`).
+/// [TicketsCubit.advanceSddStage] chat spawn is running for the section's
+/// ticket. Mirrors [_ExecutionRunningHint]'s informational-row shape (rotating
+/// gear glyph + text, no background/border/padding box) but — unlike a
+/// coding-execution run — a stage chat has no tool access, so there's no
+/// [_ExecutionLiveToolLine]-equivalent live-activity sub-line. Per Component
+/// Spec §2 (`AIO-352`).
 class _StageAdvancingHint extends StatefulWidget {
   const _StageAdvancingHint({required this.nextStageLabel});
 
@@ -2099,13 +2066,12 @@ class _StageAdvancingHintState extends State<_StageAdvancingHint>
 
 /// Shown in [_SddStageSection]'s action slot when the last
 /// [TicketsCubit.advanceSddStage] attempt failed. Delegates to
-/// [_ExecutionActionBanner]'s existing `failure`-tone shape (tinted
-/// container, warning glyph + title, scrollable reason well, full-width
-/// `secondary` retry button — the `Color(0xFFFFFFFF)`/`Color(0xFF000000)`
-/// hover-shade fix from `/design-sync` applies here unchanged, since it
-/// lives in the shared [_ExecutionActionButton]) rather than duplicating
-/// that geometry, per Component Spec §3
-/// (`AIO-352`).
+/// [_ExecutionActionBanner]'s existing `failure`-tone shape (tinted container,
+/// warning glyph + title, scrollable reason well, full-width `secondary` retry
+/// button — the `Color(0xFFFFFFFF)`/`Color(0xFF000000)` hover-shade fix from
+/// `/design-sync` applies here unchanged, since it lives in the shared
+/// [_ExecutionActionButton]) rather than duplicating that geometry, per
+/// Component Spec §3 (`AIO-352`).
 class _StageAdvanceFailureBanner extends StatelessWidget {
   const _StageAdvanceFailureBanner({
     required this.reason,
@@ -2139,13 +2105,12 @@ class _StageAdvanceFailureBanner extends StatelessWidget {
   }
 }
 
-/// The tracker's node+connector row, per design.md §1.1/§1.4. Stateful
-/// only to own the horizontal-scroll fallback's [ScrollController] and
-/// jump-to-current-node-on-first-build behavior — the row itself is
-/// otherwise a pure function of [stages]/[labels]/[currentIndex]. Added
-/// for `AIO-1834`, splitting this out of
-/// `_SddStageSection` (a [StatelessWidget]) so the scroll state has
-/// somewhere to live.
+/// The tracker's node+connector row, per design.md §1.1/§1.4. Stateful only to
+/// own the horizontal-scroll fallback's [ScrollController] and
+/// jump-to-current-node-on-first-build behavior — the row itself is otherwise
+/// a pure function of [stages]/[labels]/[currentIndex]. Added for `AIO-1834`,
+/// splitting this out of `_SddStageSection` (a [StatelessWidget]) so the
+/// scroll state has somewhere to live.
 class _StageTrackerRow extends StatefulWidget {
   const _StageTrackerRow({
     required this.stages,
@@ -2287,10 +2252,10 @@ class _StageTrackerRowState extends State<_StageTrackerRow> {
 enum _StageNodeState { complete, current, future }
 
 /// One node plus label in [_SddStageSection]'s variable-length (4-or-6-step)
-/// tracker row. [width]/[fontSize] vary with the tracker's current node
-/// count (design.md §1.4's `cellW`/label-size table) — added for
-/// `AIO-1834`; both default to the original
-/// 4-node values so this widget's own behavior is unchanged at that count.
+/// tracker row. [width]/[fontSize] vary with the tracker's current node count
+/// (design.md §1.4's `cellW`/label-size table) — added for `AIO-1834`; both
+/// default to the original 4-node values so this widget's own behavior is
+/// unchanged at that count.
 class _StageNode extends StatelessWidget {
   const _StageNode({
     required this.label,
@@ -2367,14 +2332,12 @@ class _StageNode extends StatelessWidget {
   }
 }
 
-/// AutomationConfidence.gated "ready to advance" banner plus inline
-/// confirm button. Design-gate-aware since
-/// `AIO-1834`: while [currentStage] is
-/// [SddStage.designBrief]/[SddStage.designSync], the leading glyph
-/// switches to a `typePage`-tinted pencil (design.md §3.2) and a
-/// precondition-met sub-line appears under the title (design.md §3.3) —
-/// every other stage keeps the original sparkle glyph and single-line
-/// title unchanged.
+/// AutomationConfidence.gated "ready to advance" banner plus inline confirm
+/// button. Design-gate-aware since `AIO-1834`: while [currentStage] is
+/// [SddStage.designBrief]/[SddStage.designSync], the leading glyph switches to
+/// a `typePage`-tinted pencil (design.md §3.2) and a precondition-met sub-line
+/// appears under the title (design.md §3.3) — every other stage keeps the
+/// original sparkle glyph and single-line title unchanged.
 class _GatedBanner extends StatelessWidget {
   const _GatedBanner({
     required this.currentStage,
@@ -2402,26 +2365,24 @@ class _GatedBanner extends StatelessWidget {
   final VoidCallback onAdvance;
 
   /// Explicit leading-glyph override — used by the "Ready to retry
-  /// verification" footer tier's `arrows-clockwise` motif in place of
-  /// the stage-derived sparkle/pencil glyph (Component Spec §1.1.2).
-  /// `null` falls back to the existing [currentStage]-derived
-  /// computation. Added for `AIO-1905`.
+  /// verification" footer tier's `arrows-clockwise` motif in place of the
+  /// stage-derived sparkle/pencil glyph (Component Spec §1.1.2). `null` falls
+  /// back to the existing [currentStage]-derived computation. Added for
+  /// `AIO-1905`.
   final PhosphorIconData? icon;
 
   /// Explicit banner title override, falling back to the existing
-  /// `"Ready to advance to <stage>"` computed title when `null`. Added
-  /// for `AIO-1905`.
+  /// `"Ready to advance to <stage>"` computed title when `null`. Added for
+  /// `AIO-1905`.
   final String? title;
 
   /// Explicit sub-line override, falling back to [_computedSubLine] when
   /// `null` (which itself may resolve to `null` — no sub-line — for any
-  /// [currentStage]/[nextStage] pair it doesn't cover). Added for
-  /// `AIO-1905`.
+  /// [currentStage]/[nextStage] pair it doesn't cover). Added for `AIO-1905`.
   final String? subLine;
 
-  /// Explicit confirm-button label override, falling back to the
-  /// existing fixed `"Advance"` label when `null`. Added for
-  /// `AIO-1905`.
+  /// Explicit confirm-button label override, falling back to the existing
+  /// fixed `"Advance"` label when `null`. Added for `AIO-1905`.
   final String? actionLabel;
 
   /// The sub-line text from design.md §3.3's table, or `null` for every
@@ -2547,15 +2508,13 @@ class _ManualAdvanceButton extends StatelessWidget {
   final VoidCallback onAdvance;
 
   /// Explicit leading-glyph override — used by the "Ready to retry
-  /// verification" footer tier's `arrows-clockwise` motif in place of
-  /// the default caret (Component Spec §1.2). `null` falls back to
-  /// [PhosphorIcons.caretRightLight]. Added for
-  /// `AIO-1905`.
+  /// verification" footer tier's `arrows-clockwise` motif in place of the
+  /// default caret (Component Spec §1.2). `null` falls back to
+  /// [PhosphorIcons.caretRightLight]. Added for `AIO-1905`.
   final PhosphorIconData? icon;
 
   /// Explicit button-label override, falling back to the existing
-  /// `"Advance to <stage>"` computed label when `null`. Added for
-  /// `AIO-1905`.
+  /// `"Advance to <stage>"` computed label when `null`. Added for `AIO-1905`.
   final String? actionLabel;
 
   @override
@@ -2596,28 +2555,25 @@ class _ManualAdvanceButton extends StatelessWidget {
   }
 }
 
-/// The coding-execution section shown on a `task` ticket's detail view,
-/// below the ticket-meta row and above the Description block — the same
-/// slot [_SddStageSection] occupies for `epic`/`story` tickets (only one
-/// of the two ever renders for a given ticket type). Rendered only while
-/// [isExecuting], [executionQueuePosition], [executionAwaitingReview], or
-/// [executionFailureReason] is truthy — a Task not yet attached to any
-/// run shows neither this nor [_SddStageSection]. Reuses the plain-
-/// `Column`/divider framing [_SddStageSection] already establishes for
+/// The coding-execution section shown on a `task` ticket's detail view, below
+/// the ticket-meta row and above the Description block — the same slot
+/// [_SddStageSection] occupies for `epic`/`story` tickets (only one of the two
+/// ever renders for a given ticket type). Rendered only while [isExecuting],
+/// [executionQueuePosition], [executionAwaitingReview], or
+/// [executionFailureReason] is truthy — a Task not yet attached to any run
+/// shows neither this nor [_SddStageSection]. Reuses the
+/// plain-`Column`/divider framing [_SddStageSection] already establishes for
 /// this slot rather than wrapping in its own bordered container, per
-/// `AIO-2078`'s §0
-/// container spec (the surrounding divider already supplies the "top
-/// border" it describes). The `verificationFailed` state
+/// `AIO-2078`'s §0 container spec (the surrounding divider already supplies
+/// the "top border" it describes). The `verificationFailed` state
 /// ([executionFailureReason] non-`null`) is checked before
-/// [executionAwaitingReview] — the two are mutually exclusive, a Task is
-/// never both awaiting review and showing a failure. Per
-/// `AIO-506`
-/// §0. Also renders a running-total [TokenCountLabel] line below the
-/// state body whenever [executionTokenTotal] is non-`null` — the
-/// in-flight variant ([_InFlightTokenLine]) while [isExecuting], the
-/// settled variant otherwise — without altering this section's own
-/// overall visibility gate above. Added for
-/// `AIO-2455`.
+/// [executionAwaitingReview] — the two are mutually exclusive, a Task is never
+/// both awaiting review and showing a failure. Per `AIO-506` §0. Also renders
+/// a running-total [TokenCountLabel] line below the state body whenever
+/// [executionTokenTotal] is non-`null` — the in-flight variant
+/// ([_InFlightTokenLine]) while [isExecuting], the settled variant otherwise —
+/// without altering this section's own overall visibility gate above. Added
+/// for `AIO-2455`.
 class _CodingExecutionSection extends StatelessWidget {
   const _CodingExecutionSection({
     required this.isExecuting,
@@ -2638,26 +2594,23 @@ class _CodingExecutionSection extends StatelessWidget {
   final String? executionFailureReason;
 
   /// A short, pre-formatted PR-metadata detail (e.g. "PR #42 · 5 files
-  /// changed") shown as `_ExecutionActionBanner`'s success-tone
-  /// `subLine` — see `TicketDetailLoaded.executionPrSubLine`. `null`
-  /// omits the sub-line. Added for
-  /// `AIO-1586`.
+  /// changed") shown as `_ExecutionActionBanner`'s success-tone `subLine` —
+  /// see `TicketDetailLoaded.executionPrSubLine`. `null` omits the sub-line.
+  /// Added for `AIO-1586`.
   final String? executionPrSubLine;
   final String? executionLiveActivity;
 
-  /// This Task's total coding-execution token spend recorded so far.
-  /// `null` while queued (no turn has completed yet) — the token line is
-  /// gated on this being non-`null` (Component Spec §4.2), independent
-  /// of the section's own overall visibility gate. Added for
-  /// `AIO-2455`.
+  /// This Task's total coding-execution token spend recorded so far. `null`
+  /// while queued (no turn has completed yet) — the token line is gated on
+  /// this being non-`null` (Component Spec §4.2), independent of the section's
+  /// own overall visibility gate. Added for `AIO-2455`.
   final int? executionTokenTotal;
   final VoidCallback onMarkReadyForReview;
   final VoidCallback onRetry;
 
   /// Called when the running/queued Cancel button (see
-  /// [ExecutionCancelControl]) is activated. Only rendered while
-  /// [isExecuting] or [executionQueuePosition] is non-`null`. Added for
-  /// `AIO-1400`.
+  /// [ExecutionCancelControl]) is activated. Only rendered while [isExecuting]
+  /// or [executionQueuePosition] is non-`null`. Added for `AIO-1400`.
   final VoidCallback onCancel;
 
   @override
@@ -2751,13 +2704,12 @@ class _CodingExecutionSection extends StatelessWidget {
 
 /// The execution banner's in-flight token line (Component Spec §4.3): a
 /// still-neutral [TokenCountLabel.total] paired with a *sibling* pulsing
-/// liveness dot and a `"counting…"` caption — the label itself never
-/// changes appearance while live (no accent recoloring); liveness is
-/// carried entirely by this row's own dot/caption, the same way
-/// `_WaitingForReplyIndicator` (`chat_transcript_pane.dart`) pairs a
-/// pulsing dot with its own waiting-for-reply caption. Static (no
-/// animation) under `MediaQuery.disableAnimations`. Added for
-/// `AIO-2455`.
+/// liveness dot and a `"counting…"` caption — the label itself never changes
+/// appearance while live (no accent recoloring); liveness is carried entirely
+/// by this row's own dot/caption, the same way `_WaitingForReplyIndicator`
+/// (`chat_transcript_pane.dart`) pairs a pulsing dot with its own
+/// waiting-for-reply caption. Static (no animation) under
+/// `MediaQuery.disableAnimations`. Added for `AIO-2455`.
 class _InFlightTokenLine extends StatefulWidget {
   const _InFlightTokenLine({required this.total});
 
@@ -2836,22 +2788,18 @@ class _InFlightTokenLineState extends State<_InFlightTokenLine>
   }
 }
 
-/// Shown while the Task's coding-execution chat is actively running.
-/// Mirrors [_NotReadyHint]'s informational-row shape (icon + text, no
-/// background/border/padding box) but takes an active treatment — a
-/// slowly, continuously rotating gear glyph — so it reads as "work in
-/// progress," not "blocked/waiting." Per
-/// `AIO-2078` §1.
-/// Additionally renders a [_ExecutionLiveToolLine] below the gear row
-/// when [liveActivity] is non-`null` — see
-/// `AIO-506`
-/// §2.
+/// Shown while the Task's coding-execution chat is actively running. Mirrors
+/// [_NotReadyHint]'s informational-row shape (icon + text, no
+/// background/border/padding box) but takes an active treatment — a slowly,
+/// continuously rotating gear glyph — so it reads as "work in progress," not
+/// "blocked/waiting." Per `AIO-2078` §1. Additionally renders a
+/// [_ExecutionLiveToolLine] below the gear row when [liveActivity] is
+/// non-`null` — see `AIO-506` §2.
 class _ExecutionRunningHint extends StatefulWidget {
   const _ExecutionRunningHint({this.liveActivity});
 
-  /// A live "Running `<tool>`..." status string, or `null` if no tool
-  /// call has happened yet this run. Added for
-  /// `AIO-506`.
+  /// A live "Running `<tool>`..." status string, or `null` if no tool call has
+  /// happened yet this run. Added for `AIO-506`.
   final String? liveActivity;
 
   @override
@@ -2917,17 +2865,14 @@ class _ExecutionRunningHintState extends State<_ExecutionRunningHint>
   }
 }
 
-/// Secondary status line shown below [_ExecutionRunningHint]'s gear row
-/// while a tool call is in flight, reflecting the run's current activity
-/// (e.g. "Running `npm test`..." — whatever tool the model's implement
-/// or agentic verify turn is actually invoking, not a fixed command).
-/// Indented to align under the
-/// hint's *text* (not its gear): `15` (gear box) + `8` (hint row gap) =
-/// `23`. A slow, low-contrast opacity pulse signals liveness without
+/// Secondary status line shown below [_ExecutionRunningHint]'s gear row while
+/// a tool call is in flight, reflecting the run's current activity (e.g.
+/// "Running `npm test`..." — whatever tool the model's implement or agentic
+/// verify turn is actually invoking, not a fixed command). Indented to align
+/// under the hint's *text* (not its gear): `15` (gear box) + `8` (hint row
+/// gap) = `23`. A slow, low-contrast opacity pulse signals liveness without
 /// competing with the gear's own rotation — static at full opacity under
-/// reduced motion. Per
-/// `AIO-506`
-/// §2.1.
+/// reduced motion. Per `AIO-506` §2.1.
 class _ExecutionLiveToolLine extends StatefulWidget {
   const _ExecutionLiveToolLine({required this.activity});
 
@@ -3062,9 +3007,7 @@ String ordinal(int n) {
   }
 }
 
-/// The tone an [_ExecutionActionBanner] renders in. Per
-/// `AIO-506`
-/// §5.
+/// The tone an [_ExecutionActionBanner] renders in. Per `AIO-506` §5.
 enum _BannerTone {
   /// A finished run with a confirmed PR, awaiting confirmation.
   success,
@@ -3074,21 +3017,18 @@ enum _BannerTone {
   failure,
 }
 
-/// Shown once the Task's coding-execution run reaches a non-in-flight
-/// outcome that needs a human action: a finished run with a confirmed PR
-/// awaiting confirmation (`tone: .success` — the original,
-/// behavior-unchanged `_ExecutionReadyForReviewBanner`), or a failed/
-/// stalled run offering a retry (`tone: .failure`, new). One
-/// parameterized component backs both states rather than two separate
-/// banners sharing a container — mirrors [_GatedBanner]'s tinted
-/// container/border/leading-icon shape, re-keyed per [tone], with its
-/// action button stacked full-width below the text rather than trailing
-/// inline (copy doesn't fit inline beside a two-line title at the
-/// narrowest supported phone width without crushing it to 3 lines). Per
-/// `AIO-2078` §3 (the
-/// success tone's original spec) and
-/// `AIO-506`
-/// §1 (the tone parameterization + new failure tone).
+/// Shown once the Task's coding-execution run reaches a non-in-flight outcome
+/// that needs a human action: a finished run with a confirmed PR awaiting
+/// confirmation (`tone: .success` — the original, behavior-unchanged
+/// `_ExecutionReadyForReviewBanner`), or a failed/ stalled run offering a
+/// retry (`tone: .failure`, new). One parameterized component backs both
+/// states rather than two separate banners sharing a container — mirrors
+/// [_GatedBanner]'s tinted container/border/leading-icon shape, re-keyed per
+/// [tone], with its action button stacked full-width below the text rather
+/// than trailing inline (copy doesn't fit inline beside a two-line title at
+/// the narrowest supported phone width without crushing it to 3 lines). Per
+/// `AIO-2078` §3 (the success tone's original spec) and `AIO-506` §1 (the tone
+/// parameterization + new failure tone).
 class _ExecutionActionBanner extends StatelessWidget {
   const _ExecutionActionBanner({
     required this.tone,
@@ -3107,14 +3047,13 @@ class _ExecutionActionBanner extends StatelessWidget {
   final String title;
 
   /// A short, single-line, pre-formatted PR-metadata detail shown under
-  /// [title] — `tone: .success` only (e.g. "PR #42 · 5 files changed").
-  /// `null` renders nothing, preserving the original title-only layout
-  /// when no matching notification exists yet (see
-  /// `TicketDetailLoaded.executionPrSubLine`). Distinct from
-  /// [errorDetail]'s scrollable well: this is always short (a formatted
-  /// count), never raw agentic output. Added for
-  /// `AIO-1586`; see that
-  /// change's design.md Component Spec §1.
+  /// [title] — `tone: .success` only (e.g. "PR #42 · 5 files changed"). `null`
+  /// renders nothing, preserving the original title-only layout when no
+  /// matching notification exists yet (see
+  /// `TicketDetailLoaded.executionPrSubLine`). Distinct from [errorDetail]'s
+  /// scrollable well: this is always short (a formatted count), never raw
+  /// agentic output. Added for `AIO-1586`; see its linked Documentation page's
+  /// Component Spec §1.
   final String? subLine;
 
   /// The raw agentic verify-turn failure reason/error output, shown in a
@@ -3212,13 +3151,10 @@ class _ExecutionActionBanner extends StatelessWidget {
 
 /// [_ExecutionActionBanner]'s failure-tone scrollable error well — a
 /// fixed-max-height (`96`), vertically scrollable mono region for the raw
-/// agentic verify-turn failure reason/error output, with a persistent
-/// bottom fade signaling "more below." Chosen over a "show details"
-/// disclosure so the banner's height stays constant regardless of error
-/// length, and recovery-critical info stays visible with no extra tap.
-/// Per
-/// `AIO-506`
-/// §1.4.
+/// agentic verify-turn failure reason/error output, with a persistent bottom
+/// fade signaling "more below." Chosen over a "show details" disclosure so the
+/// banner's height stays constant regardless of error length, and
+/// recovery-critical info stays visible with no extra tap. Per `AIO-506` §1.4.
 class _ExecutionErrorWell extends StatelessWidget {
   const _ExecutionErrorWell({required this.text});
 
@@ -3286,12 +3222,10 @@ class _ExecutionErrorWell extends StatelessWidget {
 /// [_BannerTone.success] uses [AionColors.success] (unchanged from the
 /// original "Mark ready for review" button); [_BannerTone.failure] uses
 /// [AionColors.secondary] plus a leading refresh glyph — a calm recovery
-/// action, not a destructive one, at the same visual weight as the
-/// success confirm button. Per
-/// `AIO-2078`
-/// §3.4/§3.5 (the success tone's original spec) and
-/// `AIO-506`
-/// §1.5/§1.6 (the tone parameterization + new failure tone/glyph).
+/// action, not a destructive one, at the same visual weight as the success
+/// confirm button. Per `AIO-2078` §3.4/§3.5 (the success tone's original spec)
+/// and `AIO-506` §1.5/§1.6 (the tone parameterization + new failure
+/// tone/glyph).
 class _ExecutionActionButton extends StatefulWidget {
   const _ExecutionActionButton({
     required this.tone,
@@ -3463,14 +3397,12 @@ class _AutoAdvancedNote extends StatelessWidget {
   final String stageLabel;
 
   /// Explicit note-text override, falling back to the existing
-  /// `"Automatically advanced to <stage>"` computed text when `null` —
-  /// used by the "Ready to retry verification" footer tier's auto-state
-  /// note (Component Spec §1.3), which reads "Verification retried
-  /// automatically" instead. No new l10n key was provisioned for this
-  /// exact string (see `AIO-1905/
-  /// tasks.md` T20's l10n list), so the caller passes a plain literal
-  /// rather than a `context.l10n.*` accessor. Added for
-  /// `AIO-1905`.
+  /// `"Automatically advanced to <stage>"` computed text when `null` — used by
+  /// the "Ready to retry verification" footer tier's auto-state note
+  /// (Component Spec §1.3), which reads "Verification retried automatically"
+  /// instead. No new l10n key was provisioned for this exact string (see
+  /// `AIO-1905/ tasks.md` T20's l10n list), so the caller passes a plain
+  /// literal rather than a `context.l10n.*` accessor. Added for `AIO-1905`.
   final String? text;
 
   @override
@@ -3512,19 +3444,16 @@ class _AutoAdvancedNote extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------------------
-// Skill attachments (Phase 2) — `_RunAttachedSkillButton`. See
-// `AIO-2650`'s Component
-// Spec §7 ("on the meta line of the ticket detail header block, after
-// the type chip + status indicator"). Moved here from
-// `ticket_detail_screen.dart` (AIO-2650 T37) to reach that exact
-// placement — the meta line's
-// `Row` (type-chip `SelectionMenu` + status `SelectionMenu`, above)
-// became a `Wrap` so this can fall to its own line on narrow width
-// per spec, rather than overflowing.
-// `_PendingSkillAttachmentBanner` (Component Spec §6) stays in
-// `ticket_detail_screen.dart` — its own placement already matched
-// spec verbatim.
+// --------------------------------------------------------------------- Skill
+// attachments (Phase 2) — `_RunAttachedSkillButton`. See `AIO-2650`'s
+// Component Spec §7 ("on the meta line of the ticket detail header block,
+// after the type chip + status indicator"). Moved here from
+// `ticket_detail_screen.dart` (AIO-2650 T37) to reach that exact placement —
+// the meta line's `Row` (type-chip `SelectionMenu` + status `SelectionMenu`,
+// above) became a `Wrap` so this can fall to its own line on narrow width per
+// spec, rather than overflowing. `_PendingSkillAttachmentBanner` (Component
+// Spec §6) stays in `ticket_detail_screen.dart` — its own placement already
+// matched spec verbatim.
 // ---------------------------------------------------------------------
 
 /// A small, always-visible control shown only when [ticket]'s current

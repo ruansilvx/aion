@@ -25,10 +25,8 @@ import 'package:aion/features/tickets/domain/entities/ticket.dart';
 /// Used by `TicketsBoardView`'s `BoardColumn` under
 /// `ExecutionSchedulingMode.hybrid` so the sibling serialization that mode
 /// enforces is visible on the Board, not just inferred from behavior. See
-/// `AIO-1400` §9 (original, `parentId`-
-/// only version) and
-/// `AIO-722`
-/// §2.4 (this ancestor-generalized version).
+/// `AIO-1400` §9 (original, `parentId`- only version) and `AIO-722` §2.4 (this
+/// ancestor-generalized version).
 List<Ticket> clusterSiblingsAdjacently(
   List<Ticket> tickets,
   Map<String, String> topmostAncestorId,

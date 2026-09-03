@@ -8,17 +8,15 @@ import 'package:aion/design_system/tokens/aion_colors.dart';
 import 'package:aion/design_system/tokens/aion_radius.dart';
 import 'package:aion/design_system/tokens/theme_scope.dart';
 
-/// A minimal, generic destructive-action trigger for a screen header: a
-/// trash icon-button that opens [showAppConfirmDialog] and, on
-/// confirmation, calls [onConfirmed]. Carries no `Ticket`/feature
-/// awareness — the caller supplies the confirmation copy and the delete
-/// action itself, so this widget stays reusable by any screen (e.g.
-/// `PageDetailScreen`) without depending on `TicketsCubit`. Promoted from
-/// `TicketOverflowMenu`'s "Delete ticket" row (per `project.md`'s
-/// Pattern 2) — `TicketOverflowMenu` itself is left untouched in
-/// `features/tickets`, since it reads `TicketsCubit` directly and isn't
-/// generic. Per
-/// `AIO-1350` §7.
+/// A minimal, generic destructive-action trigger for a screen header: a trash
+/// icon-button that opens [showAppConfirmDialog] and, on confirmation, calls
+/// [onConfirmed]. Carries no `Ticket`/feature awareness — the caller supplies
+/// the confirmation copy and the delete action itself, so this widget stays
+/// reusable by any screen (e.g. `PageDetailScreen`) without depending on
+/// `TicketsCubit`. Promoted from `TicketOverflowMenu`'s "Delete ticket" row
+/// (per `project.md`'s Pattern 2) — `TicketOverflowMenu` itself is left
+/// untouched in `features/tickets`, since it reads `TicketsCubit` directly and
+/// isn't generic. Per `AIO-1350` §7.
 class DeleteActionButton extends StatefulWidget {
   /// Creates a [DeleteActionButton].
   const DeleteActionButton({

@@ -28,15 +28,14 @@ String ticketTypeLabel(BuildContext context, TicketType type) {
   };
 }
 
-/// A small square swatch + uppercase label showing a ticket's [type],
-/// colored by that type's `AionColors` accent (`typeTask`/`typeStory`/
+/// A small square swatch + uppercase label showing a ticket's [type], colored
+/// by that type's `AionColors` accent (`typeTask`/`typeStory`/
 /// `typeEpic`/`typeResource`/`typePage`/`typeIdea`/`typeKnownGap`/
-/// `typeOpenQuestion`/`typeRelease`/`typeChat`/`typeBug`/`typeSpec`).
-/// Promoted from `tickets_list_screen
-/// .dart` (per `project.md`'s Pattern 2) so `features/pages/` can render the
-/// same "PAGE" chip `TicketDetailScreen` renders for other types, without a
-/// direct `features/tickets` presentation-layer import. Per
-/// `AIO-1350` §0.1, §3.1.
+/// `typeOpenQuestion`/`typeRelease`/`typeChat`/`typeBug`/`typeSpec`). Promoted
+/// from `tickets_list_screen .dart` (per `project.md`'s Pattern 2) so
+/// `features/pages/` can render the same "PAGE" chip `TicketDetailScreen`
+/// renders for other types, without a direct `features/tickets`
+/// presentation-layer import. Per `AIO-1350` §0.1, §3.1.
 class TypeChip extends StatelessWidget {
   /// Creates a [TypeChip] for [type].
   const TypeChip({super.key, required this.type, this.isRow = true});

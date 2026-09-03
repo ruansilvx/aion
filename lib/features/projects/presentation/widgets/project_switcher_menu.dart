@@ -7,9 +7,8 @@ import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 
 /// A small entry point living in the workspace's sidebar/nav that reads
-/// "Switch Project" and returns the user to the Hub. Tapping it does
-/// **not** open an inline list — project selection happens on the Hub
-/// itself. See
+/// "Switch Project" and returns the user to the Hub. Tapping it does **not**
+/// open an inline list — project selection happens on the Hub itself. See
 /// `AIO-1174` §5.
 class ProjectSwitcherMenu extends StatefulWidget {
   /// Creates a [ProjectSwitcherMenu]. [onSwitchProject] is called when

@@ -4,15 +4,14 @@ import 'package:aion/core/automation/automation_context.dart';
 import 'package:aion/core/automation/decision_graph.dart';
 import 'package:aion/core/automation/decision_node.dart';
 
-/// Read/write access to [DecisionGraph]/[DecisionNode] persistence. A
-/// dumb persistence layer only — no validation, no invariant enforcement.
-/// The strict-tree invariant (a node referenced as a child from at most
-/// one branch) lives in `DecisionGraphConfigCubit`, per this project's
-/// Cubit-vs-repository split (validation/invariant logic lives in
-/// Cubits, not repositories). Implemented by the data layer
-/// (`DriftDecisionGraphRepository`); UI and domain code depend only on
-/// this interface, never on a concrete data source. Added for
-/// `AIO-181`.
+/// Read/write access to [DecisionGraph]/[DecisionNode] persistence. A dumb
+/// persistence layer only — no validation, no invariant enforcement. The
+/// strict-tree invariant (a node referenced as a child from at most one
+/// branch) lives in `DecisionGraphConfigCubit`, per this project's
+/// Cubit-vs-repository split (validation/invariant logic lives in Cubits, not
+/// repositories). Implemented by the data layer
+/// (`DriftDecisionGraphRepository`); UI and domain code depend only on this
+/// interface, never on a concrete data source. Added for `AIO-181`.
 abstract interface class DecisionGraphRepository {
   /// Returns [context]'s currently-configured [DecisionGraph], defaulting
   /// to `DecisionGraph(context: context, rootNodeId: null)` — always

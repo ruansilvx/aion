@@ -11,14 +11,13 @@ enum ConfigSource {
   override,
 }
 
-/// One entry of a project's effective configuration: the result of
-/// merging a [BaselineManifest](baseline_manifest.dart) with whatever
+/// One entry of a project's effective configuration: the result of merging a
+/// [BaselineManifest](baseline_manifest.dart) with whatever
 /// [ProjectOverride](project_override.dart)s exist for a project,
-/// override-wins by matching key. See
-/// `AIO-1174` §2 — no
-/// override-authoring UI consumes this yet in this change; it exists so
-/// future "effective config" surfaces (e.g. which skills are available)
-/// have a settled shape to build on.
+/// override-wins by matching key. See `AIO-1174` §2 — no override-authoring UI
+/// consumes this yet in this change; it exists so future "effective config"
+/// surfaces (e.g. which skills are available) have a settled shape to build
+/// on.
 class ResolvedConfigItem extends Equatable {
   /// The [BaselineAsset.key](baseline_asset.dart)/
   /// [ProjectOverride.assetKey] this entry resolves.

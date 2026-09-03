@@ -54,79 +54,71 @@ class TicketsLoaded extends TicketsState {
   /// [TicketsCubit.loadMoreTickets] no-ops when this is `false`.
   final bool hasMore;
 
-  /// Task/Bug ids with a coding-execution run currently in flight —
-  /// mirrors [TicketsCubit._inFlightExecutionTaskId] as a set so the
-  /// Board (`TicketBoardCard`) can look up a specific ticket's status
-  /// without calling [TicketsCubit.getTicketById] per card. Recomputed by
-  /// [TicketsCubit._refreshInFlightBoardState]. Added for
-  /// `AIO-352`.
+  /// Task/Bug ids with a coding-execution run currently in flight — mirrors
+  /// [TicketsCubit._inFlightExecutionTaskId] as a set so the Board
+  /// (`TicketBoardCard`) can look up a specific ticket's status without
+  /// calling [TicketsCubit.getTicketById] per card. Recomputed by
+  /// [TicketsCubit._refreshInFlightBoardState]. Added for `AIO-352`.
   final Set<String> inFlightExecutionIds;
 
-  /// Task/Bug ids waiting on [TicketsCubit._executionQueue], mapped to
-  /// their 1-based queue position. Recomputed by
-  /// [TicketsCubit._refreshInFlightBoardState]. Added for
-  /// `AIO-352`.
+  /// Task/Bug ids waiting on [TicketsCubit._executionQueue], mapped to their
+  /// 1-based queue position. Recomputed by
+  /// [TicketsCubit._refreshInFlightBoardState]. Added for `AIO-352`.
   final Map<String, int> executionQueuePositions;
 
   /// Epic/Story ids (and their in-flight stage chat's own id) currently
-  /// mid-`advanceSddStage` — mirrors
-  /// [TicketsCubit._inFlightStageAdvanceIds]. Recomputed by
-  /// [TicketsCubit._refreshInFlightBoardState]. Added for
+  /// mid-`advanceSddStage` — mirrors [TicketsCubit._inFlightStageAdvanceIds].
+  /// Recomputed by [TicketsCubit._refreshInFlightBoardState]. Added for
   /// `AIO-352`.
   final Set<String> inFlightAdvanceIds;
 
   /// Work-ticket (epic/story/task/bug) ids with an unresolved
-  /// `blocks`/`blockedBy` relationship — the ticket that blocks them
-  /// exists, is live, and isn't currently at a status holding
+  /// `blocks`/`blockedBy` relationship — the ticket that blocks them exists,
+  /// is live, and isn't currently at a status holding
   /// `WorkflowStatusRole.done` yet. Recomputed by
-  /// [TicketsCubit._computeBlockedTicketIds] from persisted link data
-  /// (not in-memory/ephemeral, unlike [inFlightExecutionIds] and its
-  /// siblings above). Drives the Board's `_BlockedBadge`. Added for
-  /// `AIO-392`.
+  /// [TicketsCubit._computeBlockedTicketIds] from persisted link data (not
+  /// in-memory/ephemeral, unlike [inFlightExecutionIds] and its siblings
+  /// above). Drives the Board's `_BlockedBadge`. Added for `AIO-392`.
   final Set<String> blockedTicketIds;
 
   /// Interrupted coding-execution runs found on this launch under
   /// [AutomationConfidence](../../../../core/automation/automation_confidence.dart)
-  /// `.gated`, awaiting a Resume/Dismiss decision — drives
-  /// `ResumeRunsPrompt`, the one-time-per-launch banner pinned to the top
-  /// of the Board view. Recomputed by
-  /// [TicketsCubit._refreshInFlightBoardState] from
+  /// `.gated`, awaiting a Resume/Dismiss decision — drives `ResumeRunsPrompt`,
+  /// the one-time-per-launch banner pinned to the top of the Board view.
+  /// Recomputed by [TicketsCubit._refreshInFlightBoardState] from
   /// [TicketsCubit._pendingResumeTickets] (populated by
   /// [TicketsCubit.restoreExecutionQueue], cleared by
   /// [TicketsCubit.resumePendingExecutions]/
-  /// [TicketsCubit.dismissPendingResumePrompt]). Added for
-  /// `AIO-1400`.
+  /// [TicketsCubit.dismissPendingResumePrompt]). Added for `AIO-1400`.
   final List<Ticket> pendingResumePrompt;
 
-  /// Task/Bug id → total coding-execution token spend recorded so far
-  /// (summed `inputTokens + outputTokens` across every
+  /// Task/Bug id → total coding-execution token spend recorded so far (summed
+  /// `inputTokens + outputTokens` across every
   /// `"Coding Execution — "`-prefixed child chat's comments), mirroring
-  /// [TicketsCubit._executionTokenTotals]. An id absent from this map has
-  /// no recorded execution spend yet — `TokenCountLabel`'s Board-card
-  /// display precedence (see `_cardTokenLabel`) falls back to the
-  /// ticket's own `predictedExecutionTokensLow`/`High` in that case.
-  /// Recomputed by [TicketsCubit._refreshInFlightBoardState]. Added for
-  /// `AIO-2455`.
+  /// [TicketsCubit._executionTokenTotals]. An id absent from this map has no
+  /// recorded execution spend yet — `TokenCountLabel`'s Board-card display
+  /// precedence (see `_cardTokenLabel`) falls back to the ticket's own
+  /// `predictedExecutionTokensLow`/`High` in that case. Recomputed by
+  /// [TicketsCubit._refreshInFlightBoardState]. Added for `AIO-2455`.
   final Map<String, int> executionTokenTotals;
 
-  /// Ticket id → topmost ancestor id (the root of its `parentId` chain —
-  /// an Epic, for a well-formed Task/Bug/Story; the ticket's own id if it
-  /// has no parent at all), mirroring
-  /// [TicketsCubit.topmostAncestorIds]. Only ever non-empty under
+  /// Ticket id → topmost ancestor id (the root of its `parentId` chain — an
+  /// Epic, for a well-formed Task/Bug/Story; the ticket's own id if it has no
+  /// parent at all), mirroring [TicketsCubit.topmostAncestorIds]. Only ever
+  /// non-empty under
   /// [ExecutionSchedulingMode](../../../providers/domain/enums/execution_scheduling_mode.dart)
-  /// `.hybrid` — every other scheduling mode leaves this at its default
-  /// `{}`, since `BoardColumn` is the only reader and only consults it
-  /// under Hybrid. Used by `BoardColumn` to pass a precomputed grouping
-  /// key to `clusterSiblingsAdjacently`, replacing that function's former
-  /// direct `ticket.parentId` comparison so two Tasks under different
-  /// Stories of the same Epic cluster together too. Recomputed by
+  /// `.hybrid` — every other scheduling mode leaves this at its default `{}`,
+  /// since `BoardColumn` is the only reader and only consults it under Hybrid.
+  /// Used by `BoardColumn` to pass a precomputed grouping key to
+  /// `clusterSiblingsAdjacently`, replacing that function's former direct
+  /// `ticket.parentId` comparison so two Tasks under different Stories of the
+  /// same Epic cluster together too. Recomputed by
   /// [TicketsCubit.searchTickets]/[TicketsCubit.loadMoreTickets] on every
   /// fresh/appended load (carried forward unchanged by
   /// [TicketsCubit._refreshInFlightBoardState], the same way
-  /// [blockedTicketIds] is) — see [TicketsCubit.searchTickets]'s dartdoc
-  /// for why a live cross-cubit listener for an in-session scheduling-mode
-  /// switch isn't needed on top of that. Added for
-  /// `AIO-722`.
+  /// [blockedTicketIds] is) — see [TicketsCubit.searchTickets]'s dartdoc for
+  /// why a live cross-cubit listener for an in-session scheduling-mode switch
+  /// isn't needed on top of that. Added for `AIO-722`.
   final Map<String, String> topmostAncestorId;
 
   @override
@@ -216,43 +208,38 @@ enum TicketsErrorReason {
 
   /// A coding-execution run's agentic verify turn reported
   /// `VERIFICATION: FAILED` and the effective
-  /// `AutomationContext.codingExecutionRetry` confidence is
-  /// `gated` (or `auto` with its retry cap exhausted, forced to `gated`
-  /// visibility) — surfaced once via `AppToast`, alongside the Task
-  /// detail screen's failure banner. Added for
-  /// `AIO-506`.
+  /// `AutomationContext.codingExecutionRetry` confidence is `gated` (or `auto`
+  /// with its retry cap exhausted, forced to `gated` visibility) — surfaced
+  /// once via `AppToast`, alongside the Task detail screen's failure banner.
+  /// Added for `AIO-506`.
   executionVerificationFailed,
 
-  /// A spawned SDD-stage chat's turn (see `TicketsCubit
-  /// ._runStageChatTurn`) hard-failed. Informational, surfaced once via
-  /// `AppToast`, alongside the Epic/Story detail screen's failure banner
-  /// (`TicketDetailLoaded.sddStageFailureReason`). Added for
-  /// `AIO-352`.
+  /// A spawned SDD-stage chat's turn (see `TicketsCubit ._runStageChatTurn`)
+  /// hard-failed. Informational, surfaced once via `AppToast`, alongside the
+  /// Epic/Story detail screen's failure banner
+  /// (`TicketDetailLoaded.sddStageFailureReason`). Added for `AIO-352`.
   sddStageAdvanceFailed,
 
   /// A ticket was rejected from moving to a status holding
   /// `WorkflowStatusRole.executionTrigger` because it has an unresolved
-  /// `blocks`/`blockedBy` dependency — see
-  /// `TicketsCubit._isTicketBlocked`. Applies to every ticket type,
-  /// unlike [codingExecutionBlocked]. The widget layer reads this via
-  /// `ticketsErrorMessage` / `AppToast`. Added for
+  /// `blocks`/`blockedBy` dependency — see `TicketsCubit._isTicketBlocked`.
+  /// Applies to every ticket type, unlike [codingExecutionBlocked]. The widget
+  /// layer reads this via `ticketsErrorMessage` / `AppToast`. Added for
   /// `AIO-334`.
   blockedByOpenDependency,
 
   /// `TicketsCubit._createEpicSpec` failed while synthesizing an Epic's
-  /// `TicketType.spec` ticket at `SddStage.archived` — the Epic itself
-  /// stays `archived` regardless (see `advanceSddStage`'s dartdoc); the
-  /// fallback is manually creating the missing spec ticket via the
-  /// ordinary New Ticket flow. The widget layer reads this via
-  /// `ticketsErrorMessage` / `AppToast`. Added for
-  /// `AIO-1998`.
+  /// `TicketType.spec` ticket at `SddStage.archived` — the Epic itself stays
+  /// `archived` regardless (see `advanceSddStage`'s dartdoc); the fallback is
+  /// manually creating the missing spec ticket via the ordinary New Ticket
+  /// flow. The widget layer reads this via `ticketsErrorMessage` / `AppToast`.
+  /// Added for `AIO-1998`.
   specWriteFailed,
 
-  /// `TicketsCubit.prepareReleaseDraft` failed while drafting a
-  /// `release` ticket's changelog/version proposal — the release ticket
-  /// itself is untouched regardless (see that method's dartdoc). The
-  /// widget layer reads this via `ticketsErrorMessage` / `AppToast`.
-  /// Added for `AIO-1782`.
+  /// `TicketsCubit.prepareReleaseDraft` failed while drafting a `release`
+  /// ticket's changelog/version proposal — the release ticket itself is
+  /// untouched regardless (see that method's dartdoc). The widget layer reads
+  /// this via `ticketsErrorMessage` / `AppToast`. Added for `AIO-1782`.
   releasePreparationFailed,
 }
 
@@ -269,24 +256,22 @@ enum CodingExecutionBlockReason {
 }
 
 // `SddStageBlockReason` (an `epic`/`story`'s current `SddStage`
-// precondition-not-met reason) was removed for
-// `AIO-1936` —
+// precondition-not-met reason) was removed for `AIO-1936` —
 // [TicketDetailLoaded.sddStageBlockReason] is now a plain, already-built
 // `String?` (`'Waiting on: <field display name>'`), auto-derived by
 // `TicketsCubit._sddStageAdvanceCheck` from the failing
-// `TransitionFieldSpec`'s `displayName` rather than resolved from a fixed
-// enum at the widget layer. See that change's design.md §4.
+// `TransitionFieldSpec`'s `displayName` rather than resolved from a fixed enum
+// at the widget layer. See `AIO-1936`'s linked Documentation page, §4.
 
-/// A deterministic, code-computed embedding-similarity match from a ticket
-/// to the single most relevant live `TicketType.spec` ticket, surfaced on
-/// that ticket's own [TicketDetailLoaded.pendingSpecLinkSuggestion] while
-/// `AutomationContext.specAutoLink` is `AutomationConfidence.gated` —
-/// mirrors [SkillAttachment]/[PendingToolProposal]'s own confirm-banner
-/// shape, one level simpler (no kind/variant, since every suggestion is
-/// the same `relatesTo`-link proposal). Confirm/reject via
+/// A deterministic, code-computed embedding-similarity match from a ticket to
+/// the single most relevant live `TicketType.spec` ticket, surfaced on that
+/// ticket's own [TicketDetailLoaded.pendingSpecLinkSuggestion] while
+/// `AutomationContext.specAutoLink` is `AutomationConfidence.gated` — mirrors
+/// [SkillAttachment]/[PendingToolProposal]'s own confirm-banner shape, one
+/// level simpler (no kind/variant, since every suggestion is the same
+/// `relatesTo`-link proposal). Confirm/reject via
 /// `TicketsCubit.confirmPendingSpecLinkSuggestion`/
-/// `rejectPendingSpecLinkSuggestion`. Added for
-/// `AIO-1998`; see
+/// `rejectPendingSpecLinkSuggestion`. Added for `AIO-1998`; see
 /// `TicketsCubit._maybeAutoLinkToSpec`.
 class PendingSpecLinkSuggestion extends Equatable {
   /// Creates a [PendingSpecLinkSuggestion] proposing a link to the spec
@@ -444,12 +429,11 @@ class TicketDetailLoaded extends TicketsState {
   /// [TicketsCubit.loadDocumentRelations] resolves.
   final List<LinkedTicketRef> linkedTickets;
 
-  /// Other `page`/`resource` tickets that reference [ticket], either via
-  /// an explicit `TicketLink` or an inline `[[wikilink]]` — see
+  /// Other `page`/`resource` tickets that reference [ticket], either via an
+  /// explicit `TicketLink` or an inline `[[wikilink]]` — see
   /// [TicketsCubit.loadDocumentRelations]'s dartdoc for the merge/scoping
   /// rationale and [BacklinkRef.origin]. Was `List<LinkedTicketRef>`
-  /// (`TicketLink`-only) before
-  /// `AIO-963`. Empty until
+  /// (`TicketLink`-only) before `AIO-963`. Empty until
   /// [TicketsCubit.loadDocumentRelations] resolves.
   final List<BacklinkRef> backlinks;
 
@@ -457,9 +441,8 @@ class TicketDetailLoaded extends TicketsState {
   /// itself or to any descendant of it, recursively rolled up — see
   /// [GapOrQuestionRef]. Populated only for the same gated types
   /// `linkedTickets`/`backlinks` use (`epic`/`story`/`task`/`bug`/
-  /// `resource`/`page`). Empty until
-  /// [TicketsCubit.loadDocumentRelations] resolves. Added for
-  /// `AIO-934`.
+  /// `resource`/`page`). Empty until [TicketsCubit.loadDocumentRelations]
+  /// resolves. Added for `AIO-934`.
   final List<GapOrQuestionRef> gapsAndOpenQuestions;
 
   /// Whether [ticket] (an `epic`/`story`) currently satisfies the
@@ -469,180 +452,160 @@ class TicketDetailLoaded extends TicketsState {
   final bool canAdvanceSddStage;
 
   /// Why [canAdvanceSddStage] is `false`, for the "Not ready" hint row —
-  /// `null` whenever [canAdvanceSddStage] is `true`, or [ticket] has
-  /// nothing left to advance to. Computed by
-  /// [TicketsCubit.getTicketById] alongside [canAdvanceSddStage]. An
-  /// already-built, auto-derived string (`'Waiting on: <field display
-  /// name>'`), not a fixed enum — see
-  /// `AIO-1936` §4.
+  /// `null` whenever [canAdvanceSddStage] is `true`, or [ticket] has nothing
+  /// left to advance to. Computed by [TicketsCubit.getTicketById] alongside
+  /// [canAdvanceSddStage]. An already-built, auto-derived string
+  /// (`'Waiting on: <field display name>'`), not a fixed enum — see `AIO-1936`
+  /// §4.
   final String? sddStageBlockReason;
 
-  /// Whether [ticket] (a `story`) needs a `designBrief`/`designSync`
-  /// pass, computed by [TicketsCubit.getTicketById] from its current
-  /// child Tasks via `_storyNeedsDesignReview`. `null` until child Tasks
-  /// exist to evaluate, or for any ticket type other than `story`. Drives
-  /// `_SddStageSection`'s variable-length tracker (4 vs. 6 nodes). Added
-  /// for `AIO-1834`.
+  /// Whether [ticket] (a `story`) needs a `designBrief`/`designSync` pass,
+  /// computed by [TicketsCubit.getTicketById] from its current child Tasks via
+  /// `_storyNeedsDesignReview`. `null` until child Tasks exist to evaluate, or
+  /// for any ticket type other than `story`. Drives `_SddStageSection`'s
+  /// variable-length tracker (4 vs. 6 nodes). Added for `AIO-1834`.
   final bool? needsDesignReview;
 
   /// [ticket]'s linked design Page (a `story`'s `"Design — <title>"`
   /// `page`-type ticket, created by `TicketsCubit._spawnStageChat`'s
-  /// `designBrief` branch), computed by [TicketsCubit.getTicketById] via
-  /// the same lookup `_linkedDesignPage` uses internally for the
+  /// `designBrief` branch), computed by [TicketsCubit.getTicketById] via the
+  /// same lookup `_linkedDesignPage` uses internally for the
   /// `designBrief`/`designSync` precondition checks. `null` when
-  /// [needsDesignReview] isn't `true`, or the design Page hasn't been
-  /// created yet. Added for `AIO-1834`.
+  /// [needsDesignReview] isn't `true`, or the design Page hasn't been created
+  /// yet. Added for `AIO-1834`.
   final Ticket? linkedDesignPage;
 
-  /// Whether [ticket] (a `task`) is the coding-execution run currently
-  /// in flight. Task-only, computed by [TicketsCubit.getTicketById] from
-  /// `_inFlightExecutionTaskId`. Always `false` for every other ticket
-  /// type. Added for `AIO-2078`.
+  /// Whether [ticket] (a `task`) is the coding-execution run currently in
+  /// flight. Task-only, computed by [TicketsCubit.getTicketById] from
+  /// `_inFlightExecutionTaskId`. Always `false` for every other ticket type.
+  /// Added for `AIO-2078`.
   final bool isExecuting;
 
   /// [ticket]'s (a `task`) 1-based position in the coding-execution FIFO
   /// queue, or `null` if it isn't queued. Task-only, computed by
-  /// [TicketsCubit.getTicketById]. Added for
-  /// `AIO-2078`.
+  /// [TicketsCubit.getTicketById]. Added for `AIO-2078`.
   final int? executionQueuePosition;
 
-  /// Whether [ticket] (a `task`) has a finished coding-execution run with
-  /// a confirmed PR, awaiting human confirmation
-  /// (`AutomationConfidence.gated`) before flipping to the status holding
-  /// `WorkflowStatusRole.reviewReady`. Task-only, computed by
-  /// [TicketsCubit.getTicketById]. Added for
+  /// Whether [ticket] (a `task`) has a finished coding-execution run with a
+  /// confirmed PR, awaiting human confirmation (`AutomationConfidence.gated`)
+  /// before flipping to the status holding `WorkflowStatusRole.reviewReady`.
+  /// Task-only, computed by [TicketsCubit.getTicketById]. Added for
   /// `AIO-2078`.
   final bool executionAwaitingReview;
 
-  /// Why [ticket] (a `task`) is showing a coding-execution failure state —
-  /// an agentic verify-turn failure (with its reported reason), a
-  /// hard run error, or a fixed "ended without a clear result" message for
-  /// an orphaned/stalled run (e.g. after an app restart mid-run). `null`
-  /// when the run hasn't failed. Task-only, computed by
-  /// [TicketsCubit.getTicketById] from the most recent execution chat's
-  /// most recent comment — unlike [isExecuting]/[executionQueuePosition],
-  /// this survives an app restart, since it's derived from the persisted
-  /// comment thread rather than in-memory queue state. Added for
-  /// `AIO-506`.
+  /// Why [ticket] (a `task`) is showing a coding-execution failure state — an
+  /// agentic verify-turn failure (with its reported reason), a hard run error,
+  /// or a fixed "ended without a clear result" message for an orphaned/stalled
+  /// run (e.g. after an app restart mid-run). `null` when the run hasn't
+  /// failed. Task-only, computed by [TicketsCubit.getTicketById] from the most
+  /// recent execution chat's most recent comment — unlike
+  /// [isExecuting]/[executionQueuePosition], this survives an app restart,
+  /// since it's derived from the persisted comment thread rather than
+  /// in-memory queue state. Added for `AIO-506`.
   final String? executionFailureReason;
 
-  /// Whether [executionFailureReason] has a retry action available —
-  /// always `true` whenever [executionFailureReason] is non-`null`, kept
-  /// as a separate field so the widget layer doesn't need to null-check
+  /// Whether [executionFailureReason] has a retry action available — always
+  /// `true` whenever [executionFailureReason] is non-`null`, kept as a
+  /// separate field so the widget layer doesn't need to null-check
   /// [executionFailureReason] to decide whether to show the retry button.
   /// Added for `AIO-506`.
   final bool executionCanRetry;
 
-  /// A short, pre-formatted PR-metadata detail for [ticket] (a `task`)
-  /// while [executionAwaitingReview] is `true` — e.g. "PR #42 · 5 files
-  /// changed" — surfaced as `_ExecutionActionBanner`'s success-tone
-  /// `subLine`. `null` when no matching notification exists yet (e.g. a
-  /// pre-upgrade ticket, or a cubit constructed without a
-  /// `NotificationRepository`), in which case the banner simply omits
-  /// the sub-line. Computed by [TicketsCubit.getTicketById] from this
-  /// ticket's most recent `NotificationKind.executionPrOpened`
-  /// notification. Added for
-  /// `AIO-1586`.
+  /// A short, pre-formatted PR-metadata detail for [ticket] (a `task`) while
+  /// [executionAwaitingReview] is `true` — e.g. "PR #42 · 5 files changed" —
+  /// surfaced as `_ExecutionActionBanner`'s success-tone `subLine`. `null`
+  /// when no matching notification exists yet (e.g. a pre-upgrade ticket, or a
+  /// cubit constructed without a `NotificationRepository`), in which case the
+  /// banner simply omits the sub-line. Computed by
+  /// [TicketsCubit.getTicketById] from this ticket's most recent
+  /// `NotificationKind.executionPrOpened` notification. Added for `AIO-1586`.
   final String? executionPrSubLine;
 
-  /// A live "Running `<tool>`..."-style status string for [ticket] (a
-  /// `task`) while [isExecuting] is `true`, re-emitted by
-  /// [TicketsCubit._runCodingExecution] on every tool call/text chunk of
-  /// the in-flight run (only while this Task's detail screen is the one
-  /// showing), and cleared once the run finishes. `null` whenever
-  /// [isExecuting] is `false`, or no tool call has happened yet. In-memory
-  /// only — does not survive an app restart, like [isExecuting] itself.
-  /// Added for `AIO-506`.
+  /// A live "Running `<tool>`..."-style status string for [ticket] (a `task`)
+  /// while [isExecuting] is `true`, re-emitted by
+  /// [TicketsCubit._runCodingExecution] on every tool call/text chunk of the
+  /// in-flight run (only while this Task's detail screen is the one showing),
+  /// and cleared once the run finishes. `null` whenever [isExecuting] is
+  /// `false`, or no tool call has happened yet. In-memory only — does not
+  /// survive an app restart, like [isExecuting] itself. Added for `AIO-506`.
   final String? executionLiveActivity;
 
   /// Whether [ticket] (an `epic`/`story`) has an
   /// [TicketsCubit.advanceSddStage] chat spawn currently in flight, or
-  /// [ticket] (a `chat`) *is* that in-flight spawn's own chat ticket.
-  /// Computed by [TicketsCubit.getTicketById] from
-  /// [TicketsCubit._inFlightStageAdvanceIds]. Mirrors [isExecuting]'s
-  /// shape exactly, one level up the ticket-type hierarchy. Added for
-  /// `AIO-352`.
+  /// [ticket] (a `chat`) *is* that in-flight spawn's own chat ticket. Computed
+  /// by [TicketsCubit.getTicketById] from
+  /// [TicketsCubit._inFlightStageAdvanceIds]. Mirrors [isExecuting]'s shape
+  /// exactly, one level up the ticket-type hierarchy. Added for `AIO-352`.
   final bool isAdvancingStage;
 
-  /// Why [ticket]'s (an `epic`/`story`) most recent stage-advance
-  /// attempt failed, `null` if it hasn't or the current attempt is still
-  /// running. Survives an app restart — derived from the persisted
-  /// comment thread, like [executionFailureReason]. Computed by
-  /// [TicketsCubit.getTicketById] via
-  /// [TicketsCubit._computeStageAdvanceFailure]. Added for
-  /// `AIO-352`.
+  /// Why [ticket]'s (an `epic`/`story`) most recent stage-advance attempt
+  /// failed, `null` if it hasn't or the current attempt is still running.
+  /// Survives an app restart — derived from the persisted comment thread, like
+  /// [executionFailureReason]. Computed by [TicketsCubit.getTicketById] via
+  /// [TicketsCubit._computeStageAdvanceFailure]. Added for `AIO-352`.
   final String? sddStageFailureReason;
 
-  /// Whether [sddStageFailureReason] has a retry action available —
-  /// always `true` whenever [sddStageFailureReason] is non-`null`. Added
-  /// for `AIO-352`.
+  /// Whether [sddStageFailureReason] has a retry action available — always
+  /// `true` whenever [sddStageFailureReason] is non-`null`. Added for
+  /// `AIO-352`.
   final bool sddStageCanRetry;
 
-  /// A `branch_ticket`/`close_branch` tool call awaiting user confirmation
-  /// on [ticket] (a `chat`), while
-  /// `TicketsCubit._awaitProposalConfirmation` holds the underlying model
-  /// run paused (`AutomationConfidence.gated`). `null` whenever no such
-  /// call is pending. Drives `_ToolProposalBanner`. Added for
-  /// `AIO-1118`; see that change's
-  /// design.md §8.
+  /// A `branch_ticket`/`close_branch` tool call awaiting user confirmation on
+  /// [ticket] (a `chat`), while `TicketsCubit._awaitProposalConfirmation`
+  /// holds the underlying model run paused (`AutomationConfidence.gated`).
+  /// `null` whenever no such call is pending. Drives `_ToolProposalBanner`.
+  /// Added for `AIO-1118`; see its linked Documentation page, §8.
   final PendingToolProposal? pendingToolProposal;
 
-  /// [ticket]'s (a `task`/`bug`) total coding-execution token spend
-  /// recorded so far — see `TicketsLoaded.executionTokenTotals`'s dartdoc
-  /// for the exact accumulation rule. `null` means no execution turn has
-  /// completed yet, in which case `TicketMetadataSection` falls back to
-  /// showing [ticket]'s own `predictedExecutionTokensLow`/`High` instead.
-  /// Computed by [TicketsCubit.getTicketById] from
-  /// [TicketsCubit._executionTokenTotals]. Added for
-  /// `AIO-2455`.
+  /// [ticket]'s (a `task`/`bug`) total coding-execution token spend recorded
+  /// so far — see `TicketsLoaded.executionTokenTotals`'s dartdoc for the exact
+  /// accumulation rule. `null` means no execution turn has completed yet, in
+  /// which case `TicketMetadataSection` falls back to showing [ticket]'s own
+  /// `predictedExecutionTokensLow`/`High` instead. Computed by
+  /// [TicketsCubit.getTicketById] from [TicketsCubit._executionTokenTotals].
+  /// Added for `AIO-2455`.
   final int? executionTokenTotal;
 
-  /// A `SkillAttachment` (confidence `gated`) awaiting user confirmation
-  /// on [ticket] — [ticket] just entered the `WorkflowStatus`/[SddStage]
-  /// this attachment is configured for. `null` whenever no such
-  /// attachment is pending. Drives `_PendingSkillAttachmentBanner`.
-  /// Mirrors [pendingToolProposal]'s exact shape. Added for
-  /// `AIO-2650`.
+  /// A `SkillAttachment` (confidence `gated`) awaiting user confirmation on
+  /// [ticket] — [ticket] just entered the `WorkflowStatus`/[SddStage] this
+  /// attachment is configured for. `null` whenever no such attachment is
+  /// pending. Drives `_PendingSkillAttachmentBanner`. Mirrors
+  /// [pendingToolProposal]'s exact shape. Added for `AIO-2650`.
   final SkillAttachment? pendingSkillAttachment;
 
   /// A [PendingSpecLinkSuggestion] (confidence `gated`) awaiting user
-  /// confirmation on [ticket] — a deterministic embedding-similarity
-  /// match to the most relevant live `TicketType.spec` ticket. `null`
-  /// whenever no such suggestion is pending. Drives
-  /// `_PendingSpecLinkBanner`. Mirrors [pendingSkillAttachment]'s exact
-  /// shape. Added for `AIO-1998`.
+  /// confirmation on [ticket] — a deterministic embedding-similarity match to
+  /// the most relevant live `TicketType.spec` ticket. `null` whenever no such
+  /// suggestion is pending. Drives `_PendingSpecLinkBanner`. Mirrors
+  /// [pendingSkillAttachment]'s exact shape. Added for `AIO-1998`.
   final PendingSpecLinkSuggestion? pendingSpecLinkSuggestion;
 
-  /// Whether [ticket] (an `epic`/`story`) is ready for a verify retry —
-  /// its `sddStage` is [SddStage.verifying], the Verifying-stage chat's
-  /// latest AI reply carries `VERIFY GATE: PENDING`, and every fix
-  /// Task/Bug that verdict spawned has reached `done`. Computed by
-  /// [TicketsCubit.getTicketById] via
-  /// [TicketsCubit._verifyRetryReadiness]. Always `false` for every
-  /// other ticket type, or while fixes are still open. Drives
-  /// `_SddStageSection`'s "Ready to retry verification" footer tier.
-  /// Added for `AIO-1905`.
+  /// Whether [ticket] (an `epic`/`story`) is ready for a verify retry — its
+  /// `sddStage` is [SddStage.verifying], the Verifying-stage chat's latest AI
+  /// reply carries `VERIFY GATE: PENDING`, and every fix Task/Bug that verdict
+  /// spawned has reached `done`. Computed by [TicketsCubit.getTicketById] via
+  /// [TicketsCubit._verifyRetryReadiness]. Always `false` for every other
+  /// ticket type, or while fixes are still open. Drives `_SddStageSection`'s
+  /// "Ready to retry verification" footer tier. Added for `AIO-1905`.
   final bool verifyRetryReady;
 
-  /// The configured [AutomationContext.verifyGateRetry] confidence,
-  /// populated only when [verifyRetryReady] is `true` — selects which of
-  /// the three "Ready to retry verification" tier treatments
-  /// `_SddStageSection` renders (gated banner, manual button, or auto
-  /// note), mirroring how [TicketsCubit.getTicketById]'s screen-level
-  /// automation-confidence read already drives the "Advance to next
-  /// stage" tier. `null` whenever [verifyRetryReady] is `false`, or the
-  /// cubit was constructed without an `AutomationSettingsRepository`.
-  /// Added for `AIO-1905`.
+  /// The configured [AutomationContext.verifyGateRetry] confidence, populated
+  /// only when [verifyRetryReady] is `true` — selects which of the three
+  /// "Ready to retry verification" tier treatments `_SddStageSection` renders
+  /// (gated banner, manual button, or auto note), mirroring how
+  /// [TicketsCubit.getTicketById]'s screen-level automation-confidence read
+  /// already drives the "Advance to next stage" tier. `null` whenever
+  /// [verifyRetryReady] is `false`, or the cubit was constructed without an
+  /// `AutomationSettingsRepository`. Added for `AIO-1905`.
   final AutomationConfidence? verifyRetryConfidence;
 
   /// How many of [ticket]'s current fix Task/Bug children (spawned by a
-  /// `VERIFY GATE: PENDING` verdict) haven't yet reached `done`, or
-  /// `null` when there's no unresolved `PENDING` verdict to report on.
-  /// Computed by [TicketsCubit.getTicketById] alongside [verifyRetryReady]
-  /// — populated whether or not [verifyRetryReady] ends up `true`, so
-  /// `_SddStageSection` can show the Component Spec §1.4 "not-ready
-  /// predecessor" hint while fixes are still open. Added for
-  /// `AIO-1905`.
+  /// `VERIFY GATE: PENDING` verdict) haven't yet reached `done`, or `null`
+  /// when there's no unresolved `PENDING` verdict to report on. Computed by
+  /// [TicketsCubit.getTicketById] alongside [verifyRetryReady] — populated
+  /// whether or not [verifyRetryReady] ends up `true`, so `_SddStageSection`
+  /// can show the Component Spec §1.4 "not-ready predecessor" hint while fixes
+  /// are still open. Added for `AIO-1905`.
   final int? verifyPendingFixesRemaining;
 
   @override
@@ -676,27 +639,26 @@ class TicketDetailLoaded extends TicketsState {
   ];
 
   /// Returns a copy of this state with the given fields replaced; every
-  /// omitted field is carried over unchanged. Used wherever a single
-  /// field (typically [isAdvancingStage] or [pendingSkillAttachment])
-  /// needs to change without discarding the rest of an already-loaded
-  /// detail screen's computed state — [TicketsCubit.advanceSddStage],
+  /// omitted field is carried over unchanged. Used wherever a single field
+  /// (typically [isAdvancingStage] or [pendingSkillAttachment]) needs to
+  /// change without discarding the rest of an already-loaded detail screen's
+  /// computed state — [TicketsCubit.advanceSddStage],
   /// [TicketsCubit._resolveAndFireAttachment],
   /// [TicketsCubit.confirmPendingSkillAttachment], and
-  /// [TicketsCubit.rejectPendingSkillAttachment] all previously
-  /// reconstructed a bare `TicketDetailLoaded(ticket)` instead, silently
-  /// resetting every other field (`childDocs`, `gapsAndOpenQuestions`,
-  /// `canAdvanceSddStage`, `isExecuting`, etc.) to its default the moment
-  /// a skill attachment fired or was confirmed/rejected — fixed by
-  /// routing those four call sites through this method instead. Every
-  /// field but [pendingSkillAttachment] follows the simple
-  /// "omit to leave unchanged" convention (a plain nullable parameter,
-  /// substituted via `??`) since no current caller needs to explicitly
-  /// clear any of them back to `null`. [pendingSkillAttachment] is the
-  /// one field callers genuinely need to clear (on confirm/reject), so
-  /// it alone takes a [TicketFieldSetter] — mirrors [Ticket.copyWith]'s
-  /// own convention for the same omitted-vs-explicitly-null distinction:
-  /// pass `() => null` to clear it, or omit the parameter to leave it
-  /// unchanged. Added for `AIO-2650`.
+  /// [TicketsCubit.rejectPendingSkillAttachment] all previously reconstructed
+  /// a bare `TicketDetailLoaded(ticket)` instead, silently resetting every
+  /// other field (`childDocs`, `gapsAndOpenQuestions`, `canAdvanceSddStage`,
+  /// `isExecuting`, etc.) to its default the moment a skill attachment fired
+  /// or was confirmed/rejected — fixed by routing those four call sites
+  /// through this method instead. Every field but [pendingSkillAttachment]
+  /// follows the simple "omit to leave unchanged" convention (a plain nullable
+  /// parameter, substituted via `??`) since no current caller needs to
+  /// explicitly clear any of them back to `null`. [pendingSkillAttachment] is
+  /// the one field callers genuinely need to clear (on confirm/reject), so it
+  /// alone takes a [TicketFieldSetter] — mirrors [Ticket.copyWith]'s own
+  /// convention for the same omitted-vs-explicitly-null distinction: pass
+  /// `() => null` to clear it, or omit the parameter to leave it unchanged.
+  /// Added for `AIO-2650`.
   TicketDetailLoaded copyWith({
     Ticket? ticket,
     List<Ticket>? childDocs,

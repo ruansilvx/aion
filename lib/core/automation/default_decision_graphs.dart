@@ -15,12 +15,11 @@ const attemptExceedsMaxDefaultNodeId = 'default-attempt-exceeds-max';
 const sessionOverageDetectedDefaultNodeId = 'default-session-overage-detected';
 
 /// The baseline `DecisionGraph`/`DecisionNode` data reproducing this
-/// codebase's pre-`AIO-181`
-/// hardcoded checks — a single node per context: `attemptExceedsMax`
-/// (maxAttempts: 2) for [AutomationContext.codingExecutionRetry],
-/// `sessionOverageDetected` for [AutomationContext.codingExecution].
-/// Every other context has no baseline node (its
-/// [defaultDecisionGraphFor] resolves a `null` root).
+/// codebase's pre-`AIO-181` hardcoded checks — a single node per context:
+/// `attemptExceedsMax` (maxAttempts: 2) for
+/// [AutomationContext.codingExecutionRetry], `sessionOverageDetected` for
+/// [AutomationContext.codingExecution]. Every other context has no baseline
+/// node (its [defaultDecisionGraphFor] resolves a `null` root).
 ///
 /// Two consumers share this single source of truth so it's never
 /// duplicated as inline literals:

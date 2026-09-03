@@ -11,13 +11,12 @@ import 'package:aion/design_system/tokens/theme_scope.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 
 /// A `page` ticket detail's "Sub-pages" section: a flat list of its direct
-/// `page`/`resource` children, plus a header "+ Add" affordance that opens
-/// the create-sub-page flow with this page pre-seeded as parent. Promoted
-/// from `TicketDetailScreen`'s formerly-private `_SubPagesSection` (per
+/// `page`/`resource` children, plus a header "+ Add" affordance that opens the
+/// create-sub-page flow with this page pre-seeded as parent. Promoted from
+/// `TicketDetailScreen`'s formerly-private `_SubPagesSection` (per
 /// `project.md`'s Pattern 2) so `PageDetailScreen` can reuse it too — no
 /// `Ticket`-type-specific business logic beyond a `List<Ticket>` and
-/// callbacks. Per
-/// `AIO-1350` §4.
+/// callbacks. Per `AIO-1350` §4.
 class PageSubPagesSection extends StatelessWidget {
   /// Creates a [PageSubPagesSection] listing [childDocs].
   const PageSubPagesSection({

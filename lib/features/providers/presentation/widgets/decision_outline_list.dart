@@ -11,18 +11,17 @@ import 'package:aion/features/providers/presentation/cubit/decision_graph_config
 import 'package:aion/features/providers/presentation/widgets/agent_cost_hint.dart';
 import 'package:aion/features/providers/presentation/widgets/decision_node_form.dart';
 
-/// The outline pane of `DecisionGraphEditorScreen`: one row per
-/// `DecisionNode` (condition name, parameter chip, and its two branches'
-/// outcome badges), children of a chained branch rendered as their own
-/// indented row beneath it (recursively, no depth cap), plus a dashed
-/// "+ Add condition" affordance when the graph has no root yet.
-/// Reads/writes through [DecisionGraphConfigCubit] — the same source of
-/// truth `GraphCanvas` renders from, so a selection or edit in either
-/// pane is reflected in the other via the same [DecisionGraphConfigState].
-/// Added for `AIO-181`; see that
-/// change's design.md §2. (`/verify` fix pass — this pane previously only
-/// ever rendered the graph's root node, since `DecisionNodeForm` had no
-/// way to author a chained branch; see that form's own dartdoc.)
+/// The outline pane of `DecisionGraphEditorScreen`: one row per `DecisionNode`
+/// (condition name, parameter chip, and its two branches' outcome badges),
+/// children of a chained branch rendered as their own indented row beneath it
+/// (recursively, no depth cap), plus a dashed "+ Add condition" affordance
+/// when the graph has no root yet. Reads/writes through
+/// [DecisionGraphConfigCubit] — the same source of truth `GraphCanvas` renders
+/// from, so a selection or edit in either pane is reflected in the other via
+/// the same [DecisionGraphConfigState]. Added for `AIO-181`; see that change's
+/// design.md §2. (`/verify` fix pass — this pane previously only ever rendered
+/// the graph's root node, since `DecisionNodeForm` had no way to author a
+/// chained branch; see that form's own dartdoc.)
 class DecisionOutlineList extends StatefulWidget {
   /// Creates a [DecisionOutlineList] for [automationContext].
   const DecisionOutlineList({super.key, required this.automationContext});
@@ -274,12 +273,11 @@ class _NodeRowState extends State<_NodeRow> {
   bool _expanded = false;
   bool _hovered = false;
 
-  /// Set (and consumed once) when a per-branch "+ Add condition"
-  /// affordance (design.md §2.3) is tapped, forcing that branch's mode
-  /// straight to "Continue to condition" when the form expands — see
-  /// [DecisionNodeForm.forceMatchedContinue]/`.forceUnmatchedContinue`.
-  /// Added for `AIO-181` (`/verify`
-  /// fix pass 2).
+  /// Set (and consumed once) when a per-branch "+ Add condition" affordance
+  /// (design.md §2.3) is tapped, forcing that branch's mode straight to
+  /// "Continue to condition" when the form expands — see
+  /// [DecisionNodeForm.forceMatchedContinue]/`.forceUnmatchedContinue`. Added
+  /// for `AIO-181` (`/verify` fix pass 2).
   bool _forceMatchedContinue = false;
   bool _forceUnmatchedContinue = false;
 
@@ -644,11 +642,10 @@ class _AddConditionAffordance extends StatelessWidget {
 
 /// Indents [child] by `24 * depth` (design.md §2.1's per-level indent) and
 /// paints a 1px ancestor guide-rail line at each intervening depth —
-/// `x = 24 * d + 19` relative to this row's own left edge, full row
-/// height. Shared by [_NodeRow] and [_BranchChild] so the rail lines up
-/// identically for a row's own content and its `MATCHED`/`UNMATCHED`
-/// label. Added for `AIO-181`
-/// (`/verify` fix pass 2).
+/// `x = 24 * d + 19` relative to this row's own left edge, full row height.
+/// Shared by [_NodeRow] and [_BranchChild] so the rail lines up identically
+/// for a row's own content and its `MATCHED`/`UNMATCHED` label. Added for
+/// `AIO-181` (`/verify` fix pass 2).
 class _GuideRailIndent extends StatelessWidget {
   const _GuideRailIndent({required this.depth, required this.child});
 
@@ -680,16 +677,15 @@ class _GuideRailIndent extends StatelessWidget {
   }
 }
 
-/// The `ASK` badge preceding an `agentJudgment` row's title (design.md
-/// §4.1) — a small diamond glyph (the same "the model resolves this" mark
-/// DG §1.4's `Model decides` outcome badge already uses) plus the fixed
-/// `ASK` label, on a `primaryWash` fill with a `primary`-toned hairline.
-/// Doesn't change tone between ordinary interaction states (design.md
-/// §4.2's "it identifies a kind, not a state") — [isError] is the one
-/// exception, re-toning the whole badge to `danger` for an incomplete
-/// (empty-prompt) node, mirroring `_QuestionChip`'s own `isError` handling
-/// on the canvas card (design.md §4.3). Added for
-/// `AIO-613`.
+/// The `ASK` badge preceding an `agentJudgment` row's title (design.md §4.1) —
+/// a small diamond glyph (the same "the model resolves this" mark DG §1.4's
+/// `Model decides` outcome badge already uses) plus the fixed `ASK` label, on
+/// a `primaryWash` fill with a `primary`-toned hairline. Doesn't change tone
+/// between ordinary interaction states (design.md §4.2's "it identifies a
+/// kind, not a state") — [isError] is the one exception, re-toning the whole
+/// badge to `danger` for an incomplete (empty-prompt) node, mirroring
+/// `_QuestionChip`'s own `isError` handling on the canvas card (design.md
+/// §4.3). Added for `AIO-613`.
 class _AskBadge extends StatelessWidget {
   const _AskBadge({this.isError = false});
 
@@ -740,20 +736,16 @@ class _AskBadge extends StatelessWidget {
   }
 }
 
-/// The row chrome's parameter-summary chip (design.md §1.2/§2.1
-/// "Parameter chip") — e.g. `> 3`. Mirrors
-/// `DecisionGraphEditorScreen`'s own private `_ParameterChip` (not
-/// shared across files, consistent with this codebase's existing
-/// per-file small-private-widget convention). Added for
-/// `AIO-181` (`/verify` fix pass 2).
-/// [bordered] renders a 1px `AionColors.border` hairline and one point
-/// less vertical padding — the rule-builder node's one visual difference
-/// from a preset node's chip, mirroring the canvas pane's own
-/// `_ParameterChip.bordered`, per
-/// `AIO-661`'s Component
-/// Spec §4.2. Defaults to `false`, preserving every preset-condition call
-/// site's unbordered rendering. Added for
-/// `AIO-661`.
+/// The row chrome's parameter-summary chip (design.md §1.2/§2.1 "Parameter
+/// chip") — e.g. `> 3`. Mirrors `DecisionGraphEditorScreen`'s own private
+/// `_ParameterChip` (not shared across files, consistent with this codebase's
+/// existing per-file small-private-widget convention). Added for `AIO-181`
+/// (`/verify` fix pass 2). [bordered] renders a 1px `AionColors.border`
+/// hairline and one point less vertical padding — the rule-builder node's one
+/// visual difference from a preset node's chip, mirroring the canvas pane's
+/// own `_ParameterChip.bordered`, per `AIO-661`'s Component Spec §4.2.
+/// Defaults to `false`, preserving every preset-condition call site's
+/// unbordered rendering. Added for `AIO-661`.
 class _ParameterChip extends StatelessWidget {
   const _ParameterChip({required this.text, this.bordered = false});
 

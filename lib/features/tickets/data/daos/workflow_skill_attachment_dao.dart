@@ -7,8 +7,8 @@ import 'package:aion/features/tickets/data/models/workflow_skill_attachment_tabl
 
 part 'workflow_skill_attachment_dao.g.dart';
 
-/// Drift accessor for [WorkflowSkillAttachmentsTable]. Plain CRUD only —
-/// no seeding logic, matching [WorkflowStatusDao]'s shape minus its
+/// Drift accessor for [WorkflowSkillAttachmentsTable]. Plain CRUD only — no
+/// seeding logic, matching [WorkflowStatusDao]'s shape minus its
 /// `seedDefaultsIfEmpty` method (an empty attachment table is the correct
 /// starting state — see `app_database.dart`'s version-16 dartdoc). See
 /// `AIO-2650` §2.4.

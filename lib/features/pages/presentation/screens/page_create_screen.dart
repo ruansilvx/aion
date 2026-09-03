@@ -23,11 +23,10 @@ class PageCreateRouteExtra {
 }
 
 /// The `/workspace/pages/new` route: a short creation form dedicated to
-/// `page`-type tickets — title (required), an optional parent picker, and
-/// an optional initial Markdown content field. No type picker (type is
-/// fixed to `page`), no priority/estimate fields. Builds its own
-/// [PagesCubit], backed by the workspace-scoped [PageTicketProvider] read
-/// from context. Per
+/// `page`-type tickets — title (required), an optional parent picker, and an
+/// optional initial Markdown content field. No type picker (type is fixed to
+/// `page`), no priority/estimate fields. Builds its own [PagesCubit], backed
+/// by the workspace-scoped [PageTicketProvider] read from context. Per
 /// `AIO-1350` §8.
 class PageCreateScreen extends StatefulWidget {
   /// Creates a [PageCreateScreen]. [initialParentId] pre-selects the

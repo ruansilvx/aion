@@ -40,9 +40,8 @@ abstract interface class ProjectRepository {
   /// @throws if [id] does not exist.
   Future<void> updateBaselineVersion(String id, String version);
 
-  /// Removes the registry entry for project [id]. Does **not** delete
-  /// the project's on-disk data (desktop) or storage namespace
-  /// (mobile/web) — see
+  /// Removes the registry entry for project [id]. Does **not** delete the
+  /// project's on-disk data (desktop) or storage namespace (mobile/web) — see
   /// `AIO-1174` §3.
   ///
   /// @throws if [id] does not exist.

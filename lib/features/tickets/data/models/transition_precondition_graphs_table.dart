@@ -6,11 +6,10 @@ import 'package:drift/drift.dart';
 /// (`../../domain/enums/sdd_stage.dart`) — its currently-configured
 /// transition-precondition graph root. Row type is generated as
 /// [TransitionPreconditionGraphData]. No FK constraints — integrity is
-/// enforced at the `TransitionPreconditionConfigCubit` layer, matching
-/// every other table in this schema (mirrors
+/// enforced at the `TransitionPreconditionConfigCubit` layer, matching every
+/// other table in this schema (mirrors
 /// `core/automation/data/automation_decision_graphs_table.dart`'s exact
-/// shape). See
-/// `AIO-1936` §2.
+/// shape). See `AIO-1936` §2.
 @DataClassName('TransitionPreconditionGraphData')
 class TransitionPreconditionGraphsTable extends Table {
   @override

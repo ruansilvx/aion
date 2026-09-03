@@ -18,8 +18,8 @@ import 'package:aion/features/tickets/domain/repositories/workflow_skill_attachm
 import 'package:aion/features/tickets/domain/repositories/workflow_status_repository.dart';
 import 'package:aion/features/tickets/presentation/cubit/workflow_config_state.dart';
 
-/// Owns [WorkflowStatus] CRUD/reorder and the project's `SddStage`
-/// settings, enforcing the invariants `TicketsCubit` itself never checks —
+/// Owns [WorkflowStatus] CRUD/reorder and the project's `SddStage` settings,
+/// enforcing the invariants `TicketsCubit` itself never checks —
 /// domain/invariant logic lives in Cubits, not repositories, per this
 /// project's Cubit-vs-repository split. Backs `WorkflowStatusSettingsScreen`.
 /// See `AIO-549` §4.
@@ -45,14 +45,13 @@ import 'package:aion/features/tickets/presentation/cubit/workflow_config_state.d
 /// currently sits at — Phase 1 has no migration story for reassigning a
 /// deleted status's tickets (see proposal.md's Non-goals).
 ///
-/// Phase 2 (`AIO-2650`) adds
-/// [SkillAttachment]/[WorkflowPromptTemplate] CRUD alongside the above,
-/// enforcing two more invariants the same way: [createAttachment]/
-/// [updateAttachment] reject a second attachment on a target
-/// (`WorkflowStatus.id`/`SddStage`) that already holds one; [createTemplate]/
-/// [updateTemplate] reject a project-wide [WorkflowPromptTemplate.name]
-/// collision; [deleteTemplate] rejects while a live [SkillAttachment]
-/// still references it.
+/// Phase 2 (`AIO-2650`) adds [SkillAttachment]/[WorkflowPromptTemplate] CRUD
+/// alongside the above, enforcing two more invariants the same way:
+/// [createAttachment]/ [updateAttachment] reject a second attachment on a
+/// target (`WorkflowStatus.id`/`SddStage`) that already holds one;
+/// [createTemplate]/ [updateTemplate] reject a project-wide
+/// [WorkflowPromptTemplate.name] collision; [deleteTemplate] rejects while a
+/// live [SkillAttachment] still references it.
 class WorkflowConfigCubit extends Cubit<WorkflowConfigState> {
   /// Creates a [WorkflowConfigCubit]. [_ticketRepository] is consulted
   /// only by [deleteStatus]'s in-use check — a live-ticket count query,
@@ -76,17 +75,14 @@ class WorkflowConfigCubit extends Cubit<WorkflowConfigState> {
   final SddStageConfigRepository _sddStageConfigRepository;
   final TicketRepository _ticketRepository;
 
-  /// Persists [SkillAttachment]s. Added for
-  /// `AIO-2650`.
+  /// Persists [SkillAttachment]s. Added for `AIO-2650`.
   final WorkflowSkillAttachmentRepository _attachmentRepository;
 
-  /// Persists [WorkflowPromptTemplate]s. Added for
-  /// `AIO-2650`.
+  /// Persists [WorkflowPromptTemplate]s. Added for `AIO-2650`.
   final WorkflowPromptTemplateRepository _templateRepository;
 
-  /// Source of [WorkflowConfigLoaded.transitionPreconditionNodeCounts].
-  /// Added for `AIO-1936`'s
-  /// post-`/verify` follow-up.
+  /// Source of [WorkflowConfigLoaded.transitionPreconditionNodeCounts]. Added
+  /// for `AIO-1936`'s post-`/verify` follow-up.
   final TransitionPreconditionRepository? _transitionPreconditionRepository;
 
   /// Loads every configured [WorkflowStatus] plus the project's `SddStage`
@@ -265,10 +261,9 @@ class WorkflowConfigCubit extends Cubit<WorkflowConfigState> {
   }
 
   /// Creates [attachment]. Rejects (emits [WorkflowConfigError], preserving
-  /// the current list) if [attachment] violates either of
-  /// [SkillAttachment]'s own either/or invariants (see
-  /// [_attachmentInvariantViolation]), or if its target
-  /// ([SkillAttachment.workflowStatusId]/[SkillAttachment.sddStage])
+  /// the current list) if [attachment] violates either of [SkillAttachment]'s
+  /// own either/or invariants (see [_attachmentInvariantViolation]), or if its
+  /// target ([SkillAttachment.workflowStatusId]/[SkillAttachment.sddStage])
   /// already holds a different attachment — at most one per target. See
   /// `AIO-2650` §4.
   Future<void> createAttachment(SkillAttachment attachment) async {
@@ -475,15 +470,14 @@ class WorkflowConfigCubit extends Cubit<WorkflowConfigState> {
   };
 
   /// Checks [candidate] against [SkillAttachment]'s own two either/or
-  /// invariants — documented on that entity as enforced here, never by
-  /// the repository or the entity itself (see
-  /// `AIO-2650` §1.2):
-  /// exactly one of [SkillAttachment.workflowStatusId]/
-  /// [SkillAttachment.sddStage] must be set (what it's *for*), and
-  /// exactly one of [SkillAttachment.templateId]/[SkillAttachment.skillName]
-  /// must be set, matching [SkillAttachment.kind] (what it *runs*).
-  /// Returns a human-readable rejection reason, or `null` if [candidate]
-  /// is valid. Checked by [createAttachment]/[updateAttachment] before
+  /// invariants — documented on that entity as enforced here, never by the
+  /// repository or the entity itself (see `AIO-2650` §1.2): exactly one of
+  /// [SkillAttachment.workflowStatusId]/ [SkillAttachment.sddStage] must be
+  /// set (what it's *for*), and exactly one of
+  /// [SkillAttachment.templateId]/[SkillAttachment.skillName] must be set,
+  /// matching [SkillAttachment.kind] (what it *runs*). Returns a
+  /// human-readable rejection reason, or `null` if [candidate] is valid.
+  /// Checked by [createAttachment]/[updateAttachment] before
   /// [_attachmentTargetTaken].
   String? _attachmentInvariantViolation(SkillAttachment candidate) {
     final targetCount =

@@ -9,20 +9,18 @@ import 'package:aion/features/tickets/domain/utils/embedding_similarity.dart';
 import 'package:aion/features/tickets/domain/utils/ticket_link_direction.dart';
 
 /// Assembles a `## Related tickets` Markdown section for a spawned chat's
-/// opening context, combining a structured walk of a [Ticket]'s ancestor
-/// chain and direct [TicketLinkRepository] links with an embedding-
-/// similarity scan over every other live ticket. Placed alongside
+/// opening context, combining a structured walk of a [Ticket]'s ancestor chain
+/// and direct [TicketLinkRepository] links with an embedding-similarity scan
+/// over every other live ticket. Placed alongside
 /// `TicketRollupRecomputer`/`TicketEstimationSuggester` — the two existing
 /// orchestrator classes `TicketsCubit` constructs once and delegates a
-/// self-contained walk to — because this is judgment logic (what counts
-/// as "related enough") rather than a pure data-access concern, per
+/// self-contained walk to — because this is judgment logic (what counts as
+/// "related enough") rather than a pure data-access concern, per
 /// `project.md`'s Cubit-owns-domain-logic convention. Consumed by both
 /// `TicketsCubit._assembleExecutionContext` and
 /// `TicketsCubit._assembleStageContext` (the latter also covers
-/// `retryDesignSync`'s re-assembly, since it calls
-/// `_assembleStageContext` directly). See
-/// `AIO-2229`
-/// §1.
+/// `retryDesignSync`'s re-assembly, since it calls `_assembleStageContext`
+/// directly). See `AIO-2229` §1.
 class TicketContextEnricher {
   /// Creates a [TicketContextEnricher] backed by [_repository].
   /// [linkRepository]/[embeddingProvider] are optional — when

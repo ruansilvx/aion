@@ -8,14 +8,13 @@ import 'package:aion/features/tickets/domain/entities/transition_node.dart';
 import 'package:aion/features/tickets/domain/enums/transition_outcome.dart';
 import 'package:aion/features/tickets/domain/repositories/transition_precondition_repository.dart';
 
-/// Every value a [TransitionFieldSpec] might need to read, bundled by the
-/// call site rather than fetched by [evaluateTransitionGraph] itself —
-/// keeps that function pure (no I/O) and trivially unit-testable. Mirrors
+/// Every value a [TransitionFieldSpec] might need to read, bundled by the call
+/// site rather than fetched by [evaluateTransitionGraph] itself — keeps that
+/// function pure (no I/O) and trivially unit-testable. Mirrors
 /// `core/automation/decision_graph_evaluator.dart`'s `DecisionEvalContext`
 /// "bundled by the caller, not fetched here" convention, one field per
 /// `transitionFieldCatalog` entry. Every field is optional; a stage's
-/// evaluation only ever reads the fields valid for it. Added for
-/// `AIO-1936`.
+/// evaluation only ever reads the fields valid for it. Added for `AIO-1936`.
 @immutable
 class TransitionEvalContext {
   /// Creates a [TransitionEvalContext].
@@ -77,19 +76,18 @@ final Map<String, bool? Function(TransitionEvalContext input)> _fieldAccessors =
 /// Walks [graph] from its `TransitionGraph.rootNodeId`, evaluating each
 /// [TransitionNode] (looked up in [nodesById]) against [input] via
 /// [_fieldAccessors], following `TransitionNode.matchedBranch`/
-/// `.unmatchedBranch` until a `TransitionBranch.terminal` is reached.
-/// Returns `(outcome: TransitionOutcome.allowed, blockingFieldDisplayName:
-/// null)` immediately if `TransitionGraph.rootNodeId` is `null` (no
-/// precondition configured — an unconfigured stage should never gate,
-/// mirroring `evaluateDecisionGraph`'s own "never silently block" defensive
-/// posture) or if the walk ever references a node id missing from
-/// [nodesById] (a dangling reference resolves that node's branch as
-/// unmatched, never throws). A missing/`null` field value in [input] also
-/// resolves as unmatched, the same defensive treatment. On `blocked`,
-/// [blockingFieldDisplayName] carries the failing node's field's
-/// `TransitionFieldSpec.displayName`, so the call site can build `'Waiting
-/// on: $blockingFieldDisplayName'` without a second lookup. Pure — no I/O.
-/// Added for `AIO-1936`.
+/// `.unmatchedBranch` until a `TransitionBranch.terminal` is reached. Returns
+/// `(outcome: TransitionOutcome.allowed, blockingFieldDisplayName: null)`
+/// immediately if `TransitionGraph.rootNodeId` is `null` (no precondition
+/// configured — an unconfigured stage should never gate, mirroring
+/// `evaluateDecisionGraph`'s own "never silently block" defensive posture) or
+/// if the walk ever references a node id missing from [nodesById] (a dangling
+/// reference resolves that node's branch as unmatched, never throws). A
+/// missing/`null` field value in [input] also resolves as unmatched, the same
+/// defensive treatment. On `blocked`, [blockingFieldDisplayName] carries the
+/// failing node's field's `TransitionFieldSpec.displayName`, so the call site
+/// can build `'Waiting on: $blockingFieldDisplayName'` without a second
+/// lookup. Pure — no I/O. Added for `AIO-1936`.
 ({TransitionOutcome outcome, String? blockingFieldDisplayName})
 evaluateTransitionGraph(
   TransitionGraph graph,

@@ -13,13 +13,11 @@ import 'package:aion/core/automation/decision_node.dart';
 import 'package:aion/core/automation/decision_outcome.dart';
 import 'package:aion/core/database/app_database.dart';
 
-/// Drift-backed implementation of [DecisionGraphRepository]. No business
-/// logic here — maps [AutomationDecisionGraphData]/
-/// [AutomationDecisionNodeData] rows to [DecisionGraph]/[DecisionNode]
-/// entities and delegates every method straight to
-/// [AutomationDecisionDao], matching every other `Drift*Repository` in
-/// this codebase. Added for
-/// `AIO-181`.
+/// Drift-backed implementation of [DecisionGraphRepository]. No business logic
+/// here — maps [AutomationDecisionGraphData]/ [AutomationDecisionNodeData]
+/// rows to [DecisionGraph]/[DecisionNode] entities and delegates every method
+/// straight to [AutomationDecisionDao], matching every other
+/// `Drift*Repository` in this codebase. Added for `AIO-181`.
 class DriftDecisionGraphRepository implements DecisionGraphRepository {
   /// Creates a [DriftDecisionGraphRepository] backed by [_db].
   DriftDecisionGraphRepository(this._db);

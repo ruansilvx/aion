@@ -34,14 +34,14 @@ String severityLabel(BuildContext context, TicketSeverity severity) {
   };
 }
 
-/// A small pill showing a [TicketType.bug](../../features/tickets/domain/enums/ticket_type.dart)
-/// ticket's severity: a leading filled triangle marker plus an
-/// uppercase label, colored by [severity]'s `AionSeverityColors` entry.
-/// Parallel to `PriorityBadge`, but deliberately distinguished from it by
-/// two independent cues (per `AIO-425`
-/// §2.1): a single-temperature "ember ramp" palette (rather than
-/// `PriorityBadge`'s four-hue set) and the leading triangle marker, which
-/// `PriorityBadge` has no equivalent of.
+/// A small pill showing a
+/// [TicketType.bug](../../features/tickets/domain/enums/ticket_type.dart)
+/// ticket's severity: a leading filled triangle marker plus an uppercase
+/// label, colored by [severity]'s `AionSeverityColors` entry. Parallel to
+/// `PriorityBadge`, but deliberately distinguished from it by two independent
+/// cues (per `AIO-425` §2.1): a single-temperature "ember ramp" palette
+/// (rather than `PriorityBadge`'s four-hue set) and the leading triangle
+/// marker, which `PriorityBadge` has no equivalent of.
 ///
 /// [severity] is nullable — `null` renders the unselected/placeholder
 /// variant (dashed border, outline-only triangle, muted "SEVERITY"/
@@ -160,13 +160,12 @@ class _SeverityTrianglePainter extends CustomPainter {
 }
 
 /// A trigger + overlay picker for choosing a [TicketSeverity], shared by
-/// `CreateTicketScreen`'s Bug-fields block and the ticket detail screen's
-/// "Bug details" section severity row (`AIO-425`
-/// §3–§5.2). Structurally mirrors `AppDropdown`'s
-/// `CompositedTransformTarget`/`OverlayEntry` overlay mechanics, re-skinned
-/// to render a [SeverityBadge] per row instead of a plain label — plain
-/// `AppDropdown<T>` has no per-item leading-widget slot, so it can't
-/// render this itself.
+/// `CreateTicketScreen`'s Bug-fields block and the ticket detail screen's "Bug
+/// details" section severity row (`AIO-425` §3–§5.2). Structurally mirrors
+/// `AppDropdown`'s `CompositedTransformTarget`/`OverlayEntry` overlay
+/// mechanics, re-skinned to render a [SeverityBadge] per row instead of a
+/// plain label — plain `AppDropdown<T>` has no per-item leading-widget slot,
+/// so it can't render this itself.
 class SeverityPicker extends StatefulWidget {
   /// Creates a [SeverityPicker]. [value] is the currently selected
   /// severity, `null` if none has been chosen yet. [isLarge] selects
@@ -378,10 +377,9 @@ class _SeverityPickerState extends State<SeverityPicker> {
   }
 }
 
-/// The compact create-form dropdown-box trigger for [SeverityPicker] —
-/// a `SeverityBadge`/placeholder plus a trailing chevron, matching the
-/// sibling `AppDropdown`s' box geometry
-/// (`AIO-425` §4.2).
+/// The compact create-form dropdown-box trigger for [SeverityPicker] — a
+/// `SeverityBadge`/placeholder plus a trailing chevron, matching the sibling
+/// `AppDropdown`s' box geometry (`AIO-425` §4.2).
 class _CompactTrigger extends StatelessWidget {
   const _CompactTrigger({
     required this.value,

@@ -3,10 +3,9 @@
 import 'package:equatable/equatable.dart';
 
 /// A project-local file shadowing one named
-/// [BaselineAsset](baseline_asset.dart) by matching [assetKey]. Desktop
-/// only in this change — mobile/web projects have no local filesystem
-/// override surface (see
-/// `AIO-1174` §2).
+/// [BaselineAsset](baseline_asset.dart) by matching [assetKey]. Desktop only
+/// in this change — mobile/web projects have no local filesystem override
+/// surface (see `AIO-1174` §2).
 class ProjectOverride extends Equatable {
   /// The [Project.id](project.dart) this override belongs to.
   final String projectId;

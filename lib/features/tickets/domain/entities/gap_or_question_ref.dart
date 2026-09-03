@@ -9,12 +9,11 @@ import 'package:aion/features/tickets/domain/entities/ticket.dart';
 /// viewed ticket itself, or one of its descendants), and the underlying
 /// `TicketLink` row's own [linkId].
 ///
-/// `raisedOn` is what lets the UI distinguish a gap/question raised
-/// directly on the viewed ticket from one rolled up from a descendant —
-/// e.g. rendering "Open question — on Login Flow (Story)" when viewed
-/// from an Epic two levels up, vs. just the title when
-/// `raisedOn.id == ticket.id`. Mirrors [LinkedTicketRef]'s shape. Added
-/// for `AIO-934`; populated by
+/// `raisedOn` is what lets the UI distinguish a gap/question raised directly
+/// on the viewed ticket from one rolled up from a descendant — e.g. rendering
+/// "Open question — on Login Flow (Story)" when viewed from an Epic two levels
+/// up, vs. just the title when `raisedOn.id == ticket.id`. Mirrors
+/// [LinkedTicketRef]'s shape. Added for `AIO-934`; populated by
 /// `TicketsCubit.loadDocumentRelations`.
 typedef GapOrQuestionRef = ({
   Ticket ticket,

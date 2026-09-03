@@ -66,15 +66,13 @@ class WorkflowConfigLoaded extends WorkflowConfigState {
   final List<WorkflowPromptTemplate> templates;
 
   /// Each precondition-bearing [SddStage]'s current transition-precondition
-  /// field-check count — from `TransitionPreconditionRepository
-  /// .getNodeCounts`, `0`/absent when unconfigured. Powers
-  /// `WorkflowStatusSettingsScreen`'s "Configure precondition" affordance
-  /// count badge. Defaults to `{}` — a project built without a
-  /// `TransitionPreconditionRepository` (see [WorkflowConfigCubit]'s
-  /// constructor) shows every stage as unconfigured rather than failing
-  /// to load. Added for
-  /// `AIO-1936`'s post-`/verify`
-  /// follow-up.
+  /// field-check count — from
+  /// `TransitionPreconditionRepository .getNodeCounts`, `0`/absent when
+  /// unconfigured. Powers `WorkflowStatusSettingsScreen`'s "Configure
+  /// precondition" affordance count badge. Defaults to `{}` — a project built
+  /// without a `TransitionPreconditionRepository` (see [WorkflowConfigCubit]'s
+  /// constructor) shows every stage as unconfigured rather than failing to
+  /// load. Added for `AIO-1936`'s post-`/verify` follow-up.
   final Map<SddStage, int> transitionPreconditionNodeCounts;
 
   /// The shared-base statuses only (no per-type extensions), sorted by

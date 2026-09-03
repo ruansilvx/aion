@@ -3,14 +3,13 @@
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 
 /// Persists a project's `SddStage` configuration: whether the design-review
-/// stages (`SddStage.designBrief`/`.designSync`) are required at all, and
-/// an optional per-stage display-name override. Mirrors
+/// stages (`SddStage.designBrief`/`.designSync`) are required at all, and an
+/// optional per-stage display-name override. Mirrors
 /// `AutomationSettingsRepository`'s exact shape — the correct-fit precedent
-/// per `/explore` (not `ProjectOverride`, which only shadows bundled
-/// files). Implemented by the data layer
-/// ([SharedPrefsSddStageConfigRepository]); UI and domain code depend only
-/// on this interface, never on a concrete data source. See
-/// `AIO-549` §1.5.
+/// per `/explore` (not `ProjectOverride`, which only shadows bundled files).
+/// Implemented by the data layer ([SharedPrefsSddStageConfigRepository]); UI
+/// and domain code depend only on this interface, never on a concrete data
+/// source. See `AIO-549` §1.5.
 abstract interface class SddStageConfigRepository {
   /// Whether Epics/Stories must clear the `designBrief`/`designSync` stage
   /// cycle before execution. Defaults to `true` — matches today's

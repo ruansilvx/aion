@@ -7,16 +7,15 @@ import 'agent_tool_definition.dart';
 
 /// Provider-agnostic entry point for every model call in Aion.
 ///
-/// Per `project.md`'s Pattern 1 (dependency inversion via `core`), any
-/// feature needing a model call depends only on this interface, never on a
-/// concrete provider directly — see `AIO-1699`
-/// §1. The sole implementation for this MVP is `ClaudeAgentSdkClient`
-/// (`core/agent/claude_agent_sdk_client.dart`).
+/// Per `project.md`'s Pattern 1 (dependency inversion via `core`), any feature
+/// needing a model call depends only on this interface, never on a concrete
+/// provider directly — see `AIO-1699` §1. The sole implementation for this MVP
+/// is `ClaudeAgentSdkClient` (`core/agent/claude_agent_sdk_client.dart`).
 ///
 /// A run may emit any number of [AgentToolCallEvent]s before its terminal
-/// event — each one non-terminal, reporting an [AgentRequest.tools] call
-/// the implementation is awaiting [AgentRequest.onToolCall] for. See
-/// `AIO-1118` §2.
+/// event — each one non-terminal, reporting an [AgentRequest.tools] call the
+/// implementation is awaiting [AgentRequest.onToolCall] for. See `AIO-1118`
+/// §2.
 abstract interface class AgentModelClient {
   /// Starts a model run for [request], returning a stream of incremental
   /// [AgentEvent]s. The returned stream is finished by exactly one
@@ -24,15 +23,14 @@ abstract interface class AgentModelClient {
   /// [AgentCancelledEvent]).
   Future<Stream<AgentEvent>> run(AgentRequest request);
 
-  /// Cancels the run identified by [runId] (the [AgentRequest.runId] it
-  /// was started with), causing its [run] stream to close with a
-  /// terminal [AgentCancelledEvent] instead of whatever it would
-  /// otherwise have ended with. A no-op if [runId] doesn't match any
-  /// currently active run — already finished, never started, or unknown
-  /// to this client instance — so a caller racing a cancel against a
-  /// run's own natural completion never needs to guard the call itself.
-  /// Added for `AIO-1400`; see that change's
-  /// design.md §2.
+  /// Cancels the run identified by [runId] (the [AgentRequest.runId] it was
+  /// started with), causing its [run] stream to close with a terminal
+  /// [AgentCancelledEvent] instead of whatever it would otherwise have ended
+  /// with. A no-op if [runId] doesn't match any currently active run — already
+  /// finished, never started, or unknown to this client instance — so a caller
+  /// racing a cancel against a run's own natural completion never needs to
+  /// guard the call itself. Added for `AIO-1400`; see its linked Documentation
+  /// page, §2.
   void cancel(String runId);
 }
 
@@ -79,10 +77,9 @@ class AgentRequest extends Equatable {
   final String? workingDirectory;
 
   /// App-defined tools the model may call mid-run, independent of
-  /// [toolsEnabled] (which governs the provider's own file/git/bash tool
-  /// set, not app-defined tools). Empty for every call site that predates
-  /// this change. Added for `AIO-1118`;
-  /// see that change's design.md §2.
+  /// [toolsEnabled] (which governs the provider's own file/git/bash tool set,
+  /// not app-defined tools). Empty for every call site that predates this
+  /// change. Added for `AIO-1118`; see its linked Documentation page, §2.
   final List<AgentToolDefinition> tools;
 
   /// Invoked by the [AgentModelClient] implementation when the model calls
@@ -96,15 +93,13 @@ class AgentRequest extends Equatable {
   /// error (see the constructor's dartdoc for why this isn't a compile-time
   /// `assert`).
   ///
-  /// The 4th parameter, [AgentSessionHandle], is this call's own
-  /// resumable session — non-null only when the implementation has
-  /// already captured a session id for this run (e.g.
-  /// `ClaudeAgentSdkClient` after its bridge process emits a `"session"`
-  /// line) and the underlying provider supports resumption
-  /// ([AgentProvider.supportsSessionResume]); `null` otherwise, including
-  /// for every provider with no session concept at all. See
-  /// `AIO-613`
-  /// §4.
+  /// The 4th parameter, [AgentSessionHandle], is this call's own resumable
+  /// session — non-null only when the implementation has already captured a
+  /// session id for this run (e.g. `ClaudeAgentSdkClient` after its bridge
+  /// process emits a `"session"` line) and the underlying provider supports
+  /// resumption ([AgentProvider.supportsSessionResume]); `null` otherwise,
+  /// including for every provider with no session concept at all. See
+  /// `AIO-613` §4.
   final Future<Map<String, dynamic>> Function(
     String toolCallId,
     String toolName,
@@ -114,14 +109,15 @@ class AgentRequest extends Equatable {
   onToolCall;
 
   /// Caller-supplied identifier for this run, later passed to
-  /// [AgentModelClient.cancel] to cancel it mid-flight. `null` (the
-  /// default) for every call site that has no cancellation UI wired to
-  /// it — a run with no [runId] simply can't be cancelled. Added for
-  /// `AIO-1400`; see that change's design.md §2.
+  /// [AgentModelClient.cancel] to cancel it mid-flight. `null` (the default)
+  /// for every call site that has no cancellation UI wired to it — a run with
+  /// no [runId] simply can't be cancelled. Added for `AIO-1400`; see its
+  /// linked Documentation page, §2.
   final String? runId;
 
   /// When set, this run resumes and forks [resumeSessionId] rather than
-  /// starting a fresh conversation — see design.md §3. `null` (the
+  /// starting a fresh conversation — see its linked Documentation page,
+  /// §3. `null` (the
   /// default) for every existing call site, preserving today's behavior.
   /// Only honored by a provider whose [AgentProvider.supportsSessionResume]
   /// is `true`; ignored otherwise.
@@ -190,11 +186,10 @@ class AgentErrorEvent extends AgentEvent {
   List<Object?> get props => [message];
 }
 
-/// The bridge process reported a plan usage-window / rate-limit signal
-/// (e.g. Claude Code's opt-in overage prompt). Informational only — see
-/// `AIO-1699`'s Non-goals for
-/// why this doesn't gate anything yet. May be followed by further
-/// [AgentTextEvent]s if the underlying call still completed, or by
+/// The bridge process reported a plan usage-window / rate-limit signal (e.g.
+/// Claude Code's opt-in overage prompt). Informational only — see `AIO-1699`'s
+/// Non-goals for why this doesn't gate anything yet. May be followed by
+/// further [AgentTextEvent]s if the underlying call still completed, or by
 /// [AgentErrorEvent] if it didn't.
 class AgentOverageDetectedEvent extends AgentEvent {
   /// Creates an [AgentOverageDetectedEvent] carrying a human-readable
@@ -209,8 +204,7 @@ class AgentOverageDetectedEvent extends AgentEvent {
 }
 
 /// A tool call the model made mid-run (file edit, git, bash, MCP). Purely
-/// informational — never a terminal event. Added for
-/// `AIO-506` to give a
+/// informational — never a terminal event. Added for `AIO-506` to give a
 /// long-running coding-execution turn live progress visibility.
 class AgentToolUseEvent extends AgentEvent {
   /// Creates an [AgentToolUseEvent] carrying [toolName] and an optional
@@ -229,12 +223,11 @@ class AgentToolUseEvent extends AgentEvent {
   List<Object?> get props => [toolName, summary];
 }
 
-/// The run was cancelled via [AgentModelClient.cancel]. Terminal, but
-/// **not** a failure — distinct from [AgentErrorEvent], which always
-/// represents something going wrong. Always the last event on a
-/// cancelled stream; no [AgentDoneEvent]/[AgentErrorEvent] follows.
-/// Added for `AIO-1400`; see that change's
-/// design.md §2.
+/// The run was cancelled via [AgentModelClient.cancel]. Terminal, but **not**
+/// a failure — distinct from [AgentErrorEvent], which always represents
+/// something going wrong. Always the last event on a cancelled stream; no
+/// [AgentDoneEvent]/[AgentErrorEvent] follows. Added for `AIO-1400`; see that
+/// change's design.md §2.
 class AgentCancelledEvent extends AgentEvent {
   /// Creates an [AgentCancelledEvent].
   const AgentCancelledEvent();
@@ -244,13 +237,12 @@ class AgentCancelledEvent extends AgentEvent {
 }
 
 /// An app-defined tool call the model made mid-run — distinct from
-/// [AgentToolUseEvent], which reports the *provider's own* file/git/bash
-/// tool use. Purely informational, like [AgentToolUseEvent]; the actual
-/// execution and result round-trip happens via [AgentRequest.onToolCall],
-/// awaited internally by the client implementation before it emits any
-/// further events. Never terminal. Added for
-/// `AIO-1118`; see that change's
-/// design.md §2.
+/// [AgentToolUseEvent], which reports the *provider's own* file/git/bash tool
+/// use. Purely informational, like [AgentToolUseEvent]; the actual execution
+/// and result round-trip happens via [AgentRequest.onToolCall], awaited
+/// internally by the client implementation before it emits any further events.
+/// Never terminal. Added for `AIO-1118`; see its linked Documentation page,
+/// §2.
 class AgentToolCallEvent extends AgentEvent {
   /// Creates an [AgentToolCallEvent] for a call to [toolName], identified
   /// by [toolCallId], carrying [arguments].

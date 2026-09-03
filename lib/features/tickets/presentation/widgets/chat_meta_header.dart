@@ -10,10 +10,9 @@ import 'package:aion/features/tickets/presentation/screens/tickets_list_screen.d
 import 'package:aion/features/tickets/presentation/widgets/ticket_overflow_menu.dart';
 
 /// The compact pinned header a `chat` ticket's [TicketMetadataSection]
-/// collapses into as `ChatTranscriptPane`'s transcript scrolls — back
-/// button, ticket-id badge, overflow menu, title, chat type chip, and
-/// status indicator. Per
-/// `AIO-482` §0.1.
+/// collapses into as `ChatTranscriptPane`'s transcript scrolls — back button,
+/// ticket-id badge, overflow menu, title, chat type chip, and status
+/// indicator. Per `AIO-482` §0.1.
 class ChatMetaHeader extends StatelessWidget {
   /// Creates a [ChatMetaHeader] for [ticket].
   const ChatMetaHeader({super.key, required this.ticket, required this.onBack});

@@ -10,11 +10,10 @@ import 'package:aion/core/contracts/tool_access_tier.dart';
 
 /// The second [AgentProvider] implementation — wraps
 /// [AnthropicMessagesApiClient], a plain HTTP-backed client, rather than
-/// `ClaudeAgentSdkProvider`'s bundled bridge/subprocess machinery, which
-/// this provider has none of. Text-only: declares
-/// [ToolAccessTier.noTools] only, so `ModelPhaseToolAccess`'s filter never
-/// offers this provider's models to the Execution tier. See
-/// `AIO-110` §3.
+/// `ClaudeAgentSdkProvider`'s bundled bridge/subprocess machinery, which this
+/// provider has none of. Text-only: declares [ToolAccessTier.noTools] only, so
+/// `ModelPhaseToolAccess`'s filter never offers this provider's models to the
+/// Execution tier. See `AIO-110` §3.
 class AnthropicMessagesApiProvider implements AgentProvider {
   /// Creates an [AnthropicMessagesApiProvider] running requests through
   /// [client].
@@ -117,13 +116,11 @@ class AnthropicMessagesApiProvider implements AgentProvider {
   bool get supportsSessionResume => false;
 
   /// `false` — plain HTTP/SSE against the Messages API, with no
-  /// filesystem-based skill discovery of any kind. Already unreachable
-  /// for `SkillAttachmentKind.delegatedSkill` today via
-  /// [supportedToolAccessTiers] excluding [ToolAccessTier.full]; this
-  /// declaration makes that exclusion explicit on the capability that
-  /// actually applies, rather than leaving it an accidental side effect
-  /// of a different, coarser filter. See
-  /// `AIO-702`
+  /// filesystem-based skill discovery of any kind. Already unreachable for
+  /// `SkillAttachmentKind.delegatedSkill` today via [supportedToolAccessTiers]
+  /// excluding [ToolAccessTier.full]; this declaration makes that exclusion
+  /// explicit on the capability that actually applies, rather than leaving it
+  /// an accidental side effect of a different, coarser filter. See `AIO-702`
   /// §2.
   @override
   bool get supportsSkillDiscovery => false;

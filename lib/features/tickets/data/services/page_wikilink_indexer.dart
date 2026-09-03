@@ -12,13 +12,11 @@ import 'package:aion/features/tickets/domain/repositories/page_wikilink_reposito
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
 
 /// Shared inline-`[[wikilink]]` reindex/rename-cascade logic, used by both
-/// `TicketsCubit.updateTicket` (in-app edits) and
-/// `TicketMarkdownReconciler` (external file-edit reconciles) — the two
-/// content-change surfaces that can change a `page` ticket's Markdown, so
-/// neither one duplicates this extraction/resolution logic inline. Per
-/// `AIO-963`'s
-/// `TicketsCubit` pseudocode, factored out to a shared seam per that
-/// change's `tasks.md` T14.
+/// `TicketsCubit.updateTicket` (in-app edits) and `TicketMarkdownReconciler`
+/// (external file-edit reconciles) — the two content-change surfaces that can
+/// change a `page` ticket's Markdown, so neither one duplicates this
+/// extraction/resolution logic inline. Per `AIO-963`'s `TicketsCubit`
+/// pseudocode, factored out to a shared seam per that change's `tasks.md` T14.
 class PageWikilinkIndexer {
   /// Creates a [PageWikilinkIndexer] wired to [_repository] (candidate/
   /// referrer lookups), [_pageWikilinkRepository] (the index itself), and

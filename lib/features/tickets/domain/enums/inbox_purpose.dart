@@ -2,9 +2,8 @@
 
 /// Which of the Inbox's four purpose-specific chats spawned a
 /// [Ticket](../entities/ticket.dart) of type `chat`. Set exactly once, at
-/// creation, on `Ticket.inboxPurpose` — `null` for every ticket not spawned
-/// by the Inbox, including every other `chat`. See
-/// `AIO-1300` §1.3.
+/// creation, on `Ticket.inboxPurpose` — `null` for every ticket not spawned by
+/// the Inbox, including every other `chat`. See `AIO-1300` §1.3.
 enum InboxPurpose {
   /// Classifies pasted/typed raw notes into one or more `signal` tickets,
   /// each tagged with a suggested promotion type (epic or bug).

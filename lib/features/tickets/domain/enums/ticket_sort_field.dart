@@ -1,7 +1,6 @@
 // domain/enums/ticket_sort_field.dart — TicketSortField enum (domain layer).
 
-/// The field the ticket list's Sort control orders by. See
-/// `AIO-2371`.
+/// The field the ticket list's Sort control orders by. See `AIO-2371`.
 ///
 /// Exactly one value is active at a time (see
 /// `TicketListSort`) — this is a single-active-key sort, never a
@@ -20,9 +19,9 @@ enum TicketSortField {
   priority,
 
   /// Each ticket's resolved `WorkflowStatus.sortOrder` — a project's own
-  /// configured status ordering (`backlog` at index 0 by default), not a
-  /// fixed enum declaration order. Was `TicketStatus`'s own declaration
-  /// order before `AIO-549`.
+  /// configured status ordering (`backlog` at index 0 by default), not a fixed
+  /// enum declaration order. Was `TicketStatus`'s own declaration order before
+  /// `AIO-549`.
   status,
 
   /// [TicketType](../enums/ticket_type.dart)'s own declaration order

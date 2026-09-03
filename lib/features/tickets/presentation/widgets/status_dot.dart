@@ -6,8 +6,7 @@ import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/domain/entities/workflow_status.dart';
 import 'package:aion/features/tickets/domain/enums/workflow_status_role.dart';
 
-/// The role-keyed status-dot color rule — see
-/// `AIO-2550` §2.1. Replaces the
+/// The role-keyed status-dot color rule — see `AIO-2550` §2.1. Replaces the
 /// three independent name-matching implementations this change removes
 /// (`ticket_selection_bar.dart`'s former `_statusDotColor`, and
 /// `ticket_columns_popover.dart`'s/`ticket_filter_popover.dart`'s former

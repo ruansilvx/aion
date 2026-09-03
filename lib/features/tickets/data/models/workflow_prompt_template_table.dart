@@ -7,8 +7,7 @@ import 'package:drift/drift.dart';
 /// set — reusable, named prompt bodies a `SkillAttachment` of kind
 /// `aionNativeTemplate` renders. Row type is generated as
 /// `WorkflowPromptTemplateData`. No FK constraints, matching
-/// `WorkflowStatusesTable`'s own precedent. See
-/// `AIO-2650` §2.2.
+/// `WorkflowStatusesTable`'s own precedent. See `AIO-2650` §2.2.
 @DataClassName('WorkflowPromptTemplateData')
 class WorkflowPromptTemplatesTable extends Table {
   @override

@@ -26,9 +26,8 @@ class TicketsTable extends Table {
   /// Optional long-form description.
   TextColumn get description => text().nullable()();
 
-  /// A project-defined `WorkflowStatus.name` string (see
-  /// `Ticket.status`'s dartdoc) — was `TicketStatus.name` before
-  /// `AIO-549`.
+  /// A project-defined `WorkflowStatus.name` string (see `Ticket.status`'s
+  /// dartdoc) — was `TicketStatus.name` before `AIO-549`.
   TextColumn get status => text()();
 
   /// `TicketPriority.name` string. Defaults to `'none'`.

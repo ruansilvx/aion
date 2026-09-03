@@ -7,11 +7,11 @@ import 'package:aion/features/providers/domain/repositories/execution_scheduling
 import 'package:aion/features/providers/presentation/cubit/execution_scheduling_state.dart';
 
 /// Business logic for the Settings screen's "Coding execution scheduling"
-/// section: loads the persisted [ExecutionSchedulingMode]/concurrency
-/// ceiling and persists changes to either. Kept separate from
+/// section: loads the persisted [ExecutionSchedulingMode]/concurrency ceiling
+/// and persists changes to either. Kept separate from
 /// `ExecutionContextCapCubit`/`AutomationSettingsCubit` — one cubit per
 /// concern, per `project.md`'s Cubit-vs-repository split. Added for
-/// `AIO-1400`; see that change's design.md §6.
+/// `AIO-1400`; see its linked Documentation page, §6.
 class ExecutionSchedulingCubit extends Cubit<ExecutionSchedulingState> {
   /// Creates an [ExecutionSchedulingCubit] backed by [_repository].
   ExecutionSchedulingCubit(this._repository)

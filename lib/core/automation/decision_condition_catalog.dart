@@ -4,20 +4,18 @@ import 'package:meta/meta.dart';
 
 import 'package:aion/core/automation/automation_context.dart';
 
-/// The data type of one [DecisionConditionSpec] parameter. `integer` is
-/// the only kind either of this catalog's two shipped conditions needs;
-/// more kinds are added here as new conditions are added to
-/// [decisionConditionsFor]'s catalog — a catalog entry plus a matching
-/// `decision_graph_evaluator.dart` case, no schema change. Added for
-/// `AIO-181`.
+/// The data type of one [DecisionConditionSpec] parameter. `integer` is the
+/// only kind either of this catalog's two shipped conditions needs; more kinds
+/// are added here as new conditions are added to [decisionConditionsFor]'s
+/// catalog — a catalog entry plus a matching `decision_graph_evaluator.dart`
+/// case, no schema change. Added for `AIO-181`.
 enum DecisionConditionParameterType {
   /// A whole-number field, rendered as a digits-only numeric input.
   integer,
 }
 
 /// One parameter a [DecisionConditionSpec] accepts, driving
-/// `DecisionNodeForm`'s typed parameter field. Added for
-/// `AIO-181`.
+/// `DecisionNodeForm`'s typed parameter field. Added for `AIO-181`.
 @immutable
 class DecisionConditionParameterSpec {
   /// Creates a [DecisionConditionParameterSpec].
@@ -38,11 +36,10 @@ class DecisionConditionParameterSpec {
   final Object defaultValue;
 }
 
-/// Describes one selectable entry in a `DecisionNodeForm` condition
-/// picker: its identity ([id], referenced by `DecisionNode.conditionId`),
-/// its display copy, which [AutomationContext] values it's valid for, and
-/// what parameters it takes (empty for a flag-only condition). Added for
-/// `AIO-181`.
+/// Describes one selectable entry in a `DecisionNodeForm` condition picker:
+/// its identity ([id], referenced by `DecisionNode.conditionId`), its display
+/// copy, which [AutomationContext] values it's valid for, and what parameters
+/// it takes (empty for a flag-only condition). Added for `AIO-181`.
 @immutable
 class DecisionConditionSpec {
   /// Creates a [DecisionConditionSpec].
@@ -120,21 +117,20 @@ List<DecisionConditionSpec> decisionConditionsFor(AutomationContext context) {
 }
 
 /// [spec]'s parameters seeded to their [DecisionConditionParameterSpec
-/// .defaultValue] — the `conditionParams` a freshly created [DecisionNode]
-/// for [spec] starts with, whether authored as a graph's root or chained
-/// onto an existing node's branch via `DecisionNodeForm`'s "continue to
-/// condition" mode. Added for
-/// `AIO-181` (`/verify` fix pass).
+/// .defaultValue] — the `conditionParams` a freshly created [DecisionNode] for
+/// [spec] starts with, whether authored as a graph's root or chained onto an
+/// existing node's branch via `DecisionNodeForm`'s "continue to condition"
+/// mode. Added for `AIO-181` (`/verify` fix pass).
 Map<String, dynamic> defaultConditionParams(DecisionConditionSpec spec) => {
   for (final param in spec.parameterSpecs) param.name: param.defaultValue,
 };
 
 /// Looks up [decisionConditionCatalog] by [conditionId], or `null` if
-/// [conditionId] doesn't match any shipped condition — a small shared
-/// lookup so `DecisionNodeForm`/`DecisionOutlineList`/
-/// `DecisionGraphEditorScreen` don't each repeat their own
-/// `decisionConditionCatalog.where(...).firstOrNull`. Added for
-/// `AIO-181` (`/verify` fix pass).
+/// [conditionId] doesn't match any shipped condition — a small shared lookup
+/// so `DecisionNodeForm`/`DecisionOutlineList`/ `DecisionGraphEditorScreen`
+/// don't each repeat their own
+/// `decisionConditionCatalog.where(...).firstOrNull`. Added for `AIO-181`
+/// (`/verify` fix pass).
 DecisionConditionSpec? decisionConditionSpecById(String conditionId) {
   for (final spec in decisionConditionCatalog) {
     if (spec.id == conditionId) return spec;
@@ -142,21 +138,19 @@ DecisionConditionSpec? decisionConditionSpecById(String conditionId) {
   return null;
 }
 
-/// A short display summary of [conditionParams] for [spec] — e.g. `> 3`
-/// for [attemptExceedsMaxCondition]'s `maxAttempts` — shown as the
-/// parameter chip on both `GraphCanvas`'s condition-node chrome
-/// (`AIO-181` §1.2) and
-/// `DecisionOutlineList`'s row chrome (§2.1), so a project author can see
-/// a condition's actual threshold without opening its form. `null` for a
-/// flag-only condition ([DecisionConditionSpec.parameterSpecs] empty) —
-/// the parameter chip is hidden entirely in that case, per both specs.
-/// Every parameter shipped in [decisionConditionCatalog] today is an
-/// "exceeds" threshold ([DecisionConditionParameterType.integer]), hence
-/// the shared `>` prefix; a condition with a different comparison
-/// semantic (e.g. "below") added later should extend this switch rather
-/// than have every call site reimplement its own summary. Only the first
-/// parameter is summarized — every condition this catalog ships takes at
-/// most one. Added for `AIO-181`
+/// A short display summary of [conditionParams] for [spec] — e.g. `> 3` for
+/// [attemptExceedsMaxCondition]'s `maxAttempts` — shown as the parameter chip
+/// on both `GraphCanvas`'s condition-node chrome (`AIO-181` §1.2) and
+/// `DecisionOutlineList`'s row chrome (§2.1), so a project author can see a
+/// condition's actual threshold without opening its form. `null` for a
+/// flag-only condition ([DecisionConditionSpec.parameterSpecs] empty) — the
+/// parameter chip is hidden entirely in that case, per both specs. Every
+/// parameter shipped in [decisionConditionCatalog] today is an "exceeds"
+/// threshold ([DecisionConditionParameterType.integer]), hence the shared `>`
+/// prefix; a condition with a different comparison semantic (e.g. "below")
+/// added later should extend this switch rather than have every call site
+/// reimplement its own summary. Only the first parameter is summarized — every
+/// condition this catalog ships takes at most one. Added for `AIO-181`
 /// (`/verify` fix pass 2).
 String? conditionParameterSummary(
   DecisionConditionSpec spec,

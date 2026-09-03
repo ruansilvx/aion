@@ -5,12 +5,12 @@ import 'package:aion/features/tickets/domain/enums/workflow_status_role.dart';
 
 /// The shared-base [WorkflowStatus] set seeded into a brand-new project's
 /// `workflow_statuses` table (and backfilled once for every pre-existing
-/// project on schema-15 upgrade — see `WorkflowStatusDao.seedDefaultsIfEmpty`).
-/// Reproduces today's exact hardcoded pre-configuration behavior: a project
-/// that never opens the Workflow settings screen behaves exactly as Aion
-/// did before this change. Fixed ids (rather than freshly-generated UUIDs)
-/// so every fresh install and every upgraded pre-existing database seeds
-/// byte-identical rows. See
+/// project on schema-15 upgrade — see
+/// `WorkflowStatusDao.seedDefaultsIfEmpty`). Reproduces today's exact
+/// hardcoded pre-configuration behavior: a project that never opens the
+/// Workflow settings screen behaves exactly as Aion did before this change.
+/// Fixed ids (rather than freshly-generated UUIDs) so every fresh install and
+/// every upgraded pre-existing database seeds byte-identical rows. See
 /// `AIO-549` §1.3.
 const List<WorkflowStatus> defaultWorkflowStatuses = [
   WorkflowStatus(

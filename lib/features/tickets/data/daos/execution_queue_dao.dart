@@ -8,8 +8,7 @@ import 'package:aion/features/tickets/data/models/execution_queue_table.dart';
 
 part 'execution_queue_dao.g.dart';
 
-/// Drift accessor for [ExecutionQueueTable]. See
-/// `AIO-1400` §7.
+/// Drift accessor for [ExecutionQueueTable]. See `AIO-1400` §7.
 @DriftAccessor(tables: [ExecutionQueueTable])
 class ExecutionQueueDao extends DatabaseAccessor<AppDatabase>
     with _$ExecutionQueueDaoMixin {

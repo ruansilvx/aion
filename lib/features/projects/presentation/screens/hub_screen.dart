@@ -13,10 +13,9 @@ import 'package:aion/features/projects/presentation/widgets/empty_hub_state.dart
 import 'package:aion/features/projects/presentation/widgets/project_card.dart';
 
 /// The `/hub` route — Aion's project list/switcher and the app's initial
-/// route. Lists every known project (empty-state on first run) and
-/// offers "New Project". Selecting a project's Open action makes it
-/// active (via [onOpenProject]) and navigates into the workspace. See
-/// `AIO-1174` §2.
+/// route. Lists every known project (empty-state on first run) and offers "New
+/// Project". Selecting a project's Open action makes it active (via
+/// [onOpenProject]) and navigates into the workspace. See `AIO-1174` §2.
 class HubScreen extends StatefulWidget {
   /// Creates a [HubScreen]. [onOpenProject] is called with the chosen
   /// project when the user opens one; [onNewProject] is called when the

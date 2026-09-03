@@ -3,22 +3,21 @@
 import 'package:drift/drift.dart';
 
 /// Drift table persisting one row per `TransitionNode`
-/// (`../../domain/entities/transition_node.dart`) — a strict-tree field-
-/// check node belonging to one `SddStage`'s transition-precondition graph.
-/// Row type is generated as [TransitionPreconditionNodeData].
+/// (`../../domain/entities/transition_node.dart`) — a strict-tree field-check
+/// node belonging to one `SddStage`'s transition-precondition graph. Row type
+/// is generated as [TransitionPreconditionNodeData].
 /// `matchedBranchKind`/`unmatchedBranchKind` hold `'node'`/`'allowed'`/
-/// `'blocked'` — `'node'` means the corresponding `*BranchNodeId` column
-/// holds the child node's id; every other value is a terminal
-/// `TransitionOutcome` name and leaves that column `null`. No FK
-/// constraints on the node-id columns (nor on which
-/// `TransitionPreconditionGraphsTable` row a node belongs to — that's
-/// implicit via graph traversal from the root, not a stored parent
-/// pointer) — integrity is enforced at the `TransitionPreconditionConfigCubit`
-/// layer, matching every other table in this schema (mirrors
-/// `core/automation/data/automation_decision_nodes_table.dart`'s exact
-/// shape, minus its `condition_params_json` column — no field here takes a
-/// parameter). See
-/// `AIO-1936` §2.
+/// `'blocked'` — `'node'` means the corresponding `*BranchNodeId` column holds
+/// the child node's id; every other value is a terminal `TransitionOutcome`
+/// name and leaves that column `null`. No FK constraints on the node-id
+/// columns (nor on which `TransitionPreconditionGraphsTable` row a node
+/// belongs to — that's implicit via graph traversal from the root, not a
+/// stored parent pointer) — integrity is enforced at the
+/// `TransitionPreconditionConfigCubit` layer, matching every other table in
+/// this schema (mirrors
+/// `core/automation/data/automation_decision_nodes_table.dart`'s exact shape,
+/// minus its `condition_params_json` column — no field here takes a
+/// parameter). See `AIO-1936` §2.
 @DataClassName('TransitionPreconditionNodeData')
 class TransitionPreconditionNodesTable extends Table {
   @override

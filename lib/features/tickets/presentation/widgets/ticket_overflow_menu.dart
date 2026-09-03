@@ -70,11 +70,10 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
   /// action list instead. Reset to `null` whenever the overlay closes.
   TicketType? _promoteTargetType;
 
-  /// The target type ([TicketType.knownGap]/[TicketType.openQuestion]) of
-  /// the reclassify target picker currently showing, or `null` when the
-  /// overlay is showing the root action list (or the promote chooser)
-  /// instead. Reset to `null` whenever the overlay closes. Added for
-  /// `AIO-934`.
+  /// The target type ([TicketType.knownGap]/[TicketType.openQuestion]) of the
+  /// reclassify target picker currently showing, or `null` when the overlay is
+  /// showing the root action list (or the promote chooser) instead. Reset to
+  /// `null` whenever the overlay closes. Added for `AIO-934`.
   TicketType? _reclassifyTargetType;
 
   @override
@@ -326,9 +325,9 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
 }
 
 /// The root action-list content ("Promote to Epic"/"Promote to Bug" and
-/// "Change to Known Gap"/"Change to Open Question", for `idea` tickets
-/// only, then Delete ticket). Per design.md §7.1 Widened "Promote" menu
-/// and `AIO-934` §4.
+/// "Change to Known Gap"/"Change to Open Question", for `idea` tickets only,
+/// then Delete ticket). Per design.md §7.1 Widened "Promote" menu and
+/// `AIO-934` §4.
 class _RootMenu extends StatelessWidget {
   const _RootMenu({
     required this.ticketType,
@@ -351,9 +350,8 @@ class _RootMenu extends StatelessWidget {
   /// corresponding promote row is tapped.
   final ValueChanged<TicketType> onPromoteTap;
 
-  /// Called with [TicketType.knownGap] or [TicketType.openQuestion] when
-  /// the corresponding reclassify row is tapped. Added for
-  /// `AIO-934`.
+  /// Called with [TicketType.knownGap] or [TicketType.openQuestion] when the
+  /// corresponding reclassify row is tapped. Added for `AIO-934`.
   final ValueChanged<TicketType> onReclassifyTap;
 
   /// Called when "Delete ticket" is tapped.
@@ -684,15 +682,13 @@ class _PromoteChooser extends StatelessWidget {
 }
 
 /// The "Change to Known Gap"/"Change to Open Question" target picker
-/// (`AIO-934` §4.2): a
-/// back header, then a single "Pick target ticket" row embedding
-/// [TicketLinkPicker] as a searchable existing-ticket picker. Unlike
+/// (`AIO-934` §4.2): a back header, then a single "Pick target ticket" row
+/// embedding [TicketLinkPicker] as a searchable existing-ticket picker. Unlike
 /// [_PromoteChooser], there is no "create new" option — a reclassification
 /// target must already exist. [candidatesLoader]/[onTargetSelected] are
-/// supplied by [_TicketOverflowMenuState._showOverlay] using its own
-/// `context` — this widget itself never reads `TicketsCubit`, same
-/// rationale as [_PromoteChooser]. Added for
-/// `AIO-934`.
+/// supplied by [_TicketOverflowMenuState._showOverlay] using its own `context`
+/// — this widget itself never reads `TicketsCubit`, same rationale as
+/// [_PromoteChooser]. Added for `AIO-934`.
 class _ReclassifyChooser extends StatelessWidget {
   const _ReclassifyChooser({
     required this.targetType,

@@ -54,26 +54,24 @@ import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart
 /// could never reach a hand-editable file's frontmatter in the first
 /// place.
 class TicketMarkdownReconciler {
-  /// Creates a [TicketMarkdownReconciler] wired to [_repository] (reads
-  /// the current ticket, writes back reconciled fields),
-  /// [_serializer] (parses the file), [_activeTicketViewRegistry]
-  /// (decides blocking vs. background), and [_embeddingProvider] (the
-  /// same regen trigger used by `TicketsCubit`, applied here too so the
-  /// two content-change surfaces stay unified). [_wikilinkIndexer] is
-  /// optional (`null` in every construction site except
+  /// Creates a [TicketMarkdownReconciler] wired to [_repository] (reads the
+  /// current ticket, writes back reconciled fields), [_serializer] (parses the
+  /// file), [_activeTicketViewRegistry] (decides blocking vs. background), and
+  /// [_embeddingProvider] (the same regen trigger used by `TicketsCubit`,
+  /// applied here too so the two content-change surfaces stay unified).
+  /// [_wikilinkIndexer] is optional (`null` in every construction site except
   /// `app_router.dart`, and in this class's own existing tests) — when
   /// supplied, a successfully-reconciled `page` ticket whose title or
   /// description actually changed also runs the same inline-`[[wikilink]]`
-  /// reindex/rename-cascade `TicketsCubit.updateTicket` triggers for an
-  /// in-app edit (same content-changed gate as that trigger), through the
-  /// same shared [PageWikilinkIndexer] rather than a second, duplicated
-  /// implementation — see `AIO-963
-  /// /design.md`. [_parentTrashService] is likewise optional (`null` in
-  /// every construction site except `app_router.dart`, and in this
+  /// reindex/rename-cascade `TicketsCubit.updateTicket` triggers for an in-app
+  /// edit (same content-changed gate as that trigger), through the same shared
+  /// [PageWikilinkIndexer] rather than a second, duplicated implementation —
+  /// see `AIO-963 /design.md`. [_parentTrashService] is likewise optional
+  /// (`null` in every construction site except `app_router.dart`, and in this
   /// class's own existing tests that don't need it) — when supplied, a
   /// hand-edited `parentId`/`deletedAt` change is validated and applied
-  /// through it (see the class-level dartdoc); when `null`, both fields
-  /// are silently ignored, matching this class's original behavior.
+  /// through it (see the class-level dartdoc); when `null`, both fields are
+  /// silently ignored, matching this class's original behavior.
   TicketMarkdownReconciler(
     this._repository,
     this._serializer,

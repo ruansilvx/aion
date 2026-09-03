@@ -23,28 +23,26 @@ String transitionOutcomeLabel(
 };
 
 /// The color token associated with [outcome] — `success`/`danger`, per
-/// `AIO-1936` §0.1's
-/// outcome color map. Distinct from `decisionOutcomeColor`'s 4-value map
-/// (`success`/`warning`/`danger`/`secondary`) — `warning`/`secondary` are
-/// deliberately unused here, since there's no "ask" or "defer" state.
+/// `AIO-1936` §0.1's outcome color map. Distinct from `decisionOutcomeColor`'s
+/// 4-value map (`success`/`warning`/`danger`/`secondary`) —
+/// `warning`/`secondary` are deliberately unused here, since there's no "ask"
+/// or "defer" state.
 Color transitionOutcomeColor(AionColors c, TransitionOutcome outcome) =>
     switch (outcome) {
       TransitionOutcome.allowed => c.success,
       TransitionOutcome.blocked => c.danger,
     };
 
-/// The `CustomPaint` check/cross glyph every outcome indicator renders,
-/// per `AIO-1936`
-/// §0.1 — no icon font, so the two outcomes stay distinguishable by
-/// silhouette alone, not by hue: a closed check (`allowed`) versus an
-/// open cross (`blocked`). Shared by the canvas terminal pill (§1.3), the
-/// outline badge (§2.2), and this form's own outcome chip (§3.3) — the
-/// "one table, three consumers" pattern §0.1 itself calls out. Public
-/// (not module-private) since `transition_outline_list.dart` and
-/// `sddstage_precondition_editor_screen.dart` both render it too. Added
-/// for `AIO-1936`'s round-2
-/// `/verify` follow-up — the glyph was specified but never built in the
-/// original `/apply` pass.
+/// The `CustomPaint` check/cross glyph every outcome indicator renders, per
+/// `AIO-1936` §0.1 — no icon font, so the two outcomes stay distinguishable by
+/// silhouette alone, not by hue: a closed check (`allowed`) versus an open
+/// cross (`blocked`). Shared by the canvas terminal pill (§1.3), the outline
+/// badge (§2.2), and this form's own outcome chip (§3.3) — the "one table,
+/// three consumers" pattern §0.1 itself calls out. Public (not module-private)
+/// since `transition_outline_list.dart` and
+/// `sddstage_precondition_editor_screen.dart` both render it too. Added for
+/// `AIO-1936`'s round-2 `/verify` follow-up — the glyph was specified but
+/// never built in the original `/apply` pass.
 class TransitionOutcomeGlyph extends StatelessWidget {
   /// Creates a [TransitionOutcomeGlyph] painting [outcome] in [color] at
   /// [size] (a square box — §0.1's baseline is `12`, §2.2's outline
@@ -202,16 +200,16 @@ enum TransitionBranchMode {
 }
 
 /// One field-check-editing form: a field picker (over
-/// `transitionFieldsFor(stage)`) and a matched/unmatched branch picker
-/// pair — each branch independently either ends in a terminal
-/// [TransitionOutcome] or continues to another field check (a chained
-/// child [TransitionNode], created via [onCreateChainedChild] the first
-/// time a branch switches into [TransitionBranchMode.continueToField]).
-/// Shared by both `TransitionOutlineList`'s inline expand-in-place row
-/// and `GraphCanvas`'s popover mount (via [TransitionNodeForm.showAsPopover]).
-/// Simpler than `DecisionNodeForm` by design — no condition-kind picker
-/// (there's only one kind), no parameter field (every field is a plain
-/// boolean). Added for `AIO-1936`.
+/// `transitionFieldsFor(stage)`) and a matched/unmatched branch picker pair —
+/// each branch independently either ends in a terminal [TransitionOutcome] or
+/// continues to another field check (a chained child [TransitionNode], created
+/// via [onCreateChainedChild] the first time a branch switches into
+/// [TransitionBranchMode.continueToField]). Shared by both
+/// `TransitionOutlineList`'s inline expand-in-place row and `GraphCanvas`'s
+/// popover mount (via [TransitionNodeForm.showAsPopover]). Simpler than
+/// `DecisionNodeForm` by design — no condition-kind picker (there's only one
+/// kind), no parameter field (every field is a plain boolean). Added for
+/// `AIO-1936`.
 class TransitionNodeForm extends StatefulWidget {
   /// Creates a [TransitionNodeForm]. Pass [initialFieldId]/
   /// [initialMatchedBranch]/[initialUnmatchedBranch] when editing an
@@ -309,11 +307,10 @@ class TransitionNodeForm extends StatefulWidget {
   /// Called with `true` the moment the form's picks first diverge from
   /// [initialFieldId]/[initialMatchedBranch]/[initialUnmatchedBranch], and
   /// with `false` whenever they revert to matching, or when the form is
-  /// disposed (dismissed, saved, or unmounted for any other reason).
-  /// Backs `SddStagePreconditionEditorScreen`'s "N UNSAVED CHANGE" header
-  /// indicator (design.md §4.1). `null` if the caller doesn't care. Added
-  /// for `AIO-1936`'s
-  /// post-`/verify` follow-up.
+  /// disposed (dismissed, saved, or unmounted for any other reason). Backs
+  /// `SddStagePreconditionEditorScreen`'s "N UNSAVED CHANGE" header indicator
+  /// (design.md §4.1). `null` if the caller doesn't care. Added for
+  /// `AIO-1936`'s post-`/verify` follow-up.
   final ValueChanged<bool>? onDirtyChanged;
 
   /// Mounts a [TransitionNodeForm] as a popover: an [OverlayEntry] +

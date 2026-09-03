@@ -6,13 +6,11 @@ import 'package:aion/core/contracts/active_project_provider.dart';
 import 'package:aion/features/projects/domain/repositories/baseline_repository.dart';
 import 'package:aion/features/projects/presentation/cubit/baseline_upgrade_state.dart';
 
-/// Drives `SettingsScreen`'s "BASELINE" section — the manual,
-/// always-available upgrade action. Thin by design: the actual upgrade
-/// logic already lives on `ActiveProjectCubit.acceptBaselineUpgrade`
-/// (via [ActiveProjectProvider]); this cubit only merges "current
-/// version" and "latest available version" into a UI-ready state and
-/// forwards the accept call. Added for
-/// `AIO-297`.
+/// Drives `SettingsScreen`'s "BASELINE" section — the manual, always-available
+/// upgrade action. Thin by design: the actual upgrade logic already lives on
+/// `ActiveProjectCubit.acceptBaselineUpgrade` (via [ActiveProjectProvider]);
+/// this cubit only merges "current version" and "latest available version"
+/// into a UI-ready state and forwards the accept call. Added for `AIO-297`.
 class BaselineUpgradeCubit extends Cubit<BaselineUpgradeState> {
   /// Creates a [BaselineUpgradeCubit] backed by [_baselineRepository] and
   /// [_activeProjectProvider].

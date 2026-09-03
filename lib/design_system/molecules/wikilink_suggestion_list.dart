@@ -30,15 +30,14 @@ class WikilinkSuggestionItem {
   final String? breadcrumb;
 }
 
-/// The `[[`-triggered autocomplete overlay's full body — panel chrome,
-/// header strip, scrollable candidate rows, the empty-query populated
-/// state, and the no-matches block — everything inside `MarkdownEditor`'s
-/// `CompositedTransformFollower`. `MarkdownEditor` owns only the caret-
-/// anchored positioning and `Escape`/outside-tap dismissal; this widget
+/// The `[[`-triggered autocomplete overlay's full body — panel chrome, header
+/// strip, scrollable candidate rows, the empty-query populated state, and the
+/// no-matches block — everything inside `MarkdownEditor`'s
+/// `CompositedTransformFollower`. `MarkdownEditor` owns only the
+/// caret-anchored positioning and `Escape`/outside-tap dismissal; this widget
 /// is otherwise self-contained and reusable, following the same
-/// promotion-eligible genericness every other `design_system/` widget
-/// holds to (`items`/[onSelected] carry no domain-entity type). Per
-/// `AIO-963` §4.
+/// promotion-eligible genericness every other `design_system/` widget holds to
+/// (`items`/[onSelected] carry no domain-entity type). Per `AIO-963` §4.
 class WikilinkSuggestionList extends StatefulWidget {
   /// Creates a [WikilinkSuggestionList]. [items] is the already-filtered
   /// candidate set for the live [query] (empty [query] with non-empty

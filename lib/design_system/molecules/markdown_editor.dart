@@ -22,14 +22,13 @@ import 'package:aion/features/tickets/domain/entities/ticket.dart';
 /// §4 ("capped, e.g. 20").
 const int _kWikilinkSuggestionCap = 20;
 
-/// Responsive Markdown content editor: a view/edit toggle on narrow
-/// layouts, a live raw/preview split view on wide layouts (breakpoint
-/// `maxWidth <= 640`, live preview debounced 120ms). Commits only on
-/// explicit Save (never on blur), matching [InlineEditableField]'s
-/// multiline commit discipline. [onCommit] is awaited so Save can show a
-/// spinner and, on failure, an inline error row — it never calls a
-/// repository or Cubit method itself, only the caller-supplied callback.
-/// Per `AIO-1350` §1.
+/// Responsive Markdown content editor: a view/edit toggle on narrow layouts, a
+/// live raw/preview split view on wide layouts (breakpoint `maxWidth <= 640`,
+/// live preview debounced 120ms). Commits only on explicit Save (never on
+/// blur), matching [InlineEditableField]'s multiline commit discipline.
+/// [onCommit] is awaited so Save can show a spinner and, on failure, an inline
+/// error row — it never calls a repository or Cubit method itself, only the
+/// caller-supplied callback. Per `AIO-1350` §1.
 class MarkdownEditor extends StatefulWidget {
   /// Creates a [MarkdownEditor] seeded with [initialValue].
   const MarkdownEditor({
@@ -60,20 +59,19 @@ class MarkdownEditor extends StatefulWidget {
   /// textarea.
   final String? placeholder;
 
-  /// Resolves candidates for the `[[`-triggered autocomplete overlay,
-  /// given the live in-progress query text. `null` (the default) leaves
-  /// `[[` inert — plain literal characters, no overlay — every existing
-  /// consumer's behavior is unaffected. Added for
-  /// `AIO-963`; see design.md §4.
+  /// Resolves candidates for the `[[`-triggered autocomplete overlay, given
+  /// the live in-progress query text. `null` (the default) leaves `[[` inert —
+  /// plain literal characters, no overlay — every existing consumer's behavior
+  /// is unaffected. Added for `AIO-963`; see its linked Documentation page,
+  /// §4.
   final List<WikilinkSuggestionItem> Function(String query)? wikilinkSuggestions;
 
-  /// Called with the typed query when the autocomplete overlay's
-  /// no-matches state's create affordance is activated (Enter, or a tap
-  /// on the "Press ↵ to create it" line) — its returned item is inserted
-  /// the same way a picked suggestion is. `null` (the default, and every
-  /// consumer that doesn't supply [wikilinkSuggestions] either) leaves
-  /// that affordance a no-op, per design.md §4.5. Added for
-  /// `AIO-963`.
+  /// Called with the typed query when the autocomplete overlay's no-matches
+  /// state's create affordance is activated (Enter, or a tap on the "Press ↵
+  /// to create it" line) — its returned item is inserted the same way a picked
+  /// suggestion is. `null` (the default, and every consumer that doesn't
+  /// supply [wikilinkSuggestions] either) leaves that affordance a no-op, per
+  /// design.md §4.5. Added for `AIO-963`.
   final Future<WikilinkSuggestionItem?> Function(String title)? onCreatePage;
 
   /// Forwarded straight through to every internal `MarkdownView(source:
@@ -106,11 +104,12 @@ class _MarkdownEditorState extends State<MarkdownEditor> {
   /// showing the editable textarea instead of the rendered preview.
   bool _isEditing = false;
 
-  /// Whether [widget.onCommit] is currently in flight — see design.md §1.3.
+  /// Whether [widget.onCommit] is currently in flight — see its linked
+  /// Documentation page, §1.3.
   bool _isSaving = false;
 
-  /// Non-null when the last Save attempt failed — see design.md §1.4.
-  /// Cleared on the next keystroke.
+  /// Non-null when the last Save attempt failed — see its linked
+  /// Documentation page, §1.4. Cleared on the next keystroke.
   String? _errorMessage;
 
   /// Mirrors [_controller]'s text, but only updates [_previewDebounce]

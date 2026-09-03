@@ -16,8 +16,7 @@ import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 ///
 /// Per `project.md`'s Pattern 1 (dependency inversion via `core`),
 /// `features/pages/` depends only on this interface — never on
-/// `features/tickets/` directly. See
-/// `AIO-1350`.
+/// `features/tickets/` directly. See `AIO-1350`.
 abstract interface class PageTicketProvider {
   /// Fetches a single `page` ticket by id, or `null` if not found/not a page.
   Future<Ticket?> getPage(String id);
@@ -68,14 +67,13 @@ abstract interface class PageTicketProvider {
     TicketLinkType newRelativeType,
   );
 
-  /// Creates a [type] (`knownGap`/`openQuestion` only) ticket titled
-  /// [title] with optional [description], linked to [targetTicketId] —
-  /// delegates to `TicketsCubit.createGapOrQuestion` for the same hard-
-  /// rule validation/atomic-creation logic every other creation path
-  /// uses. Returns `true` on success, `false` if rejected/failed — the
-  /// creation popover's caller awaits this to decide whether to close or
-  /// show its inline error state. Added for
-  /// `AIO-934`.
+  /// Creates a [type] (`knownGap`/`openQuestion` only) ticket titled [title]
+  /// with optional [description], linked to [targetTicketId] — delegates to
+  /// `TicketsCubit.createGapOrQuestion` for the same hard-rule
+  /// validation/atomic-creation logic every other creation path uses. Returns
+  /// `true` on success, `false` if rejected/failed — the creation popover's
+  /// caller awaits this to decide whether to close or show its inline error
+  /// state. Added for `AIO-934`.
   Future<bool> createGapOrQuestion(
     TicketType type, {
     required String title,
@@ -84,11 +82,10 @@ abstract interface class PageTicketProvider {
   });
 
   /// Every live `page`/`resource` ticket, for wikilink-autocomplete/
-  /// resolution — widened beyond `page`-only since a wikilink can now
-  /// target a resource too (see design.md's "Resource participation,
-  /// widened"). No self/descendant exclusion — unlike parent-candidate
-  /// queries, a wikilink reference has no cycle constraint. Added for
-  /// `AIO-963`.
+  /// resolution — widened beyond `page`-only since a wikilink can now target a
+  /// resource too (see design.md's "Resource participation, widened"). No
+  /// self/descendant exclusion — unlike parent-candidate queries, a wikilink
+  /// reference has no cycle constraint. Added for `AIO-963`.
   Future<List<Ticket>> getWikilinkCandidates();
 }
 
@@ -114,18 +111,16 @@ class PageRelations extends Equatable {
   /// underlying link row's id — see [LinkedTicketRef].
   final List<LinkedTicketRef> linkedTickets;
 
-  /// Other `page`/`resource` tickets that reference this page, either via
-  /// an explicit `TicketLink` or an inline `[[wikilink]]` — see
+  /// Other `page`/`resource` tickets that reference this page, either via an
+  /// explicit `TicketLink` or an inline `[[wikilink]]` — see
   /// [BacklinkRef.origin]. Was `List<LinkedTicketRef>` (`TicketLink`-only)
   /// before `AIO-963`.
   final List<BacklinkRef> backlinks;
 
-  /// Every `knownGap`/`openQuestion` ticket `relatesTo`-linked to this
-  /// page itself or to any descendant of it, recursively rolled up —
-  /// see [GapOrQuestionRef]. Mirrors
-  /// `TicketsCubit.loadDocumentRelations`'s same aggregation for the
-  /// shared `TicketDetailScreen`. Added for
-  /// `AIO-934`.
+  /// Every `knownGap`/`openQuestion` ticket `relatesTo`-linked to this page
+  /// itself or to any descendant of it, recursively rolled up — see
+  /// [GapOrQuestionRef]. Mirrors `TicketsCubit.loadDocumentRelations`'s same
+  /// aggregation for the shared `TicketDetailScreen`. Added for `AIO-934`.
   final List<GapOrQuestionRef> gapsAndOpenQuestions;
 
   @override

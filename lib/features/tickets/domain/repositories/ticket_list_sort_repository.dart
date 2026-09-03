@@ -7,13 +7,11 @@ import 'package:aion/features/tickets/domain/entities/ticket_list_sort.dart';
 /// ([SharedPrefsTicketListSortRepository]); UI and Cubit code depend
 /// only on this interface, never on a concrete storage mechanism.
 ///
-/// A sibling of `TicketListFilterRepository`, not an extension of it —
-/// sort and filters are independent selections with different "unset"
-/// semantics: an unset filter field is an empty `Set`, meaning "no
-/// constraint"; an unset sort is `null`, meaning "no explicit choice
-/// yet, use the implicit query-aware default" (see
-/// `TicketsCubit._implicitSort`). See
-/// `AIO-2371`.
+/// A sibling of `TicketListFilterRepository`, not an extension of it — sort
+/// and filters are independent selections with different "unset" semantics: an
+/// unset filter field is an empty `Set`, meaning "no constraint"; an unset
+/// sort is `null`, meaning "no explicit choice yet, use the implicit
+/// query-aware default" (see `TicketsCubit._implicitSort`). See `AIO-2371`.
 abstract interface class TicketListSortRepository {
   /// The persisted explicit sort for [projectId], or `null` if the user
   /// has never explicitly chosen one for this project — the implicit

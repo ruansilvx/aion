@@ -41,16 +41,16 @@ class ChatLoaded extends ChatState {
   final String? streamingText;
 
   /// A live "Running `<tool>`..."-style status string, updated on every
-  /// `AgentToolUseEvent` and cleared on the next `AgentTextEvent` chunk or
-  /// on completion. `null` when no tool call is currently in flight. Added
-  /// for `AIO-506`.
+  /// `AgentToolUseEvent` and cleared on the next `AgentTextEvent` chunk or on
+  /// completion. `null` when no tool call is currently in flight. Added for
+  /// `AIO-506`.
   final String? currentToolUse;
 
-  /// The `AgentRequest.runId` of the currently in-flight reply, or `null`
-  /// when no reply is streaming. Read by `ChatCubit.cancelReply` to
-  /// resolve which run to cancel, and by `_StreamingBubble`'s stop button
-  /// to decide whether it's visible. Added for
-  /// `AIO-1400`; see that change's design.md §3.
+  /// The `AgentRequest.runId` of the currently in-flight reply, or `null` when
+  /// no reply is streaming. Read by `ChatCubit.cancelReply` to resolve which
+  /// run to cancel, and by `_StreamingBubble`'s stop button to decide whether
+  /// it's visible. Added for `AIO-1400`; see its linked Documentation page,
+  /// §3.
   final String? activeRunId;
 
   @override

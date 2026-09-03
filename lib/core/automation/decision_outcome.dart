@@ -1,10 +1,9 @@
 // core/automation/decision_outcome.dart — DecisionOutcome enum (core layer).
 
-/// The terminal result of walking a [AutomationContext]-scoped decision
-/// graph (see `decision_graph_evaluator.dart`) once a context's persisted
-/// [AutomationConfidence] has already resolved to
-/// `AutomationConfidence.auto`. Added for
-/// `AIO-181`.
+/// The terminal result of walking a [AutomationContext]-scoped decision graph
+/// (see `decision_graph_evaluator.dart`) once a context's persisted
+/// [AutomationConfidence] has already resolved to `AutomationConfidence.auto`.
+/// Added for `AIO-181`.
 enum DecisionOutcome {
   /// Apply the decision silently, exactly as plain `auto` confidence
   /// always has — no user interaction.

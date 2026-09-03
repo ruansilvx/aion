@@ -2,13 +2,12 @@
 
 import 'package:aion/core/contracts/agent_tool_definition.dart';
 
-/// The `branch_ticket` app-defined tool: callable by the model on any
-/// `chat` whose own parent isn't itself a `chat` (see
+/// The `branch_ticket` app-defined tool: callable by the model on any `chat`
+/// whose own parent isn't itself a `chat` (see
 /// `ChatCubit._toolsFor`/`TicketsCubit._canBranch`), to split a blocking
 /// sub-issue off into its own child `chat` ticket. Handled by
-/// `TicketsCubit._handleBranchToolCall`. Added for
-/// `AIO-1118`; see that change's
-/// design.md §6.
+/// `TicketsCubit._handleBranchToolCall`. Added for `AIO-1118`; see that
+/// change's design.md §6.
 const branchTicketToolDefinition = AgentToolDefinition(
   name: 'branch_ticket',
   description:
@@ -42,13 +41,11 @@ const branchTicketToolDefinition = AgentToolDefinition(
 );
 
 /// The `close_branch` app-defined tool: the symmetric counterpart to
-/// [branchTicketToolDefinition], callable by the model on a branch chat
-/// (one whose parent *is* a `chat`) once it judges the sub-issue resolved,
-/// to fold a summary of the resolution back into the parent chat's
-/// transcript and close the branch. Handled by
-/// `TicketsCubit._handleCloseBranchToolCall`. Added for
-/// `AIO-1118`; see that change's
-/// design.md §6.
+/// [branchTicketToolDefinition], callable by the model on a branch chat (one
+/// whose parent *is* a `chat`) once it judges the sub-issue resolved, to fold
+/// a summary of the resolution back into the parent chat's transcript and
+/// close the branch. Handled by `TicketsCubit._handleCloseBranchToolCall`.
+/// Added for `AIO-1118`; see its linked Documentation page, §6.
 const closeBranchToolDefinition = AgentToolDefinition(
   name: 'close_branch',
   description:

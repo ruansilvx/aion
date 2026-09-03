@@ -12,16 +12,15 @@ import 'package:aion/features/providers/presentation/widgets/transition_node_for
 import 'package:aion/features/tickets/tickets.dart';
 
 /// The outline pane of `SddStagePreconditionEditorScreen`: one row per
-/// `TransitionNode` (field name only — no parameter chip, since no field
-/// this proposal ships takes one), children of a chained branch rendered
-/// as their own indented row beneath it (recursively, no depth cap), plus
-/// a dashed "+ Add field check" affordance when the graph has no root
-/// yet. Reads/writes through [TransitionPreconditionConfigCubit] — the
-/// same source of truth `GraphCanvas` renders from, so a selection or
-/// edit in either pane is reflected in the other via the same
-/// [TransitionPreconditionConfigState]. Simpler than `DecisionOutlineList`
-/// — see that file's own dartdoc for the shape this mirrors. Added for
-/// `AIO-1936`.
+/// `TransitionNode` (field name only — no parameter chip, since no field this
+/// proposal ships takes one), children of a chained branch rendered as their
+/// own indented row beneath it (recursively, no depth cap), plus a dashed "+
+/// Add field check" affordance when the graph has no root yet. Reads/writes
+/// through [TransitionPreconditionConfigCubit] — the same source of truth
+/// `GraphCanvas` renders from, so a selection or edit in either pane is
+/// reflected in the other via the same [TransitionPreconditionConfigState].
+/// Simpler than `DecisionOutlineList` — see that file's own dartdoc for the
+/// shape this mirrors. Added for `AIO-1936`.
 class TransitionOutlineList extends StatefulWidget {
   /// Creates a [TransitionOutlineList] for [stage].
   const TransitionOutlineList({
@@ -33,10 +32,9 @@ class TransitionOutlineList extends StatefulWidget {
   /// Which [SddStage] this pane edits.
   final SddStage stage;
 
-  /// Forwarded to every [TransitionNodeForm] this pane mounts inline —
-  /// see [TransitionNodeForm.onDirtyChanged]. Added for
-  /// `AIO-1936`'s post-
-  /// `/verify` follow-up.
+  /// Forwarded to every [TransitionNodeForm] this pane mounts inline — see
+  /// [TransitionNodeForm.onDirtyChanged]. Added for `AIO-1936`'s
+  /// post-`/verify` follow-up.
   final ValueChanged<bool>? onDirtyChanged;
 
   @override

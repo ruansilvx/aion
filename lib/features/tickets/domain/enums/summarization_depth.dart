@@ -1,10 +1,9 @@
 // domain/enums/summarization_depth.dart — SummarizationDepth enum (domain layer).
 
-/// How thoroughly `TicketsCubit.runCodebaseSummarization` reads an
-/// attached, already-git-tracked codebase before drafting starting
-/// `signal` tickets. UI-facing, user-selected — not persisted anywhere,
-/// and not a structural property of any `Ticket`. Added for
-/// `AIO-1266`.
+/// How thoroughly `TicketsCubit.runCodebaseSummarization` reads an attached,
+/// already-git-tracked codebase before drafting starting `signal` tickets.
+/// UI-facing, user-selected — not persisted anywhere, and not a structural
+/// property of any `Ticket`. Added for `AIO-1266`.
 enum SummarizationDepth {
   /// A single non-tool-enabled model turn given the detected stack
   /// (`ProjectStackDetector`) and a depth-limited directory listing

@@ -5,12 +5,11 @@ import 'package:meta/meta.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 
 /// One plain-boolean field a `TransitionNode` can check — the vocabulary
-/// `TransitionNodeForm`'s field picker offers. Every field this proposal
-/// ships is a plain fact (no parameter, no operator, no units), unlike
-/// `core/automation/decision_field_catalog.dart`'s `DecisionFieldSpec`,
-/// which also carries a [DecisionFieldType] selecting an operator/value
-/// shape — nothing here needs that distinction. Added for
-/// `AIO-1936`.
+/// `TransitionNodeForm`'s field picker offers. Every field this proposal ships
+/// is a plain fact (no parameter, no operator, no units), unlike
+/// `core/automation/decision_field_catalog.dart`'s `DecisionFieldSpec`, which
+/// also carries a [DecisionFieldType] selecting an operator/value shape —
+/// nothing here needs that distinction. Added for `AIO-1936`.
 @immutable
 class TransitionFieldSpec {
   /// Creates a [TransitionFieldSpec].
@@ -104,11 +103,9 @@ const verifyGateApprovedField = TransitionFieldSpec(
   stages: [SddStage.verifying],
 );
 
-/// Every field this proposal ships, regardless of stage. Exactly the 8
-/// entries reproducing the precondition-bearing stages' hardcoded checks
-/// as data — see
-/// `AIO-1936` §1 and
-/// `AIO-1905` §2.1.
+/// Every field this proposal ships, regardless of stage. Exactly the 8 entries
+/// reproducing the precondition-bearing stages' hardcoded checks as data — see
+/// `AIO-1936` §1 and `AIO-1905` §2.1.
 const List<TransitionFieldSpec> transitionFieldCatalog = [
   mostRecentChatHasTerminalReplyField,
   hasChildrenField,

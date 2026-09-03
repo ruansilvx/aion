@@ -4,15 +4,13 @@ import 'package:equatable/equatable.dart';
 
 import 'package:aion/core/build/project_stack_detector.dart';
 
-/// An AI-drafted, editable-before-confirm release proposal for one
-/// `release` ticket, returned by `TicketsCubit.prepareReleaseDraft` and
-/// consumed by `ReleaseDraftScreen`/`TicketsCubit.confirmRelease`. Plain
-/// data — no persistence, no drift table: it lives only in memory between
-/// the draft step and confirmation. If [confirmRelease] never runs (the
-/// user cancels), the draft is simply discarded — nothing about a
-/// rejected draft needs to survive. Added for
-/// `AIO-1782`; see that change's
-/// design.md §3.
+/// An AI-drafted, editable-before-confirm release proposal for one `release`
+/// ticket, returned by `TicketsCubit.prepareReleaseDraft` and consumed by
+/// `ReleaseDraftScreen`/`TicketsCubit.confirmRelease`. Plain data — no
+/// persistence, no drift table: it lives only in memory between the draft step
+/// and confirmation. If [confirmRelease] never runs (the user cancels), the
+/// draft is simply discarded — nothing about a rejected draft needs to
+/// survive. Added for `AIO-1782`; see its linked Documentation page, §3.
 class ReleaseDraft extends Equatable {
   /// Creates a [ReleaseDraft].
   const ReleaseDraft({

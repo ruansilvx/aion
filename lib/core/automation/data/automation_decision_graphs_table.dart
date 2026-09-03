@@ -6,8 +6,7 @@ import 'package:drift/drift.dart';
 /// (`../automation_context.dart`) — its currently-configured decision-graph
 /// root. Row type is generated as `AutomationDecisionGraphData`. No FK
 /// constraints — integrity is enforced at the `DecisionGraphConfigCubit`
-/// layer, matching every other table in this schema. See
-/// `AIO-181` §2.
+/// layer, matching every other table in this schema. See `AIO-181` §2.
 @DataClassName('AutomationDecisionGraphData')
 class AutomationDecisionGraphsTable extends Table {
   @override

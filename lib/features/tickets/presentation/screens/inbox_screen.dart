@@ -18,20 +18,17 @@ import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/widgets/inbox_empty_state.dart';
 import 'package:aion/features/tickets/presentation/widgets/inbox_history_item.dart';
 
-/// The `/workspace/inbox` route: a launcher for five Inbox purposes/
-/// actions (brain dump, what's next, plan a release, ask a question, cut
-/// a release) plus a reverse-chronological history of past launches.
-/// [InboxCubit] is provided per-route by `appRouter`, same pattern as
-/// `DocumentationCubit`. The fifth "Cut a release" card is the one
-/// exception to the launcher grid running entirely on [InboxCubit] — it
-/// calls [TicketsCubit.autoCreateReleaseTicket] instead (read directly
-/// from this same `features/tickets/` feature, not a cross-feature
-/// violation — see `AIO-1782`'s
-/// proposal.md), since it spawns no chat and isn't an [InboxPurpose] at
-/// all (see [_cutReleaseAuto]'s dartdoc). Per
-/// `AIO-1300` §2; the
-/// fifth card added for
-/// `AIO-1782` §5.4.
+/// The `/workspace/inbox` route: a launcher for five Inbox purposes/ actions
+/// (brain dump, what's next, plan a release, ask a question, cut a release)
+/// plus a reverse-chronological history of past launches. [InboxCubit] is
+/// provided per-route by `appRouter`, same pattern as `DocumentationCubit`.
+/// The fifth "Cut a release" card is the one exception to the launcher grid
+/// running entirely on [InboxCubit] — it calls
+/// [TicketsCubit.autoCreateReleaseTicket] instead (read directly from this
+/// same `features/tickets/` feature, not a cross-feature violation — see
+/// `AIO-1782`'s proposal.md), since it spawns no chat and isn't an
+/// [InboxPurpose] at all (see [_cutReleaseAuto]'s dartdoc). Per `AIO-1300` §2;
+/// the fifth card added for `AIO-1782` §5.4.
 class InboxScreen extends StatefulWidget {
   /// Creates an [InboxScreen].
   const InboxScreen({super.key});
@@ -49,18 +46,16 @@ class _InboxScreenState extends State<InboxScreen> {
   /// §4.6).
   InboxPurpose? _expandedPurpose;
 
-  /// Whether [TicketsCubit.autoCreateReleaseTicket] is currently in
-  /// flight — drives the "Cut a release" card's in-flight state. Tracked
-  /// locally (not through [InboxState]) since it's a [TicketsCubit] call,
-  /// not an [InboxCubit] one — see [_cutReleaseAuto]'s dartdoc. Added for
-  /// `AIO-1782`.
+  /// Whether [TicketsCubit.autoCreateReleaseTicket] is currently in flight —
+  /// drives the "Cut a release" card's in-flight state. Tracked locally (not
+  /// through [InboxState]) since it's a [TicketsCubit] call, not an
+  /// [InboxCubit] one — see [_cutReleaseAuto]'s dartdoc. Added for `AIO-1782`.
   bool _cuttingRelease = false;
 
-  /// Whether the dismissible "nothing to release" notice (design.md §7)
-  /// is currently shown below the launcher grid — set when
+  /// Whether the dismissible "nothing to release" notice (design.md §7) is
+  /// currently shown below the launcher grid — set when
   /// [TicketsCubit.autoCreateReleaseTicket] resolves `null`, cleared on
-  /// dismiss or the next "Cut a release" tap. Added for
-  /// `AIO-1782`.
+  /// dismiss or the next "Cut a release" tap. Added for `AIO-1782`.
   bool _showNothingToRelease = false;
 
   @override
@@ -447,14 +442,12 @@ enum _CardShape {
 }
 
 /// A single purpose-launcher card — shared geometry/states for both
-/// [_CardShape]s (design.md §4.1), diverging into either an in-flight
-/// one-tap row or an expanded inline-input form. Takes [accent] directly
-/// rather than an [InboxPurpose] (as it did before
-/// `AIO-1782`) — the caller
-/// resolves it via `inboxAccentFor` for the four `InboxPurpose`-backed
-/// cards, or passes a token directly for a card with none, like "Cut a
-/// release" (deliberately not a new `InboxPurpose` value — see
-/// `InboxScreen`'s class dartdoc).
+/// [_CardShape]s (design.md §4.1), diverging into either an in-flight one-tap
+/// row or an expanded inline-input form. Takes [accent] directly rather than
+/// an [InboxPurpose] (as it did before `AIO-1782`) — the caller resolves it
+/// via `inboxAccentFor` for the four `InboxPurpose`-backed cards, or passes a
+/// token directly for a card with none, like "Cut a release" (deliberately not
+/// a new `InboxPurpose` value — see `InboxScreen`'s class dartdoc).
 class _PurposeLauncherCard extends StatefulWidget {
   const _PurposeLauncherCard({
     required this.accent,
@@ -969,13 +962,12 @@ class _SubmitButtonState extends State<_SubmitButton> {
   }
 }
 
-/// The dismissible "nothing to release" notice shown below
-/// [_LauncherGrid] when [TicketsCubit.autoCreateReleaseTicket] resolves
-/// `null` — a clean state, not a failure, so it reads with a success
-/// glyph rather than a warning one. Persists until dismissed or another
-/// launcher card is tapped (the caller clears
-/// [_InboxScreenState._showNothingToRelease] on every new "Cut a
-/// release" tap); not auto-timed. Per design.md §7. Added for
+/// The dismissible "nothing to release" notice shown below [_LauncherGrid]
+/// when [TicketsCubit.autoCreateReleaseTicket] resolves `null` — a clean
+/// state, not a failure, so it reads with a success glyph rather than a
+/// warning one. Persists until dismissed or another launcher card is tapped
+/// (the caller clears [_InboxScreenState._showNothingToRelease] on every new
+/// "Cut a release" tap); not auto-timed. Per design.md §7. Added for
 /// `AIO-1782`.
 class _NothingToReleaseNotice extends StatelessWidget {
   const _NothingToReleaseNotice({required this.onDismiss});

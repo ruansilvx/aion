@@ -43,24 +43,22 @@ typedef _PassResult = ({
   int? outputTokens,
 });
 
-/// Second [AgentModelClient] implementation: calls the Anthropic Messages
-/// API (`https://api.anthropic.com/v1/messages`) directly over HTTP,
-/// parsing its server-sent-events stream into the same [AgentEvent]
-/// shapes `ClaudeAgentSdkClient` produces from the bundled Node.js
-/// bridge's NDJSON stdout. Unlike that client, this one never spawns a
-/// process — a plain [Dio]-backed HTTP call, authenticated via
-/// [_getApiKey] rather than the user's Claude plan. See
-/// `AIO-110` §2.
+/// Second [AgentModelClient] implementation: calls the Anthropic Messages API
+/// (`https://api.anthropic.com/v1/messages`) directly over HTTP, parsing its
+/// server-sent-events stream into the same [AgentEvent] shapes
+/// `ClaudeAgentSdkClient` produces from the bundled Node.js bridge's NDJSON
+/// stdout. Unlike that client, this one never spawns a process — a plain
+/// [Dio]-backed HTTP call, authenticated via [_getApiKey] rather than the
+/// user's Claude plan. See `AIO-110` §2.
 ///
-/// When [AgentRequest.tools] is non-empty, a run may issue more than one
-/// POST: the Messages API's native `tool_use`/`tool_result` loop is
-/// implemented as an internal `while` loop inside [_streamResponse]
-/// (via [_postOnce]) rather than a single request — each pass ending in
-/// `stop_reason: 'tool_use'` awaits [AgentRequest.onToolCall] and re-POSTs
-/// with a `tool_result` continuation, repeating until a pass ends some
-/// other way. `inputTokens`/`outputTokens` on the final [AgentDoneEvent]
-/// are summed across every POST in the loop. See
-/// `AIO-1118` §4.
+/// When [AgentRequest.tools] is non-empty, a run may issue more than one POST:
+/// the Messages API's native `tool_use`/`tool_result` loop is implemented as
+/// an internal `while` loop inside [_streamResponse] (via [_postOnce]) rather
+/// than a single request — each pass ending in `stop_reason: 'tool_use'`
+/// awaits [AgentRequest.onToolCall] and re-POSTs with a `tool_result`
+/// continuation, repeating until a pass ends some other way.
+/// `inputTokens`/`outputTokens` on the final [AgentDoneEvent] are summed
+/// across every POST in the loop. See `AIO-1118` §4.
 class AnthropicMessagesApiClient implements AgentModelClient {
   /// Creates an [AnthropicMessagesApiClient] using [_dio] for the HTTP
   /// call, resolving the API key on each [run] via [_getApiKey] (so a key
@@ -72,12 +70,12 @@ class AnthropicMessagesApiClient implements AgentModelClient {
   final Future<String?> Function() _getApiKey;
 
   /// Runs currently in flight, keyed by [AgentRequest.runId]. Only runs
-  /// started with a non-null `runId` are tracked — a run with no `runId`
-  /// can't be cancelled, so there is nothing for [cancel] to look up.
-  /// One [CancelToken] per run, shared across every POST in that run's
+  /// started with a non-null `runId` are tracked — a run with no `runId` can't
+  /// be cancelled, so there is nothing for [cancel] to look up. One
+  /// [CancelToken] per run, shared across every POST in that run's
   /// tool-calling re-POST loop, so cancelling mid-loop takes effect on
-  /// whichever pass is currently in flight. Added for
-  /// `AIO-1400`; see that change's design.md §2.
+  /// whichever pass is currently in flight. Added for `AIO-1400`; see its
+  /// linked Documentation page, §2.
   final _cancelTokens = <String, CancelToken>{};
 
   @override

@@ -11,21 +11,20 @@ import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 
-/// A one-time-per-launch inline banner pinned to the top of the Board
-/// view, listing coding-execution runs `TicketsCubit.restoreExecutionQueue`
-/// found interrupted by an app restart under
-/// `AutomationConfidence.gated`. Resume re-enqueues every surviving entry
-/// (`TicketsCubit.resumePendingExecutions`); Dismiss falls back to
-/// `AutomationConfidence.manual`'s behavior — clears the snapshot and
-/// relies on the existing orphaned/stalled per-ticket retry banner
-/// (`TicketsCubit.dismissPendingResumePrompt`). Rendered only while
-/// `TicketsLoaded.pendingResumePrompt` is non-empty — vanishes on its own
-/// once either action clears it. Purpose-built to the Claude Design
-/// export's exact geometry (design.md §3) rather than `BannerShell` — that
-/// shared shell's fixed padding/single-color border doesn't match this
-/// banner's `primaryWash` fill + distinct `primary`-alpha border, and its
-/// action row has no equivalent elsewhere to reuse. Added for
-/// `AIO-1400`; see that change's design.md §3.
+/// A one-time-per-launch inline banner pinned to the top of the Board view,
+/// listing coding-execution runs `TicketsCubit.restoreExecutionQueue` found
+/// interrupted by an app restart under `AutomationConfidence.gated`. Resume
+/// re-enqueues every surviving entry (`TicketsCubit.resumePendingExecutions`);
+/// Dismiss falls back to `AutomationConfidence.manual`'s behavior — clears the
+/// snapshot and relies on the existing orphaned/stalled per-ticket retry
+/// banner (`TicketsCubit.dismissPendingResumePrompt`). Rendered only while
+/// `TicketsLoaded.pendingResumePrompt` is non-empty — vanishes on its own once
+/// either action clears it. Purpose-built to the Claude Design export's exact
+/// geometry (design.md §3) rather than `BannerShell` — that shared shell's
+/// fixed padding/single-color border doesn't match this banner's `primaryWash`
+/// fill + distinct `primary`-alpha border, and its action row has no
+/// equivalent elsewhere to reuse. Added for `AIO-1400`; see its linked
+/// Documentation page, §3.
 class ResumeRunsPrompt extends StatelessWidget {
   /// Creates a [ResumeRunsPrompt] listing [tickets] — the interrupted
   /// runs awaiting a Resume/Dismiss decision.

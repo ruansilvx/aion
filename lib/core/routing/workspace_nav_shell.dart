@@ -13,12 +13,11 @@ import 'package:aion/features/tickets/presentation/screens/tickets_board_view.da
     show ticketsErrorMessage;
 import 'package:aion/features/tickets/presentation/widgets/notification_dropdown.dart';
 
-/// Persistent navigation chrome wrapping every `/workspace/*` route's
-/// content: a left sidebar on wide layouts, a bottom tab bar on narrow
-/// ones, both offering the same three destinations (Tickets,
-/// Documentation, Inbox — see
-/// `AIO-1300` §1) plus a
-/// shared secondary-actions trigger (Switch Project, Trash).
+/// Persistent navigation chrome wrapping every `/workspace/*` route's content:
+/// a left sidebar on wide layouts, a bottom tab bar on narrow ones, both
+/// offering the same three destinations (Tickets, Documentation, Inbox — see
+/// `AIO-1300` §1) plus a shared secondary-actions trigger (Switch Project,
+/// Trash).
 ///
 /// Rendered by `WorkspaceShell` around its routed `child` — see
 /// `app_router.dart`. Replaces the ad hoc per-screen header buttons
@@ -26,14 +25,12 @@ import 'package:aion/features/tickets/presentation/widgets/notification_dropdown
 /// that `TicketsListScreen` used to own alone, and gives `DocumentationScreen`
 /// a way back to Tickets for the first time on every platform.
 ///
-/// Also owns an app-wide `BlocListener<TicketsCubit, TicketsState>`
-/// that shows an [AppToast] for every classified [TicketsErrorReason]
-/// [TicketsCubit] emits, regardless of which `/workspace/*` screen is
-/// currently active — `app_router.dart`'s single `ShellRoute` wraps
-/// Tickets, Documentation, and Settings alike, and
-/// `BlocProvider<TicketsCubit>` sits above this widget in the tree, so
-/// no new provider wiring is needed. Added for
-/// `AIO-352`.
+/// Also owns an app-wide `BlocListener<TicketsCubit, TicketsState>` that shows
+/// an [AppToast] for every classified [TicketsErrorReason] [TicketsCubit]
+/// emits, regardless of which `/workspace/*` screen is currently active —
+/// `app_router.dart`'s single `ShellRoute` wraps Tickets, Documentation, and
+/// Settings alike, and `BlocProvider<TicketsCubit>` sits above this widget in
+/// the tree, so no new provider wiring is needed. Added for `AIO-352`.
 class WorkspaceNavShell extends StatelessWidget {
   /// Creates a [WorkspaceNavShell]. [currentLocation] drives which
   /// destination renders as active; [child] is the routed screen content.
@@ -108,11 +105,10 @@ enum _NavDestination {
   documentation,
 
   /// `/workspace/inbox` — the Inbox launcher/history destination. An
-  /// Inbox-spawned chat does **not** get its own route prefix; it renders
-  /// via the existing `/workspace/tickets/:id` route, so opening one from
-  /// the Inbox history list resolves to [tickets], not this destination —
-  /// same as any other ticket detail view. Added for
-  /// `AIO-1300`.
+  /// Inbox-spawned chat does **not** get its own route prefix; it renders via
+  /// the existing `/workspace/tickets/:id` route, so opening one from the
+  /// Inbox history list resolves to [tickets], not this destination — same as
+  /// any other ticket detail view. Added for `AIO-1300`.
   inbox,
 }
 
@@ -205,12 +201,10 @@ class _BrandHeader extends StatelessWidget {
   }
 }
 
-/// The fixed-width (244px) left sidebar rendered by [_WideShell]: the
-/// brand header, then the three [_NavItem] destinations, then flexible
-/// space, then [_NotificationBellTrigger] beside [_SecondaryActionsTrigger],
-/// both anchored to the bottom. Added
-/// [_NotificationBellTrigger] for
-/// `AIO-1586`; see that
+/// The fixed-width (244px) left sidebar rendered by [_WideShell]: the brand
+/// header, then the three [_NavItem] destinations, then flexible space, then
+/// [_NotificationBellTrigger] beside [_SecondaryActionsTrigger], both anchored
+/// to the bottom. Added [_NotificationBellTrigger] for `AIO-1586`; see that
 /// change's design.md Component Spec §2.
 class _Sidebar extends StatelessWidget {
   /// Creates a [_Sidebar].
@@ -345,16 +339,14 @@ class _CompactShell extends StatelessWidget {
 
 /// The fixed-height (72px + bottom safe area) bottom tab bar rendered by
 /// [_CompactShell]: the three [_NavItem] destinations plus the
-/// [_NotificationBellTrigger] and [_SecondaryActionsTrigger]. Per
-/// `AIO-1300` §1.3, the
-/// trigger cell is a fixed 56px [SizedBox] (not `Expanded`) — the three
-/// destinations stay equal `Expanded` thirds of the remaining space,
-/// rather than all cells splitting evenly, since a destination must
-/// stay tappable/legible while the trailing triggers are just fixed
-/// 56px cells that never needed a full share. [_NotificationBellTrigger]
-/// gets its own fixed 56px cell, placed before
-/// [_SecondaryActionsTrigger]'s — see design.md Component Spec §3.1.
-/// Added for `AIO-1586`.
+/// [_NotificationBellTrigger] and [_SecondaryActionsTrigger]. Per `AIO-1300`
+/// §1.3, the trigger cell is a fixed 56px [SizedBox] (not `Expanded`) — the
+/// three destinations stay equal `Expanded` thirds of the remaining space,
+/// rather than all cells splitting evenly, since a destination must stay
+/// tappable/legible while the trailing triggers are just fixed 56px cells that
+/// never needed a full share. [_NotificationBellTrigger] gets its own fixed
+/// 56px cell, placed before [_SecondaryActionsTrigger]'s — see design.md
+/// Component Spec §3.1. Added for `AIO-1586`.
 class _BottomTabBar extends StatelessWidget {
   /// Creates a [_BottomTabBar].
   const _BottomTabBar({
@@ -606,8 +598,7 @@ enum _SecondaryAction {
   /// Navigates to `/workspace/settings`.
   settings,
 
-  /// Navigates to `/workspace/settings/workflow`. Added for
-  /// `AIO-549`.
+  /// Navigates to `/workspace/settings/workflow`. Added for `AIO-549`.
   workflowSettings,
 }
 
@@ -718,15 +709,14 @@ class _SecondaryActionsTriggerState extends State<_SecondaryActionsTrigger> {
 }
 
 /// The notification-center bell trigger, rendered beside
-/// [_SecondaryActionsTrigger] in both [_Sidebar] (wide) and
-/// [_BottomTabBar] (compact) — one widget, two geometry variants keyed
-/// by [compact], per design.md Component Spec §2/§3. Shows
+/// [_SecondaryActionsTrigger] in both [_Sidebar] (wide) and [_BottomTabBar]
+/// (compact) — one widget, two geometry variants keyed by [compact], per
+/// design.md Component Spec §2/§3. Shows
 /// `TicketsCubit.unreadNotificationCount`'s live badge and opens
 /// [NotificationDropdownPanel] in an `Overlay`, built on the same
 /// `LayerLink`/`CompositedTransformFollower`/`mounted`-guard mechanics
-/// `TicketOverflowMenu` already uses — a fourth instance of that
-/// pattern (an action list, not a `SelectionMenu` value picker). Added
-/// for `AIO-1586`.
+/// `TicketOverflowMenu` already uses — a fourth instance of that pattern (an
+/// action list, not a `SelectionMenu` value picker). Added for `AIO-1586`.
 class _NotificationBellTrigger extends StatefulWidget {
   /// Creates a [_NotificationBellTrigger]. Set [compact] `true` for the
   /// bottom-tab-bar's 56px-cell/22px-glyph variant, `false` (default) for

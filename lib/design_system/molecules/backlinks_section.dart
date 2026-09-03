@@ -14,17 +14,15 @@ import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
 /// A ticket-detail section listing other `page`/`resource` tickets that
 /// reference this one — either an explicit `TicketLink`
-/// ([BacklinkOrigin.explicitLink]) or an inline `[[wikilink]]` discovered
-/// by parsing another doc's content ([BacklinkOrigin.wikilink]). Fully
-/// derived, not authored, so this section has no "+ Add" affordance and
-/// is omitted entirely when [backlinks] is empty. Grouping logic (which
-/// links belong here vs. [LinkedTicketsSection]) lives in the caller, not
-/// this widget. Promoted from `DocumentationBacklinksSection` (per
-/// `project.md`'s Pattern 2) — already fully generic (only
-/// `List<BacklinkRef>` + callback), so promoted as-is. Per
-/// `AIO-1350` §5 and
-/// `AIO-963` §2–§3 (the
-/// wikilink-origin row variant).
+/// ([BacklinkOrigin.explicitLink]) or an inline `[[wikilink]]` discovered by
+/// parsing another doc's content ([BacklinkOrigin.wikilink]). Fully derived,
+/// not authored, so this section has no "+ Add" affordance and is omitted
+/// entirely when [backlinks] is empty. Grouping logic (which links belong here
+/// vs. [LinkedTicketsSection]) lives in the caller, not this widget. Promoted
+/// from `DocumentationBacklinksSection` (per `project.md`'s Pattern 2) —
+/// already fully generic (only `List<BacklinkRef>` + callback), so promoted
+/// as-is. Per `AIO-1350` §5 and `AIO-963` §2–§3 (the wikilink-origin row
+/// variant).
 class BacklinksSection extends StatelessWidget {
   /// Creates a [BacklinksSection] listing [backlinks]. Renders nothing
   /// when [backlinks] is empty.

@@ -6,10 +6,10 @@ import 'package:aion/features/tickets/domain/enums/summarization_depth.dart';
 
 /// The state emitted on `TicketsCubit.codebaseAnalysisStatus` as
 /// `TicketsCubit.runCodebaseSummarization` progresses. Deliberately kept
-/// separate from `TicketsState` — this is a transient, first-open-only
-/// concern unrelated to the ticket list's own filter/sort/pagination
-/// state. `CodebaseAnalysisBanner` subscribes to this stream directly.
-/// Added for `AIO-1266`.
+/// separate from `TicketsState` — this is a transient, first-open-only concern
+/// unrelated to the ticket list's own filter/sort/pagination state.
+/// `CodebaseAnalysisBanner` subscribes to this stream directly. Added for
+/// `AIO-1266`.
 sealed class CodebaseAnalysisStatus extends Equatable {
   const CodebaseAnalysisStatus();
 

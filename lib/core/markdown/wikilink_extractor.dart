@@ -7,8 +7,8 @@ class WikilinkMatch {
   const WikilinkMatch({required this.raw, required this.target, this.alias});
 
   /// The full matched text, brackets included (e.g. `[[Auth Notes]]` or
-  /// `[[AIO-42|Auth]]`) — used to locate/replace this exact occurrence
-  /// during [WikilinkExtractor.rewriteTitle].
+  /// `[[AIO-42|Auth]]`) — used to locate/replace this exact occurrence during
+  /// [WikilinkExtractor.rewriteTitle].
   final String raw;
 
   /// The text before an optional `|`, trimmed — either a page/resource
@@ -20,15 +20,14 @@ class WikilinkMatch {
   final String? alias;
 }
 
-/// Pure parsing/rewriting helpers for `[[Target]]`/`[[Target|Alias]]`
-/// inline wikilink references. No Flutter dependency — same precedent as
-/// `TicketMarkdownSerializer`, so `bin/ticket_lint.dart`-style tooling
-/// could reuse it if ever needed. Resolution itself (matching a
+/// Pure parsing/rewriting helpers for `[[Target]]`/`[[Target|Alias]]` inline
+/// wikilink references. No Flutter dependency — same precedent as
+/// `TicketMarkdownSerializer`, so `bin/ticket_lint.dart`-style tooling could
+/// reuse it if ever needed. Resolution itself (matching a
 /// [WikilinkMatch.target] against live tickets) is deliberately not this
 /// class's job — it has no database access — see `TicketsCubit`/
-/// `PageWikilinkIndexer`/`PageTicketProviderImpl` for that. Per
-/// `AIO-963`'s "Resolution
-/// model".
+/// `PageWikilinkIndexer`/`PageTicketProviderImpl` for that. Per `AIO-963`'s
+/// "Resolution model".
 abstract final class WikilinkExtractor {
   /// Matches `[[Target]]` or `[[Target|Alias]]`. Neither `Target` nor
   /// `Alias` may itself contain `[`/`]`; `Target` additionally may not
@@ -60,10 +59,10 @@ abstract final class WikilinkExtractor {
     return matches;
   }
 
-  /// Whether [target] looks like a `Ticket.ticketId` (e.g. `AIO-42`) —
-  /// an uppercase-letter prefix, a hyphen, and a numeric suffix — rather
-  /// than a title. A pure syntactic check; the caller still needs a real
-  /// lookup to confirm a match actually exists.
+  /// Whether [target] looks like a `Ticket.ticketId` (e.g. `AIO-42`) — an
+  /// uppercase-letter prefix, a hyphen, and a numeric suffix — rather than a
+  /// title. A pure syntactic check; the caller still needs a real lookup to
+  /// confirm a match actually exists.
   static bool looksLikeTicketId(String target) => _ticketIdPattern.hasMatch(target);
 
   /// Replaces every case-insensitive occurrence of `[[oldTitle...`

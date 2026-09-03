@@ -2,12 +2,11 @@
 
 import 'package:equatable/equatable.dart';
 
-/// A single isolated Aion project — the unit of isolation the Hub
-/// switches between. Each project has its own drift database and
-/// (desktop only) its own git repository, addressed by [storageKey]/
-/// [rootPath] rather than one global path. See
-/// `AIO-1174` §2 for the full
-/// per-project storage model this entity backs.
+/// A single isolated Aion project — the unit of isolation the Hub switches
+/// between. Each project has its own drift database and (desktop only) its own
+/// git repository, addressed by [storageKey]/ [rootPath] rather than one
+/// global path. See `AIO-1174` §2 for the full per-project storage model this
+/// entity backs.
 class Project extends Equatable {
   /// Internal UUID v4 primary key.
   final String id;

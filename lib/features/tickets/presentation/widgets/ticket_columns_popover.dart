@@ -14,19 +14,17 @@ import 'package:aion/features/tickets/presentation/widgets/status_dot.dart';
 
 /// The Board header's "Columns" trigger's open overlay panel: a single
 /// checkbox group listing every live, per-project status
-/// ([WorkflowConfigCubit]'s shared-base set — `resolveSharedStatusOrder`),
-/// one row per status, **checked meaning the column is currently
-/// visible** — the inverse of `TicketFilterPopover`'s "checked means
-/// selected/included in the filter." Structurally a straight copy of
-/// `TicketFilterPopover`'s `Overlay`/`OverlayEntry`/
-/// `CompositedTransformFollower`/`LayerLink`/`Escape`-to-dismiss
-/// mechanics, reduced to one flat group (no `_GroupHeader`, no
-/// `_GroupDivider` — a single group needs neither). Like
-/// `TicketFilterPopover`, toggling a row never closes the panel — only
-/// tapping outside or pressing `Escape` dismisses it. See
-/// `AIO-1069`
-/// §7.1 and that change's Component Spec §3; status order/dot color
-/// threaded through `WorkflowConfigCubit` (in place of the hardcoded
+/// ([WorkflowConfigCubit]'s shared-base set — `resolveSharedStatusOrder`), one
+/// row per status, **checked meaning the column is currently visible** — the
+/// inverse of `TicketFilterPopover`'s "checked means selected/included in the
+/// filter." Structurally a straight copy of `TicketFilterPopover`'s
+/// `Overlay`/`OverlayEntry`/
+/// `CompositedTransformFollower`/`LayerLink`/`Escape`-to-dismiss mechanics,
+/// reduced to one flat group (no `_GroupHeader`, no `_GroupDivider` — a single
+/// group needs neither). Like `TicketFilterPopover`, toggling a row never
+/// closes the panel — only tapping outside or pressing `Escape` dismisses it.
+/// See `AIO-1069` §7.1 and that change's Component Spec §3; status order/dot
+/// color threaded through `WorkflowConfigCubit` (in place of the hardcoded
 /// 6-status default) for `AIO-2550`.
 class TicketColumnsPopover extends StatefulWidget {
   /// Creates a [TicketColumnsPopover] wrapping [trigger].

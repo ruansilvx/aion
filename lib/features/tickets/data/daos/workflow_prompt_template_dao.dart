@@ -7,8 +7,8 @@ import 'package:aion/features/tickets/data/models/workflow_prompt_template_table
 
 part 'workflow_prompt_template_dao.g.dart';
 
-/// Drift accessor for [WorkflowPromptTemplatesTable]. Plain CRUD only —
-/// no seeding logic, matching [WorkflowSkillAttachmentDao]'s shape. See
+/// Drift accessor for [WorkflowPromptTemplatesTable]. Plain CRUD only — no
+/// seeding logic, matching [WorkflowSkillAttachmentDao]'s shape. See
 /// `AIO-2650` §2.4.
 @DriftAccessor(tables: [WorkflowPromptTemplatesTable])
 class WorkflowPromptTemplateDao extends DatabaseAccessor<AppDatabase>

@@ -160,9 +160,9 @@ abstract final class AionText {
     height: 1.0,
   );
 
-  /// Live tool-use status line during an in-flight chat reply (e.g.
-  /// "Running `read_file`…") — `ChatTranscriptPane`'s streaming variant.
-  /// Added for `AIO-482`.
+  /// Live tool-use status line during an in-flight chat reply (e.g. "Running
+  /// `read_file`…") — `ChatTranscriptPane`'s streaming variant. Added for
+  /// `AIO-482`.
   static const streamStatus = TextStyle(
     fontFamily: _mono,
     fontSize: 12.5,
@@ -171,10 +171,9 @@ abstract final class AionText {
   );
 
   /// The Inbox launcher card's compact title label — matches the
-  /// [cardTitle]/[button] family (Manrope, semi-condensed tracking) but
-  /// at its own size/weight. Added for
-  /// `AIO-1300`; see that change's
-  /// design.md §0.3.
+  /// [cardTitle]/[button] family (Manrope, semi-condensed tracking) but at its
+  /// own size/weight. Added for `AIO-1300`; see its linked Documentation page,
+  /// §0.3.
   static const inboxCardLabel = TextStyle(
     fontFamily: _ui,
     fontSize: 15,
@@ -185,9 +184,8 @@ abstract final class AionText {
 
   /// `AiSuggestionBadge`'s inline label — calm sentence-case text, not an
   /// uppercase tag like [chip]. The low-confidence caveat reuses this style
-  /// via `.copyWith(fontSize: 10.5, fontWeight: FontWeight.w400)`. Added
-  /// for `AIO-75`;
-  /// see that change's design.md §0.2.
+  /// via `.copyWith(fontSize: 10.5, fontWeight: FontWeight.w400)`. Added for
+  /// `AIO-75`; see its linked Documentation page, §0.2.
   static const badgeLabel = TextStyle(
     fontFamily: _ui,
     fontSize: 11,
@@ -195,11 +193,10 @@ abstract final class AionText {
     height: 1.0,
   );
 
-  /// The tiny numeric label inside `_NotificationBellTrigger`'s
-  /// unread-count badge — snug, untracked, high-weight. Distinct from
-  /// [chip] (too tracked) and [badgeLabel] (too large) for a 16px count
-  /// disc. Added for `AIO-1586`;
-  /// see that change's design.md Component Spec §0.1.
+  /// The tiny numeric label inside `_NotificationBellTrigger`'s unread-count
+  /// badge — snug, untracked, high-weight. Distinct from [chip] (too tracked)
+  /// and [badgeLabel] (too large) for a 16px count disc. Added for `AIO-1586`;
+  /// see its linked Documentation page, Component Spec §0.1.
   static const countBadge = TextStyle(
     fontFamily: _ui,
     fontSize: 10,
@@ -208,14 +205,12 @@ abstract final class AionText {
     height: 1.0,
   );
 
-  /// `ReleaseDraftScreen`'s version-field input text, the derived tag
-  /// preview pill, and the tag/branch confirmation dialog's tag value — a
-  /// semver string read digit-by-digit. Distinct from [key]/[caption]/
-  /// [time] (the mono family's only other sizes, all capped at 11px):
-  /// setting a version in [bodySm] loses the digit alignment every other
-  /// identifier in Aion gets. Added for
-  /// `AIO-1782`; see that
-  /// change's design.md §0.3.
+  /// `ReleaseDraftScreen`'s version-field input text, the derived tag preview
+  /// pill, and the tag/branch confirmation dialog's tag value — a semver
+  /// string read digit-by-digit. Distinct from [key]/[caption]/ [time] (the
+  /// mono family's only other sizes, all capped at 11px): setting a version in
+  /// [bodySm] loses the digit alignment every other identifier in Aion gets.
+  /// Added for `AIO-1782`; see its linked Documentation page, §0.3.
   static const versionInput = TextStyle(
     fontFamily: _mono,
     fontSize: 15,

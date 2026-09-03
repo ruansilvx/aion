@@ -2,11 +2,10 @@
 
 import 'package:equatable/equatable.dart';
 
-/// The outcome of one `ChatCubit.runChatTurn` call. Replaces that
-/// method's previous plain `bool` return — a cancelled turn needs to
-/// carry its accumulated-but-unpersisted text back to the caller, which
-/// a `bool` can't express. See `AIO-1400`
-/// §3.
+/// The outcome of one `ChatCubit.runChatTurn` call. Replaces that method's
+/// previous plain `bool` return — a cancelled turn needs to carry its
+/// accumulated-but-unpersisted text back to the caller, which a `bool` can't
+/// express. See `AIO-1400` §3.
 sealed class ChatTurnResult extends Equatable {
   /// Creates a [ChatTurnResult].
   const ChatTurnResult();

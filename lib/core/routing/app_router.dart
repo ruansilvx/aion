@@ -58,14 +58,12 @@ import 'package:aion/features/tickets/domain/repositories/ticket_list_sort_repos
 import 'package:aion/features/tickets/domain/repositories/ticket_list_view_mode_repository.dart';
 import 'package:aion/features/tickets/tickets.dart';
 
-/// The app's route table: `/hub`, `/hub/new` (project switcher, no
-/// active project needed), and `/workspace/tickets`,
-/// `/workspace/tickets/new`, `/workspace/tickets/trash`,
-/// `/workspace/tickets/:id`, `/workspace/documentation`,
-/// `/workspace/inbox`, `/workspace/pages/new`, `/workspace/pages/:id`,
-/// `/workspace/settings` (gated on an active project — see [_redirect]).
-/// See
-/// `AIO-1174` §9.
+/// The app's route table: `/hub`, `/hub/new` (project switcher, no active
+/// project needed), and `/workspace/tickets`, `/workspace/tickets/new`,
+/// `/workspace/tickets/trash`, `/workspace/tickets/:id`,
+/// `/workspace/documentation`, `/workspace/inbox`, `/workspace/pages/new`,
+/// `/workspace/pages/:id`, `/workspace/settings` (gated on an active project —
+/// see [_redirect]). See `AIO-1174` §9.
 ///
 /// Clean (path-based, no `#`) URLs are go_router's default. Deploying the
 /// web build to Firebase Hosting requires a catch-all rewrite rule
@@ -132,8 +130,8 @@ final appRouter = GoRouter(
                 create: (_) => TicketSelectionCubit(),
               ),
               // Board-only signal: whether `BoardColumn` should cluster
-              // same-parent siblings adjacently (hybrid scheduling mode).
-              // See AIO-1400 §9.
+              // same-parent siblings adjacently (hybrid scheduling mode). See
+              // AIO-1400 §9.
               BlocProvider<ExecutionSchedulingCubit>(
                 create: (context) => ExecutionSchedulingCubit(
                   context.read<ExecutionSchedulingRepository>(),
@@ -343,8 +341,7 @@ final appRouter = GoRouter(
           },
         ),
         // Reached from `WorkspaceNavShell`'s secondary-actions popover,
-        // alongside `/workspace/settings`. See
-        // AIO-549 §5.1.
+        // alongside `/workspace/settings`. See AIO-549 §5.1.
         GoRoute(
           path: '/workspace/settings/workflow',
           builder: (context, state) => BlocProvider<WorkflowConfigCubit>(
@@ -359,16 +356,15 @@ final appRouter = GoRouter(
             child: const WorkflowStatusSettingsScreen(),
           ),
         ),
-        // `WorkflowPromptTemplatesScreen` — reached via `context.push`
-        // from `_AttachmentForm`'s "Manage templates" link and
+        // `WorkflowPromptTemplatesScreen` — reached via `context.push` from
+        // `_AttachmentForm`'s "Manage templates" link and
         // `WorkflowStatusSettingsScreen`'s header (both in
-        // workflow_status_settings_screen.dart). A separate top-level
-        // route (not nested under `/workspace/settings/workflow`) needs
-        // its own `WorkflowConfigCubit` instance — go_router pushes a
-        // fresh page subtree per route, so a parent route's
-        // `BlocProvider` isn't inherited here, following
-        // `/workspace/settings/workflow`'s own wiring exactly. Added for
-        // `AIO-2650`.
+        // workflow_status_settings_screen.dart). A separate top-level route
+        // (not nested under `/workspace/settings/workflow`) needs its own
+        // `WorkflowConfigCubit` instance — go_router pushes a fresh page
+        // subtree per route, so a parent route's `BlocProvider` isn't
+        // inherited here, following `/workspace/settings/workflow`'s own
+        // wiring exactly. Added for `AIO-2650`.
         GoRoute(
           path: '/workspace/settings/workflow/templates',
           builder: (context, state) => BlocProvider<WorkflowConfigCubit>(
@@ -384,8 +380,7 @@ final appRouter = GoRouter(
           ),
         ),
         // Reached from `SettingsScreen`'s `_AutomationSection` "Configure
-        // decision graph" affordance. See
-        // AIO-181 §4.
+        // decision graph" affordance. See AIO-181 §4.
         GoRoute(
           path: '/workspace/settings/automation/:context/graph',
           builder: (context, state) {
@@ -403,8 +398,7 @@ final appRouter = GoRouter(
           },
         ),
         // Reached from `WorkflowStatusSettingsScreen`'s `_SddStageRenameRow`
-        // "Configure precondition" affordance. See
-        // AIO-1936 §4.
+        // "Configure precondition" affordance. See AIO-1936 §4.
         GoRoute(
           path: '/workspace/settings/workflow/sdd/:stage/precondition',
           builder: (context, state) {
@@ -507,13 +501,12 @@ Future<void> _migrateDocumentParentsOnOpen(AppDatabase database) async {
 /// Owns the per-project [AppDatabase] connection and the ticket-feature
 /// repositories/cubit built on top of it. Constructed with
 /// `key: ValueKey(project.id)` in [appRouter]'s `ShellRoute`, so Flutter
-/// disposes the old instance (closing its [AppDatabase]) and builds a
-/// fresh one — opening a new [AppDatabase] addressed to the newly active
-/// project — whenever the active project's id changes, per
-/// `AIO-1174` §6. Also wraps [child]
-/// in [WorkspaceNavShell] (persistent Tickets/Documentation navigation
-/// chrome — see `AIO-1525`),
-/// which needs [currentLocation] to know which destination is active.
+/// disposes the old instance (closing its [AppDatabase]) and builds a fresh
+/// one — opening a new [AppDatabase] addressed to the newly active project —
+/// whenever the active project's id changes, per `AIO-1174` §6. Also wraps
+/// [child] in [WorkspaceNavShell] (persistent Tickets/Documentation navigation
+/// chrome — see `AIO-1525`), which needs [currentLocation] to know which
+/// destination is active.
 class WorkspaceShell extends StatefulWidget {
   /// Creates a [WorkspaceShell] for [project], wrapping [child] (the
   /// current `/workspace/*` route's content).
@@ -597,62 +590,55 @@ class _WorkspaceShellState extends State<WorkspaceShell>
           create: (_) => DriftTicketLinkRepository(_database),
         ),
         // Resolved inline `[[wikilink]]` index — parallel to
-        // TicketLinkRepository above, not gated by `rootPath != null`
-        // (unlike the desktop-only services below): it's a plain
-        // Drift-backed repository with no file-system/git dependency.
-        // See AIO-963.
+        // TicketLinkRepository above, not gated by `rootPath != null` (unlike
+        // the desktop-only services below): it's a plain Drift-backed
+        // repository with no file-system/git dependency. See AIO-963.
         RepositoryProvider<PageWikilinkRepository>(
           create: (_) => DriftPageWikilinkRepository(_database),
         ),
         // Persisted coding-execution queue snapshot — parallel to
-        // PageWikilinkRepository above, same plain Drift-backed shape.
-        // See AIO-1400 §5.3/§7.
+        // PageWikilinkRepository above, same plain Drift-backed shape. See
+        // AIO-1400 §5.3/§7.
         RepositoryProvider<ExecutionQueueRepository>(
           create: (_) => DriftExecutionQueueRepository(_database),
         ),
         // Persisted coding-execution/SDD-stage-chat outcome notifications —
-        // same plain Drift-backed shape as ExecutionQueueRepository above.
-        // See AIO-1586 §5.
+        // same plain Drift-backed shape as ExecutionQueueRepository above. See
+        // AIO-1586 §5.
         RepositoryProvider<NotificationRepository>(
           create: (_) => DriftNotificationRepository(_database),
         ),
-        // Per-project ticket-list filter persistence — see
-        // AIO-1224
-        // §1.4/§4. No dependencies of its own; scoped alongside the other
-        // ticket-feature repositories above rather than main.dart's
-        // global providers, since its `SharedPreferences` keys are
-        // themselves project-id-prefixed.
+        // Per-project ticket-list filter persistence — see AIO-1224 §1.4/§4.
+        // No dependencies of its own; scoped alongside the other
+        // ticket-feature repositories above rather than main.dart's global
+        // providers, since its `SharedPreferences` keys are themselves
+        // project-id-prefixed.
         RepositoryProvider<TicketListFilterRepository>(
           create: (_) => SharedPrefsTicketListFilterRepository(),
         ),
-        // Per-project ticket-list sort persistence — same scoping
-        // rationale as TicketListFilterRepository above (project-id-
-        // prefixed SharedPreferences keys, no dependencies of its own).
-        // See AIO-2371.
+        // Per-project ticket-list sort persistence — same scoping rationale as
+        // TicketListFilterRepository above (project-id-prefixed
+        // SharedPreferences keys, no dependencies of its own). See AIO-2371.
         RepositoryProvider<TicketListSortRepository>(
           create: (_) => SharedPrefsTicketListSortRepository(),
         ),
         // Per-project ticket-list view-mode persistence — same scoping
         // rationale as TicketListFilterRepository/TicketListSortRepository
-        // above. See
-        // AIO-1069.
+        // above. See AIO-1069.
         RepositoryProvider<TicketListViewModeRepository>(
           create: (_) => SharedPrefsTicketListViewModeRepository(),
         ),
         // Per-project board column-visibility persistence — same scoping
-        // rationale as the three ticket-list repositories above. See
-        // AIO-1069.
+        // rationale as the three ticket-list repositories above. See AIO-1069.
         RepositoryProvider<TicketBoardColumnVisibilityRepository>(
           create: (_) => SharedPrefsTicketBoardColumnVisibilityRepository(),
         ),
-        // Project-scoped workflow-configuration repositories — see
-        // AIO-549 §6.
-        // WorkflowStatusRepository is Drift-backed (per-project database,
-        // like TicketRepository above); SddStageConfigRepository is
+        // Project-scoped workflow-configuration repositories — see AIO-549 §6.
+        // WorkflowStatusRepository is Drift-backed (per-project database, like
+        // TicketRepository above); SddStageConfigRepository is
         // `shared_preferences`-backed (project-id-agnostic keys, same as
-        // AutomationSettingsRepository), so it needs no project scoping
-        // of its own despite living alongside these project-scoped
-        // providers.
+        // AutomationSettingsRepository), so it needs no project scoping of its
+        // own despite living alongside these project-scoped providers.
         RepositoryProvider<WorkflowStatusRepository>(
           create: (_) => DriftWorkflowStatusRepository(_database),
         ),
@@ -660,9 +646,8 @@ class _WorkspaceShellState extends State<WorkspaceShell>
           create: (_) => SharedPrefsSddStageConfigRepository(),
         ),
         // Phase 2 (workflow-skill-attachments) — both Drift-backed
-        // (per-project database), following WorkflowStatusRepository's
-        // exact wiring precedent. See
-        // AIO-2650 §6.
+        // (per-project database), following WorkflowStatusRepository's exact
+        // wiring precedent. See AIO-2650 §6.
         RepositoryProvider<WorkflowSkillAttachmentRepository>(
           create: (_) => DriftWorkflowSkillAttachmentRepository(_database),
         ),
@@ -670,14 +655,13 @@ class _WorkspaceShellState extends State<WorkspaceShell>
           create: (_) => DriftWorkflowPromptTemplateRepository(_database),
         ),
         // Project-scoped decision-graph configuration — same Drift-backed
-        // shape as WorkflowStatusRepository above. See
-        // AIO-181 §2.
+        // shape as WorkflowStatusRepository above. See AIO-181 §2.
         RepositoryProvider<DecisionGraphRepository>(
           create: (_) => DriftDecisionGraphRepository(_database),
         ),
         // Project-scoped transition-precondition configuration — same
-        // Drift-backed shape as DecisionGraphRepository above. See
-        // AIO-1936 §2.
+        // Drift-backed shape as DecisionGraphRepository above. See AIO-1936
+        // §2.
         RepositoryProvider<TransitionPreconditionRepository>(
           create: (_) => DriftTransitionPreconditionRepository(_database),
         ),
@@ -747,19 +731,17 @@ class _WorkspaceShellState extends State<WorkspaceShell>
               rootPath,
             )..start();
           }
-          // Shell-wide `WorkflowConfigCubit` — additive, not a replacement
-          // for the two per-route instances at `/workspace/settings/
-          // workflow` and `/workspace/settings/workflow/templates` above.
-          // Those routes are reached via a `go_router` page push that
-          // doesn't inherit this `WorkspaceShell` subtree (same reasoning
-          // already documented on the templates route), so they still
-          // need — and keep — their own instances. This one exists so
-          // every status-rendering widget under `WorkspaceShell` (Board,
-          // List, filters/columns popovers, selection bar, ticket detail)
-          // can read the project's live, per-project status list instead
-          // of falling back to the hardcoded `defaultWorkflowStatuses`
-          // set. See
-          // AIO-2550 §3a.
+          // Shell-wide `WorkflowConfigCubit` — additive, not a replacement for
+          // the two per-route instances at `/workspace/settings/ workflow` and
+          // `/workspace/settings/workflow/templates` above. Those routes are
+          // reached via a `go_router` page push that doesn't inherit this
+          // `WorkspaceShell` subtree (same reasoning already documented on the
+          // templates route), so they still need — and keep — their own
+          // instances. This one exists so every status-rendering widget under
+          // `WorkspaceShell` (Board, List, filters/columns popovers, selection
+          // bar, ticket detail) can read the project's live, per-project
+          // status list instead of falling back to the hardcoded
+          // `defaultWorkflowStatuses` set. See AIO-2550 §3a.
           return BlocProvider<WorkflowConfigCubit>(
             create: (context) => WorkflowConfigCubit(
               context.read<WorkflowStatusRepository>(),
