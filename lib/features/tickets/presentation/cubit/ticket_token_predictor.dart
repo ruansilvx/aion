@@ -13,13 +13,12 @@ import 'package:aion/features/tickets/domain/utils/embedding_similarity.dart';
 /// `TicketsCubit`-constructed-alongside placement, same fire-and-forget
 /// `suggest` call from `createTicket`/`updateTicket` — and deliberately
 /// mirrors its no-op-guard-chain-then-candidate-walk structure. The one
-/// concrete way this diverges: this predictor is fully deterministic and
-/// makes no model call at all. It never prompts anything — it ranks
-/// candidates by embedding cosine similarity, then deterministically sums
-/// each comparable candidate's own historical execution-chat token totals
-/// (via [TicketRepository.getExecutionTokenTotals]) and persists the
-/// resulting min/max range. See
-/// `aion-arch/changes/token-cost-prediction/design.md` §2.
+/// concrete way this diverges: this predictor is fully deterministic and makes
+/// no model call at all. It never prompts anything — it ranks candidates by
+/// embedding cosine similarity, then deterministically sums each comparable
+/// candidate's own historical execution-chat token totals (via
+/// [TicketRepository.getExecutionTokenTotals]) and persists the resulting
+/// min/max range. See `AIO-2455` §2.
 class TicketTokenPredictor {
   /// Creates a [TicketTokenPredictor] backed by [_repository].
   /// [embeddingProvider] is optional — when `null`, [suggest] silently

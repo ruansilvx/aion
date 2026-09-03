@@ -124,11 +124,11 @@ class TicketMarkdownSerializer {
         return null;
       case TicketMarkdownTemplate.status:
         // A project-defined status name, not a fixed enum — any non-empty
-        // string is syntactically valid here; whether it names a status
-        // the project has actually configured is validated at the
+        // string is syntactically valid here; whether it names a status the
+        // project has actually configured is validated at the
         // `TicketsCubit`/`WorkflowConfigCubit` layer, not this pure-Dart
         // parser. Was a `TicketStatus.values` membership check before
-        // `aion-arch/changes/configurable-ticket-workflow`.
+        // `AIO-549`.
         return value is String && value.isNotEmpty ? (value,) : null;
       case TicketMarkdownTemplate.priority:
         for (final p in TicketPriority.values) {

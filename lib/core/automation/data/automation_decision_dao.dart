@@ -14,8 +14,7 @@ import 'package:aion/core/database/app_database.dart';
 part 'automation_decision_dao.g.dart';
 
 /// Drift accessor for [AutomationDecisionGraphsTable]/
-/// [AutomationDecisionNodesTable]. See
-/// `aion-arch/changes/automation-decision-graphs/design.md` §2.
+/// [AutomationDecisionNodesTable]. See `AIO-181` §2.
 @DriftAccessor(
   tables: [AutomationDecisionGraphsTable, AutomationDecisionNodesTable],
 )

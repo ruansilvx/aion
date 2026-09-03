@@ -14,23 +14,20 @@ import 'package:aion/features/tickets/domain/entities/ticket.dart';
 
 /// Read-only rendering of a Markdown string, parsed via `package:markdown`
 /// (CommonMark + GFM extensions — tables, strikethrough, task lists,
-/// autolinks) and styled with [AionText]/[AionColors] tokens. Non-Material
-/// — no `flutter_markdown` or similar rendering dependency; only the
-/// upstream package's pure-Dart parser is used, never a Flutter rendering
-/// dependency. Any node the parser produces that isn't one of the
-/// recognized tags below falls back to rendering its concatenated text
-/// content as a plain paragraph, so this widget never throws on
-/// unexpected input. Per
-/// `aion-arch/changes/page-content-markdown-editor/design.md` §2.
+/// autolinks) and styled with [AionText]/[AionColors] tokens. Non-Material —
+/// no `flutter_markdown` or similar rendering dependency; only the upstream
+/// package's pure-Dart parser is used, never a Flutter rendering dependency.
+/// Any node the parser produces that isn't one of the recognized tags below
+/// falls back to rendering its concatenated text content as a plain paragraph,
+/// so this widget never throws on unexpected input. Per `AIO-1350` §2.
 ///
-/// [resolveWikilink]/[onWikilinkTap]/[onCreateWikilinkTarget] add
-/// optional inline `[[Target]]`/`[[Target|Alias]]` recognition (a
-/// non-standard-syntax extension, same precedent as this widget's
-/// existing GFM-extension handling) — see design.md §5/§6. All three
-/// default to `null`, so every other consumer (comments, descriptions,
-/// anywhere Markdown renders outside a page) is unaffected: `[[...]]`
-/// text there just isn't specially recognized, identical to before. Per
-/// `aion-arch/changes/inline-wikilink-backlinks/design.md`.
+/// [resolveWikilink]/[onWikilinkTap]/[onCreateWikilinkTarget] add optional
+/// inline `[[Target]]`/`[[Target|Alias]]` recognition (a non-standard-syntax
+/// extension, same precedent as this widget's existing GFM-extension handling)
+/// — see design.md §5/§6. All three default to `null`, so every other consumer
+/// (comments, descriptions, anywhere Markdown renders outside a page) is
+/// unaffected: `[[...]]` text there just isn't specially recognized, identical
+/// to before. Per `AIO-963`.
 class MarkdownView extends StatelessWidget {
   /// Creates a [MarkdownView] rendering [source].
   const MarkdownView({
@@ -81,7 +78,8 @@ class MarkdownView extends StatelessWidget {
 
 /// Bundles [MarkdownView]'s three optional wikilink callbacks plus the
 /// active theme's `isDark` flag (needed for the unresolved chip's
-/// alpha — see design.md §1.3) into one value threaded through the
+/// alpha — see its linked Documentation page, §1.3) into one value
+/// threaded through the
 /// block/inline builder functions below, rather than widening every one
 /// of their signatures by three separate parameters.
 class _WikilinkContext {
@@ -218,9 +216,9 @@ Widget _buildBlock(
 
 /// Builds a paragraph from [inlineNodes] (already inline-parsed by
 /// [md.Document.parse]) as a single [Text.rich] of [TextSpan] runs — bold,
-/// italic, strikethrough, inline code, links, and (when [wikilink] carries
-/// a non-`null` `resolve`) `[[...]]` wikilink spans per design.md §2.2
-/// and `aion-arch/changes/inline-wikilink-backlinks/design.md` §5/§6.
+/// italic, strikethrough, inline code, links, and (when [wikilink] carries a
+/// non-`null` `resolve`) `[[...]]` wikilink spans per design.md §2.2 and
+/// `AIO-963` §5/§6.
 Widget _buildParagraph(
   BuildContext context,
   List<md.Node> inlineNodes, {
@@ -338,11 +336,10 @@ List<InlineSpan> _buildInlineSpans(
 List<InlineSpan> _buildWikilinkAwareTextSpans(
   String text,
   // The ambient paragraph/list-item style a resolved wikilink's
-  // `InteractiveLinkSpan` needs explicitly — unlike a plain `TextSpan`,
-  // a `WidgetSpan`'s child doesn't inherit style from its `TextSpan`
-  // ancestors, so it can't rely on `Text.rich`'s usual style-merge the
-  // way every other span in this file does. Added for
-  // `aion-arch/changes/spec-ticket-type`'s `/verify` fix-up.
+  // `InteractiveLinkSpan` needs explicitly — unlike a plain `TextSpan`, a
+  // `WidgetSpan`'s child doesn't inherit style from its `TextSpan` ancestors,
+  // so it can't rely on `Text.rich`'s usual style-merge the way every other
+  // span in this file does. Added for `AIO-1998`'s `/verify` fix-up.
   TextStyle style,
   AionColors c,
   _WikilinkContext wikilink,

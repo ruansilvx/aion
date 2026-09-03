@@ -21,29 +21,26 @@ import 'package:aion/core/contracts/provider_id.dart';
 /// spawned process's cwd and `toolsEnabled` is forwarded to the bridge, so
 /// file edits/git/bash land in the actual project checkout.
 ///
-/// When [AgentRequest.tools] is non-empty, the spawned process's stdin is
-/// kept open for the run's whole duration (rather than closed right after
-/// the initial request line) so a `"tool_call_request"` line from the
-/// bridge can be answered with a matching reply line — see
-/// [_handleToolCallRequest] and
-/// `aion-arch/changes/mid-task-chat-branching/design.md` §3.
+/// When [AgentRequest.tools] is non-empty, the spawned process's stdin is kept
+/// open for the run's whole duration (rather than closed right after the
+/// initial request line) so a `"tool_call_request"` line from the bridge can
+/// be answered with a matching reply line — see [_handleToolCallRequest] and
+/// `AIO-1118` §3.
 ///
 /// Supports cancellation (see [cancel]): every [AgentRequest] carrying a
 /// non-null [AgentRequest.runId] has its spawned [Process] tracked in
 /// [_activeRuns] for the run's duration, escalating from `SIGTERM` to
 /// `SIGKILL` if the process hasn't exited shortly after the first signal.
-/// Added for `aion-arch/changes/parallel-work`; see that change's
-/// design.md §2.
+/// Added for `AIO-1400`; see its linked Documentation page, §2.
 ///
-/// When [AgentRequest.resumeSessionId] is set, the outgoing request JSON
-/// also carries `{'resume': ..., 'forkSession': true}`, resuming and
-/// forking that session inside the bridge process rather than starting a
-/// fresh conversation. Independently, every bridge process reports its own
-/// session id via a `"session"` stdout line the moment the SDK's message
-/// stream first carries one — captured per-[run] call so
-/// [_handleToolCallRequest] can hand a resumable [AgentSessionHandle] to
-/// [AgentRequest.onToolCall]. See
-/// `aion-arch/changes/decision-graph-agentjudgment-condition/design.md` §3.
+/// When [AgentRequest.resumeSessionId] is set, the outgoing request JSON also
+/// carries `{'resume': ..., 'forkSession': true}`, resuming and forking that
+/// session inside the bridge process rather than starting a fresh
+/// conversation. Independently, every bridge process reports its own session
+/// id via a `"session"` stdout line the moment the SDK's message stream first
+/// carries one — captured per-[run] call so [_handleToolCallRequest] can hand
+/// a resumable [AgentSessionHandle] to [AgentRequest.onToolCall]. See
+/// `AIO-613` §3.
 class ClaudeAgentSdkClient implements AgentModelClient {
   /// Creates a [ClaudeAgentSdkClient] that resolves the bridge script's
   /// path via [bridgeLocator].
@@ -218,23 +215,20 @@ class ClaudeAgentSdkClient implements AgentModelClient {
     return controller.stream;
   }
 
-  /// Handles one `"tool_call_request"` line from the bridge (already
-  /// decoded as [json]): emits [AgentToolCallEvent] on [controller],
-  /// awaits [request]'s [AgentRequest.onToolCall] for the result, then
-  /// writes the matching `{"toolCallId":...,"result":...}` reply line to
-  /// [process]'s stdin so the bridge — and the model's in-progress turn —
-  /// can continue. See
-  /// `aion-arch/changes/mid-task-chat-branching/design.md` §3.
+  /// Handles one `"tool_call_request"` line from the bridge (already decoded
+  /// as [json]): emits [AgentToolCallEvent] on [controller], awaits
+  /// [request]'s [AgentRequest.onToolCall] for the result, then writes the
+  /// matching `{"toolCallId":...,"result":...}` reply line to [process]'s
+  /// stdin so the bridge — and the model's in-progress turn — can continue.
+  /// See `AIO-1118` §3.
   ///
   /// [sessionId] is [run]'s locally-captured session id at the moment this
   /// call fires — `null` if no `"session"` line has arrived yet (defensive;
-  /// shouldn't happen in practice, since the bridge always emits it before
-  /// any `"tool_call_request"` in the same message batch, but a tool call
-  /// firing before it is parsed is not a crash, just a missed opportunity
-  /// for that one call). Wrapped into an [AgentSessionHandle] and passed as
-  /// [AgentRequest.onToolCall]'s 4th argument. See
-  /// `aion-arch/changes/decision-graph-agentjudgment-condition/design.md`
-  /// §3.
+  /// shouldn't happen in practice, since the bridge always emits it before any
+  /// `"tool_call_request"` in the same message batch, but a tool call firing
+  /// before it is parsed is not a crash, just a missed opportunity for that
+  /// one call). Wrapped into an [AgentSessionHandle] and passed as
+  /// [AgentRequest.onToolCall]'s 4th argument. See `AIO-613` §3.
   Future<void> _handleToolCallRequest(
     Map<String, dynamic> json,
     AgentRequest request,

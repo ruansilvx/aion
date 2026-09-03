@@ -16,14 +16,13 @@ import 'package:aion/features/providers/presentation/cubit/decision_graph_config
 /// both `GraphCanvas` and `DecisionOutlineList`.
 ///
 /// One enforced invariant, the strict-tree constraint: a node may be
-/// referenced as a child (via a `DecisionBranch.toNode` on some other
-/// node's `matchedBranch`/`unmatchedBranch`) from at most one branch
-/// across the whole graph, and following every node's branches from the
-/// graph's root must never revisit a node (no cycles). [createNode]/
-/// [updateNode] reject an edit that would violate either rule, emitting
-/// [DecisionGraphConfigError] and leaving the prior [DecisionGraphConfigLoaded]
-/// state's tree untouched. See
-/// `aion-arch/changes/automation-decision-graphs/design.md` §3.
+/// referenced as a child (via a `DecisionBranch.toNode` on some other node's
+/// `matchedBranch`/`unmatchedBranch`) from at most one branch across the whole
+/// graph, and following every node's branches from the graph's root must never
+/// revisit a node (no cycles). [createNode]/ [updateNode] reject an edit that
+/// would violate either rule, emitting [DecisionGraphConfigError] and leaving
+/// the prior [DecisionGraphConfigLoaded] state's tree untouched. See `AIO-181`
+/// §3.
 class DecisionGraphConfigCubit extends Cubit<DecisionGraphConfigState> {
   /// Creates a [DecisionGraphConfigCubit] backed by [_repository].
   DecisionGraphConfigCubit(this._repository)
@@ -58,24 +57,23 @@ class DecisionGraphConfigCubit extends Cubit<DecisionGraphConfigState> {
   /// `null` if the write was rejected.
   ///
   /// A freshly created node isn't reachable from the graph's root yet
-  /// (`DecisionGraphRepository.getAllNodes` only returns nodes reachable
-  /// by walking from the root), so the post-write [load] this method
-  /// calls would normally drop it straight back out of
-  /// [DecisionGraphConfigLoaded.nodesById] — which broke every caller
-  /// that immediately follows up with [updateNode]/[setRoot] to attach
-  /// the new node (the form's "continue to condition" chaining flow, and
-  /// the empty-graph "add first condition" flow both do exactly this):
-  /// that follow-up call would see the just-created id as absent from
+  /// (`DecisionGraphRepository.getAllNodes` only returns nodes reachable by
+  /// walking from the root), so the post-write [load] this method calls would
+  /// normally drop it straight back out of
+  /// [DecisionGraphConfigLoaded.nodesById] — which broke every caller that
+  /// immediately follows up with [updateNode]/[setRoot] to attach the new node
+  /// (the form's "continue to condition" chaining flow, and the empty-graph
+  /// "add first condition" flow both do exactly this): that follow-up call
+  /// would see the just-created id as absent from
   /// [DecisionGraphConfigLoaded.nodesById] and reject with
   /// [DecisionGraphConfigErrorReason.danglingBranchTarget]/`nodeNotFound`,
-  /// discarding the edit. Fixed by re-merging the new orphan node into
-  /// the reloaded state whenever the reload didn't already pick it up —
-  /// found via manual QA of `aion-arch/changes/automation-decision-graphs`
-  /// (`/verify` follow-up), see that change's `tasks.md` for the
-  /// reproduction. An orphan that's never subsequently attached (the user
-  /// abandons the edit) simply stays in this merged-in state until the
-  /// next full [load] — matches [deleteNode]'s existing "cleanup is the
-  /// editor UI's responsibility" precedent.
+  /// discarding the edit. Fixed by re-merging the new orphan node into the
+  /// reloaded state whenever the reload didn't already pick it up — found via
+  /// manual QA of `AIO-181` (`/verify` follow-up), see that change's
+  /// `tasks.md` for the reproduction. An orphan that's never subsequently
+  /// attached (the user abandons the edit) simply stays in this merged-in
+  /// state until the next full [load] — matches [deleteNode]'s existing
+  /// "cleanup is the editor UI's responsibility" precedent.
   Future<String?> createNode({
     required String conditionId,
     required Map<String, dynamic> conditionParams,
@@ -143,18 +141,16 @@ class DecisionGraphConfigCubit extends Cubit<DecisionGraphConfigState> {
     await load(loaded.context);
   }
 
-  /// Deletes the node with id [id] and every node transitively reachable
-  /// from it via a matched/unmatched [ToNodeBranch] (its descendants),
-  /// clearing the graph root first if [id] was the root. Never rejected —
-  /// deleting a node can only ever shrink the tree, so it can't violate
-  /// the strict-tree invariant. Matches design.md §3.5's "Deleting a node
-  /// with children asks first ... `Delete this condition and its 2
-  /// descendants?`" — the confirm dialog promises cascading deletion, so
-  /// this actually performs it rather than leaving descendants orphaned
-  /// in the repository (unreachable from the root, but never actually
-  /// removed). Fixed via manual QA of
-  /// `aion-arch/changes/automation-decision-graphs` — the previous
-  /// single-node delete left every descendant as leaked, permanently
+  /// Deletes the node with id [id] and every node transitively reachable from
+  /// it via a matched/unmatched [ToNodeBranch] (its descendants), clearing the
+  /// graph root first if [id] was the root. Never rejected — deleting a node
+  /// can only ever shrink the tree, so it can't violate the strict-tree
+  /// invariant. Matches design.md §3.5's "Deleting a node with children asks
+  /// first ... `Delete this condition and its 2 descendants?`" — the confirm
+  /// dialog promises cascading deletion, so this actually performs it rather
+  /// than leaving descendants orphaned in the repository (unreachable from the
+  /// root, but never actually removed). Fixed via manual QA of `AIO-181` — the
+  /// previous single-node delete left every descendant as leaked, permanently
   /// unreachable rows.
   Future<void> deleteNode(String id) async {
     final loaded = _requireLoaded();
@@ -243,16 +239,15 @@ class DecisionGraphConfigCubit extends Cubit<DecisionGraphConfigState> {
 
   /// Whether [nodesById] contains a cycle anywhere in its
   /// `DecisionBranch.toNode` edges — an iterative depth-first search from
-  /// every node (not just `DecisionGraph.rootNodeId`), marking each node
-  /// on the current path (`onPath`) versus fully explored (`visited`),
-  /// the standard three-color cycle check. Scoped to the whole node set
-  /// rather than a root-reachability walk so a cycle among nodes not yet
-  /// attached to the live tree — e.g. two freshly [createNode]-d nodes
-  /// wired into a mutual loop before either is attached as anyone's
-  /// branch target or set as the root — is rejected too, not just a
-  /// cycle already reachable from the root. Added for
-  /// `aion-arch/changes/automation-decision-graphs` (`/verify` fix
-  /// pass 2 — the previous root-only walk missed exactly this case).
+  /// every node (not just `DecisionGraph.rootNodeId`), marking each node on
+  /// the current path (`onPath`) versus fully explored (`visited`), the
+  /// standard three-color cycle check. Scoped to the whole node set rather
+  /// than a root-reachability walk so a cycle among nodes not yet attached to
+  /// the live tree — e.g. two freshly [createNode]-d nodes wired into a mutual
+  /// loop before either is attached as anyone's branch target or set as the
+  /// root — is rejected too, not just a cycle already reachable from the root.
+  /// Added for `AIO-181` (`/verify` fix pass 2 — the previous root-only walk
+  /// missed exactly this case).
   bool _detectCycle(Map<String, DecisionNode> nodesById) {
     final visited = <String>{};
 

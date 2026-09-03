@@ -28,12 +28,11 @@ int _dayDifference(DateTime from, DateTime to) {
 }
 
 /// Formats how long ago [dateTime] happened as a short, generic label
-/// (`"just now"`, `"2h ago"`, `"3d ago"`, `"2w ago"`, `"3mo ago"`) — used
-/// by `InboxHistoryItem`'s timestamp (design.md §5.3), unlike
+/// (`"just now"`, `"2h ago"`, `"3d ago"`, `"2w ago"`, `"3mo ago"`) — used by
+/// `InboxHistoryItem`'s timestamp (design.md §5.3), unlike
 /// [formatTrashedAge]'s trash-specific `"Trashed ..."` phrasing. [now]
-/// defaults to [DateTime.now] and only exists as a parameter for
-/// deterministic tests. Added for
-/// `aion-arch/changes/new-project-onboarding-inbox`.
+/// defaults to [DateTime.now] and only exists as a parameter for deterministic
+/// tests. Added for `AIO-1300`.
 String formatRelativeTime(DateTime dateTime, {DateTime? now}) {
   final current = now ?? DateTime.now();
   final elapsed = current.difference(dateTime);

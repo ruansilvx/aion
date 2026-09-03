@@ -10,21 +10,19 @@ import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
 
 /// A "+ Add" ghost-button trigger that opens a searchable overlay of
-/// [candidatesLoader]'s tickets, calling [onSelected] with the chosen
-/// ticket and the type of relationship picked via the overlay's leading
-/// [_LinkTypeSelectorRow] when a row is tapped. Renders the design.md
-/// §8.1 "+ Add" affordance for the Documentation section's Sub-pages/
-/// Linked Tickets headers — used to attach an *existing* ticket via
-/// `TicketLink`, as opposed to `TicketParentPicker` which reassigns
-/// structural `parentId`. Follows the same `Overlay`/`LayerLink`/
-/// `CompositedTransformFollower` mechanics as `TicketParentPicker`
-/// rather than a from-scratch overlay. This widget only renders the
-/// trigger and overlay list — it performs no repository writes itself;
-/// [onSelected] is responsible for actually creating the `TicketLink`
-/// and refreshing whatever state depends on it. Added
-/// `linkTypeOptions`/the link-type selector for
-/// `aion-arch/changes/board-task-ordering-indication` — previously this
-/// picker always implied `TicketLinkType.relatesTo`.
+/// [candidatesLoader]'s tickets, calling [onSelected] with the chosen ticket
+/// and the type of relationship picked via the overlay's leading
+/// [_LinkTypeSelectorRow] when a row is tapped. Renders the design.md §8.1 "+
+/// Add" affordance for the Documentation section's Sub-pages/ Linked Tickets
+/// headers — used to attach an *existing* ticket via `TicketLink`, as opposed
+/// to `TicketParentPicker` which reassigns structural `parentId`. Follows the
+/// same `Overlay`/`LayerLink`/ `CompositedTransformFollower` mechanics as
+/// `TicketParentPicker` rather than a from-scratch overlay. This widget only
+/// renders the trigger and overlay list — it performs no repository writes
+/// itself; [onSelected] is responsible for actually creating the `TicketLink`
+/// and refreshing whatever state depends on it. Added `linkTypeOptions`/the
+/// link-type selector for `AIO-392` — previously this picker always implied
+/// `TicketLinkType.relatesTo`.
 class TicketLinkPicker extends StatefulWidget {
   /// Creates a [TicketLinkPicker].
   const TicketLinkPicker({
@@ -274,13 +272,11 @@ class _TicketLinkPickerState extends State<TicketLinkPicker> {
 }
 
 /// [TicketLinkPicker]'s overlay-header link-type picker — a
-/// [SelectionMenu]<[TicketLinkType]> restricted to [options], with a
-/// trigger showing [value]'s directional glyph + label (Component Spec
-/// §1.2/§1.3) and a menu row per option showing the same glyph + label
-/// (§1.6). Defaults to [TicketLinkType.relatesTo] via
-/// [_TicketLinkPickerState._selectedLinkType]'s own initializer/reset,
-/// not this widget. Added for
-/// `aion-arch/changes/board-task-ordering-indication`.
+/// [SelectionMenu]<[TicketLinkType]> restricted to [options], with a trigger
+/// showing [value]'s directional glyph + label (Component Spec §1.2/§1.3) and
+/// a menu row per option showing the same glyph + label (§1.6). Defaults to
+/// [TicketLinkType.relatesTo] via [_TicketLinkPickerState._selectedLinkType]'s
+/// own initializer/reset, not this widget. Added for `AIO-392`.
 class _LinkTypeSelectorRow extends StatefulWidget {
   /// Creates a [_LinkTypeSelectorRow] offering [options], currently
   /// showing [value], calling [onChanged] when the user picks another.

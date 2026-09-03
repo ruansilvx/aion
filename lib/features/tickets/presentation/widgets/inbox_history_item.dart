@@ -7,13 +7,12 @@ import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/enums/inbox_purpose.dart';
 
-/// Maps an [InboxPurpose] to the base `AionColors` accent its launcher
-/// card, history badge, and Suggested-row treatments all key off — four
-/// aliases of existing type-accent tokens, no new hues. Lives here (this
-/// feature's presentation layer), not in `design_system/`, since it
-/// takes the feature-local [InboxPurpose] enum and `design_system/` must
-/// stay feature-agnostic per project.md's cross-feature rule. See
-/// `aion-arch/changes/new-project-onboarding-inbox/design.md` §0.3.
+/// Maps an [InboxPurpose] to the base `AionColors` accent its launcher card,
+/// history badge, and Suggested-row treatments all key off — four aliases of
+/// existing type-accent tokens, no new hues. Lives here (this feature's
+/// presentation layer), not in `design_system/`, since it takes the
+/// feature-local [InboxPurpose] enum and `design_system/` must stay
+/// feature-agnostic per project.md's cross-feature rule. See `AIO-1300` §0.3.
 Color inboxAccentFor(InboxPurpose purpose, AionColors c) {
   return switch (purpose) {
     InboxPurpose.brainDump => c.typeIdea,

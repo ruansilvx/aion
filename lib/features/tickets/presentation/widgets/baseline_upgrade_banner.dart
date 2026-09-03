@@ -8,15 +8,14 @@ import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/presentation/widgets/banner_shell.dart';
 
-/// Lazy, one-time-per-open offer banner shown on `TicketsListScreen` when
-/// the active project's pinned baseline version isn't the latest bundled
-/// one (see `ActiveProjectCubit.switchTo`'s `offerBaselineUpgrade`
-/// computation). Two states, no diff/review UI: an [_OfferBanner]
-/// ("Upgrade" or dismiss ×) and, once tapped, an [_UpgradingBanner] —
-/// near-instant local I/O, with no separate "done" confirmation state;
-/// the version now shown wherever `Project.baselineVersion` is rendered
-/// (`ProjectCard`, the Settings "BASELINE" section) is confirmation
-/// enough. Added for `aion-arch/changes/baseline-version-upgrade-flow`.
+/// Lazy, one-time-per-open offer banner shown on `TicketsListScreen` when the
+/// active project's pinned baseline version isn't the latest bundled one (see
+/// `ActiveProjectCubit.switchTo`'s `offerBaselineUpgrade` computation). Two
+/// states, no diff/review UI: an [_OfferBanner] ("Upgrade" or dismiss ×) and,
+/// once tapped, an [_UpgradingBanner] — near-instant local I/O, with no
+/// separate "done" confirmation state; the version now shown wherever
+/// `Project.baselineVersion` is rendered (`ProjectCard`, the Settings
+/// "BASELINE" section) is confirmation enough. Added for `AIO-297`.
 class BaselineUpgradeBanner extends StatefulWidget {
   /// Creates a [BaselineUpgradeBanner] offering to upgrade from
   /// [currentVersion] to [targetVersion]. [onDismiss] is called when the

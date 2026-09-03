@@ -7,9 +7,8 @@ import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 
 /// Where an [ExecutionCancelControl] renders — governs its chrome, not its
-/// behavior (every placement calls [ExecutionCancelControl.onCancel] the
-/// same way, with no confirmation dialog). See
-/// `aion-arch/changes/parallel-work/design.md` §2.
+/// behavior (every placement calls [ExecutionCancelControl.onCancel] the same
+/// way, with no confirmation dialog). See `AIO-1400` §2.
 enum CancelPlacement {
   /// Icon-only, sized for `TicketsBoardView`'s `_CardVisual` status badge
   /// row — see `TicketsBoardView`'s `_CardVisual`.
@@ -24,17 +23,17 @@ enum CancelPlacement {
   chatStream,
 }
 
-/// One stop-square-glyph cancel affordance, shared by every coding-
-/// execution/chat-reply cancellation surface in the app
+/// One stop-square-glyph cancel affordance, shared by every
+/// coding-execution/chat-reply cancellation surface in the app
 /// ([CancelPlacement] picks the chrome) — a single widget so the three
 /// placements can never visually drift apart. Danger-family hover/pressed
 /// states, `AionColorsHubTokens.cancelFocusRing` for keyboard focus, no
 /// confirmation dialog — cancelling is immediate on activation (tap or
-/// Enter/Space while focused). No `IconButton`/`ElevatedButton`/`InkWell`
-/// — built from `Focus`/`GestureDetector`/`DecoratedBox`, per this app's
+/// Enter/Space while focused). No `IconButton`/`ElevatedButton`/`InkWell` —
+/// built from `Focus`/`GestureDetector`/`DecoratedBox`, per this app's
 /// no-Material constraint (mirrors `_RegenerateButton`'s own shape in
-/// `ticket_metadata_section.dart`). Added for
-/// `aion-arch/changes/parallel-work`; see that change's design.md §2.
+/// `ticket_metadata_section.dart`). Added for `AIO-1400`; see its linked
+/// Documentation page, §2.
 class ExecutionCancelControl extends StatefulWidget {
   /// Creates an [ExecutionCancelControl] for [placement], calling
   /// [onCancel] on activation. [semanticsLabel] overrides the default

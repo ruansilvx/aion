@@ -8,11 +8,10 @@ import 'package:aion/features/projects/domain/entities/project.dart';
 import 'package:aion/features/projects/domain/repositories/project_repository.dart';
 
 /// Drift-backed implementation of [ProjectRepository], backed by
-/// [RegistryDatabase] — the single, non-project-scoped database listing
-/// every known project (see
-/// `aion-arch/changes/multi-project-hub/design.md` §3). Plain reads/
-/// writes only, no validation — invariants (unique name, path already in
-/// use, etc.) are owned by `CreateProjectCubit`, not this class.
+/// [RegistryDatabase] — the single, non-project-scoped database listing every
+/// known project (see `AIO-1174` §3). Plain reads/ writes only, no validation
+/// — invariants (unique name, path already in use, etc.) are owned by
+/// `CreateProjectCubit`, not this class.
 class DriftProjectRepository implements ProjectRepository {
   /// Creates a [DriftProjectRepository] backed by [_db].
   DriftProjectRepository(this._db);

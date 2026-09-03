@@ -5,13 +5,12 @@ import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
 import 'package:aion/features/tickets/domain/utils/ticket_rollup_calculator.dart';
 
-/// Recomputes and persists the estimate/timeSpent rollup for every ticket
-/// on a structural ancestor chain, batching every changed ancestor into
-/// one git commit. Factored out of `TicketsCubit` so `TrashCubit` doesn't
-/// duplicate the walk — both cubits construct one instance (wired to the
-/// same [TicketRepository]/optional [TicketGitProjector]/root path they
-/// already hold) instead of each carrying a full copy of this logic. See
-/// `aion-arch/changes/estimate-timespent-rollup-for-ticket-hierarchy/design.md`
+/// Recomputes and persists the estimate/timeSpent rollup for every ticket on a
+/// structural ancestor chain, batching every changed ancestor into one git
+/// commit. Factored out of `TicketsCubit` so `TrashCubit` doesn't duplicate
+/// the walk — both cubits construct one instance (wired to the same
+/// [TicketRepository]/optional [TicketGitProjector]/root path they already
+/// hold) instead of each carrying a full copy of this logic. See `AIO-873`
 /// §2.1.
 class TicketRollupRecomputer {
   /// Creates a [TicketRollupRecomputer] backed by [_repository].

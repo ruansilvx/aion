@@ -16,9 +16,9 @@ import 'package:aion/features/tickets/domain/repositories/transition_preconditio
 /// business logic here — maps [TransitionPreconditionNodeData] rows to
 /// [TransitionNode] entities and delegates every method straight to
 /// [TransitionPreconditionDao], matching every other `Drift*Repository` in
-/// this codebase (mirrors `core/automation/data/drift_decision_graph_repository.dart`'s
-/// exact shape). Added for
-/// `aion-arch/changes/sddstage-transition-preconditions`.
+/// this codebase (mirrors
+/// `core/automation/data/drift_decision_graph_repository.dart`'s exact shape).
+/// Added for `AIO-1936`.
 class DriftTransitionPreconditionRepository
     implements TransitionPreconditionRepository {
   /// Creates a [DriftTransitionPreconditionRepository] backed by [_db].

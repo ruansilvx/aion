@@ -10,16 +10,15 @@ import 'package:aion/features/tickets/domain/entities/ticket_list_sort.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sort_direction.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_sort_field.dart';
 
-/// The `TicketsListScreen` Sort trigger's open overlay panel: a flat list
-/// of one row per [TicketSortField], single-active-key selection with a
-/// twist — unlike `SelectionMenu` (which excludes the current value),
-/// **every** row (including the currently active field) is always
-/// rendered, since tapping the already-active row is a valid, meaningful
-/// action here (flips its direction) rather than a wasted tap.
-/// Structurally mirrors `TicketFilterPopover`'s `LayerLink`/
+/// The `TicketsListScreen` Sort trigger's open overlay panel: a flat list of
+/// one row per [TicketSortField], single-active-key selection with a twist —
+/// unlike `SelectionMenu` (which excludes the current value), **every** row
+/// (including the currently active field) is always rendered, since tapping
+/// the already-active row is a valid, meaningful action here (flips its
+/// direction) rather than a wasted tap. Structurally mirrors
+/// `TicketFilterPopover`'s `LayerLink`/
 /// `CompositedTransformFollower`/`OverlayEntry` mechanics and
-/// `Escape`-to-dismiss `Shortcuts`/`Actions` wiring. See
-/// `aion-arch/changes/ticket-sort-control-and-board-as-default-view`.
+/// `Escape`-to-dismiss `Shortcuts`/`Actions` wiring. See `AIO-2371`.
 class TicketSortPopover extends StatefulWidget {
   /// Creates a [TicketSortPopover] wrapping [trigger].
   const TicketSortPopover({

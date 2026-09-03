@@ -19,14 +19,12 @@ import 'package:aion/features/tickets/presentation/widgets/ticket_metadata_secti
 
 /// A `chat`-type ticket's message transcript: a single scrolling region
 /// (`CustomScrollView`) whose top is [ticket]'s full metadata content
-/// ([TicketMetadataSection]) and whose messages ([ChatMessageBubble])
-/// follow beneath it. Scrolling down collapses the metadata into a
-/// compact pinned [ChatMetaHeader]; scrolling back up re-expands it —
-/// nothing is dropped, just collapsible. Auto-scrolls to the newest
-/// message on load and on every streaming update. Replaces the old
-/// non-scrolling, `shrinkWrap` chat list embedded in the whole page's
-/// shared scroll. Per
-/// `aion-arch/changes/chat-transcript-ux-redesign/design.md` §2 and §8.
+/// ([TicketMetadataSection]) and whose messages ([ChatMessageBubble]) follow
+/// beneath it. Scrolling down collapses the metadata into a compact pinned
+/// [ChatMetaHeader]; scrolling back up re-expands it — nothing is dropped,
+/// just collapsible. Auto-scrolls to the newest message on load and on every
+/// streaming update. Replaces the old non-scrolling, `shrinkWrap` chat list
+/// embedded in the whole page's shared scroll. Per `AIO-482` §2 and §8.
 class ChatTranscriptPane extends StatefulWidget {
   /// Creates a [ChatTranscriptPane] for the chat ticket [ticketId].
   const ChatTranscriptPane({
@@ -57,11 +55,11 @@ class ChatTranscriptPane extends StatefulWidget {
   final void Function(Ticket ticket, bool canAdvance) onMaybeAutoAdvance;
 
   /// Whether [ticket] itself is the live target of a
-  /// `TicketsCubit._runStageChatTurn` spawn (`TicketDetailLoaded
-  /// .isAdvancingStage`, sourced from `ticket_detail_screen.dart`'s own
-  /// `TicketsCubit` subscription) — drives [_WaitingForReplyIndicator]
-  /// at the transcript's tail while `true`. Added for
-  /// `aion-arch/changes/board-execution-indicators-and-notifications`.
+  /// `TicketsCubit._runStageChatTurn` spawn
+  /// (`TicketDetailLoaded .isAdvancingStage`, sourced from
+  /// `ticket_detail_screen.dart`'s own `TicketsCubit` subscription) — drives
+  /// [_WaitingForReplyIndicator] at the transcript's tail while `true`. Added
+  /// for `AIO-352`.
   final bool isAdvancingStage;
 
   @override
@@ -194,17 +192,15 @@ class _TranscriptListItem extends StatelessWidget {
 
   /// Internal id of the chat ticket this transcript belongs to — passed
   /// through to [_StreamingBubble]'s stop button, which resolves
-  /// `ChatCubit.cancelReply` against it. Added for
-  /// `aion-arch/changes/parallel-work`.
+  /// `ChatCubit.cancelReply` against it. Added for `AIO-1400`.
   final String chatTicketId;
 
   final List<TicketComment> comments;
   final String? streamingText;
   final String? currentToolUse;
 
-  /// The in-flight reply's `AgentRequest.runId`, or `null` when no reply
-  /// is streaming — mirrors `ChatLoaded.activeRunId`. Added for
-  /// `aion-arch/changes/parallel-work`.
+  /// The in-flight reply's `AgentRequest.runId`, or `null` when no reply is
+  /// streaming — mirrors `ChatLoaded.activeRunId`. Added for `AIO-1400`.
   final String? activeRunId;
   final int index;
 
@@ -430,19 +426,17 @@ class _StaticExpandedHeader extends StatelessWidget {
 }
 
 /// Shown at the tail of a chat ticket's transcript while a spawned
-/// [TicketsCubit] stage-advance turn (see `TicketsCubit
-/// ._runStageChatTurn`) hasn't posted its reply for *this* chat ticket
-/// yet. Reuses [_StreamingBubble]'s pulsing-dot pre-text treatment
-/// (design.md §2.3a) — fixed text only, no `{tool}` emphasis, since
-/// `_runStageChatTurn` calls `ChatCubit.runChatTurn`'s static helper
-/// directly rather than through this screen's own [ChatCubit], so
-/// there's no live `currentToolUse`/`streamingText` to show instead.
-/// Removed the instant the real reply lands and
-/// `ChatTranscriptPane.isAdvancingStage` flips to `false` (driving
-/// `ticket_detail_screen.dart`'s `BlocListener` to call
-/// `ChatCubit.loadMessages`, which replaces this row with the real
-/// reply bubble). Added for
-/// `aion-arch/changes/board-execution-indicators-and-notifications`.
+/// [TicketsCubit] stage-advance turn (see `TicketsCubit ._runStageChatTurn`)
+/// hasn't posted its reply for *this* chat ticket yet. Reuses
+/// [_StreamingBubble]'s pulsing-dot pre-text treatment (design.md §2.3a) —
+/// fixed text only, no `{tool}` emphasis, since `_runStageChatTurn` calls
+/// `ChatCubit.runChatTurn`'s static helper directly rather than through this
+/// screen's own [ChatCubit], so there's no live
+/// `currentToolUse`/`streamingText` to show instead. Removed the instant the
+/// real reply lands and `ChatTranscriptPane.isAdvancingStage` flips to `false`
+/// (driving `ticket_detail_screen.dart`'s `BlocListener` to call
+/// `ChatCubit.loadMessages`, which replaces this row with the real reply
+/// bubble). Added for `AIO-352`.
 class _WaitingForReplyIndicator extends StatefulWidget {
   const _WaitingForReplyIndicator();
 
@@ -535,8 +529,7 @@ class _StreamingBubble extends StatefulWidget {
   });
 
   /// Internal id of the chat ticket this bubble belongs to — passed to
-  /// `ChatCubit.cancelReply` by the stop button. Added for
-  /// `aion-arch/changes/parallel-work`.
+  /// `ChatCubit.cancelReply` by the stop button. Added for `AIO-1400`.
   final String chatTicketId;
 
   /// The accumulated reply text so far, `null` before any text chunk
@@ -547,9 +540,8 @@ class _StreamingBubble extends StatefulWidget {
   /// is in flight.
   final String? toolUse;
 
-  /// The in-flight reply's `AgentRequest.runId` — the stop button is
-  /// visible iff this is non-`null`. Added for
-  /// `aion-arch/changes/parallel-work`.
+  /// The in-flight reply's `AgentRequest.runId` — the stop button is visible
+  /// iff this is non-`null`. Added for `AIO-1400`.
   final String? activeRunId;
 
   @override

@@ -13,17 +13,16 @@ import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/domain/entities/notification.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 
-/// The notification-center dropdown's panel content: header (title +
-/// "Mark all read"), a scrollable list of [TicketsCubit.getRecentNotifications]
-/// rows, or the empty state when there are none. Rendered inside an
-/// [OverlayEntry] by `_NotificationBellTrigger` (`workspace_nav_shell.dart`),
-/// mirroring `TicketOverflowMenu`'s `Overlay`/`LayerLink`/
+/// The notification-center dropdown's panel content: header (title + "Mark all
+/// read"), a scrollable list of [TicketsCubit.getRecentNotifications] rows, or
+/// the empty state when there are none. Rendered inside an [OverlayEntry] by
+/// `_NotificationBellTrigger` (`workspace_nav_shell.dart`), mirroring
+/// `TicketOverflowMenu`'s `Overlay`/`LayerLink`/
 /// `CompositedTransformFollower`/`mounted`-guard mechanics — this widget
-/// itself is just the panel body, not the overlay plumbing (that lives on
-/// the trigger's `State`, same split `TicketOverflowMenu`'s own root-menu
-/// content vs. trigger `State` uses). Added for
-/// `aion-arch/changes/pr-metadata-and-notification-center`; see that
-/// change's design.md §6.2 and Component Spec §4-§7.
+/// itself is just the panel body, not the overlay plumbing (that lives on the
+/// trigger's `State`, same split `TicketOverflowMenu`'s own root-menu content
+/// vs. trigger `State` uses). Added for `AIO-1586`; see that change's
+/// design.md §6.2 and Component Spec §4-§7.
 class NotificationDropdownPanel extends StatefulWidget {
   /// Creates a [NotificationDropdownPanel]. [ticketsCubit] is passed in
   /// (not read via `context.read` inside this widget) because — like

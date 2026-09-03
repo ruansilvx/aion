@@ -6,12 +6,11 @@ import 'package:aion/core/contracts/agent_tool_definition.dart';
 /// turn that already offers app-defined tools (coding execution, SDD-stage
 /// chats, design-sync — see `TicketsCubit._toolsFor`), to spin off a new
 /// top-level `story`/`task`/`bug` ticket for follow-up work discovered
-/// mid-conversation. Never accepts a model-supplied parent — every ticket
-/// this tool creates is top-level; relating it to the ticket under
-/// discussion is a separate [addLinkToolDefinition] call. Handled by
-/// `TicketsCubit._handleCreateTicketToolCall`. Added for
-/// `aion-arch/changes/ticket-crud-tool-calls`; see that change's
-/// design.md §2.
+/// mid-conversation. Never accepts a model-supplied parent — every ticket this
+/// tool creates is top-level; relating it to the ticket under discussion is a
+/// separate [addLinkToolDefinition] call. Handled by
+/// `TicketsCubit._handleCreateTicketToolCall`. Added for `AIO-2108`; see that
+/// change's design.md §2.
 const createTicketToolDefinition = AgentToolDefinition(
   name: 'create_ticket',
   description:
@@ -50,9 +49,8 @@ const createTicketToolDefinition = AgentToolDefinition(
 /// human-readable `ticketId` (e.g. `"TASK-42"`, never the internal uuid).
 /// Doubles as duplicate-flagging — `linkType: 'duplicates'` is an ordinary
 /// call, not a separate tool. Handled by
-/// `TicketsCubit._handleAddLinkToolCall`. Added for
-/// `aion-arch/changes/ticket-crud-tool-calls`; see that change's
-/// design.md §2.
+/// `TicketsCubit._handleAddLinkToolCall`. Added for `AIO-2108`; see that
+/// change's design.md §2.
 const addLinkToolDefinition = AgentToolDefinition(
   name: 'add_link',
   description:

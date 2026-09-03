@@ -9,17 +9,16 @@ import 'package:aion/design_system/tokens/aion_text.dart';
 import 'package:aion/design_system/tokens/theme_scope.dart';
 
 /// Formats [tokens] as a compact `"~12.3K"`/`"~1.2M"`-style bare number, or
-/// the exact integer below 1000 — the one shared formatter every token
-/// count display in the app uses, so `TicketBoardCard`, `TicketMetadataSection`,
-/// and `_CodingExecutionSection` always agree on how a given count reads.
-/// Negative input is clamped to `0` (defensive — a token count is never
-/// meaningfully negative). One decimal place, with a trailing `".0"`
-/// dropped (`12000` → `"12K"`, not `"12.0K"`). Returns only the bare
-/// number — the `~` approximation prefix and the `"tokens"` unit word are
-/// composed by [TokenCountLabel] itself, not by this formatter, so the
-/// same output can compose into `"~12.3K"`, `"~12K–34K tokens"`, or
-/// `"842 tokens"` depending on call site. See
-/// `aion-arch/changes/token-cost-prediction/design.md` §0.2.
+/// the exact integer below 1000 — the one shared formatter every token count
+/// display in the app uses, so `TicketBoardCard`, `TicketMetadataSection`, and
+/// `_CodingExecutionSection` always agree on how a given count reads. Negative
+/// input is clamped to `0` (defensive — a token count is never meaningfully
+/// negative). One decimal place, with a trailing `".0"` dropped (`12000` →
+/// `"12K"`, not `"12.0K"`). Returns only the bare number — the `~`
+/// approximation prefix and the `"tokens"` unit word are composed by
+/// [TokenCountLabel] itself, not by this formatter, so the same output can
+/// compose into `"~12.3K"`, `"~12K–34K tokens"`, or `"842 tokens"` depending
+/// on call site. See `AIO-2455` §0.2.
 String formatTokenCount(int tokens) {
   final n = tokens < 0 ? 0 : tokens;
   if (n < 1000) return '$n';
@@ -33,9 +32,8 @@ String formatTokenCount(int tokens) {
   return '${abbrev(n / 1000000.0)}M';
 }
 
-/// Which figure a [TokenCountLabel] renders — a pre-flight forecast
-/// ([range]) or a real accumulated total ([total]). See
-/// `aion-arch/changes/token-cost-prediction/design.md` §5.2.
+/// Which figure a [TokenCountLabel] renders — a pre-flight forecast ([range])
+/// or a real accumulated total ([total]). See `AIO-2455` §5.2.
 enum TokenCountMode {
   /// A pre-flight predicted `"~{lo}–{hi} tokens"` range.
   range,
@@ -44,10 +42,9 @@ enum TokenCountMode {
   total,
 }
 
-/// Which visual size a [TokenCountLabel] renders at — [compact] for the
-/// board meta-chip row (no unit word), [detail] for the two detail-screen
-/// placements (adds the `"tokens"` unit word). See
-/// `aion-arch/changes/token-cost-prediction/design.md` §5.2.
+/// Which visual size a [TokenCountLabel] renders at — [compact] for the board
+/// meta-chip row (no unit word), [detail] for the two detail-screen placements
+/// (adds the `"tokens"` unit word). See `AIO-2455` §5.2.
 enum TokenCountVariant {
   /// Board meta-chip row sizing — `gauge` 11, mono 10.5 value, no unit
   /// word. Geometry is byte-identical to `RollupBadge`.
@@ -72,11 +69,10 @@ enum TokenCountVariant {
 /// `RollupBadge` (`neutralTint` fill, `AionRadius.sm`), whose compact
 /// geometry this widget's [TokenCountVariant.compact] matches exactly.
 ///
-/// Non-interactive: no `onTap`, no cursor change, no focus node, and a
-/// single resting visual state in both variants and both modes — no
-/// hover/focus/pressed/disabled/error state of its own. See
-/// `aion-arch/changes/token-cost-prediction/design.md` §1 (Component Spec
-/// §1) for the full visual spec this class implements.
+/// Non-interactive: no `onTap`, no cursor change, no focus node, and a single
+/// resting visual state in both variants and both modes — no
+/// hover/focus/pressed/disabled/error state of its own. See `AIO-2455` §1
+/// (Component Spec §1) for the full visual spec this class implements.
 class TokenCountLabel extends StatelessWidget {
   /// Creates a [TokenCountLabel] rendering [low]–[high] as a predicted
   /// range (`"~{lo}–{hi}"`, plus a `" tokens"` unit word at

@@ -8,11 +8,10 @@ import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/projects/domain/entities/project.dart';
 
 /// One project's card in the Hub grid: name, location, last-opened time,
-/// baseline badge, an Open action, and an overflow menu with a
-/// destructive Remove action. Tapping the card body (anywhere except the
-/// overflow trigger and the Open button) opens the project — identical
-/// to pressing [onOpen]. See
-/// `aion-arch/changes/multi-project-hub/design.md` §1, §6, §7.
+/// baseline badge, an Open action, and an overflow menu with a destructive
+/// Remove action. Tapping the card body (anywhere except the overflow trigger
+/// and the Open button) opens the project — identical to pressing [onOpen].
+/// See `AIO-1174` §1, §6, §7.
 class ProjectCard extends StatefulWidget {
   /// Creates a [ProjectCard] for [project].
   const ProjectCard({

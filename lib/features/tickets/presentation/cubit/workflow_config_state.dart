@@ -57,24 +57,22 @@ class WorkflowConfigLoaded extends WorkflowConfigState {
   /// Every configured [SkillAttachment], unfiltered — at most one per
   /// `WorkflowStatus.id`/[SddStage], enforced by
   /// [WorkflowConfigCubit.createAttachment]/[WorkflowConfigCubit.updateAttachment].
-  /// Added for `aion-arch/changes/workflow-skill-attachments`.
+  /// Added for `AIO-2650`.
   final List<SkillAttachment> attachments;
 
   /// Every configured [WorkflowPromptTemplate], unfiltered — a flat,
   /// project-wide namespace by [WorkflowPromptTemplate.name]. Added for
-  /// `aion-arch/changes/workflow-skill-attachments`.
+  /// `AIO-2650`.
   final List<WorkflowPromptTemplate> templates;
 
   /// Each precondition-bearing [SddStage]'s current transition-precondition
-  /// field-check count — from `TransitionPreconditionRepository
-  /// .getNodeCounts`, `0`/absent when unconfigured. Powers
-  /// `WorkflowStatusSettingsScreen`'s "Configure precondition" affordance
-  /// count badge. Defaults to `{}` — a project built without a
-  /// `TransitionPreconditionRepository` (see [WorkflowConfigCubit]'s
-  /// constructor) shows every stage as unconfigured rather than failing
-  /// to load. Added for
-  /// `aion-arch/changes/sddstage-transition-preconditions`'s post-`/verify`
-  /// follow-up.
+  /// field-check count — from
+  /// `TransitionPreconditionRepository .getNodeCounts`, `0`/absent when
+  /// unconfigured. Powers `WorkflowStatusSettingsScreen`'s "Configure
+  /// precondition" affordance count badge. Defaults to `{}` — a project built
+  /// without a `TransitionPreconditionRepository` (see [WorkflowConfigCubit]'s
+  /// constructor) shows every stage as unconfigured rather than failing to
+  /// load. Added for `AIO-1936`'s post-`/verify` follow-up.
   final Map<SddStage, int> transitionPreconditionNodeCounts;
 
   /// The shared-base statuses only (no per-type extensions), sorted by

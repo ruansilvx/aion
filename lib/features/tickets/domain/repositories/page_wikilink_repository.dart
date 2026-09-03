@@ -3,10 +3,9 @@
 import 'package:aion/features/tickets/domain/entities/page_wikilink.dart';
 
 /// Persists resolved inline `[[wikilink]]` references between tickets.
-/// Parallel to `TicketLinkRepository`, not built on it — a wikilink is
-/// derived from content, never user-authored, so it has no remove/retype
-/// affordance and no link type. Per
-/// `aion-arch/changes/inline-wikilink-backlinks/design.md`.
+/// Parallel to `TicketLinkRepository`, not built on it — a wikilink is derived
+/// from content, never user-authored, so it has no remove/retype affordance
+/// and no link type. Per `AIO-963`.
 abstract interface class PageWikilinkRepository {
   /// Every page that links to [targetPageId] — the raw rows behind a
   /// doc's wikilink-origin backlinks. [targetPageId] may be a `page` or a

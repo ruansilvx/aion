@@ -10,13 +10,13 @@ import 'package:aion/features/providers/domain/enums/model_phase.dart';
 /// own; a Story's `verifying` transition is gated on its child Tasks'
 /// `TicketStatus.done`, not a distinct Task-level stage value.
 ///
-/// The full cycle is `exploring → proposed → designBrief → designSync →
-/// verifying → archived`, but [designBrief]/[designSync] are skippable —
-/// they're only ever reached by a [TicketType.story] ticket whose child
-/// Tasks indicate UI work (`TicketsCubit._storyNeedsDesignReview`).
-/// Every Epic, and every Story whose Tasks don't, goes `proposed →
-/// verifying` directly, exactly as before this pair of stages existed.
-/// See `aion-arch/changes/sdd-design-gate/design.md` §1.
+/// The full cycle is
+/// `exploring → proposed → designBrief → designSync → verifying → archived`,
+/// but [designBrief]/[designSync] are skippable — they're only ever reached by
+/// a [TicketType.story] ticket whose child Tasks indicate UI work
+/// (`TicketsCubit._storyNeedsDesignReview`). Every Epic, and every Story whose
+/// Tasks don't, goes `proposed → verifying` directly, exactly as before this
+/// pair of stages existed. See `AIO-1834` §1.
 enum SddStage {
   /// The Exploration-stage chat is active or has completed.
   exploring,
@@ -43,12 +43,11 @@ enum SddStage {
   archived,
 }
 
-/// Maps each [SddStage] to the [ModelPhase] that drives its spawned
-/// chat's model choice, per
-/// `aion-arch/changes/per-phase-tier-based-model-routing/design.md` §1.2's
-/// confirmed split: `exploring`/`proposed`/`verifying` are epic/story-level
-/// judgment calls ([ModelPhase.frontier]); `designBrief`/`designSync`/
-/// `archived` are comparatively mechanical work ([ModelPhase.capable]).
+/// Maps each [SddStage] to the [ModelPhase] that drives its spawned chat's
+/// model choice, per `AIO-1491` §1.2's confirmed split:
+/// `exploring`/`proposed`/`verifying` are epic/story-level judgment calls
+/// ([ModelPhase.frontier]); `designBrief`/`designSync`/ `archived` are
+/// comparatively mechanical work ([ModelPhase.capable]).
 extension SddStageModelPhase on SddStage {
   /// The [ModelPhase] this stage's spawned chat resolves its model
   /// through.

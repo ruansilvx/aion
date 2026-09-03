@@ -13,10 +13,10 @@ import 'package:aion/features/projects/domain/repositories/project_repository.da
 
 /// Reads baseline manifests from the app's bundled
 /// `assets/baseline/<version>/manifest.json` assets, lists and edits a
-/// project's local override files under `<rootPath>/.aion/overrides/`.
-/// Depends on [ProjectRepository] to resolve a project id to its
-/// `rootPath` for [readOverrides]/[writeOverride] — pure I/O, no content
-/// validation (see `aion-arch/changes/multi-project-hub/design.md` §3).
+/// project's local override files under `<rootPath>/.aion/overrides/`. Depends
+/// on [ProjectRepository] to resolve a project id to its `rootPath` for
+/// [readOverrides]/[writeOverride] — pure I/O, no content validation (see
+/// `AIO-1174` §3).
 class BundledBaselineRepository implements BaselineRepository {
   /// Creates a [BundledBaselineRepository]. [_projectRepository] resolves
   /// a project id to its `rootPath` for [readOverrides]; [_bundle]

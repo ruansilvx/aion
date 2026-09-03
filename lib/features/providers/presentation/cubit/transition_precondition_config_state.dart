@@ -8,7 +8,7 @@ import 'package:aion/features/tickets/domain/repositories/transition_preconditio
 
 /// The state emitted by
 /// [TransitionPreconditionConfigCubit](transition_precondition_config_cubit.dart).
-/// Added for `aion-arch/changes/sddstage-transition-preconditions`.
+/// Added for `AIO-1936`.
 sealed class TransitionPreconditionConfigState extends Equatable {
   const TransitionPreconditionConfigState();
 

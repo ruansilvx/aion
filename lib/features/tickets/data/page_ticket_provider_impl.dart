@@ -14,19 +14,16 @@ import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart
 import 'package:aion/features/tickets/domain/utils/ticket_link_direction.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 
-/// Drift/[TicketsCubit]-backed implementation of [PageTicketProvider].
-/// Reads go straight to [TicketRepository]/[TicketLinkRepository]/
+/// Drift/[TicketsCubit]-backed implementation of [PageTicketProvider]. Reads
+/// go straight to [TicketRepository]/[TicketLinkRepository]/
 /// [PageWikilinkRepository] (no business logic there per project.md's
 /// Cubit-vs-repository split); writes delegate to [TicketsCubit] so page
-/// creation/edit/trash (and, per
-/// `aion-arch/changes/ticket-link-management-ui/design.md`, link
-/// [deleteLink]/[updateLinkType]) reuse exactly the same validation/
-/// invariant logic every other ticket type's screens already trigger —
-/// no duplicated write path. See
-/// `aion-arch/changes/page-content-markdown-editor/design.md`.
-/// [getPage] also accepts [TicketType.spec] tickets (added for
-/// `aion-arch/changes/spec-ticket-type`) — this is the one place that
-/// decides "is this ticket a `PagesCubit`/`PageDetailScreen` document."
+/// creation/edit/trash (and, per `AIO-2257`, link
+/// [deleteLink]/[updateLinkType]) reuse exactly the same validation/ invariant
+/// logic every other ticket type's screens already trigger — no duplicated
+/// write path. See `AIO-1350`. [getPage] also accepts [TicketType.spec]
+/// tickets (added for `AIO-1998`) — this is the one place that decides "is
+/// this ticket a `PagesCubit`/`PageDetailScreen` document."
 class PageTicketProviderImpl implements PageTicketProvider {
   /// Creates a [PageTicketProviderImpl] backed by [_ticketsCubit] (writes)
   /// and [_ticketRepository]/[_ticketLinkRepository]/
@@ -46,10 +43,9 @@ class PageTicketProviderImpl implements PageTicketProvider {
   @override
   Future<Ticket?> getPage(String id) async {
     final ticket = await _ticketRepository.getTicketById(id);
-    // Widened to also accept TicketType.spec for
-    // aion-arch/changes/spec-ticket-type — a spec ticket is an ordinary
-    // editable document once created (see TicketType.spec's dartdoc),
-    // reusing this exact same read/write path a `page` already has.
+    // Widened to also accept TicketType.spec for AIO-1998 — a spec ticket is
+    // an ordinary editable document once created (see TicketType.spec's
+    // dartdoc), reusing this exact same read/write path a `page` already has.
     if (ticket == null ||
         (ticket.type != TicketType.page && ticket.type != TicketType.spec)) {
       return null;

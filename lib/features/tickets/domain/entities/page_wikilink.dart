@@ -10,8 +10,7 @@ import 'package:equatable/equatable.dart';
 /// [sourcePageId] is always a `page` ticket's id — only pages produce
 /// *outgoing* references (see `MarkdownEditor`'s authoring surface).
 /// [targetPageId] may reference a `page` **or** `resource` ticket — see
-/// `aion-arch/changes/inline-wikilink-backlinks/design.md`'s "Resource
-/// participation, widened".
+/// `AIO-963`'s "Resource participation, widened".
 class PageWikilink extends Equatable {
   /// Creates a [PageWikilink] row.
   const PageWikilink({

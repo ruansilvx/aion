@@ -2,20 +2,18 @@
 
 import 'package:drift/drift.dart';
 
-/// Drift table persisting one row per `DecisionNode`
-/// (`../decision_node.dart`) — a strict-tree condition node belonging to
-/// one `AutomationContext`'s decision graph. Row type is generated as
-/// `AutomationDecisionNodeData`. `matchedBranchKind`/`unmatchedBranchKind`
-/// hold `'node'`/`'proceed'`/`'gated'`/`'decline'`/`'modelJudgment'` —
-/// `'node'` means the corresponding `*BranchNodeId` column holds the
-/// child node's id; every other value is a terminal `DecisionOutcome`
-/// name and leaves that column `null`. No FK constraints on the node-id
-/// columns (nor on which `AutomationDecisionGraphsTable` row a node
-/// belongs to — that's implicit via graph traversal from the root, not a
-/// stored parent pointer) — integrity is enforced at the
-/// `DecisionGraphConfigCubit` layer, matching every other table in this
-/// schema. See `aion-arch/changes/automation-decision-graphs/design.md`
-/// §2.
+/// Drift table persisting one row per `DecisionNode` (`../decision_node.dart`)
+/// — a strict-tree condition node belonging to one `AutomationContext`'s
+/// decision graph. Row type is generated as `AutomationDecisionNodeData`.
+/// `matchedBranchKind`/`unmatchedBranchKind` hold
+/// `'node'`/`'proceed'`/`'gated'`/`'decline'`/`'modelJudgment'` — `'node'`
+/// means the corresponding `*BranchNodeId` column holds the child node's id;
+/// every other value is a terminal `DecisionOutcome` name and leaves that
+/// column `null`. No FK constraints on the node-id columns (nor on which
+/// `AutomationDecisionGraphsTable` row a node belongs to — that's implicit via
+/// graph traversal from the root, not a stored parent pointer) — integrity is
+/// enforced at the `DecisionGraphConfigCubit` layer, matching every other
+/// table in this schema. See `AIO-181` §2.
 @DataClassName('AutomationDecisionNodeData')
 class AutomationDecisionNodesTable extends Table {
   @override

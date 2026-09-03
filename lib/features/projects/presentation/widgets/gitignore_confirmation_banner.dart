@@ -6,15 +6,14 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 
-/// Inline, pre-submit banner shown on `NewProjectScreen` the moment the
-/// chosen directory is detected as an existing git repository (see
-/// `NewProjectScreen._browseDirectory`'s
-/// `GitRepositoryClient.isGitRepository` check). Offers to auto-exclude
-/// Aion's own bookkeeping (`.aion/`, `tickets/`) from that repo's
-/// `.gitignore` via a checkbox, checked by default. Informational
-/// **notice** tone throughout — this is Aion's inform-don't-block
-/// posture, never a hard warning that blocks submission. Per
-/// `aion-arch/changes/new-project-onboarding/design.md` §2.
+/// Inline, pre-submit banner shown on `NewProjectScreen` the moment the chosen
+/// directory is detected as an existing git repository (see
+/// `NewProjectScreen._browseDirectory`'s `GitRepositoryClient.isGitRepository`
+/// check). Offers to auto-exclude Aion's own bookkeeping (`.aion/`,
+/// `tickets/`) from that repo's `.gitignore` via a checkbox, checked by
+/// default. Informational **notice** tone throughout — this is Aion's
+/// inform-don't-block posture, never a hard warning that blocks submission.
+/// Per `AIO-1266` §2.
 class GitignoreConfirmationBanner extends StatelessWidget {
   /// Creates a [GitignoreConfirmationBanner] reflecting [excludeAionPaths];
   /// calls [onChanged] with the toggled value when the checkbox (or its

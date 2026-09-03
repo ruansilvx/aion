@@ -9,16 +9,15 @@ import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
 import 'package:aion/features/tickets/domain/enums/comment_author_type.dart';
 import 'package:aion/features/tickets/presentation/widgets/comment_author_avatar.dart';
 
-/// A single chat-transcript message. Human messages render right-aligned
-/// in a bubble with plain text; AI messages render left-aligned and flat
-/// (no bubble), content rendered as Markdown via [MarkdownView]; system
-/// messages render as a compact centered divider, not a message row at
-/// all. Adapted from `CommentTile`'s structure (author label/timestamp/
-/// "via `<model>`" caption) but with per-author alignment and a capped
-/// content width for human/AI, instead of `CommentTile`'s uniform
-/// left-aligned, full-width, plain-text, always-bubbled rendering. Per
-/// `aion-arch/changes/chat-transcript-ux-redesign/design.md` §1/§9 (§9
-/// supersedes §1.2/§1.3's bubble treatment for `ai`/`system`).
+/// A single chat-transcript message. Human messages render right-aligned in a
+/// bubble with plain text; AI messages render left-aligned and flat (no
+/// bubble), content rendered as Markdown via [MarkdownView]; system messages
+/// render as a compact centered divider, not a message row at all. Adapted
+/// from `CommentTile`'s structure (author label/timestamp/ "via `<model>`"
+/// caption) but with per-author alignment and a capped content width for
+/// human/AI, instead of `CommentTile`'s uniform left-aligned, full-width,
+/// plain-text, always-bubbled rendering. Per `AIO-482` §1/§9 (§9 supersedes
+/// §1.2/§1.3's bubble treatment for `ai`/`system`).
 class ChatMessageBubble extends StatelessWidget {
   /// Creates a [ChatMessageBubble] rendering [comment].
   const ChatMessageBubble({super.key, required this.comment});

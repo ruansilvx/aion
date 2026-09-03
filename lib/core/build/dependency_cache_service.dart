@@ -18,13 +18,12 @@ import 'package:path/path.dart' as p;
 /// this class.
 ///
 /// Never live-shared across concurrent worktrees: the cache directory this
-/// class manages is only ever read from ([seed]) into a private
-/// per-worktree `node_modules`, or written to ([writeBack]) from one, never
-/// symlinked/junctioned directly into a worktree. With
-/// `aion-arch/changes/parallel-work`'s N-concurrent-runs already shipped, a
-/// live-shared directory would let two simultaneous Node.js runs corrupt
-/// each other's `node_modules` mid-install. Added for
-/// `aion-arch/changes/dependency-caching-and-ancestor-sibling-conflict`.
+/// class manages is only ever read from ([seed]) into a private per-worktree
+/// `node_modules`, or written to ([writeBack]) from one, never
+/// symlinked/junctioned directly into a worktree. With `AIO-1400`'s
+/// N-concurrent-runs already shipped, a live-shared directory would let two
+/// simultaneous Node.js runs corrupt each other's `node_modules` mid-install.
+/// Added for `AIO-722`.
 class DependencyCacheService {
   /// Creates a [DependencyCacheService].
   const DependencyCacheService();

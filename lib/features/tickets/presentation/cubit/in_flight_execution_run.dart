@@ -2,13 +2,12 @@
 
 import 'package:aion/core/contracts/agent_provider.dart';
 
-/// One coding-execution Task/Bug's currently-in-flight model turn, as
-/// tracked by `TicketsCubit._inFlightRuns` — pairs the turn's own `runId`
-/// (regenerated fresh for every implement/verify turn) with the
-/// [AgentProvider] it's running against, so `TicketsCubit
-/// .cancelCodingExecution` can resolve `provider.client.cancel(runId)`
-/// without re-deriving either from scratch. See
-/// `aion-arch/changes/parallel-work/design.md` §5.1.
+/// One coding-execution Task/Bug's currently-in-flight model turn, as tracked
+/// by `TicketsCubit._inFlightRuns` — pairs the turn's own `runId` (regenerated
+/// fresh for every implement/verify turn) with the [AgentProvider] it's
+/// running against, so `TicketsCubit .cancelCodingExecution` can resolve
+/// `provider.client.cancel(runId)` without re-deriving either from scratch.
+/// See `AIO-1400` §5.1.
 class InFlightExecutionRun {
   /// Creates an [InFlightExecutionRun] pairing [runId] with [provider].
   InFlightExecutionRun(this.runId, this.provider);

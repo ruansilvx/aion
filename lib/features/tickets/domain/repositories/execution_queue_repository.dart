@@ -2,11 +2,10 @@
 
 import 'package:aion/features/tickets/domain/entities/execution_queue_entry.dart';
 
-/// Persists `TicketsCubit`'s coding-execution in-flight/queued state, so
-/// it survives an app restart. See
-/// `TicketsCubit.restoreExecutionQueue`/`TicketsCubit
-/// ._persistExecutionQueueSnapshot` and
-/// `aion-arch/changes/parallel-work/design.md` §5.3.
+/// Persists `TicketsCubit`'s coding-execution in-flight/queued state, so it
+/// survives an app restart. See
+/// `TicketsCubit.restoreExecutionQueue`/`TicketsCubit ._persistExecutionQueueSnapshot`
+/// and `AIO-1400` §5.3.
 abstract interface class ExecutionQueueRepository {
   /// Returns every persisted [ExecutionQueueEntry], ordered by
   /// [ExecutionQueueEntry.queuePosition] ascending with in-flight entries

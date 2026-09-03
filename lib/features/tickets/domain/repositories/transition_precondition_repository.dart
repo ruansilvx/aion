@@ -5,12 +5,12 @@ import 'package:meta/meta.dart';
 import 'package:aion/features/tickets/domain/entities/transition_node.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 
-/// A project-authored transition-precondition graph for one [SddStage] —
-/// a strict binary tree of `TransitionNode`s. Mirrors
+/// A project-authored transition-precondition graph for one [SddStage] — a
+/// strict binary tree of `TransitionNode`s. Mirrors
 /// `core/automation/decision_graph.dart`'s `DecisionGraph` shape, one level
 /// simpler (no separate condition-outcome enum to carry — `TransitionNode`
 /// itself resolves outcomes via `TransitionBranch.terminal`). Added for
-/// `aion-arch/changes/sddstage-transition-preconditions`.
+/// `AIO-1936`.
 @immutable
 class TransitionGraph {
   /// Creates a [TransitionGraph].
@@ -38,15 +38,14 @@ class TransitionGraph {
   int get hashCode => Object.hash(stage, rootNodeId);
 }
 
-/// Read/write access to [TransitionGraph]/[TransitionNode] persistence. A
-/// dumb persistence layer only — no validation, no invariant enforcement.
-/// The strict-tree invariant (a node referenced as a child from at most one
+/// Read/write access to [TransitionGraph]/[TransitionNode] persistence. A dumb
+/// persistence layer only — no validation, no invariant enforcement. The
+/// strict-tree invariant (a node referenced as a child from at most one
 /// branch) lives in `TransitionPreconditionConfigCubit`, per this project's
-/// Cubit-vs-repository split (validation/invariant logic lives in Cubits,
-/// not repositories). Implemented by the data layer
-/// (`DriftTransitionPreconditionRepository`); UI and domain code depend
-/// only on this interface, never on a concrete data source. Added for
-/// `aion-arch/changes/sddstage-transition-preconditions`.
+/// Cubit-vs-repository split (validation/invariant logic lives in Cubits, not
+/// repositories). Implemented by the data layer
+/// (`DriftTransitionPreconditionRepository`); UI and domain code depend only
+/// on this interface, never on a concrete data source. Added for `AIO-1936`.
 abstract interface class TransitionPreconditionRepository {
   /// Returns [stage]'s currently-configured [TransitionGraph], defaulting
   /// to `TransitionGraph(stage: stage, rootNodeId: null)` — always
@@ -70,19 +69,17 @@ abstract interface class TransitionPreconditionRepository {
   /// graph configured, always allowed").
   Future<void> setRoot(SddStage stage, String? nodeId);
 
-  /// Seeds a baseline [TransitionGraph]/[TransitionNode] set for each of
-  /// the 5 precondition-bearing `SddStage` values (`exploring`,
-  /// `verifying`, `proposed`, `designBrief`, `designSync`) iff none exist
-  /// yet (idempotent) — each baseline tree reproduces that stage's exact
-  /// pre-existing hardcoded `TicketsCubit._sddStageAdvanceCheck` branch as
-  /// data, per
-  /// `aion-arch/changes/sddstage-transition-preconditions/design.md` §3.
-  /// `null`/`archived` get no seeded graph — neither has a precondition
-  /// today. Called once at app startup for the active project, and by the
-  /// schema migration's backfill for every pre-existing project. A no-op
-  /// when any [TransitionGraph] row already exists, so it's safe to call
-  /// unconditionally — mirrors `WorkflowStatusRepository
-  /// .seedDefaultsIfEmpty`'s own precedent.
+  /// Seeds a baseline [TransitionGraph]/[TransitionNode] set for each of the 5
+  /// precondition-bearing `SddStage` values (`exploring`, `verifying`,
+  /// `proposed`, `designBrief`, `designSync`) iff none exist yet (idempotent)
+  /// — each baseline tree reproduces that stage's exact pre-existing hardcoded
+  /// `TicketsCubit._sddStageAdvanceCheck` branch as data, per `AIO-1936` §3.
+  /// `null`/`archived` get no seeded graph — neither has a precondition today.
+  /// Called once at app startup for the active project, and by the schema
+  /// migration's backfill for every pre-existing project. A no-op when any
+  /// [TransitionGraph] row already exists, so it's safe to call
+  /// unconditionally — mirrors
+  /// `WorkflowStatusRepository .seedDefaultsIfEmpty`'s own precedent.
   Future<void> seedDefaultsIfEmpty();
 
   /// Fires (with no payload) after every successful [upsertNode]/
@@ -95,14 +92,13 @@ abstract interface class TransitionPreconditionRepository {
   Stream<void> get onChanged;
 
   /// The current field-check count (every node reachable from its graph's
-  /// root) for every [SddStage] that has ever been seeded/configured, in
-  /// one batch — a stage with no graph row yet, or a graph row with a
-  /// `null` root, contributes `0`. Powers `WorkflowStatusSettingsScreen`'s
-  /// "Configure precondition" affordance count badge
-  /// (`aion-arch/changes/sddstage-transition-preconditions/design.md`
-  /// §5.1/§5.2) without an N-query fan-out over the 5 precondition-bearing
-  /// stages — implementations fetch every graph row and every node row
-  /// once each, then walk each graph's reachable set in memory. Added for
-  /// that change's post-`/verify` follow-up.
+  /// root) for every [SddStage] that has ever been seeded/configured, in one
+  /// batch — a stage with no graph row yet, or a graph row with a `null` root,
+  /// contributes `0`. Powers `WorkflowStatusSettingsScreen`'s "Configure
+  /// precondition" affordance count badge (`AIO-1936` §5.1/§5.2) without an
+  /// N-query fan-out over the 5 precondition-bearing stages — implementations
+  /// fetch every graph row and every node row once each, then walk each
+  /// graph's reachable set in memory. Added for that change's post-`/verify`
+  /// follow-up.
   Future<Map<SddStage, int>> getNodeCounts();
 }

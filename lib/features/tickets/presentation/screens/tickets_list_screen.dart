@@ -34,27 +34,24 @@ import 'package:aion/features/tickets/presentation/widgets/ticket_overflow_menu.
 import 'package:aion/features/tickets/presentation/widgets/ticket_selection_bar.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_sort_popover.dart';
 
-/// The `/tickets` route: eyebrow + title header, a functioning search
-/// field + status/type/priority filter row, the ticket list body driven
-/// by [TicketsCubit], and an [AppFab] to create a new ticket. Loads the
-/// unfiltered first page in [State.initState]. The flat list loads
-/// further pages automatically as the user scrolls near the bottom (via
-/// [TicketsCubit.loadMoreTickets]); board mode, which has no single
-/// scroll container to hook that trigger onto, exposes an explicit
-/// [_BoardLoadMoreButton] instead. When `ActiveProjectCubit`'s current
-/// project was just created from an already-git-tracked directory, shows
-/// a one-time [CodebaseAnalysisBanner] between the header and the
-/// search/filter row (consumed via
-/// `ActiveProjectCubit.consumeCodebaseAnalysisOffer` in [State.initState]
-/// so it never reappears) — see `aion-arch/changes/
-/// new-project-onboarding/design.md` §4.2. When the active project's
-/// pinned baseline version isn't the latest bundled one, also shows a
-/// [BaselineUpgradeBanner] above [CodebaseAnalysisBanner] (consumed via
-/// `ActiveProjectCubit.consumeBaselineUpgradeOffer`) — unlike
-/// [CodebaseAnalysisBanner]'s persisted-once-only offer, this one can
-/// reappear on a later open for as long as a newer version remains
-/// available. See `aion-arch/changes/baseline-version-upgrade-flow/
-/// design.md` §4.1.
+/// The `/tickets` route: eyebrow + title header, a functioning search field +
+/// status/type/priority filter row, the ticket list body driven by
+/// [TicketsCubit], and an [AppFab] to create a new ticket. Loads the
+/// unfiltered first page in [State.initState]. The flat list loads further
+/// pages automatically as the user scrolls near the bottom (via
+/// [TicketsCubit.loadMoreTickets]); board mode, which has no single scroll
+/// container to hook that trigger onto, exposes an explicit
+/// [_BoardLoadMoreButton] instead. When `ActiveProjectCubit`'s current project
+/// was just created from an already-git-tracked directory, shows a one-time
+/// [CodebaseAnalysisBanner] between the header and the search/filter row
+/// (consumed via `ActiveProjectCubit.consumeCodebaseAnalysisOffer` in
+/// [State.initState] so it never reappears) — see AIO-1266 §4.2. When the
+/// active project's pinned baseline version isn't the latest bundled one, also
+/// shows a [BaselineUpgradeBanner] above [CodebaseAnalysisBanner] (consumed
+/// via `ActiveProjectCubit.consumeBaselineUpgradeOffer`) — unlike
+/// [CodebaseAnalysisBanner]'s persisted-once-only offer, this one can reappear
+/// on a later open for as long as a newer version remains available. See
+/// `AIO-297/ design.md` §4.1.
 class TicketsListScreen extends StatefulWidget {
   /// Creates a [TicketsListScreen].
   const TicketsListScreen({super.key});
@@ -1029,23 +1026,21 @@ class _SelectModeToggleState extends State<_SelectModeToggle> {
   }
 }
 
-/// Composes the "Filters"/"Sort" trigger row (§1.2) and the conditional
-/// chip row (§5) below it: reads `TicketsCubit`'s selection getters
+/// Composes the "Filters"/"Sort" trigger row (§1.2) and the conditional chip
+/// row (§5) below it: reads `TicketsCubit`'s selection getters
 /// ([TicketsCubit.selectedStatuses]/[TicketsCubit.selectedTypes]/
 /// [TicketsCubit.selectedPriorities]/[TicketsCubit.currentSort]) for the
-/// popovers' checked/selected state and the chip row's content, and
-/// wires each toggle/select handler directly to the matching
+/// popovers' checked/selected state and the chip row's content, and wires each
+/// toggle/select handler directly to the matching
 /// `TicketsCubit.toggleXFilter`/[TicketsCubit.setSort] method — no local
 /// `setState` for selection/sort itself, only for
-/// [TicketFilterPopover]/[TicketSortPopover]'s own open/closed and
-/// focused visual state (fed back via their respective
+/// [TicketFilterPopover]/[TicketSortPopover]'s own open/closed and focused
+/// visual state (fed back via their respective
 /// `onOpenChanged`/`onFocusChanged` callbacks). The chip row renders zero
-/// height (no reserved space, no gap above it) when every filter
-/// selection set is empty — the Sort trigger has no equivalent chip row,
-/// since a single active key has nothing more to summarize than its own
-/// label. Renamed from `_TicketFilterSection` when the Sort trigger was
-/// added; see
-/// `aion-arch/changes/ticket-sort-control-and-board-as-default-view`.
+/// height (no reserved space, no gap above it) when every filter selection set
+/// is empty — the Sort trigger has no equivalent chip row, since a single
+/// active key has nothing more to summarize than its own label. Renamed from
+/// `_TicketFilterSection` when the Sort trigger was added; see `AIO-2371`.
 class _TicketFilterAndSortSection extends StatefulWidget {
   const _TicketFilterAndSortSection({
     required this.hasActiveQuery,
@@ -1062,17 +1057,15 @@ class _TicketFilterAndSortSection extends StatefulWidget {
   final bool hasActiveQuery;
 
   /// The currently active view mode — gates whether the Columns trigger
-  /// renders at all (it has no meaning in
-  /// [TicketListViewMode.list] mode). Added for
-  /// `aion-arch/changes/list-board-view-and-column-visibility`.
+  /// renders at all (it has no meaning in [TicketListViewMode.list] mode).
+  /// Added for `AIO-1069`.
   final TicketListViewMode viewMode;
 
   /// Called with the toggled status when a `TicketColumnsPopover` row is
   /// tapped/activated. Threaded in from `_TicketsListScreenState`
-  /// (`_handleColumnVisibilityToggled`) rather than wired locally here
-  /// the way `onToggleStatus`/`onToggleType`/`onTogglePriority` below
-  /// are — see that method's own dartdoc for why. Added for
-  /// `aion-arch/changes/list-board-view-and-column-visibility`.
+  /// (`_handleColumnVisibilityToggled`) rather than wired locally here the way
+  /// `onToggleStatus`/`onToggleType`/`onTogglePriority` below are — see that
+  /// method's own dartdoc for why. Added for `AIO-1069`.
   final ValueChanged<String> onToggleColumnVisibility;
 
   @override
@@ -1094,13 +1087,11 @@ class _TicketFilterAndSortSectionState
   bool _isSortTriggerFocused = false;
 
   /// Whether `TicketColumnsPopover`'s overlay is currently open — mirrors
-  /// [_isPopoverOpen] for the Columns trigger. Added for
-  /// `aion-arch/changes/list-board-view-and-column-visibility`.
+  /// [_isPopoverOpen] for the Columns trigger. Added for `AIO-1069`.
   bool _isColumnsPopoverOpen = false;
 
   /// Whether the Columns trigger currently holds keyboard focus — mirrors
-  /// [_isTriggerFocused] for the Columns trigger. Added for
-  /// `aion-arch/changes/list-board-view-and-column-visibility`.
+  /// [_isTriggerFocused] for the Columns trigger. Added for `AIO-1069`.
   bool _isColumnsTriggerFocused = false;
 
   @override
@@ -1393,24 +1384,22 @@ class _FilterTriggerButtonState extends State<_FilterTriggerButton> {
   }
 }
 
-/// The "Sort" trigger button that opens [TicketSortPopover]. A visual
-/// sibling of [_FilterTriggerButton] — same idle/active/open/focused
-/// state language (`AppDropdown`'s inactive/`isActive` color mapping) —
-/// differing only in icon (a sort-arrows glyph, not a funnel), label
-/// text, the trailing direction glyph, and the absence of a count badge
-/// (a single active key has no count to show). The idle sub-state
-/// ([_SortTriggerButtonState._idleDefault]) is shown only while [currentSort] is still the
-/// untouched `createdAt` descending default; every other value —
-/// including the implicit `relevance` default while a search query is
-/// active — renders the active sub-state, with the label reading
-/// "Sort: {field}" plus a trailing direction glyph. Purely presentational —
-/// [TicketSortPopover] (which wraps this as its `trigger`) owns the
-/// actual tap/keyboard-activation handling; [isOpen] and [isFocused] are
-/// fed back in via [TicketSortPopover.onOpenChanged]/
-/// [TicketSortPopover.onFocusChanged] so this can render "open" and
-/// "focused" looks the same way [_isIdleDefault]'s negation renders an
-/// "active" one. See
-/// `aion-arch/changes/ticket-sort-control-and-board-as-default-view`.
+/// The "Sort" trigger button that opens [TicketSortPopover]. A visual sibling
+/// of [_FilterTriggerButton] — same idle/active/open/focused state language
+/// (`AppDropdown`'s inactive/`isActive` color mapping) — differing only in
+/// icon (a sort-arrows glyph, not a funnel), label text, the trailing
+/// direction glyph, and the absence of a count badge (a single active key has
+/// no count to show). The idle sub-state
+/// ([_SortTriggerButtonState._idleDefault]) is shown only while [currentSort]
+/// is still the untouched `createdAt` descending default; every other value —
+/// including the implicit `relevance` default while a search query is active —
+/// renders the active sub-state, with the label reading "Sort: {field}" plus a
+/// trailing direction glyph. Purely presentational — [TicketSortPopover]
+/// (which wraps this as its `trigger`) owns the actual tap/keyboard-activation
+/// handling; [isOpen] and [isFocused] are fed back in via
+/// [TicketSortPopover.onOpenChanged]/ [TicketSortPopover.onFocusChanged] so
+/// this can render "open" and "focused" looks the same way [_isIdleDefault]'s
+/// negation renders an "active" one. See `AIO-2371`.
 class _SortTriggerButton extends StatefulWidget {
   const _SortTriggerButton({
     required this.currentSort,
@@ -1549,21 +1538,19 @@ String _triggerFieldLabel(BuildContext context, TicketSortField field) {
   return ticketSortFieldLabel(context, field);
 }
 
-/// The "Columns" trigger button that opens `TicketColumnsPopover`. A
-/// visual sibling of [_FilterTriggerButton] — same idle/active/open/
-/// focused state language — differing only in icon (a column-layout
-/// glyph, not a funnel), label text, and badge semantics: the trailing
-/// count reflects how many columns are currently **hidden**, mirroring
-/// Filters' "how many filters are active" badge grammar rather than
-/// Sort's label-text swap, since a hidden-column count is naturally a
-/// number to show, not a field name. Purely presentational —
-/// `TicketColumnsPopover` (which wraps this as its `trigger`) owns the
-/// actual tap/keyboard-activation handling; [isOpen] and [isFocused] are
-/// fed back in via `TicketColumnsPopover.onOpenChanged`/
-/// `TicketColumnsPopover.onFocusChanged`. Rendered only while Board mode
-/// is active — see `_TicketFilterAndSortSection`'s `viewMode` gating.
-/// See `aion-arch/changes/list-board-view-and-column-visibility/design.md`
-/// §7.2 and that change's Component Spec §2.
+/// The "Columns" trigger button that opens `TicketColumnsPopover`. A visual
+/// sibling of [_FilterTriggerButton] — same idle/active/open/ focused state
+/// language — differing only in icon (a column-layout glyph, not a funnel),
+/// label text, and badge semantics: the trailing count reflects how many
+/// columns are currently **hidden**, mirroring Filters' "how many filters are
+/// active" badge grammar rather than Sort's label-text swap, since a
+/// hidden-column count is naturally a number to show, not a field name. Purely
+/// presentational — `TicketColumnsPopover` (which wraps this as its `trigger`)
+/// owns the actual tap/keyboard-activation handling; [isOpen] and [isFocused]
+/// are fed back in via `TicketColumnsPopover.onOpenChanged`/
+/// `TicketColumnsPopover.onFocusChanged`. Rendered only while Board mode is
+/// active — see `_TicketFilterAndSortSection`'s `viewMode` gating. See
+/// `AIO-1069` §7.2 and that change's Component Spec §2.
 class _ColumnsTriggerButton extends StatefulWidget {
   const _ColumnsTriggerButton({
     required this.hiddenCount,
@@ -1967,13 +1954,11 @@ class _BoardLoadMoreButtonState extends State<_BoardLoadMoreButton> {
 
 /// A single row in [TicketsListScreen]'s list: ID badge, title, priority
 /// badge, [TicketOverflowMenu] trigger, type chip, status indicator, and
-/// (right-aligned, trailing) a [RollupBadge] when [ticket] has a live-
-/// children rollup — see
-/// `aion-arch/changes/estimate-timespent-rollup-for-ticket-hierarchy/design.md`
-/// §2.4 — or, while [TicketSelectionCubit]'s selection mode is active, a
-/// leading [AppCheckbox] in place of the overflow trigger, with tapping
-/// the row toggling selection instead of navigating. Navigates to the
-/// ticket's detail screen when tapped or activated via keyboard, when
+/// (right-aligned, trailing) a [RollupBadge] when [ticket] has a live-children
+/// rollup — see `AIO-873` §2.4 — or, while [TicketSelectionCubit]'s selection
+/// mode is active, a leading [AppCheckbox] in place of the overflow trigger,
+/// with tapping the row toggling selection instead of navigating. Navigates to
+/// the ticket's detail screen when tapped or activated via keyboard, when
 /// selection mode is inactive.
 class TicketListTile extends StatelessWidget {
   /// Creates a [TicketListTile] rendering [ticket].
@@ -2153,20 +2138,18 @@ class PriorityBadge extends StatelessWidget {
   }
 }
 
-/// A small chip showing a ticket's type as a colored square + uppercase
-/// label. Color is derived from [type] via [AionColors.typeTask]/
+/// A small chip showing a ticket's type as a colored square + uppercase label.
+/// Color is derived from [type] via [AionColors.typeTask]/
 /// [AionColors.typeStory]/[AionColors.typeEpic]/[AionColors.typeResource]/
-/// [AionColors.typePage].
-/// A dot + label showing a ticket's workflow status. The dot follows the
-/// live, role-keyed [statusDotColor] rule (`status_dot.dart`) against
-/// [WorkflowConfigCubit]'s shared-base status scope — this widget is used
-/// across ticket rows/headers of mixed [TicketType], so it never resolves
-/// a per-type extension status (matching `tickets_board_view.dart`'s own
-/// cross-type surfaces). Migrated off its former hardcoded
-/// `'backlog'`/`'inProgress'`/`'done'` name-matching for
-/// `aion-arch/changes/v1-release-readiness`'s post-`/verify` fix (T18) —
-/// the fourth duplicate the change's own design gate note missed when it
-/// counted "three."
+/// [AionColors.typePage]. A dot + label showing a ticket's workflow status.
+/// The dot follows the live, role-keyed [statusDotColor] rule
+/// (`status_dot.dart`) against [WorkflowConfigCubit]'s shared-base status
+/// scope — this widget is used across ticket rows/headers of mixed
+/// [TicketType], so it never resolves a per-type extension status (matching
+/// `tickets_board_view.dart`'s own cross-type surfaces). Migrated off its
+/// former hardcoded `'backlog'`/`'inProgress'`/`'done'` name-matching for
+/// `AIO-2550`'s post-`/verify` fix (T18) — the fourth duplicate the change's
+/// own design gate note missed when it counted "three."
 class StatusIndicator extends StatelessWidget {
   /// Creates a [StatusIndicator] for [status].
   const StatusIndicator({super.key, required this.status});

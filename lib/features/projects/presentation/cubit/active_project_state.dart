@@ -12,10 +12,8 @@ sealed class ActiveProjectState extends Equatable {
   List<Object?> get props => [];
 }
 
-/// No project is open — the user is at the Hub. The initial state, and
-/// gates every `/workspace/*` route (see
-/// `aion-arch/changes/multi-project-hub/design.md` §9) to redirect to
-/// `/hub`.
+/// No project is open — the user is at the Hub. The initial state, and gates
+/// every `/workspace/*` route (see `AIO-1174` §9) to redirect to `/hub`.
 class ActiveProjectNone extends ActiveProjectState {
   /// Creates an [ActiveProjectNone] state.
   const ActiveProjectNone();
@@ -57,29 +55,25 @@ class ActiveProjectOpen extends ActiveProjectState {
   /// The currently active project.
   final Project project;
 
-  /// Whether `TicketsListScreen` should show the opt-in
-  /// codebase-summarization offer banner the next time it builds.
-  /// `true` only immediately after [ActiveProjectCubit.switchTo] was
-  /// called with `offerCodebaseAnalysis: true` (i.e. [project] was just
-  /// created from an already-git-tracked directory) — in-memory only,
-  /// not persisted, so it's naturally "shown once, right after
-  /// creation" rather than a standing flag.
+  /// Whether `TicketsListScreen` should show the opt-in codebase-summarization
+  /// offer banner the next time it builds. `true` only immediately after
+  /// [ActiveProjectCubit.switchTo] was called with
+  /// `offerCodebaseAnalysis: true` (i.e. [project] was just created from an
+  /// already-git-tracked directory) — in-memory only, not persisted, so it's
+  /// naturally "shown once, right after creation" rather than a standing flag.
   /// [ActiveProjectCubit.consumeCodebaseAnalysisOffer] clears it back to
-  /// `false` once the screen has read it. Added for
-  /// `aion-arch/changes/new-project-onboarding`.
+  /// `false` once the screen has read it. Added for `AIO-1266`.
   final bool offerCodebaseAnalysis;
 
-  /// Whether `TicketsListScreen` should show the baseline-upgrade offer
-  /// banner the next time it builds. `true` whenever [project]'s pinned
-  /// `baselineVersion` isn't the latest version bundled in the running
-  /// build — recomputed fresh on every [ActiveProjectCubit.switchTo]
-  /// call, never persisted, so declining only dismisses the current
-  /// instance: the same check re-runs (and the banner reappears) the
-  /// next time this project is switched into, for as long as a newer
-  /// version remains available.
+  /// Whether `TicketsListScreen` should show the baseline-upgrade offer banner
+  /// the next time it builds. `true` whenever [project]'s pinned
+  /// `baselineVersion` isn't the latest version bundled in the running build —
+  /// recomputed fresh on every [ActiveProjectCubit.switchTo] call, never
+  /// persisted, so declining only dismisses the current instance: the same
+  /// check re-runs (and the banner reappears) the next time this project is
+  /// switched into, for as long as a newer version remains available.
   /// [ActiveProjectCubit.consumeBaselineUpgradeOffer] clears it back to
-  /// `false` once the screen has read it. Added for
-  /// `aion-arch/changes/baseline-version-upgrade-flow`.
+  /// `false` once the screen has read it. Added for `AIO-297`.
   final bool offerBaselineUpgrade;
 
   @override

@@ -6,8 +6,7 @@ import 'package:path/path.dart' as p;
 
 /// Resolves the absolute path to the bundled Node.js bridge script
 /// (`agent_bridge/index.mjs`, sibling to the Flutter project root — see
-/// `aion-arch/changes/provider-configuration/design.md` §3). Desktop-only,
-/// same gate as `GitRepositoryClient`'s callers.
+/// `AIO-1699` §3). Desktop-only, same gate as `GitRepositoryClient`'s callers.
 ///
 /// Tries a `Directory.current`-relative path first (matches `flutter run`'s
 /// working directory during development), then walks upward from the

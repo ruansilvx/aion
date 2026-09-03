@@ -44,10 +44,9 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
   }
 
   /// Returns the ticket row whose human-readable `ticket_id` column (a
-  /// `.unique()` column, so at most one row can ever match) equals
-  /// [ticketId], or `null` if none exists. Distinct from [getTicketById],
-  /// which looks up the primary-key `id` instead. Added for
-  /// `aion-arch/changes/ticket-crud-tool-calls`.
+  /// `.unique()` column, so at most one row can ever match) equals [ticketId],
+  /// or `null` if none exists. Distinct from [getTicketById], which looks up
+  /// the primary-key `id` instead. Added for `AIO-2108`.
   Future<TicketData?> getTicketByTicketId(String ticketId) {
     return (select(
       ticketsTable,
@@ -122,15 +121,14 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
 
   /// Adds [minutesDelta] to the `time_spent` column of the ticket row with
   /// primary key [id] — treating a `NULL` `time_spent` as `0` — and bumps
-  /// `updated_at` to [updatedAtMs], both in a single atomic `UPDATE`
-  /// statement rather than a separate read-then-write round trip. This is
-  /// what makes [addTimeSpent] race-free against a concurrent
-  /// [updateFields] write to the same row's other columns (e.g. a human
-  /// editing the ticket's title in the UI at the same moment a `log_time`
-  /// tool call lands) — a read-modify-write through [updateFields] would
-  /// silently clobber whichever side lost the race. No-ops if [id] does
-  /// not exist (the `WHERE` clause simply matches zero rows). Added for
-  /// `aion-arch/changes/ticket-crud-tool-calls`.
+  /// `updated_at` to [updatedAtMs], both in a single atomic `UPDATE` statement
+  /// rather than a separate read-then-write round trip. This is what makes
+  /// [addTimeSpent] race-free against a concurrent [updateFields] write to the
+  /// same row's other columns (e.g. a human editing the ticket's title in the
+  /// UI at the same moment a `log_time` tool call lands) — a read-modify-write
+  /// through [updateFields] would silently clobber whichever side lost the
+  /// race. No-ops if [id] does not exist (the `WHERE` clause simply matches
+  /// zero rows). Added for `AIO-2108`.
   Future<void> addTimeSpent(String id, int minutesDelta, int updatedAtMs) {
     return customUpdate(
       'UPDATE tickets SET time_spent = COALESCE(time_spent, 0) + ?, '

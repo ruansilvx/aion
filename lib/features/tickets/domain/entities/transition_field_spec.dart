@@ -5,12 +5,11 @@ import 'package:meta/meta.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 
 /// One plain-boolean field a `TransitionNode` can check — the vocabulary
-/// `TransitionNodeForm`'s field picker offers. Every field this proposal
-/// ships is a plain fact (no parameter, no operator, no units), unlike
-/// `core/automation/decision_field_catalog.dart`'s `DecisionFieldSpec`,
-/// which also carries a [DecisionFieldType] selecting an operator/value
-/// shape — nothing here needs that distinction. Added for
-/// `aion-arch/changes/sddstage-transition-preconditions`.
+/// `TransitionNodeForm`'s field picker offers. Every field this proposal ships
+/// is a plain fact (no parameter, no operator, no units), unlike
+/// `core/automation/decision_field_catalog.dart`'s `DecisionFieldSpec`, which
+/// also carries a [DecisionFieldType] selecting an operator/value shape —
+/// nothing here needs that distinction. Added for `AIO-1936`.
 @immutable
 class TransitionFieldSpec {
   /// Creates a [TransitionFieldSpec].
@@ -97,18 +96,16 @@ const designSyncApprovedField = TransitionFieldSpec(
 
 /// Wraps `TicketsCubit._verifyGateApproved` — whether the Verifying-stage
 /// chat's most recent AI reply contains `VERIFY GATE: APPROVED`. Added for
-/// `aion-arch/changes/sdd-verify-quality-gate`.
+/// `AIO-1905`.
 const verifyGateApprovedField = TransitionFieldSpec(
   id: 'verifyGateApproved',
   displayName: 'Verification has been approved',
   stages: [SddStage.verifying],
 );
 
-/// Every field this proposal ships, regardless of stage. Exactly the 8
-/// entries reproducing the precondition-bearing stages' hardcoded checks
-/// as data — see
-/// `aion-arch/changes/sddstage-transition-preconditions/design.md` §1 and
-/// `aion-arch/changes/sdd-verify-quality-gate/design.md` §2.1.
+/// Every field this proposal ships, regardless of stage. Exactly the 8 entries
+/// reproducing the precondition-bearing stages' hardcoded checks as data — see
+/// `AIO-1936` §1 and `AIO-1905` §2.1.
 const List<TransitionFieldSpec> transitionFieldCatalog = [
   mostRecentChatHasTerminalReplyField,
   hasChildrenField,

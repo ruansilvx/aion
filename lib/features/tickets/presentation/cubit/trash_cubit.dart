@@ -18,18 +18,16 @@ import 'package:aion/features/tickets/presentation/cubit/trash_state.dart';
 /// root.
 class TrashCubit extends Cubit<TrashState> {
   /// Creates a [TrashCubit] backed by [_repository]. [gitProjector] and
-  /// [projectRootPath] are optional — when either is `null` (the default,
-  /// and every existing call site/test), [_parentTrashService]'s
-  /// git-projection side effect simply no-ops, matching `TicketsCubit`'s
-  /// identical optional-dependency pattern for the same desktop-only
-  /// feature. Real usage (`app_router.dart`) supplies both whenever the
-  /// active project has a `rootPath`. [sortRepository]/[projectId]
-  /// follow the same optional-dependency pattern once more — `null` for
-  /// either makes [_resolveSort] fall back to `createdAt` descending
-  /// with no persisted sort applied; real usage (`app_router.dart`)
-  /// always supplies both, mirroring `TicketsCubit`'s own
-  /// `sortRepository`/`projectId`. Added for
-  /// `aion-arch/changes/ticket-sort-control-and-board-as-default-view`.
+  /// [projectRootPath] are optional — when either is `null` (the default, and
+  /// every existing call site/test), [_parentTrashService]'s git-projection
+  /// side effect simply no-ops, matching `TicketsCubit`'s identical
+  /// optional-dependency pattern for the same desktop-only feature. Real usage
+  /// (`app_router.dart`) supplies both whenever the active project has a
+  /// `rootPath`. [sortRepository]/[projectId] follow the same
+  /// optional-dependency pattern once more — `null` for either makes
+  /// [_resolveSort] fall back to `createdAt` descending with no persisted sort
+  /// applied; real usage (`app_router.dart`) always supplies both, mirroring
+  /// `TicketsCubit`'s own `sortRepository`/`projectId`. Added for `AIO-2371`.
   TrashCubit(
     this._repository, {
     TicketGitProjector? gitProjector,
@@ -61,14 +59,12 @@ class TrashCubit extends Cubit<TrashState> {
   /// Fixed, not user-configurable (see proposal.md's Non-goals).
   static const Duration purgeAgeThreshold = Duration(days: 30);
 
-  /// Fetches every currently trashed ticket, then reduces the flat list
-  /// to roots + per-root descendant counts (see [TrashLoaded]'s dartdoc)
-  /// and counts how many are old enough for [purgeOldTrash] to remove,
-  /// before emitting. Sorts `roots` per this project's persisted sort
-  /// (see [_resolveSort]) so Trash's ticket order matches the ticket
-  /// list's — see
-  /// `aion-arch/changes/ticket-sort-control-and-board-as-default-view/design.md`
-  /// §4. Emits [TrashLoading] then [TrashLoaded] on success, or
+  /// Fetches every currently trashed ticket, then reduces the flat list to
+  /// roots + per-root descendant counts (see [TrashLoaded]'s dartdoc) and
+  /// counts how many are old enough for [purgeOldTrash] to remove, before
+  /// emitting. Sorts `roots` per this project's persisted sort (see
+  /// [_resolveSort]) so Trash's ticket order matches the ticket list's — see
+  /// `AIO-2371` §4. Emits [TrashLoading] then [TrashLoaded] on success, or
   /// [TrashError] if the repository call throws.
   Future<void> load() async {
     emit(const TrashLoading());

@@ -9,8 +9,7 @@ import 'package:aion/features/tickets/domain/entities/ticket_board_column_visibi
 /// mechanism.
 ///
 /// A sibling of `TicketListFilterRepository` — plain reads/writes, no
-/// validation, same shape as `ExecutionContextCapRepository`. See
-/// `aion-arch/changes/list-board-view-and-column-visibility/design.md`
+/// validation, same shape as `ExecutionContextCapRepository`. See `AIO-1069`
 /// §2.4.
 abstract interface class TicketBoardColumnVisibilityRepository {
   /// The persisted [TicketBoardColumnVisibility] for [projectId], or a

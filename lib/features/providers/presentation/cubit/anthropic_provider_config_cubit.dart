@@ -9,15 +9,14 @@ import 'package:aion/features/providers/domain/enums/provider_connection_status.
 import 'package:aion/features/providers/domain/repositories/anthropic_api_key_repository.dart';
 import 'package:aion/features/providers/presentation/cubit/anthropic_provider_config_state.dart';
 
-/// Business logic for the Settings screen's new "PROVIDERS" section —
-/// separate from `ProviderSettingsCubit` (which always tracks *whichever
-/// provider Frontier currently resolves to*, not a specific provider), one
-/// cubit per concern, same split as `AutomationSettingsCubit`/
+/// Business logic for the Settings screen's new "PROVIDERS" section — separate
+/// from `ProviderSettingsCubit` (which always tracks *whichever provider
+/// Frontier currently resolves to*, not a specific provider), one cubit per
+/// concern, same split as `AutomationSettingsCubit`/
 /// `ModelRoutingCubit`/`ExecutionContextCapCubit`. Holds real logic (not a
 /// thin pass-through) per `project.md`'s Cubit-vs-repository split:
-/// [saveApiKey]'s trimming/clearing and [testConnection]'s no-op guards
-/// live here, not in [_repository]. See
-/// `aion-arch/changes/anthropic-messages-api-provider/design.md` §6.
+/// [saveApiKey]'s trimming/clearing and [testConnection]'s no-op guards live
+/// here, not in [_repository]. See `AIO-110` §6.
 class AnthropicProviderConfigCubit extends Cubit<AnthropicProviderConfigState> {
   /// Creates an [AnthropicProviderConfigCubit] backed by [_repository]
   /// (API-key storage) and [_registry] (resolves the

@@ -36,14 +36,13 @@ Color decisionOutcomeColor(AionColors c, DecisionOutcome outcome) =>
     };
 
 /// [context]'s full condition catalog for `DecisionNodeForm`'s picker(s):
-/// [decisionConditionsFor]'s real catalog entries, plus the synthetic
-/// "Custom rule" entry from [ruleBuilderConditionSpec] when [context] has
-/// a non-empty rule-builder field vocabulary. Shared by
-/// [_DecisionNodeFormState.initState]/`.build` and (via `_BranchSection`'s
-/// own `catalog` parameter) the chained-branch picker, so a branch can
-/// chain into a fresh rule-builder condition exactly like it can chain
-/// into a fixed catalog one. Added for
-/// `aion-arch/changes/decision-graph-rule-builder`.
+/// [decisionConditionsFor]'s real catalog entries, plus the synthetic "Custom
+/// rule" entry from [ruleBuilderConditionSpec] when [context] has a non-empty
+/// rule-builder field vocabulary. Shared by
+/// [_DecisionNodeFormState.initState]/`.build` and (via `_BranchSection`'s own
+/// `catalog` parameter) the chained-branch picker, so a branch can chain into
+/// a fresh rule-builder condition exactly like it can chain into a fixed
+/// catalog one. Added for `AIO-661`.
 List<DecisionConditionSpec> _catalogFor(AutomationContext context) => [
   ...decisionConditionsFor(context),
   ?ruleBuilderConditionSpec(context),
@@ -51,16 +50,14 @@ List<DecisionConditionSpec> _catalogFor(AutomationContext context) => [
 ];
 
 /// [operator]'s full-word label for [type] — shown in the rule-builder
-/// operator picker's trigger and menu rows (e.g. `Is greater than`,
-/// `Equals`, `Is` for a `boolean` field's `equals`). Distinct from
+/// operator picker's trigger and menu rows (e.g. `Is greater than`, `Equals`,
+/// `Is` for a `boolean` field's `equals`). Distinct from
 /// `decision_field_catalog.dart`'s own operator-symbol formatting (used
-/// internally by `decisionNodeSummary`'s compact chip text, e.g. `>`,
-/// `is`) — that helper lives in the domain layer and can't depend on this
-/// presentation-layer one, so the two are separate, deliberately
-/// consistent mappings rather than one shared function. Per
-/// `aion-arch/changes/decision-graph-rule-builder/design.md`'s Component
-/// Spec §1.2 Operator catalog. Added for
-/// `aion-arch/changes/decision-graph-rule-builder`.
+/// internally by `decisionNodeSummary`'s compact chip text, e.g. `>`, `is`) —
+/// that helper lives in the domain layer and can't depend on this
+/// presentation-layer one, so the two are separate, deliberately consistent
+/// mappings rather than one shared function. Per `AIO-661`'s Component Spec
+/// §1.2 Operator catalog. Added for `AIO-661`.
 String _ruleOperatorLabel(
   DecisionRuleOperator operator,
   DecisionFieldType type,
@@ -87,13 +84,12 @@ String _ruleOperatorLabel(
 
 /// [branch]'s chained child's condition display name, resolved from
 /// [nodesById] — feeds [DecisionNodeForm]'s `...ChildConditionLabel`
-/// parameters. `null` for a terminal branch, or for a [DecisionBranch
-/// .toNode] whose target is missing from [nodesById] (a dangling
-/// reference — the same defensive treatment
-/// `decision_graph_evaluator.dart` gives it at evaluation time). Shared
-/// by `DecisionOutlineList` and `DecisionGraphEditorScreen`'s canvas pane
-/// so the two panes can't resolve this differently. Added for
-/// `aion-arch/changes/automation-decision-graphs` (`/verify` fix pass).
+/// parameters. `null` for a terminal branch, or for a [DecisionBranch .toNode]
+/// whose target is missing from [nodesById] (a dangling reference — the same
+/// defensive treatment `decision_graph_evaluator.dart` gives it at evaluation
+/// time). Shared by `DecisionOutlineList` and `DecisionGraphEditorScreen`'s
+/// canvas pane so the two panes can't resolve this differently. Added for
+/// `AIO-181` (`/verify` fix pass).
 String? chainedChildConditionLabel(
   DecisionBranch branch,
   Map<String, DecisionNode> nodesById,
@@ -107,10 +103,9 @@ String? chainedChildConditionLabel(
 /// Whether a [DecisionNodeForm] branch (matched or unmatched) currently
 /// terminates in an outcome, or continues the strict tree into another
 /// condition — the form-local mirror of [DecisionBranch]'s two variants,
-/// driving the two-segment control design.md §3.3/§3.4 specifies. Added
-/// for `aion-arch/changes/automation-decision-graphs` (`/verify` fix
-/// pass — this mode was previously unreachable from the form, capping
-/// every graph at one node).
+/// driving the two-segment control design.md §3.3/§3.4 specifies. Added for
+/// `AIO-181` (`/verify` fix pass — this mode was previously unreachable from
+/// the form, capping every graph at one node).
 enum DecisionBranchMode {
   /// The branch resolves to a terminal [DecisionOutcome] — design.md's
   /// "End here" segment.
@@ -133,18 +128,16 @@ enum DecisionBranchMode {
 /// the two panes can never render divergent editing UI for the same
 /// node.
 ///
-/// Editing an *existing* chained branch's own condition/parameters isn't
-/// done from here — once a branch continues to a child node, that child
-/// renders as its own row/canvas node (see `DecisionOutlineList`'s
-/// recursive rendering) with its own [DecisionNodeForm] mount; this form
-/// only ever creates the chain or detaches it (switching a
-/// [DecisionBranchMode.continueToCondition] branch back to
-/// [DecisionBranchMode.endHere] leaves the child node orphaned rather
-/// than deleting it, the same dangling-reference tolerance
-/// `decision_graph_evaluator.dart` and `DecisionGraphConfigCubit
-/// .deleteNode` already document). Added for
-/// `aion-arch/changes/automation-decision-graphs`; see that change's
-/// design.md §3.
+/// Editing an *existing* chained branch's own condition/parameters isn't done
+/// from here — once a branch continues to a child node, that child renders as
+/// its own row/canvas node (see `DecisionOutlineList`'s recursive rendering)
+/// with its own [DecisionNodeForm] mount; this form only ever creates the
+/// chain or detaches it (switching a [DecisionBranchMode.continueToCondition]
+/// branch back to [DecisionBranchMode.endHere] leaves the child node orphaned
+/// rather than deleting it, the same dangling-reference tolerance
+/// `decision_graph_evaluator.dart` and `DecisionGraphConfigCubit .deleteNode`
+/// already document). Added for `AIO-181`; see its linked Documentation page,
+/// §3.
 class DecisionNodeForm extends StatefulWidget {
   /// Creates a [DecisionNodeForm]. Pass [initialConditionId]/
   /// [initialConditionParams]/[initialMatchedBranch]/
@@ -155,7 +148,8 @@ class DecisionNodeForm extends StatefulWidget {
   /// supplied (the chained child's condition display name) whenever the
   /// corresponding initial branch is a [DecisionBranch.toNode] — the form
   /// has no repository access of its own to resolve one. [onDelete] is
-  /// omitted entirely for a not-yet-saved new node — see design.md §3.5.
+  /// omitted entirely for a not-yet-saved new node — see its linked
+  /// Documentation page, §3.5.
   /// [forceMatchedContinue]/[forceUnmatchedContinue] start that branch's
   /// mode in [DecisionBranchMode.continueToCondition] even though
   /// [initialMatchedBranch]/[initialUnmatchedBranch] is still a
@@ -376,29 +370,28 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
 
   /// The rule trio's local state — mirrors `_condition`'s own pattern,
   /// populated only while `_condition?.id == ruleBuilderConditionId`. See
-  /// [_seedRuleState]. Added for
-  /// `aion-arch/changes/decision-graph-rule-builder`.
+  /// [_seedRuleState]. Added for `AIO-661`.
   DecisionFieldSpec? _ruleField;
   DecisionRuleOperator? _ruleOperator;
   TextEditingController? _ruleIntValueController;
   bool _ruleBoolValue = false;
 
-  /// The `agentJudgment` prompt field's local state — mirrors
-  /// [_ruleField]'s own pattern, populated only while `_condition?.id ==
-  /// agentJudgmentConditionId`. See [_seedAgentJudgmentState]. A save
-  /// attempt (or a blur while empty) while this field is empty renders
-  /// it in the error state per design.md §2.4/§2.5.5 — tracked here
-  /// rather than derived, since "untouched" and "touched-then-emptied"
-  /// render differently (§2.4's table). Added for
-  /// `aion-arch/changes/decision-graph-agentjudgment-condition`.
+  /// The `agentJudgment` prompt field's local state — mirrors [_ruleField]'s
+  /// own pattern, populated only while
+  /// `_condition?.id == agentJudgmentConditionId`. See
+  /// [_seedAgentJudgmentState]. A save attempt (or a blur while empty) while
+  /// this field is empty renders it in the error state per design.md
+  /// §2.4/§2.5.5 — tracked here rather than derived, since "untouched" and
+  /// "touched-then-emptied" render differently (§2.4's table). Added for
+  /// `AIO-613`.
   TextEditingController? _agentPromptController;
   bool _agentPromptShowError = false;
 
-  /// Owns focus for [_agentPromptController]'s field so [_seedAgentJudgmentState]
-  /// can attach [_onAgentPromptFocusChange] — the mechanism behind
-  /// design.md §2.4's "focus + blur while empty" error trigger, alongside
-  /// [_save]'s own save-attempt trigger. Added for
-  /// `aion-arch/changes/decision-graph-agentjudgment-condition`.
+  /// Owns focus for [_agentPromptController]'s field so
+  /// [_seedAgentJudgmentState] can attach [_onAgentPromptFocusChange] — the
+  /// mechanism behind design.md §2.4's "focus + blur while empty" error
+  /// trigger, alongside [_save]'s own save-attempt trigger. Added for
+  /// `AIO-613`.
   FocusNode? _agentPromptFocusNode;
 
   late DecisionBranchMode _matchedMode;
@@ -498,17 +491,16 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
   /// whatever integer-value controller existed before — mirrors
   /// [_seedParamControllers]'s own pattern, for the rule-builder condition
   /// instead of a catalog condition's fixed parameters. Called from
-  /// [initState] with [DecisionNodeForm.initialConditionParams] (editing
-  /// an existing node) and from the condition picker's `onSelected`
-  /// handler with `defaultRuleConditionParams` (freshly picking "Custom
-  /// rule"). Clears every rule field to `null` when [_condition] isn't the
-  /// rule-builder condition — the trio isn't rendered in that case, but
-  /// keeping stale state around would let a leftover `_ruleField` leak
-  /// into a later save. Never throws on a missing/malformed [params]
-  /// shape (an unrecognized `field`/`operator` falls back to the first
-  /// valid option, matching this context's own rule-builder field/
-  /// operator vocabulary). Added for
-  /// `aion-arch/changes/decision-graph-rule-builder`.
+  /// [initState] with [DecisionNodeForm.initialConditionParams] (editing an
+  /// existing node) and from the condition picker's `onSelected` handler with
+  /// `defaultRuleConditionParams` (freshly picking "Custom rule"). Clears
+  /// every rule field to `null` when [_condition] isn't the rule-builder
+  /// condition — the trio isn't rendered in that case, but keeping stale state
+  /// around would let a leftover `_ruleField` leak into a later save. Never
+  /// throws on a missing/malformed [params] shape (an unrecognized
+  /// `field`/`operator` falls back to the first valid option, matching this
+  /// context's own rule-builder field/ operator vocabulary). Added for
+  /// `AIO-661`.
   void _seedRuleState(Map<String, dynamic> params) {
     _ruleIntValueController?.dispose();
     _ruleIntValueController = null;
@@ -552,17 +544,16 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
   /// (Re)builds the `agentJudgment` prompt field's local state
   /// (`_agentPromptController`/`_agentPromptFocusNode`/
   /// `_agentPromptShowError`) from [params], disposing whatever
-  /// controller/focus node existed before — mirrors [_seedRuleState]'s
-  /// own pattern, for the `agentJudgment` condition instead of the
-  /// rule-builder trio. Called from [initState] with
-  /// [DecisionNodeForm.initialConditionParams] (editing an existing node)
-  /// and from the condition picker's `onSelected` handler with
-  /// `{'prompt': ''}` (freshly picking "Ask the agent"). Leaves
-  /// [_agentPromptController] `null` when [_condition] isn't the
-  /// `agentJudgment` condition — the field isn't rendered in that case,
-  /// but keeping a stale controller around would leak into a later save.
-  /// Never throws on a missing/malformed `params` shape. Added for
-  /// `aion-arch/changes/decision-graph-agentjudgment-condition`.
+  /// controller/focus node existed before — mirrors [_seedRuleState]'s own
+  /// pattern, for the `agentJudgment` condition instead of the rule-builder
+  /// trio. Called from [initState] with
+  /// [DecisionNodeForm.initialConditionParams] (editing an existing node) and
+  /// from the condition picker's `onSelected` handler with `{'prompt': ''}`
+  /// (freshly picking "Ask the agent"). Leaves [_agentPromptController] `null`
+  /// when [_condition] isn't the `agentJudgment` condition — the field isn't
+  /// rendered in that case, but keeping a stale controller around would leak
+  /// into a later save. Never throws on a missing/malformed `params` shape.
+  /// Added for `AIO-613`.
   void _seedAgentJudgmentState(Map<String, dynamic> params) {
     _agentPromptController?.dispose();
     _agentPromptController = null;
@@ -581,13 +572,12 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
   }
 
   /// Design.md §2.4's "focus + blur while empty" error trigger — the
-  /// counterpart to [_save]'s save-attempt trigger. Fires the error state
-  /// the moment the field loses focus while still empty; does nothing on
-  /// gaining focus (an untouched, unfocused field is never itself an
-  /// error — §2.4's "before any interaction" row) and does nothing once
-  /// [_agentPromptShowError] is already `true` (avoids a redundant
-  /// rebuild). Added for
-  /// `aion-arch/changes/decision-graph-agentjudgment-condition`.
+  /// counterpart to [_save]'s save-attempt trigger. Fires the error state the
+  /// moment the field loses focus while still empty; does nothing on gaining
+  /// focus (an untouched, unfocused field is never itself an error — §2.4's
+  /// "before any interaction" row) and does nothing once
+  /// [_agentPromptShowError] is already `true` (avoids a redundant rebuild).
+  /// Added for `AIO-613`.
   void _onAgentPromptFocusChange() {
     final focusNode = _agentPromptFocusNode;
     if (focusNode == null || focusNode.hasFocus || _agentPromptShowError) {
@@ -878,13 +868,11 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
   }
 
   /// The field/operator/value trio rendered in place of the generic
-  /// per-catalog-parameter loop when `_condition?.id ==
-  /// ruleBuilderConditionId` — [decisionFieldsFor]'s field picker, an
-  /// operator picker over `operatorsFor(field.type)`, and a value control
-  /// (digits-only [AppTextField] for `integer`, a `True`/`False` picker
-  /// for `boolean`). Per
-  /// `aion-arch/changes/decision-graph-rule-builder/design.md` §3. Added
-  /// for `aion-arch/changes/decision-graph-rule-builder`.
+  /// per-catalog-parameter loop when
+  /// `_condition?.id == ruleBuilderConditionId` — [decisionFieldsFor]'s field
+  /// picker, an operator picker over `operatorsFor(field.type)`, and a value
+  /// control (digits-only [AppTextField] for `integer`, a `True`/`False`
+  /// picker for `boolean`). Per `AIO-661` §3. Added for `AIO-661`.
   Widget _buildRuleTrio(BuildContext context, AionColors c) {
     final fields = decisionFieldsFor(widget.automationContext);
     final field = _ruleField;
@@ -989,15 +977,13 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
   /// The `agentJudgment` condition's single field: a multi-line prompt
   /// (`AgentPromptField`), rendered in place of both the generic
   /// per-catalog-parameter loop and the rule trio when
-  /// `_condition?.id == agentJudgmentConditionId`. Per
-  /// `aion-arch/changes/decision-graph-agentjudgment-condition/design.md`
-  /// §2 — label + required marker, placeholder example question, a
-  /// default two-sentence helper (states the yes/no branch semantics,
-  /// per §2.2's "the one place this is stated"), a `n/240` counter once
-  /// the prompt reaches 180 characters, and the error treatment (§2.5.5)
-  /// once [_agentPromptShowError] is set (a save attempt, or blurring
-  /// while empty — see [_save]/[_onAgentPromptFocusChange]). Added
-  /// for `aion-arch/changes/decision-graph-agentjudgment-condition`.
+  /// `_condition?.id == agentJudgmentConditionId`. Per `AIO-613` §2 — label +
+  /// required marker, placeholder example question, a default two-sentence
+  /// helper (states the yes/no branch semantics, per §2.2's "the one place
+  /// this is stated"), a `n/240` counter once the prompt reaches 180
+  /// characters, and the error treatment (§2.5.5) once [_agentPromptShowError]
+  /// is set (a save attempt, or blurring while empty — see
+  /// [_save]/[_onAgentPromptFocusChange]). Added for `AIO-613`.
   Widget _buildAgentPromptField(BuildContext context, AionColors c) {
     final controller = _agentPromptController!;
     final length = controller.text.length;
@@ -1051,13 +1037,12 @@ class _DecisionNodeFormState extends State<DecisionNodeForm> {
 }
 
 /// A `DecisionConditionSpec` never equal (by identity — the class has no
-/// overridden `==`) to any real [decisionConditionCatalog] entry,
-/// deliberately constructed with `DecisionConditionSpec(...)` rather than
-/// `const DecisionConditionSpec(...)` so it can never be canonicalized
-/// into the same instance as a real spec. Used as [_ConditionPicker]'s
-/// `SelectionMenu.currentValue` when nothing is chosen yet — see that
-/// picker's own comment for why. Added for
-/// `aion-arch/changes/automation-decision-graphs` (`/verify` fix pass 2).
+/// overridden `==`) to any real [decisionConditionCatalog] entry, deliberately
+/// constructed with `DecisionConditionSpec(...)` rather than
+/// `const DecisionConditionSpec(...)` so it can never be canonicalized into
+/// the same instance as a real spec. Used as [_ConditionPicker]'s
+/// `SelectionMenu.currentValue` when nothing is chosen yet — see that picker's
+/// own comment for why. Added for `AIO-181` (`/verify` fix pass 2).
 final _unselectedConditionSentinel = DecisionConditionSpec(
   id: '__unselected__',
   displayName: '',
@@ -1146,18 +1131,17 @@ class _ConditionPicker extends StatelessWidget {
 }
 
 /// A compact `SelectionMenu<T>` trigger for the rule-builder trio's
-/// field/operator/boolean-value pickers — styled like [_ConditionPicker]'s
-/// own trigger, minus its "not yet chosen" sentinel handling: every
-/// rule-builder field/operator/value always has a selected [value] the
-/// moment a rule-builder condition is chosen (seeded by
-/// `defaultRuleConditionParams`/[_DecisionNodeFormState._seedRuleState]),
-/// so there's no unselected state to special-case. Renders inert (no
-/// [SelectionMenu]) when [items] has one or fewer selectable alternatives
-/// — [SelectionMenu] excludes [value] from its offered list, so a
-/// single-item [items] would otherwise open onto an empty overlay; this
-/// is expected for today's field picker, whose two contexts each expose
-/// exactly one field. Added for
-/// `aion-arch/changes/decision-graph-rule-builder`.
+/// field/operator/boolean-value pickers — styled like [_ConditionPicker]'s own
+/// trigger, minus its "not yet chosen" sentinel handling: every rule-builder
+/// field/operator/value always has a selected [value] the moment a
+/// rule-builder condition is chosen (seeded by
+/// `defaultRuleConditionParams`/[_DecisionNodeFormState._seedRuleState]), so
+/// there's no unselected state to special-case. Renders inert (no
+/// [SelectionMenu]) when [items] has one or fewer selectable alternatives —
+/// [SelectionMenu] excludes [value] from its offered list, so a single-item
+/// [items] would otherwise open onto an empty overlay; this is expected for
+/// today's field picker, whose two contexts each expose exactly one field.
+/// Added for `AIO-661`.
 class _RulePicker<T> extends StatelessWidget {
   const _RulePicker({
     required this.items,
@@ -1219,13 +1203,12 @@ class _RulePicker<T> extends StatelessWidget {
 }
 
 /// One matched/unmatched branch section: a labeled dot, the design.md
-/// §3.3/§3.4 two-segment "End here / Continue to condition" mode toggle,
-/// and either a terminal-outcome [SelectionMenu] ([DecisionBranchMode
-/// .endHere]) or a chaining condition picker/label
-/// ([DecisionBranchMode.continueToCondition]). Added for
-/// `aion-arch/changes/automation-decision-graphs` (`/verify` fix pass —
-/// this control was previously missing entirely, so every branch could
-/// only ever end in a terminal outcome).
+/// §3.3/§3.4 two-segment "End here / Continue to condition" mode toggle, and
+/// either a terminal-outcome [SelectionMenu] ([DecisionBranchMode .endHere])
+/// or a chaining condition picker/label
+/// ([DecisionBranchMode.continueToCondition]). Added for `AIO-181` (`/verify`
+/// fix pass — this control was previously missing entirely, so every branch
+/// could only ever end in a terminal outcome).
 class _BranchSection extends StatelessWidget {
   const _BranchSection({
     required this.label,
@@ -1326,9 +1309,8 @@ class _BranchSection extends StatelessWidget {
   }
 }
 
-/// The design.md §3.3/§3.4 two-segment "End here / Continue to
-/// condition" control. Added for
-/// `aion-arch/changes/automation-decision-graphs` (`/verify` fix pass).
+/// The design.md §3.3/§3.4 two-segment "End here / Continue to condition"
+/// control. Added for `AIO-181` (`/verify` fix pass).
 class _BranchModeToggle extends StatelessWidget {
   const _BranchModeToggle({required this.mode, required this.onChanged});
 

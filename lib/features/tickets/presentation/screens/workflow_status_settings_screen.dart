@@ -18,14 +18,13 @@ import 'package:aion/features/tickets/domain/enums/workflow_status_role.dart';
 import 'package:aion/features/tickets/presentation/cubit/workflow_config_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/workflow_config_state.dart';
 
-/// The `/workspace/settings/workflow` route — where a project customizes
-/// its ticket workflow instead of inheriting Aion's fixed defaults. Two
-/// sections: **Ticket Statuses** (per-type-scoped, reorderable status
-/// list with Base-only workflow roles and an inline add form) and
-/// **SDD Stages** (one gating toggle plus five stage-label rename
-/// fields). Reached from the same secondary-actions popover as the
-/// existing provider `SettingsScreen`. Per
-/// `aion-arch/changes/configurable-ticket-workflow`'s Component Spec.
+/// The `/workspace/settings/workflow` route — where a project customizes its
+/// ticket workflow instead of inheriting Aion's fixed defaults. Two sections:
+/// **Ticket Statuses** (per-type-scoped, reorderable status list with
+/// Base-only workflow roles and an inline add form) and **SDD Stages** (one
+/// gating toggle plus five stage-label rename fields). Reached from the same
+/// secondary-actions popover as the existing provider `SettingsScreen`. Per
+/// `AIO-549`'s Component Spec.
 ///
 /// One deliberate simplification from the pasted Component Spec, noted
 /// here rather than silently: §6.4's hand-rolled `Listener`/
@@ -64,8 +63,8 @@ class _WorkflowStatusSettingsScreenState
             showBack: true,
             onBack: () => context.go('/workspace/tickets'),
             // Secondary entry point into WorkflowPromptTemplatesScreen,
-            // alongside _AttachmentForm's own "Manage templates" link.
-            // Added for `aion-arch/changes/workflow-skill-attachments`.
+            // alongside _AttachmentForm's own "Manage templates" link. Added
+            // for `AIO-2650`.
             trailing: _ManageTemplatesLink(
               label: context.l10n.workflowSettingsManageTemplates,
             ),
@@ -383,12 +382,11 @@ class _StatusRow extends StatefulWidget {
   final List<WorkflowStatus> scopedOrder;
 
   /// This status's configured [SkillAttachment], or `null`. Added for
-  /// `aion-arch/changes/workflow-skill-attachments`.
+  /// `AIO-2650`.
   final SkillAttachment? attachment;
 
   /// Every project-configured [WorkflowPromptTemplate], threaded down to
-  /// [_AttachmentForm]'s template picker. Added for
-  /// `aion-arch/changes/workflow-skill-attachments`.
+  /// [_AttachmentForm]'s template picker. Added for `AIO-2650`.
   final List<WorkflowPromptTemplate> templates;
 
   @override
@@ -401,8 +399,8 @@ class _StatusRowState extends State<_StatusRow> {
   bool _isHovered = false;
   String? _localError;
 
-  /// Whether [_AttachmentForm] is currently expanded below this row's
-  /// meta line. Added for `aion-arch/changes/workflow-skill-attachments`.
+  /// Whether [_AttachmentForm] is currently expanded below this row's meta
+  /// line. Added for `AIO-2650`.
   bool _attachmentFormOpen = false;
 
   /// Whether this row is showing a status inherited from Base into a
@@ -561,10 +559,9 @@ class _StatusRowState extends State<_StatusRow> {
                           border: null,
                         ),
                       const Spacer(),
-                      // Skill attachment indicator — hidden on inherited
-                      // rows (attachments live on the Base/owning status
-                      // only), shown normally otherwise. Added for
-                      // aion-arch/changes/workflow-skill-attachments;
+                      // Skill attachment indicator — hidden on inherited rows
+                      // (attachments live on the Base/owning status only),
+                      // shown normally otherwise. Added for AIO-2650;
                       // Component Spec §4.
                       if (!isInherited) ...[
                         _AttachmentBadge(
@@ -1349,20 +1346,18 @@ class _SddStageRenameRow extends StatefulWidget {
   final bool isLast;
 
   /// This stage's configured [SkillAttachment], or `null`. Added for
-  /// `aion-arch/changes/workflow-skill-attachments`.
+  /// `AIO-2650`.
   final SkillAttachment? attachment;
 
   /// Every project-configured [WorkflowPromptTemplate], threaded down to
-  /// [_AttachmentForm]'s template picker. Added for
-  /// `aion-arch/changes/workflow-skill-attachments`.
+  /// [_AttachmentForm]'s template picker. Added for `AIO-2650`.
   final List<WorkflowPromptTemplate> templates;
 
-  /// This stage's current transition-precondition field-check count, or
-  /// `null` if unconfigured — [WorkflowConfigLoaded
+  /// This stage's current transition-precondition field-check count, or `null`
+  /// if unconfigured — [WorkflowConfigLoaded
   /// .transitionPreconditionNodeCounts]`[stage]`. Threaded down to
-  /// [_PreconditionAffordance]'s count badge. Added for
-  /// `aion-arch/changes/sddstage-transition-preconditions`'s post-
-  /// `/verify` follow-up.
+  /// [_PreconditionAffordance]'s count badge. Added for `AIO-1936`'s
+  /// post-`/verify` follow-up.
   final int? preconditionNodeCount;
 
   @override
@@ -1373,8 +1368,8 @@ class _SddStageRenameRowState extends State<_SddStageRenameRow> {
   late final TextEditingController _controller;
   late final FocusNode _focusNode;
 
-  /// Whether [_AttachmentForm] is currently expanded below this row.
-  /// Added for `aion-arch/changes/workflow-skill-attachments`.
+  /// Whether [_AttachmentForm] is currently expanded below this row. Added for
+  /// `AIO-2650`.
   bool _attachmentFormOpen = false;
 
   @override
@@ -1448,10 +1443,9 @@ class _SddStageRenameRowState extends State<_SddStageRenameRow> {
                     onSubmitted: (_) => _focusNode.unfocus(),
                   ),
                 ),
-                // Skill attachment indicator, appended to the
-                // display-label field's line, gap 10 (Component Spec
-                // §4). Added for `aion-arch/changes/workflow-skill-
-                // attachments`.
+                // Skill attachment indicator, appended to the display-label
+                // field's line, gap 10 (Component Spec §4). Added for
+                // AIO-2650.
                 const SizedBox(width: 10),
                 _AttachmentBadge(
                   attachment: widget.attachment,
@@ -1459,16 +1453,14 @@ class _SddStageRenameRowState extends State<_SddStageRenameRow> {
                     () => _attachmentFormOpen = !_attachmentFormOpen,
                   ),
                 ),
-                // "Configure precondition" affordance, appended after
-                // the skill-attachment indicator — every precondition-
-                // bearing stage (all of `SddStage.values` except
-                // `archived`, which has no precondition and stays
-                // untouched — design.md §7/§5) gets one. Added for
-                // `aion-arch/changes/sddstage-transition-
-                // preconditions`; see that change's design.md §5.
-                // Excluding `archived` here was missed in the original
-                // `/apply` pass and fixed in a follow-up `/verify`
-                // round (see tasks.md's "Verify follow-ups (round 2)").
+                // "Configure precondition" affordance, appended after the
+                // skill-attachment indicator — every precondition-bearing
+                // stage (all of `SddStage.values` except `archived`, which has
+                // no precondition and stays untouched — design.md §7/§5) gets
+                // one. Added for AIO-1936; see its linked Documentation page,
+                // §5. Excluding `archived` here was missed in the original
+                // `/apply` pass and fixed in a follow-up `/verify` round (see
+                // tasks.md's "Verify follow-ups (round 2)").
                 if (widget.stage != SddStage.archived) ...[
                   const SizedBox(width: 10),
                   // Flexible (not a fixed size): the affordance itself
@@ -1517,18 +1509,15 @@ String _fixedStageName(SddStage stage) => switch (stage) {
 
 /// The "Configure precondition" affordance appended to every
 /// [_SddStageRenameRow] — tapping it pushes
-/// `SddStagePreconditionEditorScreen(stage: ...)`, then (once that route
-/// pops) reloads [WorkflowConfigCubit] so [count] reflects whatever was
-/// just edited. Renders the compact §5.1 icon-only treatment or the
-/// labeled §5.2 treatment depending on how much width its own
-/// `LayoutBuilder` gets — decided locally rather than by
-/// `_SddStageRenameRow` guessing from its own gross row width, since a
-/// wide `AttachmentBadge` (a long "KIND · CONFIDENCE" label) can leave
-/// this affordance far less room than the row's total width would
-/// suggest. Originally shipped always-compact, with no count wiring at
-/// all; both gaps were closed for `aion-arch/changes/sddstage-
-/// transition-preconditions`'s post-`/verify` follow-up. Added for that
-/// change.
+/// `SddStagePreconditionEditorScreen(stage: ...)`, then (once that route pops)
+/// reloads [WorkflowConfigCubit] so [count] reflects whatever was just edited.
+/// Renders the compact §5.1 icon-only treatment or the labeled §5.2 treatment
+/// depending on how much width its own `LayoutBuilder` gets — decided locally
+/// rather than by `_SddStageRenameRow` guessing from its own gross row width,
+/// since a wide `AttachmentBadge` (a long "KIND · CONFIDENCE" label) can leave
+/// this affordance far less room than the row's total width would suggest.
+/// Originally shipped always-compact, with no count wiring at all; both gaps
+/// were closed for AIO-1936's post-`/verify` follow-up.
 class _PreconditionAffordance extends StatefulWidget {
   const _PreconditionAffordance({required this.stage, required this.count});
 
@@ -1735,11 +1724,10 @@ class _PreconditionAffordanceState extends State<_PreconditionAffordance> {
   }
 }
 
-// ---------------------------------------------------------------------
-// Skill attachments (Phase 2) — `_AttachmentBadge`/`_AttachmentForm`,
-// wired onto both `_StatusRow` (any scope) and `_SddStageRenameRow`. See
-// `aion-arch/changes/workflow-skill-attachments/design.md`'s Component
-// Spec §2–§4.
+// --------------------------------------------------------------------- Skill
+// attachments (Phase 2) — `_AttachmentBadge`/`_AttachmentForm`, wired onto
+// both `_StatusRow` (any scope) and `_SddStageRenameRow`. See `AIO-2650`'s
+// Component Spec §2–§4.
 //
 // Deliberate simplifications from the pasted Component Spec, noted here
 // rather than silently (mirrors this file's own existing precedent for

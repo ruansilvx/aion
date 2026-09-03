@@ -55,15 +55,13 @@ class CreateProjectCubit extends Cubit<CreateProjectState> {
   /// mobile/web, where a project is isolated purely by its generated
   /// storage key.
   ///
-  /// [appendGitignore] (default `true`) is consulted only when
-  /// [rootPath] is already a git repository: `true` appends `.aion/`
-  /// and `tickets/` to that repo's `.gitignore` (creating one if
-  /// absent) before any bookkeeping is written; `false` proceeds
-  /// without touching `.gitignore` — declining doesn't block creation,
-  /// matching Aion's inform-don't-block posture (see
-  /// `aion-arch/changes/new-project-onboarding/design.md`). Ignored
-  /// entirely when [rootPath] isn't already a git repository, since
-  /// `git init` there needs no gitignore gate.
+  /// [appendGitignore] (default `true`) is consulted only when [rootPath] is
+  /// already a git repository: `true` appends `.aion/` and `tickets/` to that
+  /// repo's `.gitignore` (creating one if absent) before any bookkeeping is
+  /// written; `false` proceeds without touching `.gitignore` — declining
+  /// doesn't block creation, matching Aion's inform-don't-block posture (see
+  /// `AIO-1266`). Ignored entirely when [rootPath] isn't already a git
+  /// repository, since `git init` there needs no gitignore gate.
   ///
   /// Emits [CreateProjectValidating], then either [CreateProjectFailure]
   /// (classified via [CreateProjectFailureReason]) or
@@ -178,21 +176,18 @@ class CreateProjectCubit extends Cubit<CreateProjectState> {
     }
   }
 
-  /// Writes the `.aion/manifest.json` marker (via [ProjectManifestWriter])
-  /// and creates the `tickets/` subdirectory that ticket git-projection
-  /// writes into (see
-  /// `aion-arch/changes/storage-embedding-git-sync/design.md`). Desktop
-  /// only — see `aion-arch/changes/multi-project-hub/proposal.md`'s
-  /// platform note for why mobile/web don't get git-backed version
-  /// history in this change.
+  /// Writes the `.aion/manifest.json` marker (via [ProjectManifestWriter]) and
+  /// creates the `tickets/` subdirectory that ticket git-projection writes
+  /// into (see `AIO-2022`). Desktop only — see `AIO-1174`'s platform note for
+  /// why mobile/web don't get git-backed version history in this change.
   ///
   /// When [alreadyGitRepo] is `false`, initializes a fresh empty git
-  /// repository at [rootPath] exactly as before. When `true`, [rootPath]
-  /// is left as whatever repository it already was — re-running `git
-  /// init` there is redundant — and, if [appendGitignore] is also
-  /// `true`, [_gitignoreEditor] excludes `.aion/`/`tickets/` from that
-  /// repo's own history before either bookkeeping path is written above.
-  /// Added for `aion-arch/changes/new-project-onboarding`.
+  /// repository at [rootPath] exactly as before. When `true`, [rootPath] is
+  /// left as whatever repository it already was — re-running `git init` there
+  /// is redundant — and, if [appendGitignore] is also `true`,
+  /// [_gitignoreEditor] excludes `.aion/`/`tickets/` from that repo's own
+  /// history before either bookkeeping path is written above. Added for
+  /// `AIO-1266`.
   Future<void> _initializeDesktopProject(
     String rootPath,
     String baselineVersion, {

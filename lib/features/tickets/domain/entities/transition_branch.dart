@@ -4,14 +4,12 @@ import 'package:meta/meta.dart';
 
 import 'package:aion/features/tickets/domain/enums/transition_outcome.dart';
 
-/// One outgoing edge of a `TransitionNode` — either continues the strict
-/// tree into another field check ([TransitionBranch.toNode]) or ends the
-/// walk in a terminal [TransitionOutcome] ([TransitionBranch.terminal]).
-/// Structurally identical in shape to `core/automation/decision_node.dart`'s
-/// `DecisionBranch` but a separate type — see
-/// `aion-arch/changes/sddstage-transition-preconditions/proposal.md`'s "Why
-/// parallel types, not shared ones." Added for
-/// `aion-arch/changes/sddstage-transition-preconditions`.
+/// One outgoing edge of a `TransitionNode` — either continues the strict tree
+/// into another field check ([TransitionBranch.toNode]) or ends the walk in a
+/// terminal [TransitionOutcome] ([TransitionBranch.terminal]). Structurally
+/// identical in shape to `core/automation/decision_node.dart`'s
+/// `DecisionBranch` but a separate type — see `AIO-1936`'s "Why parallel
+/// types, not shared ones." Added for `AIO-1936`.
 @immutable
 sealed class TransitionBranch {
   const TransitionBranch();

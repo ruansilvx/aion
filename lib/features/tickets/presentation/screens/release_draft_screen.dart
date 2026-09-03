@@ -17,23 +17,21 @@ import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 /// grammar.
 final RegExp _semverPattern = RegExp(r'^\d+\.\d+\.\d+(-[\w.]+)?$');
 
-/// The AI-drafted [ReleaseDraft] review screen — reached only by pushing
-/// via [Navigator.push] from [ReleaseSummarySection] (no `go_router`
-/// route; this is a transient review step, not something deep-linked to).
-/// Shows [ReleaseDraft.changelogMarkdown]/[ReleaseDraft.suggestedVersion]
-/// as freely editable fields; nothing is written to git until Confirm &
-/// Tag (gated by [showAppConfirmDialog]) resolves. When
-/// [ReleaseDraft.detectedVersionFile] is `null`, the version field is
-/// replaced by a "no version file detected" notice and the confirm
-/// action relabels to Save changelog, skipping the confirmation dialog —
-/// there's no tag name to confirm — but still calling
-/// [TicketsCubit.confirmRelease] (the only write path this change adds;
-/// see that method's dartdoc for why it always tags/pushes regardless of
-/// a version-file bump being available). On failure, stays on screen
-/// with an error banner and the same editable draft, so a retry doesn't
-/// require redrafting from scratch. Added for
-/// `aion-arch/changes/release-preparation-and-tagging`; see that
-/// change's design.md §5.3.
+/// The AI-drafted [ReleaseDraft] review screen — reached only by pushing via
+/// [Navigator.push] from [ReleaseSummarySection] (no `go_router` route; this
+/// is a transient review step, not something deep-linked to). Shows
+/// [ReleaseDraft.changelogMarkdown]/[ReleaseDraft.suggestedVersion] as freely
+/// editable fields; nothing is written to git until Confirm & Tag (gated by
+/// [showAppConfirmDialog]) resolves. When [ReleaseDraft.detectedVersionFile]
+/// is `null`, the version field is replaced by a "no version file detected"
+/// notice and the confirm action relabels to Save changelog, skipping the
+/// confirmation dialog — there's no tag name to confirm — but still calling
+/// [TicketsCubit.confirmRelease] (the only write path this change adds; see
+/// that method's dartdoc for why it always tags/pushes regardless of a
+/// version-file bump being available). On failure, stays on screen with an
+/// error banner and the same editable draft, so a retry doesn't require
+/// redrafting from scratch. Added for `AIO-1782`; see its linked Documentation
+/// page, §5.3.
 class ReleaseDraftScreen extends StatefulWidget {
   /// Creates a [ReleaseDraftScreen] reviewing [draft].
   const ReleaseDraftScreen({super.key, required this.draft});
@@ -304,8 +302,8 @@ class _Header extends StatelessWidget {
 
   final VoidCallback? onBack;
 
-  /// The release ticket's display id (e.g. `"AIO-51"`), shown as a
-  /// trailing mono badge per design.md §3.2 item 3.
+  /// The release ticket's display id (e.g. `"AIO-51"`), shown as a trailing
+  /// mono badge per design.md §3.2 item 3.
   final String releaseKey;
 
   @override

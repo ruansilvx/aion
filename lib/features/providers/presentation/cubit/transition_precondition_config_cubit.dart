@@ -11,27 +11,25 @@ import 'package:aion/features/tickets/domain/enums/transition_outcome.dart';
 import 'package:aion/features/tickets/domain/repositories/transition_precondition_repository.dart';
 
 /// Owns [TransitionNode]/[TransitionGraph] CRUD for the dual-pane
-/// `SddStagePreconditionEditorScreen`, enforcing the invariant
-/// `TicketsCubit` never checks — domain/invariant logic lives in Cubits,
-/// not repositories, per this project's Cubit-vs-repository split. Backs
-/// both `PreconditionGraphCanvas`/`GraphCanvas<TransitionNode>` and
-/// `TransitionOutlineList`. Mirrors `DecisionGraphConfigCubit`'s exact
-/// shape — see `aion-arch/changes/sddstage-transition-preconditions/design.md`
-/// §5 — with rejection messages built directly as plain strings rather
-/// than a classified reason enum, since this cubit has no
-/// `BuildContext`-resolvable widget-layer error-message function of its
-/// own (a deliberate simplification: see `TransitionPreconditionConfigError`'s
-/// own dartdoc).
+/// `SddStagePreconditionEditorScreen`, enforcing the invariant `TicketsCubit`
+/// never checks — domain/invariant logic lives in Cubits, not repositories,
+/// per this project's Cubit-vs-repository split. Backs both
+/// `PreconditionGraphCanvas`/`GraphCanvas<TransitionNode>` and
+/// `TransitionOutlineList`. Mirrors `DecisionGraphConfigCubit`'s exact shape —
+/// see `AIO-1936` §5 — with rejection messages built directly as plain strings
+/// rather than a classified reason enum, since this cubit has no
+/// `BuildContext`-resolvable widget-layer error-message function of its own (a
+/// deliberate simplification: see `TransitionPreconditionConfigError`'s own
+/// dartdoc).
 ///
 /// One enforced invariant, the strict-tree constraint: a node may be
-/// referenced as a child (via a `TransitionBranch.toNode` on some other
-/// node's `matchedBranch`/`unmatchedBranch`) from at most one branch
-/// across the whole graph, and following every node's branches from the
-/// graph's root must never revisit a node (no cycles). [createNode]/
-/// [updateNode] reject an edit that would violate either rule, emitting
-/// [TransitionPreconditionConfigError] and leaving the prior
-/// [TransitionPreconditionConfigLoaded] state's tree untouched. Added for
-/// `aion-arch/changes/sddstage-transition-preconditions`.
+/// referenced as a child (via a `TransitionBranch.toNode` on some other node's
+/// `matchedBranch`/`unmatchedBranch`) from at most one branch across the whole
+/// graph, and following every node's branches from the graph's root must never
+/// revisit a node (no cycles). [createNode]/ [updateNode] reject an edit that
+/// would violate either rule, emitting [TransitionPreconditionConfigError] and
+/// leaving the prior [TransitionPreconditionConfigLoaded] state's tree
+/// untouched. Added for `AIO-1936`.
 class TransitionPreconditionConfigCubit
     extends Cubit<TransitionPreconditionConfigState> {
   /// Creates a [TransitionPreconditionConfigCubit] backed by

@@ -6,18 +6,17 @@ import 'package:aion/features/projects/domain/entities/baseline_manifest.dart';
 import 'package:aion/features/projects/domain/repositories/baseline_repository.dart';
 
 /// Writes a project's baseline overrides from [ProjectStackDetector]'s
-/// marker-file detection (the "shallow" path — see `aion-arch/ideas/
-/// project-type-aware-conventions-and-verification.md`) for the one
-/// asset kind that mechanism can produce content for:
-/// [BaselineAssetKind.architectureConvention]. Used both at project
-/// creation ([tailorForDetectedStack], called against the version just
-/// pinned) and, via [tailorNewlyIntroducedAssets], during a baseline
-/// version upgrade (called against the new version). The "full agentic"
-/// path (tied to `new-project-onboarding`'s not-yet-built
-/// codebase-summarization depth choice) is out of scope for this
-/// change; this method's shape (project id + root path in, overrides
-/// written as a side effect) is designed to be called again later by
-/// that feature with richer input, not to be the only caller forever.
+/// marker-file detection (the "shallow" path — see AIO-53) for the one asset
+/// kind that mechanism can produce content for:
+/// [BaselineAssetKind.architectureConvention]. Used both at project creation
+/// ([tailorForDetectedStack], called against the version just pinned) and, via
+/// [tailorNewlyIntroducedAssets], during a baseline version upgrade (called
+/// against the new version). The "full agentic" path (tied to
+/// `new-project-onboarding`'s not-yet-built codebase-summarization depth
+/// choice) is out of scope for this change; this method's shape (project id +
+/// root path in, overrides written as a side effect) is designed to be called
+/// again later by that feature with richer input, not to be the only caller
+/// forever.
 class BaselineTailoringService {
   /// Creates a [BaselineTailoringService] backed by [_baselineRepository]
   /// and [_detector].

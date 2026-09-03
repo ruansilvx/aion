@@ -10,12 +10,11 @@ import 'package:aion/core/automation/decision_outcome.dart';
 import 'package:aion/core/contracts/agent_session_handle.dart';
 
 /// Every value a [DecisionConditionSpec]'s evaluator might need to read,
-/// bundled by the call site rather than fetched by
-/// [evaluateDecisionGraph] itself — keeps that function pure (no I/O) and
-/// trivially unit-testable. Every field is optional; a condition this
-/// proposal doesn't ship (or a context whose graph has no configured
-/// root) never reads most of them. Added for
-/// `aion-arch/changes/automation-decision-graphs`.
+/// bundled by the call site rather than fetched by [evaluateDecisionGraph]
+/// itself — keeps that function pure (no I/O) and trivially unit-testable.
+/// Every field is optional; a condition this proposal doesn't ship (or a
+/// context whose graph has no configured root) never reads most of them. Added
+/// for `AIO-181`.
 @immutable
 class DecisionEvalContext {
   /// Creates a [DecisionEvalContext].
@@ -136,15 +135,13 @@ bool _evaluateRule(DecisionEvalContext input, Map<String, dynamic> params) {
 }
 
 /// Evaluates an `agentJudgment` condition: reads `params['prompt']` (a
-/// `String`; defensively `false`/unmatched if missing or not a `String` —
-/// the same posture [_evaluateRule] already uses for a malformed
-/// rule-builder node), and, if [input] carries both a live
-/// `DecisionEvalContext.session` and a `DecisionEvalContext.askAgentJudgment`
-/// implementation, awaits it for the answer. `false` (unmatched) for any
-/// failure mode — no session, no way to ask, or an ambiguous/`null`
-/// answer. The one place in this file that performs real I/O — see
-/// `aion-arch/changes/decision-graph-agentjudgment-condition/design.md`
-/// §5.
+/// `String`; defensively `false`/unmatched if missing or not a `String` — the
+/// same posture [_evaluateRule] already uses for a malformed rule-builder
+/// node), and, if [input] carries both a live `DecisionEvalContext.session`
+/// and a `DecisionEvalContext.askAgentJudgment` implementation, awaits it for
+/// the answer. `false` (unmatched) for any failure mode — no session, no way
+/// to ask, or an ambiguous/`null` answer. The one place in this file that
+/// performs real I/O — see `AIO-613` §5.
 Future<bool> _evaluateAgentJudgment(
   DecisionEvalContext input,
   Map<String, dynamic> params,
@@ -161,18 +158,17 @@ Future<bool> _evaluateAgentJudgment(
 /// [DecisionNode] (looked up in [nodesById]) against [input] via
 /// [_conditionEvaluators] (or, for an `agentJudgment` node,
 /// [_evaluateAgentJudgment]), following `DecisionNode.matchedBranch`/
-/// `.unmatchedBranch` until a `DecisionBranch.terminal` is reached.
-/// Returns [DecisionOutcome.proceed] immediately if
-/// `DecisionGraph.rootNodeId` is `null` (no graph configured) or if the
-/// walk ever references a node id missing from [nodesById] (defensive —
-/// a dangling reference should never silently block automation that
-/// otherwise resolved to `auto`). No longer pure — an `agentJudgment` node
-/// performs real I/O via [DecisionEvalContext.askAgentJudgment] (see
-/// design.md §5; `providers.md`'s "Decision graphs" section still
-/// describes this function as pure and needs correcting when this change
-/// is archived). A walk that never reaches an `agentJudgment` node stays
-/// exactly as fast as before — the `await` only actually suspends on that
-/// one branch. Added for `aion-arch/changes/automation-decision-graphs`.
+/// `.unmatchedBranch` until a `DecisionBranch.terminal` is reached. Returns
+/// [DecisionOutcome.proceed] immediately if `DecisionGraph.rootNodeId` is
+/// `null` (no graph configured) or if the walk ever references a node id
+/// missing from [nodesById] (defensive — a dangling reference should never
+/// silently block automation that otherwise resolved to `auto`). No longer
+/// pure — an `agentJudgment` node performs real I/O via
+/// [DecisionEvalContext.askAgentJudgment] (see design.md §5; `providers.md`'s
+/// "Decision graphs" section still describes this function as pure and needs
+/// correcting when this change is archived). A walk that never reaches an
+/// `agentJudgment` node stays exactly as fast as before — the `await` only
+/// actually suspends on that one branch. Added for `AIO-181`.
 Future<DecisionOutcome> evaluateDecisionGraph(
   DecisionGraph graph,
   Map<String, DecisionNode> nodesById,

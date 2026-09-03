@@ -25,45 +25,40 @@ enum TicketType {
   /// A Notion-style freeform document ticket.
   page,
 
-  /// An agent chat, optionally branching into subtickets. A [chat] may
-  /// now parent exactly one further [chat] — a mid-task/issue branch —
-  /// per [TicketTypeHierarchy.canParent]'s one-level exception; a branch
-  /// chat cannot itself be branched again, a depth cap
-  /// `TicketsCubit._canBranch` enforces at the instance level (this
-  /// type-level rule alone permits unbounded nesting, since it can't see
-  /// a specific ticket's own parent chain). See
-  /// `aion-arch/changes/mid-task-chat-branching/design.md` §5.
+  /// An agent chat, optionally branching into subtickets. A [chat] may now
+  /// parent exactly one further [chat] — a mid-task/issue branch — per
+  /// [TicketTypeHierarchy.canParent]'s one-level exception; a branch chat
+  /// cannot itself be branched again, a depth cap `TicketsCubit._canBranch`
+  /// enforces at the instance level (this type-level rule alone permits
+  /// unbounded nesting, since it can't see a specific ticket's own parent
+  /// chain). See `AIO-1118` §5.
   chat,
 
-  /// A raw idea noticed but not yet resolved into work — not yet shaped
-  /// into an [epic]. Freestanding: no required target, always a subtree
-  /// root, promotable into an [epic] or a [bug] via
-  /// `TicketsCubit.promoteIdea`. Parentless; may parent a [chat] for
-  /// exploration/discussion, nothing else. See
-  /// [TicketTypeHierarchy.isAlwaysRoot]. Was `signal` prior to
-  /// `aion-arch/changes/idea-gap-question-ticket-types`, which split its
-  /// three meanings (idea / known gap / open question) into distinct
-  /// types — `idea` inherits `signal`'s exact prior behavior.
+  /// A raw idea noticed but not yet resolved into work — not yet shaped into
+  /// an [epic]. Freestanding: no required target, always a subtree root,
+  /// promotable into an [epic] or a [bug] via `TicketsCubit.promoteIdea`.
+  /// Parentless; may parent a [chat] for exploration/discussion, nothing else.
+  /// See [TicketTypeHierarchy.isAlwaysRoot]. Was `signal` prior to `AIO-934`,
+  /// which split its three meanings (idea / known gap / open question) into
+  /// distinct types — `idea` inherits `signal`'s exact prior behavior.
   idea,
 
-  /// An acknowledged hole in a target ticket's coverage — never
-  /// freestanding. Must be created already linked
-  /// (`TicketLinkType.relatesTo`) to an existing target ticket via
-  /// `TicketsCubit.createGapOrQuestion` or `TicketsCubit.reclassifyIdea`;
-  /// never reachable from the generic New Ticket flow. Parentless; may
-  /// parent a [chat] for exploration/discussion, nothing else. See
-  /// [TicketTypeHierarchy.isAlwaysRoot]. Added for
-  /// `aion-arch/changes/idea-gap-question-ticket-types`.
+  /// An acknowledged hole in a target ticket's coverage — never freestanding.
+  /// Must be created already linked (`TicketLinkType.relatesTo`) to an
+  /// existing target ticket via `TicketsCubit.createGapOrQuestion` or
+  /// `TicketsCubit.reclassifyIdea`; never reachable from the generic New
+  /// Ticket flow. Parentless; may parent a [chat] for exploration/discussion,
+  /// nothing else. See [TicketTypeHierarchy.isAlwaysRoot]. Added for
+  /// `AIO-934`.
   knownGap,
 
-  /// A raised, unresolved point about a target ticket — never
-  /// freestanding. Must be created already linked
-  /// (`TicketLinkType.relatesTo`) to an existing target ticket via
-  /// `TicketsCubit.createGapOrQuestion` or `TicketsCubit.reclassifyIdea`;
-  /// never reachable from the generic New Ticket flow. Parentless; may
-  /// parent a [chat] for exploration/discussion, nothing else. See
-  /// [TicketTypeHierarchy.isAlwaysRoot]. Added for
-  /// `aion-arch/changes/idea-gap-question-ticket-types`.
+  /// A raised, unresolved point about a target ticket — never freestanding.
+  /// Must be created already linked (`TicketLinkType.relatesTo`) to an
+  /// existing target ticket via `TicketsCubit.createGapOrQuestion` or
+  /// `TicketsCubit.reclassifyIdea`; never reachable from the generic New
+  /// Ticket flow. Parentless; may parent a [chat] for exploration/discussion,
+  /// nothing else. See [TicketTypeHierarchy.isAlwaysRoot]. Added for
+  /// `AIO-934`.
   openQuestion,
 
   /// A named release/milestone. Parentless; may parent a [chat] for
@@ -89,15 +84,13 @@ enum TicketType {
   /// ticket-native replacement for `aion-arch/specs/*.md`. Created
   /// automatically, once, when an [epic]'s `SddStage` reaches
   /// `SddStage.archived` (`TicketsCubit._createEpicSpec`, called from
-  /// `TicketsCubit.advanceSddStage`), or manually via the ordinary New
-  /// Ticket flow (used for the one-off "architecture spec" ticket that
-  /// plays `project.md`'s role — see
-  /// `aion-arch/ideas/spec-ticket-type.md`). Parentless; may parent a
-  /// [chat] for discussion, nothing else. Once created, its content is an
-  /// ordinary editable document — see `PagesCubit`, which also serves
-  /// this type — with no cycle of its own; corrections and resolved-bug
-  /// links are plain edits. See [TicketTypeHierarchy.isAlwaysRoot]. Added
-  /// for `aion-arch/changes/spec-ticket-type`.
+  /// `TicketsCubit.advanceSddStage`), or manually via the ordinary New Ticket
+  /// flow (used for the one-off "architecture spec" ticket that plays
+  /// `project.md`'s role — see `AIO-63`). Parentless; may parent a [chat] for
+  /// discussion, nothing else. Once created, its content is an ordinary
+  /// editable document — see `PagesCubit`, which also serves this type — with
+  /// no cycle of its own; corrections and resolved-bug links are plain edits.
+  /// See [TicketTypeHierarchy.isAlwaysRoot]. Added for `AIO-1998`.
   spec,
 }
 
@@ -155,17 +148,15 @@ extension TicketTypeHierarchy on TicketType {
   ///   tickets via `TicketLink` instead of `parentId`.
   /// - [TicketType.resource] remains a full leaf and can never parent
   ///   anything, including itself.
-  /// - [TicketType.chat] is a leaf for every other type but may now
-  ///   parent exactly one further [chat] — a mid-task/issue branch (see
-  ///   [TicketType.chat]'s own dartdoc). This type-level rule only says
-  ///   *a* chat may parent *a* chat; it doesn't cap nesting depth at one
-  ///   level — that instance-level invariant (a chat already parented by
-  ///   another chat cannot itself be branched) lives in
-  ///   `TicketsCubit._canBranch`, consistent with this project's "type-
-  ///   level rules live in the enum extension, instance-level invariants
-  ///   live in the Cubit" split. Added for
-  ///   `aion-arch/changes/mid-task-chat-branching`; see that change's
-  ///   design.md §5.
+  /// - [TicketType.chat] is a leaf for every other type but may now parent
+  ///   exactly one further [chat] — a mid-task/issue branch (see
+  ///   [TicketType.chat]'s own dartdoc). This type-level rule only says *a*
+  ///   chat may parent *a* chat; it doesn't cap nesting depth at one level —
+  ///   that instance-level invariant (a chat already parented by another chat
+  ///   cannot itself be branched) lives in `TicketsCubit._canBranch`,
+  ///   consistent with this project's "type-level rules live in the enum
+  ///   extension, instance-level invariants live in the Cubit" split. Added
+  ///   for `AIO-1118`; see its linked Documentation page, §5.
   bool canParent(TicketType child) {
     if (this == TicketType.page) {
       return child == TicketType.page || child == TicketType.resource;

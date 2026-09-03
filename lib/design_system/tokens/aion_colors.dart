@@ -162,43 +162,38 @@ class AionColors {
   /// Base accent color for [TicketType.page] chips.
   final Color typePage;
 
-  /// Base accent color for [TicketType.idea] chips. Renamed from
-  /// `typeSignal` for `aion-arch/changes/idea-gap-question-ticket-types` —
-  /// same values, since the rename is value-preserving.
+  /// Base accent color for [TicketType.idea] chips. Renamed from `typeSignal`
+  /// for `AIO-934` — same values, since the rename is value-preserving.
   final Color typeIdea;
 
-  /// Base accent color for [TicketType.knownGap] chips. Added for
-  /// `aion-arch/changes/idea-gap-question-ticket-types`.
+  /// Base accent color for [TicketType.knownGap] chips. Added for `AIO-934`.
   final Color typeKnownGap;
 
   /// Base accent color for [TicketType.openQuestion] chips. Added for
-  /// `aion-arch/changes/idea-gap-question-ticket-types`.
+  /// `AIO-934`.
   final Color typeOpenQuestion;
 
   /// Base accent color for [TicketType.release] chips.
   final Color typeRelease;
 
-  /// Base accent color for [TicketType.chat] chips. Added for
-  /// `aion-arch/changes/sdd-ticket-execution` — completes the seven-type
-  /// palette so `TypeChip`/`LinkedTicketsSection` no longer fall back to
-  /// [typeTask] for `chat` tickets.
+  /// Base accent color for [TicketType.chat] chips. Added for `AIO-1856` —
+  /// completes the seven-type palette so `TypeChip`/`LinkedTicketsSection` no
+  /// longer fall back to [typeTask] for `chat` tickets.
   final Color typeChat;
 
-  /// Base accent color for [TicketType.bug] chips. Added for
-  /// `aion-arch/changes/bug-ticket-type`.
+  /// Base accent color for [TicketType.bug] chips. Added for `AIO-425`.
   final Color typeBug;
 
-  /// Base accent color for [TicketType.spec] chips/badges. NOTE:
-  /// intentionally hue-shifts between themes — amethyst in [arctic], azure
-  /// in [obsidian] — because [typeTask] follows [primary] from blue to
-  /// violet in the dark theme, swapping which hue band sits free for a
-  /// tenth type accent. Do not "correct" one theme's value to match the
-  /// other's hue. Added for `aion-arch/changes/spec-ticket-type`.
+  /// Base accent color for [TicketType.spec] chips/badges. NOTE: intentionally
+  /// hue-shifts between themes — amethyst in [arctic], azure in [obsidian] —
+  /// because [typeTask] follows [primary] from blue to violet in the dark
+  /// theme, swapping which hue band sits free for a tenth type accent. Do not
+  /// "correct" one theme's value to match the other's hue. Added for
+  /// `AIO-1998`.
   final Color typeSpec;
 
   /// The four-level severity badge palette for this theme, for
-  /// [TicketType.bug] tickets. Added for
-  /// `aion-arch/changes/bug-ticket-type`.
+  /// [TicketType.bug] tickets. Added for `AIO-425`.
   final AionSeverityColors severity;
 
   /// Creates an [AionColors] palette. All fields are required.
@@ -359,10 +354,9 @@ const double fillAlphaArctic = 0.11;
 const double fillAlphaObsidian = 0.16;
 
 /// Derived, theme-aware overlay/tint colors computed from existing
-/// [AionColors] fields — not stored as separate palette entries since
-/// their only variation across themes is opacity, not hue. Added for the
-/// multi-project Hub (`features/projects/`); see
-/// `aion-arch/changes/multi-project-hub/design.md` §0.
+/// [AionColors] fields — not stored as separate palette entries since their
+/// only variation across themes is opacity, not hue. Added for the
+/// multi-project Hub (`features/projects/`); see `AIO-1174` §0.
 extension AionColorsHubTokens on AionColors {
   /// `EmptyHubState` emblem halo glow.
   Color emblemGlow(bool isDark) =>
@@ -426,7 +420,7 @@ extension AionColorsHubTokens on AionColors {
       success.withValues(alpha: isDark ? 0.24 : 0.18);
 
   // success family — ProviderConnectionBadge, connected state. Added for
-  // provider-configuration; see aion-arch/changes/provider-configuration/design.md.
+  // provider-configuration; see AIO-1699's linked Documentation page.
   /// `ProviderConnectionBadge` fill in the `connected` state.
   Color connectedTint(bool isDark) =>
       success.withValues(alpha: isDark ? 0.20 : 0.14);
@@ -492,8 +486,8 @@ extension AionColorsHubTokens on AionColors {
   // AI/override-tone family — a `primary`-keyed border distinct from the
   // neutral `noticeBorder` family, for surfaces that read as "this is
   // AI/skill-authored," matching `primarySubtle`'s existing "AI comment
-  // bubble" role. Added for project-type-aware-conventions-and-verification;
-  // see that change's design.md (Skill/Convention Overrides spec) §2.5/§3.2.
+  // bubble" role. Added for `AIO-1654`; see its linked Documentation page
+  // (Skill/Convention Overrides spec) §2.5/§3.2.
   /// `OverridesListScreen`'s "Overridden" chip border and
   /// `OverrideEditorScreen`'s status-line variant A ("editing an
   /// override") border.
@@ -515,18 +509,17 @@ extension AionColorsHubTokens on AionColors {
   Color pendingIconTint(bool isDark) =>
       primary.withValues(alpha: isDark ? 0.20 : 0.12);
 
-  // danger family — icon-chip fill behind CodebaseAnalysisBanner's
-  // failure glyph. Added for new-project-onboarding; see design.md §1.2.
+  // danger family — icon-chip fill behind CodebaseAnalysisBanner's failure
+  // glyph. Added for `AIO-1266`; see its linked Documentation page, §1.2.
   /// `CodebaseAnalysisBanner`'s leading icon-chip fill in the `failed`
   /// state.
   Color dangerIconTint(bool isDark) =>
       danger.withValues(alpha: isDark ? 0.24 : 0.16);
 
-  // idea family — CodebaseAnalysisBanner's identity accent (typeIdea),
-  // since a scan's output is `idea` tickets. Renamed from the
-  // `signal*`/`typeSignal` family (value-preserving) for
-  // `aion-arch/changes/idea-gap-question-ticket-types`. Originally added
-  // for new-project-onboarding; see that change's design.md §1.2.
+  // idea family — CodebaseAnalysisBanner's identity accent (typeIdea), since a
+  // scan's output is `idea` tickets. Renamed from the `signal*`/`typeSignal`
+  // family (value-preserving) for `AIO-934`. Originally added for `AIO-1266`;
+  // see its linked Documentation page, §1.2.
   /// `CodebaseAnalysisBanner`'s `offer`-state fill.
   Color ideaFill(bool isDark) =>
       typeIdea.withValues(alpha: isDark ? 0.13 : 0.08);
@@ -543,12 +536,12 @@ extension AionColorsHubTokens on AionColors {
   Color ideaChipTint(bool isDark) =>
       typeIdea.withValues(alpha: isDark ? 0.20 : 0.13);
 
-  // Generic accent tint, parameterized on an explicit accent rather than
-  // one fixed instance field — every other *Tint method above closes over
-  // a single color (e.g. primary/danger/typeSignal); the widened signal
-  // "Promote" menu's suggested-row treatment needs the same fill formula
-  // for whichever of typeEpic/typeBug the classifier suggested. Added for
-  // new-project-onboarding-inbox; see that change's design.md §7.3.1.
+  // Generic accent tint, parameterized on an explicit accent rather than one
+  // fixed instance field — every other *Tint method above closes over a single
+  // color (e.g. primary/danger/typeSignal); the widened signal "Promote"
+  // menu's suggested-row treatment needs the same fill formula for whichever
+  // of typeEpic/typeBug the classifier suggested. Added for `AIO-1300`; see
+  // its linked Documentation page, §7.3.1.
   /// A resting-state tint of [accent] at the "whisper" alpha used by the
   /// widened signal "Promote" menu's suggested-row background — fainter
   /// than [surfaceHover] so hover still reads as a state change on top of
@@ -558,10 +551,10 @@ extension AionColorsHubTokens on AionColors {
 
   // accent family — pressed-state wash for OverlayMenuItem's accented rows
   // (destructive "Delete ticket", suggested Promote-to-Epic/Bug). 1.6× the
-  // existing fillAlphaArctic/fillAlphaObsidian hover wash — the deepest
-  // stop in the same accent hue, matching the pressed-wash multiplier the
-  // shipped Ticket Deletion Spec §2.2 established. Added for
-  // overlay-menu-keyboard-focus; see that change's design.md §1.3.
+  // existing fillAlphaArctic/fillAlphaObsidian hover wash — the deepest stop
+  // in the same accent hue, matching the pressed-wash multiplier the shipped
+  // Ticket Deletion Spec §2.2 established. Added for `AIO-1337`; see its
+  // linked Documentation page, §1.3.
   /// The pressed-state wash of [accent] used by `OverlayMenuItem`'s
   /// accented rows — 1.6× [fillAlphaArctic]/[fillAlphaObsidian], the
   /// deepest wash stop in [accent]'s own hue.
@@ -602,10 +595,10 @@ extension AionColorsHubTokens on AionColors {
       primary.withValues(alpha: isDark ? 0.30 : 0.16);
 
   // typeChat family — _ToolProposalBanner's identity accent (the banner is
-  // keyed to the CHAT type chip's own color, not primary/success/danger —
-  // see that spec's §0 "Identity decision"). Mirrors dangerTint/
+  // keyed to the CHAT type chip's own color, not primary/success/danger — see
+  // that spec's §0 "Identity decision"). Mirrors dangerTint/
   // dangerBorderTint's shape exactly, keyed to typeChat instead of danger.
-  // Added for mid-task-chat-branching; see that change's design.md §4.
+  // Added for `AIO-1118`; see its linked Documentation page, §4.
   /// `_ToolProposalBanner`'s fill — identical alpha level to the CHAT type
   /// chip's own tint.
   Color chatTint(bool isDark) =>
@@ -619,8 +612,7 @@ extension AionColorsHubTokens on AionColors {
   // primary family — _NoColumnsVisibleHint's motif (the board's
   // all-columns-hidden empty state). Distinct alpha stops from
   // primaryWash/focusRing above, so not reused from either. Added for
-  // list-board-view-and-column-visibility; see that change's design.md
-  // (Component Spec) §4.3.
+  // `AIO-1069`; see its linked Documentation page (Component Spec) §4.3.
   /// `_NoColumnsVisibleHint`'s motif border.
   Color columnsMotifBorderTint(bool isDark) =>
       primary.withValues(alpha: isDark ? 0.30 : 0.18);
@@ -638,26 +630,23 @@ extension AionColorsHubTokens on AionColors {
       typeChat.withValues(alpha: isDark ? 0.55 : 0.40);
 
   // Generic accent tint, parameterized on an explicit accent — the
-  // notification dropdown's leading outcome-icon tile fill needs the
-  // standard chip alpha applied to whichever accent (success/danger/
-  // warning/primary) a given `NotificationKind` maps to (Component Spec
-  // §0.4, §6.3), the same "parameterized on `accent`" shape [accentTint]
-  // already established, but at the stronger chip-fill alpha
-  // ([fillAlphaArctic]/[fillAlphaObsidian]) rather than [accentTint]'s
-  // fainter "whisper" alpha. Added for
-  // `aion-arch/changes/pr-metadata-and-notification-center`; see that
-  // change's design.md Component Spec §0.1.
+  // notification dropdown's leading outcome-icon tile fill needs the standard
+  // chip alpha applied to whichever accent (success/danger/ warning/primary) a
+  // given `NotificationKind` maps to (Component Spec §0.4, §6.3), the same
+  // "parameterized on `accent`" shape [accentTint] already established, but at
+  // the stronger chip-fill alpha ([fillAlphaArctic]/[fillAlphaObsidian])
+  // rather than [accentTint]'s fainter "whisper" alpha. Added for `AIO-1586`;
+  // see its linked Documentation page's Component Spec §0.1.
   /// The notification dropdown row's leading outcome-icon tile fill —
   /// [accent] at the standard chip alpha ([fillAlphaArctic]/
   /// [fillAlphaObsidian]).
   Color outcomeTileFill(Color accent, bool isDark) =>
       accent.withValues(alpha: isDark ? fillAlphaObsidian : fillAlphaArctic);
 
-  // primary family — the `ASK ·` identity accent's own hairline, distinct
-  // from the neutral `border`/`borderStrong` family used by preset/rule
-  // condition chips (RB §4.1) since this is the one condition kind that
-  // costs a live model round trip. Added for
-  // decision-graph-agentjudgment-condition; see that change's design.md
+  // primary family — the `ASK ·` identity accent's own hairline, distinct from
+  // the neutral `border`/`borderStrong` family used by preset/rule condition
+  // chips (RB §4.1) since this is the one condition kind that costs a live
+  // model round trip. Added for `AIO-613`; see its linked Documentation page's
   // "New tokens" section / Component Spec §3.2, §4.1.
   /// The `ASK ·` question chip's (canvas card, §3.2) and `ASK` badge's
   /// (outline row, §4.1) 1px hairline — the `primary`-toned sibling of

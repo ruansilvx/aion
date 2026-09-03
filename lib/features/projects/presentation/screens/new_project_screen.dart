@@ -13,24 +13,22 @@ import 'package:aion/features/projects/presentation/cubit/create_project_cubit.d
 import 'package:aion/features/projects/presentation/cubit/create_project_state.dart';
 import 'package:aion/features/projects/presentation/widgets/gitignore_confirmation_banner.dart';
 
-/// Called with the newly created [project] once [NewProjectScreen]
-/// submits successfully. [offerCodebaseAnalysis] is `true` when
-/// [project]'s `rootPath` was already a git repository — the caller
-/// should offer the opt-in codebase-summarization banner on first open
-/// (see `TicketsListScreen`). Added for
-/// `aion-arch/changes/new-project-onboarding`.
+/// Called with the newly created [project] once [NewProjectScreen] submits
+/// successfully. [offerCodebaseAnalysis] is `true` when [project]'s `rootPath`
+/// was already a git repository — the caller should offer the opt-in
+/// codebase-summarization banner on first open (see `TicketsListScreen`).
+/// Added for `AIO-1266`.
 typedef ProjectCreatedCallback =
     void Function(Project project, {required bool offerCodebaseAnalysis});
 
 /// The `/hub/new` route: name, a desktop-only directory picker, and a
-/// (currently read-only) baseline-version selector, followed by a
-/// submit button. On mobile/web the directory field is omitted from the
-/// tree entirely (not merely hidden) and replaced by an informational
-/// notice. When the chosen directory is already a git repository, an
-/// inline [GitignoreConfirmationBanner] appears between the directory
-/// picker and the baseline-version field (desktop only) — see
-/// `aion-arch/changes/new-project-onboarding/design.md` §2/§4.1. See also
-/// `aion-arch/changes/multi-project-hub/design.md` §4.
+/// (currently read-only) baseline-version selector, followed by a submit
+/// button. On mobile/web the directory field is omitted from the tree entirely
+/// (not merely hidden) and replaced by an informational notice. When the
+/// chosen directory is already a git repository, an inline
+/// [GitignoreConfirmationBanner] appears between the directory picker and the
+/// baseline-version field (desktop only) — see `AIO-1266` §2/§4.1. See also
+/// `AIO-1174` §4.
 class NewProjectScreen extends StatefulWidget {
   /// Creates a [NewProjectScreen]. [onBack] returns to the Hub without
   /// creating; [onCreated] is called with the newly created project.

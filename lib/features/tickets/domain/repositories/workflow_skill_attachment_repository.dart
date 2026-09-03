@@ -6,11 +6,10 @@ import 'package:aion/features/tickets/domain/entities/skill_attachment.dart';
 /// layer only — no validation, no invariant enforcement (e.g. the
 /// at-most-one-per-target rule). Every domain invariant lives in
 /// `WorkflowConfigCubit`, per this project's Cubit-vs-repository split
-/// (validation/invariant logic lives in Cubits, not repositories).
-/// Implemented by the data layer
-/// ([DriftWorkflowSkillAttachmentRepository]); UI and domain code depend
-/// only on this interface, never on a concrete data source. See
-/// `aion-arch/changes/workflow-skill-attachments/design.md` §1.5.
+/// (validation/invariant logic lives in Cubits, not repositories). Implemented
+/// by the data layer ([DriftWorkflowSkillAttachmentRepository]); UI and domain
+/// code depend only on this interface, never on a concrete data source. See
+/// `AIO-2650` §1.5.
 abstract interface class WorkflowSkillAttachmentRepository {
   /// Returns every persisted [SkillAttachment], unfiltered.
   Future<List<SkillAttachment>> getAll();

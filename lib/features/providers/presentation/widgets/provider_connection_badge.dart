@@ -10,11 +10,10 @@ import 'package:aion/features/providers/domain/enums/provider_connection_status.
 /// A small icon+label status pill showing a [ProviderConnectionStatus],
 /// rendered in `SettingsScreen`'s provider status card. Follows
 /// `SyncStatusBadge`'s established icon+label pill visual family
-/// (`design_system/molecules/sync_status_badge.dart`) but stays
-/// feature-local — a one-off status readout for this screen, not yet used
-/// anywhere else, so it doesn't meet the design-system promotion bar (see
-/// `aion-arch/changes/provider-configuration/design.md` §4.3). Non-
-/// interactive (a status readout, not a control): no hover/press/focus
+/// (`design_system/molecules/sync_status_badge.dart`) but stays feature-local
+/// — a one-off status readout for this screen, not yet used anywhere else, so
+/// it doesn't meet the design-system promotion bar (see `AIO-1699` §4.3).
+/// Non-interactive (a status readout, not a control): no hover/press/focus
 /// treatment.
 ///
 /// The `checking` state reuses [AppSpinner] directly — exactly how
@@ -23,11 +22,9 @@ import 'package:aion/features/providers/domain/enums/provider_connection_status.
 /// design-sync notes on avoiding a numerically-duplicate implementation.
 ///
 /// [labelOverride] is additive (default `null`) — added so
-/// `_AnthropicApiKeySection`'s no-key-saved presentation can show
-/// `"NO KEY"` on the `unknown` state's existing chrome instead of a new
-/// badge state. See
-/// `aion-arch/changes/anthropic-messages-api-provider/design.md`'s
-/// Component Spec §5.2.
+/// `_AnthropicApiKeySection`'s no-key-saved presentation can show `"NO KEY"`
+/// on the `unknown` state's existing chrome instead of a new badge state. See
+/// `AIO-110`'s Component Spec §5.2.
 class ProviderConnectionBadge extends StatelessWidget {
   /// Creates a [ProviderConnectionBadge] for [status], optionally
   /// overriding its label via [labelOverride].

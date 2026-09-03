@@ -70,13 +70,12 @@ class CreateProjectSuccess extends CreateProjectState {
   /// The newly created project.
   final Project project;
 
-  /// Whether [project]'s `rootPath` was already a git repository at
-  /// creation time (desktop only; always `false` on mobile/web, where
-  /// there's no `rootPath` to check). Lets the widget layer decide the
-  /// gitignore-decline warning toast and the downstream
-  /// codebase-analysis offer without re-deriving the check
-  /// [CreateProjectCubit.submit] already ran. Added for
-  /// `aion-arch/changes/new-project-onboarding`.
+  /// Whether [project]'s `rootPath` was already a git repository at creation
+  /// time (desktop only; always `false` on mobile/web, where there's no
+  /// `rootPath` to check). Lets the widget layer decide the gitignore-decline
+  /// warning toast and the downstream codebase-analysis offer without
+  /// re-deriving the check [CreateProjectCubit.submit] already ran. Added for
+  /// `AIO-1266`.
   final bool wasExistingGitRepo;
 
   @override

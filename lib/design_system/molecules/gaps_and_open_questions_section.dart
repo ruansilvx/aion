@@ -12,19 +12,18 @@ import 'package:aion/features/tickets/domain/entities/gap_or_question_ref.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
 /// A ticket-detail section listing every `knownGap`/`openQuestion` ticket
-/// raised against the currently-viewed ticket, recursively rolled up from
-/// its descendants — see [GapOrQuestionRef]. Visual sibling of
-/// `LinkedTicketsSection`/`PageSubPagesSection`: same top-bordered block,
-/// same header rhythm (caption label + count pill + trailing "+ Add"
-/// control). Read-only — there is no remove/retype affordance on a row;
-/// the only way to remove an entry is to delete the underlying gap/
-/// question ticket elsewhere. Mirrors `LinkedTicketsSection`'s
-/// `trailing`-widget shape rather than a plain `onAdd` callback, since
-/// the trailing control (`RaiseGapOrQuestionPicker`) owns its own "+ Add"
-/// trigger button, `LayerLink`, and `Overlay`, same as `TicketLinkPicker`
-/// does for `LinkedTicketsSection`. Added for
-/// `aion-arch/changes/idea-gap-question-ticket-types`; see that change's
-/// design.md §6.1 and Component Spec §2.
+/// raised against the currently-viewed ticket, recursively rolled up from its
+/// descendants — see [GapOrQuestionRef]. Visual sibling of
+/// `LinkedTicketsSection`/`PageSubPagesSection`: same top-bordered block, same
+/// header rhythm (caption label + count pill + trailing "+ Add" control).
+/// Read-only — there is no remove/retype affordance on a row; the only way to
+/// remove an entry is to delete the underlying gap/ question ticket elsewhere.
+/// Mirrors `LinkedTicketsSection`'s `trailing`-widget shape rather than a
+/// plain `onAdd` callback, since the trailing control
+/// (`RaiseGapOrQuestionPicker`) owns its own "+ Add" trigger button,
+/// `LayerLink`, and `Overlay`, same as `TicketLinkPicker` does for
+/// `LinkedTicketsSection`. Added for `AIO-934`; see its linked Documentation
+/// page, §6.1 and Component Spec §2.
 class GapsAndOpenQuestionsSection extends StatelessWidget {
   /// Creates a [GapsAndOpenQuestionsSection] listing [refs].
   const GapsAndOpenQuestionsSection({

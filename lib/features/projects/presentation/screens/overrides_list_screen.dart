@@ -118,13 +118,11 @@ class _OverridesList extends StatelessWidget {
   }
 }
 
-/// The two kinds a baseline asset renders as in this list — drives only
-/// the kind glyph and its color (`_kindGlyphs`/[kindGlyphColor]). Distinct
-/// from the wider [BaselineAssetKind] (which also has `modelConfig`, an
-/// asset kind this list treats visually as a convention — see
-/// [overrideKindOf]) — this narrower enum is the row's actual view model,
-/// per `aion-arch/changes/project-type-aware-conventions-and-
-/// verification/design.md` §5.
+/// The two kinds a baseline asset renders as in this list — drives only the
+/// kind glyph and its color (`_kindGlyphs`/[kindGlyphColor]). Distinct from
+/// the wider [BaselineAssetKind] (which also has `modelConfig`, an asset kind
+/// this list treats visually as a convention — see [overrideKindOf]) — this
+/// narrower enum is the row's actual view model, per AIO-1654 §5.
 enum OverrideKind {
   /// A `skills/*` baseline asset — rendered with the sparkle glyph in
   /// [AionColors.primary].

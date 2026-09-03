@@ -10,13 +10,12 @@ import 'package:aion/features/projects/domain/repositories/baseline_repository.d
 import 'package:aion/features/projects/domain/repositories/project_repository.dart';
 import 'package:aion/features/projects/presentation/cubit/active_project_state.dart';
 
-/// Tracks which [Project] is currently active and drives the live,
-/// no-restart project switch described in
-/// `aion-arch/changes/multi-project-hub/design.md` §6: the workspace
-/// subtree in `main.dart` is keyed on `ValueKey(activeProject.id)`, so
-/// emitting a new [ActiveProjectOpen] with a different project id causes
-/// Flutter to dispose the old subtree (closing its [AppDatabase]
-/// connection) and build a fresh one addressed to the new project.
+/// Tracks which [Project] is currently active and drives the live, no-restart
+/// project switch described in `AIO-1174` §6: the workspace subtree in
+/// `main.dart` is keyed on `ValueKey(activeProject.id)`, so emitting a new
+/// [ActiveProjectOpen] with a different project id causes Flutter to dispose
+/// the old subtree (closing its [AppDatabase] connection) and build a fresh
+/// one addressed to the new project.
 ///
 /// Implements [ActiveProjectProvider] (the `core/contracts/` interface,
 /// per `project.md`'s Pattern 1) so any feature can depend on "what
@@ -94,15 +93,14 @@ class ActiveProjectCubit extends Cubit<ActiveProjectState>
     );
   }
 
-  /// Clears the current [ActiveProjectOpen.offerCodebaseAnalysis] flag
-  /// back to `false`, re-emitting the same project unchanged (preserving
+  /// Clears the current [ActiveProjectOpen.offerCodebaseAnalysis] flag back to
+  /// `false`, re-emitting the same project unchanged (preserving
   /// [ActiveProjectOpen.offerBaselineUpgrade] untouched). Called by
-  /// `TicketsListScreen.initState` once it has read the flag and shown
-  /// (or decided not to show) the codebase-analysis offer, so the offer
-  /// never reappears on a later rebuild within the same session. No-ops
-  /// if the current state isn't [ActiveProjectOpen], or the flag is
-  /// already `false`. Added for
-  /// `aion-arch/changes/new-project-onboarding`.
+  /// `TicketsListScreen.initState` once it has read the flag and shown (or
+  /// decided not to show) the codebase-analysis offer, so the offer never
+  /// reappears on a later rebuild within the same session. No-ops if the
+  /// current state isn't [ActiveProjectOpen], or the flag is already `false`.
+  /// Added for `AIO-1266`.
   @override
   void consumeCodebaseAnalysisOffer() {
     final current = state;
@@ -117,14 +115,13 @@ class ActiveProjectCubit extends Cubit<ActiveProjectState>
     );
   }
 
-  /// Clears the current [ActiveProjectOpen.offerBaselineUpgrade] flag
-  /// back to `false`, re-emitting the same project unchanged (preserving
+  /// Clears the current [ActiveProjectOpen.offerBaselineUpgrade] flag back to
+  /// `false`, re-emitting the same project unchanged (preserving
   /// [ActiveProjectOpen.offerCodebaseAnalysis] untouched). Called by
-  /// `TicketsListScreen.initState` once it has read the flag and shown
-  /// (or decided not to show) the baseline-upgrade offer banner. No-ops
-  /// if the current state isn't [ActiveProjectOpen], or the flag is
-  /// already `false`. Added for
-  /// `aion-arch/changes/baseline-version-upgrade-flow`.
+  /// `TicketsListScreen.initState` once it has read the flag and shown (or
+  /// decided not to show) the baseline-upgrade offer banner. No-ops if the
+  /// current state isn't [ActiveProjectOpen], or the flag is already `false`.
+  /// Added for `AIO-297`.
   @override
   void consumeBaselineUpgradeOffer() {
     final current = state;
@@ -139,18 +136,15 @@ class ActiveProjectCubit extends Cubit<ActiveProjectState>
     );
   }
 
-  /// Bumps [activeProject]'s pinned baseline to the latest bundled
-  /// version: updates the registry DB row
-  /// ([ProjectRepository.updateBaselineVersion]), rewrites
-  /// `.aion/manifest.json` (desktop only), and tailors any
-  /// newly-introduced `architectureConvention`-kind asset (desktop
-  /// only — see
-  /// [BaselineTailoringService.tailorNewlyIntroducedAssets]). A no-op if
-  /// the current state isn't [ActiveProjectOpen] or the project is
-  /// already pinned to the latest version. Re-emits [ActiveProjectOpen]
-  /// with the bumped project and [ActiveProjectOpen.offerBaselineUpgrade]
-  /// cleared. Added for
-  /// `aion-arch/changes/baseline-version-upgrade-flow`.
+  /// Bumps [activeProject]'s pinned baseline to the latest bundled version:
+  /// updates the registry DB row ([ProjectRepository.updateBaselineVersion]),
+  /// rewrites `.aion/manifest.json` (desktop only), and tailors any
+  /// newly-introduced `architectureConvention`-kind asset (desktop only — see
+  /// [BaselineTailoringService.tailorNewlyIntroducedAssets]). A no-op if the
+  /// current state isn't [ActiveProjectOpen] or the project is already pinned
+  /// to the latest version. Re-emits [ActiveProjectOpen] with the bumped
+  /// project and [ActiveProjectOpen.offerBaselineUpgrade] cleared. Added for
+  /// `AIO-297`.
   @override
   Future<void> acceptBaselineUpgrade() async {
     final current = state;

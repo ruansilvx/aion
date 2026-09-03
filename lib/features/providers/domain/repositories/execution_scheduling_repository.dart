@@ -3,9 +3,8 @@
 import 'package:aion/features/providers/domain/enums/execution_scheduling_mode.dart';
 
 /// Persists the user's coding-execution scheduling choice — see
-/// `ExecutionSchedulingCubit` and
-/// `aion-arch/changes/parallel-work/design.md` §6. Plain reads/writes
-/// only, no validation.
+/// `ExecutionSchedulingCubit` and `AIO-1400` §6. Plain reads/writes only, no
+/// validation.
 abstract interface class ExecutionSchedulingRepository {
   /// The persisted [ExecutionSchedulingMode], defaulting to
   /// [ExecutionSchedulingMode.strictFifo] if none has been saved yet —

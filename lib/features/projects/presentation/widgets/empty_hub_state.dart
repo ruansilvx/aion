@@ -7,9 +7,8 @@ import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 
 /// Shown on the Hub when no projects exist yet (first run): a filled
-/// faction-motif emblem, a short explanation, and a "New Project" call
-/// to action. See
-/// `aion-arch/changes/multi-project-hub/design.md` §3.
+/// faction-motif emblem, a short explanation, and a "New Project" call to
+/// action. See `AIO-1174` §3.
 class EmptyHubState extends StatelessWidget {
   /// Creates an [EmptyHubState]. [onNewProject] is called when the CTA
   /// is activated.

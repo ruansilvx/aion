@@ -4,10 +4,9 @@ import 'package:equatable/equatable.dart';
 
 import 'package:aion/features/projects/domain/entities/baseline_asset.dart';
 
-/// One versioned, app-bundled baseline package: a fixed set of default
-/// skills, model config, and architecture-convention pointers a
-/// [Project](project.dart) pins at creation time. See
-/// `aion-arch/changes/multi-project-hub/design.md` §8.
+/// One versioned, app-bundled baseline package: a fixed set of default skills,
+/// model config, and architecture-convention pointers a
+/// [Project](project.dart) pins at creation time. See `AIO-1174` §8.
 class BaselineManifest extends Equatable {
   /// The baseline version this manifest describes (e.g. `"0.1.0"`).
   final String version;

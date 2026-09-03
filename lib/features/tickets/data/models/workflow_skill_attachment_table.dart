@@ -3,12 +3,11 @@
 import 'package:drift/drift.dart';
 
 /// Drift table persisting a project's configured
-/// `SkillAttachment`(../../domain/entities/skill_attachment.dart) set —
-/// the automation attached to a `WorkflowStatus` or `SddStage` entry. Row
-/// type is generated as `WorkflowSkillAttachmentData`. No FK constraints
-/// — integrity is enforced at the `WorkflowConfigCubit` layer, matching
-/// `WorkflowStatusesTable`'s own precedent. See
-/// `aion-arch/changes/workflow-skill-attachments/design.md` §2.1.
+/// `SkillAttachment`(../../domain/entities/skill_attachment.dart) set — the
+/// automation attached to a `WorkflowStatus` or `SddStage` entry. Row type is
+/// generated as `WorkflowSkillAttachmentData`. No FK constraints — integrity
+/// is enforced at the `WorkflowConfigCubit` layer, matching
+/// `WorkflowStatusesTable`'s own precedent. See `AIO-2650` §2.1.
 @DataClassName('WorkflowSkillAttachmentData')
 class WorkflowSkillAttachmentsTable extends Table {
   @override

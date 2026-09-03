@@ -15,14 +15,12 @@ import 'package:aion/features/tickets/domain/utils/embedding_similarity.dart';
 
 /// Produces AI-suggested `complexity`/`estimate` values for a [Ticket],
 /// calibrated against similar already-sized tickets. Placed alongside
-/// `TicketRollupRecomputer` rather than in `data/services/`, because it
-/// owns the actual judgment logic (is a field locked? how many comparable
-/// tickets? what counts as low-confidence?) that `project.md`'s
-/// Cubit-owns-domain-logic convention keeps out of the repository/service
-/// layer. `TicketsCubit` constructs one instance in its own constructor
-/// body, next to `_rollupRecomputer`. See
-/// `aion-arch/changes/ai-assisted-complexity-and-estimate-suggestions/design.md`
-/// §2.1–§2.2.
+/// `TicketRollupRecomputer` rather than in `data/services/`, because it owns
+/// the actual judgment logic (is a field locked? how many comparable tickets?
+/// what counts as low-confidence?) that `project.md`'s Cubit-owns-domain-logic
+/// convention keeps out of the repository/service layer. `TicketsCubit`
+/// constructs one instance in its own constructor body, next to
+/// `_rollupRecomputer`. See `AIO-75` §2.1–§2.2.
 class TicketEstimationSuggester {
   /// Creates a [TicketEstimationSuggester] backed by [_repository].
   /// [embeddingProvider]/[providerRegistry]/[modelRoutingRepository] are

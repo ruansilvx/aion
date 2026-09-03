@@ -19,13 +19,12 @@ import 'package:aion/design_system/design_system.dart';
 /// `DecisionOutlineList`'s own call site) — the cost statement doesn't
 /// apply to a node that will never actually be evaluated.
 ///
-/// Per design.md §5.2: hover fills a `neutralTint` circle behind the
-/// glyph and opens the tooltip after a 120ms delay; keyboard focus
-/// re-tones the glyph/ring to `primary` and opens the tooltip
-/// immediately; a tap/touch toggles a sticky `primaryWash`-filled open
-/// state that persists until the next tap anywhere (via [TapRegion]).
-/// Added for `aion-arch/changes/decision-graph-agentjudgment-condition`;
-/// see that change's design.md §5.
+/// Per design.md §5.2: hover fills a `neutralTint` circle behind the glyph and
+/// opens the tooltip after a 120ms delay; keyboard focus re-tones the
+/// glyph/ring to `primary` and opens the tooltip immediately; a tap/touch
+/// toggles a sticky `primaryWash`-filled open state that persists until the
+/// next tap anywhere (via [TapRegion]). Added for `AIO-613`; see its linked
+/// Documentation page, §5.
 class AgentCostHint extends StatefulWidget {
   /// Creates an [AgentCostHint]. [showLatencyLine] adds the canvas card's
   /// second, `~2–6s per evaluation` line (design.md §5.3) — omitted on the
@@ -273,22 +272,20 @@ class _AgentCostHintTooltip extends StatelessWidget {
     final t = ThemeScope.of(context);
     final c = t.colors;
     // `left`/`top` here are load-bearing, not decorative — and can't be
-    // omitted. `Overlay`'s internal `_Theatre` (a `Stack`) only shrink-wraps
-    // a child's own intrinsic size when `StackParentData.isPositioned` is
-    // true, which requires at least one of left/top/right/bottom/width/
-    // height to be non-null; a bare `Positioned()` with none of them set
-    // is *not* positioned at all and is silently treated exactly like an
-    // unwrapped child — stretched to the theatre's full size. `left: 0,
-    // top: 0` satisfies `isPositioned` while leaving the actual screen
-    // placement entirely to [CompositedTransformFollower]'s paint-time
-    // transform below, which is unaffected by this widget's layout
-    // position. Confirmed empirically (a debug-colored child filled the
-    // entire app window instead of its requested 240×~50, and remained
-    // stretched even after a first attempt with a geometry-less
-    // `Positioned`) while fixing
-    // `aion-arch/changes/decision-graph-agentjudgment-condition`'s
-    // `/verify` findings — pre-existing since that change's original
-    // `/apply`, not introduced by this pass.
+    // omitted. `Overlay`'s internal `_Theatre` (a `Stack`) only shrink-wraps a
+    // child's own intrinsic size when `StackParentData.isPositioned` is true,
+    // which requires at least one of left/top/right/bottom/width/ height to be
+    // non-null; a bare `Positioned()` with none of them set is *not*
+    // positioned at all and is silently treated exactly like an unwrapped
+    // child — stretched to the theatre's full size. `left: 0, top: 0`
+    // satisfies `isPositioned` while leaving the actual screen placement
+    // entirely to [CompositedTransformFollower]'s paint-time transform below,
+    // which is unaffected by this widget's layout position. Confirmed
+    // empirically (a debug-colored child filled the entire app window instead
+    // of its requested 240×~50, and remained stretched even after a first
+    // attempt with a geometry-less `Positioned`) while fixing `AIO-613`'s
+    // `/verify` findings — pre-existing since that change's original `/apply`,
+    // not introduced by this pass.
     return Positioned(
       left: 0,
       top: 0,

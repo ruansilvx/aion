@@ -79,11 +79,10 @@ class TicketFilterPopover extends StatefulWidget {
   final ValueChanged<TicketPriority> onTogglePriority;
 
   /// The `Type` group's fixed, client-side-filtered item list —
-  /// `page`/`resource` moved to the Documentation section and no longer
-  /// appear here; `idea`/`knownGap`/`openQuestion`/`release` excluded (the
-  /// first three inherit `signal`'s original pre-existing-gap exclusion —
-  /// see `aion-arch/changes/idea-gap-question-ticket-types`).
-  /// Mirrors the same hardcoded list `TicketsListScreen`'s old
+  /// `page`/`resource` moved to the Documentation section and no longer appear
+  /// here; `idea`/`knownGap`/`openQuestion`/`release` excluded (the first
+  /// three inherit `signal`'s original pre-existing-gap exclusion — see
+  /// `AIO-934`). Mirrors the same hardcoded list `TicketsListScreen`'s old
   /// `AppDropdown<TicketType?>` used.
   static const typeOptions = [
     TicketType.epic,
@@ -105,29 +104,26 @@ class _TicketFilterPopoverState extends State<TicketFilterPopover> {
   @override
   void didUpdateWidget(covariant TicketFilterPopover oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Every toggle re-runs `searchTickets`, which rebuilds this widget
-    // with fresh `selectedX` sets from the cubit — but the already-open
-    // `OverlayEntry`'s content isn't part of this widget's own subtree
-    // (it's inserted into the ancestor `Overlay`), so it never repaints
-    // on its own just because this widget rebuilt. Without this, a
-    // checked/unchecked row inside an already-open popover would keep
-    // showing its state from when the popover was opened, even though
-    // the trigger badge, chip row, and ticket list (driven directly by
-    // `TicketsListScreen`'s own `BlocBuilder`) all update correctly.
-    // Deferred to a post-frame callback rather than called synchronously
-    // here — this `didUpdateWidget` can itself run nested inside
-    // another ancestor's build pass (concretely: the very first open,
+    // Every toggle re-runs `searchTickets`, which rebuilds this widget with
+    // fresh `selectedX` sets from the cubit — but the already-open
+    // `OverlayEntry`'s content isn't part of this widget's own subtree (it's
+    // inserted into the ancestor `Overlay`), so it never repaints on its own
+    // just because this widget rebuilt. Without this, a checked/unchecked row
+    // inside an already-open popover would keep showing its state from when
+    // the popover was opened, even though the trigger badge, chip row, and
+    // ticket list (driven directly by `TicketsListScreen`'s own `BlocBuilder`)
+    // all update correctly. Deferred to a post-frame callback rather than
+    // called synchronously here — this `didUpdateWidget` can itself run nested
+    // inside another ancestor's build pass (concretely: the very first open,
     // where `_showOverlay`'s `onOpenChanged` callback marks
-    // `_TicketFilterAndSortSection` dirty in the same frame this
-    // widget's own state changes), and the `OverlayEntry` lives outside
-    // this widget's own subtree (under the root `Overlay`), so a
-    // synchronous `markNeedsBuild()` here hits Flutter's "setState
-    // called during build" assertion for a non-descendant target —
-    // reproducible by tapping this trigger on a native desktop build
-    // (see `aion-arch/changes/list-board-view-and-column-visibility`'s
-    // manual verification pass). `TicketSortPopover`'s own
-    // `didUpdateWidget` already used this fix; this one hadn't been
-    // updated to match until now.
+    // `_TicketFilterAndSortSection` dirty in the same frame this widget's own
+    // state changes), and the `OverlayEntry` lives outside this widget's own
+    // subtree (under the root `Overlay`), so a synchronous `markNeedsBuild()`
+    // here hits Flutter's "setState called during build" assertion for a
+    // non-descendant target — reproducible by tapping this trigger on a native
+    // desktop build (see `AIO-1069`'s manual verification pass).
+    // `TicketSortPopover`'s own `didUpdateWidget` already used this fix; this
+    // one hadn't been updated to match until now.
     final entry = _overlayEntry;
     if (entry != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {

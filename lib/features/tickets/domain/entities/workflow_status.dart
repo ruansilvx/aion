@@ -7,7 +7,7 @@ import 'package:aion/features/tickets/domain/enums/workflow_status_role.dart';
 
 /// A single project-configured ticket-workflow status — the data-driven
 /// replacement for what used to be a fixed `TicketStatus` enum value. See
-/// `aion-arch/changes/configurable-ticket-workflow/design.md` §1.2.
+/// `AIO-549` §1.2.
 ///
 /// [name] is unique within its scope: unique among all shared-base entries
 /// ([ticketType] `null`), and unique among a given [ticketType]'s

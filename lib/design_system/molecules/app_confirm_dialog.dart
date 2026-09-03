@@ -49,17 +49,15 @@ enum ConfirmDialogTone {
 /// [tone] selects the dialog's severity styling — see [ConfirmDialogTone].
 ///
 /// [accentColor]/[accentIcon] together override the tone-driven icon disc
-/// (color, shape, and glyph) for a consequential-but-not-destructive
-/// action that needs its own accent rather than [ConfirmDialogTone]'s
-/// binary primary/danger choice — e.g. a release accent for a tag/push
-/// confirmation. Either both must be given or neither; the tone's own
-/// action-button styling ([_ConfirmButton]) is unaffected, since design.md
-/// §4.2 keeps the confirm button `primary` regardless. [extraContent], if
-/// given, renders between [message] and the action row — e.g. a read-only
-/// details block naming exact values the confirmation is about (per
-/// design.md §4.2's tag/branch block; added for
-/// `aion-arch/changes/release-preparation-and-tagging`'s `/verify`
-/// round-1 fix-up, T18).
+/// (color, shape, and glyph) for a consequential-but-not-destructive action
+/// that needs its own accent rather than [ConfirmDialogTone]'s binary
+/// primary/danger choice — e.g. a release accent for a tag/push confirmation.
+/// Either both must be given or neither; the tone's own action-button styling
+/// ([_ConfirmButton]) is unaffected, since design.md §4.2 keeps the confirm
+/// button `primary` regardless. [extraContent], if given, renders between
+/// [message] and the action row — e.g. a read-only details block naming exact
+/// values the confirmation is about (per design.md §4.2's tag/branch block;
+/// added for `AIO-1782`'s `/verify` round-1 fix-up, T18).
 ///
 /// Built the same way as [AppToast] — an [OverlayEntry] inserted into the
 /// nearest [Overlay] — so it needs no `Scaffold`/`Dialog` ancestor and

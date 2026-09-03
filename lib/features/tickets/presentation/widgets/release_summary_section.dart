@@ -10,17 +10,15 @@ import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/domain/entities/linked_ticket_ref.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
 
-/// The Release section a `release`-type ticket's detail screen renders —
-/// the type gets no Documentation-mode content of its own otherwise (see
+/// The Release section a `release`-type ticket's detail screen renders — the
+/// type gets no Documentation-mode content of its own otherwise (see
 /// `aion-arch/specs/tickets.md`'s "Documentation-mode sections", which
-/// excludes `release`). Lists [linkedWork] via the existing
-/// `design_system` [LinkedTicketsSection] molecule, reused as-is per
-/// `aion-arch/changes/release-preparation-and-tagging/design.md` §5.1 —
-/// this widget contributes only the eyebrow above it and the Prepare
-/// Release trigger below it. Feature-level composition, not a
-/// `design_system/` promotion, since it's tied to `release`-ticket
-/// business logic (the Prepare Release trigger itself). Added for
-/// `aion-arch/changes/release-preparation-and-tagging`.
+/// excludes `release`). Lists [linkedWork] via the existing `design_system`
+/// [LinkedTicketsSection] molecule, reused as-is per `AIO-1782` §5.1 — this
+/// widget contributes only the eyebrow above it and the Prepare Release
+/// trigger below it. Feature-level composition, not a `design_system/`
+/// promotion, since it's tied to `release`-ticket business logic (the Prepare
+/// Release trigger itself). Added for `AIO-1782`.
 class ReleaseSummarySection extends StatelessWidget {
   /// Creates a [ReleaseSummarySection].
   const ReleaseSummarySection({
@@ -99,16 +97,15 @@ class ReleaseSummarySection extends StatelessWidget {
 
 /// The Prepare Release trigger, wrapping [AppButton] with a hover-dwell
 /// tooltip for its disabled-by-empty-scope state (design.md §1.3.6):
-/// `"Link the work this release ships first"`, appearing after a 450ms
-/// hover dwell with a 120ms fade-in, dismissing instantly on exit. Mirrors
+/// `"Link the work this release ships first"`, appearing after a 450ms hover
+/// dwell with a 120ms fade-in, dismissing instantly on exit. Mirrors
 /// `AgentCostHint`'s existing bare `OverlayEntry` +
 /// `CompositedTransformFollower` + dwell-`Timer` pattern
 /// (`aion/lib/features/providers/presentation/widgets/agent_cost_hint.dart`)
-/// rather than a new one. The always-visible empty-state notice (§1.4)
-/// already states the same reason for a non-hovering/keyboard user — this
-/// tooltip is a hover-only supplement, not the only place the reason is
-/// surfaced. Added for `aion-arch/changes/release-preparation-and-tagging`'s
-/// `/verify` round-1 fix-up, T19.
+/// rather than a new one. The always-visible empty-state notice (§1.4) already
+/// states the same reason for a non-hovering/keyboard user — this tooltip is a
+/// hover-only supplement, not the only place the reason is surfaced. Added for
+/// `AIO-1782`'s `/verify` round-1 fix-up, T19.
 class _PrepareReleaseButton extends StatefulWidget {
   const _PrepareReleaseButton({
     required this.preparing,

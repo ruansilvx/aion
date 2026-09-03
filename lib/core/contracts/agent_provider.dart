@@ -6,13 +6,12 @@ import 'package:aion/core/contracts/consumption_signal.dart';
 import 'package:aion/core/contracts/provider_id.dart';
 import 'package:aion/core/contracts/tool_access_tier.dart';
 
-/// A configured, usable model provider. [AgentModelClient] stays the
-/// low-level "run a request" contract (unchanged); [AgentProvider] is one
-/// level up — identity, capability declaration, model list, and the two
-/// pure text-mapping functions that keep vendor-specific detail out of
-/// [AgentModelClient]'s already-shipped, unchanged event shapes. Looked
-/// up by [ProviderId] via a `ProviderRegistry`. See
-/// `aion-arch/changes/pluggable-provider-abstraction/design.md` §1.
+/// A configured, usable model provider. [AgentModelClient] stays the low-level
+/// "run a request" contract (unchanged); [AgentProvider] is one level up —
+/// identity, capability declaration, model list, and the two pure text-mapping
+/// functions that keep vendor-specific detail out of [AgentModelClient]'s
+/// already-shipped, unchanged event shapes. Looked up by [ProviderId] via a
+/// `ProviderRegistry`. See `AIO-1544` §1.
 abstract interface class AgentProvider {
   /// This provider's identity.
   ProviderId get id;
@@ -40,12 +39,11 @@ abstract interface class AgentProvider {
   /// no I/O.
   String normalizeErrorMessage(String rawMessage);
 
-  /// Whether this provider's [client] can resume/fork an existing
-  /// session cheaply enough for a mid-turn side-question (see
-  /// `aion-arch/changes/decision-graph-agentjudgment-condition/design.md`
-  /// §1). `false` means an `agentJudgment` decision-graph condition
-  /// always resolves to its unmatched branch when evaluated under this
-  /// provider — never a crash, never a block.
+  /// Whether this provider's [client] can resume/fork an existing session
+  /// cheaply enough for a mid-turn side-question (see `AIO-613` §1). `false`
+  /// means an `agentJudgment` decision-graph condition always resolves to its
+  /// unmatched branch when evaluated under this provider — never a crash,
+  /// never a block.
   bool get supportsSessionResume;
 
   /// Whether this provider's underlying agent discovers and can execute
@@ -53,17 +51,15 @@ abstract interface class AgentProvider {
   /// `/<name>` slash-command prompt — the mechanism
   /// `SkillAttachmentKind.delegatedSkill` depends on entirely (see
   /// `TicketsCubit._promptFor`, which sends that literal prompt text and
-  /// relies on the resolved provider's own discovery to do the rest).
-  /// `false` means a `delegatedSkill` attachment resolved to this
-  /// provider cannot run at all. Checked at
-  /// `TicketsCubit._fireSkillAttachment`'s provider-resolution point,
-  /// not folded into `ModelPhaseToolAccess`/`ModelRoutingCubit`'s
-  /// Settings-dropdown filtering — that filtering is phase-wide
-  /// (`ModelPhase.execution` is shared with plain coding-execution runs
-  /// that have no skill-discovery dependency), while this capability is
-  /// specific to the one `delegatedSkill` call site. Same
-  /// per-call-site-capability shape as [supportsSessionResume], above.
-  /// See `aion-arch/changes/delegated-skill-provider-portability/design.md`
-  /// §1.
+  /// relies on the resolved provider's own discovery to do the rest). `false`
+  /// means a `delegatedSkill` attachment resolved to this provider cannot run
+  /// at all. Checked at `TicketsCubit._fireSkillAttachment`'s
+  /// provider-resolution point, not folded into
+  /// `ModelPhaseToolAccess`/`ModelRoutingCubit`'s Settings-dropdown filtering
+  /// — that filtering is phase-wide (`ModelPhase.execution` is shared with
+  /// plain coding-execution runs that have no skill-discovery dependency),
+  /// while this capability is specific to the one `delegatedSkill` call site.
+  /// Same per-call-site-capability shape as [supportsSessionResume], above.
+  /// See `AIO-702` §1.
   bool get supportsSkillDiscovery;
 }

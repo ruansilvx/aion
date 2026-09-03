@@ -9,11 +9,10 @@ import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/projects/presentation/cubit/override_editor_cubit.dart';
 import 'package:aion/features/projects/presentation/cubit/override_editor_state.dart';
 
-/// Which text [OverrideEditorScreen] was opened on — drives the status
-/// line's copy/color (§3.2) and the Save button's label (§3.4). No stored
-/// override → [editingDefault]. A view-model enum, per `aion-arch/
-/// changes/project-type-aware-conventions-and-verification/design.md`
-/// §5 — carries no design tokens of its own.
+/// Which text [OverrideEditorScreen] was opened on — drives the status line's
+/// copy/color (§3.2) and the Save button's label (§3.4). No stored override →
+/// [editingDefault]. A view-model enum, per AIO-1654 §5 — carries no design
+/// tokens of its own.
 enum OverrideEditorMode {
   /// The editor opened on an existing project-local override.
   editingOverride,

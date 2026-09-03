@@ -3,9 +3,8 @@
 import 'package:aion/core/contracts/agent_model_descriptor.dart';
 import 'package:aion/features/providers/domain/enums/model_phase.dart';
 
-/// Persists which [AgentModelDescriptor] each [ModelPhase] currently
-/// resolves to. Replaces `AgentSettingsRepository` (removed by
-/// `aion-arch/changes/per-phase-tier-based-model-routing`) — a single
+/// Persists which [AgentModelDescriptor] each [ModelPhase] currently resolves
+/// to. Replaces `AgentSettingsRepository` (removed by `AIO-1491`) — a single
 /// global model selection no longer exists, only a per-phase one. Plain
 /// reads/writes only, no validation — any [AgentModelDescriptor] value is
 /// valid for any [ModelPhase], per `project.md`'s Cubit-vs-repository

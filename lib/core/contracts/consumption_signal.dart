@@ -2,11 +2,10 @@
 
 import 'package:equatable/equatable.dart';
 
-/// The one generic "consumption" dimension every provider's own budget/
-/// usage signal maps onto, via `AgentProvider.describeOverage`. Replaces
-/// the bare `VoidCallback` overage signal `ChatCubit.runChatTurn` used to
-/// expose. See
-/// `aion-arch/changes/pluggable-provider-abstraction/design.md` §1, §4.
+/// The one generic "consumption" dimension every provider's own budget/ usage
+/// signal maps onto, via `AgentProvider.describeOverage`. Replaces the bare
+/// `VoidCallback` overage signal `ChatCubit.runChatTurn` used to expose. See
+/// `AIO-1544` §1, §4.
 sealed class ConsumptionSignal extends Equatable {
   /// Creates a [ConsumptionSignal] carrying a human-readable [message].
   const ConsumptionSignal(this.message);

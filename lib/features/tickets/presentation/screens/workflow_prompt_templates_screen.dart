@@ -13,12 +13,11 @@ import 'package:aion/features/tickets/presentation/cubit/workflow_config_cubit.d
 import 'package:aion/features/tickets/presentation/cubit/workflow_config_state.dart';
 
 /// The `/workspace/settings/workflow/templates` route — a simple
-/// list-management screen for [WorkflowPromptTemplate]s: create, edit,
-/// delete. Reached from `_AttachmentForm`'s "Manage templates" link and
-/// its template picker's "+ New template" row (both in
+/// list-management screen for [WorkflowPromptTemplate]s: create, edit, delete.
+/// Reached from `_AttachmentForm`'s "Manage templates" link and its template
+/// picker's "+ New template" row (both in
 /// `workflow_status_settings_screen.dart`), and from
-/// [WorkflowStatusSettingsScreen]'s own header. See
-/// `aion-arch/changes/workflow-skill-attachments/design.md`'s Component
+/// [WorkflowStatusSettingsScreen]'s own header. See `AIO-2650`'s Component
 /// Spec §5.
 ///
 /// One deliberate simplification from the pasted Component Spec, noted

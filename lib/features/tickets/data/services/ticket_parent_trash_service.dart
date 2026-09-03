@@ -10,17 +10,15 @@ import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_rollup_recomputer.dart';
 
-/// Shared parentId-reparent and trash/restore domain logic — cycle-
-/// prevention and type-compatibility validation for reparenting, and the
-/// git-projection + rollup-recompute side effects that accompany a
-/// trash/restore — used by both `TicketsCubit`/`TrashCubit` (in-app
-/// edits, which wrap this in their own UI-state emission) and
-/// `TicketMarkdownReconciler`/`TicketRepairService` (external file edits
-/// and repair, which have no UI state to emit). Follows the same shared-
-/// plain-service pattern as `PageWikilinkIndexer` for the identical
-/// dual-caller shape, rather than pushing this logic down into
-/// `TicketRepository` — see
-/// `aion-arch/ideas/reconciler-applies-hand-edited-parentid-deletedat.md`.
+/// Shared parentId-reparent and trash/restore domain logic — cycle-prevention
+/// and type-compatibility validation for reparenting, and the git-projection +
+/// rollup-recompute side effects that accompany a trash/restore — used by both
+/// `TicketsCubit`/`TrashCubit` (in-app edits, which wrap this in their own
+/// UI-state emission) and `TicketMarkdownReconciler`/`TicketRepairService`
+/// (external file edits and repair, which have no UI state to emit). Follows
+/// the same shared-plain-service pattern as `PageWikilinkIndexer` for the
+/// identical dual-caller shape, rather than pushing this logic down into
+/// `TicketRepository` — see `AIO-57`.
 class TicketParentTrashService {
   /// Creates a [TicketParentTrashService] backed by [_repository].
   /// [gitProjector]/[projectRootPath] are optional, matching

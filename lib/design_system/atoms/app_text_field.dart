@@ -13,17 +13,16 @@ import 'package:aion/design_system/tokens/aion_shadows.dart';
 import 'package:aion/design_system/tokens/aion_text.dart';
 import 'package:aion/design_system/tokens/theme_scope.dart';
 
-/// Aion's text-field primitive — an optional label above a token-styled
-/// input. Wraps Flutter's `TextField` (the one Material widget permitted in
-/// the widget layer, see design.md's Material Coupling Audit) with every
+/// Aion's text-field primitive — an optional label above a token-styled input.
+/// Wraps Flutter's `TextField` (the one Material widget permitted in the
+/// widget layer, see design.md's Material Coupling Audit) with every
 /// `InputDecoration` value supplied explicitly from [AionColors]/[AionText]
 /// tokens, and a transparent [Material] ancestor since `TextField` requires
 /// one even outside `MaterialApp`. [obscureText]/[suffixIcon]/[isError] are
-/// additive (default `false`/`null`/`false`) — added so a secret-entry
-/// field (e.g. an API key) can mask its value with a reveal toggle and
-/// show a validation-error border, without a bespoke widget; every
-/// existing call site is unaffected. See
-/// `aion-arch/changes/anthropic-messages-api-provider/design.md` §9.
+/// additive (default `false`/`null`/`false`) — added so a secret-entry field
+/// (e.g. an API key) can mask its value with a reveal toggle and show a
+/// validation-error border, without a bespoke widget; every existing call site
+/// is unaffected. See `AIO-110` §9.
 class AppTextField extends StatefulWidget {
   /// Creates an [AppTextField].
   const AppTextField({
@@ -118,14 +117,12 @@ class AppTextField extends StatefulWidget {
   final bool isError;
 
   /// Overrides the field's default input text style (`AionText.body` for
-  /// multiline, `AionText.bodySm` at 14px for single-line) — e.g. a mono
-  /// face for a code/version field. `null` (default) preserves every
-  /// existing call site's rendering. `textPrimary` is still applied on
-  /// top regardless, same as the default styles, so callers only need to
-  /// specify family/size/weight. Added for
-  /// `aion-arch/changes/release-preparation-and-tagging`'s `/verify`
-  /// round-1 fix-up (T17) — the version field's mono
-  /// `AionText.versionInput` style needs a way in.
+  /// multiline, `AionText.bodySm` at 14px for single-line) — e.g. a mono face
+  /// for a code/version field. `null` (default) preserves every existing call
+  /// site's rendering. `textPrimary` is still applied on top regardless, same
+  /// as the default styles, so callers only need to specify
+  /// family/size/weight. Added for `AIO-1782`'s `/verify` round-1 fix-up (T17)
+  /// — the version field's mono `AionText.versionInput` style needs a way in.
   final TextStyle? style;
 
   @override
@@ -168,12 +165,11 @@ class _AppTextFieldState extends State<AppTextField> {
     final isMultiline = effectiveMaxLines == null || effectiveMaxLines > 1;
     // A 5-line minimum height for any multiline field, capped at
     // [effectiveMaxLines] itself when that's fewer than 5 — `TextField`
-    // asserts `minLines <= maxLines`, so a caller-supplied [maxLines] below
-    // 5 (e.g. `AgentPromptField`'s 4-line prompt, per
-    // `aion-arch/changes/decision-graph-agentjudgment-condition/design.md`
-    // §2.1) must not be handed a fixed `minLines: 5` — that combination
-    // throws immediately. Fixed as part of that change's `/verify` pass;
-    // pre-existing bare `AppTextField(maxLines: 3)` call sites
+    // asserts `minLines <= maxLines`, so a caller-supplied [maxLines] below 5
+    // (e.g. `AgentPromptField`'s 4-line prompt, per `AIO-613` §2.1) must not
+    // be handed a fixed `minLines: 5` — that combination throws immediately.
+    // Fixed as part of that change's `/verify` pass; pre-existing bare
+    // `AppTextField(maxLines: 3)` call sites
     // (`raise_gap_or_question_picker.dart`, `create_ticket_screen.dart`)
     // shared the same latent crash before this fix.
     final minLines = isMultiline

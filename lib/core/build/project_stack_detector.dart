@@ -31,20 +31,18 @@ class DetectedStack {
   final String checkCommand;
 }
 
-/// Which per-stack version-file convention a [DetectedVersionFile]
-/// follows — determines how [ProjectStackDetector.writeVersion] parses
-/// and rewrites it. Only stacks with a real, machine-parseable version
-/// field are represented here. `go.mod` and `requirements.txt` are still
-/// detected by [ProjectStackDetector.detect] for prompt-guidance
-/// purposes (see [DetectedStack]'s dartdoc), but
-/// [ProjectStackDetector.detectVersionFile] returns `null` for both:
-/// `go.mod`'s `go 1.x` line is a language-version pin, not the app's own
-/// release version, and `requirements.txt` has no project-metadata
-/// version field at all. Prepare Release still tags a project on either
-/// stack — it just skips the version-bump step, surfaced by
+/// Which per-stack version-file convention a [DetectedVersionFile] follows —
+/// determines how [ProjectStackDetector.writeVersion] parses and rewrites it.
+/// Only stacks with a real, machine-parseable version field are represented
+/// here. `go.mod` and `requirements.txt` are still detected by
+/// [ProjectStackDetector.detect] for prompt-guidance purposes (see
+/// [DetectedStack]'s dartdoc), but [ProjectStackDetector.detectVersionFile]
+/// returns `null` for both: `go.mod`'s `go 1.x` line is a language-version
+/// pin, not the app's own release version, and `requirements.txt` has no
+/// project-metadata version field at all. Prepare Release still tags a project
+/// on either stack — it just skips the version-bump step, surfaced by
 /// `ReleaseDraftScreen`'s "no version file detected" notice. Added for
-/// `aion-arch/changes/release-preparation-and-tagging`; see that
-/// change's design.md §1.
+/// `AIO-1782`; see its linked Documentation page, §1.
 enum VersionFileKind {
   /// `pubspec.yaml`'s top-level `version:` field.
   pubspecYaml,
@@ -64,15 +62,14 @@ enum VersionFileKind {
   pyprojectToml,
 }
 
-/// Where a project's own release version lives, and how to read/rewrite
-/// it. Returned by [ProjectStackDetector.detectVersionFile] — `null` when
-/// the detected stack (or no stack at all) has no supported version file
-/// this round; see [VersionFileKind]'s dartdoc for exactly which stacks
-/// qualify. Distinct from [DetectedStack]: that class is guidance text
-/// only, never read by Aion's own code, while this one backs a real read
-/// (this class) and write ([ProjectStackDetector.writeVersion]), driving
-/// `TicketsCubit.prepareReleaseDraft`/`.confirmRelease`. Added for
-/// `aion-arch/changes/release-preparation-and-tagging`.
+/// Where a project's own release version lives, and how to read/rewrite it.
+/// Returned by [ProjectStackDetector.detectVersionFile] — `null` when the
+/// detected stack (or no stack at all) has no supported version file this
+/// round; see [VersionFileKind]'s dartdoc for exactly which stacks qualify.
+/// Distinct from [DetectedStack]: that class is guidance text only, never read
+/// by Aion's own code, while this one backs a real read (this class) and write
+/// ([ProjectStackDetector.writeVersion]), driving
+/// `TicketsCubit.prepareReleaseDraft`/`.confirmRelease`. Added for `AIO-1782`.
 class DetectedVersionFile {
   /// Creates a [DetectedVersionFile].
   const DetectedVersionFile({

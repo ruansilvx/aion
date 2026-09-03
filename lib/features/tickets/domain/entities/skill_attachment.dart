@@ -7,10 +7,9 @@ import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 import 'package:aion/features/tickets/domain/enums/skill_attachment_kind.dart';
 
 /// A project-configured automation attached to either a
-/// `WorkflowStatus`(../entities/workflow_status.dart) or an [SddStage] —
-/// the Phase 2 mechanism that makes entering that status/stage run an AI
-/// action, rather than nothing (Phase 1's baseline). See
-/// `aion-arch/changes/workflow-skill-attachments/design.md` §1.2.
+/// `WorkflowStatus`(../entities/workflow_status.dart) or an [SddStage] — the
+/// Phase 2 mechanism that makes entering that status/stage run an AI action,
+/// rather than nothing (Phase 1's baseline). See `AIO-2650` §1.2.
 ///
 /// Exactly one of [workflowStatusId]/[sddStage] is non-`null` (what this
 /// attachment is *for*); exactly one of [templateId]/[skillName] is

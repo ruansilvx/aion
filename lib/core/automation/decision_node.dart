@@ -4,10 +4,10 @@ import 'package:meta/meta.dart';
 
 import 'package:aion/core/automation/decision_outcome.dart';
 
-/// One outgoing edge of a [DecisionNode] — either continues the strict
-/// tree into another condition ([DecisionBranch.toNode]) or ends the walk
-/// in a terminal [DecisionOutcome] ([DecisionBranch.terminal]). Added for
-/// `aion-arch/changes/automation-decision-graphs`.
+/// One outgoing edge of a [DecisionNode] — either continues the strict tree
+/// into another condition ([DecisionBranch.toNode]) or ends the walk in a
+/// terminal [DecisionOutcome] ([DecisionBranch.terminal]). Added for
+/// `AIO-181`.
 @immutable
 sealed class DecisionBranch {
   const DecisionBranch();
@@ -64,16 +64,15 @@ class TerminalBranch extends DecisionBranch {
   int get hashCode => Object.hash(TerminalBranch, outcome);
 }
 
-/// One condition in a project-authored [DecisionGraph] — a strict binary
-/// tree node. [conditionId] references a `DecisionConditionSpec.id` from
-/// `decision_condition_catalog.dart`; [conditionParams] holds that
-/// condition's parameter values (e.g. `{'maxAttempts': 3}`), validated
-/// against the spec's `parameterSpecs` shape by `DecisionGraphConfigCubit`
-/// at edit time — this entity itself performs no validation, per this
-/// project's Cubit-vs-repository split. [matchedBranch]/[unmatchedBranch]
-/// are each a [DecisionBranch] — either continues the tree or terminates
-/// in a [DecisionOutcome]. Added for
-/// `aion-arch/changes/automation-decision-graphs`.
+/// One condition in a project-authored [DecisionGraph] — a strict binary tree
+/// node. [conditionId] references a `DecisionConditionSpec.id` from
+/// `decision_condition_catalog.dart`; [conditionParams] holds that condition's
+/// parameter values (e.g. `{'maxAttempts': 3}`), validated against the spec's
+/// `parameterSpecs` shape by `DecisionGraphConfigCubit` at edit time — this
+/// entity itself performs no validation, per this project's
+/// Cubit-vs-repository split. [matchedBranch]/[unmatchedBranch] are each a
+/// [DecisionBranch] — either continues the tree or terminates in a
+/// [DecisionOutcome]. Added for `AIO-181`.
 @immutable
 class DecisionNode {
   /// Creates a [DecisionNode].
