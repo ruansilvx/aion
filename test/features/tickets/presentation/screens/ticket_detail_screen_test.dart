@@ -66,11 +66,22 @@ Widget _wrap({
   required MockAutomationSettingsRepository automationRepo,
   MockDecisionGraphRepository? decisionGraphRepository,
   AutomationConfidence sddStageConfidence = AutomationConfidence.gated,
+  // Overridable so the loading/error-view tests below can pin
+  // `ticketsCubit`'s state stream to something other than the
+  // happy-path `[TicketsLoading, TicketDetailLoaded]` sequence every
+  // other test in this suite relies on — defaults preserve that
+  // existing behavior exactly.
+  Stream<TicketsState>? states,
+  TicketsState? initialState,
 }) {
   whenListen(
     ticketsCubit,
-    Stream.fromIterable([const TicketsLoading(), TicketDetailLoaded(ticket)]),
-    initialState: const TicketsLoading(),
+    states ??
+        Stream.fromIterable([
+          const TicketsLoading(),
+          TicketDetailLoaded(ticket),
+        ]),
+    initialState: initialState ?? const TicketsLoading(),
   );
   when(
     () => ticketsCubit.detailTick,
@@ -402,4 +413,126 @@ void main() {
       );
     },
   );
+
+  group('TicketDetailScreen — loading/error body states', () {
+    // Regression coverage for the `getTicketById` startup-hang bug
+    // (`TicketMarkdownReconciler._findByTicketId`'s O(all tickets) full-
+    // table fetch — see aion-arch/ideas/
+    // decommission-aion-arch-cli-workflow.md's 2026-09-04 amendment):
+    // before this fix, the body `BlocBuilder` rendered a blank
+    // `SizedBox.shrink()` for every non-`TicketDetailLoaded` state,
+    // including a `TicketsLoading` stuck mid-hang and a genuine
+    // `TicketsError`, so the hang was silently invisible instead of
+    // showing a stuck spinner or an error the user could act on.
+    testWidgets('shows a spinner while TicketsLoading, not a blank screen', (
+      tester,
+    ) async {
+      final ticket = _ticketOf(TicketType.task);
+      final ticketsCubit = MockTicketsCubit();
+      final automationRepo = MockAutomationSettingsRepository();
+      _stubTicketsCubit(ticketsCubit);
+
+      await tester.pumpWidget(
+        _wrap(
+          ticket: ticket,
+          ticketsCubit: ticketsCubit,
+          automationRepo: automationRepo,
+          states: const Stream<TicketsState>.empty(),
+          initialState: const TicketsLoading(),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byType(AppSpinner), findsWidgets);
+    });
+
+    testWidgets(
+      'shows the not-found message and a working Retry for '
+      'TicketsError(reason: notFound)',
+      (tester) async {
+        final ticket = _ticketOf(TicketType.task);
+        final ticketsCubit = MockTicketsCubit();
+        final automationRepo = MockAutomationSettingsRepository();
+        _stubTicketsCubit(ticketsCubit);
+
+        await tester.pumpWidget(
+          _wrap(
+            ticket: ticket,
+            ticketsCubit: ticketsCubit,
+            automationRepo: automationRepo,
+            states: const Stream<TicketsState>.empty(),
+            initialState: const TicketsError(
+              '',
+              reason: TicketsErrorReason.notFound,
+            ),
+          ),
+        );
+        await tester.pump();
+
+        // Mirrors app_en.arb's `ticketsErrorNotFound` string.
+        expect(find.text('Ticket not found'), findsOneWidget);
+
+        clearInteractions(ticketsCubit);
+        await tester.tap(find.text('Retry'));
+        await tester.pump();
+
+        verify(() => ticketsCubit.getTicketById(ticket.id)).called(1);
+      },
+    );
+
+    testWidgets(
+      'shows the raw message for an unclassified TicketsError '
+      '(reason: null — getTicketById\'s catch-all)',
+      (tester) async {
+        final ticket = _ticketOf(TicketType.task);
+        final ticketsCubit = MockTicketsCubit();
+        final automationRepo = MockAutomationSettingsRepository();
+        _stubTicketsCubit(ticketsCubit);
+
+        await tester.pumpWidget(
+          _wrap(
+            ticket: ticket,
+            ticketsCubit: ticketsCubit,
+            automationRepo: automationRepo,
+            states: const Stream<TicketsState>.empty(),
+            initialState: const TicketsError('Connection refused'),
+          ),
+        );
+        await tester.pump();
+
+        expect(find.text('Connection refused'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'stays blank for a classified, non-notFound TicketsError — a '
+      'transient toast for an unrelated action (already shown app-wide '
+      'by WorkspaceNavShell) that is always immediately followed by a '
+      're-emitted TicketDetailLoaded, so this screen\'s body '
+      'deliberately does not render its own error view for it',
+      (tester) async {
+        final ticket = _ticketOf(TicketType.task);
+        final ticketsCubit = MockTicketsCubit();
+        final automationRepo = MockAutomationSettingsRepository();
+        _stubTicketsCubit(ticketsCubit);
+
+        await tester.pumpWidget(
+          _wrap(
+            ticket: ticket,
+            ticketsCubit: ticketsCubit,
+            automationRepo: automationRepo,
+            states: const Stream<TicketsState>.empty(),
+            initialState: const TicketsError(
+              '',
+              reason: TicketsErrorReason.invalidParent,
+            ),
+          ),
+        );
+        await tester.pump();
+
+        expect(find.byType(AppSpinner), findsNothing);
+        expect(find.text('Retry'), findsNothing);
+      },
+    );
+  });
 }

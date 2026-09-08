@@ -179,12 +179,20 @@ class TicketMarkdownReconciler {
     _activeTicketViewRegistry.activeTicketId.addListener(listener);
   }
 
-  Future<Ticket?> _findByTicketId(String ticketId) async {
-    final all = await _repository.getAllTickets();
-    for (final ticket in all) {
-      if (ticket.ticketId == ticketId) return ticket;
-    }
-    return null;
+  /// Resolves [ticketId] via [TicketRepository.getTicketByTicketId] — a
+  /// single indexed row lookup. **Was** a full [TicketRepository
+  /// .getAllTickets] fetch-and-linear-scan (O(all tickets) per call); on a
+  /// project with a few thousand tickets, [TicketMarkdownWatcherService
+  /// .start]'s startup pass alone calls [reconcile] — and therefore this —
+  /// once per `tickets/*.md` file, so that shape multiplied file-count by
+  /// ticket-count into a multi-minute, CPU-pinned startup hang (every
+  /// `getAllTickets` re-fetches and re-maps every row, for every file,
+  /// concurrently, all contending for the single Drift/sqlite3 connection).
+  /// Root-caused and fixed for the `decommission-aion-arch-cli-workflow`
+  /// idea's 2026-09-04 amendment — see that file for the full symptom
+  /// writeup and repro.
+  Future<Ticket?> _findByTicketId(String ticketId) {
+    return _repository.getTicketByTicketId(ticketId);
   }
 
   /// Applies a successful (or partially-successful) parse [result] to

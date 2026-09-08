@@ -93,11 +93,13 @@ class TicketRepairService {
     await _repository.updateSyncStatus(ticket.id, TicketSyncStatus.synced);
   }
 
-  Future<Ticket?> _findByTicketId(String ticketId) async {
-    final all = await _repository.getAllTickets();
-    for (final ticket in all) {
-      if (ticket.ticketId == ticketId) return ticket;
-    }
-    return null;
+  /// Resolves [ticketId] via [TicketRepository.getTicketByTicketId] — a
+  /// single indexed row lookup, not a full-table fetch-and-scan. Mirrors
+  /// the identical fix to `TicketMarkdownReconciler._findByTicketId` (see
+  /// its dartdoc) — this copy is lower-impact (only user/agent-triggered,
+  /// one ticket at a time), but the same O(all tickets)-per-call shape was
+  /// wrong here too.
+  Future<Ticket?> _findByTicketId(String ticketId) {
+    return _repository.getTicketByTicketId(ticketId);
   }
 }
