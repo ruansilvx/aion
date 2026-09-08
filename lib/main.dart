@@ -10,6 +10,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'package:aion/core/agent/anthropic_messages_api_client.dart';
 import 'package:aion/core/agent/anthropic_messages_api_provider.dart';
+import 'package:aion/core/build/orphaned_worktree_temp_sweeper.dart';
 import 'package:aion/core/build/project_stack_detector.dart';
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
@@ -62,6 +63,14 @@ class _AionAppState extends State<AionApp> with WidgetsBindingObserver {
     _theme = _themeForBrightness(
       WidgetsBinding.instance.platformDispatcher.platformBrightness,
     );
+    // Fire-and-forget: reaps stale worktree temp dirs left behind by a
+    // killed process or a swallowed cleanup failure (see
+    // sweepOrphanedWorktreeTempDirs's dartdoc). Desktop-only (matches
+    // coding execution's own desktop-only scope); never awaited, so it
+    // can't delay startup.
+    if (isDesktop) {
+      unawaited(sweepOrphanedWorktreeTempDirs());
+    }
   }
 
   @override

@@ -4014,6 +4014,53 @@ class TicketsCubit extends Cubit<TicketsState> {
     return _repository.getTicketById(chat.id);
   }
 
+  /// Best-effort cleanup for a `git worktree`-backed temp directory, shared
+  /// by every worktree-owning flow's own `finally` block
+  /// ([_runCodingExecution], [_runStageChatTurn], [_fireSkillAttachment]'s
+  /// `delegatedSkill` path, [_runFullSummarization]). First tries
+  /// [GitRepositoryClient.removeWorktree] (which, on success, deletes
+  /// [worktreePath] itself as part of unregistering the worktree), then —
+  /// regardless of whether that succeeded — deletes [worktreePath] directly
+  /// if anything is still sitting there. That second step is not redundant:
+  /// `removeWorktree` alone leaves the directory behind whenever
+  /// [GitRepositoryClient.createWorktree] never actually registered it as a
+  /// worktree in the first place (so there is nothing for git to remove),
+  /// or whenever the OS refuses the delete for an unrelated reason (e.g. a
+  /// file still locked by another process) — both confirmed as the
+  /// dominant cause of ~10,000 orphaned `aion_exec_*`/`aion_skill_*`/
+  /// `aion_analysis_*` directories accumulated under one developer's
+  /// %TEMP%, the overwhelming majority of them empty (`createWorktree`
+  /// never reached, or itself never run at all against a mocked
+  /// [GitRepositoryClient] in tests — the `git worktree remove` call those
+  /// tests stub as a no-op never touches the real directory
+  /// [Directory.systemTemp.createTempSync] created for real). Both `catch`
+  /// blocks below are swallowed deliberately, mirroring every other
+  /// best-effort cleanup in this file — this runs from inside another
+  /// `finally`, and must never mask whatever failure (if any) that block is
+  /// already handling. A directory that still can't be removed (the locked-
+  /// file case) survives to the next call, or to `sweepOrphanedWorktreeTempDirs`'s
+  /// startup sweep.
+  Future<void> _cleanupWorktreeTempDir(
+    GitRepositoryClient gitClient,
+    String rootPath,
+    String worktreePath,
+  ) async {
+    try {
+      await gitClient.removeWorktree(rootPath, worktreePath);
+    } catch (_) {
+      // See dartdoc — createWorktree may itself have failed, in which
+      // case there's nothing for git to remove.
+    }
+    try {
+      final dir = Directory(worktreePath);
+      if (await dir.exists()) {
+        await dir.delete(recursive: true);
+      }
+    } catch (_) {
+      // See dartdoc — e.g. a file still locked by another process.
+    }
+  }
+
   /// `"Coding Execution — <taskTitle>"`, or a numbered
   /// `"(continued N)"`-suffixed variant per [continuationIndex] (0 = the
   /// original, unsuffixed; 1 = the first handoff, suffixed `"(continued)"`
@@ -4336,7 +4383,6 @@ class TicketsCubit extends Cubit<TicketsState> {
         state is TicketDetailLoaded &&
         (state as TicketDetailLoaded).ticket.id == task.id;
 
-    final worktreePath = Directory.systemTemp.createTempSync('aion_exec_').path;
     final branchName = 'aion/task-${task.id}';
 
     // Set once the branch has earned the right to survive this run's
@@ -4358,6 +4404,14 @@ class TicketsCubit extends Cubit<TicketsState> {
       unawaited(_tryStartNextQueuedExecutions());
       return;
     }
+
+    // Created only once every early-return above is behind us — this used
+    // to run before the `chat == null` check and leak an empty temp
+    // directory on every hit (confirmed via ~9,300 orphaned `aion_exec_*`
+    // directories under %TEMP%: `createTempSync` has no owner until the
+    // `try`/`finally` below starts, so any exit before that point orphans
+    // it, silently and permanently).
+    final worktreePath = Directory.systemTemp.createTempSync('aion_exec_').path;
 
     try {
       await gitClient.createWorktree(rootPath, worktreePath, branchName);
@@ -4641,14 +4695,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         message: _l10n.notificationExecutionFailed,
       );
     } finally {
-      try {
-        await gitClient.removeWorktree(rootPath, worktreePath);
-      } catch (_) {
-        // Best-effort cleanup only — createWorktree may itself have
-        // failed (caught above), in which case there's nothing to
-        // remove. Swallowed so it never masks whichever failure (if
-        // any) the catch above already recorded.
-      }
+      await _cleanupWorktreeTempDir(gitClient, rootPath, worktreePath);
       if (!branchShouldSurvive) {
         try {
           await gitClient.deleteBranch(rootPath, branchName);
@@ -5876,13 +5923,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         final gitClient = _gitClient;
         final rootPath = _projectRootPath;
         if (gitClient != null && rootPath != null) {
-          try {
-            await gitClient.removeWorktree(rootPath, worktreePath);
-          } catch (_) {
-            // Best-effort cleanup only, mirrors _runCodingExecution's
-            // own finally block — createWorktree may itself have
-            // failed, in which case there's nothing to remove.
-          }
+          await _cleanupWorktreeTempDir(gitClient, rootPath, worktreePath);
         }
       }
       _inFlightStageAdvanceIds
@@ -6072,13 +6113,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         final gitClient = _gitClient;
         final rootPath = _projectRootPath;
         if (gitClient != null && rootPath != null) {
-          try {
-            await gitClient.removeWorktree(rootPath, worktreePath);
-          } catch (_) {
-            // Best-effort cleanup only, mirrors _runCodingExecution's
-            // own finally block — createWorktree may itself have
-            // failed, in which case there's nothing to remove.
-          }
+          await _cleanupWorktreeTempDir(gitClient, rootPath, worktreePath);
         }
       }
     }
@@ -8632,9 +8667,6 @@ class TicketsCubit extends Cubit<TicketsState> {
       );
     }
 
-    final worktreePath = Directory.systemTemp
-        .createTempSync('aion_analysis_')
-        .path;
     final branchName = 'aion/analysis-${runTicket.id}';
 
     final now = DateTime.now();
@@ -8653,6 +8685,13 @@ class TicketsCubit extends Cubit<TicketsState> {
     if (persistedChat == null) {
       throw StateError('Could not create the analysis chat.');
     }
+
+    // Created only once every early exit above is behind us — see the
+    // matching comment in `_runCodingExecution` for why creating this
+    // before an unguarded `throw`/early return leaks it permanently.
+    final worktreePath = Directory.systemTemp
+        .createTempSync('aion_analysis_')
+        .path;
 
     try {
       await gitClient.createWorktree(rootPath, worktreePath, branchName);
@@ -8706,13 +8745,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       final reply = await _lastCommentContent(persistedChat.id);
       return _parseSummaryFindings(reply ?? '');
     } finally {
-      try {
-        await gitClient.removeWorktree(rootPath, worktreePath);
-      } catch (_) {
-        // Best-effort cleanup only, mirrors _runCodingExecution's own
-        // finally block — createWorktree may itself have failed, in
-        // which case there's nothing to remove.
-      }
+      await _cleanupWorktreeTempDir(gitClient, rootPath, worktreePath);
     }
   }
 
