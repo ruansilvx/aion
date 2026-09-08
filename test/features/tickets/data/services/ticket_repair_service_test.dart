@@ -51,7 +51,9 @@ void main() {
     );
     await Directory('${tempDir.path}/tickets').create(recursive: true);
 
-    when(() => repository.getAllTickets()).thenAnswer((_) async => [ticket]);
+    when(
+      () => repository.getTicketByTicketId('AIO-42'),
+    ).thenAnswer((_) async => ticket);
     when(
       () => repository.updateSyncStatus(any(), any()),
     ).thenAnswer((_) async {});
@@ -155,7 +157,9 @@ void main() {
     );
 
     test('no-ops when the ticket is unknown (deleted)', () async {
-      when(() => repository.getAllTickets()).thenAnswer((_) async => []);
+      when(
+        () => repository.getTicketByTicketId('AIO-42'),
+      ).thenAnswer((_) async => null);
       await writeFile('anything');
 
       await repairService.restoreFromLastKnownGood('AIO-42', tempDir.path);

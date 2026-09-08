@@ -35,6 +35,8 @@ import 'package:aion/features/tickets/presentation/widgets/release_summary_secti
 import 'package:aion/features/tickets/presentation/widgets/ticket_metadata_section.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_overflow_menu.dart';
 import 'package:aion/features/tickets/presentation/screens/release_draft_screen.dart';
+import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart'
+    show ticketsErrorMessage;
 
 /// The `/tickets/:id` route. [TicketsCubit] is read from the root-level
 /// provider; [CommentsCubit]/[ChatCubit] are provided per-route by
@@ -508,6 +510,60 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                   Expanded(
                     child: BlocBuilder<TicketsCubit, TicketsState>(
                       builder: (context, state) {
+                        if (state is TicketsLoading) {
+                          return const Center(child: AppSpinner());
+                        }
+                        // Only the two failure shapes `getTicketById`
+                        // itself can produce for *this* ticket
+                        // (`notFound`, or `reason: null` for an
+                        // unclassified thrown exception) get a real error
+                        // view here — every other classified `reason` is a
+                        // transient one-shot toast for an unrelated action
+                        // (already shown app-wide by `WorkspaceNavShell`,
+                        // per this class's own dartdoc) that's immediately
+                        // followed by a re-emitted `TicketDetailLoaded`;
+                        // falling through to the pre-existing blank
+                        // `SizedBox.shrink()` for those avoids flashing a
+                        // wrong error page during that self-correcting
+                        // window. Added alongside the `getTicketById`
+                        // O(n²) startup-hang fix (`TicketMarkdownReconciler
+                        // ._findByTicketId`) — this screen had no visible
+                        // loading/error state at all before, which is what
+                        // let that hang render as a silently blank screen
+                        // instead of a legible stuck-loading indicator. See
+                        // `aion-arch/ideas/
+                        // decommission-aion-arch-cli-workflow.md`'s
+                        // 2026-09-04 amendment.
+                        if (state is TicketsError &&
+                            (state.reason == null ||
+                                state.reason == TicketsErrorReason.notFound)) {
+                          return Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  state.reason == TicketsErrorReason.notFound
+                                      ? ticketsErrorMessage(
+                                          context,
+                                          TicketsErrorReason.notFound,
+                                        )
+                                      : state.message,
+                                  textAlign: TextAlign.center,
+                                  style: AionText.body.copyWith(
+                                    color: c.danger,
+                                  ),
+                                ),
+                                const SizedBox(height: AionSpacing.sp12),
+                                AppButton(
+                                  label: context.l10n.commonRetry,
+                                  onPressed: () => context
+                                      .read<TicketsCubit>()
+                                      .getTicketById(widget.ticketId),
+                                ),
+                              ],
+                            ),
+                          );
+                        }
                         if (state is! TicketDetailLoaded) {
                           return const SizedBox.shrink();
                         }

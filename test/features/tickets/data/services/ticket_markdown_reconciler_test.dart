@@ -111,8 +111,8 @@ void main() {
 
   test('no-ops for a non-resource/page ticket type', () async {
     when(
-      () => repository.getAllTickets(),
-    ).thenAnswer((_) async => [workItemTicket]);
+      () => repository.getTicketByTicketId('AIO-42'),
+    ).thenAnswer((_) async => workItemTicket);
     await writeFile('not valid frontmatter');
 
     await reconciler.reconcile('AIO-42', tempDir.path);
@@ -121,7 +121,9 @@ void main() {
   });
 
   test('no-ops when the ticket is unknown (deleted)', () async {
-    when(() => repository.getAllTickets()).thenAnswer((_) async => []);
+    when(
+      () => repository.getTicketByTicketId('AIO-42'),
+    ).thenAnswer((_) async => null);
     await writeFile('anything');
 
     await reconciler.reconcile('AIO-42', tempDir.path);
@@ -132,8 +134,8 @@ void main() {
   group('Unparseable', () {
     test('sets needsRepair and does not touch content', () async {
       when(
-        () => repository.getAllTickets(),
-      ).thenAnswer((_) async => [resourceTicket]);
+        () => repository.getTicketByTicketId('AIO-42'),
+      ).thenAnswer((_) async => resourceTicket);
       await writeFile('this is not valid frontmatter at all');
 
       await reconciler.reconcile('AIO-42', tempDir.path);
@@ -151,8 +153,8 @@ void main() {
   group('ParsedOk — background apply (not actively viewed)', () {
     test('applies fields and cycles pendingReconcile -> synced', () async {
       when(
-        () => repository.getAllTickets(),
-      ).thenAnswer((_) async => [resourceTicket]);
+        () => repository.getTicketByTicketId('AIO-42'),
+      ).thenAnswer((_) async => resourceTicket);
       final serializer = TicketMarkdownSerializer();
       await writeFile(
         serializer.serialize(
@@ -187,8 +189,8 @@ void main() {
 
     test('triggers embedding regen when title/description changed', () async {
       when(
-        () => repository.getAllTickets(),
-      ).thenAnswer((_) async => [resourceTicket]);
+        () => repository.getTicketByTicketId('AIO-42'),
+      ).thenAnswer((_) async => resourceTicket);
       final serializer = TicketMarkdownSerializer();
       await writeFile(
         serializer.serialize(resourceTicket.copyWith(title: 'New title')),
@@ -209,8 +211,8 @@ void main() {
   group('ParsedPartial', () {
     test('applies valid fields, keeps DB value for the invalid one', () async {
       when(
-        () => repository.getAllTickets(),
-      ).thenAnswer((_) async => [resourceTicket]);
+        () => repository.getTicketByTicketId('AIO-42'),
+      ).thenAnswer((_) async => resourceTicket);
       final serializer = TicketMarkdownSerializer();
       // `status` is now a project-defined name, not a fixed enum — any
       // non-empty string is syntactically valid, so a blank value
@@ -243,8 +245,8 @@ void main() {
       'defers apply while the ticket is actively viewed, then applies',
       () async {
         when(
-          () => repository.getAllTickets(),
-        ).thenAnswer((_) async => [resourceTicket]);
+          () => repository.getTicketByTicketId('AIO-42'),
+        ).thenAnswer((_) async => resourceTicket);
         final serializer = TicketMarkdownSerializer();
         await writeFile(
           serializer.serialize(
@@ -295,8 +297,8 @@ void main() {
     test('fires the shared PageWikilinkIndexer for a page reconcile whose '
         'description actually changed', () async {
       when(
-        () => repository.getAllTickets(),
-      ).thenAnswer((_) async => [pageTicket]);
+        () => repository.getTicketByTicketId('AIO-42'),
+      ).thenAnswer((_) async => pageTicket);
       when(
         () => repository.getAllTicketsByType([
           TicketType.page,
@@ -323,8 +325,8 @@ void main() {
       'changed — same content gate the embedding-regen trigger uses',
       () async {
         when(
-          () => repository.getAllTickets(),
-        ).thenAnswer((_) async => [pageTicket]);
+          () => repository.getTicketByTicketId('AIO-42'),
+        ).thenAnswer((_) async => pageTicket);
         final serializer = TicketMarkdownSerializer();
         // Same title/description as pageTicket, only priority differs —
         // `_apply` still calls `repository.updateTicket`, but the
@@ -406,8 +408,8 @@ void main() {
       test('applies a hand-edited parentId via TicketParentTrashService and '
           'stays synced when accepted', () async {
         when(
-          () => repository.getAllTickets(),
-        ).thenAnswer((_) async => [resourceTicket]);
+          () => repository.getTicketByTicketId('AIO-42'),
+        ).thenAnswer((_) async => resourceTicket);
         when(
           () => parentTrashService.applyFromParsedFields(any(), any()),
         ).thenAnswer((_) async => true);
@@ -439,8 +441,8 @@ void main() {
       test('flips to needsRepair when TicketParentTrashService rejects the '
           'hand-edited parentId', () async {
         when(
-          () => repository.getAllTickets(),
-        ).thenAnswer((_) async => [resourceTicket]);
+          () => repository.getTicketByTicketId('AIO-42'),
+        ).thenAnswer((_) async => resourceTicket);
         when(
           () => parentTrashService.applyFromParsedFields(any(), any()),
         ).thenAnswer((_) async => false);
@@ -468,8 +470,8 @@ void main() {
         'TicketParentTrashService as part of applyFromParsedFields',
         () async {
           when(
-            () => repository.getAllTickets(),
-          ).thenAnswer((_) async => [resourceTicket]);
+            () => repository.getTicketByTicketId('AIO-42'),
+          ).thenAnswer((_) async => resourceTicket);
           when(
             () => parentTrashService.applyFromParsedFields(any(), any()),
           ).thenAnswer((_) async => true);
@@ -492,8 +494,8 @@ void main() {
         'TicketParentTrashService as part of applyFromParsedFields',
         () async {
           when(
-            () => repository.getAllTickets(),
-          ).thenAnswer((_) async => [trashedInDb]);
+            () => repository.getTicketByTicketId('AIO-42'),
+          ).thenAnswer((_) async => trashedInDb);
           when(
             () => parentTrashService.applyFromParsedFields(any(), any()),
           ).thenAnswer((_) async => true);
@@ -526,8 +528,8 @@ void main() {
         'TicketParentTrashService is supplied (pre-existing behavior)',
         () async {
           when(
-            () => repository.getAllTickets(),
-          ).thenAnswer((_) async => [resourceTicket]);
+            () => repository.getTicketByTicketId('AIO-42'),
+          ).thenAnswer((_) async => resourceTicket);
           final serializer = TicketMarkdownSerializer();
           await writeFile(serializer.serialize(reparentedOnDisk));
 
