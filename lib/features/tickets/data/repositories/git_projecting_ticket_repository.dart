@@ -62,18 +62,29 @@ class GitProjectingTicketRepository implements TicketRepository {
   final TicketGitProjector _projector;
   final String _rootPath;
 
+  /// Delegates to [_inner], then fires a fire-and-forget `'created'`
+  /// projection of the persisted ticket (picking up its freshly-generated
+  /// `ticketId`).
   @override
   Future<void> createTicket(Ticket ticket) async {
     await _inner.createTicket(ticket);
     unawaited(_project(ticket.id, 'created'));
   }
 
+  /// Delegates to [_inner], then fires a fire-and-forget
+  /// `'status-changed'` projection of [id].
   @override
   Future<void> updateTicketStatus(String id, String status) async {
     await _inner.updateTicketStatus(id, status);
     unawaited(_project(id, 'status-changed'));
   }
 
+  /// Delegates to [_inner], then fires one fire-and-forget
+  /// `'status-changed'` projection per id in [ids] — not batched into one
+  /// commit, matching this method's existing bulk-write shape (see
+  /// `TicketsCubit.updateStatusForTickets`'s own pre-existing per-id
+  /// projection loop, which this decorator now does instead of the
+  /// cubit).
   @override
   Future<void> updateStatusForIds(List<String> ids, String status) async {
     await _inner.updateStatusForIds(ids, status);
@@ -82,33 +93,56 @@ class GitProjectingTicketRepository implements TicketRepository {
     }
   }
 
+  /// Delegates to [_inner], then fires a fire-and-forget
+  /// `'stage-changed'` projection of [id] — closes the gap
+  /// `TicketsCubit.advanceSddStage` used to leave open (it called
+  /// [TicketRepository.updateTicketSddStage] directly, with no
+  /// projection trigger at all, before this decorator existed).
   @override
   Future<void> updateTicketSddStage(String id, SddStage stage) async {
     await _inner.updateTicketSddStage(id, stage);
     unawaited(_project(id, 'stage-changed'));
   }
 
+  /// Delegates to [_inner], then fires a fire-and-forget `'reparented'`
+  /// projection of [id] — closes a gap `TicketRollupRecomputer`'s own
+  /// batched projection didn't reliably cover: a reparent whose ancestor
+  /// rollup numbers happen not to change (e.g. moving a leaf ticket with
+  /// no estimate) previously left the moved ticket's own new `parentId`
+  /// unprojected indefinitely.
   @override
   Future<void> updateTicketParent(String id, String? parentId) async {
     await _inner.updateTicketParent(id, parentId);
     unawaited(_project(id, 'reparented'));
   }
 
+  /// Delegates to [_inner], then awaits a `'trashed'` projection of [id]
+  /// before returning — awaited (unlike the fire-and-forget methods
+  /// above), matching `TicketParentTrashService.trash`'s existing
+  /// behavior before this decorator took over: the caller is a
+  /// lower-frequency, more "final" action, and some callers (tests
+  /// included) rely on the commit having landed by the time this
+  /// returns. A projection failure here is swallowed rather than
+  /// propagated — see [_projectOrSwallow]'s dartdoc for why: the trash
+  /// itself, above, already succeeded, and a transient git hiccup must
+  /// not report that success as a [TicketsCubit]/[TrashCubit]-visible
+  /// failure, which would also skip the rollup recompute
+  /// `TicketParentTrashService.trash` fires immediately after this call
+  /// returns.
   @override
   Future<void> trashTicket(String id) async {
     await _inner.trashTicket(id);
-    // Awaited, matching `TicketParentTrashService.trash`'s existing
-    // behavior before this decorator took over — the caller is a lower-
-    // frequency, more "final" action than a create/status-change, and
-    // some callers (tests included) rely on the commit having landed by
-    // the time this returns.
-    await _project(id, 'trashed');
+    await _projectOrSwallow(id, 'trashed');
   }
 
+  /// Delegates to [_inner], then awaits a `'restored'` projection of [id]
+  /// before returning — see [trashTicket]'s dartdoc for the awaited
+  /// shape and [_projectOrSwallow]'s dartdoc for why a projection
+  /// failure here is swallowed rather than propagated.
   @override
   Future<void> restoreTicket(String id) async {
     await _inner.restoreTicket(id);
-    await _project(id, 'restored');
+    await _projectOrSwallow(id, 'restored');
   }
 
   /// Re-fetches [id] from [_inner] (picking up whatever the write that
@@ -122,6 +156,31 @@ class GitProjectingTicketRepository implements TicketRepository {
     final ticket = await _inner.getTicketById(id);
     if (ticket == null) return;
     await _projector.project(ticket, _rootPath, eventLabel);
+  }
+
+  /// Same as [_project], but never throws — used only by [trashTicket]/
+  /// [restoreTicket], the two methods that `await` their own projection
+  /// rather than firing it `unawaited`. A git failure (e.g. a missing
+  /// `git config user.email`, a stale `index.lock`, a full disk) would
+  /// otherwise propagate out of `await _projectOrSwallow(...)` into
+  /// [trashTicket]/[restoreTicket]'s caller — `TicketParentTrashService
+  /// .trash`/`.restore`, then `TicketsCubit`/`TrashCubit`'s existing
+  /// `catch (e) { emit(TicketsError(...)) }` — misreporting the trash/
+  /// restore, which already succeeded via [_inner] above, as a failure,
+  /// and skipping the rollup recompute those callers fire right after.
+  /// The failure itself is not silently invisible: [_projector] and
+  /// [GitRepositoryClient] still throw internally at the point it
+  /// happens (visible to a debugger or future logging), this method just
+  /// declines to let that fail an operation that has, in fact, already
+  /// succeeded. The fire-and-forget methods above ([createTicket] et al.)
+  /// need no equivalent — an unawaited call's exception never reaches
+  /// their own caller regardless.
+  Future<void> _projectOrSwallow(String id, String eventLabel) async {
+    try {
+      await _project(id, eventLabel);
+    } catch (_) {
+      // See this method's own dartdoc.
+    }
   }
 
   // Every method below is a deliberate pass-through — no projection. See

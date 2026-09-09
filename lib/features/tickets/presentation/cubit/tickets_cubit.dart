@@ -121,13 +121,28 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// Creates a [TicketsCubit] backed by [_repository]. [_embeddingProvider],
   /// [_gitProjector], [_projectRootPath], [_providerRegistry], and
   /// [_commentRepository] are optional — when any is `null` (the default, and
-  /// every existing call site/test), the embedding-regen, git-projection, and
+  /// every existing call site/test), the embedding-regen and
   /// stage-chat-spawning side effects documented on
-  /// [createTicket]/[updateTicket]/[updateTicketStatus]/
-  /// [changeTicketStatus]/[trashTicket]/[trashTickets]/[advanceSddStage]
-  /// simply no-op, rather than requiring every one of ~40 existing
-  /// construction sites to be updated for a feature most of them don't
-  /// exercise. Real usage (`app_router.dart`) supplies [_providerRegistry]/
+  /// [createTicket]/[updateTicket]/[advanceSddStage] simply no-op, rather
+  /// than requiring every one of ~40 existing construction sites to be
+  /// updated for a feature most of them don't exercise.
+  ///
+  /// [_gitProjector]/[_projectRootPath] here are narrower than that list
+  /// might suggest: single-ticket git projection for
+  /// [createTicket]/[updateTicketStatus]/[changeTicketStatus]/
+  /// [updateStatusForTickets]/[advanceSddStage]/[updateTicketParent] no
+  /// longer depends on these fields at all — it happens automatically
+  /// inside [_repository] itself whenever that's a
+  /// `GitProjectingTicketRepository` (see that class), regardless of what
+  /// this cubit was constructed with. [_gitProjector]/[_projectRootPath]
+  /// still matter for two things this cubit *does* still trigger
+  /// directly: the batched ancestor-rollup projection
+  /// [_rollupRecomputer]/[_parentTrashService] fire (`null` here simply
+  /// no-ops that batching, same as always), and [trashTickets]' own
+  /// per-ticket `'trashed'` projection loop
+  /// ([_trashBatchGitSideEffects]) — see that method's own dartdoc for
+  /// why it's a deliberate exception to the repository-driven approach
+  /// above. Real usage (`app_router.dart`) supplies [_providerRegistry]/
   /// [_commentRepository] so [advanceSddStage] always spawns its chat.
   /// [_automationSettingsRepository] follows the same optional-dependency
   /// pattern — `null` leaves a finished coding-execution run's status

@@ -170,6 +170,39 @@ void main() {
     );
 
     test(
+      'trashTicket does not propagate a projection failure — the trash '
+      'above already succeeded and must not be reported as an error',
+      () async {
+        when(() => inner.trashTicket(ticket.id)).thenAnswer((_) async {});
+        when(
+          () => projector.project(ticket, rootPath, 'trashed'),
+        ).thenThrow(Exception('git blew up'));
+
+        // Must complete normally (not throw) despite the projector
+        // throwing — trashTicket already succeeded via `inner` above.
+        await repository.trashTicket(ticket.id);
+
+        verify(() => inner.trashTicket(ticket.id)).called(1);
+      },
+    );
+
+    test(
+      'restoreTicket does not propagate a projection failure — the '
+      'restore above already succeeded and must not be reported as an '
+      'error',
+      () async {
+        when(() => inner.restoreTicket(ticket.id)).thenAnswer((_) async {});
+        when(
+          () => projector.project(ticket, rootPath, 'restored'),
+        ).thenThrow(Exception('git blew up'));
+
+        await repository.restoreTicket(ticket.id);
+
+        verify(() => inner.restoreTicket(ticket.id)).called(1);
+      },
+    );
+
+    test(
       'no-ops projection when the ticket no longer exists after the write',
       () async {
         when(
