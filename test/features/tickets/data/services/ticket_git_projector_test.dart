@@ -102,7 +102,7 @@ void main() {
       verify(() => git.add(tempDir.path, 'tickets/AIO-42.md')).called(1);
       verify(() => git.add(tempDir.path, 'tickets/AIO-43.md')).called(1);
       verify(
-        () => git.commit(tempDir.path, 'ticket: 2 ancestors rollup updated'),
+        () => git.commit(tempDir.path, 'ticket: 2 tickets rollup updated'),
       ).called(1);
     });
 

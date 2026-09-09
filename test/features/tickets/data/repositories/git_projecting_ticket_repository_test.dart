@@ -30,6 +30,7 @@ void main() {
 
   setUpAll(() {
     registerFallbackValue(ticket);
+    registerFallbackValue(<Ticket>[]);
   });
 
   setUp(() {
@@ -38,6 +39,9 @@ void main() {
     repository = GitProjectingTicketRepository(inner, projector, rootPath);
     when(
       () => projector.project(any(), any(), any()),
+    ).thenAnswer((_) async {});
+    when(
+      () => projector.projectBatch(any(), any(), any()),
     ).thenAnswer((_) async {});
     when(() => inner.getTicketById(ticket.id)).thenAnswer((_) async => ticket);
   });
@@ -141,32 +145,90 @@ void main() {
     });
 
     test(
-      'trashTicket delegates then awaits its "trashed" projection before '
-      'returning',
+      'trashTicket delegates then awaits a batched "trashed" projection '
+      'of every id it reports as affected, before returning',
       () async {
-        when(() => inner.trashTicket(ticket.id)).thenAnswer((_) async {});
+        when(
+          () => inner.trashTicket(ticket.id),
+        ).thenAnswer((_) async => [ticket.id]);
 
-        await repository.trashTicket(ticket.id);
+        final affected = await repository.trashTicket(ticket.id);
 
+        expect(affected, [ticket.id]);
         verify(() => inner.trashTicket(ticket.id)).called(1);
         // No `pumpEventQueue()` needed here — unlike the fire-and-forget
         // methods above, trashTicket awaits its own projection call, so
         // it's already complete by the time `await` above returns.
-        verify(() => projector.project(ticket, rootPath, 'trashed')).called(1);
+        verify(
+          () => projector.projectBatch([ticket], rootPath, 'trashed'),
+        ).called(1);
+        verifyNever(() => projector.project(any(), any(), any()));
       },
     );
 
     test(
-      'restoreTicket delegates then awaits its "restored" projection '
-      'before returning',
+      'restoreTicket delegates then awaits a batched "restored" '
+      'projection of every id it reports as affected, before returning',
       () async {
-        when(() => inner.restoreTicket(ticket.id)).thenAnswer((_) async {});
+        when(
+          () => inner.restoreTicket(ticket.id),
+        ).thenAnswer((_) async => [ticket.id]);
 
-        await repository.restoreTicket(ticket.id);
+        final affected = await repository.restoreTicket(ticket.id);
 
+        expect(affected, [ticket.id]);
         verify(() => inner.restoreTicket(ticket.id)).called(1);
         verify(
-          () => projector.project(ticket, rootPath, 'restored'),
+          () => projector.projectBatch([ticket], rootPath, 'restored'),
+        ).called(1);
+        verifyNever(() => projector.project(any(), any(), any()));
+      },
+    );
+
+    test(
+      'trashTicket batch-projects every cascaded id its inner call '
+      'reports — not just the id it was called with',
+      () async {
+        final child = Ticket(
+          id: '2',
+          ticketId: 'AIO-2',
+          type: TicketType.task,
+          title: 'Cascaded descendant',
+          status: 'backlog',
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        when(
+          () => inner.trashTicket(ticket.id),
+        ).thenAnswer((_) async => [ticket.id, child.id]);
+        when(
+          () => inner.getTicketById(child.id),
+        ).thenAnswer((_) async => child);
+
+        final affected = await repository.trashTicket(ticket.id);
+
+        expect(affected, [ticket.id, child.id]);
+        verify(
+          () => projector.projectBatch([ticket, child], rootPath, 'trashed'),
+        ).called(1);
+      },
+    );
+
+    test(
+      'trashTicket drops a cascaded id from the batch if it no longer '
+      'resolves to a ticket, without failing the whole batch',
+      () async {
+        when(
+          () => inner.trashTicket(ticket.id),
+        ).thenAnswer((_) async => [ticket.id, 'vanished']);
+        when(
+          () => inner.getTicketById('vanished'),
+        ).thenAnswer((_) async => null);
+
+        await repository.trashTicket(ticket.id);
+
+        verify(
+          () => projector.projectBatch([ticket], rootPath, 'trashed'),
         ).called(1);
       },
     );
@@ -176,10 +238,12 @@ void main() {
       'projector — the trash above already succeeded and must not be '
       'reported as an error',
       () async {
-        when(() => inner.trashTicket(ticket.id)).thenAnswer((_) async {});
-        when(() => projector.project(ticket, rootPath, 'trashed')).thenThrow(
-          ProcessException('git', ['commit'], 'boom', 128),
-        );
+        when(
+          () => inner.trashTicket(ticket.id),
+        ).thenAnswer((_) async => [ticket.id]);
+        when(
+          () => projector.projectBatch([ticket], rootPath, 'trashed'),
+        ).thenThrow(ProcessException('git', ['commit'], 'boom', 128));
 
         // Must complete normally (not throw) despite the projector
         // throwing — trashTicket already succeeded via `inner` above.
@@ -194,10 +258,12 @@ void main() {
       'projector — the restore above already succeeded and must not be '
       'reported as an error',
       () async {
-        when(() => inner.restoreTicket(ticket.id)).thenAnswer((_) async {});
-        when(() => projector.project(ticket, rootPath, 'restored')).thenThrow(
-          ProcessException('git', ['commit'], 'boom', 128),
-        );
+        when(
+          () => inner.restoreTicket(ticket.id),
+        ).thenAnswer((_) async => [ticket.id]);
+        when(
+          () => projector.projectBatch([ticket], rootPath, 'restored'),
+        ).thenThrow(ProcessException('git', ['commit'], 'boom', 128));
 
         await repository.restoreTicket(ticket.id);
 
@@ -210,9 +276,11 @@ void main() {
       'ProcessException/FileSystemException — only the two failure '
       'types git projection can actually throw are swallowed',
       () async {
-        when(() => inner.trashTicket(ticket.id)).thenAnswer((_) async {});
         when(
-          () => projector.project(ticket, rootPath, 'trashed'),
+          () => inner.trashTicket(ticket.id),
+        ).thenAnswer((_) async => [ticket.id]);
+        when(
+          () => projector.projectBatch([ticket], rootPath, 'trashed'),
         ).thenThrow(StateError('an unrelated bug, not a git failure'));
 
         await expectLater(

@@ -175,17 +175,23 @@ abstract interface class TicketRepository {
 
   /// Moves [id] and every ticket in its structural subtree into trash
   /// (sets `deletedAt`, deletes nothing). Never blocked by children —
-  /// they're cascaded into trash alongside [id] instead. Throws
-  /// [StateError] if [id] does not exist.
-  Future<void> trashTicket(String id);
+  /// they're cascaded into trash alongside [id] instead. Returns every
+  /// id actually moved to trash — [id] itself plus every cascaded
+  /// descendant, deduplicated, in unspecified order — so a caller that
+  /// must react to every affected ticket (not just [id], e.g. to
+  /// re-project each one to git) can, without re-deriving the cascade
+  /// itself. Throws [StateError] if [id] does not exist.
+  Future<List<String>> trashTicket(String id);
 
   /// Moves every ticket in [ids] — and each one's full structural
-  /// subtree — into trash in one call. Returns the total number of
-  /// tickets actually moved (== [ids] plus every cascaded descendant,
-  /// deduplicated), so the caller can report an accurate count even when
-  /// it's larger than `ids.length`. Ids that don't exist are silently
-  /// skipped.
-  Future<int> trashTickets(List<String> ids);
+  /// subtree — into trash in one call. Returns every id actually moved
+  /// to trash (== [ids] plus every cascaded descendant, deduplicated, in
+  /// unspecified order) — the full set, not just a count, for the same
+  /// reason [trashTicket] returns one: a caller can report an accurate
+  /// count via `.length`, or react to every individually affected
+  /// ticket, without re-deriving the cascade itself. Ids that don't
+  /// exist are silently skipped.
+  Future<List<String>> trashTickets(List<String> ids);
 
   /// Returns the total number of tickets that would move to trash if
   /// every id in [ids] were trashed right now — existing ids plus every
@@ -201,8 +207,13 @@ abstract interface class TicketRepository {
   /// Restores [id] out of trash, along with any currently-trashed
   /// ancestors (so it's never left with a hidden parent) and any
   /// currently-trashed descendants (its own subtree, trashed alongside
-  /// it originally). Throws [StateError] if [id] does not exist.
-  Future<void> restoreTicket(String id);
+  /// it originally). Returns every id actually restored — [id] itself
+  /// plus every revived ancestor/descendant, deduplicated, in
+  /// unspecified order — so a caller that must react to every affected
+  /// ticket (not just [id], e.g. to re-project each one to git) can,
+  /// without re-deriving the cascade itself. Throws [StateError] if
+  /// [id] does not exist.
+  Future<List<String>> restoreTicket(String id);
 
   /// Permanently deletes [id] and its full structural subtree —
   /// cascading to comments and `ticket_links` exactly as the old

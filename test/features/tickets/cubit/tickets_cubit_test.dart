@@ -1606,7 +1606,9 @@ void main() {
       'trashTicket from a TicketDetailLoaded previous state emits '
       '[TicketTrashing, TicketTrashed] on success',
       setUp: () {
-        when(() => repository.trashTicket(ticket.id)).thenAnswer((_) async {});
+        when(
+          () => repository.trashTicket(ticket.id),
+        ).thenAnswer((_) async => [ticket.id]);
         when(
           () => repository.getTicketById(ticket.id),
         ).thenAnswer((_) async => ticket);
@@ -1643,7 +1645,9 @@ void main() {
       'trashTicket from a TicketsLoaded previous state emits '
       '[TicketTrashing, TicketsLoaded] with the refreshed list on success',
       setUp: () {
-        when(() => repository.trashTicket(ticket.id)).thenAnswer((_) async {});
+        when(
+          () => repository.trashTicket(ticket.id),
+        ).thenAnswer((_) async => [ticket.id]);
         when(
           () => repository.getTicketById(ticket.id),
         ).thenAnswer((_) async => ticket);
@@ -1677,7 +1681,7 @@ void main() {
       setUp: () {
         when(
           () => repository.trashTickets([ticket.id]),
-        ).thenAnswer((_) async => 1);
+        ).thenAnswer((_) async => [ticket.id]);
         when(
           () => repository.getTicketById(ticket.id),
         ).thenAnswer((_) async => ticket);
@@ -2641,7 +2645,7 @@ void main() {
           stubEmptySearch();
           when(
             () => repository.trashTicket(ticket.id),
-          ).thenAnswer((_) async {});
+          ).thenAnswer((_) async => [ticket.id]);
           when(
             () => repository.getTicketById(any()),
           ).thenAnswer((_) async => ticket);
@@ -2651,7 +2655,7 @@ void main() {
           stubEmptySearch();
           when(
             () => repository.trashTicket(ticket.id),
-          ).thenAnswer((_) async {});
+          ).thenAnswer((_) async => [ticket.id]);
           when(
             () => repository.getTicketById(any()),
           ).thenAnswer((_) async => ticket);
@@ -2679,7 +2683,7 @@ void main() {
           stubEmptySearch();
           when(
             () => repository.trashTickets([ticket.id]),
-          ).thenAnswer((_) async => 1);
+          ).thenAnswer((_) async => [ticket.id]);
           when(
             () => repository.getTicketById(any()),
           ).thenAnswer((_) async => ticket);
@@ -2689,7 +2693,7 @@ void main() {
           stubEmptySearch();
           when(
             () => repository.trashTickets([ticket.id]),
-          ).thenAnswer((_) async => 1);
+          ).thenAnswer((_) async => [ticket.id]);
           when(
             () => repository.getTicketById(any()),
           ).thenAnswer((_) async => ticket);
@@ -4241,7 +4245,7 @@ void main() {
         setUp: () {
           when(
             () => repository.trashTicket(trashedChild.id),
-          ).thenAnswer((_) async {});
+          ).thenAnswer((_) async => [trashedChild.id]);
           when(
             () => repository.getTicketById(trashedChild.id),
           ).thenAnswer((_) async => trashedChild);
@@ -4294,7 +4298,7 @@ void main() {
         setUp: () {
           when(
             () => repository.trashTickets([bulkTrashedChild.id]),
-          ).thenAnswer((_) async => 1);
+          ).thenAnswer((_) async => [bulkTrashedChild.id]);
           when(
             () => repository.getTicketById(bulkTrashedChild.id),
           ).thenAnswer((_) async => bulkTrashedChild);
@@ -12504,7 +12508,7 @@ void main() {
         setUp: () {
           when(
             () => repository.trashTicket(taskChildNotDone.id),
-          ).thenAnswer((_) async {});
+          ).thenAnswer((_) async => [taskChildNotDone.id]);
           when(
             () => repository.getTicketById(taskChildNotDone.id),
           ).thenAnswer((_) async => taskChildNotDone);
@@ -12533,7 +12537,7 @@ void main() {
         setUp: () {
           when(
             () => repository.trashTicket(ticket.id),
-          ).thenAnswer((_) async {});
+          ).thenAnswer((_) async => [ticket.id]);
           when(
             () => repository.getTicketById(ticket.id),
           ).thenAnswer((_) async => ticket);
@@ -12550,7 +12554,7 @@ void main() {
         setUp: () {
           when(
             () => repository.trashTickets([taskChildNotDone.id]),
-          ).thenAnswer((_) async => 1);
+          ).thenAnswer((_) async => [taskChildNotDone.id]);
           when(
             () => repository.getTicketById(taskChildNotDone.id),
           ).thenAnswer((_) async => taskChildNotDone);

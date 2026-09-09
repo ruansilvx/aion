@@ -50,12 +50,28 @@ class TicketReconstructionReport {
 /// [TicketRepository.updateTicket], which never touches `ticketId` in
 /// the first place since it addresses the row by internal `id`.
 ///
-/// `deletedAt` round-trips through reconstruction the same way
-/// `parentId`/`estimate`/`timeSpent` already do — a rebuilt DB correctly
-/// reflects which tickets were trashed as of the last commit touching each
-/// file. Before `deletedAt` was part of [TicketMarkdownSerializer]'s
-/// frontmatter (added by `AIO-918`), every reconstructed ticket silently came
-/// back non-trashed regardless of its real state, since [_buildTicket] never
+/// `deletedAt` round-trips through reconstruction, but not the same way
+/// `parentId`/`estimate`/`timeSpent` do: those fields ride along on the
+/// plain [TicketRepository.updateTicket] call the existing-row branch
+/// already makes, but [TicketRepository.updateTicket] deliberately never
+/// touches trash state (see `DriftTicketRepository`'s own design note —
+/// widening it would risk an unrelated content edit silently un-trashing
+/// or re-trashing a ticket). Instead, [reconstruct] explicitly reconciles
+/// a changed `deletedAt` via [TicketRepository.trashTicket]/
+/// [TicketRepository.restoreTicket] — see [_reconcileTrashState] — the
+/// same blessed methods every other write path uses, so a reconciled
+/// trash/restore also gets correct git projection and cascade handling
+/// for free whenever [_repository] happens to be a
+/// `GitProjectingTicketRepository`. The existence check that decides
+/// whether a file is a fresh import or an update to an existing row also
+/// considers trashed tickets (via [TicketRepository.getTrashedTickets],
+/// not just [TicketRepository.getAllTickets]) — a trashed ticket's `.md`
+/// file is never deleted by trashing, so without this a reconstruction
+/// pass would treat every already-trashed ticket as brand new and fail
+/// importing it against its own still-`.unique()` `ticketId`. Before
+/// `deletedAt` was part of [TicketMarkdownSerializer]'s frontmatter
+/// (added by `AIO-918`), every reconstructed ticket silently came back
+/// non-trashed regardless of its real state, since [_buildTicket] never
 /// set the field at all.
 class TicketDbReconstructionService {
   /// Creates a [TicketDbReconstructionService] using [_repository],
@@ -94,7 +110,14 @@ class TicketDbReconstructionService {
       );
     }
 
-    final existing = await _repository.getAllTickets();
+    // Trashed tickets too — not just [TicketRepository.getAllTickets],
+    // whose live-only query would otherwise make every trashed ticket's
+    // still-on-disk `.md` file look brand new below. See this class's
+    // own dartdoc.
+    final existing = [
+      ...await _repository.getAllTickets(),
+      ...await _repository.getTrashedTickets(),
+    ];
     final existingByTicketId = {for (final t in existing) t.ticketId: t};
 
     var importedCount = 0;
@@ -111,7 +134,8 @@ class TicketDbReconstructionService {
         continue;
       }
 
-      if (existingByTicketId.containsKey(ticket.ticketId)) {
+      final existingRow = existingByTicketId[ticket.ticketId];
+      if (existingRow != null) {
         // No `estimateEdited`/`complexityEdited` — see [_buildTicket]'s
         // dartdoc for why `fields.containsKey(...)` can't be used as an
         // edited signal here. Leaving both at their `false` default is
@@ -119,6 +143,7 @@ class TicketDbReconstructionService {
         // on every reconstruction pass, which is what happened before
         // `estimateSource` existed to get it wrong.
         await _repository.updateTicket(ticket);
+        await _reconcileTrashState(existingRow, ticket);
       } else {
         await _repository.importTicket(ticket);
       }
@@ -139,6 +164,28 @@ class TicketDbReconstructionService {
       importedCount: importedCount,
       skippedPaths: skippedPaths,
     );
+  }
+
+  /// Brings [existing]'s trash state in line with [parsed]'s (the
+  /// file's) `deletedAt`, via [TicketRepository.trashTicket]/
+  /// [TicketRepository.restoreTicket] — never by writing `deletedAt`
+  /// directly, and never through [TicketRepository.updateTicket] (which
+  /// deliberately excludes the field — see `DriftTicketRepository`'s own
+  /// design note). Mirrors `TicketParentTrashService
+  /// .applyFromParsedFields`'s identical detection logic for the same
+  /// file→DB reconciliation direction, duplicated here rather than
+  /// shared — the same "not worth a helper for two call sites" judgment
+  /// call that class's own dartdoc already makes for its `parentId`
+  /// handling. A no-op if `deletedAt` didn't change, or if it changed
+  /// between two non-null values (re-trashing an already-trashed ticket
+  /// with a new timestamp has no domain operation to reconcile through —
+  /// same as `applyFromParsedFields`).
+  Future<void> _reconcileTrashState(Ticket existing, Ticket parsed) async {
+    if (parsed.deletedAt != null && existing.deletedAt == null) {
+      await _repository.trashTicket(existing.id);
+    } else if (parsed.deletedAt == null && existing.deletedAt != null) {
+      await _repository.restoreTicket(existing.id);
+    }
   }
 
   /// Builds a [Ticket] from a parse [result], reusing the existing row's

@@ -191,7 +191,9 @@ void main() {
       when(
         () => repository.getTicketById(ticket.id),
       ).thenAnswer((_) async => ticket);
-      when(() => repository.trashTicket(ticket.id)).thenAnswer((_) async {});
+      when(
+        () => repository.trashTicket(ticket.id),
+      ).thenAnswer((_) async => [ticket.id]);
 
       final service = TicketParentTrashService(repository);
       final result = await service.trash(ticket.id);
@@ -223,7 +225,7 @@ void main() {
       ).thenAnswer((_) async => trashedTicket);
       when(
         () => repository.restoreTicket(trashedTicket.id),
-      ).thenAnswer((_) async {});
+      ).thenAnswer((_) async => [trashedTicket.id]);
 
       final service = TicketParentTrashService(repository);
       final result = await service.restore(trashedTicket.id);
@@ -304,7 +306,9 @@ void main() {
       when(
         () => repository.getTicketById(ticket.id),
       ).thenAnswer((_) async => ticket);
-      when(() => repository.trashTicket(ticket.id)).thenAnswer((_) async {});
+      when(
+        () => repository.trashTicket(ticket.id),
+      ).thenAnswer((_) async => [ticket.id]);
 
       final service = TicketParentTrashService(repository);
       final ok = await service.applyFromParsedFields(ticket, {
@@ -321,7 +325,7 @@ void main() {
       ).thenAnswer((_) async => trashedTicket);
       when(
         () => repository.restoreTicket(trashedTicket.id),
-      ).thenAnswer((_) async {});
+      ).thenAnswer((_) async => [trashedTicket.id]);
 
       final service = TicketParentTrashService(repository);
       final ok = await service.applyFromParsedFields(trashedTicket, {

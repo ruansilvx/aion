@@ -7461,32 +7461,6 @@ class TicketsCubit extends Cubit<TicketsState> {
     );
   }
 
-  /// Projects [ticket] to its Markdown file and commits it, labelled
-  /// [eventLabel]. No-ops if no [_gitProjector]/[_projectRootPath] was
-  /// provided (see the constructor's dartdoc) — desktop-only in
-  /// practice, since `WorkspaceShell` only supplies these on desktop.
-  ///
-  /// [_trashBatchGitSideEffects] is this method's one remaining caller.
-  /// Every single-ticket create/status-change/reparent/stage-advance path
-  /// that used to call this directly now gets projected automatically by
-  /// `GitProjectingTicketRepository` instead (see that class's dartdoc) —
-  /// `_repository` is that decorator whenever a project has a `rootPath`,
-  /// so those writes project themselves without this cubit needing to ask.
-  /// The bulk-trash path above is the one exception: it calls
-  /// `TicketRepository.trashTickets` (plural), which — unlike the singular
-  /// `trashTicket` — is deliberately *not* wrapped by the decorator, since
-  /// its per-ticket projections must stay sequenced strictly before the
-  /// batched rollup recompute that follows them (see
-  /// [_trashBatchGitSideEffects]'s own dartdoc), a guarantee a generic
-  /// per-call decorator can't give without either blocking this cubit on
-  /// every commit in the batch or dropping the sequencing entirely.
-  Future<void> _triggerGitProjection(Ticket ticket, String eventLabel) async {
-    final projector = _gitProjector;
-    final rootPath = _projectRootPath;
-    if (projector == null || rootPath == null) return;
-    await projector.project(ticket, rootPath, eventLabel);
-  }
-
   /// Recomputes and persists the rollup for every ticket on the path from
   /// each id in [startIds] up to its structural root (inclusive of each
   /// starting ancestor — see the call sites in [updateTicket]/
@@ -7497,7 +7471,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// `TrashCubit` (see [TicketRollupRecomputer]) rather than duplicated
   /// here. No-ops if [startIds] is empty. Fire-and-forget from every call
   /// site — never awaited by the caller's own return path, same pattern
-  /// as [_triggerEmbeddingRegen]/[_triggerGitProjection].
+  /// as [_triggerEmbeddingRegen].
   Future<void> _recomputeRollupChain(Set<String> startIds, String eventLabel) {
     return _rollupRecomputer.recompute(startIds, eventLabel);
   }
@@ -7583,24 +7557,33 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
   }
 
-  /// Runs each id in [ids]' single-ticket `'trashed'` projection (in
-  /// order, re-fetching each from [_repository] since [trashTickets]
-  /// itself never holds the post-trash rows) followed by one batched
+  /// Projects every id in [affectedIds] — [TicketRepository.trashTickets]'s
+  /// full return value: the explicitly-selected ids plus every cascaded
+  /// descendant it also moved to trash — as **one** batched `'trashed'`
+  /// commit (re-fetching each from [_repository] since [trashTickets]
+  /// itself never holds the post-trash rows), followed by one batched
   /// rollup recompute seeded from [parentIdOf]'s values — see
   /// [trashTickets]'s dartdoc for why these must be sequenced rather than
-  /// fired concurrently.
+  /// fired concurrently. No-ops the projection step (but still runs the
+  /// rollup recompute) if no [_gitProjector]/[_projectRootPath] was
+  /// provided — desktop-only in practice, since `WorkspaceShell` only
+  /// supplies these on desktop.
   Future<void> _trashBatchGitSideEffects(
-    List<String> ids,
+    List<String> affectedIds,
     Map<String, String?> parentIdOf,
   ) async {
-    for (final id in ids) {
-      final trashed = await _repository.getTicketById(id);
-      if (trashed != null) {
-        await _triggerGitProjection(trashed, 'trashed');
+    final projector = _gitProjector;
+    final rootPath = _projectRootPath;
+    if (projector != null && rootPath != null) {
+      final tickets = <Ticket>[];
+      for (final id in affectedIds) {
+        final ticket = await _repository.getTicketById(id);
+        if (ticket != null) tickets.add(ticket);
       }
+      await projector.projectBatch(tickets, rootPath, 'trashed');
     }
     await _recomputeRollupChain({
-      for (final id in ids)
+      for (final id in parentIdOf.keys)
         if (parentIdOf[id] != null) parentIdOf[id]!,
     }, 'rollup updated');
   }
@@ -7972,25 +7955,28 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [searchTickets] was last called with and requests at least as many
   /// tickets as were already loaded.
   ///
-  /// Every git-touching step — each explicitly-trashed id's own
-  /// `'trashed'` projection (projects only the explicitly-requested ids,
-  /// not their cascaded descendants, also trashed by
-  /// [TicketRepository.trashTickets] but not individually enumerable from
-  /// its return value — a documented scope simplification, not an
-  /// oversight), then the single batched rollup recompute (see
-  /// [_recomputeRollupChain]) seeded from the union of every
-  /// explicitly-trashed id's pre-trash `parentId` (read before the trash
-  /// write, mirroring [trashTicket]'s own timing) — is sequenced into one
-  /// chain and fired as a single fire-and-forget unit, same reasoning as
-  /// [trashTicket]: concurrent unawaited git operations race the
-  /// underlying git client's add/commit steps and can silently coalesce
-  /// separate logical commits into one mislabeled commit.
+  /// Every git-touching step — one batched `'trashed'` projection
+  /// covering every id [TicketRepository.trashTickets] actually reports
+  /// as affected (the explicitly-requested ids *and* every cascaded
+  /// descendant it also trashed — no longer a scope simplification: its
+  /// return value now enumerates the full set, see
+  /// [_trashBatchGitSideEffects]), then the single batched rollup
+  /// recompute (see [_recomputeRollupChain]) seeded from the union of
+  /// every explicitly-trashed id's pre-trash `parentId` (read before the
+  /// trash write, mirroring [trashTicket]'s own timing) — is sequenced
+  /// into one chain and fired as a single fire-and-forget unit, same
+  /// reasoning as [trashTicket]: concurrent unawaited git operations race
+  /// the underlying git client's add/commit steps and can silently
+  /// coalesce separate logical commits into one mislabeled commit.
   ///
   /// Also fires a fire-and-forget [_refreshDetailIfOpenAndAffected] call for
-  /// the explicitly-passed [ids] (not their cascaded descendants, same
-  /// documented scope simplification as the git-projection side effect above),
-  /// so a Story's or Epic's already-open detail screen live-refreshes when
-  /// this bulk trash touches one of its direct children. Added for `AIO-905`.
+  /// the explicitly-passed [ids] only (not their cascaded descendants —
+  /// unlike the git-projection side effect above, this one is still
+  /// deliberately scoped to what the user selected: refreshing a detail
+  /// screen for a descendant that was never itself selected isn't needed
+  /// for correctness), so a Story's or Epic's already-open detail screen
+  /// live-refreshes when this bulk trash touches one of its direct
+  /// children. Added for `AIO-905`.
   Future<void> trashTickets(List<String> ids) async {
     // Captured before this call's own TicketsBatchTrashing/
     // TicketsBatchTrashed emissions below overwrite `state` — see
@@ -8016,8 +8002,8 @@ class TicketsCubit extends Cubit<TicketsState> {
         for (final id in ids)
           id: (await _repository.getTicketById(id))?.parentId,
       };
-      final trashedCount = await _repository.trashTickets(ids);
-      unawaited(_trashBatchGitSideEffects(ids, parentIdOf));
+      final affectedIds = await _repository.trashTickets(ids);
+      unawaited(_trashBatchGitSideEffects(affectedIds, parentIdOf));
       final page = await _repository.searchTickets(
         query: _lastQuery,
         statuses: _lastStatuses,
@@ -8028,7 +8014,11 @@ class TicketsCubit extends Cubit<TicketsState> {
         statusSortOrder: _statusSortOrder,
       );
       emit(
-        TicketsBatchTrashed(page.tickets, trashedCount, hasMore: page.hasMore),
+        TicketsBatchTrashed(
+          page.tickets,
+          affectedIds.length,
+          hasMore: page.hasMore,
+        ),
       );
       unawaited(
         _refreshDetailIfOpenAndAffected(
