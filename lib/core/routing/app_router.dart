@@ -40,6 +40,7 @@ import 'package:aion/features/tickets/data/repositories/drift_transition_precond
 import 'package:aion/features/tickets/data/repositories/drift_workflow_prompt_template_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_workflow_skill_attachment_repository.dart';
 import 'package:aion/features/tickets/data/repositories/drift_workflow_status_repository.dart';
+import 'package:aion/features/tickets/data/repositories/git_projecting_ticket_repository.dart';
 import 'package:aion/features/tickets/data/repositories/shared_prefs_sdd_stage_config_repository.dart';
 import 'package:aion/features/tickets/data/repositories/shared_prefs_ticket_board_column_visibility_repository.dart';
 import 'package:aion/features/tickets/data/repositories/shared_prefs_ticket_list_filter_repository.dart';
@@ -580,8 +581,43 @@ class _WorkspaceShellState extends State<WorkspaceShell>
 
     return MultiRepositoryProvider(
       providers: [
+        // Desktop-only git-projection dependencies, needed *before*
+        // TicketRepository's own provider below so its `create` callback
+        // can read TicketGitProjector — MultiRepositoryProvider nests
+        // providers in list order, so anything TicketRepository's
+        // `create` reads via `context.read` must appear earlier in this
+        // list, not later. Absent entirely on mobile/web (no rootPath to
+        // address git commands to).
+        if (rootPath != null) ...[
+          RepositoryProvider<GitRepositoryClient>(
+            create: (_) => GitRepositoryClient(),
+          ),
+          RepositoryProvider<TicketMarkdownSerializer>(
+            create: (_) => TicketMarkdownSerializer(),
+          ),
+          RepositoryProvider<TicketGitProjector>(
+            create: (context) => TicketGitProjector(
+              context.read<TicketMarkdownSerializer>(),
+              context.read<GitRepositoryClient>(),
+            ),
+          ),
+        ],
+        // Structural/lifecycle ticket writes (create, status/sddStage/
+        // parentId change, trash, restore) project themselves to
+        // `tickets/*.md` automatically whenever this project has a
+        // `rootPath` — see GitProjectingTicketRepository. Every consumer
+        // below depends on the TicketRepository *interface* only, so
+        // this is the one place that decision is made.
         RepositoryProvider<TicketRepository>(
-          create: (_) => DriftTicketRepository(_database),
+          create: (context) {
+            final drift = DriftTicketRepository(_database);
+            if (rootPath == null) return drift;
+            return GitProjectingTicketRepository(
+              drift,
+              context.read<TicketGitProjector>(),
+              rootPath,
+            );
+          },
         ),
         RepositoryProvider<CommentRepository>(
           create: (_) => DriftCommentRepository(_database),
@@ -665,28 +701,19 @@ class _WorkspaceShellState extends State<WorkspaceShell>
         RepositoryProvider<TransitionPreconditionRepository>(
           create: (_) => DriftTransitionPreconditionRepository(_database),
         ),
-        // Desktop-only project-scoped services below — git projection,
-        // bidirectional resource/page reconcile, and repair. Absent
-        // entirely on mobile/web (no rootPath to address git commands
-        // to); `TicketsCubit`'s embeddingProvider/gitProjector/
+        // Desktop-only project-scoped services below — bidirectional
+        // resource/page reconcile and repair (GitRepositoryClient/
+        // TicketMarkdownSerializer/TicketGitProjector moved above,
+        // before TicketRepository's own provider, since that provider's
+        // `create` callback now needs to read TicketGitProjector).
+        // Absent entirely on mobile/web (no rootPath to address git
+        // commands to); `TicketsCubit`'s embeddingProvider/gitProjector/
         // projectRootPath params already no-op when null, and
         // `TicketDetailScreen` gates the sync badge/banner on
         // `isDesktop` rather than reading these providers unguarded.
         if (rootPath != null) ...[
-          RepositoryProvider<GitRepositoryClient>(
-            create: (_) => GitRepositoryClient(),
-          ),
-          RepositoryProvider<TicketMarkdownSerializer>(
-            create: (_) => TicketMarkdownSerializer(),
-          ),
           RepositoryProvider<ActiveTicketViewRegistry>(
             create: (_) => ActiveTicketViewRegistry(),
-          ),
-          RepositoryProvider<TicketGitProjector>(
-            create: (context) => TicketGitProjector(
-              context.read<TicketMarkdownSerializer>(),
-              context.read<GitRepositoryClient>(),
-            ),
           ),
           // Shared parentId-reparent/trash/restore domain logic — see
           // AIO-1735. Consumed below by both TicketMarkdownReconciler and

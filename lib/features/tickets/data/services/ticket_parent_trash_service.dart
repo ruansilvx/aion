@@ -11,8 +11,10 @@ import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart
 import 'package:aion/features/tickets/presentation/cubit/ticket_rollup_recomputer.dart';
 
 /// Shared parentId-reparent and trash/restore domain logic — cycle-prevention
-/// and type-compatibility validation for reparenting, and the git-projection +
-/// rollup-recompute side effects that accompany a trash/restore — used by both
+/// and type-compatibility validation for reparenting, and the batched
+/// rollup-recompute side effect that accompanies a reparent/trash/restore
+/// (single-ticket git projection is handled one layer down, inside
+/// `_repository` itself — see `GitProjectingTicketRepository`) — used by both
 /// `TicketsCubit`/`TrashCubit` (in-app edits, which wrap this in their own
 /// UI-state emission) and `TicketMarkdownReconciler`/`TicketRepairService`
 /// (external file edits and repair, which have no UI state to emit). Follows
@@ -23,14 +25,18 @@ class TicketParentTrashService {
   /// Creates a [TicketParentTrashService] backed by [_repository].
   /// [gitProjector]/[projectRootPath] are optional, matching
   /// `TicketRollupRecomputer`'s identical optional-dependency pattern —
-  /// `null` for either simply no-ops the git-projection side effect.
+  /// `null` for either simply no-ops [_rollupRecomputer]'s own batched
+  /// git-projection side effect. Trash/restore's own single-ticket
+  /// projection is no longer this class's concern — it happens
+  /// automatically inside [_repository]'s `trashTicket`/`restoreTicket`
+  /// whenever `_repository` is a `GitProjectingTicketRepository` (see that
+  /// class), so [gitProjector]/[projectRootPath] here exist solely to
+  /// construct [_rollupRecomputer].
   TicketParentTrashService(
     this._repository, {
     TicketGitProjector? gitProjector,
     String? projectRootPath,
   }) {
-    _gitProjector = gitProjector;
-    _projectRootPath = projectRootPath;
     _rollupRecomputer = TicketRollupRecomputer(
       _repository,
       gitProjector: gitProjector,
@@ -39,12 +45,11 @@ class TicketParentTrashService {
   }
 
   final TicketRepository _repository;
-  late final TicketGitProjector? _gitProjector;
-  late final String? _projectRootPath;
 
   /// Shared estimate/timeSpent rollup-recompute walk — see
-  /// [TicketRollupRecomputer]. Wired to the same [_repository]/
-  /// [_gitProjector]/[_projectRootPath] this service already holds.
+  /// [TicketRollupRecomputer]. Wired to the same [_repository] this
+  /// service already holds, plus this constructor's own `gitProjector`/
+  /// `projectRootPath` parameters.
   late final TicketRollupRecomputer _rollupRecomputer;
 
   /// Reassigns [ticket]'s parent to [newParentId] (`null` clears it).
@@ -101,21 +106,24 @@ class TicketParentTrashService {
   /// Trashes the ticket with internal id [id] via
   /// [TicketRepository.trashTicket] — which already carries the full
   /// descendant-cascade logic, so no validation happens here beyond what
-  /// the repository itself already guards (the ticket existing). Mirrors
-  /// `TicketsCubit`'s previous `_trashGitSideEffects`: projects the
-  /// trashed ticket to git (`'trashed'`) and fires a rollup recompute
-  /// seeded from the ticket's pre-trash `parentId`. Returns the trashed
-  /// [Ticket], or `null` if [id] doesn't exist — checked up front so a
-  /// missing id never reaches [TicketRepository.trashTicket] (which would
-  /// otherwise throw), keeping this a graceful rejection for callers like
-  /// [applyFromParsedFields] that need one instead of an uncaught
-  /// exception.
+  /// the repository itself already guards (the ticket existing), *and*
+  /// (whenever [_repository] is a `GitProjectingTicketRepository`)
+  /// already projects the trashed ticket to git (`'trashed'`) before this
+  /// method's own `await` returns — see that class's dartdoc. This method
+  /// then fires a rollup recompute seeded from the ticket's pre-trash
+  /// `parentId`, safely sequenced after that projection for the same
+  /// reason `specs/tickets.md`'s "Git projection" section documents:
+  /// concurrent git operations can coalesce into one mislabeled commit.
+  /// Returns the trashed [Ticket], or `null` if [id] doesn't exist —
+  /// checked up front so a missing id never reaches
+  /// [TicketRepository.trashTicket] (which would otherwise throw), keeping
+  /// this a graceful rejection for callers like [applyFromParsedFields]
+  /// that need one instead of an uncaught exception.
   Future<Ticket?> trash(String id) async {
     final preTrash = await _repository.getTicketById(id);
     if (preTrash == null) return null;
     await _repository.trashTicket(id);
     final trashed = await _repository.getTicketById(id);
-    if (trashed != null) await _triggerGitProjection(trashed, 'trashed');
     unawaited(
       _rollupRecomputer.recompute({?preTrash.parentId}, 'rollup updated'),
     );
@@ -124,21 +132,22 @@ class TicketParentTrashService {
 
   /// Restores the ticket with internal id [id] via
   /// [TicketRepository.restoreTicket] — which already revives trashed
-  /// ancestors/descendants. Mirrors `TrashCubit`'s previous
-  /// `_restoreGitSideEffects`: projects the restored ticket to git
-  /// (`'restored'`) and fires a rollup recompute seeded from its
-  /// (now-restored) `parentId`. Returns the restored [Ticket], or `null`
-  /// if [id] doesn't exist — checked up front so a missing id never
-  /// reaches [TicketRepository.restoreTicket] (which would otherwise
-  /// throw), keeping this a graceful rejection for callers like
-  /// [applyFromParsedFields] that need one instead of an uncaught
-  /// exception.
+  /// ancestors/descendants, *and* (whenever [_repository] is a
+  /// `GitProjectingTicketRepository`) already projects the restored
+  /// ticket to git (`'restored'`) before this method's own `await`
+  /// returns — see that class's dartdoc. This method then fires a rollup
+  /// recompute seeded from its (now-restored) `parentId`, sequenced after
+  /// that projection for the same reason [trash] is. Returns the restored
+  /// [Ticket], or `null` if [id] doesn't exist — checked up front so a
+  /// missing id never reaches [TicketRepository.restoreTicket] (which
+  /// would otherwise throw), keeping this a graceful rejection for
+  /// callers like [applyFromParsedFields] that need one instead of an
+  /// uncaught exception.
   Future<Ticket?> restore(String id) async {
     final existing = await _repository.getTicketById(id);
     if (existing == null) return null;
     await _repository.restoreTicket(id);
     final restored = await _repository.getTicketById(id);
-    if (restored != null) await _triggerGitProjection(restored, 'restored');
     unawaited(
       _rollupRecomputer.recompute({?existing.parentId}, 'rollup updated'),
     );
@@ -182,17 +191,6 @@ class TicketParentTrashService {
       }
     }
     return ok;
-  }
-
-  /// Projects [ticket] to its Markdown file under the active project's
-  /// git repository, labelling the commit [eventLabel] — a no-op when
-  /// either [_gitProjector] or [_projectRootPath] is `null` (mobile/web,
-  /// or no resolved project directory).
-  Future<void> _triggerGitProjection(Ticket ticket, String eventLabel) async {
-    final projector = _gitProjector;
-    final rootPath = _projectRootPath;
-    if (projector == null || rootPath == null) return;
-    await projector.project(ticket, rootPath, eventLabel);
   }
 
   /// Same descendant-walk as `TicketsCubit._descendantIds` — duplicated

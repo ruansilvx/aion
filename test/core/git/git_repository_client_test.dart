@@ -54,6 +54,75 @@ void main() {
     }
   }
 
+  group('add / commit / hasChanges', () {
+    Future<String> initRepo() async {
+      await runGit(['init', '-b', 'main']);
+      await runGit(['config', 'user.email', 'test@example.com']);
+      await runGit(['config', 'user.name', 'Test']);
+      return tempDir.path;
+    }
+
+    test('add stages a file and hasChanges reports true', () async {
+      final rootPath = await initRepo();
+      File(
+        '$rootPath${Platform.pathSeparator}a.txt',
+      ).writeAsStringSync('a');
+
+      await client.add(rootPath, 'a.txt');
+
+      expect(await client.hasChanges(rootPath), isTrue);
+    });
+
+    test('commit clears staged changes and hasChanges reports false '
+        'afterward', () async {
+      final rootPath = await initRepo();
+      File(
+        '$rootPath${Platform.pathSeparator}a.txt',
+      ).writeAsStringSync('a');
+      await client.add(rootPath, 'a.txt');
+
+      await client.commit(rootPath, 'add a.txt');
+
+      expect(await client.hasChanges(rootPath), isFalse);
+    });
+
+    test(
+      'add throws ProcessException for a pathspec that matches nothing',
+      () async {
+        final rootPath = await initRepo();
+        await expectLater(
+          client.add(rootPath, 'does-not-exist.txt'),
+          throwsA(isA<ProcessException>()),
+        );
+      },
+    );
+
+    test('commit throws ProcessException when nothing is staged', () async {
+      final rootPath = await initRepo();
+      File(
+        '$rootPath${Platform.pathSeparator}a.txt',
+      ).writeAsStringSync('a');
+      await runGit(['add', 'a.txt']);
+      await runGit(['commit', '-m', 'base']);
+      // Nothing staged since that commit — "nothing to commit" is a
+      // non-zero exit.
+      await expectLater(
+        client.commit(rootPath, 'empty'),
+        throwsA(isA<ProcessException>()),
+      );
+    });
+
+    test(
+      'hasChanges throws ProcessException outside a git repository',
+      () async {
+        await expectLater(
+          client.hasChanges(tempDir.path),
+          throwsA(isA<ProcessException>()),
+        );
+      },
+    );
+  });
+
   group('changedFileCount', () {
     test('counts files changed on branch relative to base', () async {
       await runGit(['init', '-b', 'main']);

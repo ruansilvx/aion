@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -140,6 +141,91 @@ void main() {
         () => git.commit(tempDir.path, 'ticket: AIO-42 rollup updated'),
       ).called(1);
     });
+  });
+
+  group('serialization (git-projection-concurrency-race)', () {
+    final secondTicket = Ticket(
+      id: 'internal-2',
+      ticketId: 'AIO-43',
+      type: TicketType.story,
+      title: 'A story',
+      status: 'backlog',
+      createdAt: DateTime.utc(2026, 7, 18),
+      updatedAt: DateTime.utc(2026, 7, 18),
+    );
+
+    test(
+      'a second project call queues behind a still-in-flight first call, '
+      'instead of running its git commands concurrently',
+      () async {
+        final events = <String>[];
+        final unblockFirstAdd = Completer<void>();
+        when(() => git.add(any(), any())).thenAnswer((invocation) async {
+          final relativePath = invocation.positionalArguments[1] as String;
+          events.add('add-start:$relativePath');
+          if (relativePath.contains('AIO-42')) {
+            await unblockFirstAdd.future;
+          }
+          events.add('add-end:$relativePath');
+        });
+        when(() => git.hasChanges(any())).thenAnswer((_) async => true);
+
+        final first = projector.project(ticket, tempDir.path, 'created');
+        // Let the real filesystem I/O ahead of `first`'s `git.add` call
+        // (directory create + file write) actually complete, so `add`
+        // has genuinely started — and blocked on `unblockFirstAdd` —
+        // before `second` is fired. A short poll rather than one fixed
+        // delay, so this isn't flaky under slow disk I/O.
+        while (events.isEmpty) {
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+        final second = projector.project(
+          secondTicket,
+          tempDir.path,
+          'created',
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        // If calls ran concurrently, the second ticket's `add-start`
+        // would already appear here. Queued correctly, it doesn't —
+        // the second call hasn't even reached `git.add` yet, because
+        // `_enqueue` hasn't started running its operation.
+        expect(events, ['add-start:tickets/AIO-42.md']);
+
+        unblockFirstAdd.complete();
+        await first;
+        await second;
+
+        expect(events, [
+          'add-start:tickets/AIO-42.md',
+          'add-end:tickets/AIO-42.md',
+          'add-start:tickets/AIO-43.md',
+          'add-end:tickets/AIO-43.md',
+        ]);
+      },
+    );
+
+    test(
+      'a failing project call does not block a subsequently queued call',
+      () async {
+        when(
+          () => git.add(any(), any()),
+        ).thenThrow(ProcessException('git', ['add'], 'boom', 128));
+        when(() => git.hasChanges(any())).thenAnswer((_) async => true);
+
+        await expectLater(
+          projector.project(ticket, tempDir.path, 'created'),
+          throwsA(isA<ProcessException>()),
+        );
+
+        when(() => git.add(any(), any())).thenAnswer((_) async {});
+        await projector.project(secondTicket, tempDir.path, 'created');
+
+        verify(
+          () => git.commit(tempDir.path, 'ticket: AIO-43 created'),
+        ).called(1);
+      },
+    );
   });
 
   group('against a real git repository (the bug this fixes)', () {

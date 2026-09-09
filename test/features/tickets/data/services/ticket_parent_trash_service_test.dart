@@ -1,18 +1,14 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
-import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
 import 'package:aion/features/tickets/data/services/ticket_parent_change_result.dart';
 import 'package:aion/features/tickets/data/services/ticket_parent_trash_service.dart';
 import 'package:aion/features/tickets/tickets.dart';
 
 class MockTicketRepository extends Mock implements TicketRepository {}
 
-class MockTicketGitProjector extends Mock implements TicketGitProjector {}
-
 void main() {
   late MockTicketRepository repository;
-  late MockTicketGitProjector gitProjector;
 
   final ticket = Ticket(
     id: '1',
@@ -100,10 +96,6 @@ void main() {
 
   setUp(() {
     repository = MockTicketRepository();
-    gitProjector = MockTicketGitProjector();
-    when(
-      () => gitProjector.project(any(), any(), any()),
-    ).thenAnswer((_) async {});
   });
 
   group('changeParent', () {
@@ -188,40 +180,25 @@ void main() {
   });
 
   group('trash', () {
-    test('calls TicketRepository.trashTicket and projects "trashed" when a '
-        'TicketGitProjector is supplied', () async {
+    // Single-ticket git projection is no longer this service's own
+    // concern — it happens automatically inside `TicketRepository
+    // .trashTicket` whenever the repository is a
+    // `GitProjectingTicketRepository` (see that class's own test).
+    // `gitProjector`/`projectRootPath` here exist solely to construct
+    // this service's internal `TicketRollupRecomputer`, which these
+    // tests don't exercise (no rollup-affecting fixture).
+    test('calls TicketRepository.trashTicket', () async {
       when(
         () => repository.getTicketById(ticket.id),
       ).thenAnswer((_) async => ticket);
       when(() => repository.trashTicket(ticket.id)).thenAnswer((_) async {});
 
-      final service = TicketParentTrashService(
-        repository,
-        gitProjector: gitProjector,
-        projectRootPath: '/root',
-      );
+      final service = TicketParentTrashService(repository);
       final result = await service.trash(ticket.id);
 
       expect(result, ticket);
       verify(() => repository.trashTicket(ticket.id)).called(1);
-      verify(() => gitProjector.project(ticket, '/root', 'trashed')).called(1);
     });
-
-    test(
-      'no-ops git projection when no TicketGitProjector is supplied',
-      () async {
-        when(
-          () => repository.getTicketById(ticket.id),
-        ).thenAnswer((_) async => ticket);
-        when(() => repository.trashTicket(ticket.id)).thenAnswer((_) async {});
-
-        final service = TicketParentTrashService(repository);
-        final result = await service.trash(ticket.id);
-
-        expect(result, ticket);
-        verifyNever(() => gitProjector.project(any(), any(), any()));
-      },
-    );
 
     test('returns null without calling TicketRepository.trashTicket when the '
         'id does not exist', () async {
@@ -238,8 +215,9 @@ void main() {
   });
 
   group('restore', () {
-    test('calls TicketRepository.restoreTicket and projects "restored" when '
-        'a TicketGitProjector is supplied', () async {
+    // Single-ticket git projection is no longer this service's own
+    // concern — see the `trash` group's comment above.
+    test('calls TicketRepository.restoreTicket', () async {
       when(
         () => repository.getTicketById(trashedTicket.id),
       ).thenAnswer((_) async => trashedTicket);
@@ -247,37 +225,12 @@ void main() {
         () => repository.restoreTicket(trashedTicket.id),
       ).thenAnswer((_) async {});
 
-      final service = TicketParentTrashService(
-        repository,
-        gitProjector: gitProjector,
-        projectRootPath: '/root',
-      );
+      final service = TicketParentTrashService(repository);
       final result = await service.restore(trashedTicket.id);
 
       expect(result, trashedTicket);
       verify(() => repository.restoreTicket(trashedTicket.id)).called(1);
-      verify(
-        () => gitProjector.project(trashedTicket, '/root', 'restored'),
-      ).called(1);
     });
-
-    test(
-      'no-ops git projection when no TicketGitProjector is supplied',
-      () async {
-        when(
-          () => repository.getTicketById(trashedTicket.id),
-        ).thenAnswer((_) async => trashedTicket);
-        when(
-          () => repository.restoreTicket(trashedTicket.id),
-        ).thenAnswer((_) async {});
-
-        final service = TicketParentTrashService(repository);
-        final result = await service.restore(trashedTicket.id);
-
-        expect(result, trashedTicket);
-        verifyNever(() => gitProjector.project(any(), any(), any()));
-      },
-    );
 
     test('returns null without calling TicketRepository.restoreTicket when '
         'the id does not exist', () async {
