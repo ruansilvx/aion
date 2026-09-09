@@ -60,6 +60,17 @@ convert "$ICON_SRC" -resize 512x512 "$ICON_STAGED"
 cp -r "$BUNDLE_DIR/data" "$APPDIR/usr/bin/"
 cp -r "$BUNDLE_DIR/lib/." "$APPDIR/usr/lib/"
 
+# The Node.js bridge script ClaudeAgentSdkClient shells out to at runtime
+# (aion/lib/core/agent/agent_bridge_locator.dart resolves it as a sibling
+# of the running executable — usr/bin/aion inside the mounted AppImage, so
+# usr/bin/agent_bridge is where it looks first). CI runs `npm ci
+# --omit=dev` in agent_bridge/ before this script runs, so node_modules
+# exists here at build time — without it, every installed release fails
+# with a MODULE_NOT_FOUND on the first provider connection attempt.
+mkdir -p "$APPDIR/usr/bin/agent_bridge"
+cp "$REPO_ROOT/agent_bridge/index.mjs" "$REPO_ROOT/agent_bridge/package.json" "$APPDIR/usr/bin/agent_bridge/"
+cp -r "$REPO_ROOT/agent_bridge/node_modules" "$APPDIR/usr/bin/agent_bridge/node_modules"
+
 OUTPUT="$REPO_ROOT/Aion-${VERSION}-x86_64.AppImage"
 "$TOOLS_DIR/appimagetool.AppImage" "$APPDIR" "$OUTPUT"
 

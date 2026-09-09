@@ -29,6 +29,26 @@ jobs:
 
       - run: flutter build windows --release
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install agent_bridge dependencies
+        run: npm ci --omit=dev
+        working-directory: agent_bridge
+
+      # @anthropic-ai/claude-agent-sdk vendors a prebuilt ripgrep binary
+      # for every platform it supports (~55MB across 5 dirs) — this
+      # installer only ever runs on Windows, so the other 4 are pure
+      # dead weight in every Aion-Setup-*.exe otherwise.
+      - name: Prune non-Windows vendor binaries from agent_bridge
+        shell: pwsh
+        run: |
+          $vendor = "agent_bridge/node_modules/@anthropic-ai/claude-agent-sdk/vendor/ripgrep"
+          if (Test-Path $vendor) {
+            Get-ChildItem $vendor -Directory | Where-Object { $_.Name -ne "x64-win32" } | Remove-Item -Recurse -Force
+          }
+
       - name: Install Inno Setup
         run: choco install innosetup -y
 
@@ -75,6 +95,24 @@ jobs:
       - run: dart run build_runner build
 
       - run: flutter build linux --release
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install agent_bridge dependencies
+        run: npm ci --omit=dev
+        working-directory: agent_bridge
+
+      # See the matching Windows-side prune step in build-windows above —
+      # this AppImage only ever runs on Linux, so the other 4 platforms'
+      # vendored ripgrep binaries (~55MB total) are dead weight here too.
+      - name: Prune non-Linux vendor binaries from agent_bridge
+        run: |
+          vendor="agent_bridge/node_modules/@anthropic-ai/claude-agent-sdk/vendor/ripgrep"
+          if [ -d "$vendor" ]; then
+            find "$vendor" -mindepth 1 -maxdepth 1 -type d ! -name "x64-linux" -exec rm -rf {} +
+          fi
 
       - name: Build AppImage
         run: |
