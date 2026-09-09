@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 import 'package:aion/core/build/project_manifest_writer.dart';
 import 'package:aion/core/core.dart';
 import 'package:aion/features/projects/data/services/baseline_tailoring_service.dart';
+import 'package:aion/features/projects/data/services/skill_materialization_service.dart';
 import 'package:aion/features/projects/domain/entities/project.dart';
 import 'package:aion/features/projects/domain/repositories/baseline_repository.dart';
 import 'package:aion/features/projects/domain/repositories/project_repository.dart';
@@ -21,18 +22,21 @@ import 'package:aion/features/projects/presentation/cubit/create_project_state.d
 /// `.aion/manifest.json` marker), then persists via [ProjectRepository]
 /// and, on desktop, writes the marker, initializes an empty git
 /// repository at `rootPath` (skipped if one already exists — see
-/// [submit]'s `appendGitignore` parameter), and asks
+/// [submit]'s `appendGitignore` parameter), asks
 /// [_baselineTailoringService] to tailor a starting
 /// `conventions/architecture-conventions` override from the detected
-/// stack.
+/// stack, and asks [_skillMaterializationService] to write the pinned
+/// baseline's skill assets out as discoverable `.claude/skills/<name>/SKILL.md`
+/// files.
 class CreateProjectCubit extends Cubit<CreateProjectState> {
   /// Creates a [CreateProjectCubit] backed by [_projectRepository],
-  /// [_baselineRepository], [_baselineTailoringService], [_gitClient],
-  /// and [_gitignoreEditor].
+  /// [_baselineRepository], [_baselineTailoringService],
+  /// [_skillMaterializationService], [_gitClient], and [_gitignoreEditor].
   CreateProjectCubit(
     this._projectRepository,
     this._baselineRepository,
     this._baselineTailoringService,
+    this._skillMaterializationService,
     this._gitClient,
     this._gitignoreEditor,
   ) : super(const CreateProjectInitial());
@@ -40,6 +44,7 @@ class CreateProjectCubit extends Cubit<CreateProjectState> {
   final ProjectRepository _projectRepository;
   final BaselineRepository _baselineRepository;
   final BaselineTailoringService _baselineTailoringService;
+  final SkillMaterializationService _skillMaterializationService;
   final GitRepositoryClient _gitClient;
   final GitignoreEditor _gitignoreEditor;
   static const _uuid = Uuid();
@@ -157,6 +162,16 @@ class CreateProjectCubit extends Cubit<CreateProjectState> {
           alreadyGitRepo: wasExistingGitRepo,
           appendGitignore: appendGitignore,
         );
+      }
+
+      // Persisted before the baseline side effects below, not after:
+      // both resolve the project's `rootPath` by looking the row up
+      // through [ProjectRepository] (see `BundledBaselineRepository`),
+      // so running them against a project that doesn't exist in the
+      // registry yet made them silently no-op.
+      await _projectRepository.createProject(project);
+
+      if (isDesktop && rootPath != null) {
         final manifest = await _baselineRepository.getManifest(
           resolvedVersion,
         );
@@ -165,9 +180,13 @@ class CreateProjectCubit extends Cubit<CreateProjectState> {
           rootPath: rootPath,
           manifest: manifest,
         );
+        await _skillMaterializationService.materializeAll(
+          projectId: id,
+          rootPath: rootPath,
+          manifest: manifest,
+        );
       }
 
-      await _projectRepository.createProject(project);
       emit(
         CreateProjectSuccess(project, wasExistingGitRepo: wasExistingGitRepo),
       );

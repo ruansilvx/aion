@@ -18,6 +18,7 @@ import 'package:aion/l10n/generated/app_localizations.dart';
 import 'package:aion/features/projects/data/repositories/bundled_baseline_repository.dart';
 import 'package:aion/features/projects/data/repositories/drift_project_repository.dart';
 import 'package:aion/features/projects/data/services/baseline_tailoring_service.dart';
+import 'package:aion/features/projects/data/services/skill_materialization_service.dart';
 import 'package:aion/features/projects/projects.dart';
 import 'package:aion/features/providers/data/repositories/secure_storage_anthropic_api_key_repository.dart';
 import 'package:aion/features/providers/data/repositories/shared_prefs_execution_context_cap_repository.dart';
@@ -169,6 +170,7 @@ class _AionAppState extends State<AionApp> with WidgetsBindingObserver {
             context.read<BaselineRepository>(),
             ProjectStackDetector(),
           ),
+          SkillMaterializationService(context.read<BaselineRepository>()),
         ),
         child: RepositoryProvider<ActiveProjectProvider>(
           // Exposes the same ActiveProjectCubit instance under its

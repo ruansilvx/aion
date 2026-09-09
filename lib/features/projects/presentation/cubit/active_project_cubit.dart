@@ -5,6 +5,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:aion/core/build/project_manifest_writer.dart';
 import 'package:aion/core/core.dart';
 import 'package:aion/features/projects/data/services/baseline_tailoring_service.dart';
+import 'package:aion/features/projects/data/services/skill_materialization_service.dart';
 import 'package:aion/features/projects/domain/entities/project.dart';
 import 'package:aion/features/projects/domain/repositories/baseline_repository.dart';
 import 'package:aion/features/projects/domain/repositories/project_repository.dart';
@@ -24,16 +25,19 @@ import 'package:aion/features/projects/presentation/cubit/active_project_state.d
 class ActiveProjectCubit extends Cubit<ActiveProjectState>
     implements ActiveProjectProvider {
   /// Creates an [ActiveProjectCubit] backed by [_repository],
-  /// [_baselineRepository], and [_baselineTailoringService].
+  /// [_baselineRepository], [_baselineTailoringService], and
+  /// [_skillMaterializationService].
   ActiveProjectCubit(
     this._repository,
     this._baselineRepository,
     this._baselineTailoringService,
+    this._skillMaterializationService,
   ) : super(const ActiveProjectNone());
 
   final ProjectRepository _repository;
   final BaselineRepository _baselineRepository;
   final BaselineTailoringService _baselineTailoringService;
+  final SkillMaterializationService _skillMaterializationService;
 
   @override
   Project? get activeProject => switch (state) {
@@ -138,9 +142,14 @@ class ActiveProjectCubit extends Cubit<ActiveProjectState>
 
   /// Bumps [activeProject]'s pinned baseline to the latest bundled version:
   /// updates the registry DB row ([ProjectRepository.updateBaselineVersion]),
-  /// rewrites `.aion/manifest.json` (desktop only), and tailors any
+  /// rewrites `.aion/manifest.json` (desktop only), tailors any
   /// newly-introduced `architectureConvention`-kind asset (desktop only — see
-  /// [BaselineTailoringService.tailorNewlyIntroducedAssets]). A no-op if the
+  /// [BaselineTailoringService.tailorNewlyIntroducedAssets]), and re-writes
+  /// the new version's skill assets as `.claude/skills/<name>/SKILL.md` files
+  /// (desktop only — see
+  /// [SkillMaterializationService.materializeAll]) so an upgraded project
+  /// picks up both skills the new version introduces and revised bodies of
+  /// ones it already had. A no-op if the
   /// current state isn't [ActiveProjectOpen] or the project is already pinned
   /// to the latest version. Re-emits [ActiveProjectOpen] with the bumped
   /// project and [ActiveProjectOpen.offerBaselineUpgrade] cleared. Added for
@@ -170,6 +179,11 @@ class ActiveProjectCubit extends Cubit<ActiveProjectState>
         rootPath: rootPath,
         oldManifest: oldManifest,
         newManifest: newManifest,
+      );
+      await _skillMaterializationService.materializeAll(
+        projectId: project.id,
+        rootPath: rootPath,
+        manifest: newManifest,
       );
     }
 

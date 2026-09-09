@@ -2,6 +2,7 @@
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:aion/features/projects/data/services/skill_materialization_service.dart';
 import 'package:aion/features/projects/domain/entities/baseline_asset.dart';
 import 'package:aion/features/projects/domain/repositories/baseline_repository.dart';
 import 'package:aion/features/projects/presentation/cubit/override_editor_state.dart';
@@ -11,19 +12,30 @@ import 'package:aion/features/projects/presentation/cubit/override_editor_state.
 /// `OverrideEditorScreen`. Route-scoped — provided per visit to
 /// `/workspace/settings/overrides/:assetKey`, not at the app root.
 class OverrideEditorCubit extends Cubit<OverrideEditorState> {
-  /// Creates an [OverrideEditorCubit] backed by [_baselineRepository],
-  /// scoped to the project identified by [_projectId] pinned to
-  /// [_baselineVersion], editing the asset keyed [_assetKey].
+  /// Creates an [OverrideEditorCubit] backed by [_baselineRepository]
+  /// and [_skillMaterializationService], scoped to the project identified
+  /// by [_projectId] pinned to [_baselineVersion] and rooted at
+  /// [_rootPath] (`null` on mobile/web), editing the asset keyed
+  /// [_assetKey].
   OverrideEditorCubit(
     this._baselineRepository,
+    this._skillMaterializationService,
     this._projectId,
     this._baselineVersion,
+    this._rootPath,
     this._assetKey,
   ) : super(const OverrideEditorLoading());
 
   final BaselineRepository _baselineRepository;
+  final SkillMaterializationService _skillMaterializationService;
   final String _projectId;
   final String _baselineVersion;
+
+  /// The edited project's root directory on disk, or `null` on mobile/web
+  /// where a project has none — [save] skips re-materializing the
+  /// discoverable skill file in that case, exactly as the rest of the
+  /// baseline machinery skips its filesystem work there.
+  final String? _rootPath;
   final String _assetKey;
 
   /// The resolved [BaselineAsset] for [_assetKey], captured by [load] for
@@ -80,6 +92,14 @@ class OverrideEditorCubit extends Cubit<OverrideEditorState> {
   /// resolved by [load]. No-ops if [load] hasn't successfully resolved
   /// an asset yet. Emits [OverrideEditorSaving] then [OverrideEditorSaved]
   /// on success, or [OverrideEditorError] if the write throws.
+  ///
+  /// When the saved asset is a [BaselineAssetKind.skill] and the project
+  /// has a [_rootPath], the discoverable
+  /// `<rootPath>/.claude/skills/<name>/SKILL.md` file is rewritten from
+  /// [content] in the same pass. Without this, a saved skill override
+  /// would change what the override editor shows while the file a
+  /// `delegatedSkill` attachment's `/<skillName>` prompt actually
+  /// discovers stayed pinned to the stale bundled body.
   Future<void> save(String content) async {
     final asset = _asset;
     if (asset == null) return;
@@ -90,6 +110,14 @@ class OverrideEditorCubit extends Cubit<OverrideEditorState> {
         asset: asset,
         content: content,
       );
+      final rootPath = _rootPath;
+      if (rootPath != null) {
+        _skillMaterializationService.materializeSkill(
+          rootPath: rootPath,
+          asset: asset,
+          content: content,
+        );
+      }
       emit(const OverrideEditorSaved());
     } catch (e) {
       emit(OverrideEditorError(e.toString()));
