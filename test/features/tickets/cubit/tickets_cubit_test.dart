@@ -6001,9 +6001,9 @@ void main() {
     );
 
     blocTest<TicketsCubit, TicketsState>(
-      'omits the "## Related tickets" section entirely — preserving '
-      "today's exact prompt — when TicketContextEnricher has nothing to "
-      'contribute',
+      'omits the "## Related tickets" section, but still includes the '
+      'exploring-stage read-only-investigation instruction, when '
+      'TicketContextEnricher has nothing to contribute',
       setUp: () {
         when(
           () => repository.updateTicketSddStage(epic.id, SddStage.exploring),
@@ -6032,7 +6032,63 @@ void main() {
               that: predicate<AgentRequest>(
                 (request) =>
                     !request.prompt.contains('## Related tickets') &&
-                    request.prompt.trim() == '# ${epic.title}',
+                    request.prompt.startsWith('# ${epic.title}'),
+              ),
+            ),
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'scopes the exploring-stage prompt to read-only investigation — no '
+      'file edits/creates/deletes, no implementation plan or code, no '
+      'request for repo write access',
+      setUp: () {
+        when(
+          () => repository.updateTicketSddStage(epic.id, SddStage.exploring),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(
+          () => repository.getTicketById(epic.id),
+        ).thenAnswer((_) async => epic);
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        when(
+          () => commentRepository.addComment(any()),
+        ).thenAnswer((_) async {});
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.advanceSddStage(epic),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        final posted = verify(
+          () => commentRepository.addComment(captureAny()),
+        ).captured;
+        expect(posted, hasLength(1));
+        final content = (posted.single as TicketComment).content;
+        expect(
+          content,
+          allOf([
+            contains('read-only investigation'),
+            contains('do not edit, create, or delete any project files'),
+            contains('do not ask for write access to any repository'),
+            contains('do not write code'),
+          ]),
+        );
+        verify(
+          () => agentClient.run(
+            any(
+              that: predicate<AgentRequest>(
+                (request) =>
+                    request.prompt.contains('read-only investigation') &&
+                    request.prompt.contains(
+                      'do not ask for write access to any repository',
+                    ),
               ),
             ),
           ),
