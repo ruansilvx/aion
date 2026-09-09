@@ -1643,5 +1643,15 @@
     "sourceTicketId": "5979f01c-3b9f-4863-a375-69464782c518",
     "targetTicketId": "efcef90d-8fc2-48c7-891a-27ddadcf1ff5",
     "type": "relatesTo"
+  },
+  {
+    "sourceTicketId": "af08a2ab-1638-497c-a6cf-67d02f5792b6",
+    "targetTicketId": "d4780d82-4803-448b-8549-52d112db0edb",
+    "type": "relatesTo"
+  },
+  {
+    "sourceTicketId": "af08a2ab-1638-497c-a6cf-67d02f5792b6",
+    "targetTicketId": "52dcbabb-8da4-4733-b206-6df810caa063",
+    "type": "relatesTo"
   }
 ]
