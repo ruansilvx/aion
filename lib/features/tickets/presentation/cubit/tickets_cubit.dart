@@ -7035,8 +7035,15 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// Assembles the plain-text context a spawned stage chat opens with:
   /// [parent]'s title/description, a `## Related tickets` section from
   /// [_contextEnricher] (see [TicketContextEnricher.relatedTicketsSection] —
-  /// omitted entirely when it returns `''`), and — for [SddStage.verifying]/
-  /// [SddStage.archived] — its direct children's titles and statuses (plus,
+  /// omitted entirely when it returns `''`), and — for [SddStage.exploring]
+  /// specifically — an explicit read-only-investigation scope (no file
+  /// edits/creates/deletes, no implementation plan or code, no request for
+  /// repo write access, closing with a request for a written exploration
+  /// summary instead of a proposal — mirroring `aion-arch`'s own `/explore`
+  /// skill's rule; unlike every other branch below, this is a behavioral
+  /// constraint on the turn rather than an output-format request), or — for
+  /// [SddStage.verifying]/ [SddStage.archived] — its direct children's
+  /// titles and statuses (plus,
   /// for [SddStage.verifying] specifically, instructions to end the reply with
   /// `VERIFY GATE: APPROVED`/`PENDING` and, on `PENDING`, optionally a fenced
   /// `## Fixes Needed` block — parsed by [_materializeVerifyFixes] once the
@@ -7067,7 +7074,24 @@ class TicketsCubit extends Cubit<TicketsState> {
         ..writeln(related);
     }
 
-    if (stage == SddStage.verifying || stage == SddStage.archived) {
+    if (stage == SddStage.exploring) {
+      buffer
+        ..writeln()
+        ..writeln(
+          "Investigate this ${parent.type.name}'s problem space using the "
+          'title, description, and related tickets above. This stage is '
+          'read-only investigation and analysis only — do not edit, '
+          'create, or delete any project files, do not draft a '
+          'file-by-file implementation plan, do not write code, and do '
+          'not ask for write access to any repository. Ground every '
+          'claim in what the context above actually shows rather than '
+          'speculating. End your reply with a written exploration '
+          'summary: the problem as you understand it, what you found, '
+          'and the tradeoffs of any options — a decision aid for a human '
+          'to read before a later stage decomposes this into real work, '
+          'not a proposal or an implementation.',
+        );
+    } else if (stage == SddStage.verifying || stage == SddStage.archived) {
       final nextRank = parent.type == TicketType.story
           ? TicketType.task
           : TicketType.story;
