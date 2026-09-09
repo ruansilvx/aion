@@ -12,9 +12,9 @@ question, the way a real design conversation would. Ends when the
 direction is either clearly resolved or explicitly deferred with a
 stated reason.
 
-Persists the session as a written record (an "idea" file) so the
-thinking isn't lost between sessions — future work can reference it
-without re-deriving the same reasoning. A quick/abbreviated mode exists
+Persists the session as an idea ticket so the thinking isn't lost
+between sessions — future work can reference it without re-deriving the
+same reasoning. A quick/abbreviated mode exists
 for smaller questions that don't need a full multi-question session.
 
 Once a brainstorm reaches a clear direction, its natural next step is

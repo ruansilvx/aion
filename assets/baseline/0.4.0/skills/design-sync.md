@@ -1,9 +1,9 @@
 # design-sync
 
-Validates and integrates a design export pasted back into a change's
-`design.md`. Run after a design session (see `design-brief`) and before
-`apply` — the gate between "a design exists" and "a design is actually
-safe and complete enough to build against."
+Validates and integrates a design export pasted into a story's linked
+design ticket. Run after a design session (see `design-brief`) and
+before `apply` — the gate between "a design exists" and "a design is
+actually safe and complete enough to build against."
 
 What it checks:
 
@@ -14,10 +14,10 @@ What it checks:
 - **Token cross-reference** — every color/spacing/type value in the
   design either matches an existing design-system token or is flagged as
   a new one that needs adding before implementation.
-- **Task annotation** — updates the change's `tasks.md` so each
-  UI-creating task cites the exact design section that specifies it,
-  so implementation doesn't have to guess which part of the design
-  applies to which file.
+- **Task annotation** — each UI-creating task ticket gets a reference to
+  the exact design-ticket section that specifies it, so implementation
+  doesn't have to guess which part of the design applies to which file.
 
-Sets the change's design gate to approved or still-pending accordingly.
-`apply` should refuse to proceed on UI tasks while the gate is pending.
+Sets the story's design gate to approved or still-pending accordingly.
+`apply` should refuse to proceed on UI task tickets while the gate is
+pending.

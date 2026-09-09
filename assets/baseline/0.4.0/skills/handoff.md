@@ -14,8 +14,8 @@ Use it when:
 - Someone else — a person or another session — needs to continue what
   you started.
 
-A good handoff states: what change or task is active and where its
-artifacts live, what's been done so far, what's left, any decisions
+A good handoff states: which ticket is active and its current stage,
+what's been done so far, what's left, any decisions
 made along the way that aren't obvious from the code/artifacts alone,
 and any blockers or open questions the next session should know about
 before continuing. The goal is that the next session can start working

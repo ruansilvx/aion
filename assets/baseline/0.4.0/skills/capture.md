@@ -1,6 +1,6 @@
 # capture
 
-Lightweight, zero-friction idea capture. Writes a raw idea record from
+Lightweight, zero-friction idea capture. Writes a raw idea ticket from
 a single sentence or two — no questions asked, no back-and-forth. The
 deliberately narrow counterpart to `brainstorm`, for the moment you have
 a thought worth not losing but don't have time for a structured
