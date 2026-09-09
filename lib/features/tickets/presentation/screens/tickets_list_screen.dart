@@ -318,15 +318,22 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
   };
 
   /// Narrows [tickets] to whatever `TicketsCubit.currentViewMode` actually
-  /// renders as selectable rows/cards — the board view only shows
-  /// story/task/bug types, so "select all" while on the board must not
-  /// silently include ids for tickets that have no checkbox on screen.
+  /// renders as selectable rows/cards — the board view shows story/task/bug
+  /// types by default, but respects explicit type filters. "Select all" while
+  /// on the board must not silently include ids for tickets that have no
+  /// checkbox on screen.
   List<Ticket> _visibleTickets(List<Ticket> tickets) {
     if (context.read<TicketsCubit>().currentViewMode ==
         TicketListViewMode.board) {
-      return tickets
-          .where((t) => t.type == TicketType.story || t.type.isExecutable)
-          .toList();
+      final selectedTypes = context.read<TicketsCubit>().selectedTypes;
+      if (selectedTypes.isEmpty) {
+        // No type filter: show default board-compatible types
+        return tickets
+            .where((t) => t.type == TicketType.story || t.type.isExecutable)
+            .toList();
+      }
+      // Type filter applied: show all tickets (already filtered by search)
+      return tickets;
     }
     return tickets;
   }
@@ -754,12 +761,27 @@ class _TicketsBody extends StatelessWidget {
     }
 
     if (viewMode == TicketListViewMode.board) {
-      final boardTickets = tickets
-          .where(
-            (ticket) =>
-                ticket.type == TicketType.story || ticket.type.isExecutable,
-          )
-          .toList();
+      // When no type filter is applied, show all ticket types that are
+      // compatible with board view (story/task/bug). When a type filter is
+      // explicitly selected, show only those types to allow viewing other
+      // types like epic or chat on the board if the user chooses.
+      final selectedTypes = context.read<TicketsCubit>().selectedTypes;
+      List<Ticket> boardTickets;
+
+      if (selectedTypes.isEmpty) {
+        // No type filter: show default board-compatible types
+        boardTickets = tickets
+            .where(
+              (ticket) =>
+                  ticket.type == TicketType.story || ticket.type.isExecutable,
+            )
+            .toList();
+      } else {
+        // Type filter applied: show all tickets (filters already respect the
+        // selected types from the search)
+        boardTickets = tickets;
+      }
+
       return TicketBoardView(
         tickets: boardTickets,
         hiddenStatuses: context.read<TicketsCubit>().hiddenBoardColumns,
