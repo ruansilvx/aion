@@ -199,10 +199,14 @@ void main() {
       // by leaning on updateTicket (which never touches deletedAt on a
       // real DriftTicketRepository — see the real-repository group
       // below for the integration-level proof of that).
+      final trashedAt = DateTime.utc(2026, 8, 1);
       when(
         () => repository.trashTicket(existing.id),
       ).thenAnswer((_) async => [existing.id]);
-      final trashedAt = DateTime.utc(2026, 8, 1);
+      when(() => repository.getTicketById(existing.id)).thenAnswer(
+        (_) async =>
+            ticket(ticketId: 'AIO-1', title: 'Old title', deletedAt: trashedAt),
+      );
       await File('${tempDir.path}/tickets/AIO-1.md').writeAsString(
         serializer.serialize(
           ticket(ticketId: 'AIO-1', title: 'Old title', deletedAt: trashedAt),
@@ -350,6 +354,111 @@ void main() {
         final row = await realRepository.getTicketById(live.id);
         expect(row!.deletedAt, isNotNull);
         expect(await realRepository.getTrashedTickets(), hasLength(1));
+      },
+    );
+
+    test(
+      "/verify regression — a descendant cascade-trashed by its parent's "
+      'own reconciliation does not also trigger a second, redundant '
+      'trashTicket call from its own (otherwise-stale) reconciliation '
+      'later in the same reconstruct() pass',
+      () async {
+        // A spy wrapping the real repository: mocktail tracks call counts
+        // precisely, while every call still executes against the real,
+        // in-memory database — the only way to observe whether
+        // reconstruct()'s in-memory existingByTicketId snapshot was
+        // refreshed after a cascade, since a real DriftTicketRepository
+        // has no call-count introspection of its own.
+        final spyRepository = MockTicketRepository();
+        when(
+          () => spyRepository.getAllTickets(),
+        ).thenAnswer((_) => realRepository.getAllTickets());
+        when(
+          () => spyRepository.getTrashedTickets(),
+        ).thenAnswer((_) => realRepository.getTrashedTickets());
+        when(() => spyRepository.getTicketById(any())).thenAnswer(
+          (i) => realRepository.getTicketById(i.positionalArguments[0] as String),
+        );
+        when(() => spyRepository.updateTicket(any())).thenAnswer(
+          (i) => realRepository.updateTicket(i.positionalArguments[0] as Ticket),
+        );
+        when(() => spyRepository.importTicket(any())).thenAnswer(
+          (i) => realRepository.importTicket(i.positionalArguments[0] as Ticket),
+        );
+        when(() => spyRepository.trashTicket(any())).thenAnswer(
+          (i) => realRepository.trashTicket(i.positionalArguments[0] as String),
+        );
+        when(
+          () => spyRepository.updateEmbedding(any(), any()),
+        ).thenAnswer((_) async {});
+        final spyService = TicketDbReconstructionService(
+          spyRepository,
+          serializer,
+          _NullEmbeddingProvider(),
+        );
+
+        final now = DateTime.utc(2026, 9, 8);
+        await realRepository.importTicket(
+          Ticket(
+            id: 'internal-epic',
+            ticketId: 'AIO-3',
+            type: TicketType.epic,
+            title: 'Epic',
+            status: 'backlog',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+        final epic = (await realRepository.getAllTickets()).single;
+        await realRepository.importTicket(
+          Ticket(
+            id: 'internal-child',
+            ticketId: 'AIO-4',
+            type: TicketType.task,
+            title: 'Child',
+            status: 'backlog',
+            parentId: epic.id,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+        final child = (await realRepository.getTicketById('internal-child'))!;
+
+        // Both files agree the whole subtree should be trashed — a
+        // consistent cascade, not a genuine conflict (see
+        // _reconcileTrashState's own dartdoc for why a *genuine*
+        // conflict can't be fully resolved either way).
+        final trashedAt = DateTime.utc(2026, 9, 8, 22, 42);
+        Future<void> writeFile(Ticket t) => File(
+          '${realTempDir.path}/tickets/${t.ticketId}.md',
+        ).writeAsString(
+          serializer.serialize(
+            Ticket(
+              id: t.id,
+              ticketId: t.ticketId,
+              type: t.type,
+              title: t.title,
+              status: t.status,
+              parentId: t.parentId,
+              createdAt: t.createdAt,
+              updatedAt: t.updatedAt,
+              deletedAt: trashedAt,
+            ),
+          ),
+        );
+        await writeFile(epic);
+        await writeFile(child);
+
+        await spyService.reconstruct(realTempDir.path);
+
+        // Whichever of the two files reconstruct() happens to process
+        // first, its own reconciliation cascades and trashes both —
+        // the *other* file's reconciliation must then see that cascade
+        // (via the refreshed cache) and recognize its own ticket
+        // already matches, rather than firing its own redundant
+        // trashTicket call.
+        verify(() => spyRepository.trashTicket(any())).called(1);
+        expect(await realRepository.getTrashedTickets(), hasLength(2));
       },
     );
   });

@@ -143,7 +143,7 @@ class TicketDbReconstructionService {
         // on every reconstruction pass, which is what happened before
         // `estimateSource` existed to get it wrong.
         await _repository.updateTicket(ticket);
-        await _reconcileTrashState(existingRow, ticket);
+        await _reconcileTrashState(existingRow, ticket, existingByTicketId);
       } else {
         await _repository.importTicket(ticket);
       }
@@ -180,11 +180,42 @@ class TicketDbReconstructionService {
   /// between two non-null values (re-trashing an already-trashed ticket
   /// with a new timestamp has no domain operation to reconcile through —
   /// same as `applyFromParsedFields`).
-  Future<void> _reconcileTrashState(Ticket existing, Ticket parsed) async {
+  ///
+  /// [trashTicket]/[restoreTicket] can cascade to *other* tickets beyond
+  /// [existing.id] (an ancestor or descendant sharing the same trash
+  /// state) — real writes [reconstruct]'s own snapshot, [byTicketId],
+  /// has no way to know about otherwise. Whenever a cascade actually
+  /// fires, every id it reports as affected is re-fetched and written
+  /// back into [byTicketId], so a *later* iteration of [reconstruct]'s
+  /// own loop that reconciles one of those same tickets compares against
+  /// its true post-cascade state — not the stale pre-cascade snapshot
+  /// this method was originally called with (`/verify` found this: a
+  /// child cascaded to trash by its parent's reconciliation, whose own
+  /// file already agreed, could still trigger a second, redundant
+  /// `trashTicket` call purely because [byTicketId]'s copy of it was
+  /// never updated). This doesn't — can't — make two *genuinely*
+  /// conflicting files in the same ancestor chain (one says trashed, the
+  /// other says live) both win: `trashTicket`/`restoreTicket` enforce a
+  /// uniform trash state across the whole cascaded chain by design, so a
+  /// real conflict between two files in the same chain still resolves to
+  /// whichever file [reconstruct] processes last — but every reconciling
+  /// call now sees accurate state and is never silently skipped over a
+  /// stale read.
+  Future<void> _reconcileTrashState(
+    Ticket existing,
+    Ticket parsed,
+    Map<String, Ticket> byTicketId,
+  ) async {
+    List<String>? affectedIds;
     if (parsed.deletedAt != null && existing.deletedAt == null) {
-      await _repository.trashTicket(existing.id);
+      affectedIds = await _repository.trashTicket(existing.id);
     } else if (parsed.deletedAt == null && existing.deletedAt != null) {
-      await _repository.restoreTicket(existing.id);
+      affectedIds = await _repository.restoreTicket(existing.id);
+    }
+    if (affectedIds == null) return;
+    for (final id in affectedIds) {
+      final refreshed = await _repository.getTicketById(id);
+      if (refreshed != null) byTicketId[refreshed.ticketId] = refreshed;
     }
   }
 
