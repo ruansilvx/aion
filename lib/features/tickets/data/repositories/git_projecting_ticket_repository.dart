@@ -45,7 +45,13 @@ import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart
 /// [updateTicketStatus]/[updateStatusForIds] (`'status-changed'`),
 /// [updateTicketSddStage] (`'stage-changed'`), [updateTicketParent]
 /// (`'reparented'`), [trashTicket] (`'trashed'`), [restoreTicket]
-/// (`'restored'`). Every other method — plain content edits via
+/// (`'restored'`). [trashTicket]/[restoreTicket] project every ticket
+/// their underlying cascade actually touches (the named id plus any
+/// ancestor/descendant [_inner] also trashed/restored alongside it),
+/// batched into one commit — not just the named id — closing a gap
+/// where a cascaded ticket's `deletedAt` could change in the database
+/// with no corresponding write to its own `tickets/*.md` file. Every
+/// other method — plain content edits via
 /// [updateTicket] included — is a pass-through with no projection,
 /// deliberately: `specs/tickets.md` already excludes content edits from
 /// projection (no commit per keystroke-adjacent save), and this class
@@ -117,33 +123,39 @@ class GitProjectingTicketRepository implements TicketRepository {
     unawaited(_project(id, 'reparented'));
   }
 
-  /// Delegates to [_inner], then awaits a `'trashed'` projection of [id]
-  /// before returning — awaited (unlike the fire-and-forget methods
-  /// above), matching `TicketParentTrashService.trash`'s existing
-  /// behavior before this decorator took over: the caller is a
+  /// Delegates to [_inner], then awaits a `'trashed'` projection of
+  /// every id [_inner] reports as actually affected (`id` itself plus
+  /// any descendant cascaded into trash alongside it), batched into one
+  /// commit, before returning — awaited (unlike the fire-and-forget
+  /// methods above), matching `TicketParentTrashService.trash`'s
+  /// existing behavior before this decorator took over: the caller is a
   /// lower-frequency, more "final" action, and some callers (tests
   /// included) rely on the commit having landed by the time this
   /// returns. A projection failure here is swallowed rather than
-  /// propagated — see [_projectOrSwallow]'s dartdoc for why: the trash
-  /// itself, above, already succeeded, and a transient git hiccup must
-  /// not report that success as a [TicketsCubit]/[TrashCubit]-visible
-  /// failure, which would also skip the rollup recompute
+  /// propagated — see [_projectAllOrSwallow]'s dartdoc for why: the
+  /// trash itself, above, already succeeded, and a transient git hiccup
+  /// must not report that success as a [TicketsCubit]/[TrashCubit]-
+  /// visible failure, which would also skip the rollup recompute
   /// `TicketParentTrashService.trash` fires immediately after this call
   /// returns.
   @override
-  Future<void> trashTicket(String id) async {
-    await _inner.trashTicket(id);
-    await _projectOrSwallow(id, 'trashed');
+  Future<List<String>> trashTicket(String id) async {
+    final affected = await _inner.trashTicket(id);
+    await _projectAllOrSwallow(affected, 'trashed');
+    return affected;
   }
 
-  /// Delegates to [_inner], then awaits a `'restored'` projection of [id]
-  /// before returning — see [trashTicket]'s dartdoc for the awaited
-  /// shape and [_projectOrSwallow]'s dartdoc for why a projection
-  /// failure here is swallowed rather than propagated.
+  /// Delegates to [_inner], then awaits a `'restored'` projection of
+  /// every id [_inner] reports as actually affected (`id` itself plus
+  /// any ancestor/descendant revived alongside it), batched into one
+  /// commit, before returning — see [trashTicket]'s dartdoc for the
+  /// awaited shape and [_projectAllOrSwallow]'s dartdoc for why a
+  /// projection failure here is swallowed rather than propagated.
   @override
-  Future<void> restoreTicket(String id) async {
-    await _inner.restoreTicket(id);
-    await _projectOrSwallow(id, 'restored');
+  Future<List<String>> restoreTicket(String id) async {
+    final affected = await _inner.restoreTicket(id);
+    await _projectAllOrSwallow(affected, 'restored');
+    return affected;
   }
 
   /// Re-fetches [id] from [_inner] (picking up whatever the write that
@@ -159,21 +171,29 @@ class GitProjectingTicketRepository implements TicketRepository {
     await _projector.project(ticket, _rootPath, eventLabel);
   }
 
-  /// Same as [_project], but swallows the two failure types
-  /// [GitRepositoryClient] and the plain file-write inside [_project] can
-  /// actually throw — used only by [trashTicket]/[restoreTicket], the two
-  /// methods that `await` their own projection rather than firing it
-  /// `unawaited`. A [ProcessException] (a failed `git add`/`status`/
-  /// `commit` — e.g. a missing `git config user.email`, a stale
-  /// `index.lock`) or [FileSystemException] (the Markdown write itself
-  /// failing — e.g. a full disk, a permissions error) would otherwise
-  /// propagate out of `await _projectOrSwallow(...)` into
-  /// [trashTicket]/[restoreTicket]'s caller — `TicketParentTrashService
-  /// .trash`/`.restore`, then `TicketsCubit`/`TrashCubit`'s existing
-  /// `catch (e) { emit(TicketsError(...)) }` — misreporting the trash/
-  /// restore, which already succeeded via [_inner] above, as a failure,
-  /// and skipping the rollup recompute those callers fire right after.
-  /// Deliberately *not* a bare `catch` — anything else (a bug in
+  /// Re-fetches every id in [ids] from [_inner] (dropping any `null` — a
+  /// vanished ticket is a silent no-op for that one id) and projects the
+  /// survivors as **one** batched commit via [_projector.projectBatch] —
+  /// not one commit per id. Used only by [trashTicket]/[restoreTicket],
+  /// the two methods that `await` their own projection rather than
+  /// firing it `unawaited`, whose underlying write can cascade to
+  /// ancestors/descendants beyond the id the caller named — for the
+  /// common case ([ids] has exactly one member, no cascade), this
+  /// produces the identical single-ticket commit [_project] would.
+  ///
+  /// Swallows the two failure types [GitRepositoryClient] and the plain
+  /// file-write above can actually throw. A [ProcessException] (a failed
+  /// `git add`/`status`/`commit` — e.g. a missing `git config
+  /// user.email`, a stale `index.lock`) or [FileSystemException] (the
+  /// Markdown write itself failing — e.g. a full disk, a permissions
+  /// error) would otherwise propagate out of `await
+  /// _projectAllOrSwallow(...)` into [trashTicket]/[restoreTicket]'s
+  /// caller — `TicketParentTrashService.trash`/`.restore`, then
+  /// `TicketsCubit`/`TrashCubit`'s existing `catch (e) {
+  /// emit(TicketsError(...)) }` — misreporting the trash/restore, which
+  /// already succeeded via [_inner] above, as a failure, and skipping
+  /// the rollup recompute those callers fire right after. Deliberately
+  /// *not* a bare `catch` — anything else (a bug in
   /// [TicketMarkdownSerializer.serialize], a corrupt read from [_inner
   /// .getTicketById], or any other exception this method didn't
   /// anticipate) still propagates and fails loudly, exactly like it
@@ -187,9 +207,14 @@ class GitProjectingTicketRepository implements TicketRepository {
   /// methods above ([createTicket] et al.) need no equivalent — an
   /// unawaited call's exception never reaches their own caller
   /// regardless.
-  Future<void> _projectOrSwallow(String id, String eventLabel) async {
+  Future<void> _projectAllOrSwallow(List<String> ids, String eventLabel) async {
     try {
-      await _project(id, eventLabel);
+      final tickets = <Ticket>[];
+      for (final id in ids) {
+        final ticket = await _inner.getTicketById(id);
+        if (ticket != null) tickets.add(ticket);
+      }
+      await _projector.projectBatch(tickets, _rootPath, eventLabel);
     } on ProcessException {
       // See this method's own dartdoc.
     } on FileSystemException {
@@ -270,7 +295,8 @@ class GitProjectingTicketRepository implements TicketRepository {
   );
 
   @override
-  Future<int> trashTickets(List<String> ids) => _inner.trashTickets(ids);
+  Future<List<String>> trashTickets(List<String> ids) =>
+      _inner.trashTickets(ids);
 
   @override
   Future<int> previewTrashCount(List<String> ids) =>

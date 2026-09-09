@@ -71,7 +71,14 @@ class DriftTicketRepository implements TicketRepository {
   /// [importTicket] — every column from [ticket] except `ticketId`,
   /// which the caller supplies directly: `''` for [createTicket] (the DAO
   /// generates the real value), or [ticket]'s own [Ticket.ticketId] for
-  /// [importTicket] (preserved verbatim by the DAO).
+  /// [importTicket] (preserved verbatim by the DAO). Includes
+  /// `deletedAt` — inert for [createTicket] (no call site constructs a
+  /// pre-trashed [Ticket] before creating it, so this is always `null`
+  /// there in practice) but necessary for [importTicket]: a `.md` file
+  /// being imported for the first time (the second-machine/
+  /// reconstruction case) can legitimately already be trashed, and
+  /// omitting the column here would silently insert it live regardless
+  /// of what the file says.
   TicketsTableCompanion _buildInsertCompanion(
     Ticket ticket, {
     required String ticketId,
@@ -98,6 +105,7 @@ class DriftTicketRepository implements TicketRepository {
       inboxPurpose: Value(ticket.inboxPurpose?.name),
       createdAt: ticket.createdAt.millisecondsSinceEpoch,
       updatedAt: ticket.updatedAt.millisecondsSinceEpoch,
+      deletedAt: Value(ticket.deletedAt?.millisecondsSinceEpoch),
       complexitySource: Value(
         ticket.complexity != null ? TicketEstimationSource.manual.name : null,
       ),
@@ -155,6 +163,20 @@ class DriftTicketRepository implements TicketRepository {
   /// Also stamps `complexity_source`/`estimate_source` — see
   /// [TicketRepository.updateTicket]'s dartdoc for the exact
   /// [complexityEdited]/[estimateEdited] semantics.
+  ///
+  /// Deliberately omits `deletedAt` from the companion below —
+  /// resist the urge to add it. Trash state changes only through
+  /// [trashTicket]/[restoreTicket] (both cascade-aware and both drive
+  /// git projection); if this method also wrote `deletedAt`, any
+  /// caller passing a stale/incidental value on its [Ticket] object
+  /// (nothing validates it against the row's current trash state)
+  /// could silently un-trash or re-trash a ticket as a side effect of
+  /// an unrelated content edit, with none of `trashTicket`/
+  /// `restoreTicket`'s cascade or projection behavior. A caller that
+  /// needs to reconcile a `deletedAt` mismatch (e.g.
+  /// `TicketDbReconstructionService.reconstruct`) calls `trashTicket`/
+  /// `restoreTicket` explicitly instead — see that service's
+  /// `_reconcileTrashState`.
   @override
   Future<void> updateTicket(
     Ticket ticket, {
@@ -343,24 +365,30 @@ class DriftTicketRepository implements TicketRepository {
     );
   }
 
+  /// See [TicketRepository.trashTicket] for the contract. Delegates to
+  /// [trashTickets] for the actual cascade/write, after its own
+  /// existence check (so a missing [id] throws before
+  /// [_resolveDescendantCascade] gets a chance to just silently skip
+  /// it, matching this method's documented contract).
   @override
-  Future<void> trashTicket(String id) async {
+  Future<List<String>> trashTicket(String id) async {
     final existing = await _db.ticketDao.getTicketById(id);
     if (existing == null) {
       throw StateError('Ticket $id does not exist');
     }
-    await trashTickets([id]);
+    return trashTickets([id]);
   }
 
+  /// See [TicketRepository.trashTickets] for the contract.
   @override
-  Future<int> trashTickets(List<String> ids) async {
+  Future<List<String>> trashTickets(List<String> ids) async {
     final affected = await _resolveDescendantCascade(ids);
-    if (affected.isEmpty) return 0;
+    if (affected.isEmpty) return const [];
     await _db.ticketDao.softDeleteByIds(
       affected.toList(),
       DateTime.now().millisecondsSinceEpoch,
     );
-    return affected.length;
+    return affected.toList();
   }
 
   @override
@@ -392,8 +420,9 @@ class DriftTicketRepository implements TicketRepository {
     return affected;
   }
 
+  /// See [TicketRepository.restoreTicket] for the contract.
   @override
-  Future<void> restoreTicket(String id) async {
+  Future<List<String>> restoreTicket(String id) async {
     final existing = await _db.ticketDao.getTicketById(id);
     if (existing == null) {
       throw StateError('Ticket $id does not exist');
@@ -403,6 +432,7 @@ class DriftTicketRepository implements TicketRepository {
     toRestore.addAll(await _db.ticketDao.getAncestorIds(id));
     toRestore.addAll(await _db.ticketDao.getDescendantIds(id));
     await _db.ticketDao.restoreByIds(toRestore.toList());
+    return toRestore.toList();
   }
 
   @override

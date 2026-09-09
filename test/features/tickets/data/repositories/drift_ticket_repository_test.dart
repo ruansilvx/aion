@@ -136,6 +136,31 @@ void main() {
     expect(tickets.first.ticketId, 'AIO-99');
   });
 
+  test(
+    'importTicket persisting a ticket with deletedAt already set inserts '
+    'it already trashed, not silently live',
+    () async {
+      final now = DateTime(2026, 1, 1);
+      await repository.importTicket(
+        Ticket(
+          id: 'imported-trashed',
+          ticketId: 'AIO-98',
+          type: TicketType.task,
+          title: 'Imported already-trashed ticket',
+          status: 'backlog',
+          createdAt: now,
+          updatedAt: now,
+          deletedAt: DateTime(2026, 1, 2),
+        ),
+      );
+
+      expect(await repository.getAllTickets(), isEmpty);
+      final trashed = await repository.getTrashedTickets();
+      expect(trashed, hasLength(1));
+      expect(trashed.single.ticketId, 'AIO-98');
+    },
+  );
+
   test('getTicketById returns correct ticket when found', () async {
     await repository.createTicket(buildTicket(id: 'abc'));
     final found = await repository.getTicketById('abc');
@@ -681,21 +706,39 @@ void main() {
       );
     });
 
-    test('trashTickets returns the total moved (selection + cascaded '
-        'descendants), and silently skips a non-existent id', () async {
+    test(
+      'trashTicket returns every id actually moved — the requested id '
+      'plus every cascaded descendant',
+      () async {
+        await repository.createTicket(buildTicket(id: 'epic'));
+        await repository.createTicket(
+          buildTicket(id: 'child', parentId: 'epic'),
+        );
+
+        final affected = await repository.trashTicket('epic');
+
+        expect(affected.toSet(), {'epic', 'child'});
+      },
+    );
+
+    test('trashTickets returns every id actually moved (selection + '
+        'cascaded descendants), and silently skips a non-existent id', () async {
       await repository.createTicket(buildTicket(id: 'parent'));
       await repository.createTicket(
         buildTicket(id: 'child', parentId: 'parent'),
       );
       await repository.createTicket(buildTicket(id: 'other'));
 
-      final total = await repository.trashTickets([
+      final affected = await repository.trashTickets([
         'parent',
         'other',
         'missing',
       ]);
 
-      expect(total, 3); // parent + child (cascaded) + other
+      expect(
+        affected.toSet(),
+        {'parent', 'child', 'other'}, // parent + child (cascaded) + other
+      );
       expect(await repository.getAllTickets(), isEmpty);
     });
   });
@@ -714,7 +757,7 @@ void main() {
         expect(preview, 2); // parent + child
 
         final actual = await repository.trashTickets(['parent']);
-        expect(actual, preview);
+        expect(actual.length, preview);
       },
     );
 
@@ -746,7 +789,7 @@ void main() {
       final actual = await repository.trashTickets(['parent']);
 
       expect(preview, 3); // parent + already-trashed child + grandchild
-      expect(actual, preview);
+      expect(actual.length, preview);
     });
   });
 
@@ -781,6 +824,34 @@ void main() {
         throwsA(isA<StateError>()),
       );
     });
+
+    test(
+      'restoreTicket returns every id actually restored, including a '
+      'revived ancestor the caller never named — the exact incident '
+      '/explore reproduced: trashing an epic + child, then restoring '
+      'only the child, silently un-trashes the epic too',
+      () async {
+        await repository.createTicket(buildTicket(id: 'epic'));
+        await repository.createTicket(
+          buildTicket(id: 'child', parentId: 'epic'),
+        );
+        await repository.trashTicket('epic');
+        expect((await repository.getTrashedTickets()).map((t) => t.id), {
+          'epic',
+          'child',
+        });
+
+        final affected = await repository.restoreTicket('child');
+
+        expect(affected.toSet(), {'epic', 'child'});
+        expect((await repository.getAllTickets()).map((t) => t.id).toSet(), {
+          'epic',
+          'child',
+        });
+        final epicRow = await repository.getTicketById('epic');
+        expect(epicRow!.deletedAt, isNull);
+      },
+    );
   });
 
   group('permanentlyDeleteTicket / emptyTrash', () {
@@ -1570,22 +1641,24 @@ void main() {
           'DROP INDEX IF EXISTS idx_tickets_priority;',
         );
         await v1Db.customStatement(
-          'ALTER TABLE tickets DROP COLUMN deleted_at;',
-        );
-        await v1Db.customStatement(
           'ALTER TABLE tickets DROP COLUMN sdd_stage;',
         );
 
         // sync_status/complexity/severity/steps_to_reproduce/
-        // expected_behavior/actual_behavior/suggested_type/inbox_purpose
-        // can't be dropped yet — createTicket's generated companion sets
-        // all of them explicitly (unlike deleted_at/sdd_stage, which it
-        // never touches), so they must still exist for this insert to
-        // succeed. Drop them immediately after, before stamping
-        // user_version, to finish simulating the pre-v4 shape.
+        // expected_behavior/actual_behavior/suggested_type/inbox_purpose,
+        // and (since `fix-ticket-trash-cascade-projection-gap`'s
+        // `_buildInsertCompanion` fix) deleted_at too, can't be dropped
+        // yet — createTicket's generated companion sets all of them
+        // explicitly (unlike sdd_stage, which it never touches), so they
+        // must still exist for this insert to succeed. Drop them
+        // immediately after, before stamping user_version, to finish
+        // simulating the pre-v4 shape.
         final preMigrationRepo = DriftTicketRepository(v1Db);
         await preMigrationRepo.createTicket(
           buildSearchable(id: 'pre-existing', title: 'Fix authentication bug'),
+        );
+        await v1Db.customStatement(
+          'ALTER TABLE tickets DROP COLUMN deleted_at;',
         );
         await v1Db.customStatement(
           'ALTER TABLE tickets DROP COLUMN sync_status;',

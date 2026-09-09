@@ -253,7 +253,9 @@ void main() {
     blocTest<TrashCubit, TrashState>(
       'restore calls the repository then reloads',
       setUp: () {
-        when(() => repository.restoreTicket('1')).thenAnswer((_) async {});
+        when(
+          () => repository.restoreTicket('1'),
+        ).thenAnswer((_) async => ['1']);
         when(
           () => repository.getTicketById('1'),
         ).thenAnswer((_) async => buildTrashed(id: '1', deletedAt: null));
@@ -317,7 +319,7 @@ void main() {
           setUp: () {
             when(
               () => repository.restoreTicket(restoredWithParent.id),
-            ).thenAnswer((_) async {});
+            ).thenAnswer((_) async => [restoredWithParent.id]);
             when(
               () => repository.getTicketById(restoredWithParent.id),
             ).thenAnswer((_) async => restoredWithParent);
@@ -357,7 +359,9 @@ void main() {
       'restoreTickets calls TicketParentTrashService.restore once per id '
       '(not a batched repository call), reloads, and returns true',
       setUp: () {
-        when(() => repository.restoreTicket(any())).thenAnswer((_) async {});
+        when(
+          () => repository.restoreTicket(any()),
+        ).thenAnswer((_) async => const <String>[]);
         when(
           () => repository.getTicketById(any()),
         ).thenAnswer((_) async => buildTrashed(id: '1', deletedAt: null));
@@ -373,7 +377,9 @@ void main() {
     );
 
     test('restoreTickets returns true on success', () async {
-      when(() => repository.restoreTicket(any())).thenAnswer((_) async {});
+      when(
+        () => repository.restoreTicket(any()),
+      ).thenAnswer((_) async => const <String>[]);
       when(
         () => repository.getTicketById(any()),
       ).thenAnswer((_) async => buildTrashed(id: '1', deletedAt: null));

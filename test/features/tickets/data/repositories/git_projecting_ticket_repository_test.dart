@@ -1,8 +1,12 @@
-import 'dart:io' show ProcessException;
+import 'dart:io' show Directory, File, Process, ProcessException;
 
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
+import 'package:aion/core/core.dart';
+import 'package:aion/features/projects/projects.dart';
+import 'package:aion/features/tickets/data/repositories/drift_ticket_repository.dart';
 import 'package:aion/features/tickets/data/repositories/git_projecting_ticket_repository.dart';
 import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
 import 'package:aion/features/tickets/tickets.dart';
@@ -30,6 +34,7 @@ void main() {
 
   setUpAll(() {
     registerFallbackValue(ticket);
+    registerFallbackValue(<Ticket>[]);
   });
 
   setUp(() {
@@ -38,6 +43,9 @@ void main() {
     repository = GitProjectingTicketRepository(inner, projector, rootPath);
     when(
       () => projector.project(any(), any(), any()),
+    ).thenAnswer((_) async {});
+    when(
+      () => projector.projectBatch(any(), any(), any()),
     ).thenAnswer((_) async {});
     when(() => inner.getTicketById(ticket.id)).thenAnswer((_) async => ticket);
   });
@@ -141,32 +149,90 @@ void main() {
     });
 
     test(
-      'trashTicket delegates then awaits its "trashed" projection before '
-      'returning',
+      'trashTicket delegates then awaits a batched "trashed" projection '
+      'of every id it reports as affected, before returning',
       () async {
-        when(() => inner.trashTicket(ticket.id)).thenAnswer((_) async {});
+        when(
+          () => inner.trashTicket(ticket.id),
+        ).thenAnswer((_) async => [ticket.id]);
 
-        await repository.trashTicket(ticket.id);
+        final affected = await repository.trashTicket(ticket.id);
 
+        expect(affected, [ticket.id]);
         verify(() => inner.trashTicket(ticket.id)).called(1);
         // No `pumpEventQueue()` needed here — unlike the fire-and-forget
         // methods above, trashTicket awaits its own projection call, so
         // it's already complete by the time `await` above returns.
-        verify(() => projector.project(ticket, rootPath, 'trashed')).called(1);
+        verify(
+          () => projector.projectBatch([ticket], rootPath, 'trashed'),
+        ).called(1);
+        verifyNever(() => projector.project(any(), any(), any()));
       },
     );
 
     test(
-      'restoreTicket delegates then awaits its "restored" projection '
-      'before returning',
+      'restoreTicket delegates then awaits a batched "restored" '
+      'projection of every id it reports as affected, before returning',
       () async {
-        when(() => inner.restoreTicket(ticket.id)).thenAnswer((_) async {});
+        when(
+          () => inner.restoreTicket(ticket.id),
+        ).thenAnswer((_) async => [ticket.id]);
 
-        await repository.restoreTicket(ticket.id);
+        final affected = await repository.restoreTicket(ticket.id);
 
+        expect(affected, [ticket.id]);
         verify(() => inner.restoreTicket(ticket.id)).called(1);
         verify(
-          () => projector.project(ticket, rootPath, 'restored'),
+          () => projector.projectBatch([ticket], rootPath, 'restored'),
+        ).called(1);
+        verifyNever(() => projector.project(any(), any(), any()));
+      },
+    );
+
+    test(
+      'trashTicket batch-projects every cascaded id its inner call '
+      'reports — not just the id it was called with',
+      () async {
+        final child = Ticket(
+          id: '2',
+          ticketId: 'AIO-2',
+          type: TicketType.task,
+          title: 'Cascaded descendant',
+          status: 'backlog',
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        when(
+          () => inner.trashTicket(ticket.id),
+        ).thenAnswer((_) async => [ticket.id, child.id]);
+        when(
+          () => inner.getTicketById(child.id),
+        ).thenAnswer((_) async => child);
+
+        final affected = await repository.trashTicket(ticket.id);
+
+        expect(affected, [ticket.id, child.id]);
+        verify(
+          () => projector.projectBatch([ticket, child], rootPath, 'trashed'),
+        ).called(1);
+      },
+    );
+
+    test(
+      'trashTicket drops a cascaded id from the batch if it no longer '
+      'resolves to a ticket, without failing the whole batch',
+      () async {
+        when(
+          () => inner.trashTicket(ticket.id),
+        ).thenAnswer((_) async => [ticket.id, 'vanished']);
+        when(
+          () => inner.getTicketById('vanished'),
+        ).thenAnswer((_) async => null);
+
+        await repository.trashTicket(ticket.id);
+
+        verify(
+          () => projector.projectBatch([ticket], rootPath, 'trashed'),
         ).called(1);
       },
     );
@@ -176,10 +242,12 @@ void main() {
       'projector — the trash above already succeeded and must not be '
       'reported as an error',
       () async {
-        when(() => inner.trashTicket(ticket.id)).thenAnswer((_) async {});
-        when(() => projector.project(ticket, rootPath, 'trashed')).thenThrow(
-          ProcessException('git', ['commit'], 'boom', 128),
-        );
+        when(
+          () => inner.trashTicket(ticket.id),
+        ).thenAnswer((_) async => [ticket.id]);
+        when(
+          () => projector.projectBatch([ticket], rootPath, 'trashed'),
+        ).thenThrow(ProcessException('git', ['commit'], 'boom', 128));
 
         // Must complete normally (not throw) despite the projector
         // throwing — trashTicket already succeeded via `inner` above.
@@ -194,10 +262,12 @@ void main() {
       'projector — the restore above already succeeded and must not be '
       'reported as an error',
       () async {
-        when(() => inner.restoreTicket(ticket.id)).thenAnswer((_) async {});
-        when(() => projector.project(ticket, rootPath, 'restored')).thenThrow(
-          ProcessException('git', ['commit'], 'boom', 128),
-        );
+        when(
+          () => inner.restoreTicket(ticket.id),
+        ).thenAnswer((_) async => [ticket.id]);
+        when(
+          () => projector.projectBatch([ticket], rootPath, 'restored'),
+        ).thenThrow(ProcessException('git', ['commit'], 'boom', 128));
 
         await repository.restoreTicket(ticket.id);
 
@@ -210,9 +280,11 @@ void main() {
       'ProcessException/FileSystemException — only the two failure '
       'types git projection can actually throw are swallowed',
       () async {
-        when(() => inner.trashTicket(ticket.id)).thenAnswer((_) async {});
         when(
-          () => projector.project(ticket, rootPath, 'trashed'),
+          () => inner.trashTicket(ticket.id),
+        ).thenAnswer((_) async => [ticket.id]);
+        when(
+          () => projector.projectBatch([ticket], rootPath, 'trashed'),
         ).thenThrow(StateError('an unrelated bug, not a git failure'));
 
         await expectLater(
@@ -331,5 +403,112 @@ void main() {
       expect(result, [ticket]);
       verifyNever(() => projector.project(any(), any(), any()));
     });
+  });
+
+  group('against a real repository, projector, and git repo (SUGGESTION '
+      'from /verify: prove the whole cascade → one-commit chain end to '
+      'end, not just at each layer in isolation)', () {
+    late AppDatabase database;
+    late GitProjectingTicketRepository realRepository;
+    late Directory realRepoDir;
+
+    setUp(() async {
+      database = AppDatabase(
+        Project(
+          id: 'test-project',
+          name: 'Test Project',
+          storageKey: 'test-project',
+          baselineVersion: '0.1.0',
+          createdAt: DateTime(2024, 1, 1),
+          lastOpenedAt: DateTime(2024, 1, 1),
+        ),
+        NativeDatabase.memory(),
+      );
+      realRepoDir = await Directory.systemTemp.createTemp(
+        'git_projecting_ticket_repository_real_test',
+      );
+      await Process.run('git', ['init'], workingDirectory: realRepoDir.path);
+      realRepository = GitProjectingTicketRepository(
+        DriftTicketRepository(database),
+        TicketGitProjector(TicketMarkdownSerializer(), GitRepositoryClient()),
+        realRepoDir.path,
+      );
+    });
+
+    tearDown(() async {
+      await database.close();
+      await realRepoDir.delete(recursive: true);
+    });
+
+    Future<List<String>> commitSubjects() async {
+      final result = await Process.run(
+        'git',
+        ['log', '--format=%s'],
+        workingDirectory: realRepoDir.path,
+      );
+      final output = result.stdout.toString().trim();
+      return output.isEmpty ? [] : output.split('\n');
+    }
+
+    test(
+      'restoring only a child produces one commit covering both the '
+      "child and its silently-cascaded parent — not a missing commit "
+      "for the parent (the AIO-2703/2704 incident this proposal fixes)",
+      () async {
+        await realRepository.importTicket(
+          Ticket(
+            id: 'epic-1',
+            ticketId: 'AIO-1',
+            type: TicketType.epic,
+            title: 'Duplicate epic',
+            status: 'backlog',
+            createdAt: DateTime.utc(2026),
+            updatedAt: DateTime.utc(2026),
+          ),
+        );
+        await realRepository.importTicket(
+          Ticket(
+            id: 'child-1',
+            ticketId: 'AIO-2',
+            type: TicketType.task,
+            title: 'Child',
+            status: 'backlog',
+            parentId: 'epic-1',
+            createdAt: DateTime.utc(2026),
+            updatedAt: DateTime.utc(2026),
+          ),
+        );
+
+        await realRepository.trashTicket('epic-1');
+        final afterTrash = await commitSubjects();
+        expect(
+          afterTrash.first,
+          'ticket: 2 tickets trashed',
+          reason:
+              'one commit covering both the explicitly-trashed epic and '
+              'its cascaded child',
+        );
+
+        await realRepository.restoreTicket('child-1');
+
+        final epicFile = File('${realRepoDir.path}/tickets/AIO-1.md');
+        expect(
+          (await epicFile.readAsString()),
+          contains('deletedAt: null'),
+          reason:
+              "restoring only the child must also re-project the epic it "
+              "silently revived — the exact commit this proposal's "
+              'cascade fix exists to produce.',
+        );
+        final subjects = await commitSubjects();
+        expect(
+          subjects.first,
+          'ticket: 2 tickets restored',
+          reason:
+              'one commit covering both the explicitly-restored child '
+              'and the epic its restore cascaded back to life',
+        );
+      },
+    );
   });
 }

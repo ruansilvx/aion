@@ -77,11 +77,15 @@ class TicketGitProjector {
   /// serialization [project] uses) and stages each one, then makes
   /// **one** commit covering the whole batch — skipped if nothing
   /// actually changed (same `hasChanges` guard [project] uses). Used for
-  /// a rollup recompute's cascading ancestor rewrites, where committing
+  /// a rollup recompute's cascading ancestor rewrites (where committing
   /// per-file would turn one estimate edit into a wall of near-identical
-  /// commits. No-ops (writes nothing, commits nothing) if [ancestors] is
-  /// empty. Queued behind any earlier [project]/[projectBatch] call
-  /// still in flight — see this class's own dartdoc.
+  /// commits) and for `GitProjectingTicketRepository`'s trash/restore
+  /// cascade and `TicketsCubit`'s bulk-trash path (where the batch can
+  /// include cascaded descendants, or — for restore — both ancestors
+  /// and descendants at once, not only ancestors). No-ops (writes
+  /// nothing, commits nothing) if [ancestors] is empty. Queued behind
+  /// any earlier [project]/[projectBatch] call still in flight — see
+  /// this class's own dartdoc.
   Future<void> projectBatch(
     List<Ticket> ancestors,
     String rootPath,
@@ -106,7 +110,7 @@ class TicketGitProjector {
     if (!await _git.hasChanges(rootPath)) return;
     final label = ancestors.length == 1
         ? '${ancestors.single.ticketId} $eventLabel'
-        : '${ancestors.length} ancestors $eventLabel';
+        : '${ancestors.length} tickets $eventLabel';
     await _git.commit(rootPath, 'ticket: $label');
   }
 
