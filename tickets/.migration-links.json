@@ -1623,5 +1623,25 @@
     "sourceTicketId": "a93f9495-8ca3-4c83-8253-d9b451b732a1",
     "targetTicketId": "aafacac2-3238-4bd6-9f35-3362f58e8a81",
     "type": "relatesTo"
+  },
+  {
+    "sourceTicketId": "a21a7740-087f-4b66-81e4-26fddbd7f14f",
+    "targetTicketId": "a146dc27-1095-4674-97ef-1b109bf7ba89",
+    "type": "relatesTo"
+  },
+  {
+    "sourceTicketId": "a21a7740-087f-4b66-81e4-26fddbd7f14f",
+    "targetTicketId": "3ea45401-4d53-49ca-846b-0cba22e31daf",
+    "type": "relatesTo"
+  },
+  {
+    "sourceTicketId": "5979f01c-3b9f-4863-a375-69464782c518",
+    "targetTicketId": "5f7e47fe-ba4d-401d-a316-d51b2d681a8d",
+    "type": "relatesTo"
+  },
+  {
+    "sourceTicketId": "5979f01c-3b9f-4863-a375-69464782c518",
+    "targetTicketId": "efcef90d-8fc2-48c7-891a-27ddadcf1ff5",
+    "type": "relatesTo"
   }
 ]
