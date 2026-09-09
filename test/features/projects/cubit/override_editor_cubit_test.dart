@@ -2,12 +2,17 @@ import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
+import 'package:aion/features/projects/data/services/skill_materialization_service.dart';
 import 'package:aion/features/projects/projects.dart';
 
 class MockBaselineRepository extends Mock implements BaselineRepository {}
 
+class MockSkillMaterializationService extends Mock
+    implements SkillMaterializationService {}
+
 void main() {
   late MockBaselineRepository baselineRepository;
+  late MockSkillMaterializationService skillMaterializationService;
 
   const manifest = BaselineManifest(
     version: '0.3.0',
@@ -27,6 +32,7 @@ void main() {
 
   setUp(() {
     baselineRepository = MockBaselineRepository();
+    skillMaterializationService = MockSkillMaterializationService();
     registerFallbackValue(asset);
   });
 
@@ -47,8 +53,10 @@ void main() {
       },
       build: () => OverrideEditorCubit(
         baselineRepository,
+        skillMaterializationService,
         'project-1',
         '0.3.0',
+        null,
         'skills/verify',
       ),
       act: (cubit) => cubit.load(),
@@ -85,8 +93,10 @@ void main() {
       },
       build: () => OverrideEditorCubit(
         baselineRepository,
+        skillMaterializationService,
         'project-1',
         '0.3.0',
+        null,
         'skills/verify',
       ),
       act: (cubit) => cubit.load(),
@@ -108,8 +118,10 @@ void main() {
       },
       build: () => OverrideEditorCubit(
         baselineRepository,
+        skillMaterializationService,
         'project-1',
         '0.3.0',
+        null,
         'skills/unknown',
       ),
       act: (cubit) => cubit.load(),
@@ -142,8 +154,10 @@ void main() {
       },
       build: () => OverrideEditorCubit(
         baselineRepository,
+        skillMaterializationService,
         'project-1',
         '0.3.0',
+        null,
         'skills/verify',
       ),
       act: (cubit) async {
@@ -167,6 +181,103 @@ void main() {
             content: 'edited content',
           ),
         ).called(1);
+      },
+    );
+
+    blocTest<OverrideEditorCubit, OverrideEditorState>(
+      'save re-materializes the discoverable skill file from the just-saved '
+      'content when the project has a rootPath',
+      setUp: () {
+        when(
+          () => baselineRepository.getManifest('0.3.0'),
+        ).thenAnswer((_) async => manifest);
+        when(
+          () => baselineRepository.readOverrides('project-1'),
+        ).thenAnswer((_) async => const []);
+        when(
+          () => baselineRepository.readBundledContent(asset),
+        ).thenAnswer((_) async => 'default content');
+        when(
+          () => baselineRepository.writeOverride(
+            projectId: any(named: 'projectId'),
+            asset: any(named: 'asset'),
+            content: any(named: 'content'),
+          ),
+        ).thenAnswer((_) async {});
+      },
+      build: () => OverrideEditorCubit(
+        baselineRepository,
+        skillMaterializationService,
+        'project-1',
+        '0.3.0',
+        '/root',
+        'skills/verify',
+      ),
+      act: (cubit) async {
+        await cubit.load();
+        await cubit.save('edited content');
+      },
+      expect: () => [
+        const OverrideEditorLoading(),
+        const OverrideEditorReady(
+          content: 'default content',
+          isOverridden: false,
+        ),
+        const OverrideEditorSaving('edited content'),
+        const OverrideEditorSaved(),
+      ],
+      verify: (_) {
+        verify(
+          () => skillMaterializationService.materializeSkill(
+            rootPath: '/root',
+            asset: asset,
+            content: 'edited content',
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<OverrideEditorCubit, OverrideEditorState>(
+      'save skips skill materialization entirely when the project has no '
+      'rootPath (mobile/web)',
+      setUp: () {
+        when(
+          () => baselineRepository.getManifest('0.3.0'),
+        ).thenAnswer((_) async => manifest);
+        when(
+          () => baselineRepository.readOverrides('project-1'),
+        ).thenAnswer((_) async => const []);
+        when(
+          () => baselineRepository.readBundledContent(asset),
+        ).thenAnswer((_) async => 'default content');
+        when(
+          () => baselineRepository.writeOverride(
+            projectId: any(named: 'projectId'),
+            asset: any(named: 'asset'),
+            content: any(named: 'content'),
+          ),
+        ).thenAnswer((_) async {});
+      },
+      build: () => OverrideEditorCubit(
+        baselineRepository,
+        skillMaterializationService,
+        'project-1',
+        '0.3.0',
+        null,
+        'skills/verify',
+      ),
+      act: (cubit) async {
+        await cubit.load();
+        await cubit.save('edited content');
+      },
+      verify: (_) {
+        verifyNever(
+          () => skillMaterializationService.materializeSkill(
+            rootPath: any(named: 'rootPath'),
+            asset: any(named: 'asset'),
+            content: any(named: 'content'),
+          ),
+        );
       },
     );
   });

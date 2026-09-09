@@ -14,6 +14,7 @@ import 'package:aion/core/git/git_repository_client.dart';
 import 'package:aion/core/git/gitignore_editor.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/projects/data/services/baseline_tailoring_service.dart';
+import 'package:aion/features/projects/data/services/skill_materialization_service.dart';
 import 'package:aion/features/projects/projects.dart';
 import 'package:aion/l10n/generated/app_localizations.dart';
 
@@ -23,6 +24,9 @@ class MockBaselineRepository extends Mock implements BaselineRepository {}
 
 class MockBaselineTailoringService extends Mock
     implements BaselineTailoringService {}
+
+class MockSkillMaterializationService extends Mock
+    implements SkillMaterializationService {}
 
 class MockGitRepositoryClient extends Mock implements GitRepositoryClient {}
 
@@ -72,6 +76,7 @@ void main() {
   late MockProjectRepository projectRepository;
   late MockBaselineRepository baselineRepository;
   late MockBaselineTailoringService baselineTailoringService;
+  late MockSkillMaterializationService skillMaterializationService;
   late MockGitignoreEditor gitignoreEditor;
   late Directory tempDir;
 
@@ -101,6 +106,7 @@ void main() {
     projectRepository = MockProjectRepository();
     baselineRepository = MockBaselineRepository();
     baselineTailoringService = MockBaselineTailoringService();
+    skillMaterializationService = MockSkillMaterializationService();
     gitignoreEditor = MockGitignoreEditor();
     tempDir = await Directory.systemTemp.createTemp('new_project_screen_test_');
     when(
@@ -123,6 +129,13 @@ void main() {
       ),
     ).thenAnswer((_) async {});
     when(
+      () => skillMaterializationService.materializeAll(
+        projectId: any(named: 'projectId'),
+        rootPath: any(named: 'rootPath'),
+        manifest: any(named: 'manifest'),
+      ),
+    ).thenAnswer((_) async {});
+    when(
       () => gitignoreEditor.ensureIgnored(any(), any()),
     ).thenAnswer((_) async {});
   });
@@ -137,6 +150,7 @@ void main() {
     projectRepository,
     baselineRepository,
     baselineTailoringService,
+    skillMaterializationService,
     GitRepositoryClient(),
     gitignoreEditor,
   );
