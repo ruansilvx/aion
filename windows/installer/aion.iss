@@ -34,6 +34,15 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 
 [Files]
 Source: "..\..\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+; The Node.js bridge script ClaudeAgentSdkClient shells out to at runtime
+; (aion/lib/core/agent/agent_bridge_locator.dart resolves it as a sibling
+; of aion.exe). CI (release.yml) runs `npm ci --omit=dev` in agent_bridge/
+; before this script compiles, so node_modules exists here at build time —
+; without it, every installed release fails with a MODULE_NOT_FOUND on the
+; first provider connection attempt.
+Source: "..\..\agent_bridge\index.mjs"; DestDir: "{app}\agent_bridge"; Flags: ignoreversion
+Source: "..\..\agent_bridge\package.json"; DestDir: "{app}\agent_bridge"; Flags: ignoreversion
+Source: "..\..\agent_bridge\node_modules\*"; DestDir: "{app}\agent_bridge\node_modules"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
 Name: "{group}\Aion"; Filename: "{app}\aion.exe"
