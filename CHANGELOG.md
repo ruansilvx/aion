@@ -7,6 +7,22 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-09
+
+### Fixes & chores
+
+- Bundle `agent_bridge/` (the Node.js bridge script and its dependencies)
+  into both the Windows installer and Linux AppImage — every fresh
+  v0.1.0 install failed to connect the Claude Agent SDK provider with a
+  `MODULE_NOT_FOUND` error, since neither packaging pipeline shipped it.
+  (AIO-2802)
+- Recorded the libsecret-1-dev and app-icon-size Linux packaging fixes
+  (aion#114, aion#115, already shipped in v0.1.0) as tickets under
+  AIO-2792 — record-keeping only, no code change.
+- Resolved AIO-2799: keep `.claude/skills/` materialization as a gated
+  bonus feature for Claude-Code-CLI-backed providers, no further
+  generalization planned — record-keeping only, no code change.
+
 ## [0.1.0] - 2026-09-09
 
 First release. Everything below was built pre-release, so this entry
