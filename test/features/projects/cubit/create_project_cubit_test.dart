@@ -7,6 +7,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:aion/core/git/git_repository_client.dart';
 import 'package:aion/core/git/gitignore_editor.dart';
 import 'package:aion/features/projects/data/services/baseline_tailoring_service.dart';
+import 'package:aion/features/projects/data/services/skill_materialization_service.dart';
 import 'package:aion/features/projects/projects.dart';
 
 class MockProjectRepository extends Mock implements ProjectRepository {}
@@ -16,6 +17,9 @@ class MockBaselineRepository extends Mock implements BaselineRepository {}
 class MockBaselineTailoringService extends Mock
     implements BaselineTailoringService {}
 
+class MockSkillMaterializationService extends Mock
+    implements SkillMaterializationService {}
+
 class MockGitRepositoryClient extends Mock implements GitRepositoryClient {}
 
 class MockGitignoreEditor extends Mock implements GitignoreEditor {}
@@ -24,6 +28,7 @@ void main() {
   late MockProjectRepository projectRepository;
   late MockBaselineRepository baselineRepository;
   late MockBaselineTailoringService baselineTailoringService;
+  late MockSkillMaterializationService skillMaterializationService;
   late MockGitRepositoryClient gitClient;
   late MockGitignoreEditor gitignoreEditor;
   late Directory tempDir;
@@ -46,6 +51,7 @@ void main() {
     projectRepository = MockProjectRepository();
     baselineRepository = MockBaselineRepository();
     baselineTailoringService = MockBaselineTailoringService();
+    skillMaterializationService = MockSkillMaterializationService();
     gitClient = MockGitRepositoryClient();
     gitignoreEditor = MockGitignoreEditor();
     tempDir = await Directory.systemTemp.createTemp('create_project_test_');
@@ -60,6 +66,13 @@ void main() {
     ).thenAnswer((_) async => const BaselineManifest(version: '0.1.0', assets: []));
     when(
       () => baselineTailoringService.tailorForDetectedStack(
+        projectId: any(named: 'projectId'),
+        rootPath: any(named: 'rootPath'),
+        manifest: any(named: 'manifest'),
+      ),
+    ).thenAnswer((_) async {});
+    when(
+      () => skillMaterializationService.materializeAll(
         projectId: any(named: 'projectId'),
         rootPath: any(named: 'rootPath'),
         manifest: any(named: 'manifest'),
@@ -88,6 +101,7 @@ void main() {
         projectRepository,
         baselineRepository,
         baselineTailoringService,
+        skillMaterializationService,
         gitClient,
         gitignoreEditor,
       ),
@@ -117,6 +131,7 @@ void main() {
         projectRepository,
         baselineRepository,
         baselineTailoringService,
+        skillMaterializationService,
         gitClient,
         gitignoreEditor,
       ),
@@ -146,6 +161,7 @@ void main() {
         projectRepository,
         baselineRepository,
         baselineTailoringService,
+        skillMaterializationService,
         gitClient,
         gitignoreEditor,
       ),
@@ -176,6 +192,65 @@ void main() {
     );
 
     blocTest<CreateProjectCubit, CreateProjectState>(
+      'submit materializes the pinned version\'s skill assets, and does so '
+      'only after the project row exists (both baseline side effects '
+      "resolve the project's rootPath through ProjectRepository)",
+      setUp: () {
+        when(
+          () => projectRepository.createProject(any()),
+        ).thenAnswer((_) async {});
+      },
+      build: () => CreateProjectCubit(
+        projectRepository,
+        baselineRepository,
+        baselineTailoringService,
+        skillMaterializationService,
+        gitClient,
+        gitignoreEditor,
+      ),
+      act: (cubit) =>
+          cubit.submit(name: 'A New Project', rootPath: tempDir.path),
+      verify: (_) {
+        verifyInOrder([
+          () => projectRepository.createProject(any()),
+          () => baselineTailoringService.tailorForDetectedStack(
+            projectId: any(named: 'projectId'),
+            rootPath: tempDir.path,
+            manifest: any(named: 'manifest'),
+          ),
+          () => skillMaterializationService.materializeAll(
+            projectId: any(named: 'projectId'),
+            rootPath: tempDir.path,
+            manifest: any(named: 'manifest'),
+          ),
+        ]);
+      },
+    );
+
+    blocTest<CreateProjectCubit, CreateProjectState>(
+      'submit skips skill materialization when validation fails before the '
+      'project is ever created',
+      build: () => CreateProjectCubit(
+        projectRepository,
+        baselineRepository,
+        baselineTailoringService,
+        skillMaterializationService,
+        gitClient,
+        gitignoreEditor,
+      ),
+      act: (cubit) => cubit.submit(name: '  ', rootPath: tempDir.path),
+      verify: (_) {
+        verifyNever(
+          () => skillMaterializationService.materializeAll(
+            projectId: any(named: 'projectId'),
+            rootPath: any(named: 'rootPath'),
+            manifest: any(named: 'manifest'),
+          ),
+        );
+      },
+    );
+
+    blocTest<CreateProjectCubit, CreateProjectState>(
       'submit on an already-git-tracked directory with appendGitignore '
       'true skips git init and appends .aion//tickets/ to .gitignore',
       setUp: () {
@@ -190,6 +265,7 @@ void main() {
         projectRepository,
         baselineRepository,
         baselineTailoringService,
+        skillMaterializationService,
         gitClient,
         gitignoreEditor,
       ),
@@ -234,6 +310,7 @@ void main() {
         projectRepository,
         baselineRepository,
         baselineTailoringService,
+        skillMaterializationService,
         gitClient,
         gitignoreEditor,
       ),
@@ -271,6 +348,7 @@ void main() {
         projectRepository,
         baselineRepository,
         baselineTailoringService,
+        skillMaterializationService,
         gitClient,
         gitignoreEditor,
       ),

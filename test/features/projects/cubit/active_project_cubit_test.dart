@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
 import 'package:aion/features/projects/data/services/baseline_tailoring_service.dart';
+import 'package:aion/features/projects/data/services/skill_materialization_service.dart';
 import 'package:aion/features/projects/projects.dart';
 
 class MockProjectRepository extends Mock implements ProjectRepository {}
@@ -12,10 +13,14 @@ class MockBaselineRepository extends Mock implements BaselineRepository {}
 class MockBaselineTailoringService extends Mock
     implements BaselineTailoringService {}
 
+class MockSkillMaterializationService extends Mock
+    implements SkillMaterializationService {}
+
 void main() {
   late MockProjectRepository repository;
   late MockBaselineRepository baselineRepository;
   late MockBaselineTailoringService baselineTailoringService;
+  late MockSkillMaterializationService skillMaterializationService;
 
   final project = Project(
     id: '1',
@@ -39,8 +44,12 @@ void main() {
   const oldManifest = BaselineManifest(version: '0.1.0', assets: []);
   const newManifest = BaselineManifest(version: '0.2.0', assets: []);
 
-  ActiveProjectCubit buildCubit() =>
-      ActiveProjectCubit(repository, baselineRepository, baselineTailoringService);
+  ActiveProjectCubit buildCubit() => ActiveProjectCubit(
+    repository,
+    baselineRepository,
+    baselineTailoringService,
+    skillMaterializationService,
+  );
 
   setUpAll(() {
     registerFallbackValue(oldManifest);
@@ -50,6 +59,14 @@ void main() {
     repository = MockProjectRepository();
     baselineRepository = MockBaselineRepository();
     baselineTailoringService = MockBaselineTailoringService();
+    skillMaterializationService = MockSkillMaterializationService();
+    when(
+      () => skillMaterializationService.materializeAll(
+        projectId: any(named: 'projectId'),
+        rootPath: any(named: 'rootPath'),
+        manifest: any(named: 'manifest'),
+      ),
+    ).thenAnswer((_) async {});
     when(
       () => repository.updateLastOpened(any(), any()),
     ).thenAnswer((_) async {});
@@ -285,6 +302,13 @@ void main() {
             newManifest: newManifest,
           ),
         ).called(1);
+        verify(
+          () => skillMaterializationService.materializeAll(
+            projectId: desktopProject.id,
+            rootPath: desktopProject.rootPath!,
+            manifest: newManifest,
+          ),
+        ).called(1);
       },
       expect: () => [
         isA<ActiveProjectSwitching>(),
@@ -333,6 +357,13 @@ void main() {
             rootPath: any(named: 'rootPath'),
             oldManifest: any(named: 'oldManifest'),
             newManifest: any(named: 'newManifest'),
+          ),
+        );
+        verifyNever(
+          () => skillMaterializationService.materializeAll(
+            projectId: any(named: 'projectId'),
+            rootPath: any(named: 'rootPath'),
+            manifest: any(named: 'manifest'),
           ),
         );
       },

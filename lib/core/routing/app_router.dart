@@ -27,6 +27,7 @@ import 'package:aion/core/utils/platform_utils.dart';
 import 'package:aion/features/pages/presentation/screens/page_create_screen.dart';
 import 'package:aion/features/pages/presentation/screens/page_detail_screen.dart';
 import 'package:aion/features/projects/data/services/baseline_tailoring_service.dart';
+import 'package:aion/features/projects/data/services/skill_materialization_service.dart';
 import 'package:aion/features/projects/projects.dart';
 import 'package:aion/features/providers/providers.dart';
 import 'package:aion/features/tickets/data/page_ticket_provider_impl.dart';
@@ -95,6 +96,7 @@ final appRouter = GoRouter(
             context.read<BaselineRepository>(),
             ProjectStackDetector(),
           ),
+          SkillMaterializationService(context.read<BaselineRepository>()),
           GitRepositoryClient(),
           GitignoreEditor(),
         ),
@@ -333,8 +335,10 @@ final appRouter = GoRouter(
             return BlocProvider<OverrideEditorCubit>(
               create: (context) => OverrideEditorCubit(
                 context.read<BaselineRepository>(),
+                SkillMaterializationService(context.read<BaselineRepository>()),
                 _activeProject(context).id,
                 _activeProject(context).baselineVersion,
+                isDesktop ? _activeProject(context).rootPath : null,
                 assetKey,
               )..load(),
               child: OverrideEditorScreen(assetKey: assetKey),
