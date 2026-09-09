@@ -1,6 +1,7 @@
 // data/repositories/git_projecting_ticket_repository.dart — GitProjectingTicketRepository (data layer).
 
 import 'dart:async';
+import 'dart:io' show FileSystemException, ProcessException;
 import 'dart:typed_data';
 
 import 'package:aion/features/tickets/data/services/ticket_git_projector.dart';
@@ -158,27 +159,40 @@ class GitProjectingTicketRepository implements TicketRepository {
     await _projector.project(ticket, _rootPath, eventLabel);
   }
 
-  /// Same as [_project], but never throws — used only by [trashTicket]/
-  /// [restoreTicket], the two methods that `await` their own projection
-  /// rather than firing it `unawaited`. A git failure (e.g. a missing
-  /// `git config user.email`, a stale `index.lock`, a full disk) would
-  /// otherwise propagate out of `await _projectOrSwallow(...)` into
+  /// Same as [_project], but swallows the two failure types
+  /// [GitRepositoryClient] and the plain file-write inside [_project] can
+  /// actually throw — used only by [trashTicket]/[restoreTicket], the two
+  /// methods that `await` their own projection rather than firing it
+  /// `unawaited`. A [ProcessException] (a failed `git add`/`status`/
+  /// `commit` — e.g. a missing `git config user.email`, a stale
+  /// `index.lock`) or [FileSystemException] (the Markdown write itself
+  /// failing — e.g. a full disk, a permissions error) would otherwise
+  /// propagate out of `await _projectOrSwallow(...)` into
   /// [trashTicket]/[restoreTicket]'s caller — `TicketParentTrashService
   /// .trash`/`.restore`, then `TicketsCubit`/`TrashCubit`'s existing
   /// `catch (e) { emit(TicketsError(...)) }` — misreporting the trash/
   /// restore, which already succeeded via [_inner] above, as a failure,
   /// and skipping the rollup recompute those callers fire right after.
-  /// The failure itself is not silently invisible: [_projector] and
-  /// [GitRepositoryClient] still throw internally at the point it
-  /// happens (visible to a debugger or future logging), this method just
-  /// declines to let that fail an operation that has, in fact, already
-  /// succeeded. The fire-and-forget methods above ([createTicket] et al.)
-  /// need no equivalent — an unawaited call's exception never reaches
-  /// their own caller regardless.
+  /// Deliberately *not* a bare `catch` — anything else (a bug in
+  /// [TicketMarkdownSerializer.serialize], a corrupt read from [_inner
+  /// .getTicketById], or any other exception this method didn't
+  /// anticipate) still propagates and fails loudly, exactly like it
+  /// would anywhere else in this codebase; only the two failure modes
+  /// this whole mechanism exists to tolerate are caught. Neither
+  /// swallowed failure is silently invisible in the sense this change
+  /// cares about: [_projector]/[GitRepositoryClient] still throw
+  /// internally at the point it happens (visible to a debugger or
+  /// future logging), this method just declines to let that fail an
+  /// operation that has, in fact, already succeeded. The fire-and-forget
+  /// methods above ([createTicket] et al.) need no equivalent — an
+  /// unawaited call's exception never reaches their own caller
+  /// regardless.
   Future<void> _projectOrSwallow(String id, String eventLabel) async {
     try {
       await _project(id, eventLabel);
-    } catch (_) {
+    } on ProcessException {
+      // See this method's own dartdoc.
+    } on FileSystemException {
       // See this method's own dartdoc.
     }
   }

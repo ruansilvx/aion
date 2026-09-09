@@ -1,3 +1,5 @@
+import 'dart:io' show ProcessException;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
@@ -170,13 +172,14 @@ void main() {
     );
 
     test(
-      'trashTicket does not propagate a projection failure — the trash '
-      'above already succeeded and must not be reported as an error',
+      'trashTicket does not propagate a ProcessException from the '
+      'projector — the trash above already succeeded and must not be '
+      'reported as an error',
       () async {
         when(() => inner.trashTicket(ticket.id)).thenAnswer((_) async {});
-        when(
-          () => projector.project(ticket, rootPath, 'trashed'),
-        ).thenThrow(Exception('git blew up'));
+        when(() => projector.project(ticket, rootPath, 'trashed')).thenThrow(
+          ProcessException('git', ['commit'], 'boom', 128),
+        );
 
         // Must complete normally (not throw) despite the projector
         // throwing — trashTicket already succeeded via `inner` above.
@@ -187,18 +190,35 @@ void main() {
     );
 
     test(
-      'restoreTicket does not propagate a projection failure — the '
-      'restore above already succeeded and must not be reported as an '
-      'error',
+      'restoreTicket does not propagate a ProcessException from the '
+      'projector — the restore above already succeeded and must not be '
+      'reported as an error',
       () async {
         when(() => inner.restoreTicket(ticket.id)).thenAnswer((_) async {});
-        when(
-          () => projector.project(ticket, rootPath, 'restored'),
-        ).thenThrow(Exception('git blew up'));
+        when(() => projector.project(ticket, rootPath, 'restored')).thenThrow(
+          ProcessException('git', ['commit'], 'boom', 128),
+        );
 
         await repository.restoreTicket(ticket.id);
 
         verify(() => inner.restoreTicket(ticket.id)).called(1);
+      },
+    );
+
+    test(
+      'trashTicket still propagates an exception that is not a '
+      'ProcessException/FileSystemException — only the two failure '
+      'types git projection can actually throw are swallowed',
+      () async {
+        when(() => inner.trashTicket(ticket.id)).thenAnswer((_) async {});
+        when(
+          () => projector.project(ticket, rootPath, 'trashed'),
+        ).thenThrow(StateError('an unrelated bug, not a git failure'));
+
+        await expectLater(
+          repository.trashTicket(ticket.id),
+          throwsA(isA<StateError>()),
+        );
       },
     );
 
