@@ -1888,33 +1888,14 @@ void main() {
         ],
       );
 
-      blocTest<TicketsCubit, TicketsState>(
-        'git-projection fires only for the successfully-written ticket, '
-        'never for the blocked or coding-execution-gated ones',
-        setUp: stubMixedSelection,
-        build: buildCubit,
-        act: (cubit) => cubit.updateStatusForTickets([
-          bulkBlockedTask.id,
-          bulkCodingGatedTask.id,
-          bulkCleanTask.id,
-        ], 'inProgress'),
-        verify: (_) {
-          verify(
-            () =>
-                gitProjector.project(bulkCleanTask, rootPath, 'status-changed'),
-          ).called(1);
-          verifyNever(
-            () => gitProjector.project(bulkBlockedTask, any(), any()),
-          );
-          verifyNever(
-            () => gitProjector.project(bulkCodingGatedTask, any(), any()),
-          );
-        },
-        expect: () => [
-          const TicketsBatchStatusUpdating(),
-          const TicketsBatchStatusUpdated([], 1, 2, hasMore: false),
-        ],
-      );
+      // Git projection for updateStatusForIds now happens one layer down,
+      // inside GitProjectingTicketRepository (see that class's own test)
+      // — it fires once per id the repository call actually touches,
+      // regardless of which ids TicketsCubit filtered out above. This
+      // cubit-level suite no longer needs its own git-projection
+      // assertion for that reason; the "only the writable id reaches
+      // updateStatusForIds" test above already covers the gating logic
+      // this cubit is actually responsible for.
 
       blocTest<TicketsCubit, TicketsState>(
         'a target status other than inProgress skips gating entirely — '
@@ -1967,17 +1948,13 @@ void main() {
 
       blocTest<TicketsCubit, TicketsState>(
         'updatePriorityForTickets always writes unconditionally — '
-        'updatedCount equals ids.length and no git projection is '
-        'triggered',
+        'updatedCount equals ids.length',
         setUp: () {
           when(
             () => repository.updatePriorityForIds([
               ticket.id,
               unrelated.id,
             ], TicketPriority.critical),
-          ).thenAnswer((_) async {});
-          when(
-            () => gitProjector.project(any(), any(), any()),
           ).thenAnswer((_) async {});
           stubEmptySearch();
         },
@@ -1993,7 +1970,6 @@ void main() {
               unrelated.id,
             ], TicketPriority.critical),
           ).called(1);
-          verifyNever(() => gitProjector.project(any(), any(), any()));
         },
         expect: () => [
           const TicketsBatchPriorityUpdating(),
@@ -3445,7 +3421,7 @@ void main() {
       );
 
       blocTest<TicketsCubit, TicketsState>(
-        'createTicket always triggers embedding regen and a "created" projection',
+        'createTicket always triggers embedding regen',
         setUp: () {
           when(() => repository.createTicket(any())).thenAnswer((_) async {});
           when(
@@ -3471,9 +3447,6 @@ void main() {
             cubit.createTicket(type: TicketType.task, title: 'New ticket'),
         verify: (_) {
           verify(() => embeddingProvider.embed(any())).called(1);
-          verify(
-            () => gitProjector.project(ticket, rootPath, 'created'),
-          ).called(1);
         },
         expect: () => [
           const TicketCreating([]),
@@ -3500,7 +3473,7 @@ void main() {
       );
 
       blocTest<TicketsCubit, TicketsState>(
-        'updateTicketStatus (board path) triggers a "status-changed" projection, no embedding',
+        'updateTicketStatus (board path) triggers no embedding regen',
         setUp: () {
           when(
             () => repository.updateTicketStatus(any(), any()),
@@ -3531,13 +3504,6 @@ void main() {
         act: (cubit) => cubit.updateTicketStatus(ticket.id, 'done'),
         verify: (_) {
           verifyNever(() => embeddingProvider.embed(any()));
-          verify(
-            () => gitProjector.project(
-              ticket.copyWith(status: 'done'),
-              rootPath,
-              'status-changed',
-            ),
-          ).called(1);
         },
         expect: () => [
           TicketStatusUpdating([ticket.copyWith(status: 'done')]),
@@ -3547,26 +3513,14 @@ void main() {
         ],
       );
 
-      blocTest<TicketsCubit, TicketsState>(
-        'trashTicket triggers a "trashed" projection',
-        setUp: () {
-          when(
-            () => repository.trashTicket(ticket.id),
-          ).thenAnswer((_) async {});
-          when(
-            () => repository.getTicketById(ticket.id),
-          ).thenAnswer((_) async => ticket);
-        },
-        build: buildCubit,
-        seed: () => TicketDetailLoaded(ticket),
-        act: (cubit) => cubit.trashTicket(ticket.id),
-        verify: (_) {
-          verify(
-            () => gitProjector.project(ticket, rootPath, 'trashed'),
-          ).called(1);
-        },
-        expect: () => [const TicketTrashing(), const TicketTrashed()],
-      );
+      // "created"/"status-changed"/"trashed"/"restored" git-projection
+      // coverage lives in git_projecting_ticket_repository_test.dart now
+      // — TicketsCubit/TicketParentTrashService no longer call
+      // TicketGitProjector directly for any of these (see
+      // GitProjectingTicketRepository's own dartdoc). trashTicket is
+      // still exercised above via TicketDetailLoaded/TicketTrashed state
+      // assertions elsewhere in this file; only the now-removed
+      // git-projection assertion moved.
 
       blocTest<TicketsCubit, TicketsState>(
         'when no embeddingProvider/gitProjector/projectRootPath is given, both no-op',

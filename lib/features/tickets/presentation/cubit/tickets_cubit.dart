@@ -1735,7 +1735,6 @@ class TicketsCubit extends Cubit<TicketsState> {
               .then((_) => _refreshDetailIfOpenAndAffected({persisted.id})),
         );
         unawaited(_tokenPredictor.suggest(persisted));
-        unawaited(_triggerGitProjection(persisted, 'created'));
         unawaited(
           _refreshDetailIfOpenAndAffected({
             persisted.id,
@@ -1843,7 +1842,6 @@ class TicketsCubit extends Cubit<TicketsState> {
       final updated = await _repository.getTicketById(id);
       SkillAttachment? attachment;
       if (updated != null) {
-        unawaited(_triggerGitProjection(updated, 'status-changed'));
         if (updated.type.isExecutable &&
             _roleOf(status) == WorkflowStatusRole.executionTrigger) {
           unawaited(_triggerOrQueueCodingExecution(updated));
@@ -2057,7 +2055,6 @@ class TicketsCubit extends Cubit<TicketsState> {
       final refreshed = await _repository.getTicketById(ticket.id);
       if (refreshed != null) {
         emit(TicketDetailLoaded(refreshed));
-        unawaited(_triggerGitProjection(refreshed, 'status-changed'));
         if (refreshed.type.isExecutable &&
             _roleOf(status) == WorkflowStatusRole.executionTrigger) {
           unawaited(_triggerOrQueueCodingExecution(refreshed));
@@ -7430,9 +7427,20 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// provided (see the constructor's dartdoc) — desktop-only in
   /// practice, since `WorkspaceShell` only supplies these on desktop.
   ///
-  /// The `'restored'` trigger event lives on `TrashCubit` instead — see its
-  /// own `_triggerGitProjection` (added by `AIO-2509`, which closed the gap
-  /// this dartdoc used to flag here).
+  /// [_trashBatchGitSideEffects] is this method's one remaining caller.
+  /// Every single-ticket create/status-change/reparent/stage-advance path
+  /// that used to call this directly now gets projected automatically by
+  /// `GitProjectingTicketRepository` instead (see that class's dartdoc) —
+  /// `_repository` is that decorator whenever a project has a `rootPath`,
+  /// so those writes project themselves without this cubit needing to ask.
+  /// The bulk-trash path above is the one exception: it calls
+  /// `TicketRepository.trashTickets` (plural), which — unlike the singular
+  /// `trashTicket` — is deliberately *not* wrapped by the decorator, since
+  /// its per-ticket projections must stay sequenced strictly before the
+  /// batched rollup recompute that follows them (see
+  /// [_trashBatchGitSideEffects]'s own dartdoc), a guarantee a generic
+  /// per-call decorator can't give without either blocking this cubit on
+  /// every commit in the batch or dropping the sequencing entirely.
   Future<void> _triggerGitProjection(Ticket ticket, String eventLabel) async {
     final projector = _gitProjector;
     final rootPath = _projectRootPath;
@@ -8087,7 +8095,6 @@ class TicketsCubit extends Cubit<TicketsState> {
         for (final id in writableIds) {
           final updated = await _repository.getTicketById(id);
           if (updated != null) {
-            unawaited(_triggerGitProjection(updated, 'status-changed'));
             if (updated.type.isExecutable &&
                 _roleOf(status) == WorkflowStatusRole.executionTrigger) {
               unawaited(_triggerOrQueueCodingExecution(updated));

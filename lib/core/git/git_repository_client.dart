@@ -35,22 +35,30 @@ class GitRepositoryClient {
     await _run(['init'], rootPath);
   }
 
-  /// Runs `git add <relativePath>` in [rootPath].
+  /// Runs `git add <relativePath>` in [rootPath]. Throws a
+  /// [ProcessException] (carrying `stderr`) if `git` exits non-zero,
+  /// matching [createWorktree]/[push]/[tag]'s existing checked shape —
+  /// see [_runChecked]'s dartdoc for why a silently swallowed failure
+  /// here is exactly the class of bug `AIO-506` already fixed for
+  /// those methods.
   Future<void> add(String rootPath, String relativePath) async {
-    await _run(['add', relativePath], rootPath);
+    await _runChecked(['add', relativePath], rootPath);
   }
 
   /// Returns whether `git status --porcelain` in [rootPath] reports any
   /// pending changes (staged or unstaged). Used to skip a commit when a
-  /// write didn't actually change the serialized content.
+  /// write didn't actually change the serialized content. Throws a
+  /// [ProcessException] if the underlying `git status` call itself
+  /// fails — see [add]'s dartdoc.
   Future<bool> hasChanges(String rootPath) async {
-    final result = await _run(['status', '--porcelain'], rootPath);
+    final result = await _runChecked(['status', '--porcelain'], rootPath);
     return result.stdout.toString().trim().isNotEmpty;
   }
 
-  /// Runs `git commit -m <message>` in [rootPath].
+  /// Runs `git commit -m <message>` in [rootPath]. Throws a
+  /// [ProcessException] if `git` exits non-zero — see [add]'s dartdoc.
   Future<void> commit(String rootPath, String message) async {
-    await _run(['commit', '-m', message], rootPath);
+    await _runChecked(['commit', '-m', message], rootPath);
   }
 
   /// Runs `git worktree add -b <branchName> <worktreePath>` in [rootPath],
@@ -172,14 +180,18 @@ class GitRepositoryClient {
 
   /// Same as [_run], but throws a [ProcessException] (carrying `stderr`) if
   /// `git` exits non-zero. [createWorktree]/[removeWorktree]/[push] use this
-  /// rather than [init]/[add]/[commit]/[hasChanges]'s existing fire-and-forget
-  /// shape, because a silently swallowed failure here leaves a
-  /// coding-execution run believing an isolated worktree exists when it
-  /// doesn't — confirmed via a live manual run: `git worktree add` failing
-  /// silently left the model's turn pointed at an empty temp directory, which
-  /// it escaped by finding and committing to the developer's real checkout
-  /// instead of throwing loudly and aborting. A `/verify` follow-up fix for
-  /// `AIO-506`.
+  /// rather than [_run]'s fire-and-forget shape, because a silently
+  /// swallowed failure here leaves a coding-execution run believing an
+  /// isolated worktree exists when it doesn't — confirmed via a live manual
+  /// run: `git worktree add` failing silently left the model's turn pointed
+  /// at an empty temp directory, which it escaped by finding and committing
+  /// to the developer's real checkout instead of throwing loudly and
+  /// aborting. A `/verify` follow-up fix for `AIO-506`. [add]/[commit]/
+  /// [hasChanges] later switched to this same checked shape too, for the
+  /// identical reason applied to ticket git-projection: a failed
+  /// projection commit was silently indistinguishable from a no-op skip.
+  /// [init] stays on plain [_run] — no caller currently depends on
+  /// distinguishing an init failure from a no-op.
   Future<ProcessResult> _runChecked(List<String> args, String rootPath) async {
     final result = await _run(args, rootPath);
     if (result.exitCode != 0) {
