@@ -17,7 +17,7 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: subosito/flutter-action@v2
         with:
@@ -39,7 +39,7 @@ jobs:
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
             "/DAppVersion=$version" windows\installer\aion.iss
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-installer
           path: windows/installer/Output/Aion-Setup-*.exe
@@ -52,14 +52,23 @@ jobs:
     # `needs:` gate downstream.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
 
       - name: Install Linux build dependencies
-        run: sudo apt-get update && sudo apt-get install -y ninja-build libgtk-3-dev
+        run: |
+          # ubuntu-latest runner images bundle a Google Chrome apt source by
+          # default, unrelated to this build (we need neither Chrome nor any
+          # of its packages) — its mirror has been observed serving a
+          # transient Hash Sum mismatch, which fails `apt-get update` outright
+          # even though every repo we actually need is fine. Drop it before
+          # updating so a flaky, irrelevant third-party mirror can't take
+          # this job down.
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list
+          sudo apt-get update && sudo apt-get install -y ninja-build libgtk-3-dev
 
       - run: flutter pub get
 
@@ -72,7 +81,7 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           bash linux/packaging/build_appimage.sh "$version"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux-appimage
           path: Aion-*-x86_64.AppImage
@@ -81,9 +90,9 @@ jobs:
     needs: [build-windows, build-linux]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: windows-installer
           path: artifacts/windows-installer
@@ -92,7 +101,7 @@ jobs:
       # continue-on-error above) must not fail this job — a Windows-only
       # release is the accepted degraded outcome for this release. Kept
       # as its own step so only this download is allowed to fail.
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: linux-appimage
