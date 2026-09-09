@@ -183,8 +183,8 @@ class TicketDbReconstructionService {
   ///
   /// [trashTicket]/[restoreTicket] can cascade to *other* tickets beyond
   /// [existing.id] (an ancestor or descendant sharing the same trash
-  /// state) — real writes [reconstruct]'s own snapshot, [byTicketId],
-  /// has no way to know about otherwise. Whenever a cascade actually
+  /// state) — real writes that [reconstruct]'s own snapshot,
+  /// [byTicketId], has no way to know about otherwise. Whenever a cascade actually
   /// fires, every id it reports as affected is re-fetched and written
   /// back into [byTicketId], so a *later* iteration of [reconstruct]'s
   /// own loop that reconciles one of those same tickets compares against
