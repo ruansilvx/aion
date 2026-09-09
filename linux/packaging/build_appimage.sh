@@ -36,13 +36,17 @@ fetch_tool "$LINUXDEPLOY_URL" "$TOOLS_DIR/linuxdeploy.AppImage"
 fetch_tool "$APPIMAGETOOL_URL" "$TOOLS_DIR/appimagetool.AppImage"
 
 # linuxdeploy expects the icon file's basename (minus extension) to match
-# the .desktop file's Icon= key ("aion"). assets/icons/aion_icon.png is
-# currently Flutter's default template icon (same placeholder every
-# platform in this repo still ships) — not real Aion branding yet; see
-# aion-arch/ideas/aion-needs-a-real-app-icon.md.
+# the .desktop file's Icon= key ("aion"), AND — unlike every other
+# platform's icon pipeline in this repo — validates the file's exact
+# pixel dimensions against a fixed allow-list (8x8 up to 512x512; see
+# linuxdeploy's own AppImage icon spec). assets/icons/aion_icon.png is
+# 1024x1024 real Aion artwork (shipped since v1-release-readiness),
+# which isn't on that list and gets rejected outright — resize down to
+# 512x512 (the largest valid size) before staging it, rather than
+# shipping a different, smaller source icon just for Linux.
 ICON_SRC="$REPO_ROOT/assets/icons/aion_icon.png"
 ICON_STAGED="$WORK_DIR/aion.png"
-cp "$ICON_SRC" "$ICON_STAGED"
+convert "$ICON_SRC" -resize 512x512 "$ICON_STAGED"
 
 "$TOOLS_DIR/linuxdeploy.AppImage" \
   --appdir "$APPDIR" \
