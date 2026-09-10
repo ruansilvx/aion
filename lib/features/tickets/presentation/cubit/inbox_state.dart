@@ -43,27 +43,46 @@ class InboxLoaded extends InboxState {
 /// A purpose launch ([InboxCubit.startBrainDump]/[startWhatNextGuidance]/
 /// [startReleasePlanning]/[startQa]) is in flight — spawning the chat
 /// ticket and running its opening turn. Carries which [purpose] is
-/// launching, for the launcher UI's own per-card loading state.
+/// launching, for the launcher UI's own per-card loading state, plus
+/// [history] — the last successfully loaded history, carried forward
+/// (rather than dropped) so the Recent section doesn't flash empty for
+/// the whole launch — see `AIO-2821`.
 class InboxLaunching extends InboxState {
   /// Creates an [InboxLaunching] state carrying which [purpose] is
-  /// launching.
-  const InboxLaunching(this.purpose);
+  /// launching, plus the [history] to keep showing meanwhile.
+  const InboxLaunching(this.purpose, {this.history = const []});
 
   /// The Inbox purpose currently launching.
   final InboxPurpose purpose;
 
+  /// The last successfully loaded history — kept visible in the Recent
+  /// section while this launch is in flight. Fixed for `AIO-2821`: before
+  /// this field existed, the Recent section (built from `state.history`
+  /// only when `state is InboxLoaded`) fell straight to its empty state
+  /// the instant a launch began, with no loading indicator, for the
+  /// entire multi-second launch — see [InboxCubit._currentHistory].
+  final List<Ticket> history;
+
   @override
-  List<Object?> get props => [purpose];
+  List<Object?> get props => [purpose, history];
 }
 
 /// An [InboxCubit.load]/`start*` call failed.
 class InboxError extends InboxState {
-  /// Creates an [InboxError] state carrying [message].
-  const InboxError(this.message);
+  /// Creates an [InboxError] state carrying [message], plus the
+  /// [history] to keep showing meanwhile — same `AIO-2821` fix as
+  /// [InboxLaunching.history], for a `start*` call that fails after
+  /// already having cleared the screen to [InboxLaunching].
+  const InboxError(this.message, {this.history = const []});
 
   /// A raw, unlocalized description of what went wrong.
   final String message;
 
+  /// The last successfully loaded history — kept visible in the Recent
+  /// section despite the failure. Empty when [InboxCubit.load] itself is
+  /// what failed, since there's nothing to carry forward yet.
+  final List<Ticket> history;
+
   @override
-  List<Object?> get props => [message];
+  List<Object?> get props => [message, history];
 }

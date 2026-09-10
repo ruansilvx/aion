@@ -684,4 +684,71 @@ void main() {
       expect: () => [const InboxLaunching(InboxPurpose.qa), isA<InboxError>()],
     );
   });
+
+  group('AIO-2821 — history carried through launch/error states', () {
+    test(
+      'the InboxLaunching state emitted at the start of startBrainDump '
+      'carries the already-loaded history forward, not empty',
+      () async {
+        final existing = inboxChat(id: 'existing', purpose: InboxPurpose.qa);
+        when(
+          () => repository.getTicketsByParent(
+            null,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [existing]);
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('BRAINDUMP: DONE'),
+            AgentDoneEvent(),
+          ]),
+        );
+
+        final cubit = buildCubit();
+        await cubit.load();
+        expect((cubit.state as InboxLoaded).history, [existing]);
+
+        // Before the AIO-2821 fix, `InboxLaunching` carried no history at
+        // all, so the Recent section (built straight off `state.history`)
+        // fell to its empty state the instant this state was emitted —
+        // for the whole launch, with no loading indicator.
+        final states = <InboxState>[];
+        final subscription = cubit.stream.listen(states.add);
+        await cubit.startBrainDump('a new note');
+        await subscription.cancel();
+        await cubit.close();
+
+        final launching = states.whereType<InboxLaunching>().single;
+        expect(launching.purpose, InboxPurpose.brainDump);
+        expect(launching.history, [existing]);
+      },
+    );
+
+    test(
+      'the InboxError state emitted when a launch fails after an '
+      'earlier successful load still carries that history forward',
+      () async {
+        final existing = inboxChat(id: 'existing', purpose: InboxPurpose.qa);
+        when(
+          () => repository.getTicketsByParent(
+            null,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [existing]);
+        when(
+          () => repository.createTicket(any()),
+        ).thenThrow(Exception('createTicket failed'));
+
+        final cubit = buildCubit();
+        await cubit.load();
+        expect((cubit.state as InboxLoaded).history, [existing]);
+
+        await cubit.startBrainDump('a new note');
+        await cubit.close();
+
+        expect(cubit.state, isA<InboxError>());
+        expect((cubit.state as InboxError).history, [existing]);
+      },
+    );
+  });
 }
