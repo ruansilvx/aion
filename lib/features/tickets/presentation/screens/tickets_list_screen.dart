@@ -96,6 +96,24 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
   /// user scrolls within 400px of the bottom (design.md §4).
   final ScrollController _scrollController = ScrollController();
 
+  /// The last ticket list [_currentTickets] actually derived from a
+  /// list-bearing state, filtered exactly as [_currentTickets] itself
+  /// filters (`resource`/`page` types excluded) — reused when the current
+  /// state is a classified [TicketsError] (`reason` non-null). Those
+  /// reasons (`executionVerificationFailed`, etc.; see
+  /// `TicketsErrorReason`'s own dartdoc — every reason whose l10n key ends
+  /// in `Toast`) are already surfaced app-wide by
+  /// `WorkspaceNavShell`'s `AppToast` listener; they carry no ticket data
+  /// of their own and aren't a "the list failed to load" signal, so this
+  /// screen must not also blank the board out from under an in-flight
+  /// coding-execution toast — see [_currentTickets]'s dartdoc for the
+  /// `reason == null` case that's still exempt from this fallback. Confirmed
+  /// via live reproduction: 2+ concurrent gated verification failures each
+  /// emit one of these, and without this fallback every one of them wiped
+  /// the entire Tickets board back to empty until an unrelated navigation
+  /// forced a fresh [TicketsLoaded].
+  List<Ticket> _lastKnownTickets = const <Ticket>[];
+
   /// Whether a search query or a non-default filter is currently active —
   /// used to pick between the "No tickets yet" and "No tickets match your
   /// search" empty states, and to drive the search icon's "active" color.
@@ -274,12 +292,20 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
   }
 
   /// Extracts the currently loaded ticket list from any list-shaped
-  /// [state], or an empty list otherwise. Shared by the header (Select
-  /// toggle visibility), the body switch, and the selection bar's
-  /// select-all wiring, so all three agree on "what's currently on
-  /// screen." Excludes `resource`/`page` tickets — those moved to the
-  /// Documentation section and are no longer shown here, in either list
-  /// or board mode.
+  /// [state]. Shared by the header (Select toggle visibility), the body
+  /// switch, and the selection bar's select-all wiring, so all three agree
+  /// on "what's currently on screen." Excludes `resource`/`page` tickets —
+  /// those moved to the Documentation section and are no longer shown
+  /// here, in either list or board mode.
+  ///
+  /// A classified [TicketsError] (`reason` non-null — every toast-only
+  /// reason `WorkspaceNavShell` already surfaces app-wide) falls back to
+  /// [_lastKnownTickets] rather than an empty list, so a coding-execution
+  /// toast doesn't also blank the board underneath it — see
+  /// [_lastKnownTickets]'s own dartdoc. An unclassified [TicketsError]
+  /// (`reason == null`, a genuine list-load failure) and every other
+  /// non-list-shaped state still fall through to empty, matching the body
+  /// switch's own full-screen error+Retry treatment for that case.
   List<Ticket> _currentTickets(TicketsState state) {
     final tickets = switch (state) {
       TicketsLoaded(:final tickets) => tickets,
@@ -292,13 +318,17 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
       TicketsBatchPriorityUpdated(:final tickets) => tickets,
       TicketsLoadingMore(:final tickets) => tickets,
       TicketsLoadMoreFailed(:final tickets) => tickets,
+      TicketsError(:final reason) when reason != null => null, // see below
       _ => const <Ticket>[],
     };
-    return tickets
+    if (tickets == null) return _lastKnownTickets;
+    final filtered = tickets
         .where(
           (t) => t.type != TicketType.resource && t.type != TicketType.page,
         )
         .toList();
+    _lastKnownTickets = filtered;
+    return filtered;
   }
 
   /// Whether at least one more page exists beyond the tickets currently on
@@ -557,15 +587,27 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                             TicketsBatchPriorityUpdating() => const Center(
                               child: AppSpinner(),
                             ),
-                            TicketsError(:final message, :final reason) =>
+                            TicketsError(:final message, reason: null) =>
+                              // Unclassified only — a genuine "the list
+                              // itself failed to load" error with nothing
+                              // cached yet to fall back to. A *classified*
+                              // TicketsError (reason != null) falls through
+                              // to the branch below instead: WorkspaceNavShell
+                              // already surfaces it app-wide as a toast, and
+                              // _currentTickets/_lastKnownTickets keep this
+                              // screen showing the board underneath it — see
+                              // both their dartdocs. Confirmed via live
+                              // reproduction that reusing this same
+                              // full-screen treatment for a classified
+                              // reason (e.g. executionVerificationFailed)
+                              // blanks the entire board on every concurrent
+                              // gated verification failure.
                               Center(
                                 child: Column(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Text(
-                                      reason != null
-                                          ? ticketsErrorMessage(context, reason)
-                                          : message,
+                                      message,
                                       style: AionText.body.copyWith(
                                         color: c.textSecondary,
                                       ),
@@ -578,6 +620,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                                   ],
                                 ),
                               ),
+                            TicketsError() ||
                             TicketsLoaded() ||
                             TicketCreating() ||
                             TicketCreated() ||
