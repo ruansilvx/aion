@@ -77,6 +77,34 @@ data: {"type":"message_stop"}
 
 ''';
 
+// Same tool-call shape as [_toolUseSse], but with a duplicate
+// `content_block_start` for index 0 before its matching
+// `content_block_stop` — a genuine SSE chunk-boundary edge case observed
+// live, where the same block gets announced twice in one pass.
+const _duplicateToolUseSse = '''
+event: message_start
+data: {"type":"message_start","message":{"usage":{"input_tokens":10}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"branch_ticket"}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"branch_ticket"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\\"title\\":\\"Fix bug\\"}"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":5}}
+
+event: message_stop
+data: {"type":"message_stop"}
+
+''';
+
 void main() {
   late MockDio dio;
 
@@ -291,6 +319,63 @@ void main() {
       expect(toolResultBlock['type'], 'tool_result');
       expect(toolResultBlock['tool_use_id'], 'toolu_1');
       expect(toolResultBlock['content'], '{"accepted":true}');
+    });
+
+    test('a duplicate content_block_start for the same index does not '
+        'duplicate that block in the next request\'s assistant message',
+        () async {
+      final requestBodies = <Map<String, dynamic>>[];
+      var callCount = 0;
+      when(
+        () => dio.post<ResponseBody>(
+          any(),
+          data: any(named: 'data'),
+          options: any(named: 'options'),
+          cancelToken: any(named: 'cancelToken'),
+        ),
+      ).thenAnswer((invocation) async {
+        requestBodies.add(
+          invocation.namedArguments[#data] as Map<String, dynamic>,
+        );
+        callCount += 1;
+        return _response(
+          callCount == 1 ? _duplicateToolUseSse : _followUpSse,
+          200,
+        );
+      });
+
+      final client = AnthropicMessagesApiClient(dio, () async => 'sk-ant-x');
+      await (await client.run(
+        AgentRequest(
+          prompt: 'hi',
+          model: 'claude-sonnet-5',
+          tools: const [
+            AgentToolDefinition(
+              name: 'branch_ticket',
+              description: 'test tool',
+              inputSchema: {'type': 'object', 'properties': {}},
+            ),
+          ],
+          onToolCall: (toolCallId, toolName, arguments, session) async {
+            return {'accepted': true};
+          },
+        ),
+      )).toList();
+
+      // The second POST's `messages[1]` is the assistant turn built from
+      // the first pass's content blocks — must carry exactly one tool_use
+      // block despite content_block_start firing twice for it, or the real
+      // API rejects the request outright with "tool_use ids must be
+      // unique" (confirmed via live reproduction on a retried
+      // coding-execution turn).
+      final continuationMessages =
+          requestBodies[1]['messages'] as List<dynamic>;
+      final assistantMessage =
+          continuationMessages[1] as Map<String, dynamic>;
+      expect(assistantMessage['role'], 'assistant');
+      final assistantContent = assistantMessage['content'] as List<dynamic>;
+      expect(assistantContent, hasLength(1));
+      expect((assistantContent.single as Map)['id'], 'toolu_1');
     });
 
     test('a cancelled POST (DioExceptionType.cancel) emits '
