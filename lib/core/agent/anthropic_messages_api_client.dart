@@ -277,7 +277,17 @@ class AnthropicMessagesApiClient implements AgentModelClient {
           // SSE without one.
           final index = (json['index'] as int?) ?? 0;
           final block = json['content_block'] as Map? ?? const {};
-          blockOrder.add(index);
+          // Guard against a duplicate `content_block_start` for an index
+          // already seen this pass (observed live: an SSE chunk-boundary
+          // edge case can replay one) — `blocks[index] =` below is
+          // idempotent for a genuine duplicate, but `blockOrder` isn't a
+          // set, so an unguarded `.add` would list `index` twice.
+          // `assistantContent` (below) maps `blockOrder` straight into the
+          // next request's `messages`, and the API hard-rejects a message
+          // whose content repeats one `tool_use` id — confirmed via live
+          // reproduction: a retried coding-execution turn failed outright
+          // with `400 tool_use ids must be unique`.
+          if (!blockOrder.contains(index)) blockOrder.add(index);
           if (block['type'] == 'tool_use') {
             blocks[index] = {
               'type': 'tool_use',
