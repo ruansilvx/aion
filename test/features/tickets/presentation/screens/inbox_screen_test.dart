@@ -255,6 +255,44 @@ void main() {
     expect(find.byType(InboxHistoryItem), findsNothing);
   });
 
+  testWidgets(
+    'AIO-2821: the Recent section keeps showing its history while a '
+    'launch is in flight, instead of falling to the empty state',
+    (tester) async {
+      when(() => cubit.state).thenReturn(
+        InboxLaunching(
+          InboxPurpose.brainDump,
+          history: [_historyChat(id: '1', purpose: InboxPurpose.qa)],
+        ),
+      );
+
+      await tester.pumpWidget(_wrap(cubit));
+      await tester.pump();
+
+      expect(find.byType(InboxHistoryItem), findsOneWidget);
+      expect(find.byType(InboxEmptyState), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'AIO-2821: the Recent section keeps showing its history when a '
+    'launch fails, instead of falling to the empty state',
+    (tester) async {
+      when(() => cubit.state).thenReturn(
+        InboxError(
+          'Something went wrong',
+          history: [_historyChat(id: '1', purpose: InboxPurpose.qa)],
+        ),
+      );
+
+      await tester.pumpWidget(_wrap(cubit));
+      await tester.pump();
+
+      expect(find.byType(InboxHistoryItem), findsOneWidget);
+      expect(find.byType(InboxEmptyState), findsNothing);
+    },
+  );
+
   testWidgets('tapping a history item navigates to its ticket detail', (
     tester,
   ) async {
