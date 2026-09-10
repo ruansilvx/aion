@@ -651,7 +651,26 @@ class _AddFieldCheckAffordance extends StatelessWidget {
 
 /// Indents [child] by `24 * depth` and paints a 1px ancestor guide-rail
 /// line at each intervening depth. Mirrors `_GuideRailIndent`
-/// (`decision_outline_list.dart`).
+/// (`decision_outline_list.dart`) — with one deliberate divergence, see
+/// below.
+///
+/// That mirrored version uses a `Row`+`IntrinsicHeight` to stretch the
+/// rail lines to [child]'s height without a bounded incoming height
+/// (this row sits inside an unconstrained-height `Column`). That shape
+/// doesn't work here: [child] is ultimately `_NodeRow`'s content, which
+/// contains a `LayoutBuilder` (the narrow-prefix check, design.md §2.2 —
+/// `decision_outline_list.dart`'s own row has no such `LayoutBuilder`,
+/// which is why its `IntrinsicHeight` is still safe there). Flutter
+/// refuses to compute intrinsic dimensions through a `LayoutBuilder`
+/// ("LayoutBuilder does not support returning intrinsic dimensions"),
+/// so at any `depth > 0` — i.e. as soon as a stage's tree has a second,
+/// chained field check — this threw on every build, leaving both panes
+/// of `SddStagePreconditionEditorScreen` rendering nothing. Fixed for
+/// `AIO-2831` by switching to a `Stack`: its size comes from the one
+/// non-`Positioned` child ([child] itself, indented via [Padding]) with
+/// no intrinsic-dimension query at all, and the rail lines are
+/// `Positioned` to stretch `top: 0`/`bottom: 0` against whatever size
+/// that resolves to.
 class _GuideRailIndent extends StatelessWidget {
   const _GuideRailIndent({required this.depth, required this.child});
 
@@ -662,18 +681,20 @@ class _GuideRailIndent extends StatelessWidget {
   Widget build(BuildContext context) {
     if (depth == 0) return child;
     final c = ThemeScope.of(context).colors;
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (var d = 0; d < depth; d++)
-            SizedBox(
-              width: 24,
-              child: Center(child: Container(width: 1, color: c.border)),
-            ),
-          Expanded(child: child),
-        ],
-      ),
+    return Stack(
+      children: [
+        for (var d = 0; d < depth; d++)
+          Positioned(
+            left: (d * 24) + 11.5,
+            top: 0,
+            bottom: 0,
+            child: Container(width: 1, color: c.border),
+          ),
+        Padding(
+          padding: EdgeInsets.only(left: depth * 24.0),
+          child: child,
+        ),
+      ],
     );
   }
 }
