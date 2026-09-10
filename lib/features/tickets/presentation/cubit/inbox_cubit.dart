@@ -87,6 +87,19 @@ class InboxCubit extends Cubit<InboxState> {
     return (model, provider);
   }
 
+  /// The current [state]'s history, whichever state it is — [InboxLoaded]'s
+  /// own, or whatever [InboxLaunching]/[InboxError] last carried forward, or
+  /// empty before the first successful [load]. Every `emit(InboxLaunching(
+  /// ...))`/`emit(InboxError(...))` site below reads this first so the
+  /// Recent section never loses a history it already had — see `AIO-2821`
+  /// and [InboxLaunching.history]'s own dartdoc.
+  List<Ticket> get _currentHistory => switch (state) {
+    InboxLoaded(:final history) => history,
+    InboxLaunching(:final history) => history,
+    InboxError(:final history) => history,
+    InboxInitial() || InboxLoading() => const [],
+  };
+
   /// Fetches every Inbox-spawned chat (`getTicketsByParent(null, types:
   /// [TicketType.chat])`, filtered defensively to `inboxPurpose != null`
   /// even though nothing else can currently produce a parentless chat),
@@ -117,7 +130,9 @@ class InboxCubit extends Cubit<InboxState> {
   /// `null` if the launch failed (in which case [InboxError] was
   /// emitted). Reloads [history] before returning either way.
   Future<String?> startBrainDump(String rawText) async {
-    emit(const InboxLaunching(InboxPurpose.brainDump));
+    emit(
+      InboxLaunching(InboxPurpose.brainDump, history: _currentHistory),
+    );
     try {
       final chat = await _createInboxChat(
         InboxPurpose.brainDump,
@@ -149,7 +164,7 @@ class InboxCubit extends Cubit<InboxState> {
       await load();
       return chat.id;
     } catch (e) {
-      emit(InboxError(e.toString()));
+      emit(InboxError(e.toString(), history: _currentHistory));
       return null;
     }
   }
@@ -162,7 +177,9 @@ class InboxCubit extends Cubit<InboxState> {
   /// response is advisory prose only. Returns the created chat ticket's
   /// id, or `null` on failure (see [startBrainDump]).
   Future<String?> startWhatNextGuidance() async {
-    emit(const InboxLaunching(InboxPurpose.whatNextGuidance));
+    emit(
+      InboxLaunching(InboxPurpose.whatNextGuidance, history: _currentHistory),
+    );
     try {
       final chat = await _createInboxChat(
         InboxPurpose.whatNextGuidance,
@@ -185,7 +202,7 @@ class InboxCubit extends Cubit<InboxState> {
       await load();
       return chat.id;
     } catch (e) {
-      emit(InboxError(e.toString()));
+      emit(InboxError(e.toString(), history: _currentHistory));
       return null;
     }
   }
@@ -200,7 +217,9 @@ class InboxCubit extends Cubit<InboxState> {
   /// the caller, per that method's own dartdoc). Returns the created chat
   /// ticket's id, or `null` on failure (see [startBrainDump]).
   Future<String?> startReleasePlanning() async {
-    emit(const InboxLaunching(InboxPurpose.releasePlanning));
+    emit(
+      InboxLaunching(InboxPurpose.releasePlanning, history: _currentHistory),
+    );
     try {
       final chat = await _createInboxChat(
         InboxPurpose.releasePlanning,
@@ -232,7 +251,7 @@ class InboxCubit extends Cubit<InboxState> {
       await load();
       return chat.id;
     } catch (e) {
-      emit(InboxError(e.toString()));
+      emit(InboxError(e.toString(), history: _currentHistory));
       return null;
     }
   }
@@ -300,13 +319,14 @@ class InboxCubit extends Cubit<InboxState> {
   /// directory). Returns the created chat ticket's id, or `null` on
   /// failure (see [startBrainDump]).
   Future<String?> startQa(String initialQuestion) async {
-    emit(const InboxLaunching(InboxPurpose.qa));
+    emit(InboxLaunching(InboxPurpose.qa, history: _currentHistory));
     final gitClient = _gitClient;
     final rootPath = _projectRootPath;
     if (gitClient == null || rootPath == null) {
       emit(
-        const InboxError(
+        InboxError(
           'Ask a question requires an open, git-tracked project directory.',
+          history: _currentHistory,
         ),
       );
       return null;
@@ -351,7 +371,7 @@ class InboxCubit extends Cubit<InboxState> {
       await load();
       return chat.id;
     } catch (e) {
-      emit(InboxError(e.toString()));
+      emit(InboxError(e.toString(), history: _currentHistory));
       return null;
     }
   }
