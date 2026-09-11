@@ -11082,36 +11082,33 @@ void main() {
       );
 
       blocTest<TicketsCubit, TicketsState>(
-        'a duplicate tool_use id failure on the implement turn triggers '
-        'one automatic handoff-and-retry (AIO-2828), which then succeeds',
+        'a duplicate tool_use id failure on the implement turn is retried '
+        'in place — same chat, no handoff — and succeeds on the retry '
+        '(AIO-2839)',
         build: buildCubit,
         setUp: () {
           var call = 0;
           when(() => agentClient.run(any())).thenAnswer((_) async {
             call++;
             return switch (call) {
-              // 1: implement turn — the known corrupted-chat 400.
+              // 1: implement turn — the known duplicate-tool_use-id 400.
               1 => Stream.fromIterable(const [
                 // Realistic wording — Anthropic quotes the field name in
                 // backticks; a naive literal match without them is exactly
-                // what let AIO-2828's recovery ship never actually firing
-                // (confirmed live against AIO-2819 on 2026-09-10).
+                // what let AIO-2828's original (now-replaced) recovery
+                // ship never actually firing (confirmed live against
+                // AIO-2819 on 2026-09-10).
                 AgentErrorEvent(
                   '400 {"type":"invalid_request_error","message":'
                   '"messages.1.content.3: `tool_use` ids must be unique"}',
                 ),
               ]),
-              // 2: _handoffExecutionChat's own summary turn.
+              // 2: implement retried in place — same chat — and succeeds.
               2 => Stream.fromIterable(const [
-                AgentTextEvent('Summary of what was done so far.'),
-                AgentDoneEvent(),
-              ]),
-              // 3: implement turn, retried against the fresh chat.
-              3 => Stream.fromIterable(const [
                 AgentTextEvent('Implemented.\n\nIMPLEMENTATION: DONE'),
                 AgentDoneEvent(),
               ]),
-              // 4: agentic verify turn.
+              // 3: agentic verify turn.
               _ => Stream.fromIterable(const [
                 AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
                 AgentDoneEvent(),
@@ -11122,7 +11119,68 @@ void main() {
         act: (cubit) => cubit.retryCodingExecution(taskNoStory),
         wait: const Duration(milliseconds: 50),
         verify: (_) {
-          verify(() => agentClient.run(any())).called(4);
+          verify(() => agentClient.run(any())).called(3);
+          // No handoff needed — the in-place retry alone recovered it, so
+          // no new chat is ever created.
+          verifyNever(() => repository.createTicket(any()));
+          verifyNever(
+            () => linkRepository.createLink(
+              sourceTicketId: any(named: 'sourceTicketId'),
+              targetTicketId: any(named: 'targetTicketId'),
+              linkType: TicketLinkType.relatesTo,
+            ),
+          );
+          verify(
+            () => gitHubClient.openPullRequest(
+              rootPath: any(named: 'rootPath'),
+              branch: any(named: 'branch'),
+              title: any(named: 'title'),
+              body: any(named: 'body'),
+            ),
+          ).called(1);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'a duplicate tool_use id failure recurring on every in-place '
+        'retry falls back to one automatic handoff-and-retry, which then '
+        'succeeds (AIO-2839)',
+        build: buildCubit,
+        setUp: () {
+          var call = 0;
+          when(() => agentClient.run(any())).thenAnswer((_) async {
+            call++;
+            const duplicateIdError = AgentErrorEvent(
+              '400 {"type":"invalid_request_error","message":'
+              '"messages.1.content.3: `tool_use` ids must be unique"}',
+            );
+            return switch (call) {
+              // 1-3: implement turn, then 2 in-place retries (the
+              // _duplicateToolUseIdRetryCap) — all fail identically,
+              // exhausting the in-place retry before any handoff.
+              1 || 2 || 3 => Stream.fromIterable(const [duplicateIdError]),
+              // 4: _handoffExecutionChat's own summary turn.
+              4 => Stream.fromIterable(const [
+                AgentTextEvent('Summary of what was done so far.'),
+                AgentDoneEvent(),
+              ]),
+              // 5: implement turn, retried against the fresh chat.
+              5 => Stream.fromIterable(const [
+                AgentTextEvent('Implemented.\n\nIMPLEMENTATION: DONE'),
+                AgentDoneEvent(),
+              ]),
+              // 6: agentic verify turn.
+              _ => Stream.fromIterable(const [
+                AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+                AgentDoneEvent(),
+              ]),
+            };
+          });
+        },
+        act: (cubit) => cubit.retryCodingExecution(taskNoStory),
+        wait: const Duration(milliseconds: 50),
+        verify: (_) {
+          verify(() => agentClient.run(any())).called(6);
           verify(() => repository.createTicket(any())).called(1);
           verify(
             () => linkRepository.createLink(
@@ -11146,41 +11204,34 @@ void main() {
       );
 
       blocTest<TicketsCubit, TicketsState>(
-        'the same duplicate tool_use id failure recurring on the fresh '
-        'handoff chat falls through to the normal failure path — no '
-        'second handoff (AIO-2828)',
+        'the same duplicate tool_use id failure recurring on every '
+        'in-place retry of both the original and the handoff chat falls '
+        'through to the normal failure path — no second handoff '
+        '(AIO-2839)',
         build: buildCubit,
         setUp: () {
           var call = 0;
           when(() => agentClient.run(any())).thenAnswer((_) async {
             call++;
+            const duplicateIdError = AgentErrorEvent(
+              '400 {"type":"invalid_request_error","message":'
+              '"messages.1.content.3: `tool_use` ids must be unique"}',
+            );
             return switch (call) {
-              1 => Stream.fromIterable(const [
-                // Realistic wording — Anthropic quotes the field name in
-                // backticks; a naive literal match without them is exactly
-                // what let AIO-2828's recovery ship never actually firing
-                // (confirmed live against AIO-2819 on 2026-09-10).
-                AgentErrorEvent(
-                  '400 {"type":"invalid_request_error","message":'
-                  '"messages.1.content.3: `tool_use` ids must be unique"}',
-                ),
-              ]),
-              2 => Stream.fromIterable(const [
+              // 1-3: implement turn + 2 in-place retries on the original
+              // chat — all fail, exhausting the in-place retry.
+              1 || 2 || 3 => Stream.fromIterable(const [duplicateIdError]),
+              // 4: _handoffExecutionChat's own summary turn — succeeds.
+              4 => Stream.fromIterable(const [
                 AgentTextEvent('Summary of what was done so far.'),
                 AgentDoneEvent(),
               ]),
-              // 3: implement retried against the fresh chat — the
-              // identical failure recurs.
-              _ => Stream.fromIterable(const [
-                // Realistic wording — Anthropic quotes the field name in
-                // backticks; a naive literal match without them is exactly
-                // what let AIO-2828's recovery ship never actually firing
-                // (confirmed live against AIO-2819 on 2026-09-10).
-                AgentErrorEvent(
-                  '400 {"type":"invalid_request_error","message":'
-                  '"messages.1.content.3: `tool_use` ids must be unique"}',
-                ),
-              ]),
+              // 5-7: implement turn + 2 in-place retries on the fresh
+              // handoff chat — the identical failure recurs every time,
+              // exhausting the in-place retry again. Recovery was already
+              // spent on this run, so this falls through rather than
+              // handing off a second time.
+              _ => Stream.fromIterable(const [duplicateIdError]),
             };
           });
         },
@@ -11196,9 +11247,10 @@ void main() {
               linkType: TicketLinkType.relatesTo,
             ),
           ).called(1);
-          // implement (fails) -> handoff summary -> implement retried on
-          // the fresh chat (fails again) -> stop. No verify turn, no PR.
-          verify(() => agentClient.run(any())).called(3);
+          // 3 (original chat, exhausting its in-place retry) + 1 (handoff
+          // summary) + 3 (fresh chat, exhausting its own in-place retry)
+          // -> stop. No verify turn, no PR.
+          verify(() => agentClient.run(any())).called(7);
           verifyNever(
             () => gitHubClient.openPullRequest(
               rootPath: any(named: 'rootPath'),
