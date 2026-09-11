@@ -20,6 +20,7 @@ class ProjectModel {
     required this.name,
     required this.storageKey,
     this.rootPath,
+    this.ticketsRootPath,
     required this.baselineVersion,
     required this.createdAtMillis,
     required this.lastOpenedAtMillis,
@@ -36,6 +37,11 @@ class ProjectModel {
 
   /// Real filesystem directory, desktop only. `null` on mobile/web.
   final String? rootPath;
+
+  /// Real filesystem directory for this project's ticket git repository,
+  /// when kept separate from [rootPath]. `null` when it isn't (the
+  /// default). See [Project.ticketsRootPath].
+  final String? ticketsRootPath;
 
   /// Pinned baseline version string.
   final String baselineVersion;
@@ -60,6 +66,7 @@ class ProjectModel {
       name: row.name,
       storageKey: row.storageKey,
       rootPath: row.rootPath,
+      ticketsRootPath: row.ticketsRootPath,
       baselineVersion: row.baselineVersion,
       createdAtMillis: row.createdAt,
       lastOpenedAtMillis: row.lastOpenedAt,
@@ -73,6 +80,7 @@ class ProjectModel {
       name: project.name,
       storageKey: project.storageKey,
       rootPath: project.rootPath,
+      ticketsRootPath: project.ticketsRootPath,
       baselineVersion: project.baselineVersion,
       createdAtMillis: project.createdAt.millisecondsSinceEpoch,
       lastOpenedAtMillis: project.lastOpenedAt.millisecondsSinceEpoch,
@@ -86,6 +94,7 @@ class ProjectModel {
       name: name,
       storageKey: storageKey,
       rootPath: rootPath,
+      ticketsRootPath: ticketsRootPath,
       baselineVersion: baselineVersion,
       createdAt: DateTime.fromMillisecondsSinceEpoch(createdAtMillis),
       lastOpenedAt: DateTime.fromMillisecondsSinceEpoch(lastOpenedAtMillis),
@@ -99,6 +108,7 @@ class ProjectModel {
       name: name,
       storageKey: storageKey,
       rootPath: Value(rootPath),
+      ticketsRootPath: Value(ticketsRootPath),
       baselineVersion: baselineVersion,
       createdAt: createdAtMillis,
       lastOpenedAt: lastOpenedAtMillis,

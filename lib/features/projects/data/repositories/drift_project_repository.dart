@@ -64,6 +64,19 @@ class DriftProjectRepository implements ProjectRepository {
   }
 
   @override
+  Future<void> updateTicketsRootPath(String id, String? path) async {
+    // Same explicit existence check as updateBaselineVersion, for the
+    // same reason — see that method's comment.
+    final existing = await getProject(id);
+    if (existing == null) {
+      throw StateError('Project $id does not exist');
+    }
+    await (_db.update(_db.projectsTable)..where((t) => t.id.equals(id))).write(
+      ProjectsTableCompanion(ticketsRootPath: Value(path)),
+    );
+  }
+
+  @override
   Future<void> removeProject(String id) async {
     await (_db.delete(_db.projectsTable)..where((t) => t.id.equals(id))).go();
   }

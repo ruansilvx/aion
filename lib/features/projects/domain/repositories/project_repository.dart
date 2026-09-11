@@ -40,6 +40,14 @@ abstract interface class ProjectRepository {
   /// @throws if [id] does not exist.
   Future<void> updateBaselineVersion(String id, String version);
 
+  /// Updates only the `ticketsRootPath` field of the project with id
+  /// [id] to [path]. Does not touch any other field. Pass `null` to
+  /// clear it (revert to keeping ticket git-projection under
+  /// `rootPath`). See `AIO-2845`.
+  ///
+  /// @throws if [id] does not exist.
+  Future<void> updateTicketsRootPath(String id, String? path);
+
   /// Removes the registry entry for project [id]. Does **not** delete the
   /// project's on-disk data (desktop) or storage namespace (mobile/web) — see
   /// `AIO-1174` §3.
