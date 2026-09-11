@@ -61,6 +61,17 @@ class Project extends Equatable {
     required this.lastOpenedAt,
   });
 
+  /// The path any ticket git-projection wiring should actually address
+  /// commands/writes to — [ticketsRootPath] when this project has one
+  /// set, otherwise [rootPath] (the pre-`AIO-2845` default, still fully
+  /// supported). `null` when both are `null` (mobile/web, or a desktop
+  /// project with no directory at all). Read this instead of [rootPath]
+  /// directly anywhere the intent is specifically "where do this
+  /// project's tickets live" — [rootPath] alone no longer answers that
+  /// once a project has opted into a separate [ticketsRootPath]. See
+  /// `AIO-2846`.
+  String? get ticketsGitRootPath => ticketsRootPath ?? rootPath;
+
   @override
   List<Object?> get props => [
     id,

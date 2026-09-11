@@ -5,13 +5,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:aion/features/projects/domain/entities/project.dart';
 
 void main() {
-  Project buildProject({String? ticketsRootPath}) {
+  Project buildProject({
+    String? rootPath = '/project/root',
+    String? ticketsRootPath,
+  }) {
     final now = DateTime(2026, 1, 1);
     return Project(
       id: '1',
       name: 'Test Project',
       storageKey: '1',
-      rootPath: '/project/root',
+      rootPath: rootPath,
       ticketsRootPath: ticketsRootPath,
       baselineVersion: '0.1.0',
       createdAt: now,
@@ -40,4 +43,21 @@ void main() {
       expect(a, isNot(equals(b)));
     },
   );
+
+  group('ticketsGitRootPath', () {
+    test('is null when both rootPath and ticketsRootPath are unset', () {
+      final project = buildProject(rootPath: null);
+      expect(project.ticketsGitRootPath, isNull);
+    });
+
+    test('falls back to rootPath when ticketsRootPath is unset', () {
+      final project = buildProject();
+      expect(project.ticketsGitRootPath, '/project/root');
+    });
+
+    test('prefers ticketsRootPath when both are set', () {
+      final project = buildProject(ticketsRootPath: '/tickets/repo');
+      expect(project.ticketsGitRootPath, '/tickets/repo');
+    });
+  });
 }

@@ -285,4 +285,129 @@ void main() {
     },
     timeout: const Timeout(Duration(minutes: 2)),
   );
+
+  testWidgets(
+    'the real TicketRepository the router provides projects a created '
+    'ticket into ticketsRootPath, not rootPath, when the active project '
+    'has both set (AIO-2846)',
+    (tester) async {
+      // `Directory.createTemp`/`Process.run` are real OS-level async
+      // work — issuing them here, outside `runAsync`'s real-time escape
+      // hatch, hangs forever against `flutter_test`'s fake-async clock
+      // (confirmed: this exact ordering timed out at 2 minutes). Every
+      // real-I/O step below happens inside `runAsync`.
+      late Directory ticketsRepoDir;
+      late Project projectWithTicketsRepo;
+      final activeProjectCubit = MockActiveProjectCubit();
+      var ticketProjected = false;
+      var sourceGotNoTickets = false;
+
+      await tester.runAsync(() async {
+        ticketsRepoDir = await Directory.systemTemp.createTemp(
+          'aion_app_router_test_tickets_repo_',
+        );
+        addTearDown(() async {
+          if (await ticketsRepoDir.exists()) {
+            await ticketsRepoDir.delete(recursive: true);
+          }
+        });
+        await Process.run(
+          'git',
+          ['init'],
+          workingDirectory: ticketsRepoDir.path,
+        );
+
+        projectWithTicketsRepo = Project(
+          id: project.id,
+          name: project.name,
+          storageKey: project.storageKey,
+          rootPath: project.rootPath,
+          ticketsRootPath: ticketsRepoDir.path,
+          baselineVersion: project.baselineVersion,
+          createdAt: project.createdAt,
+          lastOpenedAt: project.lastOpenedAt,
+        );
+        when(
+          () => activeProjectCubit.state,
+        ).thenReturn(ActiveProjectOpen(projectWithTicketsRepo));
+        when(
+          () => activeProjectCubit.stream,
+        ).thenAnswer((_) => const Stream<ActiveProjectState>.empty());
+
+        appRouter.go('/workspace/inbox');
+        await tester.pumpWidget(wrap(activeProjectCubit));
+        for (var i = 0; i < 20; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+          await tester.pump();
+        }
+
+        // Reads whatever TicketRepository WorkspaceShell's own provider
+        // tree actually constructed for this project — not a
+        // freshly-built one — so this genuinely exercises the
+        // `_rootPath`/`ticketsGitRootPath` wiring `app_router.dart`
+        // itself resolved, not a re-implementation of it.
+        final ticketRepository = tester
+            .element(find.byType(InboxScreen))
+            .read<TicketRepository>();
+
+        final now = DateTime.now();
+        await ticketRepository.createTicket(
+          Ticket(
+            id: 'ticket-for-tickets-repo-path-test',
+            ticketId: '',
+            type: TicketType.task,
+            title: 'Threaded to ticketsRootPath',
+            status: 'backlog',
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+        // The projection commit fires unawaited from
+        // GitProjectingTicketRepository, involving a real `git commit`
+        // subprocess — poll for the commit to actually land (not just
+        // the file to exist) before this test returns and its
+        // addTearDown deletes the directory out from under a
+        // still-in-flight `git commit`. Generous window (up to 30s):
+        // under a full parallel test-suite run this was observed flaky
+        // at 5-10s, reliable at 30s across repeated full-suite runs.
+        for (var i = 0; i < 300; i++) {
+          final log = await Process.run(
+            'git',
+            ['log', '--format=%s'],
+            workingDirectory: ticketsRepoDir.path,
+          );
+          if (log.stdout.toString().contains('ticket: AIO-1')) {
+            ticketProjected = true;
+            break;
+          }
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        }
+        sourceGotNoTickets = !await Directory(
+          '${tempDir.path}/tickets',
+        ).exists();
+      });
+
+      expect(
+        ticketProjected,
+        isTrue,
+        reason:
+            'the created ticket should be projected under ticketsRootPath',
+      );
+      expect(
+        sourceGotNoTickets,
+        isTrue,
+        reason:
+            'rootPath must receive no ticket git-projection at all when '
+            'ticketsRootPath is set',
+      );
+
+      await tester.pumpWidget(const SizedBox());
+    },
+    // Longer than this file's other two tests' timeout — this one polls
+    // for a real `git commit` subprocess to land, which under a full
+    // parallel test-suite run (many isolates competing for CPU/IO) can
+    // take noticeably longer than in isolation.
+    timeout: const Timeout(Duration(minutes: 3)),
+  );
 }

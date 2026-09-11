@@ -3,6 +3,7 @@ import 'dart:io' show Directory, File, Process, ProcessException;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:aion/core/core.dart';
 import 'package:aion/features/projects/projects.dart';
@@ -16,6 +17,8 @@ class MockTicketRepository extends Mock implements TicketRepository {}
 class MockTicketGitProjector extends Mock implements TicketGitProjector {}
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late MockTicketRepository inner;
   late MockTicketGitProjector projector;
   late GitProjectingTicketRepository repository;
@@ -511,4 +514,122 @@ void main() {
       },
     );
   });
+
+  group(
+    'constructed with a project\'s resolved ticketsGitRootPath (AIO-2846)',
+    () {
+      // Mirrors exactly how app_router.dart now wires this repository —
+      // constructed with Project.ticketsGitRootPath, not raw rootPath —
+      // against two *separate* real git repos, proving the resolved
+      // path (not the source rootPath) is where projection actually
+      // lands.
+      late AppDatabase database;
+      late Directory sourceRepoDir;
+      late Directory ticketsRepoDir;
+
+      setUp(() async {
+        SharedPreferences.setMockInitialValues({});
+        database = AppDatabase(
+          Project(
+            id: 'test-project',
+            name: 'Test Project',
+            storageKey: 'test-project',
+            baselineVersion: '0.1.0',
+            createdAt: DateTime(2024, 1, 1),
+            lastOpenedAt: DateTime(2024, 1, 1),
+          ),
+          NativeDatabase.memory(),
+        );
+        sourceRepoDir = await Directory.systemTemp.createTemp(
+          'git_projecting_ticket_repository_source_repo_test',
+        );
+        ticketsRepoDir = await Directory.systemTemp.createTemp(
+          'git_projecting_ticket_repository_tickets_repo_test',
+        );
+        await Process.run('git', ['init'], workingDirectory: sourceRepoDir.path);
+        await Process.run(
+          'git',
+          ['init'],
+          workingDirectory: ticketsRepoDir.path,
+        );
+      });
+
+      tearDown(() async {
+        await database.close();
+        await sourceRepoDir.delete(recursive: true);
+        await ticketsRepoDir.delete(recursive: true);
+      });
+
+      test(
+        'projects into ticketsRootPath, not rootPath, when the owning '
+        'project has both set',
+        () async {
+          final project = Project(
+            id: 'test-project',
+            name: 'Test Project',
+            storageKey: 'test-project',
+            rootPath: sourceRepoDir.path,
+            ticketsRootPath: ticketsRepoDir.path,
+            baselineVersion: '0.1.0',
+            createdAt: DateTime(2024, 1, 1),
+            lastOpenedAt: DateTime(2024, 1, 1),
+          );
+          final repository = GitProjectingTicketRepository(
+            DriftTicketRepository(database),
+            TicketGitProjector(
+              TicketMarkdownSerializer(),
+              GitRepositoryClient(),
+            ),
+            project.ticketsGitRootPath!,
+          );
+
+          await repository.createTicket(
+            Ticket(
+              id: 'ticket-1',
+              ticketId: '',
+              type: TicketType.task,
+              title: 'Test ticket',
+              status: 'backlog',
+              createdAt: DateTime.utc(2026),
+              updatedAt: DateTime.utc(2026),
+            ),
+          );
+          // createTicket's projection fires unawaited and involves a
+          // real `git commit` subprocess — poll for the commit to
+          // actually land rather than assuming one microtask-queue
+          // drain covers real OS-level process I/O.
+          var ticketsRepoLog = '';
+          for (var i = 0; i < 50; i++) {
+            ticketsRepoLog = (await Process.run('git', [
+              'log',
+              '--format=%s',
+            ], workingDirectory: ticketsRepoDir.path)).stdout.toString();
+            if (ticketsRepoLog.contains('ticket: AIO-1')) break;
+            await Future<void>.delayed(const Duration(milliseconds: 100));
+          }
+
+          expect(
+            await File('${ticketsRepoDir.path}/tickets/AIO-1.md').exists(),
+            isTrue,
+            reason: 'the ticket file should be written under ticketsRootPath',
+          );
+          expect(ticketsRepoLog, contains('ticket: AIO-1'));
+
+          expect(
+            await Directory('${sourceRepoDir.path}/tickets').exists(),
+            isFalse,
+            reason:
+                'rootPath (the source repo) must receive no ticket '
+                'git-projection at all when ticketsRootPath is set',
+          );
+          final sourceRepoLog = await Process.run(
+            'git',
+            ['log', '--format=%s'],
+            workingDirectory: sourceRepoDir.path,
+          );
+          expect(sourceRepoLog.stdout.toString().trim(), isEmpty);
+        },
+      );
+    },
+  );
 }
