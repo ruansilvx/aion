@@ -4220,26 +4220,95 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Fragments of Anthropic's `tool_use` id-collision 400 response, once
   /// [ChatCubit.runChatTurn] persists it into a chat's
-  /// `"Execution failed: ..."` comment. `AIO-2828`'s root cause
-  /// (`AnthropicMessagesApiClient._postOnce`'s pre-fix `blockOrder`
-  /// duplication) is already fixed for any *new* occurrence, but a chat
-  /// whose conversation state was already corrupted before that fix landed
-  /// keeps hitting this identically on every retry — see
-  /// [_recoverFromDuplicateToolUseIdFailure]. Checked as two separate
-  /// substrings rather than one, because the API's actual wording quotes
-  /// the field name in backticks (`` `tool_use` ids must be unique ``) —
-  /// a single literal-string match against `'tool_use ids must be unique'`
-  /// (no backticks) silently never matches live traffic; confirmed live
-  /// against AIO-2819's genuinely corrupted chat on 2026-09-10, where the
-  /// recovery this was meant to drive never fired for exactly this reason.
-  /// [ChatTurnFailure] carries no structured error code of its own — this
-  /// is [runChatTurn]'s only way to recognize it, from free-form persisted
-  /// comment text.
+  /// `"Execution failed: ..."` comment. Root-caused for `AIO-2839`: not a
+  /// corrupted-chat-state bug at all (`AIO-2828`'s original theory) — every
+  /// coding-execution turn already starts a brand-new, non-resumed Claude
+  /// Agent SDK session (`ChatCubit.runChatTurn`'s `AgentModelClient.run`
+  /// call never sets `resumeSessionId`), so there is no persisted session
+  /// for a chat handoff to actually escape. Live-tested against AIO-2817/
+  /// AIO-2819 on 2026-09-10 confirmed this: a brand-new handoff chat
+  /// reproduced the identical failure on its very first turn. The actual
+  /// cause is an upstream Claude Agent SDK/CLI bug (see AIO-2839's ticket
+  /// for citations) where a turn in which the model batches 2+ tool calls
+  /// into one response can emit colliding `tool_use` ids — an artifact of
+  /// that turn's own tool-call shape (more likely under this app's
+  /// headless, full-tool-access, `bypassPermissions` execution turns), not
+  /// of anything Aion persists. See [_runTurnRetryingDuplicateToolUseId]
+  /// (the primary recovery: retry the identical turn in place) and
+  /// [_recoverFromDuplicateToolUseIdFailure] (the last-resort fallback,
+  /// kept in case a task's own tool-call pattern is reliably deterministic
+  /// rather than just likely). Checked as two separate substrings rather
+  /// than one, because the API's actual wording quotes the field name in
+  /// backticks (`` `tool_use` ids must be unique ``) — a single literal-
+  /// string match against `'tool_use ids must be unique'` (no backticks)
+  /// silently never matches live traffic; confirmed live against AIO-2819's
+  /// chat on 2026-09-10, where the recovery this was meant to drive never
+  /// fired for exactly this reason. [ChatTurnFailure] carries no structured
+  /// error code of its own — this is [runChatTurn]'s only way to recognize
+  /// it, from free-form persisted comment text.
   static const _duplicateToolUseIdSignatureFragments = [
     'tool_use',
     'ids must be unique',
   ];
 
+  /// How many additional identical-turn attempts
+  /// [_runTurnRetryingDuplicateToolUseId] makes (beyond the first) before
+  /// giving up on retrying in place and letting its caller fall back to
+  /// [_recoverFromDuplicateToolUseIdFailure]. Small and fixed rather than
+  /// configurable — this is a defensive retry against an intermittent
+  /// upstream bug (AIO-2839), not a user-facing retry-confidence knob like
+  /// [_effectiveCodingExecutionRetryConfidence]'s.
+  static const _duplicateToolUseIdRetryCap = 2;
+
+  /// Runs one coding-execution turn via [runTurn] and, if it fails with the
+  /// duplicate-`tool_use`-id signature (see
+  /// [_duplicateToolUseIdSignatureFragments]), retries the identical turn —
+  /// same chat, same prompt, same worktree; [runTurn] is invoked again
+  /// unchanged — up to [_duplicateToolUseIdRetryCap] additional times before
+  /// returning the last (still-failing) result. Added for `AIO-2839`,
+  /// replacing a forced chat handoff as the primary recovery: since the
+  /// underlying cause is an intermittent upstream SDK/CLI bug tied to a
+  /// turn's own tool-call batching (see the signature constant's dartdoc),
+  /// re-running the exact same turn is both cheaper (no extra chat, no
+  /// extra worktree churn) and more honest about what might actually help
+  /// than starting over in a fresh chat. Returns immediately on
+  /// [ChatTurnSuccess]/[ChatTurnCancelled], or on any failure that doesn't
+  /// match the signature — this never retries a genuine, different failure.
+  /// [chatId] is only used to re-read the just-persisted failure comment
+  /// between attempts; it does not affect what [runTurn] itself does.
+  Future<ChatTurnResult> _runTurnRetryingDuplicateToolUseId(
+    String chatId,
+    Future<ChatTurnResult> Function() runTurn,
+  ) async {
+    for (var attempt = 0; ; attempt++) {
+      final result = await runTurn();
+      if (result is ChatTurnSuccess || result is ChatTurnCancelled) {
+        return result;
+      }
+      if (attempt >= _duplicateToolUseIdRetryCap) return result;
+      final lastComment = await _lastCommentContent(chatId);
+      if (lastComment == null ||
+          !_duplicateToolUseIdSignatureFragments.every(lastComment.contains)) {
+        return result;
+      }
+      // Matches the signature and retries remain — loop for another
+      // attempt at the identical turn.
+    }
+  }
+
+  /// Last-resort fallback once [_runTurnRetryingDuplicateToolUseId] has
+  /// already retried the identical turn [_duplicateToolUseIdRetryCap] times
+  /// and it still matches the duplicate-`tool_use`-id signature. Kept
+  /// distinct from AIO-2828's original theory (a genuinely fresh chat is
+  /// known, since AIO-2839, *not* to fix this — see
+  /// [_duplicateToolUseIdSignatureFragments]'s dartdoc) but retained in
+  /// case a given task's tool-call pattern turns out to be reliably
+  /// deterministic rather than just likely: a fresh chat at least gets a
+  /// re-assembled prompt (via [_assembleExecutionContext]'s handoff
+  /// framing), which *could* nudge the model away from repeating the exact
+  /// tool-call batching that triggered it, even though it carries no
+  /// session state the old theory thought it needed to shed.
+  ///
   /// Whether [chat]'s just-persisted failure comment (from the
   /// [ChatTurnFailure] its caller just got back) matches every fragment in
   /// [_duplicateToolUseIdSignatureFragments] — and if so, recovers by
@@ -4252,20 +4321,10 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// `continue` its loop with, or `null` if there's nothing to recover
   /// into — no match, or [_handoffExecutionChat] itself fell back to
   /// reusing the same (still-corrupted) chat, e.g. because its own summary
-  /// turn hard-failed too. `AIO-2828`: `retryCodingExecution` reuses a
-  /// task's existing execution chat rather than starting fresh, so a chat
-  /// corrupted before the `blockOrder` fix landed would otherwise fail this
-  /// exact way on every future retry, forever, regardless of how many
-  /// times a human clicks Retry — a fresh chat carries none of whatever
-  /// state actually caused it (this project's own reconstructed request
-  /// history, or the underlying agent session itself — the exact
-  /// mechanism was never conclusively pinned down, which is the point:
-  /// this recovery doesn't need to know). [_runCodingExecution] caps this
-  /// to one attempt per run (its own `duplicateToolUseIdRecoveryAttempted`
-  /// flag) — if the fresh chat hits the identical failure again, that's
-  /// new information (the trigger is tied to the *task*, not the *chat*),
-  /// and the run falls through to its normal failure handling rather than
-  /// looping.
+  /// turn hard-failed too. [_runCodingExecution] caps this to one attempt
+  /// per run (its own `duplicateToolUseIdRecoveryAttempted` flag) — if the
+  /// fresh chat hits the identical failure again, the run falls through to
+  /// its normal failure handling rather than looping.
   Future<(Ticket, String)?> _recoverFromDuplicateToolUseIdFailure(
     Ticket task,
     Ticket chat,
@@ -4606,33 +4665,42 @@ class TicketsCubit extends Cubit<TicketsState> {
 
       var attempt = 0;
       var verified = false;
-      // At most one automatic recovery per run — see
-      // _recoverFromDuplicateToolUseIdFailure's own dartdoc (AIO-2828).
+      // Each turn call below already retries itself in place on the
+      // duplicate-tool_use-id signature (see
+      // _runTurnRetryingDuplicateToolUseId) — this flag only gates the
+      // last-resort chat-handoff fallback if that still isn't enough, at
+      // most once per run. See _recoverFromDuplicateToolUseIdFailure's own
+      // dartdoc (AIO-2839).
       var duplicateToolUseIdRecoveryAttempted = false;
       while (true) {
         final (implementModel, implementProvider) =
             await _resolveModelAndProvider(ModelPhase.execution);
-        final implementRunId = _uuid.v4();
-        _inFlightRuns[task.id] = InFlightExecutionRun(
-          implementRunId,
-          implementProvider,
-        );
-        final implementResult = await ChatCubit.runChatTurn(
-          client: implementProvider.client,
-          provider: implementProvider,
-          commentRepo: commentRepo,
-          ticketRepository: _repository,
-          chatTicketId: chat.id,
-          prompt: prompt,
-          model: implementModel,
-          runId: implementRunId,
-          toolsEnabled: true,
-          workingDirectory: worktreePath,
-          onChunk: onChunk,
-          onToolUse: onToolUse,
-          onConsumptionSignal: onConsumptionSignal,
-          tools: executionTools,
-          onToolCall: executionOnToolCall,
+        final implementResult = await _runTurnRetryingDuplicateToolUseId(
+          chat.id,
+          () {
+            final implementRunId = _uuid.v4();
+            _inFlightRuns[task.id] = InFlightExecutionRun(
+              implementRunId,
+              implementProvider,
+            );
+            return ChatCubit.runChatTurn(
+              client: implementProvider.client,
+              provider: implementProvider,
+              commentRepo: commentRepo,
+              ticketRepository: _repository,
+              chatTicketId: chat.id,
+              prompt: prompt,
+              model: implementModel,
+              runId: implementRunId,
+              toolsEnabled: true,
+              workingDirectory: worktreePath,
+              onChunk: onChunk,
+              onToolUse: onToolUse,
+              onConsumptionSignal: onConsumptionSignal,
+              tools: executionTools,
+              onToolCall: executionOnToolCall,
+            );
+          },
         );
         if (implementResult is ChatTurnCancelled) {
           branchShouldSurvive = true;
@@ -4663,27 +4731,32 @@ class TicketsCubit extends Cubit<TicketsState> {
         final (verifyModel, verifyProvider) = await _resolveModelAndProvider(
           ModelPhase.execution,
         );
-        final verifyRunId = _uuid.v4();
-        _inFlightRuns[task.id] = InFlightExecutionRun(
-          verifyRunId,
-          verifyProvider,
-        );
-        final verifyResult = await ChatCubit.runChatTurn(
-          client: verifyProvider.client,
-          provider: verifyProvider,
-          commentRepo: commentRepo,
-          ticketRepository: _repository,
-          chatTicketId: chat.id,
-          prompt: verifyPrompt,
-          model: verifyModel,
-          runId: verifyRunId,
-          toolsEnabled: true,
-          workingDirectory: worktreePath,
-          onChunk: onChunk,
-          onToolUse: onToolUse,
-          onConsumptionSignal: onConsumptionSignal,
-          tools: executionTools,
-          onToolCall: executionOnToolCall,
+        final verifyResult = await _runTurnRetryingDuplicateToolUseId(
+          chat.id,
+          () {
+            final verifyRunId = _uuid.v4();
+            _inFlightRuns[task.id] = InFlightExecutionRun(
+              verifyRunId,
+              verifyProvider,
+            );
+            return ChatCubit.runChatTurn(
+              client: verifyProvider.client,
+              provider: verifyProvider,
+              commentRepo: commentRepo,
+              ticketRepository: _repository,
+              chatTicketId: chat.id,
+              prompt: verifyPrompt,
+              model: verifyModel,
+              runId: verifyRunId,
+              toolsEnabled: true,
+              workingDirectory: worktreePath,
+              onChunk: onChunk,
+              onToolUse: onToolUse,
+              onConsumptionSignal: onConsumptionSignal,
+              tools: executionTools,
+              onToolCall: executionOnToolCall,
+            );
+          },
         );
         if (verifyResult is ChatTurnCancelled) {
           branchShouldSurvive = true;
