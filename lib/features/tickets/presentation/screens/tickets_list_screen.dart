@@ -61,7 +61,6 @@ class TicketsListScreen extends StatefulWidget {
 }
 
 class _TicketsListScreenState extends State<TicketsListScreen> {
-
   /// Whether to show [CodebaseAnalysisBanner] — set once in [initState]
   /// from `ActiveProjectProvider.offerCodebaseAnalysis`, then owned
   /// locally so dismissing it doesn't depend on the provider's state
@@ -225,9 +224,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
   /// of the "what project is active" cross-feature contract Pattern 1
   /// covers.
   Future<void> _loadBaselineUpgradeTargetVersion() async {
-    final versions = await context
-        .read<BaselineRepository>()
-        .getAvailableBaselineVersions();
+    final versions = await context.read<BaselineRepository>().getAvailableBaselineVersions();
     if (!mounted) return;
     setState(() => _baselineUpgradeTargetVersion = versions.last);
   }
@@ -323,9 +320,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
     };
     if (tickets == null) return _lastKnownTickets;
     final filtered = tickets
-        .where(
-          (t) => t.type != TicketType.resource && t.type != TicketType.page,
-        )
+        .where((t) => t.type != TicketType.resource && t.type != TicketType.page)
         .toList();
     _lastKnownTickets = filtered;
     return filtered;
@@ -348,21 +343,11 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
   };
 
   /// Narrows [tickets] to whatever `TicketsCubit.currentViewMode` actually
-  /// renders as selectable rows/cards — the board view shows story/task/bug
-  /// types by default, but respects explicit type filters. "Select all" while
-  /// on the board must not silently include ids for tickets that have no
-  /// checkbox on screen.
+  /// renders as selectable rows/cards — the board view shows all tickets.
+  /// "Select all" while on the board will include all visible tickets.
   List<Ticket> _visibleTickets(List<Ticket> tickets) {
-    if (context.read<TicketsCubit>().currentViewMode ==
-        TicketListViewMode.board) {
-      final selectedTypes = context.read<TicketsCubit>().selectedTypes;
-      if (selectedTypes.isEmpty) {
-        // No type filter: show default board-compatible types
-        return tickets
-            .where((t) => t.type == TicketType.story || t.type.isExecutable)
-            .toList();
-      }
-      // Type filter applied: show all tickets (already filtered by search)
+    if (context.read<TicketsCubit>().currentViewMode == TicketListViewMode.board) {
+      // Board view shows all tickets - no type filtering
       return tickets;
     }
     return tickets;
@@ -372,10 +357,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
   /// via [showAppConfirmDialog], and — if confirmed — trashes every id in
   /// [selectedIds] via [TicketsCubit.trashTickets]. Shared onDelete
   /// handler for [TicketSelectionBar].
-  Future<void> _confirmAndTrashSelection(
-    BuildContext context,
-    Set<String> selectedIds,
-  ) async {
+  Future<void> _confirmAndTrashSelection(BuildContext context, Set<String> selectedIds) async {
     final ids = selectedIds.toList();
     final total = await context.read<TicketsCubit>().previewTrashCount(ids);
     if (!context.mounted) return;
@@ -397,11 +379,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
   /// write is a plain field edit with no cascade, matching how a
   /// single-ticket status edit today also has no confirmation step.
   /// Shared `onChangeStatus` handler for [TicketSelectionBar].
-  void _bulkChangeStatus(
-    BuildContext context,
-    Set<String> ids,
-    String status,
-  ) {
+  void _bulkChangeStatus(BuildContext context, Set<String> ids, String status) {
     context.read<TicketsCubit>().updateStatusForTickets(ids.toList(), status);
   }
 
@@ -409,15 +387,8 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
   /// [TicketsCubit.updatePriorityForTickets]. No confirmation dialog, same
   /// rationale as [_bulkChangeStatus]. Shared `onChangePriority` handler
   /// for [TicketSelectionBar].
-  void _bulkChangePriority(
-    BuildContext context,
-    Set<String> ids,
-    TicketPriority priority,
-  ) {
-    context.read<TicketsCubit>().updatePriorityForTickets(
-      ids.toList(),
-      priority,
-    );
+  void _bulkChangePriority(BuildContext context, Set<String> ids, TicketPriority priority) {
+    context.read<TicketsCubit>().updatePriorityForTickets(ids.toList(), priority);
   }
 
   @override
@@ -428,10 +399,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
     return BlocListener<TicketsCubit, TicketsState>(
       listener: (context, state) {
         if (state is TicketsBatchTrashed) {
-          AppToast.show(
-            context,
-            context.l10n.ticketBulkTrashSummaryToast(state.trashedCount),
-          );
+          AppToast.show(context, context.l10n.ticketBulkTrashSummaryToast(state.trashedCount));
           context.read<TicketSelectionCubit>().clear();
         } else if (state is TicketsBatchStatusUpdated) {
           AppToast.show(
@@ -445,10 +413,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
           );
           context.read<TicketSelectionCubit>().clear();
         } else if (state is TicketsBatchPriorityUpdated) {
-          AppToast.show(
-            context,
-            context.l10n.ticketBulkPrioritySummaryToast(state.updatedCount),
-          );
+          AppToast.show(context, context.l10n.ticketBulkPrioritySummaryToast(state.updatedCount));
           context.read<TicketSelectionCubit>().clear();
         }
       },
@@ -476,9 +441,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                         children: [
                           Text(
                             context.l10n.ticketsListEyebrow,
-                            style: AionText.caption.copyWith(
-                              color: c.textMuted,
-                            ),
+                            style: AionText.caption.copyWith(color: c.textMuted),
                           ),
                           const SizedBox(height: AionSpacing.sp4),
                           Row(
@@ -486,15 +449,10 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                               Expanded(
                                 child: Text(
                                   context.l10n.ticketsListTitle,
-                                  style: AionText.h1.copyWith(
-                                    color: c.textPrimary,
-                                  ),
+                                  style: AionText.h1.copyWith(color: c.textPrimary),
                                 ),
                               ),
-                              _ViewModeToggle(
-                                mode: viewMode,
-                                onChanged: _handleViewModeChanged,
-                              ),
+                              _ViewModeToggle(mode: viewMode, onChanged: _handleViewModeChanged),
                               if (tickets.isNotEmpty) ...[
                                 const SizedBox(width: AionSpacing.sp8),
                                 const _SelectModeToggle(),
@@ -505,8 +463,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                         ],
                       ),
                     ),
-                    if (_showBaselineUpgradeOffer &&
-                        _baselineUpgradeTargetVersion != null)
+                    if (_showBaselineUpgradeOffer && _baselineUpgradeTargetVersion != null)
                       Padding(
                         padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
                         child: BaselineUpgradeBanner(
@@ -515,17 +472,14 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                               .activeProject!
                               .baselineVersion,
                           targetVersion: _baselineUpgradeTargetVersion!,
-                          onDismiss: () =>
-                              setState(() => _showBaselineUpgradeOffer = false),
+                          onDismiss: () => setState(() => _showBaselineUpgradeOffer = false),
                         ),
                       ),
                     if (_showCodebaseAnalysisOffer)
                       Padding(
                         padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
                         child: CodebaseAnalysisBanner(
-                          onDismiss: () => setState(
-                            () => _showCodebaseAnalysisOffer = false,
-                          ),
+                          onDismiss: () => setState(() => _showCodebaseAnalysisOffer = false),
                         ),
                       ),
                     Padding(
@@ -533,10 +487,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                       child: Column(
                         children: [
                           AnimatedBuilder(
-                            animation: Listenable.merge([
-                              _searchController,
-                              _searchFocusNode,
-                            ]),
+                            animation: Listenable.merge([_searchController, _searchFocusNode]),
                             builder: (context, _) {
                               return AppTextField(
                                 controller: _searchController,
@@ -547,9 +498,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                                   size: 18,
                                   color: _searchFocusNode.hasFocus
                                       ? c.primary
-                                      : (_searchController.text
-                                                .trim()
-                                                .isNotEmpty
+                                      : (_searchController.text.trim().isNotEmpty
                                             ? c.textSecondary
                                             : c.textMuted),
                                 ),
@@ -558,12 +507,9 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                           ),
                           const SizedBox(height: 10),
                           _TicketFilterAndSortSection(
-                            hasActiveQuery: _searchController.text
-                                .trim()
-                                .isNotEmpty,
+                            hasActiveQuery: _searchController.text.trim().isNotEmpty,
                             viewMode: viewMode,
-                            onToggleColumnVisibility:
-                                _handleColumnVisibilityToggled,
+                            onToggleColumnVisibility: _handleColumnVisibilityToggled,
                           ),
                         ],
                       ),
@@ -574,26 +520,14 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                         color: c.surface,
                         child: DecoratedBox(
                           decoration: BoxDecoration(
-                            border: Border(
-                              top: BorderSide(color: c.border, width: 1),
-                            ),
+                            border: Border(top: BorderSide(color: c.border, width: 1)),
                           ),
                           child: switch (state) {
-                            TicketsLoading() => const Center(
-                              child: AppSpinner(),
-                            ),
-                            TicketTrashing() => const Center(
-                              child: AppSpinner(),
-                            ),
-                            TicketsBatchTrashing() => const Center(
-                              child: AppSpinner(),
-                            ),
-                            TicketsBatchStatusUpdating() => const Center(
-                              child: AppSpinner(),
-                            ),
-                            TicketsBatchPriorityUpdating() => const Center(
-                              child: AppSpinner(),
-                            ),
+                            TicketsLoading() => const Center(child: AppSpinner()),
+                            TicketTrashing() => const Center(child: AppSpinner()),
+                            TicketsBatchTrashing() => const Center(child: AppSpinner()),
+                            TicketsBatchStatusUpdating() => const Center(child: AppSpinner()),
+                            TicketsBatchPriorityUpdating() => const Center(child: AppSpinner()),
                             TicketsError(:final message, reason: null) =>
                               // Unclassified only — a genuine "the list
                               // itself failed to load" error with nothing
@@ -615,9 +549,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                                   children: [
                                     Text(
                                       message,
-                                      style: AionText.body.copyWith(
-                                        color: c.textSecondary,
-                                      ),
+                                      style: AionText.body.copyWith(color: c.textSecondary),
                                     ),
                                     const SizedBox(height: AionSpacing.sp12),
                                     AppButton(
@@ -642,9 +574,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                               transitionBuilder: (child, anim) =>
                                   FadeTransition(opacity: anim, child: child),
                               child: KeyedSubtree(
-                                key: ValueKey(
-                                  tickets.map((t) => t.id).join(','),
-                                ),
+                                key: ValueKey(tickets.map((t) => t.id).join(',')),
                                 child: _TicketsBody(
                                   tickets: tickets,
                                   state: state,
@@ -665,9 +595,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                   Positioned(
                     right: 18,
                     bottom: 24,
-                    child: AppFab(
-                      onTap: () => context.go('/workspace/tickets/new'),
-                    ),
+                    child: AppFab(onTap: () => context.go('/workspace/tickets/new')),
                   )
                 else
                   Positioned(
@@ -678,28 +606,16 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                       selectedCount: selection.selectedIds.length,
                       allSelected:
                           visibleTickets.isNotEmpty &&
-                          visibleTickets.every(
-                            (t) => selection.selectedIds.contains(t.id),
-                          ),
-                      onCancel: () =>
-                          context.read<TicketSelectionCubit>().clear(),
-                      onSelectAll: () => context
-                          .read<TicketSelectionCubit>()
-                          .selectAll(visibleTickets.map((t) => t.id).toList()),
-                      onChangeStatus: (status) => _bulkChangeStatus(
-                        context,
-                        selection.selectedIds,
-                        status,
+                          visibleTickets.every((t) => selection.selectedIds.contains(t.id)),
+                      onCancel: () => context.read<TicketSelectionCubit>().clear(),
+                      onSelectAll: () => context.read<TicketSelectionCubit>().selectAll(
+                        visibleTickets.map((t) => t.id).toList(),
                       ),
-                      onChangePriority: (priority) => _bulkChangePriority(
-                        context,
-                        selection.selectedIds,
-                        priority,
-                      ),
-                      onDelete: () => _confirmAndTrashSelection(
-                        context,
-                        selection.selectedIds,
-                      ),
+                      onChangeStatus: (status) =>
+                          _bulkChangeStatus(context, selection.selectedIds, status),
+                      onChangePriority: (priority) =>
+                          _bulkChangePriority(context, selection.selectedIds, priority),
+                      onDelete: () => _confirmAndTrashSelection(context, selection.selectedIds),
                     ),
                   ),
                 if (viewMode == TicketListViewMode.board &&
@@ -710,8 +626,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                     bottom: 24,
                     child: _BoardLoadMoreButton(
                       isLoading: state is TicketsLoadingMore,
-                      onTap: () =>
-                          context.read<TicketsCubit>().loadMoreTickets(),
+                      onTap: () => context.read<TicketsCubit>().loadMoreTickets(),
                     ),
                   ),
               ],
@@ -779,10 +694,7 @@ class _TicketsBody extends StatelessWidget {
                 Text(
                   context.l10n.ticketsListNoResultsState,
                   textAlign: TextAlign.center,
-                  style: AionText.body.copyWith(
-                    color: c.textPrimary,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: AionText.body.copyWith(color: c.textPrimary, fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 6),
                 Text(
@@ -804,29 +716,11 @@ class _TicketsBody extends StatelessWidget {
     }
 
     if (viewMode == TicketListViewMode.board) {
-      // When no type filter is applied, show all ticket types that are
-      // compatible with board view (story/task/bug). When a type filter is
-      // explicitly selected, show only those types to allow viewing other
-      // types like epic or chat on the board if the user chooses.
-      final selectedTypes = context.read<TicketsCubit>().selectedTypes;
-      List<Ticket> boardTickets;
-
-      if (selectedTypes.isEmpty) {
-        // No type filter: show default board-compatible types
-        boardTickets = tickets
-            .where(
-              (ticket) =>
-                  ticket.type == TicketType.story || ticket.type.isExecutable,
-            )
-            .toList();
-      } else {
-        // Type filter applied: show all tickets (filters already respect the
-        // selected types from the search)
-        boardTickets = tickets;
-      }
-
+      // Show all tickets on the board view - no implicit type filtering.
+      // The board view displays all tickets returned by the search,
+      // regardless of type, when no explicit type filter is applied.
       return TicketBoardView(
-        tickets: boardTickets,
+        tickets: tickets,
         hiddenStatuses: context.read<TicketsCubit>().hiddenBoardColumns,
       );
     }
@@ -840,8 +734,7 @@ class _TicketsBody extends StatelessWidget {
       child: ListView.separated(
         controller: scrollController,
         itemCount: tickets.length + (showFooter ? 1 : 0),
-        separatorBuilder: (context, index) =>
-            Container(color: c.border, height: 1),
+        separatorBuilder: (context, index) => Container(color: c.border, height: 1),
         itemBuilder: (context, index) {
           if (index >= tickets.length) {
             return _TicketListFooter(
@@ -896,9 +789,7 @@ class AppFab extends StatelessWidget {
                 const SizedBox(width: AionSpacing.sp8),
                 Text(
                   context.l10n.commonNewTicket,
-                  style: AionText.button.copyWith(
-                    color: const Color(0xFFFFFFFF),
-                  ),
+                  style: AionText.button.copyWith(color: const Color(0xFFFFFFFF)),
                 ),
               ],
             ),
@@ -983,11 +874,7 @@ class _ViewModeIcon extends StatelessWidget {
             ),
             child: Padding(
               padding: const EdgeInsets.all(6),
-              child: PhosphorIcon(
-                icon,
-                size: 18,
-                color: isActive ? c.primary : c.textMuted,
-              ),
+              child: PhosphorIcon(icon, size: 18, color: isActive ? c.primary : c.textMuted),
             ),
           ),
         ),
@@ -1027,16 +914,9 @@ class _SelectModeToggleState extends State<_SelectModeToggle> {
         : isActive
         ? c.primarySubtle
         : (_isHovered ? c.surfaceHover : const Color(0x00000000));
-    final iconColor = isActive
-        ? c.primary
-        : (_isHovered ? c.textPrimary : c.textSecondary);
+    final iconColor = isActive ? c.primary : (_isHovered ? c.textPrimary : c.textSecondary);
     final boxShadow = _isFocused
-        ? [
-            BoxShadow(
-              color: c.primary.withValues(alpha: t.isDark ? 0.30 : 0.16),
-              spreadRadius: 3,
-            ),
-          ]
+        ? [BoxShadow(color: c.primary.withValues(alpha: t.isDark ? 0.30 : 0.16), spreadRadius: 3)]
         : const <BoxShadow>[];
 
     return Semantics(
@@ -1075,11 +955,7 @@ class _SelectModeToggleState extends State<_SelectModeToggle> {
                   width: 37,
                   height: 37,
                   child: Center(
-                    child: PhosphorIcon(
-                      PhosphorIcons.checkSquareLight,
-                      size: 20,
-                      color: iconColor,
-                    ),
+                    child: PhosphorIcon(PhosphorIcons.checkSquareLight, size: 20, color: iconColor),
                   ),
                 ),
               ),
@@ -1134,12 +1010,10 @@ class _TicketFilterAndSortSection extends StatefulWidget {
   final ValueChanged<String> onToggleColumnVisibility;
 
   @override
-  State<_TicketFilterAndSortSection> createState() =>
-      _TicketFilterAndSortSectionState();
+  State<_TicketFilterAndSortSection> createState() => _TicketFilterAndSortSectionState();
 }
 
-class _TicketFilterAndSortSectionState
-    extends State<_TicketFilterAndSortSection> {
+class _TicketFilterAndSortSectionState extends State<_TicketFilterAndSortSection> {
   bool _isPopoverOpen = false;
   bool _isTriggerFocused = false;
 
@@ -1170,13 +1044,8 @@ class _TicketFilterAndSortSectionState
     // status chips (design.md §5/§6 — the popovers each derive their own
     // copy of this same order internally via
     // `resolveSharedStatusOrder`).
-    final statusOrder = resolveSharedStatusOrder(
-      context.watch<WorkflowConfigCubit>().state,
-    );
-    final activeCount =
-        selectedStatuses.length +
-        selectedTypes.length +
-        selectedPriorities.length;
+    final statusOrder = resolveSharedStatusOrder(context.watch<WorkflowConfigCubit>().state);
+    final activeCount = selectedStatuses.length + selectedTypes.length + selectedPriorities.length;
     final hasChips = activeCount > 0;
     final currentSort = cubit.currentSort;
     final hiddenColumns = cubit.hiddenBoardColumns;
@@ -1198,13 +1067,9 @@ class _TicketFilterAndSortSectionState
               selectedPriorities: selectedPriorities,
               onToggleStatus: context.read<TicketsCubit>().toggleStatusFilter,
               onToggleType: context.read<TicketsCubit>().toggleTypeFilter,
-              onTogglePriority: context
-                  .read<TicketsCubit>()
-                  .togglePriorityFilter,
-              onOpenChanged: (isOpen) =>
-                  setState(() => _isPopoverOpen = isOpen),
-              onFocusChanged: (isFocused) =>
-                  setState(() => _isTriggerFocused = isFocused),
+              onTogglePriority: context.read<TicketsCubit>().togglePriorityFilter,
+              onOpenChanged: (isOpen) => setState(() => _isPopoverOpen = isOpen),
+              onFocusChanged: (isFocused) => setState(() => _isTriggerFocused = isFocused),
             ),
             const SizedBox(width: AionSpacing.sp8),
             TicketSortPopover(
@@ -1216,10 +1081,8 @@ class _TicketFilterAndSortSectionState
               currentSort: currentSort,
               hasActiveQuery: widget.hasActiveQuery,
               onSortSelected: _handleSortSelected,
-              onOpenChanged: (isOpen) =>
-                  setState(() => _isSortPopoverOpen = isOpen),
-              onFocusChanged: (isFocused) =>
-                  setState(() => _isSortTriggerFocused = isFocused),
+              onOpenChanged: (isOpen) => setState(() => _isSortPopoverOpen = isOpen),
+              onFocusChanged: (isFocused) => setState(() => _isSortTriggerFocused = isFocused),
             ),
             if (widget.viewMode == TicketListViewMode.board) ...[
               const SizedBox(width: AionSpacing.sp8),
@@ -1231,10 +1094,8 @@ class _TicketFilterAndSortSectionState
                 ),
                 hiddenStatuses: hiddenColumns,
                 onToggleColumn: widget.onToggleColumnVisibility,
-                onOpenChanged: (isOpen) =>
-                    setState(() => _isColumnsPopoverOpen = isOpen),
-                onFocusChanged: (isFocused) =>
-                    setState(() => _isColumnsTriggerFocused = isFocused),
+                onOpenChanged: (isOpen) => setState(() => _isColumnsPopoverOpen = isOpen),
+                onFocusChanged: (isFocused) => setState(() => _isColumnsTriggerFocused = isFocused),
               ),
             ],
           ],
@@ -1255,32 +1116,26 @@ class _TicketFilterAndSortSectionState
               ])
                 AppFilterChip(
                   label: ticketStatusLabel(context, s),
-                  onRemove: () =>
-                      context.read<TicketsCubit>().toggleStatusFilter(s),
-                  removeSemanticsLabel: context.l10n
-                      .ticketsListFilterChipRemoveSemantics(
-                        ticketStatusLabel(context, s),
-                      ),
+                  onRemove: () => context.read<TicketsCubit>().toggleStatusFilter(s),
+                  removeSemanticsLabel: context.l10n.ticketsListFilterChipRemoveSemantics(
+                    ticketStatusLabel(context, s),
+                  ),
                 ),
               for (final t in selectedTypes)
                 AppFilterChip(
                   label: ticketTypeLabel(context, t),
-                  onRemove: () =>
-                      context.read<TicketsCubit>().toggleTypeFilter(t),
-                  removeSemanticsLabel: context.l10n
-                      .ticketsListFilterChipRemoveSemantics(
-                        ticketTypeLabel(context, t),
-                      ),
+                  onRemove: () => context.read<TicketsCubit>().toggleTypeFilter(t),
+                  removeSemanticsLabel: context.l10n.ticketsListFilterChipRemoveSemantics(
+                    ticketTypeLabel(context, t),
+                  ),
                 ),
               for (final p in selectedPriorities)
                 AppFilterChip(
                   label: ticketPriorityLabel(context, p),
-                  onRemove: () =>
-                      context.read<TicketsCubit>().togglePriorityFilter(p),
-                  removeSemanticsLabel: context.l10n
-                      .ticketsListFilterChipRemoveSemantics(
-                        ticketPriorityLabel(context, p),
-                      ),
+                  onRemove: () => context.read<TicketsCubit>().togglePriorityFilter(p),
+                  removeSemanticsLabel: context.l10n.ticketsListFilterChipRemoveSemantics(
+                    ticketPriorityLabel(context, p),
+                  ),
                 ),
             ],
           ),
@@ -1362,9 +1217,7 @@ class _FilterTriggerButtonState extends State<_FilterTriggerButton> {
     final Color border = isActive
         ? c.primary
         : (showRing ? c.primary : (_isHovered ? c.borderStrong : c.border));
-    final Color foreground = isActive
-        ? c.primary
-        : (showRing ? c.primary : c.textSecondary);
+    final Color foreground = isActive ? c.primary : (showRing ? c.primary : c.textSecondary);
     final Color labelColor = isActive || showRing
         ? (isActive ? c.primary : c.textPrimary)
         : c.textPrimary;
@@ -1387,9 +1240,7 @@ class _FilterTriggerButtonState extends State<_FilterTriggerButton> {
             boxShadow: showRing
                 ? [
                     BoxShadow(
-                      color: c.primary.withValues(
-                        alpha: t.isDark ? 0.30 : 0.16,
-                      ),
+                      color: c.primary.withValues(alpha: t.isDark ? 0.30 : 0.16),
                       spreadRadius: 3,
                     ),
                   ]
@@ -1398,11 +1249,7 @@ class _FilterTriggerButtonState extends State<_FilterTriggerButton> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              PhosphorIcon(
-                PhosphorIcons.funnelLight,
-                size: 16,
-                color: foreground,
-              ),
+              PhosphorIcon(PhosphorIcons.funnelLight, size: 16, color: foreground),
               const SizedBox(width: 8),
               Text(
                 context.l10n.ticketsListFilterTriggerLabel,
@@ -1421,10 +1268,7 @@ class _FilterTriggerButtonState extends State<_FilterTriggerButton> {
                       vertical: 1,
                     ),
                     child: ConstrainedBox(
-                      constraints: const BoxConstraints(
-                        minWidth: 18,
-                        minHeight: 18,
-                      ),
+                      constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
                       child: Center(
                         child: Text(
                           '${widget.activeCount}',
@@ -1514,18 +1358,13 @@ class _SortTriggerButtonState extends State<_SortTriggerButton> {
     final Color border = isActive
         ? c.primary
         : (showRing ? c.primary : (_isHovered ? c.borderStrong : c.border));
-    final Color foreground = isActive
-        ? c.primary
-        : (showRing ? c.primary : c.textSecondary);
+    final Color foreground = isActive ? c.primary : (showRing ? c.primary : c.textSecondary);
     final Color labelColor = isActive || showRing
         ? (isActive ? c.primary : c.textPrimary)
         : c.textPrimary;
 
     final fieldLabel = ticketSortFieldLabel(context, widget.currentSort.field);
-    final triggerFieldLabel = _triggerFieldLabel(
-      context,
-      widget.currentSort.field,
-    );
+    final triggerFieldLabel = _triggerFieldLabel(context, widget.currentSort.field);
 
     return Semantics(
       button: true,
@@ -1545,9 +1384,7 @@ class _SortTriggerButtonState extends State<_SortTriggerButton> {
             boxShadow: showRing
                 ? [
                     BoxShadow(
-                      color: c.primary.withValues(
-                        alpha: t.isDark ? 0.30 : 0.16,
-                      ),
+                      color: c.primary.withValues(alpha: t.isDark ? 0.30 : 0.16),
                       spreadRadius: 3,
                     ),
                   ]
@@ -1556,17 +1393,11 @@ class _SortTriggerButtonState extends State<_SortTriggerButton> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              PhosphorIcon(
-                PhosphorIcons.arrowsDownUpLight,
-                size: 16,
-                color: foreground,
-              ),
+              PhosphorIcon(PhosphorIcons.arrowsDownUpLight, size: 16, color: foreground),
               const SizedBox(width: 8),
               Text(
                 isActive
-                    ? context.l10n.ticketsListSortTriggerActiveLabel(
-                        triggerFieldLabel,
-                      )
+                    ? context.l10n.ticketsListSortTriggerActiveLabel(triggerFieldLabel)
                     : context.l10n.ticketsListSortTriggerLabel,
                 style: AionText.button.copyWith(color: labelColor),
               ),
@@ -1655,18 +1486,14 @@ class _ColumnsTriggerButtonState extends State<_ColumnsTriggerButton> {
     final Color border = isActive
         ? c.primary
         : (showRing ? c.primary : (_isHovered ? c.borderStrong : c.border));
-    final Color foreground = isActive
-        ? c.primary
-        : (showRing ? c.primary : c.textSecondary);
+    final Color foreground = isActive ? c.primary : (showRing ? c.primary : c.textSecondary);
     final Color labelColor = isActive || showRing
         ? (isActive ? c.primary : c.textPrimary)
         : c.textPrimary;
 
     return Semantics(
       button: true,
-      label: context.l10n.ticketsListColumnsTriggerSemantics(
-        widget.hiddenCount,
-      ),
+      label: context.l10n.ticketsListColumnsTriggerSemantics(widget.hiddenCount),
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         onEnter: (_) => setState(() => _isHovered = true),
@@ -1682,9 +1509,7 @@ class _ColumnsTriggerButtonState extends State<_ColumnsTriggerButton> {
             boxShadow: showRing
                 ? [
                     BoxShadow(
-                      color: c.primary.withValues(
-                        alpha: t.isDark ? 0.30 : 0.16,
-                      ),
+                      color: c.primary.withValues(alpha: t.isDark ? 0.30 : 0.16),
                       spreadRadius: 3,
                     ),
                   ]
@@ -1693,11 +1518,7 @@ class _ColumnsTriggerButtonState extends State<_ColumnsTriggerButton> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              PhosphorIcon(
-                PhosphorIcons.columnsLight,
-                size: 16,
-                color: foreground,
-              ),
+              PhosphorIcon(PhosphorIcons.columnsLight, size: 16, color: foreground),
               const SizedBox(width: 8),
               Text(
                 context.l10n.ticketsListColumnsTriggerLabel,
@@ -1716,10 +1537,7 @@ class _ColumnsTriggerButtonState extends State<_ColumnsTriggerButton> {
                       vertical: 1,
                     ),
                     child: ConstrainedBox(
-                      constraints: const BoxConstraints(
-                        minWidth: 18,
-                        minHeight: 18,
-                      ),
+                      constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
                       child: Center(
                         child: Text(
                           '${widget.hiddenCount}',
@@ -1807,16 +1625,9 @@ class _LoadMoreRetryRowState extends State<_LoadMoreRetryRow> {
 
     final fill = _isPressed
         ? c.danger.withValues(alpha: t.fillAlpha + 0.06)
-        : (_isHovered
-              ? c.danger.withValues(alpha: t.fillAlpha)
-              : const Color(0x00000000));
+        : (_isHovered ? c.danger.withValues(alpha: t.fillAlpha) : const Color(0x00000000));
     final boxShadow = _isFocused
-        ? [
-            BoxShadow(
-              color: c.danger.withValues(alpha: t.isDark ? 0.30 : 0.16),
-              spreadRadius: 3,
-            ),
-          ]
+        ? [BoxShadow(color: c.danger.withValues(alpha: t.isDark ? 0.30 : 0.16), spreadRadius: 3)]
         : const <BoxShadow>[];
 
     return Semantics(
@@ -1845,10 +1656,7 @@ class _LoadMoreRetryRowState extends State<_LoadMoreRetryRow> {
               scale: _isPressed ? 0.98 : 1.0,
               duration: const Duration(milliseconds: 80),
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 12,
-                  horizontal: 16,
-                ),
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     color: fill,
@@ -1856,19 +1664,12 @@ class _LoadMoreRetryRowState extends State<_LoadMoreRetryRow> {
                     boxShadow: boxShadow,
                   ),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 8,
-                      horizontal: 12,
-                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       mainAxisSize: MainAxisSize.max,
                       children: [
-                        PhosphorIcon(
-                          PhosphorIcons.arrowClockwiseLight,
-                          size: 16,
-                          color: c.danger,
-                        ),
+                        PhosphorIcon(PhosphorIcons.arrowClockwiseLight, size: 16, color: c.danger),
                         const SizedBox(width: 9),
                         Text(
                           context.l10n.ticketsListLoadMoreRetry,
@@ -1944,12 +1745,7 @@ class _BoardLoadMoreButtonState extends State<_BoardLoadMoreButton> {
             ),
           ];
     final focusRing = _isFocused
-        ? [
-            BoxShadow(
-              color: c.primary.withValues(alpha: t.isDark ? 0.30 : 0.16),
-              spreadRadius: 3,
-            ),
-          ]
+        ? [BoxShadow(color: c.primary.withValues(alpha: t.isDark ? 0.30 : 0.16), spreadRadius: 3)]
         : const <BoxShadow>[];
 
     return Semantics(
@@ -1985,10 +1781,7 @@ class _BoardLoadMoreButtonState extends State<_BoardLoadMoreButton> {
                   boxShadow: [...restingShadow, ...focusRing],
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 12,
-                    horizontal: 18,
-                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 18),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.center,
@@ -2036,12 +1829,9 @@ class TicketListTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = ThemeScope.of(context);
     final c = t.colors;
-    final isSelectionActive = context.select(
-      (TicketSelectionCubit cubit) => cubit.state.isActive,
-    );
+    final isSelectionActive = context.select((TicketSelectionCubit cubit) => cubit.state.isActive);
     final isSelected = context.select(
-      (TicketSelectionCubit cubit) =>
-          cubit.state.selectedIds.contains(ticket.id),
+      (TicketSelectionCubit cubit) => cubit.state.selectedIds.contains(ticket.id),
     );
 
     void handleTap() {
@@ -2069,9 +1859,7 @@ class TicketListTile extends StatelessWidget {
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: isSelected ? c.primarySubtle : c.surface,
-              border: isSelected
-                  ? Border(left: BorderSide(color: c.primary, width: 3))
-                  : null,
+              border: isSelected ? Border(left: BorderSide(color: c.primary, width: 3)) : null,
             ),
             child: Padding(
               padding: isSelectionActive
@@ -2085,9 +1873,7 @@ class TicketListTile extends StatelessWidget {
                       if (isSelectionActive) ...[
                         AppCheckbox(
                           value: isSelected,
-                          onChanged: (_) => context
-                              .read<TicketSelectionCubit>()
-                              .toggle(ticket.id),
+                          onChanged: (_) => context.read<TicketSelectionCubit>().toggle(ticket.id),
                         ),
                         const SizedBox(width: AionSpacing.sp12),
                       ],
@@ -2097,16 +1883,10 @@ class TicketListTile extends StatelessWidget {
                           borderRadius: BorderRadius.circular(5),
                         ),
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           child: Text(
                             ticket.ticketId,
-                            style: AionText.key.copyWith(
-                              color: c.textSecondary,
-                              fontSize: 10.5,
-                            ),
+                            style: AionText.key.copyWith(color: c.textSecondary, fontSize: 10.5),
                           ),
                         ),
                       ),
@@ -2114,9 +1894,7 @@ class TicketListTile extends StatelessWidget {
                       Expanded(
                         child: Text(
                           ticket.title,
-                          style: AionText.cardTitle.copyWith(
-                            color: c.textPrimary,
-                          ),
+                          style: AionText.cardTitle.copyWith(color: c.textPrimary),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -2138,8 +1916,7 @@ class TicketListTile extends StatelessWidget {
                       const SizedBox(width: AionSpacing.sp12),
                       StatusIndicator(status: ticket.status),
                       LinkCountLabel(ticketId: ticket.id),
-                      if (ticket.estimateRollup != null ||
-                          ticket.timeSpentRollup != null) ...[
+                      if (ticket.estimateRollup != null || ticket.timeSpentRollup != null) ...[
                         const Spacer(),
                         RollupBadge(ticket: ticket, onSelectedRow: isSelected),
                       ],
@@ -2184,19 +1961,14 @@ class PriorityBadge extends StatelessWidget {
     };
 
     return DecoratedBox(
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(5),
-      ),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(5)),
       child: Padding(
         padding: isRow
             ? const EdgeInsets.symmetric(horizontal: 7, vertical: 3)
             : const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
         child: Text(
           ticketPriorityLabel(context, priority).toUpperCase(),
-          style: (isRow ? AionText.prioritySm : AionText.priorityBig).copyWith(
-            color: fg,
-          ),
+          style: (isRow ? AionText.prioritySm : AionText.priorityBig).copyWith(color: fg),
         ),
       ),
     );
@@ -2276,11 +2048,7 @@ class LinkCountLabel extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              PhosphorIcon(
-                PhosphorIcons.linkLight,
-                size: 11,
-                color: c.textMuted,
-              ),
+              PhosphorIcon(PhosphorIcons.linkLight, size: 11, color: c.textMuted),
               const SizedBox(width: 3),
               Text(
                 '$count',
@@ -2351,9 +2119,7 @@ class RollupBadge extends StatelessWidget {
       decoration: BoxDecoration(
         color: onSelectedRow ? c.surface : c.neutralTint(t.isDark),
         borderRadius: BorderRadius.all(AionRadius.sm),
-        border: onSelectedRow
-            ? Border.all(color: c.neutralBorderTint(t.isDark), width: 1)
-            : null,
+        border: onSelectedRow ? Border.all(color: c.neutralBorderTint(t.isDark), width: 1) : null,
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(6, 2, 7, 2),
@@ -2365,10 +2131,7 @@ class RollupBadge extends StatelessWidget {
             const SizedBox(width: 5),
             Text(
               formatRollupMinutes(minutes),
-              style: AionText.key.copyWith(
-                fontSize: 10.5,
-                color: c.textSecondary,
-              ),
+              style: AionText.key.copyWith(fontSize: 10.5, color: c.textSecondary),
             ),
           ],
         ),
