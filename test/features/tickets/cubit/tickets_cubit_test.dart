@@ -11092,7 +11092,14 @@ void main() {
             return switch (call) {
               // 1: implement turn — the known corrupted-chat 400.
               1 => Stream.fromIterable(const [
-                AgentErrorEvent('400 tool_use ids must be unique'),
+                // Realistic wording — Anthropic quotes the field name in
+                // backticks; a naive literal match without them is exactly
+                // what let AIO-2828's recovery ship never actually firing
+                // (confirmed live against AIO-2819 on 2026-09-10).
+                AgentErrorEvent(
+                  '400 {"type":"invalid_request_error","message":'
+                  '"messages.1.content.3: `tool_use` ids must be unique"}',
+                ),
               ]),
               // 2: _handoffExecutionChat's own summary turn.
               2 => Stream.fromIterable(const [
@@ -11149,7 +11156,14 @@ void main() {
             call++;
             return switch (call) {
               1 => Stream.fromIterable(const [
-                AgentErrorEvent('400 tool_use ids must be unique'),
+                // Realistic wording — Anthropic quotes the field name in
+                // backticks; a naive literal match without them is exactly
+                // what let AIO-2828's recovery ship never actually firing
+                // (confirmed live against AIO-2819 on 2026-09-10).
+                AgentErrorEvent(
+                  '400 {"type":"invalid_request_error","message":'
+                  '"messages.1.content.3: `tool_use` ids must be unique"}',
+                ),
               ]),
               2 => Stream.fromIterable(const [
                 AgentTextEvent('Summary of what was done so far.'),
@@ -11158,7 +11172,14 @@ void main() {
               // 3: implement retried against the fresh chat — the
               // identical failure recurs.
               _ => Stream.fromIterable(const [
-                AgentErrorEvent('400 tool_use ids must be unique'),
+                // Realistic wording — Anthropic quotes the field name in
+                // backticks; a naive literal match without them is exactly
+                // what let AIO-2828's recovery ship never actually firing
+                // (confirmed live against AIO-2819 on 2026-09-10).
+                AgentErrorEvent(
+                  '400 {"type":"invalid_request_error","message":'
+                  '"messages.1.content.3: `tool_use` ids must be unique"}',
+                ),
               ]),
             };
           });
