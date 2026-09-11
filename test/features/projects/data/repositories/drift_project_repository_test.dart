@@ -99,6 +99,36 @@ void main() {
     );
   });
 
+  test(
+    'updateTicketsRootPath changes only the ticketsRootPath field',
+    () async {
+      await repository.createProject(buildProject(id: '1'));
+
+      await repository.updateTicketsRootPath('1', '/tickets/repo');
+      final found = await repository.getProject('1');
+
+      expect(found!.ticketsRootPath, '/tickets/repo');
+      expect(found.name, 'Test Project');
+    },
+  );
+
+  test('updateTicketsRootPath can clear the field back to null', () async {
+    await repository.createProject(buildProject(id: '1'));
+    await repository.updateTicketsRootPath('1', '/tickets/repo');
+
+    await repository.updateTicketsRootPath('1', null);
+    final found = await repository.getProject('1');
+
+    expect(found!.ticketsRootPath, isNull);
+  });
+
+  test('updateTicketsRootPath throws for an unknown id', () async {
+    expect(
+      () => repository.updateTicketsRootPath('missing', '/tickets/repo'),
+      throwsStateError,
+    );
+  });
+
   test('removeProject deletes the registry entry', () async {
     await repository.createProject(buildProject(id: '1'));
     await repository.removeProject('1');
