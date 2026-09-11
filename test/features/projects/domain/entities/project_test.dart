@@ -24,15 +24,12 @@ void main() {
     expect(project.ticketsRootPath, isNull);
   });
 
-  test(
-    'two projects with the same ticketsRootPath are equal',
-    () {
-      final a = buildProject(ticketsRootPath: '/tickets/repo');
-      final b = buildProject(ticketsRootPath: '/tickets/repo');
+  test('two projects with the same ticketsRootPath are equal', () {
+    final a = buildProject(ticketsRootPath: '/tickets/repo');
+    final b = buildProject(ticketsRootPath: '/tickets/repo');
 
-      expect(a, equals(b));
-    },
-  );
+    expect(a, equals(b));
+  });
 
   test(
     'two otherwise-identical projects with different ticketsRootPath are not equal',

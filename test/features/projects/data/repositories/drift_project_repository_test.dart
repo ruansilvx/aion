@@ -82,15 +82,18 @@ void main() {
     expect(found.name, 'Test Project');
   });
 
-  test('updateBaselineVersion changes only the baselineVersion field', () async {
-    await repository.createProject(buildProject(id: '1'));
+  test(
+    'updateBaselineVersion changes only the baselineVersion field',
+    () async {
+      await repository.createProject(buildProject(id: '1'));
 
-    await repository.updateBaselineVersion('1', '0.3.0');
-    final found = await repository.getProject('1');
+      await repository.updateBaselineVersion('1', '0.3.0');
+      final found = await repository.getProject('1');
 
-    expect(found!.baselineVersion, '0.3.0');
-    expect(found.name, 'Test Project');
-  });
+      expect(found!.baselineVersion, '0.3.0');
+      expect(found.name, 'Test Project');
+    },
+  );
 
   test('updateBaselineVersion throws for an unknown id', () async {
     expect(
