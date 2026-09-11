@@ -4218,22 +4218,32 @@ class TicketsCubit extends Cubit<TicketsState> {
     return (newChat, summary);
   }
 
-  /// The exact substring Anthropic's `tool_use ids must be unique` 400
-  /// response surfaces as once [ChatCubit.runChatTurn] persists it into a
-  /// chat's `"Execution failed: ..."` comment. `AIO-2828`'s root cause
+  /// Fragments of Anthropic's `tool_use` id-collision 400 response, once
+  /// [ChatCubit.runChatTurn] persists it into a chat's
+  /// `"Execution failed: ..."` comment. `AIO-2828`'s root cause
   /// (`AnthropicMessagesApiClient._postOnce`'s pre-fix `blockOrder`
   /// duplication) is already fixed for any *new* occurrence, but a chat
   /// whose conversation state was already corrupted before that fix landed
   /// keeps hitting this identically on every retry — see
-  /// [_recoverFromDuplicateToolUseIdFailure]. A plain substring match, not a
-  /// structured error code: [ChatTurnFailure] carries no message of its own,
-  /// and `runChatTurn` only ever surfaces this as free-form persisted
+  /// [_recoverFromDuplicateToolUseIdFailure]. Checked as two separate
+  /// substrings rather than one, because the API's actual wording quotes
+  /// the field name in backticks (`` `tool_use` ids must be unique ``) —
+  /// a single literal-string match against `'tool_use ids must be unique'`
+  /// (no backticks) silently never matches live traffic; confirmed live
+  /// against AIO-2819's genuinely corrupted chat on 2026-09-10, where the
+  /// recovery this was meant to drive never fired for exactly this reason.
+  /// [ChatTurnFailure] carries no structured error code of its own — this
+  /// is [runChatTurn]'s only way to recognize it, from free-form persisted
   /// comment text.
-  static const _duplicateToolUseIdSignature = 'tool_use ids must be unique';
+  static const _duplicateToolUseIdSignatureFragments = [
+    'tool_use',
+    'ids must be unique',
+  ];
 
   /// Whether [chat]'s just-persisted failure comment (from the
-  /// [ChatTurnFailure] its caller just got back) matches
-  /// [_duplicateToolUseIdSignature] — and if so, recovers by forcing an
+  /// [ChatTurnFailure] its caller just got back) matches every fragment in
+  /// [_duplicateToolUseIdSignatureFragments] — and if so, recovers by
+  /// forcing an
   /// unconditional handoff to a fresh, linked execution chat (via
   /// [_handoffExecutionChat], bypassing [_resolveExecutionChat]'s normal
   /// over-cap gate) and re-seeding it with a fresh system-comment context,
@@ -4262,7 +4272,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   ) async {
     final lastComment = await _lastCommentContent(chat.id);
     if (lastComment == null ||
-        !lastComment.contains(_duplicateToolUseIdSignature)) {
+        !_duplicateToolUseIdSignatureFragments.every(lastComment.contains)) {
       return null;
     }
 
