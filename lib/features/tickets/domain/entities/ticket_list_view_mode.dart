@@ -10,7 +10,7 @@ enum TicketListViewMode {
   /// The flat, chronologically-sortable `ListView` of every ticket.
   list,
 
-  /// `TicketBoardView`, grouped by status and filtered to task/story
+  /// `TicketBoardView`, grouped by status and filtered to task/story/bug/idea
   /// tickets.
   board,
 }

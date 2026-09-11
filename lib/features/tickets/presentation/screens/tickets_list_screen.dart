@@ -348,7 +348,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
   };
 
   /// Narrows [tickets] to whatever `TicketsCubit.currentViewMode` actually
-  /// renders as selectable rows/cards — the board view shows story/task/bug
+  /// renders as selectable rows/cards — the board view shows story/task/bug/idea
   /// types by default, but respects explicit type filters. "Select all" while
   /// on the board must not silently include ids for tickets that have no
   /// checkbox on screen.
@@ -359,7 +359,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
       if (selectedTypes.isEmpty) {
         // No type filter: show default board-compatible types
         return tickets
-            .where((t) => t.type == TicketType.story || t.type.isExecutable)
+            .where((t) => t.type == TicketType.story || t.type.isExecutable || t.type == TicketType.idea)
             .toList();
       }
       // Type filter applied: show all tickets (already filtered by search)
@@ -805,7 +805,7 @@ class _TicketsBody extends StatelessWidget {
 
     if (viewMode == TicketListViewMode.board) {
       // When no type filter is applied, show all ticket types that are
-      // compatible with board view (story/task/bug). When a type filter is
+      // compatible with board view (story/task/bug/idea). When a type filter is
       // explicitly selected, show only those types to allow viewing other
       // types like epic or chat on the board if the user chooses.
       final selectedTypes = context.read<TicketsCubit>().selectedTypes;
@@ -816,7 +816,7 @@ class _TicketsBody extends StatelessWidget {
         boardTickets = tickets
             .where(
               (ticket) =>
-                  ticket.type == TicketType.story || ticket.type.isExecutable,
+                  ticket.type == TicketType.story || ticket.type.isExecutable || ticket.type == TicketType.idea,
             )
             .toList();
       } else {
