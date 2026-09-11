@@ -166,10 +166,11 @@ final appRouter = GoRouter(
               BlocProvider<TrashCubit>(
                 create: (context) => TrashCubit(
                   context.read<TicketRepository>(),
-                  gitProjector: _activeProject(context).rootPath != null
+                  gitProjector:
+                      _activeProject(context).ticketsGitRootPath != null
                       ? context.read<TicketGitProjector>()
                       : null,
-                  projectRootPath: _activeProject(context).rootPath,
+                  projectRootPath: _activeProject(context).ticketsGitRootPath,
                   sortRepository: context.read<TicketListSortRepository>(),
                   projectId: _activeProject(context).id,
                 )..load(),
@@ -210,10 +211,10 @@ final appRouter = GoRouter(
               context.read<TicketLinkRepository>(),
               context.read<ProviderRegistry>(),
               context.read<ModelRoutingRepository>(),
-              gitClient: _activeProject(context).rootPath != null
+              gitClient: _activeProject(context).ticketsGitRootPath != null
                   ? context.read<GitRepositoryClient>()
                   : null,
-              projectRootPath: _activeProject(context).rootPath,
+              projectRootPath: _activeProject(context).ticketsGitRootPath,
             ),
             child: const InboxScreen(),
           ),
@@ -540,11 +541,16 @@ class _WorkspaceShellState extends State<WorkspaceShell>
     with WidgetsBindingObserver {
   late final AppDatabase _database = AppDatabase(widget.project);
 
-  /// Non-null only on desktop with a resolved project directory — the
-  /// same gate `CreateProjectCubit._initializeDesktopProject` uses for
-  /// git-backed version history at all (see proposal.md's Non-goals:
-  /// mobile/web project-scoped git history is a separate, unbuilt gap).
-  String? get _rootPath => isDesktop ? widget.project.rootPath : null;
+  /// Non-null only on desktop with a resolved ticket git-projection
+  /// directory — the same gate `CreateProjectCubit
+  /// ._initializeDesktopProject` uses for git-backed version history at
+  /// all (see proposal.md's Non-goals: mobile/web project-scoped git
+  /// history is a separate, unbuilt gap). Reads
+  /// [Project.ticketsGitRootPath] (falls back to `rootPath` when the
+  /// project has no separate tickets repo configured — see `AIO-2846`)
+  /// rather than `rootPath` directly, since every consumer below wants
+  /// specifically "where do this project's tickets live".
+  String? get _rootPath => isDesktop ? widget.project.ticketsGitRootPath : null;
 
   TicketMarkdownWatcherService? _watcherService;
 
