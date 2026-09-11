@@ -26,6 +26,14 @@ class Project extends Equatable {
   /// isolated purely by [storageKey].
   final String? rootPath;
 
+  /// Real filesystem directory for this project's *ticket* git
+  /// repository, when it's kept separate from [rootPath] — same
+  /// nullability contract as [rootPath] (desktop-only, `null` on
+  /// mobile/web). `null` also for the (default, still-supported) case of
+  /// a project that keeps its ticket git-projection under `rootPath`
+  /// itself, same as before this field existed. See `AIO-2845`.
+  final String? ticketsRootPath;
+
   /// The pinned baseline version this project was created against (e.g.
   /// `"0.1.0"`). The legitimate post-creation write path is
   /// `ActiveProjectCubit.acceptBaselineUpgrade`, which bumps this to the
@@ -47,6 +55,7 @@ class Project extends Equatable {
     required this.name,
     required this.storageKey,
     this.rootPath,
+    this.ticketsRootPath,
     required this.baselineVersion,
     required this.createdAt,
     required this.lastOpenedAt,
@@ -58,6 +67,7 @@ class Project extends Equatable {
     name,
     storageKey,
     rootPath,
+    ticketsRootPath,
     baselineVersion,
     createdAt,
     lastOpenedAt,

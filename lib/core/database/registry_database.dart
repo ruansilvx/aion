@@ -27,6 +27,14 @@ class ProjectsTable extends Table {
   /// Real filesystem directory, desktop only. `null` on mobile/web.
   TextColumn get rootPath => text().named('root_path').nullable()();
 
+  /// Real filesystem directory for this project's ticket git repository,
+  /// when it's kept separate from [rootPath]. Same nullability contract
+  /// as [rootPath] — `null` on mobile/web, and `null` on desktop too for
+  /// the (default, still-supported) case of a project that keeps its
+  /// ticket git-projection under [rootPath] itself. See `AIO-2845`.
+  TextColumn get ticketsRootPath =>
+      text().named('tickets_root_path').nullable()();
+
   /// Pinned baseline version string (e.g. `"0.1.0"`).
   TextColumn get baselineVersion => text().named('baseline_version')();
 
@@ -68,9 +76,15 @@ class RegistryDatabase extends _$RegistryDatabase {
     : super(executor ?? _openRegistryConnection());
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
-  MigrationStrategy get migration =>
-      MigrationStrategy(onCreate: (Migrator m) async => m.createAll());
+  MigrationStrategy get migration => MigrationStrategy(
+    onCreate: (Migrator m) async => m.createAll(),
+    onUpgrade: (Migrator m, int from, int to) async {
+      if (from < 2) {
+        await m.addColumn(projectsTable, projectsTable.ticketsRootPath);
+      }
+    },
+  );
 }
