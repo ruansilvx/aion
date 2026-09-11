@@ -4218,6 +4218,89 @@ class TicketsCubit extends Cubit<TicketsState> {
     return (newChat, summary);
   }
 
+  /// The exact substring Anthropic's `tool_use ids must be unique` 400
+  /// response surfaces as once [ChatCubit.runChatTurn] persists it into a
+  /// chat's `"Execution failed: ..."` comment. `AIO-2828`'s root cause
+  /// (`AnthropicMessagesApiClient._postOnce`'s pre-fix `blockOrder`
+  /// duplication) is already fixed for any *new* occurrence, but a chat
+  /// whose conversation state was already corrupted before that fix landed
+  /// keeps hitting this identically on every retry — see
+  /// [_recoverFromDuplicateToolUseIdFailure]. A plain substring match, not a
+  /// structured error code: [ChatTurnFailure] carries no message of its own,
+  /// and `runChatTurn` only ever surfaces this as free-form persisted
+  /// comment text.
+  static const _duplicateToolUseIdSignature = 'tool_use ids must be unique';
+
+  /// Whether [chat]'s just-persisted failure comment (from the
+  /// [ChatTurnFailure] its caller just got back) matches
+  /// [_duplicateToolUseIdSignature] — and if so, recovers by forcing an
+  /// unconditional handoff to a fresh, linked execution chat (via
+  /// [_handoffExecutionChat], bypassing [_resolveExecutionChat]'s normal
+  /// over-cap gate) and re-seeding it with a fresh system-comment context,
+  /// exactly as [_runCodingExecution]'s own top-of-run setup does for
+  /// [chat] itself. Returns the `(newChat, newPrompt)` the caller should
+  /// `continue` its loop with, or `null` if there's nothing to recover
+  /// into — no match, or [_handoffExecutionChat] itself fell back to
+  /// reusing the same (still-corrupted) chat, e.g. because its own summary
+  /// turn hard-failed too. `AIO-2828`: `retryCodingExecution` reuses a
+  /// task's existing execution chat rather than starting fresh, so a chat
+  /// corrupted before the `blockOrder` fix landed would otherwise fail this
+  /// exact way on every future retry, forever, regardless of how many
+  /// times a human clicks Retry — a fresh chat carries none of whatever
+  /// state actually caused it (this project's own reconstructed request
+  /// history, or the underlying agent session itself — the exact
+  /// mechanism was never conclusively pinned down, which is the point:
+  /// this recovery doesn't need to know). [_runCodingExecution] caps this
+  /// to one attempt per run (its own `duplicateToolUseIdRecoveryAttempted`
+  /// flag) — if the fresh chat hits the identical failure again, that's
+  /// new information (the trigger is tied to the *task*, not the *chat*),
+  /// and the run falls through to its normal failure handling rather than
+  /// looping.
+  Future<(Ticket, String)?> _recoverFromDuplicateToolUseIdFailure(
+    Ticket task,
+    Ticket chat,
+  ) async {
+    final lastComment = await _lastCommentContent(chat.id);
+    if (lastComment == null ||
+        !lastComment.contains(_duplicateToolUseIdSignature)) {
+      return null;
+    }
+
+    final (recoveredChat, handoffSummary) = await _handoffExecutionChat(
+      task,
+      chat,
+    );
+    // _handoffExecutionChat's own dartdoc: every fallback path (no
+    // ProviderRegistry/CommentRepository, its summary turn hard-failing,
+    // or the new chat's create write failing to persist) returns
+    // `(oldChat, null)` — a null summary is that method's own documented
+    // "nothing to recover into" signal, more robust here than comparing
+    // ids (a genuinely fresh chat always gets a new UUID in production,
+    // but a null summary is unambiguous either way).
+    if (recoveredChat == null || handoffSummary == null) {
+      return null;
+    }
+
+    final prompt = await _assembleExecutionContext(
+      task,
+      handoffSummary: handoffSummary,
+      handoffReason: 'hit a provider error that a fresh chat avoids',
+    );
+    final commentRepo = _commentRepository;
+    if (commentRepo != null) {
+      await commentRepo.addComment(
+        TicketComment(
+          id: '',
+          ticketId: recoveredChat.id,
+          content: prompt,
+          authorType: CommentAuthorType.system,
+          createdAt: DateTime.now(),
+        ),
+      );
+    }
+    return (recoveredChat, prompt);
+  }
+
   /// Renders [comments] (a chat's full history, oldest first — matches
   /// [CommentRepository.getCommentsForTicket]'s own ordering) as a plain
   /// transcript for the handoff-summary prompt: one `[authorType]` line per
@@ -4347,6 +4430,15 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// `TicketsLoaded.executionTokenTotals`'s dartdoc for how that running total
   /// then surfaces. Added for `AIO-2455`.
   ///
+  /// If an implement/verify turn hard-fails with the exact `tool_use ids
+  /// must be unique` signature (see [_recoverFromDuplicateToolUseIdFailure]),
+  /// automatically forces one fresh-chat handoff and retries from the
+  /// implement turn against it, entirely transparently — no toast, no
+  /// distinct failure surfaced, just a normal retry from the caller's
+  /// perspective. At most one such recovery per run; a second occurrence
+  /// (on the fresh chat) falls through to the ordinary hard-failure path
+  /// below instead of looping. Added for `AIO-2828`.
+  ///
   /// Right after the worktree is created and before the implement turn's
   /// prompt is assembled, detects the project's stack via
   /// [ProjectStackDetector.detect] (called fresh at execution time, not the
@@ -4406,8 +4498,8 @@ class TicketsCubit extends Cubit<TicketsState> {
     // on every other exit path matters.
     var branchShouldSurvive = false;
 
-    final (chat, handoffSummary) = await _resolveExecutionChat(task);
-    if (chat == null) {
+    final (initialChat, handoffSummary) = await _resolveExecutionChat(task);
+    if (initialChat == null) {
       _inFlightExecutionIds.remove(task.id);
       _inFlightRuns.remove(task.id);
       _refreshInFlightBoardState();
@@ -4416,6 +4508,9 @@ class TicketsCubit extends Cubit<TicketsState> {
       unawaited(_tryStartNextQueuedExecutions());
       return;
     }
+    // Reassigned at most once below, by _recoverFromDuplicateToolUseIdFailure
+    // — see AIO-2828.
+    var chat = initialChat;
 
     // Created only once every early-return above is behind us — this used
     // to run before the `chat == null` check and leak an empty temp
@@ -4501,6 +4596,9 @@ class TicketsCubit extends Cubit<TicketsState> {
 
       var attempt = 0;
       var verified = false;
+      // At most one automatic recovery per run — see
+      // _recoverFromDuplicateToolUseIdFailure's own dartdoc (AIO-2828).
+      var duplicateToolUseIdRecoveryAttempted = false;
       while (true) {
         final (implementModel, implementProvider) =
             await _resolveModelAndProvider(ModelPhase.execution);
@@ -4534,6 +4632,17 @@ class TicketsCubit extends Cubit<TicketsState> {
         if (implementResult is! ChatTurnSuccess) {
           // A hard error (API failure, thrown exception) — `runChatTurn`
           // already persisted an "Execution failed: ..." comment itself.
+          if (!duplicateToolUseIdRecoveryAttempted) {
+            duplicateToolUseIdRecoveryAttempted = true;
+            final recovered = await _recoverFromDuplicateToolUseIdFailure(
+              task,
+              chat,
+            );
+            if (recovered != null) {
+              (chat, prompt) = recovered;
+              continue;
+            }
+          }
           // Don't run a verify turn against a worktree whose
           // implementation turn never actually completed.
           break;
@@ -4574,6 +4683,17 @@ class TicketsCubit extends Cubit<TicketsState> {
         if (verifyResult is! ChatTurnSuccess) {
           // A hard error during the verify turn itself — same shape as
           // above; `runChatTurn` already posted the failure comment.
+          if (!duplicateToolUseIdRecoveryAttempted) {
+            duplicateToolUseIdRecoveryAttempted = true;
+            final recovered = await _recoverFromDuplicateToolUseIdFailure(
+              task,
+              chat,
+            );
+            if (recovered != null) {
+              (chat, prompt) = recovered;
+              continue;
+            }
+          }
           break;
         }
         await _addExecutionTokens(task.id, chat.id);
@@ -5319,17 +5439,21 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// worktree was torn down. When [handoffSummary] is non-null (a handoff —
   /// see [_handoffExecutionChat] — just seeded this chat), it's prepended so
   /// the new chat's opening context makes clear this Task is being picked up
-  /// mid-flight rather than started fresh. Added for AIO-833.
+  /// mid-flight rather than started fresh, phrased per [handoffReason] — the
+  /// normal context-limit handoff's own wording by default, overridden by
+  /// [_recoverFromDuplicateToolUseIdFailure] for its own, differently-caused
+  /// handoff (`AIO-2828`). Added for AIO-833.
   Future<String> _assembleExecutionContext(
     Ticket task, {
     String? handoffSummary,
+    String handoffReason = 'reached its context limit',
   }) async {
     final buffer = StringBuffer();
     if (handoffSummary != null) {
       buffer
         ..writeln(
           'Picking up this Task from a prior coding-execution chat that '
-          'reached its context limit. Handoff summary from that chat:',
+          '$handoffReason. Handoff summary from that chat:',
         )
         ..writeln()
         ..writeln(handoffSummary)

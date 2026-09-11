@@ -11082,6 +11082,114 @@ void main() {
       );
 
       blocTest<TicketsCubit, TicketsState>(
+        'a duplicate tool_use id failure on the implement turn triggers '
+        'one automatic handoff-and-retry (AIO-2828), which then succeeds',
+        build: buildCubit,
+        setUp: () {
+          var call = 0;
+          when(() => agentClient.run(any())).thenAnswer((_) async {
+            call++;
+            return switch (call) {
+              // 1: implement turn — the known corrupted-chat 400.
+              1 => Stream.fromIterable(const [
+                AgentErrorEvent('400 tool_use ids must be unique'),
+              ]),
+              // 2: _handoffExecutionChat's own summary turn.
+              2 => Stream.fromIterable(const [
+                AgentTextEvent('Summary of what was done so far.'),
+                AgentDoneEvent(),
+              ]),
+              // 3: implement turn, retried against the fresh chat.
+              3 => Stream.fromIterable(const [
+                AgentTextEvent('Implemented.\n\nIMPLEMENTATION: DONE'),
+                AgentDoneEvent(),
+              ]),
+              // 4: agentic verify turn.
+              _ => Stream.fromIterable(const [
+                AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+                AgentDoneEvent(),
+              ]),
+            };
+          });
+        },
+        act: (cubit) => cubit.retryCodingExecution(taskNoStory),
+        wait: const Duration(milliseconds: 50),
+        verify: (_) {
+          verify(() => agentClient.run(any())).called(4);
+          verify(() => repository.createTicket(any())).called(1);
+          verify(
+            () => linkRepository.createLink(
+              sourceTicketId: any(named: 'sourceTicketId'),
+              targetTicketId: any(named: 'targetTicketId'),
+              linkType: TicketLinkType.relatesTo,
+            ),
+          ).called(1);
+          // The run recovered and completed all the way through — a PR
+          // opened on the fresh chat, exactly as an ordinary clean pass
+          // would.
+          verify(
+            () => gitHubClient.openPullRequest(
+              rootPath: any(named: 'rootPath'),
+              branch: any(named: 'branch'),
+              title: any(named: 'title'),
+              body: any(named: 'body'),
+            ),
+          ).called(1);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'the same duplicate tool_use id failure recurring on the fresh '
+        'handoff chat falls through to the normal failure path — no '
+        'second handoff (AIO-2828)',
+        build: buildCubit,
+        setUp: () {
+          var call = 0;
+          when(() => agentClient.run(any())).thenAnswer((_) async {
+            call++;
+            return switch (call) {
+              1 => Stream.fromIterable(const [
+                AgentErrorEvent('400 tool_use ids must be unique'),
+              ]),
+              2 => Stream.fromIterable(const [
+                AgentTextEvent('Summary of what was done so far.'),
+                AgentDoneEvent(),
+              ]),
+              // 3: implement retried against the fresh chat — the
+              // identical failure recurs.
+              _ => Stream.fromIterable(const [
+                AgentErrorEvent('400 tool_use ids must be unique'),
+              ]),
+            };
+          });
+        },
+        act: (cubit) => cubit.retryCodingExecution(taskNoStory),
+        wait: const Duration(milliseconds: 50),
+        verify: (_) {
+          // Exactly one handoff attempted, not a second.
+          verify(() => repository.createTicket(any())).called(1);
+          verify(
+            () => linkRepository.createLink(
+              sourceTicketId: any(named: 'sourceTicketId'),
+              targetTicketId: any(named: 'targetTicketId'),
+              linkType: TicketLinkType.relatesTo,
+            ),
+          ).called(1);
+          // implement (fails) -> handoff summary -> implement retried on
+          // the fresh chat (fails again) -> stop. No verify turn, no PR.
+          verify(() => agentClient.run(any())).called(3);
+          verifyNever(
+            () => gitHubClient.openPullRequest(
+              rootPath: any(named: 'rootPath'),
+              branch: any(named: 'branch'),
+              title: any(named: 'title'),
+              body: any(named: 'body'),
+            ),
+          );
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
         '_executionSucceededWithPr/_computeExecutionFailure (via '
         'getTicketById) resolve against a "(continued)" handoff chat, not '
         'the original',
