@@ -42,6 +42,40 @@ void main() {
     });
   });
 
+  group('addRemote', () {
+    test('adds origin pointing at the given url', () async {
+      await Process.run('git', ['init'], workingDirectory: tempDir.path);
+
+      await client.addRemote(tempDir.path, 'https://example.com/repo.git');
+
+      final result = await Process.run(
+        'git',
+        ['remote', 'get-url', 'origin'],
+        workingDirectory: tempDir.path,
+      );
+      expect(result.stdout.toString().trim(), 'https://example.com/repo.git');
+    });
+
+    test(
+      'throws ProcessException when a remote named origin already exists',
+      () async {
+        await Process.run('git', ['init'], workingDirectory: tempDir.path);
+        await Process.run('git', [
+          'remote',
+          'add',
+          'origin',
+          'https://example.com/first.git',
+        ], workingDirectory: tempDir.path);
+
+        expect(
+          () =>
+              client.addRemote(tempDir.path, 'https://example.com/second.git'),
+          throwsA(isA<ProcessException>()),
+        );
+      },
+    );
+  });
+
   /// Runs `git` with [args] in [tempDir], throwing on a non-zero exit —
   /// used to build a real repo fixture for `changedFileCount`/
   /// `defaultBranch` below (both shell out to `git` themselves, so a real
