@@ -41,6 +41,17 @@ void main() {
     lastOpenedAt: DateTime(2026, 1, 1),
   );
 
+  final projectWithTicketsRepo = Project(
+    id: '1',
+    name: 'Test Project',
+    storageKey: '1',
+    rootPath: '/tmp/test-project',
+    ticketsRootPath: '/tmp/test-project/.aion/tickets-repo',
+    baselineVersion: '0.1.0',
+    createdAt: DateTime(2026, 1, 1),
+    lastOpenedAt: DateTime(2026, 1, 1),
+  );
+
   const oldManifest = BaselineManifest(version: '0.1.0', assets: []);
   const newManifest = BaselineManifest(version: '0.2.0', assets: []);
 
@@ -111,6 +122,23 @@ void main() {
       verify: (_) {
         verify(() => repository.updateLastOpened(project.id, any())).called(1);
       },
+    );
+
+    blocTest<ActiveProjectCubit, ActiveProjectState>(
+      'switchTo preserves ticketsRootPath on the emitted ActiveProjectOpen '
+      '(regression: _withLastOpened used to silently drop it, discovered '
+      'live while cutting the aion project itself over to a separate '
+      'tickets repo — see AIO-2848)',
+      build: buildCubit,
+      act: (cubit) => cubit.switchTo(projectWithTicketsRepo),
+      expect: () => [
+        isA<ActiveProjectSwitching>(),
+        isA<ActiveProjectOpen>().having(
+          (s) => s.project.ticketsRootPath,
+          'project.ticketsRootPath',
+          projectWithTicketsRepo.ticketsRootPath,
+        ),
+      ],
     );
 
     blocTest<ActiveProjectCubit, ActiveProjectState>(
@@ -367,6 +395,34 @@ void main() {
           ),
         );
       },
+    );
+
+    blocTest<ActiveProjectCubit, ActiveProjectState>(
+      'acceptBaselineUpgrade preserves ticketsRootPath on the re-emitted '
+      'ActiveProjectOpen (regression: _withBaselineVersion used to '
+      'silently drop it — see AIO-2848)',
+      setUp: () {
+        when(
+          () => baselineRepository.getAvailableBaselineVersions(),
+        ).thenAnswer((_) async => ['0.1.0', '0.2.0']);
+        when(
+          () => baselineRepository.getManifest('0.2.0'),
+        ).thenAnswer((_) async => newManifest);
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        await cubit.switchTo(projectWithTicketsRepo);
+        await cubit.acceptBaselineUpgrade();
+      },
+      expect: () => [
+        isA<ActiveProjectSwitching>(),
+        isA<ActiveProjectOpen>(),
+        isA<ActiveProjectOpen>().having(
+          (s) => s.project.ticketsRootPath,
+          'project.ticketsRootPath',
+          projectWithTicketsRepo.ticketsRootPath,
+        ),
+      ],
     );
 
     blocTest<ActiveProjectCubit, ActiveProjectState>(
