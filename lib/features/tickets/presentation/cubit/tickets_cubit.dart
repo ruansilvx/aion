@@ -1966,7 +1966,20 @@ class TicketsCubit extends Cubit<TicketsState> {
       }
       final refreshed = await _repository.getTicketById(ticket.id);
       if (refreshed != null) {
-        emit(TicketDetailLoaded(refreshed));
+        // copyWith, not a bare TicketDetailLoaded(refreshed) — the latter
+        // would silently reset every other computed field (linkedTickets,
+        // backlinks, childDocs, gapsAndOpenQuestions, canAdvanceSddStage,
+        // isExecuting, etc.) to its default the moment any field on this
+        // ticket was edited — confirmed live during a dogfooding QA sweep
+        // (editing a Bug's Severity made its already-loaded "Linked
+        // Tickets" section flash "No linked tickets" until the screen was
+        // re-entered). See TicketDetailLoaded.copyWith's dartdoc.
+        final current = state;
+        emit(
+          current is TicketDetailLoaded && current.ticket.id == refreshed.id
+              ? current.copyWith(ticket: refreshed)
+              : TicketDetailLoaded(refreshed),
+        );
         // Only regenerate when title/description actually changed — not
         // on every field edit (e.g. a priority-only change shouldn't
         // trigger this). Git projection is deliberately not triggered
@@ -2026,7 +2039,15 @@ class TicketsCubit extends Cubit<TicketsState> {
     try {
       await _estimationSuggester.regenerate(ticket, forceComplexity: true);
       final refreshed = await _repository.getTicketById(ticket.id);
-      if (refreshed != null) emit(TicketDetailLoaded(refreshed));
+      if (refreshed != null) {
+        // copyWith — see updateTicket's identical comment above.
+        final current = state;
+        emit(
+          current is TicketDetailLoaded && current.ticket.id == refreshed.id
+              ? current.copyWith(ticket: refreshed)
+              : TicketDetailLoaded(refreshed),
+        );
+      }
     } catch (e) {
       emit(TicketsError(e.toString()));
     }
@@ -2038,7 +2059,15 @@ class TicketsCubit extends Cubit<TicketsState> {
     try {
       await _estimationSuggester.regenerate(ticket, forceEstimate: true);
       final refreshed = await _repository.getTicketById(ticket.id);
-      if (refreshed != null) emit(TicketDetailLoaded(refreshed));
+      if (refreshed != null) {
+        // copyWith — see updateTicket's identical comment above.
+        final current = state;
+        emit(
+          current is TicketDetailLoaded && current.ticket.id == refreshed.id
+              ? current.copyWith(ticket: refreshed)
+              : TicketDetailLoaded(refreshed),
+        );
+      }
     } catch (e) {
       emit(TicketsError(e.toString()));
     }
@@ -2069,7 +2098,13 @@ class TicketsCubit extends Cubit<TicketsState> {
       await _repository.updateTicketStatus(ticket.id, status);
       final refreshed = await _repository.getTicketById(ticket.id);
       if (refreshed != null) {
-        emit(TicketDetailLoaded(refreshed));
+        // copyWith — see updateTicket's identical comment above.
+        final current = state;
+        emit(
+          current is TicketDetailLoaded && current.ticket.id == refreshed.id
+              ? current.copyWith(ticket: refreshed)
+              : TicketDetailLoaded(refreshed),
+        );
         if (refreshed.type.isExecutable &&
             _roleOf(status) == WorkflowStatusRole.executionTrigger) {
           unawaited(_triggerOrQueueCodingExecution(refreshed));
@@ -2164,9 +2199,16 @@ class TicketsCubit extends Cubit<TicketsState> {
       );
       switch (result) {
         case ParentChangeRejected():
-          await _emitInvalidParent(ticket.id);
+          await _emitInvalidParent(ticket.id, fromState: stateBeforeThisWrite);
         case ParentChangeSuccess(:final ticket):
-          emit(TicketDetailLoaded(ticket));
+          // copyWith, not a bare TicketDetailLoaded(ticket) — see
+          // TicketDetailLoaded.copyWith's dartdoc.
+          emit(
+            stateBeforeThisWrite is TicketDetailLoaded &&
+                    stateBeforeThisWrite.ticket.id == ticket.id
+                ? stateBeforeThisWrite.copyWith(ticket: ticket)
+                : TicketDetailLoaded(ticket),
+          );
           unawaited(
             _refreshDetailIfOpenAndAffected({
               ticket.id,
@@ -2191,11 +2233,23 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// Emits the rejected-reparent error for ticket [ticketId], then
   /// re-emits its unchanged [TicketDetailLoaded] so the detail screen
   /// shows a toast instead of collapsing to the generic error view.
-  Future<void> _emitInvalidParent(String ticketId) async {
+  /// [fromState], if given, is the state captured before this call's own
+  /// [TicketsError] emission overwrote it — used to preserve that detail
+  /// screen's already-loaded fields via [TicketDetailLoaded.copyWith]
+  /// rather than resetting them (see that method's dartdoc).
+  Future<void> _emitInvalidParent(
+    String ticketId, {
+    TicketsState? fromState,
+  }) async {
+    final previous = fromState ?? state;
     emit(const TicketsError('', reason: TicketsErrorReason.invalidParent));
     final ticket = await _repository.getTicketById(ticketId);
     if (ticket != null) {
-      emit(TicketDetailLoaded(ticket));
+      emit(
+        previous is TicketDetailLoaded && previous.ticket.id == ticket.id
+            ? previous.copyWith(ticket: ticket)
+            : TicketDetailLoaded(ticket),
+      );
     }
   }
 
@@ -2301,12 +2355,31 @@ class TicketsCubit extends Cubit<TicketsState> {
         if (ticket.type == TicketType.epic) {
           unawaited(_createEpicSpec(refreshed));
         }
-        emit(TicketDetailLoaded(refreshed));
+        // copyWith, not a bare TicketDetailLoaded(refreshed) — see
+        // TicketDetailLoaded.copyWith's dartdoc.
+        final currentBeforeArchive = state;
+        emit(
+          currentBeforeArchive is TicketDetailLoaded &&
+                  currentBeforeArchive.ticket.id == refreshed.id
+              ? currentBeforeArchive.copyWith(ticket: refreshed)
+              : TicketDetailLoaded(refreshed),
+        );
         return null;
       }
 
       _inFlightStageAdvanceIds.add(ticket.id);
-      emit(TicketDetailLoaded(refreshed, isAdvancingStage: true));
+      // copyWith, not a bare TicketDetailLoaded(refreshed, ...) — see
+      // TicketDetailLoaded.copyWith's dartdoc.
+      final currentBeforeAdvance = state;
+      emit(
+        currentBeforeAdvance is TicketDetailLoaded &&
+                currentBeforeAdvance.ticket.id == refreshed.id
+            ? currentBeforeAdvance.copyWith(
+                ticket: refreshed,
+                isAdvancingStage: true,
+              )
+            : TicketDetailLoaded(refreshed, isAdvancingStage: true),
+      );
       _refreshInFlightBoardState();
 
       final chatId = await _createStageChat(refreshed, nextStage);
@@ -2917,7 +2990,13 @@ class TicketsCubit extends Cubit<TicketsState> {
       );
       final refreshed = await _repository.getTicketById(idea.id);
       if (refreshed != null) {
-        emit(TicketDetailLoaded(refreshed));
+        // copyWith — see updateTicket's identical comment above.
+        final current = state;
+        emit(
+          current is TicketDetailLoaded && current.ticket.id == refreshed.id
+              ? current.copyWith(ticket: refreshed)
+              : TicketDetailLoaded(refreshed),
+        );
       }
     } catch (e) {
       emit(TicketsError(e.toString()));
@@ -3047,7 +3126,15 @@ class TicketsCubit extends Cubit<TicketsState> {
         linkType: TicketLinkType.relatesTo,
       );
       final refreshed = await _repository.getTicketById(idea.id);
-      if (refreshed != null) emit(TicketDetailLoaded(refreshed));
+      if (refreshed != null) {
+        // copyWith — see updateTicket's identical comment above.
+        final current = state;
+        emit(
+          current is TicketDetailLoaded && current.ticket.id == refreshed.id
+              ? current.copyWith(ticket: refreshed)
+              : TicketDetailLoaded(refreshed),
+        );
+      }
     } catch (e) {
       emit(TicketsError(e.toString()));
       await _emitTicketDetailIfFound(idea.id);
@@ -3297,6 +3384,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// shows a toast instead of collapsing to the generic error view.
   /// Mirrors [_emitInvalidParent].
   Future<void> _emitSddStagePreconditionNotMet(String ticketId) async {
+    final previous = state;
     emit(
       const TicketsError(
         '',
@@ -3305,7 +3393,13 @@ class TicketsCubit extends Cubit<TicketsState> {
     );
     final ticket = await _repository.getTicketById(ticketId);
     if (ticket != null) {
-      emit(TicketDetailLoaded(ticket));
+      // copyWith, not a bare TicketDetailLoaded(ticket) — see
+      // TicketDetailLoaded.copyWith's dartdoc.
+      emit(
+        previous is TicketDetailLoaded && previous.ticket.id == ticket.id
+            ? previous.copyWith(ticket: ticket)
+            : TicketDetailLoaded(ticket),
+      );
     }
   }
 
@@ -3694,13 +3788,20 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
     final check = await _codingExecutionGateCheck(task);
     if (!check.canStart) {
+      final previous = state;
       emit(
         const TicketsError(
           '',
           reason: TicketsErrorReason.codingExecutionBlocked,
         ),
       );
-      emit(TicketDetailLoaded(task));
+      // copyWith, not a bare TicketDetailLoaded(task) — see
+      // TicketDetailLoaded.copyWith's dartdoc.
+      emit(
+        previous is TicketDetailLoaded && previous.ticket.id == task.id
+            ? previous.copyWith(ticket: task)
+            : TicketDetailLoaded(task),
+      );
       return false;
     }
     // Captured immediately before the caller's own inProgress status write, so
@@ -3726,13 +3827,20 @@ class TicketsCubit extends Cubit<TicketsState> {
   ) async {
     if (_roleOf(status) != WorkflowStatusRole.executionTrigger) return true;
     if (!(await _isTicketBlocked(ticket))) return true;
+    final previous = state;
     emit(
       const TicketsError(
         '',
         reason: TicketsErrorReason.blockedByOpenDependency,
       ),
     );
-    emit(TicketDetailLoaded(ticket));
+    // copyWith, not a bare TicketDetailLoaded(ticket) — see
+    // TicketDetailLoaded.copyWith's dartdoc.
+    emit(
+      previous is TicketDetailLoaded && previous.ticket.id == ticket.id
+          ? previous.copyWith(ticket: ticket)
+          : TicketDetailLoaded(ticket),
+    );
     return false;
   }
 
@@ -6020,6 +6128,19 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// path was taken) — [NotificationKind.stageAdvanceCompleted] or
   /// `.stageAdvanceFailed` depending on whether the `catch` block ran. Added
   /// for `AIO-1586`.
+  ///
+  /// After the `finally` block, also re-fetches via [getTicketById] whichever
+  /// of [parent]/[chatId] was already [TicketDetailLoaded] when this method
+  /// started (captured up front as `showingDetailId`, mirroring
+  /// `_runCodingExecution`'s own `wasShowingTaskDetail` capture) — neither the
+  /// success nor the failure path above otherwise re-emits for either ticket,
+  /// so a detail screen left open on one of them never sees
+  /// [TicketDetailLoaded.isAdvancingStage] flip back to `false` (the spawned
+  /// chat's "Waiting for reply…" indicator then never clears even once the
+  /// real reply has landed) and, on a failure, is left showing a blank screen
+  /// under the [TicketsError] just emitted instead of
+  /// [TicketDetailLoaded.sddStageFailureReason]'s retry bar. Found live during
+  /// a dogfooding QA sweep; fixed as an ad hoc bug fix.
   Future<void> _runStageChatTurn(
     Ticket parent,
     SddStage stage,
@@ -6028,6 +6149,20 @@ class TicketsCubit extends Cubit<TicketsState> {
     final providerRegistry = _providerRegistry;
     final commentRepo = _commentRepository;
     if (providerRegistry == null || commentRepo == null) return;
+
+    // Captured before the run starts, not re-read from `state` afterward —
+    // mirrors _runCodingExecution's own wasShowingTaskDetail capture, for the
+    // identical reason: emissions below (TicketsError on a hard failure)
+    // clobber `state` mid-run, which would otherwise make a live re-check
+    // wrongly conclude neither detail screen is open anymore. Either
+    // [parent] (the Epic/Story) or [chatId] (the spawned chat) may be the
+    // one currently showing.
+    final showingDetailId = switch (state) {
+      TicketDetailLoaded(:final ticket)
+          when ticket.id == parent.id || ticket.id == chatId =>
+        ticket.id,
+      _ => null,
+    };
 
     String? worktreePath;
     var failed = false;
@@ -6164,6 +6299,24 @@ class TicketsCubit extends Cubit<TicketsState> {
           ),
         );
       }
+    }
+
+    // Neither the success nor the failure path above re-emits
+    // TicketDetailLoaded for whichever of parent/chatId is currently on
+    // screen — without this, a detail screen left open on either ticket
+    // while this turn was running never learns isAdvancingStage flipped
+    // back to false (the spawned chat's "Waiting for reply…" indicator
+    // then never clears, even though the reply already landed — confirmed
+    // live during a dogfooding QA sweep), and on the failure path is left
+    // showing a blank screen under the TicketsError just emitted above
+    // instead of TicketDetailLoaded.sddStageFailureReason's retry bar.
+    // Mirrors _runCodingExecution's own wasShowingTaskDetail-gated
+    // getTicketById call at its tail. The `!isClosed` guard mirrors this
+    // class's other post-async-gap emit sites — this runs `unawaited` from
+    // advanceSddStage, so the cubit may already be closed by the time this
+    // resumes (e.g. the app shutting down mid-turn).
+    if (showingDetailId != null && !isClosed) {
+      await getTicketById(showingDetailId);
     }
   }
 
