@@ -6875,6 +6875,16 @@ void main() {
             invocation.positionalArguments[0] as TicketComment,
           );
         });
+        // getTicketById's post-failure refresh (see _runStageChatTurn's own
+        // dartdoc) reads this chat's comments back via
+        // _computeStageAdvanceFailure to populate sddStageFailureReason —
+        // reuses hardFailurePostedComments so it sees the same
+        // "Stage advance failed: ..." comment addComment above just posted.
+        when(
+          () => commentRepository.getCommentsForTicket(dummyChatTicket.id),
+        ).thenAnswer(
+          (_) async => List<TicketComment>.of(hardFailurePostedComments),
+        );
       },
       build: buildCubit,
       act: (cubit) => cubit.advanceSddStage(epic),
@@ -6889,6 +6899,19 @@ void main() {
           '',
           reason: TicketsErrorReason.sddStageAdvanceFailed,
         ),
+        // _runStageChatTurn's post-finally refresh (this Epic's detail
+        // screen was open when the turn started) — see that method's own
+        // dartdoc for why neither the success nor the failure path above
+        // otherwise re-emits.
+        const TicketsLoading(),
+        isA<TicketDetailLoaded>()
+            .having((s) => s.isAdvancingStage, 'isAdvancingStage', false)
+            .having(
+              (s) => s.sddStageFailureReason,
+              'sddStageFailureReason',
+              startsWith('Stage advance failed: '),
+            )
+            .having((s) => s.sddStageCanRetry, 'sddStageCanRetry', true),
       ],
       verify: (_) {
         verify(() => commentRepository.addComment(any())).called(3);
