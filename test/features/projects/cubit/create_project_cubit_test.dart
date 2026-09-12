@@ -454,6 +454,51 @@ void main() {
         // once a separate ticketsRootPath is in play.
         expect(Directory('${tempDir.path}/tickets').existsSync(), isFalse);
         verifyNever(() => gitClient.addRemote(any(), any()));
+        // appendGitignore defaults to true and this directory is already
+        // a git repo, so ensureIgnored does fire -- but narrowed to
+        // .aion/ only, since tickets/ is never created here once a
+        // separate ticketsRootPath is in play (AIO-2857).
+        verify(
+          () => gitignoreEditor.ensureIgnored(tempDir.path, ['.aion/']),
+        ).called(1);
+      },
+    );
+
+    blocTest<CreateProjectCubit, CreateProjectState>(
+      'submit with separateTicketsRepo: false on an already-git-tracked '
+      'directory still appends both .aion/ and tickets/ to .gitignore '
+      '(unchanged pre-AIO-2857 behavior)',
+      setUp: () {
+        when(
+          () => projectRepository.createProject(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => gitClient.isGitRepository(tempDir.path),
+        ).thenAnswer((_) async => true);
+      },
+      build: () => CreateProjectCubit(
+        projectRepository,
+        baselineRepository,
+        baselineTailoringService,
+        skillMaterializationService,
+        gitClient,
+        gitignoreEditor,
+      ),
+      act: (cubit) =>
+          cubit.submit(name: 'A New Project', rootPath: tempDir.path),
+      expect: () => [
+        const CreateProjectValidating(),
+        isA<CreateProjectReady>(),
+        const CreateProjectSubmitting(),
+        isA<CreateProjectSuccess>(),
+      ],
+      verify: (_) {
+        verify(
+          () => gitignoreEditor.ensureIgnored(tempDir.path, [
+            '.aion/',
+            'tickets/',
+          ]),
+        ).called(1);
       },
     );
 

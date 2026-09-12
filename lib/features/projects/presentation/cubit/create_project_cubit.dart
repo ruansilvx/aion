@@ -231,7 +231,10 @@ class CreateProjectCubit extends Cubit<CreateProjectState> {
   /// is redundant — and, if [appendGitignore] is also `true`,
   /// [_gitignoreEditor] excludes `.aion/`/`tickets/` from that repo's own
   /// history before either bookkeeping path is written above. Added for
-  /// `AIO-1266`.
+  /// `AIO-1266`. Excludes only `.aion/` (not `tickets/`) when
+  /// [ticketsRootPath] is set — that project's source repo never gets a
+  /// `tickets/` directory at all in that case, so there's nothing there
+  /// to exclude. See `AIO-2857`.
   ///
   /// [ticketsRootPath], when non-null (this project opted into
   /// [submit]'s `separateTicketsRepo`), redirects the `tickets/`
@@ -252,10 +255,10 @@ class CreateProjectCubit extends Cubit<CreateProjectState> {
     String? ticketsRepoRemoteUrl,
   }) async {
     if (alreadyGitRepo && appendGitignore) {
-      await _gitignoreEditor.ensureIgnored(rootPath, [
-        '.aion/',
-        'tickets/',
-      ]);
+      await _gitignoreEditor.ensureIgnored(
+        rootPath,
+        ticketsRootPath != null ? ['.aion/'] : ['.aion/', 'tickets/'],
+      );
     }
 
     await ProjectManifestWriter.write(rootPath, baselineVersion);
