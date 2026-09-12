@@ -35,6 +35,17 @@ class GitRepositoryClient {
     await _run(['init'], rootPath);
   }
 
+  /// Runs `git remote add origin <url>` in [rootPath]. Throws a
+  /// [ProcessException] if `git` exits non-zero — see [add]'s dartdoc
+  /// for why a silently swallowed failure here would be the same class
+  /// of bug. Does not push anything itself; a fresh repo has no commits
+  /// yet to push at the point this is normally called (project
+  /// creation) — see `CreateProjectCubit`'s own caller for the full
+  /// rationale. Added for `AIO-2847`.
+  Future<void> addRemote(String rootPath, String url) async {
+    await _runChecked(['remote', 'add', 'origin', url], rootPath);
+  }
+
   /// Runs `git add <relativePath>` in [rootPath]. Throws a
   /// [ProcessException] (carrying `stderr`) if `git` exits non-zero,
   /// matching [createWorktree]/[push]/[tag]'s existing checked shape —

@@ -82,6 +82,7 @@ void main() {
       () => gitClient.isGitRepository(any()),
     ).thenAnswer((_) async => false);
     when(() => gitClient.init(any())).thenAnswer((_) async {});
+    when(() => gitClient.addRemote(any(), any())).thenAnswer((_) async {});
     when(
       () => gitignoreEditor.ensureIgnored(any(), any()),
     ).thenAnswer((_) async {});
@@ -333,6 +334,246 @@ void main() {
         verify(() => projectRepository.createProject(any())).called(1);
         verifyNever(() => gitClient.init(any()));
         verifyNever(() => gitignoreEditor.ensureIgnored(any(), any()));
+      },
+    );
+
+    blocTest<CreateProjectCubit, CreateProjectState>(
+      'submit with separateTicketsRepo defaulted (false) leaves '
+      'ticketsRootPath unset, matching pre-AIO-2847 behavior',
+      setUp: () {
+        when(
+          () => projectRepository.createProject(any()),
+        ).thenAnswer((_) async {});
+      },
+      build: () => CreateProjectCubit(
+        projectRepository,
+        baselineRepository,
+        baselineTailoringService,
+        skillMaterializationService,
+        gitClient,
+        gitignoreEditor,
+      ),
+      act: (cubit) =>
+          cubit.submit(name: 'A New Project', rootPath: tempDir.path),
+      expect: () => [
+        const CreateProjectValidating(),
+        isA<CreateProjectReady>(),
+        const CreateProjectSubmitting(),
+        isA<CreateProjectSuccess>().having(
+          (s) => s.project.ticketsRootPath,
+          'project.ticketsRootPath',
+          isNull,
+        ),
+      ],
+      verify: (_) {
+        verify(() => gitClient.init(tempDir.path)).called(1);
+      },
+    );
+
+    blocTest<CreateProjectCubit, CreateProjectState>(
+      'submit with separateTicketsRepo: true sets ticketsRootPath under '
+      '.aion/tickets-repo and git-inits it',
+      setUp: () {
+        when(
+          () => projectRepository.createProject(any()),
+        ).thenAnswer((_) async {});
+      },
+      build: () => CreateProjectCubit(
+        projectRepository,
+        baselineRepository,
+        baselineTailoringService,
+        skillMaterializationService,
+        gitClient,
+        gitignoreEditor,
+      ),
+      act: (cubit) => cubit.submit(
+        name: 'A New Project',
+        rootPath: tempDir.path,
+        separateTicketsRepo: true,
+      ),
+      expect: () => [
+        const CreateProjectValidating(),
+        isA<CreateProjectReady>(),
+        const CreateProjectSubmitting(),
+        isA<CreateProjectSuccess>().having(
+          (s) => s.project.ticketsRootPath,
+          'project.ticketsRootPath',
+          '${tempDir.path}${Platform.pathSeparator}.aion${Platform.pathSeparator}tickets-repo',
+        ),
+      ],
+      verify: (_) {
+        final ticketsRootPath =
+            '${tempDir.path}${Platform.pathSeparator}.aion${Platform.pathSeparator}tickets-repo';
+        // Both the source rootPath (fresh, not already a repo) and the
+        // new dedicated ticketsRootPath get their own `git init`.
+        verify(() => gitClient.init(tempDir.path)).called(1);
+        verify(() => gitClient.init(ticketsRootPath)).called(1);
+        expect(Directory('$ticketsRootPath/tickets').existsSync(), isTrue);
+        verifyNever(() => gitClient.addRemote(any(), any()));
+      },
+    );
+
+    blocTest<CreateProjectCubit, CreateProjectState>(
+      'submit with separateTicketsRepo: true on an already-git-tracked '
+      'directory still git-inits only the new ticketsRootPath, not '
+      'rootPath itself',
+      setUp: () {
+        when(
+          () => projectRepository.createProject(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => gitClient.isGitRepository(tempDir.path),
+        ).thenAnswer((_) async => true);
+      },
+      build: () => CreateProjectCubit(
+        projectRepository,
+        baselineRepository,
+        baselineTailoringService,
+        skillMaterializationService,
+        gitClient,
+        gitignoreEditor,
+      ),
+      act: (cubit) => cubit.submit(
+        name: 'A New Project',
+        rootPath: tempDir.path,
+        separateTicketsRepo: true,
+      ),
+      expect: () => [
+        const CreateProjectValidating(),
+        isA<CreateProjectReady>(),
+        const CreateProjectSubmitting(),
+        isA<CreateProjectSuccess>(),
+      ],
+      verify: (_) {
+        final ticketsRootPath =
+            '${tempDir.path}${Platform.pathSeparator}.aion${Platform.pathSeparator}tickets-repo';
+        verifyNever(() => gitClient.init(tempDir.path));
+        verify(() => gitClient.init(ticketsRootPath)).called(1);
+        expect(Directory('$ticketsRootPath/tickets').existsSync(), isTrue);
+        // The default rootPath/tickets/ directory is not created at all
+        // once a separate ticketsRootPath is in play.
+        expect(Directory('${tempDir.path}/tickets').existsSync(), isFalse);
+        verifyNever(() => gitClient.addRemote(any(), any()));
+        // appendGitignore defaults to true and this directory is already
+        // a git repo, so ensureIgnored does fire -- but narrowed to
+        // .aion/ only, since tickets/ is never created here once a
+        // separate ticketsRootPath is in play (AIO-2857).
+        verify(
+          () => gitignoreEditor.ensureIgnored(tempDir.path, ['.aion/']),
+        ).called(1);
+      },
+    );
+
+    blocTest<CreateProjectCubit, CreateProjectState>(
+      'submit with separateTicketsRepo: false on an already-git-tracked '
+      'directory still appends both .aion/ and tickets/ to .gitignore '
+      '(unchanged pre-AIO-2857 behavior)',
+      setUp: () {
+        when(
+          () => projectRepository.createProject(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => gitClient.isGitRepository(tempDir.path),
+        ).thenAnswer((_) async => true);
+      },
+      build: () => CreateProjectCubit(
+        projectRepository,
+        baselineRepository,
+        baselineTailoringService,
+        skillMaterializationService,
+        gitClient,
+        gitignoreEditor,
+      ),
+      act: (cubit) =>
+          cubit.submit(name: 'A New Project', rootPath: tempDir.path),
+      expect: () => [
+        const CreateProjectValidating(),
+        isA<CreateProjectReady>(),
+        const CreateProjectSubmitting(),
+        isA<CreateProjectSuccess>(),
+      ],
+      verify: (_) {
+        verify(
+          () => gitignoreEditor.ensureIgnored(tempDir.path, [
+            '.aion/',
+            'tickets/',
+          ]),
+        ).called(1);
+      },
+    );
+
+    blocTest<CreateProjectCubit, CreateProjectState>(
+      'submit with separateTicketsRepo: true and a ticketsRepoRemoteUrl '
+      'configures that url as the new tickets repo\'s origin remote',
+      setUp: () {
+        when(
+          () => projectRepository.createProject(any()),
+        ).thenAnswer((_) async {});
+      },
+      build: () => CreateProjectCubit(
+        projectRepository,
+        baselineRepository,
+        baselineTailoringService,
+        skillMaterializationService,
+        gitClient,
+        gitignoreEditor,
+      ),
+      act: (cubit) => cubit.submit(
+        name: 'A New Project',
+        rootPath: tempDir.path,
+        separateTicketsRepo: true,
+        ticketsRepoRemoteUrl: 'https://example.com/my-tickets.git',
+      ),
+      expect: () => [
+        const CreateProjectValidating(),
+        isA<CreateProjectReady>(),
+        const CreateProjectSubmitting(),
+        isA<CreateProjectSuccess>(),
+      ],
+      verify: (_) {
+        final ticketsRootPath =
+            '${tempDir.path}${Platform.pathSeparator}.aion${Platform.pathSeparator}tickets-repo';
+        verify(() => gitClient.init(ticketsRootPath)).called(1);
+        verify(
+          () => gitClient.addRemote(
+            ticketsRootPath,
+            'https://example.com/my-tickets.git',
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<CreateProjectCubit, CreateProjectState>(
+      'submit with separateTicketsRepo: true and an empty '
+      'ticketsRepoRemoteUrl behaves as if none was given — local-only, '
+      'no remote configured',
+      setUp: () {
+        when(
+          () => projectRepository.createProject(any()),
+        ).thenAnswer((_) async {});
+      },
+      build: () => CreateProjectCubit(
+        projectRepository,
+        baselineRepository,
+        baselineTailoringService,
+        skillMaterializationService,
+        gitClient,
+        gitignoreEditor,
+      ),
+      act: (cubit) => cubit.submit(
+        name: 'A New Project',
+        rootPath: tempDir.path,
+        separateTicketsRepo: true,
+        ticketsRepoRemoteUrl: '',
+      ),
+      expect: () => [
+        const CreateProjectValidating(),
+        isA<CreateProjectReady>(),
+        const CreateProjectSubmitting(),
+        isA<CreateProjectSuccess>(),
+      ],
+      verify: (_) {
+        verifyNever(() => gitClient.addRemote(any(), any()));
       },
     );
 

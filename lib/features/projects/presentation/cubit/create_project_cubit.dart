@@ -68,6 +68,22 @@ class CreateProjectCubit extends Cubit<CreateProjectState> {
   /// `AIO-1266`). Ignored entirely when [rootPath] isn't already a git
   /// repository, since `git init` there needs no gitignore gate.
   ///
+  /// [separateTicketsRepo] (default `false`, desktop only) opts this
+  /// project into a dedicated tickets repository at
+  /// `<rootPath>/.aion/tickets-repo` instead of keeping ticket
+  /// git-projection under [rootPath] itself — the created [Project]'s
+  /// [Project.ticketsRootPath] is set accordingly. `false` changes
+  /// nothing: [Project.ticketsRootPath] stays unset, matching every
+  /// project created before this parameter existed.
+  ///
+  /// [ticketsRepoRemoteUrl] is consulted only when [separateTicketsRepo]
+  /// is `true`: if non-null and non-empty, the new tickets repo gets that
+  /// URL configured as its `origin` remote (no push happens yet — a
+  /// fresh repo has no commits at this point to push, see
+  /// `GitRepositoryClient.addRemote`'s dartdoc). Left `null`/empty, the
+  /// tickets repo is still created — just local-only, no remote. See
+  /// `AIO-2846`/`AIO-2847`.
+  ///
   /// Emits [CreateProjectValidating], then either [CreateProjectFailure]
   /// (classified via [CreateProjectFailureReason]) or
   /// [CreateProjectReady] followed immediately by
@@ -79,6 +95,8 @@ class CreateProjectCubit extends Cubit<CreateProjectState> {
     String? rootPath,
     String? baselineVersion,
     bool appendGitignore = true,
+    bool separateTicketsRepo = false,
+    String? ticketsRepoRemoteUrl,
   }) async {
     emit(const CreateProjectValidating());
 
@@ -143,11 +161,16 @@ class CreateProjectCubit extends Cubit<CreateProjectState> {
     try {
       final now = DateTime.now();
       final id = _uuid.v4();
+      final ticketsRootPath =
+          (isDesktop && rootPath != null && separateTicketsRepo)
+          ? '$rootPath${Platform.pathSeparator}.aion${Platform.pathSeparator}tickets-repo'
+          : null;
       final project = Project(
         id: id,
         name: trimmedName,
         storageKey: id,
         rootPath: isDesktop ? rootPath : null,
+        ticketsRootPath: ticketsRootPath,
         baselineVersion: resolvedVersion,
         createdAt: now,
         lastOpenedAt: now,
@@ -161,6 +184,8 @@ class CreateProjectCubit extends Cubit<CreateProjectState> {
           resolvedVersion,
           alreadyGitRepo: wasExistingGitRepo,
           appendGitignore: appendGitignore,
+          ticketsRootPath: ticketsRootPath,
+          ticketsRepoRemoteUrl: ticketsRepoRemoteUrl,
         );
       }
 
@@ -206,25 +231,51 @@ class CreateProjectCubit extends Cubit<CreateProjectState> {
   /// is redundant — and, if [appendGitignore] is also `true`,
   /// [_gitignoreEditor] excludes `.aion/`/`tickets/` from that repo's own
   /// history before either bookkeeping path is written above. Added for
-  /// `AIO-1266`.
+  /// `AIO-1266`. Excludes only `.aion/` (not `tickets/`) when
+  /// [ticketsRootPath] is set — that project's source repo never gets a
+  /// `tickets/` directory at all in that case, so there's nothing there
+  /// to exclude. See `AIO-2857`.
+  ///
+  /// [ticketsRootPath], when non-null (this project opted into
+  /// [submit]'s `separateTicketsRepo`), redirects the `tickets/`
+  /// subdirectory there instead of under [rootPath], and `git init`s a
+  /// fresh repository at [ticketsRootPath] itself — it's always a
+  /// brand-new directory this method just created, so unlike [rootPath]
+  /// there's no "already a repo" case to check. If [ticketsRepoRemoteUrl]
+  /// is also given, that new repo gets it configured as its `origin`
+  /// remote (see [GitRepositoryClient.addRemote]'s dartdoc for why this
+  /// doesn't also push). `null` [ticketsRootPath] (default) preserves
+  /// the original single-`rootPath` behavior exactly. See `AIO-2847`.
   Future<void> _initializeDesktopProject(
     String rootPath,
     String baselineVersion, {
     required bool alreadyGitRepo,
     required bool appendGitignore,
+    String? ticketsRootPath,
+    String? ticketsRepoRemoteUrl,
   }) async {
     if (alreadyGitRepo && appendGitignore) {
-      await _gitignoreEditor.ensureIgnored(rootPath, [
-        '.aion/',
-        'tickets/',
-      ]);
+      await _gitignoreEditor.ensureIgnored(
+        rootPath,
+        ticketsRootPath != null ? ['.aion/'] : ['.aion/', 'tickets/'],
+      );
     }
 
     await ProjectManifestWriter.write(rootPath, baselineVersion);
 
-    Directory(
-      '$rootPath${Platform.pathSeparator}tickets',
-    ).createSync(recursive: true);
+    if (ticketsRootPath != null) {
+      Directory(
+        '$ticketsRootPath${Platform.pathSeparator}tickets',
+      ).createSync(recursive: true);
+      await _gitClient.init(ticketsRootPath);
+      if (ticketsRepoRemoteUrl != null && ticketsRepoRemoteUrl.isNotEmpty) {
+        await _gitClient.addRemote(ticketsRootPath, ticketsRepoRemoteUrl);
+      }
+    } else {
+      Directory(
+        '$rootPath${Platform.pathSeparator}tickets',
+      ).createSync(recursive: true);
+    }
 
     if (!alreadyGitRepo) {
       await _gitClient.init(rootPath);

@@ -146,14 +146,15 @@ void main() {
     }
   });
 
-  CreateProjectCubit buildCubit() => CreateProjectCubit(
-    projectRepository,
-    baselineRepository,
-    baselineTailoringService,
-    skillMaterializationService,
-    GitRepositoryClient(),
-    gitignoreEditor,
-  );
+  CreateProjectCubit buildCubit({GitRepositoryClient? gitClient}) =>
+      CreateProjectCubit(
+        projectRepository,
+        baselineRepository,
+        baselineTailoringService,
+        skillMaterializationService,
+        gitClient ?? GitRepositoryClient(),
+        gitignoreEditor,
+      );
 
   group('NewProjectScreen — gitignore-confirmation banner', () {
     testWidgets(
@@ -235,8 +236,9 @@ void main() {
         await tester.tap(find.text('Browse…'));
         await tester.pumpAndSettle();
 
-        // Uncheck the "add to .gitignore" checkbox.
-        await tester.tap(find.byType(AppCheckbox));
+        // Uncheck the "add to .gitignore" checkbox — the first of the two
+        // checkboxes the banner now renders.
+        await tester.tap(find.byType(AppCheckbox).first);
         await tester.pumpAndSettle();
 
         await tester.tap(find.text('Create project'));
@@ -277,7 +279,9 @@ void main() {
         await tester.tap(find.text('Browse…'));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byType(AppCheckbox));
+        // Uncheck the "add to .gitignore" checkbox — the first of the two
+        // checkboxes the banner now renders.
+        await tester.tap(find.byType(AppCheckbox).first);
         await tester.pumpAndSettle();
 
         await tester.tap(find.text('Create project'));
@@ -292,6 +296,112 @@ void main() {
         // doesn't leave a pending Timer at test teardown (see the
         // matching comment in the "unchecking..." test above).
         await tester.pump(const Duration(seconds: 4));
+      },
+    );
+
+    testWidgets(
+      'checking "keep tickets in their own repository" reveals the remote-URL '
+      'field and flows both through to submit()',
+      (tester) async {
+        Directory(
+          '${tempDir.path}${Platform.pathSeparator}.git',
+        ).createSync();
+        FileSelectorPlatform.instance = _FakeFileSelectorPlatform(
+          tempDir.path,
+        );
+        Project? created;
+        // The real GitRepositoryClient runs an actual `git init`/`git remote
+        // add` subprocess for the new tickets-repo directory once
+        // separateTicketsRepo is true (unlike the existing-repo checks
+        // elsewhere in this file, which only fake `.git`'s presence and
+        // never exercise that codepath) — mocked here so this widget test
+        // doesn't depend on a real subprocess completing inside the fake
+        // async zone `testWidgets` runs in.
+        final mockGitClient = MockGitRepositoryClient();
+        when(
+          () => mockGitClient.isGitRepository(any()),
+        ).thenAnswer((_) async => true);
+        when(() => mockGitClient.init(any())).thenAnswer((_) async {});
+        when(
+          () => mockGitClient.addRemote(any(), any()),
+        ).thenAnswer((_) async {});
+
+        await tester.pumpWidget(
+          _wrap(
+            cubit: buildCubit(gitClient: mockGitClient),
+            child: NewProjectScreen(
+              onBack: () {},
+              onCreated: (project, {required offerCodebaseAnalysis}) {
+                created = project;
+              },
+            ),
+          ),
+        );
+
+        await tester.enterText(find.byType(EditableText).first, 'A New Project');
+        await tester.tap(find.text('Browse…'));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('Keep tickets in their own repository'),
+          findsOneWidget,
+        );
+        // Remote-URL field is not yet revealed.
+        expect(find.text('Remote URL'), findsNothing);
+
+        // Check the second checkbox — the separate-tickets-repo one.
+        await tester.tap(find.byType(AppCheckbox).last);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Remote URL'), findsOneWidget);
+
+        await tester.enterText(
+          find.widgetWithText(AppTextField, 'Remote URL'),
+          'git@github.com:me/aion-tickets.git',
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Create project'));
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 4));
+
+        expect(created, isNotNull);
+      },
+    );
+
+    testWidgets(
+      'unchecking "keep tickets in their own repository" hides the field '
+      'without submitting the URL',
+      (tester) async {
+        Directory(
+          '${tempDir.path}${Platform.pathSeparator}.git',
+        ).createSync();
+        FileSelectorPlatform.instance = _FakeFileSelectorPlatform(
+          tempDir.path,
+        );
+
+        await tester.pumpWidget(
+          _wrap(
+            cubit: buildCubit(),
+            child: NewProjectScreen(
+              onBack: () {},
+              onCreated: (_, {required offerCodebaseAnalysis}) {},
+            ),
+          ),
+        );
+
+        await tester.enterText(find.byType(EditableText).first, 'A New Project');
+        await tester.tap(find.text('Browse…'));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byType(AppCheckbox).last);
+        await tester.pumpAndSettle();
+        expect(find.text('Remote URL'), findsOneWidget);
+
+        await tester.tap(find.byType(AppCheckbox).last);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Remote URL'), findsNothing);
       },
     );
   });
