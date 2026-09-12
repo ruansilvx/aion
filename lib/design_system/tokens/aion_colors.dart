@@ -370,6 +370,11 @@ extension AionColorsHubTokens on AionColors {
   Color noticeBorder(bool isDark) =>
       primary.withValues(alpha: isDark ? 0.30 : 0.20);
 
+  /// Hairline divider between the two choice rows inside
+  /// `GitignoreConfirmationBanner`'s notice card. See `AIO-2857`.
+  Color noticeDivider(bool isDark) =>
+      primary.withValues(alpha: isDark ? 0.22 : 0.16);
+
   /// Remove-icon disc fill and destructive menu-row hover fill
   /// (`ProjectCard` overflow menu).
   Color destructiveTint(bool isDark) =>

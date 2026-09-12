@@ -52,15 +52,18 @@ class NewProjectScreen extends StatefulWidget {
 class _NewProjectScreenState extends State<NewProjectScreen> {
   final _nameController = TextEditingController();
   final _nameFocus = FocusNode();
+  final _ticketsRepoRemoteUrlController = TextEditingController();
   final _gitClient = GitRepositoryClient();
   String? _chosenDirectory;
   bool _isExistingGitRepo = false;
   bool _appendGitignore = true;
+  bool _separateTicketsRepo = false;
 
   @override
   void dispose() {
     _nameController.dispose();
     _nameFocus.dispose();
+    _ticketsRepoRemoteUrlController.dispose();
     super.dispose();
   }
 
@@ -76,10 +79,15 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
   }
 
   void _submit() {
+    final trimmedRemoteUrl = _ticketsRepoRemoteUrlController.text.trim();
     context.read<CreateProjectCubit>().submit(
       name: _nameController.text,
       rootPath: _chosenDirectory,
       appendGitignore: _appendGitignore,
+      separateTicketsRepo: _separateTicketsRepo,
+      ticketsRepoRemoteUrl: _separateTicketsRepo && trimmedRemoteUrl.isNotEmpty
+          ? trimmedRemoteUrl
+          : null,
     );
   }
 
@@ -130,6 +138,11 @@ class _NewProjectScreenState extends State<NewProjectScreen> {
                         appendGitignore: _appendGitignore,
                         onAppendGitignoreChanged: (value) =>
                             setState(() => _appendGitignore = value),
+                        separateTicketsRepo: _separateTicketsRepo,
+                        onSeparateTicketsRepoChanged: (value) =>
+                            setState(() => _separateTicketsRepo = value),
+                        ticketsRepoRemoteUrlController:
+                            _ticketsRepoRemoteUrlController,
                         onBrowseDirectory: _browseDirectory,
                         onSubmit: _submit,
                       ),
@@ -158,6 +171,9 @@ class _Form extends StatelessWidget {
     required this.isExistingGitRepo,
     required this.appendGitignore,
     required this.onAppendGitignoreChanged,
+    required this.separateTicketsRepo,
+    required this.onSeparateTicketsRepoChanged,
+    required this.ticketsRepoRemoteUrlController,
     required this.onBrowseDirectory,
     required this.onSubmit,
   });
@@ -170,6 +186,9 @@ class _Form extends StatelessWidget {
   final bool isExistingGitRepo;
   final bool appendGitignore;
   final ValueChanged<bool> onAppendGitignoreChanged;
+  final bool separateTicketsRepo;
+  final ValueChanged<bool> onSeparateTicketsRepoChanged;
+  final TextEditingController ticketsRepoRemoteUrlController;
   final VoidCallback onBrowseDirectory;
   final VoidCallback onSubmit;
 
@@ -212,7 +231,10 @@ class _Form extends StatelessWidget {
         _AnimatedGitignoreBanner(
           show: isDesktop && isExistingGitRepo,
           excludeAionPaths: appendGitignore,
-          onChanged: onAppendGitignoreChanged,
+          onExcludeAionPathsChanged: onAppendGitignoreChanged,
+          separateTicketsRepo: separateTicketsRepo,
+          onSeparateTicketsRepoChanged: onSeparateTicketsRepoChanged,
+          ticketsRepoRemoteUrlController: ticketsRepoRemoteUrlController,
         ),
         const SizedBox(height: AionSpacing.sp20),
         _BaselineVersionField(colors: c),
@@ -232,12 +254,18 @@ class _AnimatedGitignoreBanner extends StatelessWidget {
   const _AnimatedGitignoreBanner({
     required this.show,
     required this.excludeAionPaths,
-    required this.onChanged,
+    required this.onExcludeAionPathsChanged,
+    required this.separateTicketsRepo,
+    required this.onSeparateTicketsRepoChanged,
+    required this.ticketsRepoRemoteUrlController,
   });
 
   final bool show;
   final bool excludeAionPaths;
-  final ValueChanged<bool> onChanged;
+  final ValueChanged<bool> onExcludeAionPathsChanged;
+  final bool separateTicketsRepo;
+  final ValueChanged<bool> onSeparateTicketsRepoChanged;
+  final TextEditingController ticketsRepoRemoteUrlController;
 
   @override
   Widget build(BuildContext context) {
@@ -258,7 +286,11 @@ class _AnimatedGitignoreBanner extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 18),
                 child: GitignoreConfirmationBanner(
                   excludeAionPaths: excludeAionPaths,
-                  onChanged: onChanged,
+                  onExcludeAionPathsChanged: onExcludeAionPathsChanged,
+                  separateTicketsRepo: separateTicketsRepo,
+                  onSeparateTicketsRepoChanged: onSeparateTicketsRepoChanged,
+                  ticketsRepoRemoteUrlController:
+                      ticketsRepoRemoteUrlController,
                 ),
               )
             : const SizedBox.shrink(key: ValueKey('hidden')),
