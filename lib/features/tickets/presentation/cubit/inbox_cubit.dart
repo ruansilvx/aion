@@ -88,16 +88,18 @@ class InboxCubit extends Cubit<InboxState> {
   }
 
   /// The current [state]'s history, whichever state it is — [InboxLoaded]'s
-  /// own, or whatever [InboxLaunching]/[InboxError] last carried forward, or
-  /// empty before the first successful [load]. Every `emit(InboxLaunching(
-  /// ...))`/`emit(InboxError(...))` site below reads this first so the
-  /// Recent section never loses a history it already had — see `AIO-2821`
-  /// and [InboxLaunching.history]'s own dartdoc.
+  /// own, or whatever [InboxLaunching]/[InboxLoading]/[InboxError] last
+  /// carried forward, or empty before the first successful [load]. Every
+  /// `emit(InboxLaunching(...))`/`emit(InboxLoading(...))`/`emit(InboxError(
+  /// ...))` site below reads this first so the Recent section never loses a
+  /// history it already had — see `AIO-2835`/`AIO-2821` and
+  /// [InboxLaunching.history]'s own dartdoc.
   List<Ticket> get _currentHistory => switch (state) {
     InboxLoaded(:final history) => history,
     InboxLaunching(:final history) => history,
+    InboxLoading(:final history) => history,
     InboxError(:final history) => history,
-    InboxInitial() || InboxLoading() => const [],
+    InboxInitial() => const [],
   };
 
   /// Fetches every Inbox-spawned chat (`getTicketsByParent(null, types:
@@ -105,9 +107,10 @@ class InboxCubit extends Cubit<InboxState> {
   /// even though nothing else can currently produce a parentless chat),
   /// sorted by `createdAt` descending. Emits [InboxLoading] then
   /// [InboxLoaded] on success, or [InboxError] if the repository call
-  /// throws.
+  /// throws. Carries the current history through [InboxLoading] and
+  /// [InboxError] to keep the Recent section visible — see `AIO-2835`.
   Future<void> load() async {
-    emit(const InboxLoading());
+    emit(InboxLoading(history: _currentHistory));
     try {
       final chats = await _ticketRepository.getTicketsByParent(
         null,
@@ -117,7 +120,7 @@ class InboxCubit extends Cubit<InboxState> {
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
       emit(InboxLoaded(history: history));
     } catch (e) {
-      emit(InboxError(e.toString()));
+      emit(InboxError(e.toString(), history: _currentHistory));
     }
   }
 

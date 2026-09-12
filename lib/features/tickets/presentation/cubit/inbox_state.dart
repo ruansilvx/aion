@@ -20,11 +20,24 @@ class InboxInitial extends InboxState {
   const InboxInitial();
 }
 
-/// An [InboxCubit.load] call is in flight and nothing is on screen yet.
+/// An [InboxCubit.load] call is in flight. Carries [history] — the last
+/// successfully loaded history, carried forward (rather than dropped) so the
+/// Recent section doesn't flash empty during the load — see `AIO-2835`/`AIO-2821`.
 /// UI should show [AppSpinner](../../../../design_system/design_system.dart).
 class InboxLoading extends InboxState {
-  /// Creates an [InboxLoading] state.
-  const InboxLoading();
+  /// Creates an [InboxLoading] state carrying the [history] to keep showing
+  /// meanwhile.
+  const InboxLoading({this.history = const []});
+
+  /// The last successfully loaded history — kept visible in the Recent
+  /// section while this load is in flight. Fixed for `AIO-2835`: before
+  /// this field existed, the Recent section fell straight to its empty state
+  /// the instant a load began, with no loading indicator, for the entire
+  /// load duration — see [InboxCubit._currentHistory].
+  final List<Ticket> history;
+
+  @override
+  List<Object?> get props => [history];
 }
 
 /// The Inbox history list loaded successfully.

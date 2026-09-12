@@ -184,19 +184,19 @@ class _InboxScreenState extends State<InboxScreen> {
                 const SizedBox(height: AionSpacing.sp32),
                 BlocBuilder<InboxCubit, InboxState>(
                   builder: (context, state) {
-                    // A launch (or a launch that then failed) carries the
+                    // A load (or a launch, or a failure) carries the
                     // last successfully loaded history forward rather than
-                    // dropping it — fixed for `AIO-2821`: this section used
-                    // to fall straight to its empty state, with no loading
-                    // indicator, for the whole multi-second launch.
+                    // dropping it — fixed for `AIO-2835`/`AIO-2821`: these
+                    // sections used to fall straight to empty state, with no
+                    // loading indicator, for the whole multi-second operation.
                     final history = switch (state) {
                       InboxLoaded(:final history) => history,
                       InboxLaunching(:final history) => history,
+                      InboxLoading(:final history) => history,
                       InboxError(:final history) => history,
-                      InboxInitial() || InboxLoading() => const <Ticket>[],
+                      InboxInitial() => const <Ticket>[],
                     };
-                    final isLoading =
-                        state is InboxLoading || state is InboxInitial;
+                    final isLoading = state is InboxInitial;
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
