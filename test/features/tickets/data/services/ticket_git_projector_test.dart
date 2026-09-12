@@ -31,6 +31,7 @@ void main() {
     git = MockGitRepositoryClient();
     projector = TicketGitProjector(TicketMarkdownSerializer(), git);
     tempDir = await Directory.systemTemp.createTemp('ticket_git_projector_test');
+    when(() => git.isIgnored(any(), any())).thenAnswer((_) async => false);
     when(() => git.add(any(), any())).thenAnswer((_) async {});
     when(() => git.commit(any(), any())).thenAnswer((_) async {});
   });
@@ -69,6 +70,53 @@ void main() {
 
     verify(() => git.add(any(), any())).called(1);
     verifyNever(() => git.commit(any(), any()));
+  });
+
+  group('gitignored ticket path', () {
+    test(
+      'still writes the file but skips add/hasChanges/commit entirely '
+      'when the ticket path is gitignored',
+      () async {
+        when(() => git.isIgnored(any(), any())).thenAnswer((_) async => true);
+
+        await projector.project(ticket, tempDir.path, 'created');
+
+        final file = File('${tempDir.path}/tickets/AIO-42.md');
+        expect(await file.exists(), isTrue);
+        verifyNever(() => git.add(any(), any()));
+        verifyNever(() => git.hasChanges(any()));
+        verifyNever(() => git.commit(any(), any()));
+      },
+    );
+
+    test(
+      'projectBatch writes every file but skips the commit entirely when '
+      'every ticket in the batch is gitignored',
+      () async {
+        when(() => git.isIgnored(any(), any())).thenAnswer((_) async => true);
+        final secondTicket = Ticket(
+          id: 'internal-2',
+          ticketId: 'AIO-43',
+          type: TicketType.story,
+          title: 'A story',
+          status: 'backlog',
+          createdAt: DateTime.utc(2026, 7, 18),
+          updatedAt: DateTime.utc(2026, 7, 18),
+        );
+
+        await projector.projectBatch(
+          [ticket, secondTicket],
+          tempDir.path,
+          'rollup updated',
+        );
+
+        expect(await File('${tempDir.path}/tickets/AIO-42.md').exists(), isTrue);
+        expect(await File('${tempDir.path}/tickets/AIO-43.md').exists(), isTrue);
+        verifyNever(() => git.add(any(), any()));
+        verifyNever(() => git.hasChanges(any()));
+        verifyNever(() => git.commit(any(), any()));
+      },
+    );
   });
 
   group('projectBatch', () {
@@ -315,6 +363,48 @@ void main() {
         // pre-existing "no empty commits" behavior must survive this fix.
         await realProjector.project(restored, realRepoDir.path, 'restored');
         expect(await commitCount(), 3);
+      },
+    );
+
+    test(
+      'a ticket created in a project whose tickets/ path is gitignored '
+      'writes the file and does not throw, instead of surfacing git '
+      "add's \"paths are ignored\" ProcessException",
+      () async {
+        File(
+          '${realRepoDir.path}${Platform.pathSeparator}.gitignore',
+        ).writeAsStringSync('tickets/\n');
+        await Process.run(
+          'git',
+          ['add', '.gitignore'],
+          workingDirectory: realRepoDir.path,
+        );
+        await Process.run(
+          'git',
+          ['commit', '-m', 'base'],
+          workingDirectory: realRepoDir.path,
+        );
+        expect(await commitCount(), 1);
+
+        // Before the fix, this threw a ProcessException: `git add` on a
+        // path newly excluded by a just-committed .gitignore, never
+        // tracked before, exits non-zero ("The following paths are
+        // ignored by one of your .gitignore files... hint: Use -f").
+        await realProjector.project(ticket, realRepoDir.path, 'created');
+
+        final file = File('${realRepoDir.path}/tickets/AIO-42.md');
+        expect(
+          await file.exists(),
+          isTrue,
+          reason: 'the audit-trail file is still written even though git '
+              "won't track it",
+        );
+        expect(
+          await commitCount(),
+          1,
+          reason: 'no commit should be produced for a path git refuses to '
+              'stage',
+        );
       },
     );
   });

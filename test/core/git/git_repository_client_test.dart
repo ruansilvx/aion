@@ -157,6 +157,56 @@ void main() {
     );
   });
 
+  group('isIgnored', () {
+    Future<String> initRepo() async {
+      await runGit(['init', '-b', 'main']);
+      await runGit(['config', 'user.email', 'test@example.com']);
+      await runGit(['config', 'user.name', 'Test']);
+      return tempDir.path;
+    }
+
+    test('returns false for a path with no matching .gitignore entry',
+        () async {
+      final rootPath = await initRepo();
+      final result = await client.isIgnored(rootPath, 'a.txt');
+      expect(result, isFalse);
+    });
+
+    test('returns true for a path excluded by .gitignore', () async {
+      final rootPath = await initRepo();
+      File(
+        '$rootPath${Platform.pathSeparator}.gitignore',
+      ).writeAsStringSync('tickets/\n');
+
+      final result = await client.isIgnored(rootPath, 'tickets/AIO-1.md');
+
+      expect(result, isTrue);
+    });
+
+    test(
+      'reproduces the underlying bug this guards against: add throws on '
+      'an ignored, never-tracked path',
+      () async {
+        final rootPath = await initRepo();
+        File(
+          '$rootPath${Platform.pathSeparator}.gitignore',
+        ).writeAsStringSync('tickets/\n');
+        Directory(
+          '$rootPath${Platform.pathSeparator}tickets',
+        ).createSync();
+        File(
+          '$rootPath${Platform.pathSeparator}tickets${Platform.pathSeparator}AIO-1.md',
+        ).writeAsStringSync('# AIO-1');
+
+        expect(await client.isIgnored(rootPath, 'tickets/AIO-1.md'), isTrue);
+        await expectLater(
+          client.add(rootPath, 'tickets/AIO-1.md'),
+          throwsA(isA<ProcessException>()),
+        );
+      },
+    );
+  });
+
   group('changedFileCount', () {
     test('counts files changed on branch relative to base', () async {
       await runGit(['init', '-b', 'main']);
