@@ -93,19 +93,36 @@ agent_bridge/node_modules/
 
 # Aion's own project-bookkeeping data, written by the app itself when
 # this checkout is registered as an Aion "project" root for dogfooding
-# self-iteration. `/tickets/*.md` and `/.aion/manifest.json` are
-# deliberately TRACKED (not ignored) here — this project's own choice
-# to reuse its source repo for ticket-data git-projection rather than a
-# separate dedicated bookkeeping repo (the latter is the other option
-# under discussion, not yet built — see
-# aion-arch/ideas/self-iteration-sequencing.md and the follow-up
-# per-project bookkeeping-repo-strategy idea). Only `/.aion/data/`
-# (the local SQLite DB + its ad hoc backups) stays ignored: it's a
-# disposable, fully reconstructable cache of `/tickets/*.md`
-# (`TicketDbReconstructionService.reconstruct`), not a durable
-# artifact — binary, large, and churns on every write, exactly what
-# git shouldn't track. Anchored to the repo root (`/`) — unanchored
-# `tickets/` previously matched any directory named `tickets` anywhere
-# in the tree, silently hiding new files under the real source
-# directory `lib/features/tickets/` from `git status`.
+# self-iteration. `/.aion/manifest.json` is deliberately TRACKED (not
+# ignored) here — a small marker, cheap to commit. `/tickets/` and
+# `/.aion/data/` are both ignored:
+#
+# - `/tickets/` — until AIO-2848, this project reused its own source
+#   repo for ticket git-projection (the markdown mirror lived here,
+#   tracked directly). AIO-2848 cut this project over to the separate-
+#   tickets-repo option AIO-2844/2856/2857 built (`Project
+#   .ticketsRootPath`, pointed at `ruansilvx/aion-tickets` — see
+#   `Project.ticketsGitRootPath`'s dartdoc): the markdown mirror now
+#   lives under `/.aion/tickets-repo/tickets/` instead, its own
+#   separate git history. This repo no longer receives ticket-mirror
+#   commits at all — `/tickets/`'s prior history stays in this repo's
+#   log, but the directory itself is untracked and ignored going
+#   forward, matching every other project that has opted into a
+#   separate tickets repo.
+# - `/.aion/data/` (the local SQLite DB + its ad hoc backups) is a
+#   disposable, fully reconstructable cache of the ticket markdown
+#   mirror (`TicketDbReconstructionService.reconstruct`), not a durable
+#   artifact — binary, large, and churns on every write, exactly what
+#   git shouldn't track. (Once a separate tickets repo is configured,
+#   as here, this framing flips per `AIO-2848`: the DB is what stays
+#   authoritative and the git mirror in `ruansilvx/aion-tickets` is
+#   itself the disposable side — but `/.aion/data/` was never git-
+#   tracked either way, so nothing changes about this ignore rule.)
+#
+# Both anchored to the repo root (`/`) — unanchored `tickets/`
+# previously matched any directory named `tickets` anywhere in the
+# tree, silently hiding new files under the real source directory
+# `lib/features/tickets/` from `git status`.
+/tickets/
 /.aion/data/
+/.aion/tickets-repo/
