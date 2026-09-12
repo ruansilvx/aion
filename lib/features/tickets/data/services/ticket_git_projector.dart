@@ -47,9 +47,12 @@ class TicketGitProjector {
   /// a message describing [eventLabel] (e.g. `'created'`,
   /// `'status-changed'`, `'trashed'`, `'restored'`). Skips the commit
   /// (but still writes the file) if the write produced no git-visible
-  /// change, avoiding empty commits. Queued behind any earlier
-  /// [project]/[projectBatch] call still in flight — see this class's
-  /// own dartdoc.
+  /// change, avoiding empty commits. Also skips the `git add`/commit
+  /// entirely — while still writing the file — when `tickets/` (or this
+  /// one ticket's path specifically) is gitignored; see
+  /// [GitRepositoryClient.isIgnored]'s dartdoc for why that's a no-op
+  /// rather than an error. Queued behind any earlier [project]/
+  /// [projectBatch] call still in flight — see this class's own dartdoc.
   Future<void> project(
     Ticket ticket,
     String rootPath,
@@ -68,6 +71,8 @@ class TicketGitProjector {
     await file.parent.create(recursive: true);
     await file.writeAsString(_serializer.serialize(ticket));
 
+    if (await _git.isIgnored(rootPath, relativePath)) return;
+
     await _git.add(rootPath, relativePath);
     if (!await _git.hasChanges(rootPath)) return;
     await _git.commit(rootPath, 'ticket: ${ticket.ticketId} $eventLabel');
@@ -83,9 +88,13 @@ class TicketGitProjector {
   /// cascade and `TicketsCubit`'s bulk-trash path (where the batch can
   /// include cascaded descendants, or — for restore — both ancestors
   /// and descendants at once, not only ancestors). No-ops (writes
-  /// nothing, commits nothing) if [ancestors] is empty. Queued behind
-  /// any earlier [project]/[projectBatch] call still in flight — see
-  /// this class's own dartdoc.
+  /// nothing, commits nothing) if [ancestors] is empty. Every ticket
+  /// whose path is gitignored is still written to disk but excluded from
+  /// staging (see [_project]'s dartdoc on [GitRepositoryClient.isIgnored]);
+  /// if every ticket in the batch is ignored this way, the commit itself
+  /// is skipped too, the same as the empty-list case. Queued behind any
+  /// earlier [project]/[projectBatch] call still in flight — see this
+  /// class's own dartdoc.
   Future<void> projectBatch(
     List<Ticket> ancestors,
     String rootPath,
@@ -100,13 +109,17 @@ class TicketGitProjector {
     String eventLabel,
   ) async {
     if (ancestors.isEmpty) return;
+    var anyStaged = false;
     for (final ticket in ancestors) {
       final relativePath = 'tickets/${ticket.ticketId}.md';
       final file = File('$rootPath/$relativePath');
       await file.parent.create(recursive: true);
       await file.writeAsString(_serializer.serialize(ticket));
+      if (await _git.isIgnored(rootPath, relativePath)) continue;
       await _git.add(rootPath, relativePath);
+      anyStaged = true;
     }
+    if (!anyStaged) return;
     if (!await _git.hasChanges(rootPath)) return;
     final label = ancestors.length == 1
         ? '${ancestors.single.ticketId} $eventLabel'

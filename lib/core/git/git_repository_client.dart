@@ -56,6 +56,27 @@ class GitRepositoryClient {
     await _runChecked(['add', relativePath], rootPath);
   }
 
+  /// Returns whether [relativePath] is excluded by [rootPath]'s
+  /// `.gitignore` (or any other git exclude mechanism — `.git/info/
+  /// exclude`, a global excludesfile), via `git check-ignore -q`. Unlike
+  /// [add]/[commit]/[hasChanges], a non-zero exit
+  /// here is *not* a failure to propagate: `git check-ignore` exits `1`
+  /// for "not ignored", which is the common, expected result, not an
+  /// error. Only exit code `0` ("ignored") returns `true`; a fatal error
+  /// (exit `128`, e.g. a malformed `.gitignore` pattern) is treated the
+  /// same as "not ignored" rather than thrown — the caller's own
+  /// subsequent [add] surfaces that underlying problem through its
+  /// existing checked-throw contract instead of this method masking it
+  /// as a skip. Added so [TicketGitProjector] can treat a ticket path
+  /// that a user's `.gitignore` (or `GitignoreConfirmationBanner`'s own
+  /// `tickets/` entry — see `projects.md`) already excludes as an
+  /// expected no-op rather than surfacing `git add`'s "paths are
+  /// ignored" failure.
+  Future<bool> isIgnored(String rootPath, String relativePath) async {
+    final result = await _run(['check-ignore', '-q', relativePath], rootPath);
+    return result.exitCode == 0;
+  }
+
   /// Returns whether `git status --porcelain` in [rootPath] reports any
   /// pending changes (staged or unstaged). Used to skip a commit when a
   /// write didn't actually change the serialized content. Throws a
