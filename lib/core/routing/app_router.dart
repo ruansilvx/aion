@@ -211,10 +211,10 @@ final appRouter = GoRouter(
               context.read<TicketLinkRepository>(),
               context.read<ProviderRegistry>(),
               context.read<ModelRoutingRepository>(),
-              gitClient: _activeProject(context).ticketsGitRootPath != null
+              gitClient: _activeProject(context).rootPath != null
                   ? context.read<GitRepositoryClient>()
                   : null,
-              projectRootPath: _activeProject(context).ticketsGitRootPath,
+              sourceRootPath: _activeProject(context).rootPath,
             ),
             child: const InboxScreen(),
           ),
@@ -797,6 +797,7 @@ class _WorkspaceShellState extends State<WorkspaceShell>
                           ? context.read<TicketGitProjector>()
                           : null,
                       projectRootPath: rootPath,
+                      sourceRootPath: widget.project.rootPath,
                       linkRepository: context.read<TicketLinkRepository>(),
                       providerRegistry: context.read<ProviderRegistry>(),
                       commentRepository: context.read<CommentRepository>(),

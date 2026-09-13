@@ -35,17 +35,23 @@ import 'package:aion/features/tickets/presentation/cubit/inbox_state.dart';
 /// design.md §5's stated dependency list — all five required, since
 /// every one of the Inbox's four purposes *is* an agent call; unlike
 /// `TicketsCubit`, there's no reduced ticket-CRUD-only "core" mode to
-/// fall back to without them. [_gitClient]/[_projectRootPath] are two
+/// fall back to without them. [_gitClient]/[_sourceRootPath] are two
 /// further dependencies design.md's own constructor list omitted, needed
 /// only by [startQa]: §3's decision requires mirroring
 /// `TicketsCubit._runFullSummarization`'s exact worktree-create/run/
 /// remove-in-`finally` shape, which needs a [GitRepositoryClient] and the
-/// project's root path. These two *are* optional (`null` on mobile/web,
-/// which has no user-chosen project directory — see
-/// `Project.rootPath`'s own dartdoc, and `app_router.dart`'s existing
-/// `if (rootPath != null)`-gated provisioning of the same two
-/// dependencies for `TicketsCubit`) — [startQa] emits [InboxError]
-/// immediately if constructed without either, rather than crashing.
+/// project's *codebase* root — [Project.rootPath], never
+/// [Project.ticketsGitRootPath] (a project with a separate tickets repo
+/// has no application source in it at all — a `startQa` worktree created
+/// there would leave the model with nothing real to read, exactly the
+/// `AIO-2894` bug already fixed for `TicketsCubit`'s own coding-execution/
+/// skill-attachment/summarization/release worktrees). These two *are*
+/// optional (`null` on mobile/web, which has no user-chosen project
+/// directory — see `Project.rootPath`'s own dartdoc, and
+/// `app_router.dart`'s existing `if (rootPath != null)`-gated provisioning
+/// of the same two dependencies for `TicketsCubit`) — [startQa] emits
+/// [InboxError] immediately if constructed without either, rather than
+/// crashing.
 class InboxCubit extends Cubit<InboxState> {
   /// Creates an [InboxCubit].
   InboxCubit(
@@ -55,10 +61,10 @@ class InboxCubit extends Cubit<InboxState> {
     this._providerRegistry,
     this._modelRoutingRepository, {
     GitRepositoryClient? gitClient,
-    String? projectRootPath,
+    String? sourceRootPath,
   }) : super(const InboxInitial()) {
     _gitClient = gitClient;
-    _projectRootPath = projectRootPath;
+    _sourceRootPath = sourceRootPath;
   }
 
   final TicketRepository _ticketRepository;
@@ -67,7 +73,7 @@ class InboxCubit extends Cubit<InboxState> {
   final ProviderRegistry _providerRegistry;
   final ModelRoutingRepository _modelRoutingRepository;
   late final GitRepositoryClient? _gitClient;
-  late final String? _projectRootPath;
+  late final String? _sourceRootPath;
 
   static const _uuid = Uuid();
 
@@ -313,18 +319,18 @@ class InboxCubit extends Cubit<InboxState> {
   /// worktree-isolated opening turn per §3 — mirrors
   /// `TicketsCubit._runFullSummarization`'s exact worktree-create/run/
   /// remove-in-`finally` shape: a fresh, throwaway
-  /// [GitRepositoryClient.createWorktree] (never [_projectRootPath]
+  /// [GitRepositoryClient.createWorktree] (never [_sourceRootPath]
   /// itself), `toolsEnabled: true`, [ModelPhase.capable]. Every later
   /// reply in this chat goes through the ordinary `ChatCubit.sendMessage`
   /// path, not this method. Emits [InboxError] immediately, creating no
   /// chat, if constructed without a [GitRepositoryClient]/
-  /// [_projectRootPath] (mobile/web, which has no user-chosen project
+  /// [_sourceRootPath] (mobile/web, which has no user-chosen project
   /// directory). Returns the created chat ticket's id, or `null` on
   /// failure (see [startBrainDump]).
   Future<String?> startQa(String initialQuestion) async {
     emit(InboxLaunching(InboxPurpose.qa, history: _currentHistory));
     final gitClient = _gitClient;
-    final rootPath = _projectRootPath;
+    final rootPath = _sourceRootPath;
     if (gitClient == null || rootPath == null) {
       emit(
         InboxError(

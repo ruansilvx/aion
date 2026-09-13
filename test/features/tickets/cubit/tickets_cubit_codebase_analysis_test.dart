@@ -162,6 +162,7 @@ void main() {
       providerRegistry: registry,
       linkRepository: linkRepository,
       projectRootPath: '/fake/project/root',
+      sourceRootPath: '/fake/project/root',
       projectName: 'Fake Project',
     );
 
@@ -283,6 +284,7 @@ void main() {
       gitClient: gitClient,
       linkRepository: linkRepository,
       projectRootPath: '/fake/project/root',
+      sourceRootPath: '/fake/project/root',
       projectName: 'Fake Project',
     );
 

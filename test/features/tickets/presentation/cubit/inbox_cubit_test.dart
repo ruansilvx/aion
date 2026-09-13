@@ -158,7 +158,7 @@ void main() {
     registry,
     modelRoutingRepository,
     gitClient: gitClient,
-    projectRootPath: '/fake/project/root',
+    sourceRootPath: '/fake/project/root',
   );
 
   Ticket inboxChat({

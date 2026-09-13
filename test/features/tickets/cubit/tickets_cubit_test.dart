@@ -7103,6 +7103,7 @@ void main() {
         commentRepository: commentRepository,
         automationSettingsRepository: automationSettingsRepository,
         projectRootPath: '/fake/project/root',
+        sourceRootPath: '/fake/project/root',
         gitClient: gitClient,
         gitHubClient: gitHubClient,
         baselineRepository: baselineRepository,
@@ -8822,6 +8823,7 @@ void main() {
       commentRepository: commentRepository,
       automationSettingsRepository: automationSettingsRepository,
       projectRootPath: '/fake/project/root',
+      sourceRootPath: '/fake/project/root',
       gitClient: gitClient,
       gitHubClient: gitHubClient,
       baselineRepository: baselineRepository,
@@ -9287,6 +9289,7 @@ void main() {
         providerRegistry: registry,
         commentRepository: commentRepository,
         projectRootPath: '/fake/project/root',
+        sourceRootPath: '/fake/project/root',
         gitClient: gitClient,
         gitHubClient: gitHubClient,
         baselineRepository: baselineRepository,
@@ -9672,6 +9675,7 @@ void main() {
         providerRegistry: registry,
         commentRepository: commentRepository,
         projectRootPath: '/fake/project/root',
+        sourceRootPath: '/fake/project/root',
         gitClient: gitClient,
         gitHubClient: gitHubClient,
         baselineRepository: baselineRepository,
@@ -9780,6 +9784,7 @@ void main() {
           commentRepository: commentRepository,
           automationSettingsRepository: automationSettingsRepository,
           projectRootPath: rootPath,
+          sourceRootPath: rootPath,
           gitClient: gitClient,
           gitHubClient: gitHubClient,
           baselineRepository: baselineRepository,
@@ -9947,6 +9952,7 @@ void main() {
         commentRepository: commentRepository,
         automationSettingsRepository: automationSettingsRepository,
         projectRootPath: '/fake/project/root',
+        sourceRootPath: '/fake/project/root',
         gitClient: gitClient,
         gitHubClient: gitHubClient,
         baselineRepository: baselineRepository,
@@ -10523,6 +10529,7 @@ void main() {
         commentRepository: commentRepository,
         automationSettingsRepository: automationSettingsRepository,
         projectRootPath: '/fake/project/root',
+        sourceRootPath: '/fake/project/root',
         gitClient: gitClient,
         gitHubClient: gitHubClient,
         baselineRepository: baselineRepository,
@@ -13003,6 +13010,7 @@ void main() {
       automationSettingsRepository: automationSettingsRepository,
       modelRoutingRepository: modelRoutingRepository,
       projectRootPath: '/fake/project/root',
+      sourceRootPath: '/fake/project/root',
       gitClient: gitClient,
       gitHubClient: gitHubClient,
       baselineRepository: baselineRepository,
@@ -14255,6 +14263,7 @@ void main() {
       commentRepository: commentRepository,
       automationSettingsRepository: automationSettingsRepository,
       projectRootPath: '/fake/project/root',
+      sourceRootPath: '/fake/project/root',
       gitClient: gitClient,
       gitHubClient: gitHubClient,
       baselineRepository: baselineRepository,
@@ -15119,6 +15128,7 @@ void main() {
       workflowPromptTemplateRepository: templateRepository,
       gitClient: gitClient,
       projectRootPath: '/project/root',
+      sourceRootPath: '/project/root',
     );
 
     group('auto confidence — WorkflowStatus entry', () {
@@ -15690,6 +15700,7 @@ void main() {
         workflowPromptTemplateRepository: templateRepository,
         gitClient: gitClient,
         projectRootPath: '/project/root',
+        sourceRootPath: '/project/root',
       );
 
       blocTest<TicketsCubit, TicketsState>(
