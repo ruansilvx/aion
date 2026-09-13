@@ -2441,4 +2441,133 @@ void main() {
       expect(after.updatedAt, before.updatedAt);
     });
   });
+
+  group('bug ticket severity validation', () {
+    test('createTicket throws ArgumentError when bug ticket has no severity',
+        () async {
+      final now = DateTime(2026, 1, 1);
+      final bugWithoutSeverity = Ticket(
+        id: 'bug-no-severity',
+        ticketId: '',
+        type: TicketType.bug,
+        title: 'Bug without severity',
+        status: 'backlog',
+        createdAt: now,
+        updatedAt: now,
+      );
+
+      await expectLater(
+        () => repository.createTicket(bugWithoutSeverity),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
+    test('importTicket throws ArgumentError when bug ticket has no severity',
+        () async {
+      final now = DateTime(2026, 1, 1);
+      final bugWithoutSeverity = Ticket(
+        id: 'imported-bug-no-severity',
+        ticketId: 'AIO-99',
+        type: TicketType.bug,
+        title: 'Imported bug without severity',
+        status: 'backlog',
+        createdAt: now,
+        updatedAt: now,
+      );
+
+      await expectLater(
+        () => repository.importTicket(bugWithoutSeverity),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
+    test('createTicket succeeds when bug ticket has severity set', () async {
+      final now = DateTime(2026, 1, 1);
+      final bugWithSeverity = Ticket(
+        id: 'bug-with-severity',
+        ticketId: '',
+        type: TicketType.bug,
+        title: 'Bug with severity',
+        status: 'backlog',
+        severity: TicketSeverity.high,
+        createdAt: now,
+        updatedAt: now,
+      );
+
+      await expectLater(
+        () => repository.createTicket(bugWithSeverity),
+        returnsNormally,
+      );
+      final created = await repository.getTicketById('bug-with-severity');
+      expect(created, isNotNull);
+      expect(created!.severity, TicketSeverity.high);
+    });
+
+    test('importTicket succeeds when bug ticket has severity set', () async {
+      final now = DateTime(2026, 1, 1);
+      final bugWithSeverity = Ticket(
+        id: 'imported-bug-with-severity',
+        ticketId: 'AIO-98',
+        type: TicketType.bug,
+        title: 'Imported bug with severity',
+        status: 'backlog',
+        severity: TicketSeverity.low,
+        createdAt: now,
+        updatedAt: now,
+      );
+
+      await expectLater(
+        () => repository.importTicket(bugWithSeverity),
+        returnsNormally,
+      );
+      final imported = await repository.getTicketById('imported-bug-with-severity');
+      expect(imported, isNotNull);
+      expect(imported!.ticketId, 'AIO-98');
+      expect(imported.severity, TicketSeverity.low);
+    });
+
+    test('createTicket succeeds when non-bug ticket has no severity',
+        () async {
+      final now = DateTime(2026, 1, 1);
+      final taskWithoutSeverity = Ticket(
+        id: 'task-no-severity',
+        ticketId: '',
+        type: TicketType.task,
+        title: 'Task without severity',
+        status: 'backlog',
+        createdAt: now,
+        updatedAt: now,
+      );
+
+      await expectLater(
+        () => repository.createTicket(taskWithoutSeverity),
+        returnsNormally,
+      );
+      final created = await repository.getTicketById('task-no-severity');
+      expect(created, isNotNull);
+      expect(created!.severity, isNull);
+    });
+
+    test('importTicket succeeds when non-bug ticket has no severity',
+        () async {
+      final now = DateTime(2026, 1, 1);
+      final storyWithoutSeverity = Ticket(
+        id: 'imported-story-no-severity',
+        ticketId: 'AIO-97',
+        type: TicketType.story,
+        title: 'Imported story without severity',
+        status: 'backlog',
+        createdAt: now,
+        updatedAt: now,
+      );
+
+      await expectLater(
+        () => repository.importTicket(storyWithoutSeverity),
+        returnsNormally,
+      );
+      final imported = await repository.getTicketById('imported-story-no-severity');
+      expect(imported, isNotNull);
+      expect(imported!.severity, isNull);
+    });
+  });
 }

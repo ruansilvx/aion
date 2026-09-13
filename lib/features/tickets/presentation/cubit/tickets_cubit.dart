@@ -3007,6 +3007,9 @@ class TicketsCubit extends Cubit<TicketsState> {
           title: idea.title,
           description: idea.description,
           status: _defaultCreationStatus,
+          severity: targetType == TicketType.bug
+              ? TicketSeverity.medium
+              : null,
           createdAt: now,
           updatedAt: now,
         );

@@ -54,6 +54,7 @@ class DriftTicketRepository implements TicketRepository {
 
   @override
   Future<void> createTicket(Ticket ticket) async {
+    _validateTicket(ticket);
     final prefs = await SharedPreferences.getInstance();
     final prefix = prefs.getString(_prefixKey) ?? _defaultPrefix;
 
@@ -63,6 +64,7 @@ class DriftTicketRepository implements TicketRepository {
 
   @override
   Future<void> importTicket(Ticket ticket) async {
+    _validateTicket(ticket);
     final companion = _buildInsertCompanion(ticket, ticketId: ticket.ticketId);
     await _db.ticketDao.insertTicketPreservingId(companion);
   }
@@ -113,6 +115,17 @@ class DriftTicketRepository implements TicketRepository {
         ticket.estimate != null ? TicketEstimationSource.manual.name : null,
       ),
     );
+  }
+
+  /// Validates that a [ticket] meets domain constraints before persistence.
+  /// Throws [ArgumentError] if the ticket violates any constraint.
+  /// Currently enforces: bug tickets must have severity set.
+  void _validateTicket(Ticket ticket) {
+    if (ticket.type == TicketType.bug && ticket.severity == null) {
+      throw ArgumentError(
+        'Bug tickets must have a severity set. Ticket: ${ticket.id}',
+      );
+    }
   }
 
   @override
