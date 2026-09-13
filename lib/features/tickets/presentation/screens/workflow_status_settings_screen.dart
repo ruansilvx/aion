@@ -1503,6 +1503,7 @@ String _fixedStageName(SddStage stage) => switch (stage) {
   SddStage.proposed => 'Proposed',
   SddStage.designBrief => 'Design Brief',
   SddStage.designSync => 'Design Sync',
+  SddStage.applying => 'Applying',
   SddStage.verifying => 'Verifying',
   SddStage.archived => 'Archived',
 };

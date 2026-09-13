@@ -2382,7 +2382,9 @@ class TicketsCubit extends Cubit<TicketsState> {
     // live `state` read after those emissions would never see a detail
     // screen that was open when this call started.
     final stateBeforeThisWrite = state;
-    if (ticket.type != TicketType.epic && ticket.type != TicketType.story) {
+    if (ticket.type != TicketType.epic &&
+        ticket.type != TicketType.story &&
+        ticket.type != TicketType.bug) {
       await _emitSddStagePreconditionNotMet(ticket.id);
       return null;
     }
@@ -2424,6 +2426,27 @@ class TicketsCubit extends Cubit<TicketsState> {
           currentBeforeArchive is TicketDetailLoaded &&
                   currentBeforeArchive.ticket.id == refreshed.id
               ? currentBeforeArchive.copyWith(ticket: refreshed)
+              : TicketDetailLoaded(refreshed),
+        );
+        return null;
+      }
+
+      if (nextStage == SddStage.applying) {
+        // Bug-only (see SddStage.applying's own dartdoc): no stage chat is
+        // spawned here at all — entering this stage fires the same
+        // autonomous coding-execution run a Task/Bug's plain-status
+        // executionTrigger shortcut already fires, via the existing
+        // _triggerOrQueueCodingExecution/_runCodingExecution machinery
+        // (which spawns and tracks its own execution chat internally,
+        // independent of _inFlightStageAdvanceIds — that flag is specific
+        // to the generic stage-chat-turn "advancing" spinner this branch
+        // deliberately doesn't use). Added for `AIO-2898`.
+        unawaited(_triggerOrQueueCodingExecution(refreshed));
+        final currentBeforeApplying = state;
+        emit(
+          currentBeforeApplying is TicketDetailLoaded &&
+                  currentBeforeApplying.ticket.id == refreshed.id
+              ? currentBeforeApplying.copyWith(ticket: refreshed)
               : TicketDetailLoaded(refreshed),
         );
         return null;
@@ -3486,7 +3509,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [SddStage.designBrief] and [SddStage.verifying] for a `story` — see
   /// [_storyNeedsDesignReview]. An `epic` always skips straight to
   /// [SddStage.verifying], since [SddStage.designBrief]/ [SddStage.designSync]
-  /// only ever apply to `story` tickets. Added for `AIO-1834`.
+  /// only ever apply to `story` tickets. A `bug` always goes
+  /// `proposed → applying → verifying` — it has no children to decompose
+  /// (so `designBrief`/`designSync` never apply either, same skip as an
+  /// epic) and needs the explicit `applying` stage an epic/story doesn't,
+  /// since it has no child Task to delegate actual code-writing to. See
+  /// `AIO-1834`, `AIO-2898`.
   Future<SddStage?> _nextSddStage(Ticket ticket) async {
     switch (ticket.sddStage) {
       case null:
@@ -3494,6 +3522,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       case SddStage.exploring:
         return SddStage.proposed;
       case SddStage.proposed:
+        if (ticket.type == TicketType.bug) return SddStage.applying;
         if (ticket.type != TicketType.story) return SddStage.verifying;
         final tasks = await _repository.getTicketsByParent(
           ticket.id,
@@ -3505,6 +3534,8 @@ class TicketsCubit extends Cubit<TicketsState> {
       case SddStage.designBrief:
         return SddStage.designSync;
       case SddStage.designSync:
+        return SddStage.verifying;
+      case SddStage.applying:
         return SddStage.verifying;
       case SddStage.verifying:
         return SddStage.archived;
@@ -3600,18 +3631,31 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [TicketDetailLoaded.canAdvanceSddStage]/
   /// [TicketDetailLoaded.sddStageBlockReason] computation, so the two can't
   /// disagree. `canAdvance` is `false` with `blockReason: null` for any type
-  /// other than [TicketType.epic]/[TicketType.story], or once
-  /// [SddStage.archived] is reached (nothing left to advance to, not a
-  /// "blocked" state). Each of the 5 precondition-bearing branches below
-  /// builds a [TransitionEvalContext] from the same signals the
+  /// other than [TicketType.epic]/[TicketType.story]/[TicketType.bug]
+  /// (`AIO-2898`), or once [SddStage.archived] is reached (nothing left to
+  /// advance to, not a "blocked" state). Most precondition-bearing branches
+  /// below build a [TransitionEvalContext] from the same signals the
   /// pre-`sddstage-transition-preconditions` hardcoded checks used, then
-  /// consults [stage]'s project-configured `TransitionGraph` via
+  /// consult [stage]'s project-configured `TransitionGraph` via
   /// [_resolveTransition] rather than a fixed rule — see that change's
-  /// design.md §4.
+  /// design.md §4. **Exception**: a [TicketType.bug]'s `proposed`/`applying`
+  /// branches are checked directly (`_proposeGateApproved`/
+  /// `_codingExecutionConcluded`), not routed through [_resolveTransition] —
+  /// the project-configurable graph system keys a precondition tree by
+  /// [SddStage] alone, shared across every type that reaches that stage, and
+  /// the existing seeded `proposed` tree checks `hasChildren`/
+  /// `allChildrenComplete`, which a Bug (a leaf, never has children) could
+  /// never satisfy — routing it through that same tree would permanently
+  /// stick every Bug at `proposed`. Making Bug's own gates project-
+  /// configurable too needs a schema change (keying by `(SddStage,
+  /// TicketType)`, not just `SddStage`) — deliberately deferred, not
+  /// overlooked; see `AIO-2898`/`AIO-2902`.
   Future<({bool canAdvance, String? blockReason})> _sddStageAdvanceCheck(
     Ticket ticket,
   ) async {
-    if (ticket.type != TicketType.epic && ticket.type != TicketType.story) {
+    if (ticket.type != TicketType.epic &&
+        ticket.type != TicketType.story &&
+        ticket.type != TicketType.bug) {
       return (canAdvance: false, blockReason: null);
     }
     if (await _nextSddStage(ticket) == null) {
@@ -3632,7 +3676,9 @@ class TicketsCubit extends Cubit<TicketsState> {
         // carry `VERIFY GATE: APPROVED` — mirrors `designSync`'s own
         // approved-content gate. `approved` short-circuits to `false` when
         // there's no reply yet at all, avoiding a redundant chat-content
-        // lookup; see `AIO-1905` §4.2.
+        // lookup; see `AIO-1905` §4.2. Unchanged for a `bug` reaching this
+        // stage from `applying` — this is exactly the human-reviewable
+        // safety check `AIO-2898` needs, with zero new code of its own.
         final ready = await _mostRecentChatHasTerminalReply(ticket.id);
         final approved = ready ? await _verifyGateApproved(ticket.id) : false;
         return _resolveTransition(
@@ -3641,6 +3687,25 @@ class TicketsCubit extends Cubit<TicketsState> {
             mostRecentChatHasTerminalReply: ready,
             verifyGateApproved: approved,
           ),
+        );
+      case SddStage.proposed when ticket.type == TicketType.bug:
+        // See this method's own dartdoc "Exception" note for why this
+        // skips _resolveTransition entirely. Added for `AIO-2898`.
+        final approved = await _proposeGateApproved(ticket.id);
+        return (
+          canAdvance: approved,
+          blockReason: approved ? null : 'Waiting on: Proposal approved',
+        );
+      case SddStage.applying:
+        // Bug-only (an Epic/Story never reaches this stage — see
+        // SddStage.applying's own dartdoc). Gates purely on the
+        // coding-execution run having reached a terminal state, not on any
+        // chat content — the human safety check happens next, in
+        // `verifying`. Added for `AIO-2898`.
+        final concluded = await _codingExecutionConcluded(ticket.id);
+        return (
+          canAdvance: concluded,
+          blockReason: concluded ? null : 'Waiting on: Coding execution',
         );
       case SddStage.proposed:
         // Story branch: `designBrief`/`designSync` are supposed to run
@@ -3796,6 +3861,64 @@ class TicketsCubit extends Cubit<TicketsState> {
     );
     return mostRecent.authorType == CommentAuthorType.ai &&
         mostRecent.content.contains('VERIFY GATE: APPROVED');
+  }
+
+  /// The [TicketType.bug] [bugId]'s current Proposed-stage chat — its most
+  /// recently created chat child whose title starts with `'${await
+  /// _stagePresentName(SddStage.proposed)} — '`. `null` if none exists yet.
+  /// Mirrors [_mostRecentVerifyChat]'s exact shape. Added for `AIO-2898`.
+  Future<Ticket?> _mostRecentProposedChat(String bugId) async {
+    final prefix = '${await _stagePresentName(SddStage.proposed)} — ';
+    final chats = await _repository.getTicketsByParent(
+      bugId,
+      types: const [TicketType.chat],
+    );
+    final proposedChats = chats.where((c) => c.title.startsWith(prefix)).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return proposedChats.isEmpty ? null : proposedChats.first;
+  }
+
+  /// Whether [bugId]'s Proposed-stage chat's most recent comment is an
+  /// [CommentAuthorType.ai] reply whose content contains the literal line
+  /// `PROPOSE GATE: APPROVED` — mirrors [_verifyGateApproved]/
+  /// [_designSyncApproved] field-for-field, built on
+  /// [_mostRecentProposedChat]. Gates [SddStage.proposed → SddStage.applying]
+  /// for a [TicketType.bug], replacing the `hasChildren`/`allChildrenComplete`
+  /// check a Story/Epic uses at this same stage — a Bug has no children to
+  /// decompose into. Added for `AIO-2898`.
+  Future<bool> _proposeGateApproved(String bugId) async {
+    final commentRepo = _commentRepository;
+    if (commentRepo == null) return false;
+    final proposedChat = await _mostRecentProposedChat(bugId);
+    if (proposedChat == null) return false;
+    final comments = await commentRepo.getCommentsForTicket(proposedChat.id);
+    if (comments.isEmpty) return false;
+    final mostRecent = comments.reduce(
+      (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
+    );
+    return mostRecent.authorType == CommentAuthorType.ai &&
+        mostRecent.content.contains('PROPOSE GATE: APPROVED');
+  }
+
+  /// Whether [bugId]'s coding-execution run (fired on entering
+  /// [SddStage.applying] — see [advanceSddStage]'s dedicated branch) has
+  /// reached a terminal state: not currently running
+  /// ([_inFlightExecutionIds]) and not still waiting in
+  /// [_executionQueue], with at least one execution chat actually having
+  /// been spawned (so a Bug that has never been through Applying yet, or
+  /// whose execution hasn't started, doesn't read as "concluded" by
+  /// vacuous absence). Gates [SddStage.applying → SddStage.verifying] —
+  /// deliberately outcome-agnostic (succeeded, failed, or "nothing to
+  /// fix" all count as concluded alike): Verifying's own existing chat
+  /// review is where a human/AI judges *what* the run actually produced,
+  /// not this gate. Added for `AIO-2898`.
+  Future<bool> _codingExecutionConcluded(String bugId) async {
+    if (_inFlightExecutionIds.contains(bugId) ||
+        _executionQueue.contains(bugId)) {
+      return false;
+    }
+    final executionChat = await _mostRecentExecutionChat(bugId);
+    return executionChat != null;
   }
 
   /// Whether a Task or Bug's coding-execution run may start, built
@@ -6311,7 +6434,14 @@ class TicketsCubit extends Cubit<TicketsState> {
         ChatTurnSuccess() => true,
         ChatTurnFailure() || ChatTurnCancelled() => false,
       };
-      if (succeeded && stage == SddStage.proposed) {
+      if (succeeded &&
+          stage == SddStage.proposed &&
+          parent.type != TicketType.bug) {
+        // A Bug's Proposed-stage chat produces a fix plan
+        // (`PROPOSE GATE: APPROVED`/`PENDING`), not a `## Decomposition`
+        // block — it has no children to materialize. Would likely no-op
+        // anyway (no matching block to parse), but skip explicitly rather
+        // than rely on that. Added for `AIO-2898`.
         final comments = await commentRepo.getCommentsForTicket(chatId);
         if (comments.isNotEmpty) {
           final mostRecent = comments.reduce(
@@ -7858,6 +7988,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     SddStage.proposed => 'Proposed',
     SddStage.designBrief => 'Design Brief',
     SddStage.designSync => 'Design Sync',
+    SddStage.applying => 'Applying',
     SddStage.verifying => 'Verifying',
     SddStage.archived => 'Archived',
   };

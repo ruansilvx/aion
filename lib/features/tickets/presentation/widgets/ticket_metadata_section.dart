@@ -1752,6 +1752,9 @@ class _SddStageSection extends StatelessWidget {
     SddStage.proposed => context.l10n.ticketDetailSddStagePropose,
     SddStage.designBrief => context.l10n.ticketDetailSddStageDesignBrief,
     SddStage.designSync => context.l10n.ticketDetailSddStageDesignSync,
+    // Not yet in _stages (Bug's own stage tracker rendering is `AIO-2902`,
+    // not shipped yet) — included only so this switch stays exhaustive.
+    SddStage.applying => context.l10n.ticketDetailSddStageApply,
     SddStage.verifying => context.l10n.ticketDetailSddStageVerify,
     SddStage.archived => context.l10n.ticketDetailSddStageArchive,
   };
@@ -1766,6 +1769,8 @@ class _SddStageSection extends StatelessWidget {
         // Design spec's current-stage-line table).
         SddStage.designBrief => context.l10n.ticketDetailSddStageDesignBrief,
         SddStage.designSync => context.l10n.ticketDetailSddStageDesignSync,
+        // Not yet in _stages — see _stageLabel's own note. `AIO-2902`.
+        SddStage.applying => context.l10n.ticketDetailSddStageApplying,
         SddStage.verifying => context.l10n.ticketDetailSddStageVerifying,
         SddStage.archived => context.l10n.ticketDetailSddStageArchived,
       };
@@ -1783,6 +1788,10 @@ class _SddStageSection extends StatelessWidget {
       needsDesignReview == true ? SddStage.designBrief : SddStage.verifying,
     SddStage.designBrief => SddStage.designSync,
     SddStage.designSync => SddStage.verifying,
+    // Bug-only in practice (a Story/Epic never reaches `applying`) — the
+    // transition itself needs no ticket-type branch, unlike `proposed`
+    // above. See `TicketsCubit._nextSddStage`, `AIO-2898`.
+    SddStage.applying => SddStage.verifying,
     SddStage.verifying => SddStage.archived,
     SddStage.archived => null,
   };
