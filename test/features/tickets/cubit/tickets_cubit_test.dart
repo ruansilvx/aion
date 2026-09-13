@@ -6141,6 +6141,319 @@ void main() {
     );
   });
 
+  group('advanceSddStage — bug SDD cycle (AIO-2898)', () {
+    late MockAgentModelClient agentClient;
+    late MockProviderRegistry registry;
+    late MockCommentRepository commentRepository;
+    late MockTicketLinkRepository linkRepository;
+
+    final bug = Ticket(
+      id: 'bug-1',
+      ticketId: 'AIO-100',
+      type: TicketType.bug,
+      title: 'A real bug',
+      status: 'backlog',
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    Ticket bugAt(SddStage? stage) => Ticket(
+      id: bug.id,
+      ticketId: bug.ticketId,
+      type: bug.type,
+      title: bug.title,
+      status: bug.status,
+      sddStage: stage,
+      createdAt: bug.createdAt,
+      updatedAt: bug.updatedAt,
+    );
+
+    setUp(() {
+      agentClient = MockAgentModelClient();
+      registry = buildProviderStack(agentClient).registry;
+      commentRepository = MockCommentRepository();
+      linkRepository = MockTicketLinkRepository();
+      when(
+        () => linkRepository.getLinksForTicket(any()),
+      ).thenAnswer((_) async => []);
+    });
+
+    TicketsCubit buildCubit() => TicketsCubit(
+      repository,
+      providerRegistry: registry,
+      commentRepository: commentRepository,
+      linkRepository: linkRepository,
+      transitionPreconditionRepository: FakeTransitionPreconditionRepository(),
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'a Task is still rejected outright — only bug joins epic/story '
+      '(AIO-2898 explicitly excludes Task)',
+      setUp: () {
+        when(
+          () => repository.getTicketById(ticket.id),
+        ).thenAnswer((_) async => ticket);
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.advanceSddStage(ticket),
+      verify: (_) {
+        verifyNever(() => repository.updateTicketSddStage(any(), any()));
+      },
+      expect: () => [
+        const TicketsError(
+          '',
+          reason: TicketsErrorReason.sddStagePreconditionNotMet,
+        ),
+        TicketDetailLoaded(ticket),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'a fresh bug advances null → exploring exactly like an epic/story '
+      'would (the type guard now admits it)',
+      setUp: () {
+        when(
+          () => repository.getTicketById(bug.id),
+        ).thenAnswer((_) async => bugAt(SddStage.exploring));
+        when(
+          () => repository.updateTicketSddStage(bug.id, SddStage.exploring),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.createTicket(any()),
+        ).thenAnswer((_) async {});
+        stubStatefulComments(commentRepository, 'any-chat-id');
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Investigating...'),
+            AgentDoneEvent(),
+          ]),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        await cubit.advanceSddStage(bug);
+      },
+      verify: (_) {
+        verify(
+          () => repository.updateTicketSddStage(bug.id, SddStage.exploring),
+        ).called(1);
+        // The generic stage-chat flow ran (unlike `applying`, below) — a
+        // chat ticket was actually created.
+        verify(() => repository.createTicket(any())).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'a bug at proposed cannot advance without PROPOSE GATE: APPROVED — '
+      'not gated on children, unlike a story',
+      setUp: () {
+        when(
+          () => repository.getTicketById(bug.id),
+        ).thenAnswer((_) async => bugAt(SddStage.proposed));
+        when(
+          () => repository.getTicketsByParent(
+            bug.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer(
+          (_) async => [
+            Ticket(
+              id: 'proposed-chat',
+              ticketId: 'AIO-101',
+              type: TicketType.chat,
+              title: 'Proposed — ${bug.title}',
+              status: 'backlog',
+              parentId: bug.id,
+              createdAt: DateTime(2026),
+              updatedAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(
+          () => commentRepository.getCommentsForTicket('proposed-chat'),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'c1',
+              ticketId: 'proposed-chat',
+              content: 'Here is my fix plan.\n\nPROPOSE GATE: PENDING',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        await cubit.advanceSddStage(bugAt(SddStage.proposed));
+      },
+      verify: (_) {
+        verifyNever(() => repository.updateTicketSddStage(any(), any()));
+      },
+      expect: () => [
+        const TicketsError(
+          '',
+          reason: TicketsErrorReason.sddStagePreconditionNotMet,
+        ),
+        TicketDetailLoaded(bugAt(SddStage.proposed)),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'a bug at proposed advances straight to applying (no design stages) '
+      'once PROPOSE GATE: APPROVED is found, firing coding-execution '
+      'instead of spawning another stage chat',
+      setUp: () {
+        when(
+          () => repository.getTicketById(bug.id),
+        ).thenAnswer((_) async => bugAt(SddStage.applying));
+        when(
+          () => repository.getTicketsByParent(
+            bug.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer(
+          (_) async => [
+            Ticket(
+              id: 'proposed-chat',
+              ticketId: 'AIO-101',
+              type: TicketType.chat,
+              title: 'Proposed — ${bug.title}',
+              status: 'backlog',
+              parentId: bug.id,
+              createdAt: DateTime(2026),
+              updatedAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(
+          () => commentRepository.getCommentsForTicket('proposed-chat'),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'c1',
+              ticketId: 'proposed-chat',
+              content: 'Here is my fix plan.\n\nPROPOSE GATE: APPROVED',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(
+          () => repository.updateTicketSddStage(bug.id, SddStage.applying),
+        ).thenAnswer((_) async {});
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        await cubit.advanceSddStage(bugAt(SddStage.proposed));
+        // Let _triggerOrQueueCodingExecution's unawaited
+        // _tryStartNextQueuedExecutions() chain settle — this cubit has
+        // no gitClient/providerRegistry execution deps configured, so
+        // _runCodingExecution's own missing-dependency guard clears the
+        // queue immediately rather than doing anything real.
+        await Future<void>.delayed(Duration.zero);
+      },
+      verify: (_) {
+        verify(
+          () => repository.updateTicketSddStage(bug.id, SddStage.applying),
+        ).called(1);
+        // No new chat was created for `applying` — unlike every other
+        // stage, entering it fires coding-execution directly instead of
+        // the generic _createStageChat/_runStageChatTurn flow.
+        verifyNever(() => repository.createTicket(any()));
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'a bug at applying cannot advance to verifying before any execution '
+      'chat has ever been spawned — vacuous absence must not read as '
+      '"concluded"',
+      setUp: () {
+        when(
+          () => repository.getTicketById(bug.id),
+        ).thenAnswer((_) async => bugAt(SddStage.applying));
+        when(
+          () => repository.getTicketsByParent(
+            bug.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => []);
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        await cubit.advanceSddStage(bugAt(SddStage.applying));
+      },
+      verify: (_) {
+        verifyNever(() => repository.updateTicketSddStage(any(), any()));
+      },
+      expect: () => [
+        const TicketsError(
+          '',
+          reason: TicketsErrorReason.sddStagePreconditionNotMet,
+        ),
+        TicketDetailLoaded(bugAt(SddStage.applying)),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'a bug at applying advances to verifying once its execution chat '
+      'exists and nothing is still running/queued — outcome-agnostic, '
+      'unlike verifying\'s own content-based gate',
+      setUp: () {
+        when(
+          () => repository.getTicketById(bug.id),
+        ).thenAnswer((_) async => bugAt(SddStage.verifying));
+        when(
+          () => repository.getTicketsByParent(
+            bug.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer(
+          (_) async => [
+            Ticket(
+              id: 'exec-chat',
+              ticketId: 'AIO-102',
+              type: TicketType.chat,
+              title: 'Coding Execution — ${bug.title}',
+              status: 'backlog',
+              parentId: bug.id,
+              createdAt: DateTime(2026),
+              updatedAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(
+          () => repository.updateTicketSddStage(bug.id, SddStage.verifying),
+        ).thenAnswer((_) async {});
+        stubStatefulComments(commentRepository, 'any-chat-id');
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Reviewing the diff...'),
+            AgentDoneEvent(),
+          ]),
+        );
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        await cubit.advanceSddStage(bugAt(SddStage.applying));
+      },
+      verify: (_) {
+        verify(
+          () => repository.updateTicketSddStage(bug.id, SddStage.verifying),
+        ).called(1);
+        // Verifying is the generic stage-chat flow again — unchanged,
+        // exactly what an epic/story already gets at this stage.
+        verify(() => repository.createTicket(any())).called(1);
+      },
+    );
+  });
+
   group('advanceSddStage — archived / _createEpicSpec (spec-ticket-type)', () {
     late MockAgentModelClient agentClient;
     late MockProviderRegistry registry;

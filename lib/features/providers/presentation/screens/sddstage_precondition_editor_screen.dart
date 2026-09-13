@@ -23,6 +23,12 @@ String sddStagePreconditionStageLabel(BuildContext context, SddStage stage) =>
       SddStage.proposed => context.l10n.ticketDetailSddStageProposed,
       SddStage.designBrief => context.l10n.ticketDetailSddStageDesignBrief,
       SddStage.designSync => context.l10n.ticketDetailSddStageDesignSync,
+      // Not yet reachable from this screen — `applying` isn't in
+      // _preconditionBearingStagesInOrder (its Bug-only gate isn't wired
+      // into the project-configurable graph system yet; see
+      // `TicketsCubit._sddStageAdvanceCheck`'s own dartdoc, `AIO-2898`/
+      // `AIO-2902`). Included only so this switch stays exhaustive.
+      SddStage.applying => context.l10n.ticketDetailSddStageApplying,
       SddStage.verifying => context.l10n.ticketDetailSddStageVerify,
       SddStage.archived => context.l10n.ticketDetailSddStageArchive,
     };

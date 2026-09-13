@@ -385,11 +385,18 @@ void main() {
 
   // `aion-arch/changes/sddstage-transition-preconditions` — round-2
   // `/verify` follow-up: the "Configure precondition" affordance must
-  // appear on every precondition-bearing stage row (5) and never on
+  // appear on every precondition-bearing stage row and never on
   // `SddStage.archived`, which has no precondition (design.md §5/§7).
+  // `SddStage.applying` (`AIO-2898`) joined the enum after this test was
+  // written — it renders a row here too (this screen iterates
+  // `SddStage.values` directly, not a curated subset), even though its
+  // own Bug-only gate isn't wired into the project-configurable
+  // precondition-graph system yet (see
+  // `TicketsCubit._sddStageAdvanceCheck`'s dartdoc) — the affordance
+  // still appears, it just has nothing seeded to edit yet.
   testWidgets(
-    'the "Configure precondition" affordance appears on all 5 '
-    'precondition-bearing stage rows and not on Archived',
+    'the "Configure precondition" affordance appears on every '
+    'precondition-bearing stage row and not on Archived',
     (tester) async {
       final cubit = buildCubit()..load();
       await tester.pumpWidget(_wrap(cubit));
@@ -406,6 +413,7 @@ void main() {
         SddStage.proposed: 'Proposed',
         SddStage.designBrief: 'Design Brief',
         SddStage.designSync: 'Design Sync',
+        SddStage.applying: 'Applying',
         SddStage.verifying: 'Verifying',
         SddStage.archived: 'Archived',
       };
