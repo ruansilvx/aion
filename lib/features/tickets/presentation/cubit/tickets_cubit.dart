@@ -1670,6 +1670,36 @@ class TicketsCubit extends Cubit<TicketsState> {
     }
   }
 
+  /// Ensures a [TicketType.bug] ticket carries a [Ticket.severity] before
+  /// it's ever persisted — the single enforcement point for the invariant
+  /// "every bug ticket has a severity" (`AIO-2826`), applied uniformly
+  /// across every ticket-creation path in this cubit ([createTicket],
+  /// [promoteIdea], [_handleCreateTicketToolCall], and
+  /// [_materializeParsedChildren]'s verify-fix tickets) rather than relying
+  /// on any single caller (e.g. `CreateTicketScreen`'s own required-field
+  /// UI) to have remembered to ask. Deliberately placed here, not in
+  /// `DriftTicketRepository` — this project's own convention is that
+  /// domain/invariant validation lives in the cubit layer, not the
+  /// repository (a lower-level data-access layer several other legitimate
+  /// flows, including this file's own tests, rely on being able to persist
+  /// a bug with no severity yet and set one later via [updateTicket]).
+  /// Defaults to [TicketSeverity.medium] when [ticket] doesn't already
+  /// carry one — the same "give it a reasonable default rather than block
+  /// the action" posture this app already uses for AI-suggested Complexity/
+  /// Estimate — since most call sites here have no interactive user to
+  /// prompt. The two call sites that *do* have one (the New Ticket form via
+  /// [createTicket], and the "Promote to Bug" overflow menu via
+  /// [promoteIdea]) collect a real choice from the user first and pass it
+  /// through, so this only ever supplies the default for a caller that
+  /// didn't already have an answer. No-op for every other [TicketType], or
+  /// when [ticket] already has a severity.
+  Ticket _withRequiredBugSeverity(Ticket ticket) {
+    if (ticket.type != TicketType.bug || ticket.severity != null) {
+      return ticket;
+    }
+    return ticket.copyWith(severity: () => TicketSeverity.medium);
+  }
+
   /// Creates a new ticket of [type] with [title], then reloads the list.
   ///
   /// [status] always starts at `_defaultCreationStatus`. [complexity]
@@ -1750,22 +1780,24 @@ class TicketsCubit extends Cubit<TicketsState> {
     emit(TicketCreating(currentTickets));
     try {
       final now = DateTime.now();
-      final ticket = Ticket(
-        id: _uuid.v4(),
-        ticketId: '',
-        complexity: complexity,
-        severity: severity,
-        stepsToReproduce: stepsToReproduce,
-        expectedBehavior: expectedBehavior,
-        actualBehavior: actualBehavior,
-        type: type,
-        title: title,
-        description: description,
-        status: _defaultCreationStatus,
-        priority: priority,
-        parentId: parentId,
-        createdAt: now,
-        updatedAt: now,
+      final ticket = _withRequiredBugSeverity(
+        Ticket(
+          id: _uuid.v4(),
+          ticketId: '',
+          complexity: complexity,
+          severity: severity,
+          stepsToReproduce: stepsToReproduce,
+          expectedBehavior: expectedBehavior,
+          actualBehavior: actualBehavior,
+          type: type,
+          title: title,
+          description: description,
+          status: _defaultCreationStatus,
+          priority: priority,
+          parentId: parentId,
+          createdAt: now,
+          updatedAt: now,
+        ),
       );
 
       await _repository.createTicket(ticket);
@@ -2975,10 +3007,21 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// (does not touch the repository) if constructed without a
   /// [TicketLinkRepository] (see the constructor's dartdoc). Renamed from
   /// `promoteSignal` for `AIO-934` — behavior is otherwise unchanged.
+  ///
+  /// [severity] is the user-chosen severity for a newly-created
+  /// [TicketType.bug] target (ignored for [TicketType.epic], and for a
+  /// promotion to an [existingTicketId] — that ticket's own severity, if
+  /// any, is left untouched). The overflow menu collects this via a
+  /// [SeverityPicker] step before calling here, the same required-choice UX
+  /// as the New Ticket form's own Severity field — see
+  /// [_withRequiredBugSeverity]'s dartdoc for why an explicit choice
+  /// still passes through a default-supplying safety net rather than
+  /// skipping it. Added for `AIO-2826`.
   Future<void> promoteIdea(
     Ticket idea, {
     required TicketType targetType,
     String? existingTicketId,
+    TicketSeverity? severity,
   }) async {
     if (idea.type != TicketType.idea) {
       emit(TicketsError('Only idea tickets can be promoted.'));
@@ -3000,15 +3043,18 @@ class TicketsCubit extends Cubit<TicketsState> {
         targetId = existingTicketId;
       } else {
         final now = DateTime.now();
-        final target = Ticket(
-          id: _uuid.v4(),
-          ticketId: '',
-          type: targetType,
-          title: idea.title,
-          description: idea.description,
-          status: _defaultCreationStatus,
-          createdAt: now,
-          updatedAt: now,
+        final target = _withRequiredBugSeverity(
+          Ticket(
+            id: _uuid.v4(),
+            ticketId: '',
+            type: targetType,
+            severity: targetType == TicketType.bug ? severity : null,
+            title: idea.title,
+            description: idea.description,
+            status: _defaultCreationStatus,
+            createdAt: now,
+            updatedAt: now,
+          ),
         );
         await _repository.createTicket(target);
         targetId = target.id;
@@ -7229,16 +7275,18 @@ class TicketsCubit extends Cubit<TicketsState> {
 
     Future<Map<String, dynamic>> create() async {
       final now = DateTime.now();
-      final ticket = Ticket(
-        id: _uuid.v4(),
-        ticketId: '',
-        type: type,
-        title: title,
-        description: description,
-        status: _defaultCreationStatus,
-        parentId: null,
-        createdAt: now,
-        updatedAt: now,
+      final ticket = _withRequiredBugSeverity(
+        Ticket(
+          id: _uuid.v4(),
+          ticketId: '',
+          type: type,
+          title: title,
+          description: description,
+          status: _defaultCreationStatus,
+          parentId: null,
+          createdAt: now,
+          updatedAt: now,
+        ),
       );
       await _repository.createTicket(ticket);
       return {'accepted': true, 'createdTicketId': ticket.id};
@@ -7719,15 +7767,17 @@ class TicketsCubit extends Cubit<TicketsState> {
     final now = DateTime.now();
     final idByTitle = <String, String>{};
     for (final (childType, title, _) in parsed) {
-      final child = Ticket(
-        id: _uuid.v4(),
-        ticketId: '',
-        type: childType,
-        title: title,
-        status: _defaultCreationStatus,
-        parentId: parent.id,
-        createdAt: now,
-        updatedAt: now,
+      final child = _withRequiredBugSeverity(
+        Ticket(
+          id: _uuid.v4(),
+          ticketId: '',
+          type: childType,
+          title: title,
+          status: _defaultCreationStatus,
+          parentId: parent.id,
+          createdAt: now,
+          updatedAt: now,
+        ),
       );
       await _repository.createTicket(child);
       idByTitle[title.toLowerCase()] = child.id;
