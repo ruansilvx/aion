@@ -272,7 +272,8 @@ void main() {
   );
 
   testWidgets(
-    'tapping "Create new bug" calls promoteIdea with targetType bug',
+    'tapping "Create new bug" opens a severity prompt instead of creating '
+    'immediately (AIO-2826)',
     (tester) async {
       await tester.pumpWidget(
         _wrap(TicketOverflowMenu(ticket: buildIdea()), cubit),
@@ -286,10 +287,89 @@ void main() {
       await tester.tap(find.text('Create new bug'));
       await tester.pumpAndSettle();
 
+      expect(find.text('Bug severity'), findsOneWidget);
+      expect(find.byType(SeverityPicker), findsOneWidget);
+      verifyNever(() => repository.createTicket(any()));
+    },
+  );
+
+  testWidgets(
+    'the severity prompt\'s confirm row is disabled until a severity is '
+    'picked (AIO-2826)',
+    (tester) async {
+      await tester.pumpWidget(
+        _wrap(TicketOverflowMenu(ticket: buildIdea()), cubit),
+      );
+      await tester.pump();
+
+      await tester.tap(find.byType(TicketOverflowMenu));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Promote to Bug'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Create new bug'));
+      await tester.pumpAndSettle();
+
+      // Only the header/confirm-row copy of "Create new bug" exists now
+      // (the chooser's own row is gone) — tapping it with no severity
+      // picked yet must not create anything.
+      await tester.tap(find.text('Create new bug'));
+      await tester.pumpAndSettle();
+      verifyNever(() => repository.createTicket(any()));
+    },
+  );
+
+  testWidgets(
+    'picking a severity then confirming calls promoteIdea, creating a bug '
+    'with that severity set (AIO-2826)',
+    (tester) async {
+      await tester.pumpWidget(
+        _wrap(TicketOverflowMenu(ticket: buildIdea()), cubit),
+      );
+      await tester.pump();
+
+      await tester.tap(find.byType(TicketOverflowMenu));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Promote to Bug'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Create new bug'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(SeverityPicker));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('High'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Create new bug'));
+      await tester.pumpAndSettle();
+
       final created =
           verify(() => repository.createTicket(captureAny())).captured;
       expect(created, hasLength(1));
       expect((created.first as Ticket).type, TicketType.bug);
+      expect((created.first as Ticket).severity, TicketSeverity.high);
+    },
+  );
+
+  testWidgets(
+    'promoting an idea to an epic still creates immediately, with no '
+    'severity prompt (AIO-2826 only applies to bug targets)',
+    (tester) async {
+      await tester.pumpWidget(
+        _wrap(TicketOverflowMenu(ticket: buildIdea()), cubit),
+      );
+      await tester.pump();
+
+      await tester.tap(find.byType(TicketOverflowMenu));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Promote to Epic'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Create new epic'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Bug severity'), findsNothing);
+      final created =
+          verify(() => repository.createTicket(captureAny())).captured;
+      expect(created, hasLength(1));
+      expect((created.first as Ticket).type, TicketType.epic);
     },
   );
 }

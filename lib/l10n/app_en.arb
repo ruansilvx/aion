@@ -398,6 +398,7 @@
   "ticketOverflowPromoteToBug": "Promote to Bug",
   "ticketPromoteLinkExistingEpic": "Link to existing epic",
   "ticketPromoteLinkExistingBug": "Link to existing bug",
+  "ticketPromoteBugSeverityStepTitle": "Bug severity",
   "ticketPromoteCreateNewEpic": "Create new epic",
   "ticketPromoteCreateNewBug": "Create new bug",
   "ticketOverflowSuggestedPill": "SUGGESTED",

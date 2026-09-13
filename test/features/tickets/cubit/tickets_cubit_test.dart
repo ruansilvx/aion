@@ -970,6 +970,46 @@ void main() {
     );
 
     blocTest<TicketsCubit, TicketsState>(
+      'createTicket defaults a bug with no severity to Medium rather than '
+      'persisting one unset (AIO-2826 — a defense-in-depth backstop for '
+      'any caller that skips the New Ticket form\'s own required-Severity '
+      'field)',
+      setUp: () {
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => ticket);
+        when(
+          () => repository.searchTickets(
+            query: any(named: 'query'),
+            statuses: any(named: 'statuses'),
+            types: any(named: 'types'),
+            priorities: any(named: 'priorities'),
+            sort: any(named: 'sort'),
+            limit: any(named: 'limit'),
+            offset: any(named: 'offset'),
+            statusSortOrder: any(named: 'statusSortOrder'),
+          ),
+        ).thenAnswer(
+          (_) async => TicketSearchPage(tickets: [ticket], hasMore: false),
+        );
+      },
+      build: () => TicketsCubit(repository),
+      act: (cubit) => cubit.createTicket(type: TicketType.bug, title: 'Bug'),
+      verify: (_) {
+        final created = verify(
+          () => repository.createTicket(captureAny()),
+        ).captured;
+        expect(created, hasLength(1));
+        expect((created.single as Ticket).severity, TicketSeverity.medium);
+      },
+      expect: () => [
+        const TicketCreating([]),
+        TicketCreated([ticket], hasMore: false),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
       'createTicket emits [TicketCreating, TicketsError] on exception',
       setUp: () {
         when(() => repository.createTicket(any())).thenThrow(Exception('boom'));
@@ -8054,6 +8094,10 @@ void main() {
         final bug = children.firstWhere((t) => t.type == TicketType.bug);
         expect(task.title, 'Fix the null check');
         expect(bug.title, 'Crash on save');
+        // AIO-2826: this verify-fix materialization path has no interactive
+        // user to prompt for severity, so it must still default one rather
+        // than persist a bug with none set.
+        expect(bug.severity, TicketSeverity.medium);
 
         verify(
           () => linkRepository.createLink(
@@ -11437,7 +11481,10 @@ void main() {
 
     blocTest<TicketsCubit, TicketsState>(
       'creates a new bug and links it when existingTicketId is omitted '
-      'and targetType is bug',
+      'and targetType is bug, defaulting to Medium severity when none is '
+      'given (AIO-2826 — every creation path must produce a bug with a '
+      'severity set, even one that skips the overflow menu\'s own '
+      'severity-prompt step)',
       setUp: () {
         when(() => repository.createTicket(any())).thenAnswer((_) async {});
         when(
@@ -11459,6 +11506,7 @@ void main() {
         ).captured;
         expect(created, hasLength(1));
         expect((created.first as Ticket).type, TicketType.bug);
+        expect((created.first as Ticket).severity, TicketSeverity.medium);
         verify(
           () => linkRepository.createLink(
             sourceTicketId: ideaTicket.id,
@@ -11466,6 +11514,38 @@ void main() {
             linkType: TicketLinkType.relatesTo,
           ),
         ).called(1);
+      },
+      expect: () => [TicketDetailLoaded(ideaTicket)],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'creates a new bug with the caller-supplied severity when one is '
+      'given, rather than the Medium default (AIO-2826)',
+      setUp: () {
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        when(
+          () => linkRepository.createLink(
+            sourceTicketId: ideaTicket.id,
+            targetTicketId: any(named: 'targetTicketId'),
+            linkType: TicketLinkType.relatesTo,
+          ),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(ideaTicket.id),
+        ).thenAnswer((_) async => ideaTicket);
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.promoteIdea(
+        ideaTicket,
+        targetType: TicketType.bug,
+        severity: TicketSeverity.critical,
+      ),
+      verify: (_) {
+        final created = verify(
+          () => repository.createTicket(captureAny()),
+        ).captured;
+        expect(created, hasLength(1));
+        expect((created.first as Ticket).severity, TicketSeverity.critical);
       },
       expect: () => [TicketDetailLoaded(ideaTicket)],
     );

@@ -294,6 +294,10 @@ void main() {
         expect(createdTicket.title, 'Follow-up bug');
         expect(createdTicket.description, 'Found while working on this');
         expect(createdTicket.parentId, isNull);
+        // AIO-2826: this tool call accepts no `severity` argument at all
+        // (an agent-driven, non-interactive path), so the cubit must still
+        // default one rather than persist a bug with none set.
+        expect(createdTicket.severity, TicketSeverity.medium);
       },
       expect: () => <TicketsState>[],
     );

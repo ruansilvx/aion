@@ -7,6 +7,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_severity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_link_picker.dart';
@@ -76,6 +77,21 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
   /// `null` whenever the overlay closes. Added for `AIO-934`.
   TicketType? _reclassifyTargetType;
 
+  /// Whether the "create new bug" severity-prompt step (§5.2a) is currently
+  /// showing in place of [_PromoteChooser] — set when "Create new bug" is
+  /// tapped with [_promoteTargetType] at [TicketType.bug], since that flow
+  /// needs a severity chosen before [TicketsCubit.promoteIdea] is called
+  /// (mirrors the New Ticket form's own required Severity field — see
+  /// [TicketsCubit.promoteIdea]'s dartdoc). Not used for
+  /// [TicketType.epic], which has no severity to collect. Reset to `false`
+  /// whenever the overlay closes. Added for `AIO-2826`.
+  bool _promoteBugSeverityPrompt = false;
+
+  /// The severity chosen so far in the [_promoteBugSeverityPrompt] step, or
+  /// `null` before the user has picked one. Reset to `null` whenever the
+  /// overlay closes. Added for `AIO-2826`.
+  TicketSeverity? _selectedPromoteSeverity;
+
   @override
   void dispose() {
     _overlayEntry?.remove();
@@ -126,8 +142,10 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
                     minWidth: 180,
-                    maxWidth: (_promoteTargetType != null ||
-                            _reclassifyTargetType != null)
+                    maxWidth:
+                        (_promoteTargetType != null ||
+                            _reclassifyTargetType != null ||
+                            _promoteBugSeverityPrompt)
                         ? 210
                         : (widget.ticket.type == TicketType.idea
                               ? 210
@@ -137,6 +155,28 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
                     builder: (context, setOverlayState) {
                       final promoteTargetType = _promoteTargetType;
                       final reclassifyTargetType = _reclassifyTargetType;
+                      if (promoteTargetType != null &&
+                          _promoteBugSeverityPrompt) {
+                        return _BugSeverityPrompt(
+                          value: _selectedPromoteSeverity,
+                          onChanged: (severity) => setOverlayState(
+                            () => _selectedPromoteSeverity = severity,
+                          ),
+                          onBack: () => setOverlayState(
+                            () => _promoteBugSeverityPrompt = false,
+                          ),
+                          onConfirm: _selectedPromoteSeverity == null
+                              ? null
+                              : () {
+                                  ticketsCubit.promoteIdea(
+                                    widget.ticket,
+                                    targetType: promoteTargetType,
+                                    severity: _selectedPromoteSeverity,
+                                  );
+                                  _removeOverlay();
+                                },
+                        );
+                      }
                       if (promoteTargetType != null) {
                         return _PromoteChooser(
                           targetType: promoteTargetType,
@@ -157,13 +197,17 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
                             );
                             _removeOverlay();
                           },
-                          onCreateNewTap: () {
-                            ticketsCubit.promoteIdea(
-                              widget.ticket,
-                              targetType: promoteTargetType,
-                            );
-                            _removeOverlay();
-                          },
+                          onCreateNewTap: promoteTargetType == TicketType.bug
+                              ? () => setOverlayState(
+                                  () => _promoteBugSeverityPrompt = true,
+                                )
+                              : () {
+                                  ticketsCubit.promoteIdea(
+                                    widget.ticket,
+                                    targetType: promoteTargetType,
+                                  );
+                                  _removeOverlay();
+                                },
                         );
                       }
                       if (reclassifyTargetType != null) {
@@ -221,6 +265,8 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
     _overlayEntry = null;
     _promoteTargetType = null;
     _reclassifyTargetType = null;
+    _promoteBugSeverityPrompt = false;
+    _selectedPromoteSeverity = null;
     // Guards against setState-after-dispose — the same class of bug
     // project.md's AppDropdown overlay-dismiss crash note warns about.
     if (mounted) {
@@ -666,6 +712,92 @@ class _PromoteChooser extends StatelessWidget {
                 Expanded(
                   child: Text(
                     createNewLabel,
+                    style: AionText.bodySm.copyWith(
+                      color: c.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The "Create new bug" severity-prompt step (§5.2a), shown in place of
+/// [_PromoteChooser] once its "Create new bug" row is tapped: a back header
+/// (returns to [_PromoteChooser], not the root menu), a required
+/// [SeverityPicker], and a confirm row — disabled until [value] is non-null
+/// — that actually creates the promoted bug. Mirrors the New Ticket form's
+/// own required-Severity UX (`createTicketSeverityRequired`'s "Choose a
+/// severity" copy), so promoting an idea to a bug can no longer silently
+/// skip the same invariant a manual bug ticket enforces (`AIO-2826`).
+/// [onChanged]/[onBack]/[onConfirm] are supplied by
+/// [_TicketOverflowMenuState._showOverlay] using its own `context` — this
+/// widget itself never reads `TicketsCubit`, same rationale as
+/// [_PromoteChooser]. Added for `AIO-2826`.
+class _BugSeverityPrompt extends StatelessWidget {
+  const _BugSeverityPrompt({
+    required this.value,
+    required this.onChanged,
+    required this.onBack,
+    required this.onConfirm,
+  });
+
+  /// The severity picked so far, or `null` before the user has chosen one.
+  final TicketSeverity? value;
+
+  /// Called with the newly picked severity.
+  final ValueChanged<TicketSeverity> onChanged;
+
+  /// Called when the back caret is tapped, returning to [_PromoteChooser].
+  final VoidCallback onBack;
+
+  /// Called to actually create the promoted bug with [value]. `null` (and
+  /// the confirm row renders disabled) until [value] is non-null.
+  final VoidCallback? onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _ChooserHeader(
+          onBack: onBack,
+          title: context.l10n.ticketPromoteBugSeverityStepTitle,
+        ),
+        Container(color: c.border, height: 1),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+          child: SeverityPicker(
+            value: value,
+            onChanged: onChanged,
+            labelText: context.l10n.ticketDetailSeverityCaption,
+            isRequired: true,
+          ),
+        ),
+        Container(color: c.border, height: 1),
+        OverlayMenuItem(
+          onTap: onConfirm ?? () {},
+          enabled: onConfirm != null,
+          semanticsLabel: context.l10n.ticketPromoteCreateNewBug,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+            child: Row(
+              children: [
+                PhosphorIcon(
+                  PhosphorIcons.plusLight,
+                  size: 16,
+                  color: c.primary,
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Text(
+                    context.l10n.ticketPromoteCreateNewBug,
                     style: AionText.bodySm.copyWith(
                       color: c.primary,
                       fontWeight: FontWeight.w600,
