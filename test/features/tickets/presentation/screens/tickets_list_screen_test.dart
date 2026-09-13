@@ -286,6 +286,7 @@ void main() {
     linkRepository: linkRepository,
     providerRegistry: registry,
     projectRootPath: '/fake/project/root',
+    sourceRootPath: '/fake/project/root',
     projectName: 'Fake Project',
   );
 

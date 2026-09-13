@@ -261,6 +261,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     EmbeddingProvider? embeddingProvider,
     TicketGitProjector? gitProjector,
     String? projectRootPath,
+    String? sourceRootPath,
     TicketLinkRepository? linkRepository,
     ProviderRegistry? providerRegistry,
     CommentRepository? commentRepository,
@@ -293,6 +294,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     _embeddingProvider = embeddingProvider;
     _gitProjector = gitProjector;
     _projectRootPath = projectRootPath;
+    _sourceRootPath = sourceRootPath;
     _linkRepository = linkRepository;
     _providerRegistry = providerRegistry;
     _commentRepository = commentRepository;
@@ -372,6 +374,34 @@ class TicketsCubit extends Cubit<TicketsState> {
   late final EmbeddingProvider? _embeddingProvider;
   late final TicketGitProjector? _gitProjector;
   late final String? _projectRootPath;
+
+  /// The project's actual codebase checkout ([Project.rootPath]) — never
+  /// [Project.ticketsGitRootPath]. Distinct from [_projectRootPath] (which
+  /// *is* [Project.ticketsGitRootPath] — the tickets-only repo when a
+  /// project has one configured) because every consumer below wants
+  /// specifically "where does the code this ticket describes actually
+  /// live": [_runCodingExecution]/[_runStageChatTurn]/
+  /// [_fireSkillAttachment]'s isolated worktrees (the model needs the real
+  /// source tree to fix, not a tickets-only checkout with nothing to
+  /// build/edit), [runCodebaseSummarization], [_readTokenFilesForContext],
+  /// and [confirmRelease]/[prepareReleaseDraft] (tagging/CHANGELOG-writing
+  /// the actual release, not the tickets repo). Before this field existed,
+  /// all of the above read [_projectRootPath] directly — harmless for a
+  /// project with no separate tickets repo (where [_projectRootPath] and
+  /// [_sourceRootPath] are the same value), but for one that *has* opted
+  /// into `AIO-2845`'s separate tickets repo, every coding-execution
+  /// worktree was created off the tickets-only repo instead: the model
+  /// found no application source to fix there, and either produced a
+  /// nonsense "fix" (editing ticket markdown/writing ad hoc validation
+  /// scripts) or — worse — used its own bash tool to navigate out of the
+  /// worktree entirely and edit the developer's real checkout directly,
+  /// landing uncontrolled commits straight onto whatever branch it had
+  /// checked out. `gh pr create` itself worked fine throughout — the PRs
+  /// it opened were real, just against `ruansilvx/aion-tickets` instead of
+  /// the actual application repo. Root-caused and fixed for `AIO-2894`
+  /// (filed, then fixed directly rather than through Aion's own — broken —
+  /// coding-execution loop, for obvious reasons).
+  late final String? _sourceRootPath;
 
   /// Shared estimate/timeSpent rollup-recompute walk — see
   /// [TicketRollupRecomputer]. Wired to the same [_repository]/
@@ -2551,7 +2581,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// work, not a fresh judgment call — matching [_createEpicSpec]'s own tier
   /// rationale) and runs one non-tool [AgentModelClient.run] call requesting
   /// changelog prose plus a suggested semver bump. Calls
-  /// [ProjectStackDetector.detectVersionFile] on [_projectRootPath] once, up
+  /// [ProjectStackDetector.detectVersionFile] on [_sourceRootPath] once, up
   /// front — its `currentVersion` (when detected) is folded into the prompt so
   /// the model can suggest a real next version instead of a bare `x.y.z`
   /// placeholder (found missing during T14's manual pass: every drafted
@@ -2567,7 +2597,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// the caller shows an inline message, mirroring [_createEpicSpec]'s own
   /// guard) if this cubit was constructed without a
   /// [ProviderRegistry]/[TicketLinkRepository]/
-  /// [GitRepositoryClient]/`projectRootPath`, or if [releaseTicketId] doesn't
+  /// [GitRepositoryClient]/`sourceRootPath`, or if [releaseTicketId] doesn't
   /// resolve to a live `release`-type ticket. On a model failure, emits
   /// `TicketsError(reason: TicketsErrorReason.releasePreparationFailed)` and
   /// returns `null` — the release ticket itself is untouched either way,
@@ -2579,7 +2609,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   Future<ReleaseDraft?> prepareReleaseDraft(String releaseTicketId) async {
     final providerRegistry = _providerRegistry;
     final linkRepo = _linkRepository;
-    final rootPath = _projectRootPath;
+    final rootPath = _sourceRootPath;
     final gitClient = _gitClient;
     if (providerRegistry == null ||
         linkRepo == null ||
@@ -2823,12 +2853,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// re-emits its detail state (per design.md §3.7's "whose status flips to
   /// Done" success behavior) — never reached if an earlier step throws. No-ops
   /// (writes nothing) if constructed without a [GitRepositoryClient] or
-  /// `projectRootPath`. Added for `AIO-1782`; see its linked Documentation
+  /// `sourceRootPath`. Added for `AIO-1782`; see its linked Documentation
   /// page, §4.3. Extended by the `/verify` round-2 fix-up (T21) to add the
   /// status flip, found missing during T14's manual pass.
   Future<void> confirmRelease(ReleaseDraft draft) async {
     final gitClient = _gitClient;
-    final rootPath = _projectRootPath;
+    final rootPath = _sourceRootPath;
     if (gitClient == null || rootPath == null) return;
 
     final version = draft.suggestedVersion.trim();
@@ -4517,7 +4547,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// then loops an implement-then-verify pair of **model** turns: an implement
   /// [ChatCubit.runChatTurn] (model resolved via
   /// [_resolveModel]/[ModelPhase.execution], `toolsEnabled: true`,
-  /// `workingDirectory` pointed at the worktree — never [_projectRootPath]
+  /// `workingDirectory` pointed at the worktree — never [_sourceRootPath]
   /// itself, so the developer's real checkout is never touched), then — if
   /// that succeeded — a second `runChatTurn` in the same chat/ worktree fed
   /// [_assembleVerificationContext]'s prompt (the project's effective
@@ -4588,7 +4618,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [_tryStartNextQueuedExecutions]), no-opping gracefully if constructed
   /// without a [ProviderRegistry]/[CommentRepository]/[GitRepositoryClient]/
   /// [GitHubCliClient]/[BaselineRepository]/`projectId`/`baselineVersion`/
-  /// `projectRootPath` (see the constructor's dartdoc).
+  /// `sourceRootPath` (see the constructor's dartdoc).
   ///
   /// Every implement/verify turn below gets a fresh `runId`, tracked in
   /// [_inFlightRuns] for the run's duration — [cancelCodingExecution] resolves
@@ -4637,7 +4667,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     final baselineRepo = _baselineRepository;
     final projectId = _projectId;
     final baselineVersion = _baselineVersion;
-    final rootPath = _projectRootPath;
+    final rootPath = _sourceRootPath;
     if (providerRegistry == null ||
         commentRepo == null ||
         gitClient == null ||
@@ -6116,10 +6146,10 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// Non-goals). When `attachmentToolsEnabled`, runs inside a fresh isolated
   /// `git worktree` (via
   /// [GitRepositoryClient.createWorktree]/`.removeWorktree`) exactly like
-  /// [_runCodingExecution] — never [_projectRootPath] itself, so a
+  /// [_runCodingExecution] — never [_sourceRootPath] itself, so a
   /// `delegatedSkill` attachment can't touch the developer's real checkout.
   /// Throws (caught below, posting the usual failure comment) if constructed
-  /// without a [GitRepositoryClient]/`projectRootPath` in that case, or if the
+  /// without a [GitRepositoryClient]/`sourceRootPath` in that case, or if the
   /// resolved provider lacks [AgentProvider.supportsSkillDiscovery] (see
   /// `AIO-702` §3a — the `SddStage` counterpart to [_fireSkillAttachment]'s
   /// own same check). Added for `AIO-2650`. Also calls [_recordNotification]
@@ -6199,7 +6229,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       }
       if (attachmentToolsEnabled) {
         final gitClient = _gitClient;
-        final rootPath = _projectRootPath;
+        final rootPath = _sourceRootPath;
         if (gitClient == null || rootPath == null) {
           throw StateError(
             'Delegated-skill attachments require a git client and '
@@ -6275,7 +6305,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     } finally {
       if (worktreePath != null) {
         final gitClient = _gitClient;
-        final rootPath = _projectRootPath;
+        final rootPath = _sourceRootPath;
         if (gitClient != null && rootPath != null) {
           await _cleanupWorktreeTempDir(gitClient, rootPath, worktreePath);
         }
@@ -6378,7 +6408,7 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [GitRepositoryClient.createWorktree] on a fresh
   /// `aion/skill-<attachment.id>-<uuid>` branch and always removed in a
   /// `finally` — mirrors [_runCodingExecution]'s own worktree-isolation
-  /// shape exactly, never running tool-enabled against [_projectRootPath]
+  /// shape exactly, never running tool-enabled against [_sourceRootPath]
   /// itself, so the developer's real checkout is never touched by an
   /// unattended (`auto`-confidence) attachment run.
   ///
@@ -6391,8 +6421,8 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// proposal.md's Non-goals). No-ops if constructed without a
   /// [ProviderRegistry]/[CommentRepository] (see the constructor's dartdoc). A
   /// hard error — including a `delegatedSkill` run constructed without a
-  /// [GitRepositoryClient]/`projectRootPath`, which throws rather than
-  /// silently falling back to [_projectRootPath] — is caught and posted as a
+  /// [GitRepositoryClient]/`sourceRootPath`, which throws rather than
+  /// silently falling back to [_sourceRootPath] — is caught and posted as a
   /// "Skill attachment failed: `<e>`" [CommentAuthorType.system] comment,
   /// mirroring [_runStageChatTurn]'s own catch-comment shape — the same path a
   /// resolved provider lacking [AgentProvider.supportsSkillDiscovery] hits for
@@ -6436,7 +6466,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     try {
       if (toolsEnabled) {
         final gitClient = _gitClient;
-        final rootPath = _projectRootPath;
+        final rootPath = _sourceRootPath;
         if (gitClient == null || rootPath == null) {
           throw StateError(
             'Delegated-skill attachments require a git client and '
@@ -6483,7 +6513,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     } finally {
       if (worktreePath != null) {
         final gitClient = _gitClient;
-        final rootPath = _projectRootPath;
+        final rootPath = _sourceRootPath;
         if (gitClient != null && rootPath != null) {
           await _cleanupWorktreeTempDir(gitClient, rootPath, worktreePath);
         }
@@ -7723,14 +7753,14 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// approach `/design-brief`/`/design-sync`'s own `SKILL.md` `cat`s these
   /// files for, ported to Dart `File.readAsString`. No tool access involved;
   /// this is [TicketsCubit] reading files for context assembly, the same
-  /// category of desktop-only capability [_gitProjector]/[_projectRootPath]
+  /// category of desktop-only capability [_gitProjector]/[_sourceRootPath]
   /// already gates. Returns an empty string (not an error) if
-  /// [_projectRootPath] is unset or a file is missing — mobile/web has neither
+  /// [_sourceRootPath] is unset or a file is missing — mobile/web has neither
   /// a filesystem root nor UI Story design-gate stages triggering in practice
   /// (Task/Story execution is desktop-only already), so this degrades
   /// gracefully rather than throwing. Added for `AIO-1834`.
   Future<String> _readTokenFilesForContext() async {
-    final root = _projectRootPath;
+    final root = _sourceRootPath;
     if (root == null) return '';
     const relativePaths = [
       'lib/design_system/tokens/aion_colors.dart',
@@ -8904,12 +8934,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [CodebaseAnalysisRunning] immediately, then either [CodebaseAnalysisDone]
   /// (carrying the created-ticket count, `0` if the model reported no
   /// findings) or [CodebaseAnalysisFailed]. No-ops into an immediate
-  /// [CodebaseAnalysisFailed] if constructed without `projectRootPath`. Added
+  /// [CodebaseAnalysisFailed] if constructed without `sourceRootPath`. Added
   /// for `AIO-1266`.
   Future<void> runCodebaseSummarization({
     required SummarizationDepth depth,
   }) async {
-    final rootPath = _projectRootPath;
+    final rootPath = _sourceRootPath;
     if (rootPath == null) {
       _codebaseAnalysisController.add(
         const CodebaseAnalysisFailed('No project directory to scan.'),
