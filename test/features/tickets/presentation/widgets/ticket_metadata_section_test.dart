@@ -54,12 +54,22 @@ Widget _wrap({
   List<LinkedTicketRef> linkedTickets = const [],
   bool executionAwaitingReview = false,
   String? executionPrSubLine,
+  bool isExecuting = false,
+  int? executionQueuePosition,
+  String? executionFailureReason,
+  bool canAdvanceSddStage = false,
+  String? sddStageBlockReason,
 }) {
   final state = TicketDetailLoaded(
     ticket,
     linkedTickets: linkedTickets,
     executionAwaitingReview: executionAwaitingReview,
     executionPrSubLine: executionPrSubLine,
+    isExecuting: isExecuting,
+    executionQueuePosition: executionQueuePosition,
+    executionFailureReason: executionFailureReason,
+    canAdvanceSddStage: canAdvanceSddStage,
+    sddStageBlockReason: sddStageBlockReason,
   );
   whenListen(ticketsCubit, Stream.value(state), initialState: state);
   when(
@@ -199,6 +209,81 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('LINKED TICKETS'), findsOneWidget);
+  });
+
+  group('bug SDD-stage section (AIO-2902)', () {
+    final bugAtApplying = Ticket(
+      id: 'bug-applying',
+      ticketId: 'AIO-200',
+      type: TicketType.bug,
+      title: 'A bug being fixed',
+      status: 'inProgress',
+      sddStage: SddStage.applying,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    testWidgets(
+      'renders the SDD stage tracker for a bug, including an Apply node '
+      '(_bugStages, not the collapsed 4-node story set)',
+      (tester) async {
+        await tester.pumpWidget(
+          _wrap(ticket: bugAtApplying, ticketsCubit: ticketsCubit),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('SDD STAGE'), findsOneWidget);
+        expect(find.text('Apply'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'renders both the SDD stage tracker and live coding-execution '
+      'progress together for a bug in applying — unlike epic/story vs. '
+      'task, these are not mutually exclusive for a bug',
+      (tester) async {
+        await tester.pumpWidget(
+          _wrap(
+            ticket: bugAtApplying,
+            ticketsCubit: ticketsCubit,
+            isExecuting: true,
+          ),
+        );
+        // Not pumpAndSettle — isExecuting starts a repeating pulse
+        // AnimationController that never settles.
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+
+        expect(find.text('SDD STAGE'), findsOneWidget);
+        expect(find.text('CODING EXECUTION'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'a plain task in progress still gets only the coding-execution '
+      'section, no SDD stage tracker (unaffected by the bug change)',
+      (tester) async {
+        final task = Ticket(
+          id: 'task-parity',
+          ticketId: 'AIO-201',
+          type: TicketType.task,
+          title: 'A plain task',
+          status: 'inProgress',
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+
+        await tester.pumpWidget(
+          _wrap(ticket: task, ticketsCubit: ticketsCubit, isExecuting: true),
+        );
+        // Not pumpAndSettle — see the previous test's own note.
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+
+        expect(find.text('SDD STAGE'), findsNothing);
+        expect(find.text('CODING EXECUTION'), findsOneWidget);
+      },
+    );
   });
 
   testWidgets(

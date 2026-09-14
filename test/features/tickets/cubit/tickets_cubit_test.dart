@@ -7368,12 +7368,28 @@ void main() {
           createdAt: epic.createdAt,
           updatedAt: epic.updatedAt,
         );
+        // AIO-2902: _computeStageAdvanceFailure's post-failure refresh now
+        // filters to the current stage's own chat by title prefix — this
+        // fixture stands in for the same newly-created chat both
+        // getTicketById(any()) and getTicketsByParent return (hence the
+        // shared id with dummyChatTicket), just with a title matching
+        // SddStage.exploring's prefix instead of dummyChatTicket's generic
+        // "Spawned chat".
+        final exploringDummyChat = Ticket(
+          id: dummyChatTicket.id,
+          ticketId: dummyChatTicket.ticketId,
+          type: dummyChatTicket.type,
+          title: 'Exploring — ${epic.title}',
+          status: dummyChatTicket.status,
+          createdAt: dummyChatTicket.createdAt,
+          updatedAt: dummyChatTicket.updatedAt,
+        );
         when(
           () => repository.updateTicketSddStage(epic.id, SddStage.exploring),
         ).thenAnswer((_) async {});
         when(
           () => repository.getTicketById(any()),
-        ).thenAnswer((_) async => dummyChatTicket);
+        ).thenAnswer((_) async => exploringDummyChat);
         when(
           () => repository.getTicketById(epic.id),
         ).thenAnswer((_) async => advancedEpic);
@@ -7383,7 +7399,7 @@ void main() {
             epic.id,
             types: const [TicketType.chat],
           ),
-        ).thenAnswer((_) async => [dummyChatTicket]);
+        ).thenAnswer((_) async => [exploringDummyChat]);
         // The agent turn itself succeeds with text — ChatCubit.runChatTurn
         // already swallows an agentClient.run failure internally (posting
         // its own "Execution failed: ..." comment and returning `false`,
@@ -10715,6 +10731,22 @@ void main() {
         updatedAt: epic.updatedAt,
       );
 
+      // AIO-2902: _computeStageAdvanceFailure now filters to the current
+      // stage's own chat by title prefix (see its own dartdoc) rather than
+      // blindly taking the most recently created chat child — needs a
+      // properly-prefixed fixture, unlike dummyChatTicket's generic
+      // "Spawned chat" title.
+      final exploringChat = Ticket(
+        id: 'exploring-stage-chat',
+        ticketId: 'AIO-98',
+        type: TicketType.chat,
+        title: 'Exploring — ${epic.title}',
+        status: 'backlog',
+        parentId: epic.id,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+
       setUp(() {
         commentRepository = MockCommentRepository();
       });
@@ -10761,14 +10793,14 @@ void main() {
               epic.id,
               types: const [TicketType.chat],
             ),
-          ).thenAnswer((_) async => [dummyChatTicket]);
+          ).thenAnswer((_) async => [exploringChat]);
           when(
-            () => commentRepository.getCommentsForTicket(dummyChatTicket.id),
+            () => commentRepository.getCommentsForTicket(exploringChat.id),
           ).thenAnswer(
             (_) async => [
               TicketComment(
                 id: 'c-ai',
-                ticketId: dummyChatTicket.id,
+                ticketId: exploringChat.id,
                 content: 'All done.',
                 authorType: CommentAuthorType.ai,
                 createdAt: DateTime(2026),
@@ -10801,14 +10833,14 @@ void main() {
               epic.id,
               types: const [TicketType.chat],
             ),
-          ).thenAnswer((_) async => [dummyChatTicket]);
+          ).thenAnswer((_) async => [exploringChat]);
           when(
-            () => commentRepository.getCommentsForTicket(dummyChatTicket.id),
+            () => commentRepository.getCommentsForTicket(exploringChat.id),
           ).thenAnswer(
             (_) async => [
               TicketComment(
                 id: 'c-fail',
-                ticketId: dummyChatTicket.id,
+                ticketId: exploringChat.id,
                 content: 'Stage advance failed: boom',
                 authorType: CommentAuthorType.system,
                 createdAt: DateTime(2026),
@@ -10843,14 +10875,14 @@ void main() {
               epic.id,
               types: const [TicketType.chat],
             ),
-          ).thenAnswer((_) async => [dummyChatTicket]);
+          ).thenAnswer((_) async => [exploringChat]);
           when(
-            () => commentRepository.getCommentsForTicket(dummyChatTicket.id),
+            () => commentRepository.getCommentsForTicket(exploringChat.id),
           ).thenAnswer(
             (_) async => [
               TicketComment(
                 id: 'c-context',
-                ticketId: dummyChatTicket.id,
+                ticketId: exploringChat.id,
                 content: 'Context for the stage.',
                 authorType: CommentAuthorType.system,
                 createdAt: DateTime(2026),
@@ -10866,6 +10898,93 @@ void main() {
                 (s) => s.sddStageFailureReason,
                 'sddStageFailureReason',
                 'Stage advance ended without a clear result.',
+              )
+              .having((s) => s.sddStageCanRetry, 'sddStageCanRetry', true),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'a bug with a newer "Coding Execution — " chat sibling still reads '
+        'its own current-stage chat, not the execution chat (AIO-2902)',
+        build: () =>
+            TicketsCubit(repository, commentRepository: commentRepository),
+        setUp: () {
+          final bugProposed = Ticket(
+            id: bugNoStory.id,
+            ticketId: bugNoStory.ticketId,
+            type: bugNoStory.type,
+            title: bugNoStory.title,
+            status: bugNoStory.status,
+            sddStage: SddStage.proposed,
+            createdAt: bugNoStory.createdAt,
+            updatedAt: bugNoStory.updatedAt,
+          );
+          when(
+            () => repository.getTicketById(bugNoStory.id),
+          ).thenAnswer((_) async => bugProposed);
+          final proposedChat = Ticket(
+            id: 'proposed-chat-for-failure-test',
+            ticketId: 'AIO-97',
+            type: TicketType.chat,
+            title: 'Proposed — ${bugNoStory.title}',
+            status: 'backlog',
+            parentId: bugNoStory.id,
+            createdAt: DateTime(2026),
+            updatedAt: DateTime(2026),
+          );
+          // Created *after* the stage chat — an unfiltered "most recently
+          // created chat child" pick would wrongly land here instead.
+          final executionChat = Ticket(
+            id: 'execution-chat-for-failure-test',
+            ticketId: 'AIO-96',
+            type: TicketType.chat,
+            title: 'Coding Execution — ${bugNoStory.title}',
+            status: 'backlog',
+            parentId: bugNoStory.id,
+            createdAt: DateTime(2027),
+            updatedAt: DateTime(2027),
+          );
+          when(
+            () => repository.getTicketsByParent(
+              bugNoStory.id,
+              types: const [TicketType.chat],
+            ),
+          ).thenAnswer((_) async => [proposedChat, executionChat]);
+          when(
+            () => commentRepository.getCommentsForTicket(proposedChat.id),
+          ).thenAnswer(
+            (_) async => [
+              TicketComment(
+                id: 'c-fail',
+                ticketId: proposedChat.id,
+                content: 'Stage advance failed: proposed-stage boom',
+                authorType: CommentAuthorType.system,
+                createdAt: DateTime(2026),
+              ),
+            ],
+          );
+          when(
+            () => commentRepository.getCommentsForTicket(executionChat.id),
+          ).thenAnswer(
+            (_) async => [
+              TicketComment(
+                id: 'c-exec',
+                ticketId: executionChat.id,
+                content: 'EXECUTION: PR_OPENED https://example.com/pr/1',
+                authorType: CommentAuthorType.ai,
+                createdAt: DateTime(2027),
+              ),
+            ],
+          );
+        },
+        act: (cubit) => cubit.getTicketById(bugNoStory.id),
+        expect: () => [
+          const TicketsLoading(),
+          isA<TicketDetailLoaded>()
+              .having(
+                (s) => s.sddStageFailureReason,
+                'sddStageFailureReason',
+                'Stage advance failed: proposed-stage boom',
               )
               .having((s) => s.sddStageCanRetry, 'sddStageCanRetry', true),
         ],

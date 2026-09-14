@@ -218,7 +218,8 @@ class TicketMetadataSection extends StatelessWidget {
                     child: Builder(
                       builder: (context) {
                         if (ticket.type == TicketType.epic ||
-                            ticket.type == TicketType.story) {
+                            ticket.type == TicketType.story ||
+                            ticket.type == TicketType.bug) {
                           onMaybeAutoAdvance(ticket, canAdvanceSddStage);
                         }
                         return Column(
@@ -726,8 +727,26 @@ class TicketMetadataSection extends StatelessWidget {
                             ],
                             const SizedBox(height: AionSpacing.sp16),
                             Container(color: c.border, height: 1),
+                            // A bug gets both sections when relevant, not
+                            // one or the other — unlike epic/story vs.
+                            // task/bug below, which were always mutually
+                            // exclusive by type (`isExecutable` never true
+                            // for epic/story, `sddStage` never set for
+                            // task). A bug can carry both: its own SDD-stage
+                            // cycle (this epic, `AIO-2898`) *and* live
+                            // coding-execution progress once it reaches
+                            // `applying` — or from the still-unrevoked plain
+                            // status-flip shortcut, which nothing in
+                            // `AIO-2899`/`AIO-2900` disabled for `bug` (only
+                            // `task` was ever documented as "keeping" it).
+                            // Losing `_CodingExecutionSection`'s live queue
+                            // position/PR banner/retry affordance behind
+                            // `_SddStageSection`'s static block-reason text
+                            // would be a real regression. Added for
+                            // `AIO-2902`.
                             if (ticket.type == TicketType.epic ||
-                                ticket.type == TicketType.story) ...[
+                                ticket.type == TicketType.story ||
+                                ticket.type == TicketType.bug) ...[
                               const SizedBox(height: AionSpacing.sp16),
                               _SddStageSection(
                                 ticket: ticket,
@@ -749,7 +768,8 @@ class TicketMetadataSection extends StatelessWidget {
                               ),
                               const SizedBox(height: AionSpacing.sp16),
                               Container(color: c.border, height: 1),
-                            ] else if (ticket.type.isExecutable &&
+                            ],
+                            if (ticket.type.isExecutable &&
                                 (isExecuting ||
                                     executionQueuePosition != null ||
                                     executionAwaitingReview ||
@@ -1744,16 +1764,33 @@ class _SddStageSection extends StatelessWidget {
     SddStage.archived,
   ];
 
-  List<SddStage> get _stages =>
-      needsDesignReview == false ? _collapsedStages : _fullStages;
+  /// A [TicketType.bug]'s own leaf-shaped stage set — mirrors
+  /// [_collapsedStages] (no Design Brief/Design Sync) with one addition,
+  /// [SddStage.applying], the stage that fires coding-execution directly for
+  /// a Bug (see `TicketsCubit.advanceSddStage`'s dedicated branch). A Story
+  /// never reaches `applying`, so [_collapsedStages] itself stays untouched
+  /// rather than gaining a node no Story transition ever lands on. Added for
+  /// `AIO-2902`.
+  static const _bugStages = [
+    SddStage.exploring,
+    SddStage.proposed,
+    SddStage.applying,
+    SddStage.verifying,
+    SddStage.archived,
+  ];
+
+  List<SddStage> get _stages {
+    if (ticket.type == TicketType.bug) return _bugStages;
+    return needsDesignReview == false ? _collapsedStages : _fullStages;
+  }
 
   String _stageLabel(BuildContext context, SddStage stage) => switch (stage) {
     SddStage.exploring => context.l10n.ticketDetailSddStageExplore,
     SddStage.proposed => context.l10n.ticketDetailSddStagePropose,
     SddStage.designBrief => context.l10n.ticketDetailSddStageDesignBrief,
     SddStage.designSync => context.l10n.ticketDetailSddStageDesignSync,
-    // Not yet in _stages (Bug's own stage tracker rendering is `AIO-2902`,
-    // not shipped yet) — included only so this switch stays exhaustive.
+    // Bug-only in practice (a Story/Epic never reaches this stage) — see
+    // _bugStages. Added for `AIO-2902`.
     SddStage.applying => context.l10n.ticketDetailSddStageApply,
     SddStage.verifying => context.l10n.ticketDetailSddStageVerify,
     SddStage.archived => context.l10n.ticketDetailSddStageArchive,
@@ -1769,7 +1806,7 @@ class _SddStageSection extends StatelessWidget {
         // Design spec's current-stage-line table).
         SddStage.designBrief => context.l10n.ticketDetailSddStageDesignBrief,
         SddStage.designSync => context.l10n.ticketDetailSddStageDesignSync,
-        // Not yet in _stages — see _stageLabel's own note. `AIO-2902`.
+        // Bug-only in practice — see _stageLabel's own note. `AIO-2902`.
         SddStage.applying => context.l10n.ticketDetailSddStageApplying,
         SddStage.verifying => context.l10n.ticketDetailSddStageVerifying,
         SddStage.archived => context.l10n.ticketDetailSddStageArchived,
