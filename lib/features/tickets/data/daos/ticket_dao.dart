@@ -279,7 +279,9 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
   /// cleared, since `relevance` has no score to order by with no query
   /// active — falls back to the same `created_at` descending ordering
   /// this method used before sort existed. With [query] set, matches
-  /// against the `tickets_fts` index (title + description); the `ORDER
+  /// against the `tickets_fts` index (title + description + ticket_id,
+  /// since `AIO-2888` — see `AppDatabase._createSearchInfrastructure`); the
+  /// `ORDER
   /// BY` is `bm25(tickets_fts) ASC` (SQLite's bm25 scores are negative,
   /// more-negative meaning a better match) only when [sort.field] is
   /// [TicketSortField.relevance] — every other field instead orders by

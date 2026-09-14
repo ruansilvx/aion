@@ -149,7 +149,19 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
 /// [TransitionPreconditionDao.seedDefaultsIfEmpty]) for both a fresh install
 /// and a backfill of every pre-existing project — reproducing the exact
 /// hardcoded `TicketsCubit._sddStageAdvanceCheck` branches a pre-19 database
-/// already behaved with. See `AIO-1936` §2/§3.
+/// already behaved with. See `AIO-1936` §2/§3. Version 20 upgrades an
+/// existing project's `verifying` transition-precondition graph to the new
+/// two-node `verifyGateApproved` shape, with no schema/table change of its
+/// own. See `AIO-1905` §3.2. Version 21 widens the FTS5 `tickets_fts` index
+/// (see [_createSearchInfrastructure]) to also cover `ticket_id`, so
+/// searching e.g. `AIO-2835` finds that ticket even though its id never
+/// appears in its own title/description — `tickets_fts` previously indexed
+/// only `title`/`description`. Existing installs get the widened index via
+/// [_widenFtsIndexWithTicketId] (drop + recreate, since FTS5's `ALTER TABLE
+/// ADD COLUMN` support isn't guaranteed across every bundled `sqlite3`
+/// version this app ships against); a fresh install's single
+/// [_createSearchInfrastructure] call already creates the 3-column shape
+/// directly. See `AIO-2888`.
 @DriftDatabase(
   tables: [
     TicketsTable,
@@ -191,7 +203,7 @@ class AppDatabase extends _$AppDatabase {
     : super(executor ?? _openConnection(project));
 
   @override
-  int get schemaVersion => 20;
+  int get schemaVersion => 21;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -312,6 +324,9 @@ class AppDatabase extends _$AppDatabase {
         // `AIO-1905` §3.2.
         await transitionPreconditionDao.upgradeVerifyingGraphIfDefault();
       }
+      if (from < 21) {
+        await _widenFtsIndexWithTicketId(m);
+      }
     },
   );
 
@@ -324,6 +339,21 @@ class AppDatabase extends _$AppDatabase {
   /// implicit integer `rowid` even though its declared primary key (`id`)
   /// is a UUID `TEXT` column — that `rowid` is what ties `tickets_fts` back
   /// to `tickets` via `content_rowid='rowid'`.
+  ///
+  /// Indexes `ticket_id` alongside `title`/`description` (since schema 21,
+  /// `AIO-2888`) — searching `AIO-2835` needs to find that ticket even
+  /// though its id never appears in its own title/description text.
+  /// [TicketDao._buildFtsQuery] already quotes every query token (defending
+  /// against `-`/`(`/`"`/`:` being parsed as FTS5 query-syntax operators);
+  /// the *indexed* text goes through the same `unicode61` tokenizer at
+  /// write time, so `AIO-2835` becomes the token pair `["aio", "2835"]` on
+  /// both sides and a quoted-phrase-with-prefix query matches it exactly —
+  /// the earlier `-`-as-NOT-operator theory this ticket started with turned
+  /// out not to be the actual bug; `ticket_id` was simply never indexed at
+  /// all. On [_widenFtsIndexWithTicketId]'s upgrade path, this method is
+  /// called a second time *after* the old 2-column index and its triggers
+  /// are dropped, so every `IF NOT EXISTS`/backfill statement below runs for
+  /// real rather than silently no-op'ing against still-existing objects.
   Future<void> _createSearchInfrastructure(Migrator m) async {
     await m.database.customStatement(
       'CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);',
@@ -337,7 +367,7 @@ class AppDatabase extends _$AppDatabase {
 
     await m.database.customStatement('''
       CREATE VIRTUAL TABLE IF NOT EXISTS tickets_fts USING fts5(
-        title, description, content='tickets', content_rowid='rowid'
+        title, description, ticket_id, content='tickets', content_rowid='rowid'
       );
     ''');
 
@@ -346,30 +376,76 @@ class AppDatabase extends _$AppDatabase {
     // (existing local ticket data must become searchable retroactively —
     // the triggers below only cover writes from this point forward).
     await m.database.customStatement('''
-      INSERT INTO tickets_fts(rowid, title, description)
-      SELECT rowid, title, description FROM tickets;
+      INSERT INTO tickets_fts(rowid, title, description, ticket_id)
+      SELECT rowid, title, description, ticket_id FROM tickets;
     ''');
 
     await m.database.customStatement('''
       CREATE TRIGGER IF NOT EXISTS tickets_fts_ai AFTER INSERT ON tickets BEGIN
-        INSERT INTO tickets_fts(rowid, title, description)
-        VALUES (new.rowid, new.title, new.description);
+        INSERT INTO tickets_fts(rowid, title, description, ticket_id)
+        VALUES (new.rowid, new.title, new.description, new.ticket_id);
       END;
     ''');
     await m.database.customStatement('''
       CREATE TRIGGER IF NOT EXISTS tickets_fts_ad AFTER DELETE ON tickets BEGIN
-        INSERT INTO tickets_fts(tickets_fts, rowid, title, description)
-        VALUES ('delete', old.rowid, old.title, old.description);
+        INSERT INTO tickets_fts(tickets_fts, rowid, title, description, ticket_id)
+        VALUES ('delete', old.rowid, old.title, old.description, old.ticket_id);
       END;
     ''');
     await m.database.customStatement('''
       CREATE TRIGGER IF NOT EXISTS tickets_fts_au AFTER UPDATE ON tickets BEGIN
-        INSERT INTO tickets_fts(tickets_fts, rowid, title, description)
-        VALUES ('delete', old.rowid, old.title, old.description);
-        INSERT INTO tickets_fts(rowid, title, description)
-        VALUES (new.rowid, new.title, new.description);
+        INSERT INTO tickets_fts(tickets_fts, rowid, title, description, ticket_id)
+        VALUES ('delete', old.rowid, old.title, old.description, old.ticket_id);
+        INSERT INTO tickets_fts(rowid, title, description, ticket_id)
+        VALUES (new.rowid, new.title, new.description, new.ticket_id);
       END;
     ''');
+  }
+
+  /// Upgrades an existing (pre-21) project's `tickets_fts` index from
+  /// `(title, description)` to `(title, description, ticket_id)` — see
+  /// [_createSearchInfrastructure]'s own dartdoc for why. FTS5's `ALTER
+  /// TABLE ... ADD COLUMN` support isn't guaranteed across every bundled
+  /// `sqlite3` version this app ships against, so this drops the index and
+  /// its 3 sync triggers outright and calls [_createSearchInfrastructure]
+  /// again, which recreates all of it (indexes, virtual table, backfill,
+  /// triggers) from scratch with the new 3-column shape — safe because
+  /// `tickets_fts` is an *external-content* FTS5 table (`content='tickets'`):
+  /// it stores no text of its own, only the index, so dropping and
+  /// rebuilding it is a pure reindex, never data loss. `idx_tickets_*`/the 3
+  /// triggers all use `IF NOT EXISTS`/are dropped-then-recreated, so this is
+  /// idempotent if ever re-run.
+  ///
+  /// No-ops if `tickets` itself doesn't exist yet — every real upgrade has
+  /// it (it's the very first table this app ever created), but several of
+  /// this file's own pre-existing tests simulate "an install upgraded from
+  /// schema N" via a bare `PRAGMA user_version = N` on an otherwise-empty
+  /// in-memory database (see `app_database_test.dart`'s schema-16/18/20
+  /// groups), deliberately never creating `tickets` at all since their own
+  /// `from < N` block under test doesn't need it. Since `from < 21` is true
+  /// for any of those (`N` < 21), this method would otherwise always run
+  /// for them too and fail on `no such table: tickets` — a test-harness
+  /// artifact, not a real-world case this needs to actually recover from.
+  /// Added for `AIO-2888`.
+  Future<void> _widenFtsIndexWithTicketId(Migrator m) async {
+    final ticketsTableExists = await m.database
+        .customSelect(
+          "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tickets'",
+        )
+        .getSingleOrNull();
+    if (ticketsTableExists == null) return;
+
+    await m.database.customStatement(
+      'DROP TRIGGER IF EXISTS tickets_fts_ai;',
+    );
+    await m.database.customStatement(
+      'DROP TRIGGER IF EXISTS tickets_fts_ad;',
+    );
+    await m.database.customStatement(
+      'DROP TRIGGER IF EXISTS tickets_fts_au;',
+    );
+    await m.database.customStatement('DROP TABLE IF EXISTS tickets_fts;');
+    await _createSearchInfrastructure(m);
   }
 
   /// One-time backfill of `estimate_rollup`/`time_spent_rollup` for every
