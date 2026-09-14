@@ -6084,17 +6084,24 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Computes the `(sddStageFailureReason, sddStageCanRetry)` pair for
   /// [epicOrStoryId]'s most recent [advanceSddStage] attempt — used by
-  /// [getTicketById]. Mirrors [_computeExecutionFailure]'s shape, but
-  /// looks at the ticket's most recently created `chat` child directly
-  /// (unlike [_mostRecentExecutionChat], no title-prefix filter is
-  /// needed here — every `chat` child of an epic/story is a stage-
-  /// advance chat spawned by [_createStageChat], never a coding-
-  /// execution chat, which only ever parents under a Task/Bug) and
-  /// inspects its most recent comment:
+  /// [getTicketById]. Mirrors [_computeExecutionFailure]'s shape, and looks
+  /// at [currentStage]'s own stage-advance chat specifically — the most
+  /// recently created `chat` child whose title starts with
+  /// `'${await _stagePresentName(currentStage)} — '`, mirroring
+  /// [_mostRecentVerifyChat]'s own title-prefix-filtered lookup. **Not**
+  /// simply "the most recently created `chat` child" (that was safe for an
+  /// epic/story, whose every `chat` child is a stage-advance chat spawned by
+  /// [_createStageChat] — but stopped being safe once a
+  /// [TicketType.bug] could reach this method too, per `AIO-2902`: a bug's
+  /// `chat` children can include coding-execution chats too (from
+  /// [SddStage.applying] firing [_triggerOrQueueCodingExecution], or the
+  /// still-live plain-status-flip shortcut), which the unfiltered "most
+  /// recent" pick could mistake for a stage-advance chat and misread). Once
+  /// found, inspects that chat's most recent comment:
   /// - Starts with `"Stage advance failed: "` (posted by
   ///   [_runStageChatTurn]'s catch block) → that comment's content,
   ///   `canRetry: true`.
-  /// - No `chat` child exists yet, or the most recent comment is
+  /// - No matching `chat` child exists yet, or the most recent comment is
   ///   [CommentAuthorType.ai]-authored (the turn completed normally) →
   ///   `(null, false)`.
   /// - Anything else while [epicOrStoryId] is **not** in
@@ -6102,20 +6109,23 @@ class TicketsCubit extends Cubit<TicketsState> {
   ///   happened mid-turn) → a fixed "ended without a clear result" message,
   ///   `canRetry: true`, mirroring [_computeExecutionFailure]'s own
   ///   orphaned/stalled fallback. While still in-flight, `(null, false)` — the
-  ///   turn just hasn't produced a terminal comment yet. Added for `AIO-352`.
+  ///   turn just hasn't produced a terminal comment yet. Added for `AIO-352`;
+  ///   [currentStage] parameter added for `AIO-2902`.
   Future<(String?, bool)> _computeStageAdvanceFailure(
     String epicOrStoryId,
+    SddStage currentStage,
   ) async {
     final commentRepo = _commentRepository;
     if (commentRepo == null) return (null, false);
+    final prefix = '${await _stagePresentName(currentStage)} — ';
     final chats = await _repository.getTicketsByParent(
       epicOrStoryId,
       types: const [TicketType.chat],
     );
-    if (chats.isEmpty) return (null, false);
-    final mostRecentChat = chats.reduce(
-      (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
-    );
+    final matchingChats = chats.where((c) => c.title.startsWith(prefix)).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    if (matchingChats.isEmpty) return (null, false);
+    final mostRecentChat = matchingChats.first;
     const stalledMessage = 'Stage advance ended without a clear result.';
     final comments = await commentRepo.getCommentsForTicket(mostRecentChat.id);
     if (comments.isEmpty) {
@@ -8454,10 +8464,16 @@ class TicketsCubit extends Cubit<TicketsState> {
 
       String? sddStageFailureReason;
       var sddStageCanRetry = false;
-      if ((ticket.type == TicketType.epic || ticket.type == TicketType.story) &&
+      final sddStageForFailureCheck = ticket.sddStage;
+      if ((ticket.type == TicketType.epic ||
+              ticket.type == TicketType.story ||
+              ticket.type == TicketType.bug) &&
           !isAdvancingStage &&
-          ticket.sddStage != null) {
-        final (reason, canRetry) = await _computeStageAdvanceFailure(ticket.id);
+          sddStageForFailureCheck != null) {
+        final (reason, canRetry) = await _computeStageAdvanceFailure(
+          ticket.id,
+          sddStageForFailureCheck,
+        );
         sddStageFailureReason = reason;
         sddStageCanRetry = canRetry;
       }
@@ -8465,7 +8481,15 @@ class TicketsCubit extends Cubit<TicketsState> {
       var verifyRetryReady = false;
       AutomationConfidence? verifyRetryConfidence;
       int? verifyPendingFixesRemaining;
-      if (ticket.type == TicketType.epic || ticket.type == TicketType.story) {
+      // AIO-2902: a bug reaches `verifying` too (see AIO-2898) and reuses
+      // this exact tier — _verifyRetryReadiness/retryVerifyForStoryOrEpic
+      // are already type-agnostic (their "StoryOrEpic" naming predates this
+      // epic; not renamed, matching _mostRecentVerifyChat's own
+      // storyOrEpicId param, already reused for bug unchanged since
+      // AIO-2899).
+      if (ticket.type == TicketType.epic ||
+          ticket.type == TicketType.story ||
+          ticket.type == TicketType.bug) {
         final readiness = await _verifyRetryReadiness(ticket);
         verifyRetryReady = readiness.ready;
         verifyPendingFixesRemaining = readiness.pendingFixesRemaining;
