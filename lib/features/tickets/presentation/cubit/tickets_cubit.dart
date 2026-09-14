@@ -7626,6 +7626,27 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [_runStageChatTurn], and [retryDesignSync]/ [retryVerify] (which call
   /// this method directly, so the related-tickets walk automatically re-runs
   /// on retry too).
+  ///
+  /// A [TicketType.bug] gets its own leaf-shaped variant of both the
+  /// [SddStage.exploring] and [SddStage.proposed] branches above — added for
+  /// `AIO-2898`/`AIO-2901`, since a Bug's own gates
+  /// ([_proposeGateApproved]/[_codingExecutionConcluded]) are diagnosis- and
+  /// fix-plan-shaped, not decomposition-shaped: for `exploring`, an optional
+  /// `## Steps to Reproduce`/`## Expected Behavior`/`## Actual Behavior`
+  /// context block (each omitted individually when the corresponding
+  /// [Ticket] field is `null`/empty) followed by root-cause-diagnosis
+  /// framing instead of generic "investigate the problem space" wording; for
+  /// `proposed`, a concrete-fix-plan request ending in exactly one line —
+  /// `PROPOSE GATE: APPROVED`/`PENDING`, mirroring `VERIFY GATE`'s own
+  /// approved-content convention exactly (see [_proposeGateApproved]) —
+  /// instead of the `## Decomposition` block every other type gets at this
+  /// stage, since a Bug is a leaf with no children to decompose into.
+  /// [SddStage.applying] and [SddStage.verifying] need no Bug-specific
+  /// branch here: `applying` fires coding-execution directly without a
+  /// stage chat at all (see [advanceSddStage]'s dedicated branch), and
+  /// `verifying`'s existing children-summary/`VERIFY GATE` prompt already
+  /// reads sensibly for a childless Bug (an empty `## Stories`/`## Tasks`
+  /// section is simply omitted, per the branch above).
   Future<String> _assembleStageContext(Ticket parent, SddStage stage) async {
     final buffer = StringBuffer()..writeln('# ${parent.title}');
     final description = parent.description;
@@ -7642,7 +7663,52 @@ class TicketsCubit extends Cubit<TicketsState> {
         ..writeln(related);
     }
 
-    if (stage == SddStage.exploring) {
+    if (stage == SddStage.exploring && parent.type == TicketType.bug) {
+      final repro = parent.stepsToReproduce;
+      final expected = parent.expectedBehavior;
+      final actual = parent.actualBehavior;
+      if ((repro != null && repro.isNotEmpty) ||
+          (expected != null && expected.isNotEmpty) ||
+          (actual != null && actual.isNotEmpty)) {
+        buffer.writeln();
+        if (repro != null && repro.isNotEmpty) {
+          buffer
+            ..writeln('## Steps to Reproduce')
+            ..writeln(repro);
+        }
+        if (expected != null && expected.isNotEmpty) {
+          buffer
+            ..writeln()
+            ..writeln('## Expected Behavior')
+            ..writeln(expected);
+        }
+        if (actual != null && actual.isNotEmpty) {
+          buffer
+            ..writeln()
+            ..writeln('## Actual Behavior')
+            ..writeln(actual);
+        }
+      }
+      buffer
+        ..writeln()
+        ..writeln(
+          "Diagnose this bug's actual root cause using the title, "
+          'description, Steps to Reproduce/Expected/Actual Behavior '
+          '(if present above), and related tickets above — this is '
+          'root-cause diagnosis, not feature planning. This stage is '
+          'read-only investigation and analysis only — do not edit, '
+          'create, or delete any project files, do not draft a '
+          'file-by-file implementation plan, do not write code, and do '
+          'not ask for write access to any repository. Ground every '
+          'claim in what the context above actually shows rather than '
+          'speculating — if the evidence is insufficient to pin down a '
+          'root cause, say so rather than guessing. End your reply with '
+          'a written diagnosis: the root cause as you understand it, '
+          'the evidence for it, and any open questions — a decision aid '
+          'for a human to read before the next stage writes a concrete '
+          'fix plan, not a proposal or an implementation.',
+        );
+    } else if (stage == SddStage.exploring) {
       buffer
         ..writeln()
         ..writeln(
@@ -7728,6 +7794,19 @@ class TicketsCubit extends Cubit<TicketsState> {
           'a clearly new, semantically named one. List any issues found. '
           'End your reply with exactly one line: "DESIGN GATE: APPROVED" '
           'if there are no issues, or "DESIGN GATE: PENDING" if there are.',
+        );
+    } else if (stage == SddStage.proposed && parent.type == TicketType.bug) {
+      buffer
+        ..writeln()
+        ..writeln(
+          'Write a concrete fix plan for this bug: which files/layers '
+          'need to change, the approach, and what tests will cover it. '
+          'This is a plan for a human to review before any code gets '
+          'written — do not edit, create, or delete any project files, '
+          'and do not ask for write access to any repository. End your '
+          'reply with exactly one line: "PROPOSE GATE: APPROVED" if the '
+          'plan is ready to implement as-is, or "PROPOSE GATE: PENDING" '
+          'if it still needs human input or revision first.',
         );
     } else if (stage == SddStage.proposed) {
       final childRank = parent.type == TicketType.epic
