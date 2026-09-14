@@ -1411,6 +1411,33 @@ void main() {
       },
     );
 
+    test(
+      'query matches a ticket\'s own ticket_id, not just title/description '
+      '(AIO-2888)',
+      () async {
+        await repository.createTicket(
+          buildSearchable(
+            id: 'id-hit',
+            title: 'Completely unrelated title',
+            description: 'and an unrelated description too',
+          ),
+        );
+        await repository.createTicket(
+          buildSearchable(id: 'no-match', title: 'Also unrelated'),
+        );
+        final created = await repository.getTicketById('id-hit');
+        final realTicketId = created!.ticketId;
+
+        final results = await repository.searchTickets(
+          query: realTicketId,
+          sort: _relevanceSort,
+          limit: 100,
+        );
+
+        expect(results.tickets.map((t) => t.id), ['id-hit']);
+      },
+    );
+
     test('status/type/priority filters return only exact matches', () async {
       await repository.createTicket(
         buildSearchable(
@@ -2050,6 +2077,95 @@ void main() {
         expect(rows.single.targetPageId, 'target');
 
         await v12Db.close();
+      },
+    );
+
+    test(
+      'onUpgrade from v20 reindexes tickets_fts to include ticket_id, so a '
+      'pre-existing ticket becomes findable by its own id (AIO-2888)',
+      () async {
+        final tempDir = Directory.systemTemp.createTempSync(
+          'aion_migration_v21_test',
+        );
+        final dbFile = File('${tempDir.path}/test.sqlite');
+        addTearDown(() => tempDir.deleteSync(recursive: true));
+
+        final v20Db = AppDatabase(_testProject, NativeDatabase(dbFile));
+        final preMigrationRepo = DriftTicketRepository(v20Db);
+
+        // Tear down the (already-fixed, since this test runs against the
+        // current AppDatabase code) 3-column tickets_fts createAll()/
+        // onCreate just built, and rebuild the pre-AIO-2888 2-column
+        // shape by hand — simulating a database that predates this
+        // migration, the same "strip down to an earlier shape, then
+        // reopen" technique the v9/v10/v12 tests above use for plain
+        // columns, applied here to a virtual table + its triggers
+        // instead.
+        await v20Db.customStatement('DROP TRIGGER tickets_fts_ai;');
+        await v20Db.customStatement('DROP TRIGGER tickets_fts_ad;');
+        await v20Db.customStatement('DROP TRIGGER tickets_fts_au;');
+        await v20Db.customStatement('DROP TABLE tickets_fts;');
+        await v20Db.customStatement('''
+          CREATE VIRTUAL TABLE tickets_fts USING fts5(
+            title, description, content='tickets', content_rowid='rowid'
+          );
+        ''');
+        await v20Db.customStatement('''
+          CREATE TRIGGER tickets_fts_ai AFTER INSERT ON tickets BEGIN
+            INSERT INTO tickets_fts(rowid, title, description)
+            VALUES (new.rowid, new.title, new.description);
+          END;
+        ''');
+        await v20Db.customStatement('''
+          CREATE TRIGGER tickets_fts_ad AFTER DELETE ON tickets BEGIN
+            INSERT INTO tickets_fts(tickets_fts, rowid, title, description)
+            VALUES ('delete', old.rowid, old.title, old.description);
+          END;
+        ''');
+        await v20Db.customStatement('''
+          CREATE TRIGGER tickets_fts_au AFTER UPDATE ON tickets BEGIN
+            INSERT INTO tickets_fts(tickets_fts, rowid, title, description)
+            VALUES ('delete', old.rowid, old.title, old.description);
+            INSERT INTO tickets_fts(rowid, title, description)
+            VALUES (new.rowid, new.title, new.description);
+          END;
+        ''');
+
+        // Created under the simulated pre-21 (2-column) index — the old
+        // trigger above only ever wrote title/description into
+        // tickets_fts, never ticket_id.
+        await preMigrationRepo.createTicket(
+          buildTicket(id: 'pre-migration-ticket', title: 'A pre-existing bug'),
+        );
+        final createdTicket = await preMigrationRepo.getTicketById(
+          'pre-migration-ticket',
+        );
+        final realTicketId = createdTicket!.ticketId;
+
+        await v20Db.customStatement('PRAGMA user_version = 20;');
+        await v20Db.close();
+
+        // Reopen against the same file at the current schemaVersion (21).
+        // Drift reads user_version=20, sees schemaVersion=21, and runs
+        // the `from < 21` onUpgrade step (_widenFtsIndexWithTicketId) —
+        // dropping and rebuilding tickets_fts with the new 3-column
+        // shape, backfilling from the tickets table (which still has the
+        // pre-existing row untouched throughout).
+        final v21Db = AppDatabase(_testProject, NativeDatabase(dbFile));
+        final upgradedRepo = DriftTicketRepository(v21Db);
+
+        final page = await upgradedRepo.searchTickets(
+          query: realTicketId,
+          sort: _relevanceSort,
+          limit: 10,
+        );
+
+        expect(
+          page.tickets.map((t) => t.id),
+          contains('pre-migration-ticket'),
+        );
+
+        await v21Db.close();
       },
     );
   });
