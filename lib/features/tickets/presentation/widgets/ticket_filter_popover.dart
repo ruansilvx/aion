@@ -79,17 +79,30 @@ class TicketFilterPopover extends StatefulWidget {
   final ValueChanged<TicketPriority> onTogglePriority;
 
   /// The `Type` group's fixed, client-side-filtered item list —
-  /// `page`/`resource` moved to the Documentation section and no longer appear
-  /// here; `idea`/`knownGap`/`openQuestion`/`release` excluded (the first
-  /// three inherit `signal`'s original pre-existing-gap exclusion — see
-  /// `AIO-934`). Mirrors the same hardcoded list `TicketsListScreen`'s old
-  /// `AppDropdown<TicketType?>` used.
+  /// `page`/`resource` moved to the Documentation section and no longer
+  /// appear here; `idea`/`knownGap`/`openQuestion` excluded because
+  /// `AIO-934`'s own proposal explicitly scoped them out of the Board/list
+  /// entirely ("these three types have no board presence today (`signal`
+  /// didn't either) and none is proposed" — its "Out of scope" section),
+  /// not merely omitted from this filter. `release`/`spec` have no such
+  /// exclusion on record (`release` was bundled into this list's
+  /// predecessor without a stated reason, and `spec` — added later,
+  /// `AIO-1998` — was simply never wired in here) and are real,
+  /// browsable board/list tickets, so both are included. Added for
+  /// `AIO-2887`; see that ticket for the fuller investigation, including a
+  /// separate, unrelated finding (`idea`/`openQuestion` tickets currently
+  /// do leak into the unfiltered list despite `AIO-934`'s "no board
+  /// presence" intent — filed separately, not fixed here since this
+  /// ticket's own scope is the filter panel, not the list's own exclusion
+  /// rule).
   static const typeOptions = [
     TicketType.epic,
     TicketType.story,
     TicketType.task,
     TicketType.bug,
     TicketType.chat,
+    TicketType.release,
+    TicketType.spec,
   ];
 
   @override
