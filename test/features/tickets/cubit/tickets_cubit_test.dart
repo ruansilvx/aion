@@ -6168,6 +6168,35 @@ void main() {
       updatedAt: bug.updatedAt,
     );
 
+    // AIO-2901: a bug carrying its own Steps to Reproduce/Expected/Actual
+    // Behavior fields, for the exploring-stage prompt-grounding test below.
+    final bugWithRepro = Ticket(
+      id: bug.id,
+      ticketId: bug.ticketId,
+      type: bug.type,
+      title: bug.title,
+      status: bug.status,
+      createdAt: bug.createdAt,
+      updatedAt: bug.updatedAt,
+      stepsToReproduce: 'Click the submit button twice quickly.',
+      expectedBehavior: 'Only one request is sent.',
+      actualBehavior: 'Two requests are sent.',
+    );
+
+    Ticket bugWithReproAt(SddStage? stage) => Ticket(
+      id: bugWithRepro.id,
+      ticketId: bugWithRepro.ticketId,
+      type: bugWithRepro.type,
+      title: bugWithRepro.title,
+      status: bugWithRepro.status,
+      sddStage: stage,
+      createdAt: bugWithRepro.createdAt,
+      updatedAt: bugWithRepro.updatedAt,
+      stepsToReproduce: bugWithRepro.stepsToReproduce,
+      expectedBehavior: bugWithRepro.expectedBehavior,
+      actualBehavior: bugWithRepro.actualBehavior,
+    );
+
     setUp(() {
       agentClient = MockAgentModelClient();
       registry = buildProviderStack(agentClient).registry;
@@ -6241,6 +6270,157 @@ void main() {
         // The generic stage-chat flow ran (unlike `applying`, below) — a
         // chat ticket was actually created.
         verify(() => repository.createTicket(any())).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      "a bug entering exploring gets a root-cause-diagnosis prompt grounded "
+      'in its Steps to Reproduce/Expected/Actual Behavior fields, not the '
+      'generic "investigate the problem space" wording or the '
+      '"## Decomposition" ask (AIO-2901)',
+      setUp: () {
+        // The freshly created stage-chat ticket's own getTicketById lookup
+        // (see _createStageChat) needs a fallback — its id is a real
+        // generated uuid, not bug.id.
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(
+          () => repository.getTicketById(bug.id),
+        ).thenAnswer((_) async => bugWithReproAt(SddStage.exploring));
+        when(
+          () => repository.updateTicketSddStage(bug.id, SddStage.exploring),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.createTicket(any()),
+        ).thenAnswer((_) async {});
+        stubStatefulComments(commentRepository, dummyChatTicket.id);
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Diagnosing...'),
+            AgentDoneEvent(),
+          ]),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        await cubit.advanceSddStage(bugWithRepro);
+      },
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verify(
+          () => agentClient.run(
+            any(
+              that: predicate<AgentRequest>(
+                (request) =>
+                    request.prompt.contains('## Steps to Reproduce') &&
+                    request.prompt.contains(
+                      'Click the submit button twice quickly.',
+                    ) &&
+                    request.prompt.contains('## Expected Behavior') &&
+                    request.prompt.contains(
+                      'Only one request is sent.',
+                    ) &&
+                    request.prompt.contains('## Actual Behavior') &&
+                    request.prompt.contains('Two requests are sent.') &&
+                    request.prompt.contains(
+                      "Diagnose this bug's actual root cause",
+                    ) &&
+                    !request.prompt.contains(
+                      "Investigate this bug's problem space",
+                    ) &&
+                    !request.prompt.contains('## Decomposition'),
+              ),
+            ),
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'a bug entering proposed gets a fix-plan prompt ending in "PROPOSE '
+      'GATE: APPROVED"/"PENDING", not the "## Decomposition" ask a story/ '
+      'epic gets at this same stage (AIO-2901)',
+      setUp: () {
+        // The freshly created stage-chat ticket's own getTicketById lookup
+        // (see _createStageChat) needs a fallback — its id is a real
+        // generated uuid, not bug.id.
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(
+          () => repository.getTicketById(bug.id),
+        ).thenAnswer((_) async => bugAt(SddStage.proposed));
+        when(
+          () => repository.updateTicketSddStage(bug.id, SddStage.proposed),
+        ).thenAnswer((_) async {});
+        // Exploring-stage precondition: the most recently created chat
+        // child needs an AI reply already.
+        when(
+          () => repository.getTicketsByParent(
+            bug.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer(
+          (_) async => [
+            Ticket(
+              id: 'exploring-chat',
+              ticketId: 'AIO-101',
+              type: TicketType.chat,
+              title: 'Exploring — ${bug.title}',
+              status: 'backlog',
+              parentId: bug.id,
+              createdAt: DateTime(2026),
+              updatedAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(
+          () => commentRepository.getCommentsForTicket('exploring-chat'),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'existing-reply',
+              ticketId: 'exploring-chat',
+              content: 'My diagnosis.',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        stubStatefulComments(commentRepository, dummyChatTicket.id);
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Planning the fix...'),
+            AgentDoneEvent(),
+          ]),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        await cubit.advanceSddStage(bugAt(SddStage.exploring));
+      },
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verify(
+          () => agentClient.run(
+            any(
+              that: predicate<AgentRequest>(
+                (request) =>
+                    request.prompt.contains(
+                      'Write a concrete fix plan for this bug',
+                    ) &&
+                    request.prompt.contains('PROPOSE GATE: APPROVED') &&
+                    request.prompt.contains('PROPOSE GATE: PENDING') &&
+                    !request.prompt.contains('## Decomposition') &&
+                    !request.prompt.contains('Decompose this bug'),
+              ),
+            ),
+          ),
+        ).called(1);
       },
     );
 
