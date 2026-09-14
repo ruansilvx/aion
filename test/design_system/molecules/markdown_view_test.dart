@@ -101,6 +101,49 @@ void main() {
       expect(find.textContaining('final x = 1;'), findsOneWidget);
     });
 
+    testWidgets(
+      'decodes HTML entities in plain text to their real characters '
+      '(AIO-2889)',
+      (tester) async {
+        await tester.pumpWidget(
+          _wrap(
+            const MarkdownView(
+              source:
+                  "AT&amp;T said &quot;a &lt; b &amp;&amp; c &gt; d&quot; "
+                  "and it&#39;s true.",
+            ),
+          ),
+        );
+
+        expect(
+          find.textContaining('AT&T said "a < b && c > d" and it\'s true.'),
+          findsOneWidget,
+        );
+        expect(find.textContaining('&amp;'), findsNothing);
+        expect(find.textContaining('&quot;'), findsNothing);
+        expect(find.textContaining('&#39;'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'leaves HTML entities undecoded inside a fenced code block — '
+      'CommonMark treats code content as literal (AIO-2889)',
+      (tester) async {
+        await tester.pumpWidget(
+          _wrap(
+            const MarkdownView(
+              source: '```\nconst x = a &amp;&amp; b;\n```',
+            ),
+          ),
+        );
+
+        expect(
+          find.textContaining('const x = a &amp;&amp; b;'),
+          findsOneWidget,
+        );
+      },
+    );
+
     testWidgets('renders a blockquote', (tester) async {
       await tester.pumpWidget(
         _wrap(const MarkdownView(source: '> A quoted line.')),
