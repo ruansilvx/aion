@@ -57,7 +57,28 @@ class MarkdownView extends StatelessWidget {
   /// span fully inert.
   final void Function(String title)? onCreateWikilinkTarget;
 
-  static final _document = md.Document(extensionSet: md.ExtensionSet.gitHubWeb);
+  /// `encodeHtml: false` — the default (`true`) is meant for
+  /// `package:markdown`'s own `renderToHtml` output, where an entity like
+  /// `&amp;` must round-trip back to itself so the resulting *HTML string*
+  /// stays valid. This widget never produces an HTML string — it walks the
+  /// parsed AST directly into Flutter `Text`/`TextSpan`s, which want the
+  /// real decoded character. With the default left on, `md.Document`'s
+  /// built-in `DecodeHtmlSyntax` (which does run — this isn't a parser
+  /// gap) decodes `&amp;`/`&lt;`/`&gt;`/`&quot;`/`&#39;`/etc. and then
+  /// immediately re-escapes anything HTML-reserved right back to its
+  /// original entity text, so a comment/description/page containing a
+  /// literal `&amp;` rendered here as `&amp;` forever instead of `&` —
+  /// confirmed empirically (not by inspecting the pattern/matcher code
+  /// alone) against this exact `markdown` package version. Entities
+  /// inside inline `code`/fenced code blocks correctly stay undecoded
+  /// either way — `DecodeHtmlSyntax` already skips content immediately
+  /// after a backtick, and fenced code's content never goes through
+  /// inline parsing at all — matching CommonMark's own spec for code
+  /// spans/blocks. Added for `AIO-2889`.
+  static final _document = md.Document(
+    extensionSet: md.ExtensionSet.gitHubWeb,
+    encodeHtml: false,
+  );
 
   @override
   Widget build(BuildContext context) {
