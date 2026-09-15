@@ -5854,30 +5854,49 @@ class TicketsCubit extends Cubit<TicketsState> {
   }
 
   /// Assembles the plain-text context a spawned coding-execution chat opens
-  /// with: [task]'s title/description, a `## Related tickets` section from
-  /// [_contextEnricher] (see [TicketContextEnricher.relatedTicketsSection] —
-  /// omitted entirely when it returns `''`), the project's effective
-  /// `conventions/ architecture-conventions` content (see
-  /// [_effectiveAssetContent]) if any, plus an instruction to implement the
-  /// task using the available file, git, and bash tools, commit the result,
-  /// and end the reply with exactly one line, `IMPLEMENTATION: DONE`. This no
-  /// longer instructs the model to push or open a PR itself — that only
-  /// happens after [_runCodingExecution]'s own agentic verify turn passes (see
-  /// [_assembleVerificationContext]/ [_assembleCorrectiveContext] for the
-  /// retry-turn prompt used instead when that turn reports a failure). The
-  /// explicit "commit your changes" instruction was added after a real manual
-  /// pass caught the model finishing `IMPLEMENTATION: DONE` having only edited
-  /// files on disk without ever running `git commit` — verification doesn't
-  /// inherently care about git state, so it passed anyway, Aion pushed a
-  /// branch with nothing new, and `gh pr create` correctly rejected it with
-  /// "No commits between main and ...", losing the edit entirely once the
-  /// worktree was torn down. When [handoffSummary] is non-null (a handoff —
-  /// see [_handoffExecutionChat] — just seeded this chat), it's prepended so
-  /// the new chat's opening context makes clear this Task is being picked up
+  /// with: [task]'s title/description, a [TicketType.bug]'s own approved
+  /// Proposed-stage plan if it has one (see below), a `## Related tickets`
+  /// section from [_contextEnricher] (see
+  /// [TicketContextEnricher.relatedTicketsSection] — omitted entirely when it
+  /// returns `''`), the project's effective `conventions/
+  /// architecture-conventions` content (see [_effectiveAssetContent]) if any,
+  /// plus an instruction to implement the task using the available file, git,
+  /// and bash tools, commit the result, and end the reply with exactly one
+  /// line, `IMPLEMENTATION: DONE`. This no longer instructs the model to push
+  /// or open a PR itself — that only happens after [_runCodingExecution]'s
+  /// own agentic verify turn passes (see [_assembleVerificationContext]/
+  /// [_assembleCorrectiveContext] for the retry-turn prompt used instead when
+  /// that turn reports a failure). The explicit "commit your changes"
+  /// instruction was added after a real manual pass caught the model
+  /// finishing `IMPLEMENTATION: DONE` having only edited files on disk
+  /// without ever running `git commit` — verification doesn't inherently
+  /// care about git state, so it passed anyway, Aion pushed a branch with
+  /// nothing new, and `gh pr create` correctly rejected it with "No commits
+  /// between main and ...", losing the edit entirely once the worktree was
+  /// torn down. When [handoffSummary] is non-null (a handoff — see
+  /// [_handoffExecutionChat] — just seeded this chat), it's prepended so the
+  /// new chat's opening context makes clear this Task is being picked up
   /// mid-flight rather than started fresh, phrased per [handoffReason] — the
   /// normal context-limit handoff's own wording by default, overridden by
   /// [_recoverFromDuplicateToolUseIdFailure] for its own, differently-caused
   /// handoff (`AIO-2828`). Added for AIO-833.
+  ///
+  /// For a [TicketType.bug] entering [SddStage.applying] (see
+  /// [advanceSddStage]'s dedicated branch, which calls
+  /// [_triggerOrQueueCodingExecution] directly), this method used to give the
+  /// execution agent nothing but the bare title/description to work from —
+  /// the Proposed-stage chat's own reviewed, `PROPOSE GATE: APPROVED` plan
+  /// (see [_mostRecentProposedChat]/[_proposeGateApproved]) was silently
+  /// discarded, even though producing and gating that exact plan is the
+  /// whole point of the stage this run just advanced out of. Confirmed live
+  /// on `AIO-2911`: its description was empty, so the execution agent
+  /// re-derived (and got materially wrong) its own fix from the bare title
+  /// alone instead of implementing the plan that had just been approved.
+  /// Same shape of gap as `AIO-2914` (the Verify-stage prompt not
+  /// referencing its own coding-execution PR), one stage earlier. Fixed by
+  /// quoting that chat's final approved reply under a `## Approved plan`
+  /// heading, mirroring `AIO-2914`'s `## Coding execution` section. Filed
+  /// and fixed as `AIO-2920`.
   Future<String> _assembleExecutionContext(
     Ticket task, {
     String? handoffSummary,
@@ -5902,6 +5921,35 @@ class TicketsCubit extends Cubit<TicketsState> {
       buffer
         ..writeln()
         ..writeln(description);
+    }
+
+    if (task.type == TicketType.bug) {
+      final proposedChat = await _mostRecentProposedChat(task.id);
+      final commentRepo = _commentRepository;
+      final approvedPlan = proposedChat == null || commentRepo == null
+          ? null
+          : (await commentRepo.getCommentsForTicket(proposedChat.id))
+              .where((c) => c.authorType == CommentAuthorType.ai)
+              .fold<TicketComment?>(
+                null,
+                (latest, c) => latest == null || c.createdAt.isAfter(latest.createdAt)
+                    ? c
+                    : latest,
+              );
+      if (approvedPlan != null) {
+        buffer
+          ..writeln()
+          ..writeln('## Approved plan')
+          ..writeln()
+          ..writeln(
+            "This bug's fix was already planned and approved in its own "
+            'Proposed-stage review — implement that plan, not a fresh '
+            "reading of the title/description alone. The plan's final "
+            'reply:',
+          )
+          ..writeln()
+          ..writeln(approvedPlan.content);
+      }
     }
 
     final related = await _contextEnricher.relatedTicketsSection(task);

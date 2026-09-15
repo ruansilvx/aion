@@ -6247,6 +6247,125 @@ void main() {
       ).thenAnswer((_) async => []);
     });
 
+    // AIO-2920: entering `applying` fires coding-execution directly (no
+    // stage chat), via _triggerOrQueueCodingExecution/_runCodingExecution —
+    // a completely separate prompt-assembly path from the stage-chat flow
+    // every _assembleStageContext-based test above exercises. Needs its own
+    // full execution-infra build (git/GitHub/baseline/automation), unlike
+    // this group's own bare buildCubit().
+    blocTest<TicketsCubit, TicketsState>(
+      'a bug entering applying includes its own approved Proposed-stage '
+      "plan in the coding-execution prompt, not just the bare title — "
+      'found live on AIO-2911, where an empty description plus a '
+      'plan-blind prompt let the execution agent silently implement a '
+      'different fix than the one actually approved',
+      build: () {
+        final gitClient = MockGitRepositoryClient();
+        final gitHubClient = MockGitHubCliClient();
+        final baselineRepository = MockBaselineRepository();
+        final automationSettingsRepository = MockAutomationSettingsRepository();
+        stubSuccessfulCodingExecutionInfra(gitClient, gitHubClient);
+        stubEmptyBaseline(baselineRepository);
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecution,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.gated);
+
+        final proposedChat = Ticket(
+          id: 'proposed-chat-2920',
+          ticketId: 'AIO-101',
+          type: TicketType.chat,
+          title: 'Proposed — ${bug.title}',
+          status: 'backlog',
+          parentId: bug.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final execChat = Ticket(
+          id: 'exec-chat-2920',
+          ticketId: 'AIO-102',
+          type: TicketType.chat,
+          title: 'Coding Execution — ${bug.title}',
+          status: 'backlog',
+          parentId: bug.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        when(
+          () => repository.getTicketsByParent(
+            bug.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [proposedChat, execChat]);
+        when(
+          () => commentRepository.getCommentsForTicket(proposedChat.id),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'plan-c1',
+              ticketId: proposedChat.id,
+              content:
+                  'Re-enable the three types as opt-in filters, scoped to '
+                  'ticket_filter_popover.dart + tickets_list_screen.dart.'
+                  '\n\nPROPOSE GATE: APPROVED',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+        stubStatefulComments(commentRepository, execChat.id);
+        when(
+          () => repository.getTicketById(bug.id),
+        ).thenAnswer((_) async => bugAt(SddStage.applying));
+        when(
+          () => repository.updateTicketSddStage(bug.id, SddStage.applying),
+        ).thenAnswer((_) async {});
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Implemented.\n\nIMPLEMENTATION: DONE'),
+            AgentDoneEvent(),
+          ]),
+        );
+
+        return TicketsCubit(
+          repository,
+          providerRegistry: registry,
+          commentRepository: commentRepository,
+          automationSettingsRepository: automationSettingsRepository,
+          projectRootPath: '/fake/project/root',
+          sourceRootPath: '/fake/project/root',
+          gitClient: gitClient,
+          gitHubClient: gitHubClient,
+          baselineRepository: baselineRepository,
+          projectId: 'project-1',
+          baselineVersion: '0.1.0',
+          linkRepository: linkRepository,
+          transitionPreconditionRepository:
+              FakeTransitionPreconditionRepository(),
+        );
+      },
+      act: (cubit) => cubit.advanceSddStage(bugAt(SddStage.proposed)),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        final posted = verify(
+          () => commentRepository.addComment(captureAny()),
+        ).captured;
+        final prompt = (posted.first as TicketComment).content;
+        expect(
+          prompt,
+          allOf([
+            contains('## Approved plan'),
+            contains(
+              'Re-enable the three types as opt-in filters, scoped to '
+              'ticket_filter_popover.dart + tickets_list_screen.dart.',
+            ),
+            contains('PROPOSE GATE: APPROVED'),
+          ]),
+        );
+      },
+    );
+
     TicketsCubit buildCubit() => TicketsCubit(
       repository,
       providerRegistry: registry,
