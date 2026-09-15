@@ -6672,6 +6672,104 @@ void main() {
         verify(() => repository.createTicket(any())).called(1);
       },
     );
+
+    // AIO-2914: a bug is a leaf, so the epic/story ## Stories/## Tasks
+    // lookup this stage's context otherwise shares always finds nothing for
+    // it — not "sensibly empty," a real gap, since that block was the
+    // model's only source of what to actually verify. Found live during
+    // `bug-sdd-cycle-proposal`'s end-to-end test.
+    blocTest<TicketsCubit, TicketsState>(
+      'a bug entering verifying gets its own coding-execution PR in the '
+      'context instead of an epic/story-shaped Stories/Tasks section',
+      setUp: () {
+        // Unlike the passing test above, this one verifies the context
+        // _createStageChat actually posts — which needs its own
+        // `getTicketById(chatTicket.id)` re-fetch (a fresh uuid) to resolve
+        // to something non-null, or it silently short-circuits before
+        // ever assembling context/posting a comment at all.
+        when(() => repository.getTicketById(any())).thenAnswer((
+          invocation,
+        ) async {
+          final id = invocation.positionalArguments[0] as String;
+          if (id == bug.id) return bugAt(SddStage.verifying);
+          return Ticket(
+            id: id,
+            ticketId: '',
+            type: TicketType.chat,
+            title: 'Verifying — ${bug.title}',
+            status: 'backlog',
+            parentId: bug.id,
+            createdAt: DateTime(2026),
+            updatedAt: DateTime(2026),
+          );
+        });
+        when(
+          () => repository.getTicketsByParent(
+            bug.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer(
+          (_) async => [
+            Ticket(
+              id: 'exec-chat',
+              ticketId: 'AIO-102',
+              type: TicketType.chat,
+              title: 'Coding Execution — ${bug.title}',
+              status: 'backlog',
+              parentId: bug.id,
+              createdAt: DateTime(2026),
+              updatedAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(() => commentRepository.getCommentsForTicket('exec-chat')).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'pr-opened',
+              ticketId: 'exec-chat',
+              content:
+                  'EXECUTION: PR_OPENED https://github.com/ruansilvx/aion/pull/999',
+              authorType: CommentAuthorType.system,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(
+          () => repository.updateTicketSddStage(bug.id, SddStage.verifying),
+        ).thenAnswer((_) async {});
+        stubStatefulComments(commentRepository, 'any-chat-id');
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Reviewing the diff...'),
+            AgentDoneEvent(),
+          ]),
+        );
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        await cubit.advanceSddStage(bugAt(SddStage.applying));
+      },
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        final posted = verify(
+          () => commentRepository.addComment(captureAny()),
+        ).captured;
+        final context = (posted.first as TicketComment).content;
+        expect(
+          context,
+          allOf([
+            contains('## Coding execution'),
+            contains(
+              'EXECUTION: PR_OPENED https://github.com/ruansilvx/aion/pull/999',
+            ),
+            isNot(contains('## Stories')),
+            isNot(contains('## Tasks')),
+          ]),
+        );
+      },
+    );
   });
 
   group('advanceSddStage — archived / _createEpicSpec (spec-ticket-type)', () {

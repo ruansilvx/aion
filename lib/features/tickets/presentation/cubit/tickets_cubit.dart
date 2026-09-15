@@ -7696,12 +7696,16 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// approved-content convention exactly (see [_proposeGateApproved]) —
   /// instead of the `## Decomposition` block every other type gets at this
   /// stage, since a Bug is a leaf with no children to decompose into.
-  /// [SddStage.applying] and [SddStage.verifying] need no Bug-specific
-  /// branch here: `applying` fires coding-execution directly without a
-  /// stage chat at all (see [advanceSddStage]'s dedicated branch), and
-  /// `verifying`'s existing children-summary/`VERIFY GATE` prompt already
-  /// reads sensibly for a childless Bug (an empty `## Stories`/`## Tasks`
-  /// section is simply omitted, per the branch above).
+  /// [SddStage.applying] needs no Bug-specific branch here: it fires
+  /// coding-execution directly without a stage chat at all (see
+  /// [advanceSddStage]'s dedicated branch). [SddStage.verifying] **does**
+  /// get one: a Bug is a leaf, so the epic/story branch's Story/Task
+  /// children lookup always finds nothing for it — not "sensibly reads as
+  /// empty," but a real gap, since that block is the model's only source
+  /// of what to actually verify. The Bug branch below points it at its own
+  /// most recent coding-execution chat/PR instead. Found live during
+  /// `bug-sdd-cycle-proposal`'s end-to-end test (AIO-2914) — this dartdoc
+  /// used to (wrongly) claim the empty-section case was fine.
   Future<String> _assembleStageContext(Ticket parent, SddStage stage) async {
     final buffer = StringBuffer()..writeln('# ${parent.title}');
     final description = parent.description;
@@ -7781,24 +7785,60 @@ class TicketsCubit extends Cubit<TicketsState> {
           'not a proposal or an implementation.',
         );
     } else if (stage == SddStage.verifying || stage == SddStage.archived) {
-      final nextRank = parent.type == TicketType.story
-          ? TicketType.task
-          : TicketType.story;
-      final children = await _repository.getTicketsByParent(
-        parent.id,
-        types: nextRank == TicketType.task
-            ? TicketTypeHierarchy.executableTypes
-            : [nextRank],
-      );
-      if (children.isNotEmpty) {
+      if (parent.type == TicketType.bug) {
+        // A Bug is a leaf — it never has Story/Task children, so the
+        // epic/story branch below (which looks up exactly those) would
+        // always find nothing, silently omitting the only context that
+        // actually matters here: what the Applying-stage coding-execution
+        // run changed. Point the model at that run's own chat/PR instead.
+        // Found live during `bug-sdd-cycle-proposal`'s end-to-end test —
+        // filed as AIO-2914. Added for `AIO-2898`.
+        final executionChat = await _mostRecentExecutionChat(parent.id);
+        final commentRepo = _commentRepository;
+        final prComments = executionChat == null || commentRepo == null
+            ? const <TicketComment>[]
+            : (await commentRepo.getCommentsForTicket(executionChat.id))
+                  .where((c) => c.content.contains('EXECUTION: PR_OPENED'))
+                  .toList();
         buffer
           ..writeln()
-          ..writeln(nextRank == TicketType.task ? '## Tasks' : '## Stories');
-        for (final child in children) {
-          final statusLabel = nextRank == TicketType.task
-              ? child.status
-              : (child.sddStage?.name ?? 'not started');
-          buffer.writeln('- ${child.title} ($statusLabel)');
+          ..writeln('## Coding execution');
+        if (prComments.isNotEmpty) {
+          buffer.writeln(
+            "This bug's fix was implemented by a coding-execution run — "
+            '${prComments.last.content} — review that diff specifically, '
+            'not just the working tree, since the pull request may not be '
+            'merged yet.',
+          );
+        } else if (executionChat != null) {
+          buffer.writeln(
+            'A coding-execution run happened for this bug ("${executionChat.title}") '
+            'but no confirmed pull request was found in its transcript — '
+            'read that chat directly for what it actually changed.',
+          );
+        } else {
+          buffer.writeln('No coding-execution run was found for this bug.');
+        }
+      } else {
+        final nextRank = parent.type == TicketType.story
+            ? TicketType.task
+            : TicketType.story;
+        final children = await _repository.getTicketsByParent(
+          parent.id,
+          types: nextRank == TicketType.task
+              ? TicketTypeHierarchy.executableTypes
+              : [nextRank],
+        );
+        if (children.isNotEmpty) {
+          buffer
+            ..writeln()
+            ..writeln(nextRank == TicketType.task ? '## Tasks' : '## Stories');
+          for (final child in children) {
+            final statusLabel = nextRank == TicketType.task
+                ? child.status
+                : (child.sddStage?.name ?? 'not started');
+            buffer.writeln('- ${child.title} ($statusLabel)');
+          }
         }
       }
       if (stage == SddStage.verifying) {
