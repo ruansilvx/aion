@@ -5894,9 +5894,17 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// alone instead of implementing the plan that had just been approved.
   /// Same shape of gap as `AIO-2914` (the Verify-stage prompt not
   /// referencing its own coding-execution PR), one stage earlier. Fixed by
-  /// quoting that chat's final approved reply under a `## Approved plan`
-  /// heading, mirroring `AIO-2914`'s `## Coding execution` section. Filed
-  /// and fixed as `AIO-2920`.
+  /// quoting that chat's full human/AI transcript under a `## Approved
+  /// plan` heading, mirroring `AIO-2914`'s `## Coding execution` section.
+  /// Filed and fixed as `AIO-2920`. **Correction**: the first cut of this
+  /// fix quoted only the chat's single most recent AI reply — wrong
+  /// whenever that reply is itself content-free, e.g. a human explicitly
+  /// asking for "just the literal gate line, nothing else" once a plan
+  /// from an *earlier* reply is already accepted (confirmed live, again on
+  /// `AIO-2911`: the quoted "plan" was the bare string `PROPOSE GATE:
+  /// APPROVED`, and a fresh execution run driven by it would have repeated
+  /// the exact same failure this fix exists to close). Quoting the whole
+  /// transcript sidesteps guessing which single reply is "the real plan."
   Future<String> _assembleExecutionContext(
     Ticket task, {
     String? handoffSummary,
@@ -5926,29 +5934,24 @@ class TicketsCubit extends Cubit<TicketsState> {
     if (task.type == TicketType.bug) {
       final proposedChat = await _mostRecentProposedChat(task.id);
       final commentRepo = _commentRepository;
-      final approvedPlan = proposedChat == null || commentRepo == null
-          ? null
+      final planComments = proposedChat == null || commentRepo == null
+          ? const <TicketComment>[]
           : (await commentRepo.getCommentsForTicket(proposedChat.id))
-              .where((c) => c.authorType == CommentAuthorType.ai)
-              .fold<TicketComment?>(
-                null,
-                (latest, c) => latest == null || c.createdAt.isAfter(latest.createdAt)
-                    ? c
-                    : latest,
-              );
-      if (approvedPlan != null) {
+              .where((c) => c.authorType != CommentAuthorType.system)
+              .toList();
+      if (planComments.isNotEmpty) {
         buffer
           ..writeln()
           ..writeln('## Approved plan')
           ..writeln()
           ..writeln(
             "This bug's fix was already planned and approved in its own "
-            'Proposed-stage review — implement that plan, not a fresh '
-            "reading of the title/description alone. The plan's final "
-            'reply:',
+            'Proposed-stage review — implement that reviewed plan, not a '
+            'fresh reading of the title/description alone. The full '
+            'Proposed-stage conversation, in order:',
           )
           ..writeln()
-          ..writeln(approvedPlan.content);
+          ..writeln(_assembleChatTranscript(planComments));
       }
     }
 

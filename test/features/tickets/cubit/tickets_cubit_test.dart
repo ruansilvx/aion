@@ -6366,6 +6366,144 @@ void main() {
       },
     );
 
+    // AIO-2920 correction: the first cut of this fix quoted only the
+    // Proposed chat's single most recent AI reply — wrong whenever that
+    // reply is itself content-free, which is exactly what happened live on
+    // AIO-2911 a second time: a human asked for "just the literal gate
+    // line, nothing else" once the real plan (an earlier reply) was
+    // already accepted, and the naive "most recent AI reply" pick quoted
+    // only the bare `PROPOSE GATE: APPROVED` string into the execution
+    // prompt — no plan content at all.
+    blocTest<TicketsCubit, TicketsState>(
+      'a bug whose Proposed-stage chat ends with a content-free gate-only '
+      'reply still gets the real plan from an earlier reply, not just the '
+      'bare gate line',
+      build: () {
+        final gitClient = MockGitRepositoryClient();
+        final gitHubClient = MockGitHubCliClient();
+        final baselineRepository = MockBaselineRepository();
+        final automationSettingsRepository = MockAutomationSettingsRepository();
+        stubSuccessfulCodingExecutionInfra(gitClient, gitHubClient);
+        stubEmptyBaseline(baselineRepository);
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecution,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.gated);
+
+        final proposedChat = Ticket(
+          id: 'proposed-chat-2920b',
+          ticketId: 'AIO-103',
+          type: TicketType.chat,
+          title: 'Proposed — ${bug.title}',
+          status: 'backlog',
+          parentId: bug.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final execChat = Ticket(
+          id: 'exec-chat-2920b',
+          ticketId: 'AIO-104',
+          type: TicketType.chat,
+          title: 'Coding Execution — ${bug.title}',
+          status: 'backlog',
+          parentId: bug.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        when(
+          () => repository.getTicketsByParent(
+            bug.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [proposedChat, execChat]);
+        when(
+          () => commentRepository.getCommentsForTicket(proposedChat.id),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'plan-detailed',
+              ticketId: proposedChat.id,
+              content:
+                  'Re-enable the three types as opt-in filters, scoped to '
+                  'ticket_filter_popover.dart + tickets_list_screen.dart.'
+                  '\n\nPROPOSE GATE: PENDING',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+            TicketComment(
+              id: 'human-nudge',
+              ticketId: proposedChat.id,
+              content:
+                  'This plan looks good - approved. Please close with '
+                  'exactly one line: PROPOSE GATE: APPROVED',
+              authorType: CommentAuthorType.human,
+              createdAt: DateTime(2026, 1, 2),
+            ),
+            TicketComment(
+              id: 'gate-only',
+              ticketId: proposedChat.id,
+              content: 'PROPOSE GATE: APPROVED',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026, 1, 3),
+            ),
+          ],
+        );
+        stubStatefulComments(commentRepository, execChat.id);
+        when(
+          () => repository.getTicketById(bug.id),
+        ).thenAnswer((_) async => bugAt(SddStage.applying));
+        when(
+          () => repository.updateTicketSddStage(bug.id, SddStage.applying),
+        ).thenAnswer((_) async {});
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Implemented.\n\nIMPLEMENTATION: DONE'),
+            AgentDoneEvent(),
+          ]),
+        );
+
+        return TicketsCubit(
+          repository,
+          providerRegistry: registry,
+          commentRepository: commentRepository,
+          automationSettingsRepository: automationSettingsRepository,
+          projectRootPath: '/fake/project/root',
+          sourceRootPath: '/fake/project/root',
+          gitClient: gitClient,
+          gitHubClient: gitHubClient,
+          baselineRepository: baselineRepository,
+          projectId: 'project-1',
+          baselineVersion: '0.1.0',
+          linkRepository: linkRepository,
+          transitionPreconditionRepository:
+              FakeTransitionPreconditionRepository(),
+        );
+      },
+      act: (cubit) => cubit.advanceSddStage(bugAt(SddStage.proposed)),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        final posted = verify(
+          () => commentRepository.addComment(captureAny()),
+        ).captured;
+        final prompt = (posted.first as TicketComment).content;
+        expect(
+          prompt,
+          allOf([
+            contains('## Approved plan'),
+            // The real plan, from the earlier reply — not just the bare
+            // gate-only confirmation that happens to be chronologically
+            // last.
+            contains(
+              'Re-enable the three types as opt-in filters, scoped to '
+              'ticket_filter_popover.dart + tickets_list_screen.dart.',
+            ),
+            contains('This plan looks good - approved'),
+          ]),
+        );
+      },
+    );
+
     TicketsCubit buildCubit() => TicketsCubit(
       repository,
       providerRegistry: registry,
