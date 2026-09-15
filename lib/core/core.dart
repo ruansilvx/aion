@@ -40,5 +40,6 @@ export 'markdown/ticket_markdown_template.dart';
 export 'routing/app_router.dart';
 export 'routing/ticket_navigation.dart';
 export 'utils/duration_format.dart';
+export 'utils/mouse_drag_scroll_behavior.dart';
 export 'utils/platform_utils.dart';
 export 'utils/relative_time_format.dart';
