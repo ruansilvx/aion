@@ -404,18 +404,25 @@ final appRouter = GoRouter(
           },
         ),
         // Reached from `WorkflowStatusSettingsScreen`'s `_SddStageRenameRow`
-        // "Configure precondition" affordance. See AIO-1936 §4.
+        // "Configure precondition" affordance. See AIO-1936 §4. The optional
+        // `?type=` query param selects a type-specific override graph
+        // (currently only `bug`, for `proposed`/`applying`) instead of the
+        // shared graph — added for `AIO-2903`.
         GoRoute(
           path: '/workspace/settings/workflow/sdd/:stage/precondition',
           builder: (context, state) {
             final stage = SddStage.values.firstWhere(
               (s) => s.name == state.pathParameters['stage'],
             );
+            final typeParam = state.uri.queryParameters['type'];
+            final type = typeParam == null
+                ? null
+                : TicketType.values.where((t) => t.name == typeParam).firstOrNull;
             return BlocProvider<TransitionPreconditionConfigCubit>(
               create: (context) => TransitionPreconditionConfigCubit(
                 context.read<TransitionPreconditionRepository>(),
               ),
-              child: SddStagePreconditionEditorScreen(stage: stage),
+              child: SddStagePreconditionEditorScreen(stage: stage, type: type),
             );
           },
         ),

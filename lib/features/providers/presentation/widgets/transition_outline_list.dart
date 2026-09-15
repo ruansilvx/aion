@@ -26,11 +26,17 @@ class TransitionOutlineList extends StatefulWidget {
   const TransitionOutlineList({
     super.key,
     required this.stage,
+    this.type,
     this.onDirtyChanged,
   });
 
   /// Which [SddStage] this pane edits.
   final SddStage stage;
+
+  /// Which [TicketType]'s precondition graph this pane edits — `null` for
+  /// the shared/type-agnostic graph. Forwarded to every
+  /// [TransitionNodeForm] this pane mounts. Added for `AIO-2903`.
+  final TicketType? type;
 
   /// Forwarded to every [TransitionNodeForm] this pane mounts inline — see
   /// [TransitionNodeForm.onDirtyChanged]. Added for `AIO-1936`'s
@@ -110,6 +116,7 @@ class _TransitionOutlineListState extends State<TransitionOutlineList> {
                         depth: 0,
                         nodesById: loaded.nodesById,
                         stage: widget.stage,
+                        type: widget.type,
                         onDirtyChanged: widget.onDirtyChanged,
                         onDelete: () => context
                             .read<TransitionPreconditionConfigCubit>()
@@ -145,6 +152,7 @@ class _TransitionOutlineListState extends State<TransitionOutlineList> {
                           ),
                           child: TransitionNodeForm(
                             stage: widget.stage,
+                            type: widget.type,
                             onDirtyChanged: widget.onDirtyChanged,
                             onSave:
                                 ({
@@ -215,6 +223,7 @@ class _NodeRow extends StatefulWidget {
     required this.depth,
     required this.nodesById,
     required this.stage,
+    this.type,
     required this.onSave,
     required this.onDelete,
     required this.onCreateChainedChild,
@@ -229,6 +238,11 @@ class _NodeRow extends StatefulWidget {
   /// [TransitionNodeForm]'s `...ChildFieldLabel`).
   final Map<String, TransitionNode> nodesById;
   final SddStage stage;
+
+  /// Forwarded to this row's own [TransitionNodeForm] and every descendant
+  /// [_BranchChild]/[_NodeRow] — see [TransitionOutlineList.type]. Added
+  /// for `AIO-2903`.
+  final TicketType? type;
   final void Function({
     required String fieldId,
     required TransitionBranch matchedBranch,
@@ -367,6 +381,7 @@ class _NodeRowState extends State<_NodeRow> {
                 if (_expanded)
                   TransitionNodeForm(
                     stage: widget.stage,
+                    type: widget.type,
                     onDirtyChanged: widget.onDirtyChanged,
                     initialFieldId: widget.node.fieldId,
                     initialMatchedBranch: widget.node.matchedBranch,
@@ -403,6 +418,7 @@ class _NodeRowState extends State<_NodeRow> {
             depth: widget.depth + 1,
             nodesById: widget.nodesById,
             stage: widget.stage,
+            type: widget.type,
             onCreateChainedChild: widget.onCreateChainedChild,
             onDirtyChanged: widget.onDirtyChanged,
           )
@@ -420,6 +436,7 @@ class _NodeRowState extends State<_NodeRow> {
             depth: widget.depth + 1,
             nodesById: widget.nodesById,
             stage: widget.stage,
+            type: widget.type,
             onCreateChainedChild: widget.onCreateChainedChild,
             onDirtyChanged: widget.onDirtyChanged,
           )
@@ -458,6 +475,7 @@ class _BranchChild extends StatelessWidget {
     required this.depth,
     required this.nodesById,
     required this.stage,
+    this.type,
     required this.onCreateChainedChild,
     this.onDirtyChanged,
   });
@@ -467,6 +485,10 @@ class _BranchChild extends StatelessWidget {
   final int depth;
   final Map<String, TransitionNode> nodesById;
   final SddStage stage;
+
+  /// Forwarded to this child's own recursive [_NodeRow] — see
+  /// [TransitionOutlineList.type]. Added for `AIO-2903`.
+  final TicketType? type;
   final Future<String?> Function(String fieldId) onCreateChainedChild;
 
   /// Forwarded to this child's own recursive [_NodeRow] — see
@@ -500,6 +522,7 @@ class _BranchChild extends StatelessWidget {
           depth: depth,
           nodesById: nodesById,
           stage: stage,
+          type: type,
           onDirtyChanged: onDirtyChanged,
           onDelete: () => context
               .read<TransitionPreconditionConfigCubit>()

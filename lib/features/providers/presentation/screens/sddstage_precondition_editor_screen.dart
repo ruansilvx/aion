@@ -16,33 +16,41 @@ import 'package:aion/features/tickets/tickets.dart';
 /// [stage]'s display label for this screen's header/root-marker/empty
 /// state — reuses `_SddStageSection`'s own tracker-node wording
 /// (`ticket_metadata_section.dart`) so the two surfaces never disagree.
-/// Module-private since this screen is its only consumer here.
-String sddStagePreconditionStageLabel(BuildContext context, SddStage stage) =>
-    switch (stage) {
-      SddStage.exploring => context.l10n.ticketDetailSddStageExplore,
-      SddStage.proposed => context.l10n.ticketDetailSddStageProposed,
-      SddStage.designBrief => context.l10n.ticketDetailSddStageDesignBrief,
-      SddStage.designSync => context.l10n.ticketDetailSddStageDesignSync,
-      // Not yet reachable from this screen — `applying` isn't in
-      // _preconditionBearingStagesInOrder (its Bug-only gate isn't wired
-      // into the project-configurable graph system yet; see
-      // `TicketsCubit._sddStageAdvanceCheck`'s own dartdoc, `AIO-2898`/
-      // `AIO-2902`). Included only so this switch stays exhaustive.
-      SddStage.applying => context.l10n.ticketDetailSddStageApplying,
-      SddStage.verifying => context.l10n.ticketDetailSddStageVerify,
-      SddStage.archived => context.l10n.ticketDetailSddStageArchive,
-    };
+/// When [type] is non-`null` (editing a type-specific override, e.g. Bug's
+/// own `proposed`/`applying` graph), appends `· <type label>` so the two
+/// precondition graphs a stage can now have are never confused for one
+/// another — added for `AIO-2903`. Module-private since this screen is its
+/// only consumer here.
+String sddStagePreconditionStageLabel(
+  BuildContext context,
+  SddStage stage, {
+  TicketType? type,
+}) {
+  final stageLabel = switch (stage) {
+    SddStage.exploring => context.l10n.ticketDetailSddStageExplore,
+    SddStage.proposed => context.l10n.ticketDetailSddStageProposed,
+    SddStage.designBrief => context.l10n.ticketDetailSddStageDesignBrief,
+    SddStage.designSync => context.l10n.ticketDetailSddStageDesignSync,
+    SddStage.applying => context.l10n.ticketDetailSddStageApplying,
+    SddStage.verifying => context.l10n.ticketDetailSddStageVerify,
+    SddStage.archived => context.l10n.ticketDetailSddStageArchive,
+  };
+  if (type == null) return stageLabel;
+  return '$stageLabel · ${ticketTypeLabel(context, type)}';
+}
 
-/// The 5 [SddStage] values that carry a real precondition today, in their
+/// The 6 [SddStage] values that carry a real precondition today, in their
 /// `_sddStageAdvanceCheck` advancement order — `null`/[SddStage .archived] are
 /// excluded, since neither has a precondition. Backs [_Header]'s "Stage N of
-/// 5" position chip (design.md §4.1). Added for `AIO-1936`'s post-`/verify`
-/// follow-up.
+/// 6" position chip (design.md §4.1). Added for `AIO-1936`'s post-`/verify`
+/// follow-up. [SddStage.applying] joined this list for `AIO-2903`, once its
+/// Bug-only gate was wired into this same project-configurable graph system.
 const _preconditionBearingStagesInOrder = [
   SddStage.exploring,
   SddStage.proposed,
   SddStage.designBrief,
   SddStage.designSync,
+  SddStage.applying,
   SddStage.verifying,
 ];
 
@@ -90,11 +98,19 @@ class _TerminalCanvasNode extends _CanvasNode {
 /// terminal) in place of DG's condition/4-outcome canvas. Added for
 /// `AIO-1936`.
 class SddStagePreconditionEditorScreen extends StatefulWidget {
-  /// Creates a [SddStagePreconditionEditorScreen] for [stage].
-  const SddStagePreconditionEditorScreen({super.key, required this.stage});
+  /// Creates a [SddStagePreconditionEditorScreen] for [stage]/[type].
+  const SddStagePreconditionEditorScreen({
+    super.key,
+    required this.stage,
+    this.type,
+  });
 
   /// Which [SddStage] this screen edits.
   final SddStage stage;
+
+  /// Which [TicketType]'s precondition graph this screen edits — `null`
+  /// for the shared/type-agnostic graph. Added for `AIO-2903`.
+  final TicketType? type;
 
   @override
   State<SddStagePreconditionEditorScreen> createState() =>
@@ -133,7 +149,10 @@ class _SddStagePreconditionEditorScreenState
   @override
   void initState() {
     super.initState();
-    context.read<TransitionPreconditionConfigCubit>().load(widget.stage);
+    context.read<TransitionPreconditionConfigCubit>().load(
+      widget.stage,
+      type: widget.type,
+    );
   }
 
   @override
@@ -165,6 +184,7 @@ class _SddStagePreconditionEditorScreenState
             children: [
               _Header(
                 stage: widget.stage,
+                type: widget.type,
                 dirty: _dirty,
                 stacked: stacked,
                 paneToggle: singlePane
@@ -193,6 +213,7 @@ class _SddStagePreconditionEditorScreenState
 
                         final canvas = _CanvasPane(
                           stage: widget.stage,
+                          type: widget.type,
                           loaded: loaded,
                           selectedId: _selectedCanvasId,
                           onSelect: (id) =>
@@ -203,6 +224,7 @@ class _SddStagePreconditionEditorScreenState
                           color: c.surface,
                           child: TransitionOutlineList(
                             stage: widget.stage,
+                            type: widget.type,
                             onDirtyChanged: (v) => _dirty.value = v,
                           ),
                         );
@@ -237,12 +259,17 @@ class _SddStagePreconditionEditorScreenState
 class _Header extends StatelessWidget {
   const _Header({
     required this.stage,
+    this.type,
     required this.dirty,
     required this.stacked,
     required this.paneToggle,
   });
 
   final SddStage stage;
+
+  /// Which [TicketType]'s precondition graph this header titles — `null`
+  /// for the shared/type-agnostic graph. Added for `AIO-2903`.
+  final TicketType? type;
 
   /// [_SddStagePreconditionEditorScreenState._dirty] — feeds the "N UNSAVED
   /// CHANGE" indicator (design.md §4.1). Added for `AIO-1936`'s post-`/verify`
@@ -302,7 +329,7 @@ class _Header extends StatelessWidget {
           style: AionText.caption.copyWith(color: c.textMuted),
         ),
         Text(
-          sddStagePreconditionStageLabel(context, stage),
+          sddStagePreconditionStageLabel(context, stage, type: type),
           style: AionText.h2.copyWith(color: c.textPrimary),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
@@ -562,6 +589,7 @@ class _PaneModeSegment extends StatelessWidget {
 class _CanvasPane extends StatefulWidget {
   const _CanvasPane({
     required this.stage,
+    this.type,
     required this.loaded,
     required this.selectedId,
     required this.onSelect,
@@ -569,6 +597,10 @@ class _CanvasPane extends StatefulWidget {
   });
 
   final SddStage stage;
+
+  /// Which [TicketType]'s precondition graph this pane edits — `null` for
+  /// the shared/type-agnostic graph. Added for `AIO-2903`.
+  final TicketType? type;
   final TransitionPreconditionConfigLoaded loaded;
   final String? selectedId;
   final ValueChanged<String> onSelect;
@@ -599,7 +631,7 @@ class _CanvasPaneState extends State<_CanvasPane> {
         edges: const [],
         nodeBuilder: (context, data, selected, hovered, dragging) =>
             const SizedBox.shrink(),
-        emptyState: _EmptyGraphState(stage: widget.stage),
+        emptyState: _EmptyGraphState(stage: widget.stage, type: widget.type),
       );
     }
 
@@ -617,6 +649,7 @@ class _CanvasPaneState extends State<_CanvasPane> {
               link: _linkFor(node.id),
               child: _CanvasNodeContent(
                 stage: widget.stage,
+                type: widget.type,
                 data: data,
                 selected: selected,
                 hovered: hovered,
@@ -625,6 +658,7 @@ class _CanvasPaneState extends State<_CanvasPane> {
             ),
             _TerminalCanvasNode() => _CanvasNodeContent(
               stage: widget.stage,
+              type: widget.type,
               data: data,
               selected: selected,
               hovered: hovered,
@@ -646,6 +680,7 @@ class _CanvasPaneState extends State<_CanvasPane> {
       context,
       link: _linkFor(id),
       stage: widget.stage,
+      type: widget.type,
       initialFieldId: node.fieldId,
       initialMatchedBranch: node.matchedBranch,
       initialUnmatchedBranch: node.unmatchedBranch,
@@ -807,6 +842,7 @@ class _TreeLayout {
 class _CanvasNodeContent extends StatelessWidget {
   const _CanvasNodeContent({
     required this.stage,
+    this.type,
     required this.data,
     required this.selected,
     required this.hovered,
@@ -814,6 +850,10 @@ class _CanvasNodeContent extends StatelessWidget {
   });
 
   final SddStage stage;
+
+  /// Which [TicketType]'s precondition graph this node belongs to —
+  /// forwarded to [_RootMarker]. Added for `AIO-2903`.
+  final TicketType? type;
   final _CanvasNode data;
   final bool selected;
   final bool hovered;
@@ -932,7 +972,11 @@ class _CanvasNodeContent extends StatelessWidget {
       children: [
         box,
         if (isRoot)
-          Positioned(top: -30, left: 0, child: _RootMarker(stage: stage)),
+          Positioned(
+            top: -30,
+            left: 0,
+            child: _RootMarker(stage: stage, type: type),
+          ),
         Positioned(
           bottom: -3.5,
           left: 68 - 3.5,
@@ -952,14 +996,18 @@ class _CanvasNodeContent extends StatelessWidget {
 /// naming the stage transition rather than an automation context.
 /// Mirrors `_RootMarker` (`decision_graph_editor_screen.dart`).
 class _RootMarker extends StatelessWidget {
-  const _RootMarker({required this.stage});
+  const _RootMarker({required this.stage, this.type});
 
   final SddStage stage;
+
+  /// Which [TicketType]'s precondition graph this marker names — `null`
+  /// for the shared/type-agnostic graph. Added for `AIO-2903`.
+  final TicketType? type;
 
   @override
   Widget build(BuildContext context) {
     final c = ThemeScope.of(context).colors;
-    final label = sddStagePreconditionStageLabel(context, stage);
+    final label = sddStagePreconditionStageLabel(context, stage, type: type);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: c.primarySubtle,
@@ -1003,14 +1051,18 @@ class _AnchorDot extends StatelessWidget {
 /// configured precondition. Mirrors `_EmptyGraphState`
 /// (`decision_graph_editor_screen.dart`).
 class _EmptyGraphState extends StatelessWidget {
-  const _EmptyGraphState({required this.stage});
+  const _EmptyGraphState({required this.stage, this.type});
 
   final SddStage stage;
+
+  /// Which [TicketType]'s precondition graph is empty — `null` for the
+  /// shared/type-agnostic graph. Added for `AIO-2903`.
+  final TicketType? type;
 
   @override
   Widget build(BuildContext context) {
     final c = ThemeScope.of(context).colors;
-    final label = sddStagePreconditionStageLabel(context, stage);
+    final label = sddStagePreconditionStageLabel(context, stage, type: type);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: c.surface.withValues(alpha: 0.72),

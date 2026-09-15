@@ -224,6 +224,7 @@ class TransitionNodeForm extends StatefulWidget {
   const TransitionNodeForm({
     super.key,
     required this.stage,
+    this.type,
     this.initialFieldId,
     this.initialMatchedBranch = const TransitionBranch.terminal(
       TransitionOutcome.allowed,
@@ -245,6 +246,14 @@ class TransitionNodeForm extends StatefulWidget {
 
   /// Which [SddStage] this form's field picker is scoped to.
   final SddStage stage;
+
+  /// Which [TicketType]'s precondition graph this form is editing — `null`
+  /// for the shared/type-agnostic graph. Narrows [stage]'s field picker
+  /// further via [transitionFieldsFor]'s own `type` parameter, so e.g. Bug's
+  /// `proposed` override only ever offers `proposeGateApproved`, never
+  /// `hasChildren`/etc (meaningless for a Bug, and vice versa for the shared
+  /// graph). Added for `AIO-2903`.
+  final TicketType? type;
 
   /// The field id to preselect, or `null` for "no field chosen yet."
   final String? initialFieldId;
@@ -324,6 +333,7 @@ class TransitionNodeForm extends StatefulWidget {
     BuildContext context, {
     required LayerLink link,
     required SddStage stage,
+    TicketType? type,
     String? initialFieldId,
     TransitionBranch initialMatchedBranch = const TransitionBranch.terminal(
       TransitionOutcome.allowed,
@@ -374,6 +384,7 @@ class TransitionNodeForm extends StatefulWidget {
               child: _PopoverChrome(
                 child: TransitionNodeForm(
                   stage: stage,
+                  type: type,
                   initialFieldId: initialFieldId,
                   initialMatchedBranch: initialMatchedBranch,
                   initialUnmatchedBranch: initialUnmatchedBranch,
@@ -434,7 +445,7 @@ class _TransitionNodeFormState extends State<TransitionNodeForm> {
   @override
   void initState() {
     super.initState();
-    final catalog = transitionFieldsFor(widget.stage);
+    final catalog = transitionFieldsFor(widget.stage, type: widget.type);
     _field = catalog
         .where((spec) => spec.id == widget.initialFieldId)
         .firstOrNull;
@@ -618,7 +629,7 @@ class _TransitionNodeFormState extends State<TransitionNodeForm> {
   @override
   Widget build(BuildContext context) {
     final c = ThemeScope.of(context).colors;
-    final catalog = transitionFieldsFor(widget.stage);
+    final catalog = transitionFieldsFor(widget.stage, type: widget.type);
 
     return Padding(
       padding: const EdgeInsets.all(AionSpacing.sp16),

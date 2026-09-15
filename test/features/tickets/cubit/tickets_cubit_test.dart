@@ -114,6 +114,13 @@ class MockDecisionGraphRepository extends Mock
 /// every test below that exercises `_sddStageAdvanceCheck`'s real
 /// precondition-gated behavior (rather than just its "always allowed"
 /// fallback) supplies one of these instead of omitting the parameter.
+/// Widened from a `SddStage`-only key to `(SddStage, TicketType?)` for
+/// `AIO-2903`, including seeding [TicketType.bug]'s own `proposed`/
+/// `applying` override graphs alongside the shared ones — without those
+/// two, `TicketsCubit._resolveTransition`'s fallback would resolve Bug's
+/// gate to an always-`rootNodeId: null` (i.e. always-allowed) graph
+/// instead of the "blocked until approved" shape every pre-existing Bug
+/// `proposed`/`applying` test below actually exercises.
 class FakeTransitionPreconditionRepository
     implements TransitionPreconditionRepository {
   /// Creates a [FakeTransitionPreconditionRepository], seeded immediately.
@@ -140,7 +147,7 @@ class FakeTransitionPreconditionRepository
       matched: TransitionBranch.toNode(verifyGateApproved.id),
       unmatched: const TransitionBranch.terminal(TransitionOutcome.blocked),
     );
-    _graphs[SddStage.verifying] = TransitionGraph(
+    _graphs[(SddStage.verifying, null)] = TransitionGraph(
       stage: SddStage.verifying,
       rootNodeId: mostRecentChatHasTerminalReply.id,
     );
@@ -163,7 +170,7 @@ class FakeTransitionPreconditionRepository
       matched: TransitionBranch.toNode(storyNeedsDesignReview.id),
       unmatched: const TransitionBranch.terminal(TransitionOutcome.blocked),
     );
-    _graphs[SddStage.proposed] = TransitionGraph(
+    _graphs[(SddStage.proposed, null)] = TransitionGraph(
       stage: SddStage.proposed,
       rootNodeId: hasChildren.id,
     );
@@ -185,13 +192,38 @@ class FakeTransitionPreconditionRepository
       matched: TransitionBranch.toNode(designSyncApproved.id),
       unmatched: const TransitionBranch.terminal(TransitionOutcome.blocked),
     );
-    _graphs[SddStage.designSync] = TransitionGraph(
+    _graphs[(SddStage.designSync, null)] = TransitionGraph(
       stage: SddStage.designSync,
       rootNodeId: allTasksComplete.id,
     );
+
+    // Bug's own `proposed`/`applying` override graphs — mirrors
+    // `TransitionPreconditionDao._seedBugStageDefaults`'s real shape,
+    // added when `AIO-2903` retired `_sddStageAdvanceCheck`'s hardcoded
+    // bypass for these two stages.
+    final proposeGateApproved = _node(
+      'seed-proposed-bug-proposeGateApproved',
+      proposeGateApprovedField.id,
+      matched: const TransitionBranch.terminal(TransitionOutcome.allowed),
+      unmatched: const TransitionBranch.terminal(TransitionOutcome.blocked),
+    );
+    _graphs[(SddStage.proposed, TicketType.bug)] = TransitionGraph(
+      stage: SddStage.proposed,
+      rootNodeId: proposeGateApproved.id,
+    );
+    final codingExecutionConcluded = _node(
+      'seed-applying-bug-codingExecutionConcluded',
+      codingExecutionConcludedField.id,
+      matched: const TransitionBranch.terminal(TransitionOutcome.allowed),
+      unmatched: const TransitionBranch.terminal(TransitionOutcome.blocked),
+    );
+    _graphs[(SddStage.applying, TicketType.bug)] = TransitionGraph(
+      stage: SddStage.applying,
+      rootNodeId: codingExecutionConcluded.id,
+    );
   }
 
-  final Map<SddStage, TransitionGraph> _graphs = {};
+  final Map<(SddStage, TicketType?), TransitionGraph> _graphs = {};
   final Map<String, TransitionNode> _nodesById = {};
   final _changeController = StreamController<void>.broadcast(sync: true);
 
@@ -221,19 +253,22 @@ class FakeTransitionPreconditionRepository
       matched: const TransitionBranch.terminal(TransitionOutcome.allowed),
       unmatched: const TransitionBranch.terminal(TransitionOutcome.blocked),
     );
-    _graphs[stage] = TransitionGraph(stage: stage, rootNodeId: node.id);
+    _graphs[(stage, null)] = TransitionGraph(stage: stage, rootNodeId: node.id);
   }
 
   @override
-  Future<TransitionGraph> getGraph(SddStage stage) async =>
-      _graphs[stage] ?? TransitionGraph(stage: stage, rootNodeId: null);
+  Future<TransitionGraph> getGraph(SddStage stage, TicketType? type) async =>
+      _graphs[(stage, type)] ?? TransitionGraph(stage: stage, rootNodeId: null);
 
   @override
   Future<TransitionNode?> getNode(String id) async => _nodesById[id];
 
   @override
-  Future<List<TransitionNode>> getAllNodes(SddStage stage) async {
-    final rootId = _graphs[stage]?.rootNodeId;
+  Future<List<TransitionNode>> getAllNodes(
+    SddStage stage,
+    TicketType? type,
+  ) async {
+    final rootId = _graphs[(stage, type)]?.rootNodeId;
     if (rootId == null) return [];
     final result = <TransitionNode>[];
     final toVisit = <String>[rootId];
@@ -264,8 +299,12 @@ class FakeTransitionPreconditionRepository
   }
 
   @override
-  Future<void> setRoot(SddStage stage, String? nodeId) async {
-    _graphs[stage] = TransitionGraph(stage: stage, rootNodeId: nodeId);
+  Future<void> setRoot(
+    SddStage stage,
+    TicketType? type,
+    String? nodeId,
+  ) async {
+    _graphs[(stage, type)] = TransitionGraph(stage: stage, rootNodeId: nodeId);
     _changeController.add(null);
   }
 
@@ -276,9 +315,10 @@ class FakeTransitionPreconditionRepository
   Stream<void> get onChanged => _changeController.stream;
 
   @override
-  Future<Map<SddStage, int>> getNodeCounts() async {
+  Future<Map<(SddStage, TicketType?), int>> getNodeCounts() async {
     return {
-      for (final stage in _graphs.keys) stage: (await getAllNodes(stage)).length,
+      for (final key in _graphs.keys)
+        key: (await getAllNodes(key.$1, key.$2)).length,
     };
   }
 }

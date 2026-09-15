@@ -147,8 +147,8 @@ class _WorkflowStatusSettingsScreenState
                                 .where((a) => a.sddStage == stage)
                                 .firstOrNull,
                             templates: loaded.templates,
-                            preconditionNodeCount:
-                                loaded.transitionPreconditionNodeCounts[stage],
+                            preconditionNodeCounts:
+                                loaded.transitionPreconditionNodeCounts,
                           ),
                       ],
                     );
@@ -1338,7 +1338,7 @@ class _SddStageRenameRow extends StatefulWidget {
     required this.isLast,
     required this.attachment,
     required this.templates,
-    required this.preconditionNodeCount,
+    required this.preconditionNodeCounts,
   });
 
   final SddStage stage;
@@ -1353,12 +1353,16 @@ class _SddStageRenameRow extends StatefulWidget {
   /// [_AttachmentForm]'s template picker. Added for `AIO-2650`.
   final List<WorkflowPromptTemplate> templates;
 
-  /// This stage's current transition-precondition field-check count, or `null`
-  /// if unconfigured — [WorkflowConfigLoaded
-  /// .transitionPreconditionNodeCounts]`[stage]`. Threaded down to
-  /// [_PreconditionAffordance]'s count badge. Added for `AIO-1936`'s
-  /// post-`/verify` follow-up.
-  final int? preconditionNodeCount;
+  /// Every `(SddStage, TicketType?)` combination's current
+  /// transition-precondition field-check count — [WorkflowConfigLoaded
+  /// .transitionPreconditionNodeCounts]. This row looks up its own current
+  /// selection (see [_SddStageRenameRowState._selectedPreconditionType])
+  /// rather than being handed a single pre-resolved count, since [stage]
+  /// alone no longer determines which count applies once a type-specific
+  /// override exists. Threaded down to [_PreconditionAffordance]'s count
+  /// badge. Added for `AIO-1936`'s post-`/verify` follow-up; widened to the
+  /// whole map for `AIO-2903`.
+  final Map<(SddStage, TicketType?), int> preconditionNodeCounts;
 
   @override
   State<_SddStageRenameRow> createState() => _SddStageRenameRowState();
@@ -1371,6 +1375,14 @@ class _SddStageRenameRowState extends State<_SddStageRenameRow> {
   /// Whether [_AttachmentForm] is currently expanded below this row. Added for
   /// `AIO-2650`.
   bool _attachmentFormOpen = false;
+
+  /// Which precondition variant this row's "Configure precondition"
+  /// affordance currently points at — `null` (the shared graph) unless the
+  /// user has switched [_PreconditionTypeToggle] to "Bug". Only meaningful
+  /// for [SddStage.proposed]/[SddStage.applying], the two stages with a
+  /// real per-type variant today; ephemeral UI selection, not persisted.
+  /// Added for `AIO-2903`.
+  TicketType? _selectedPreconditionType;
 
   @override
   void initState() {
@@ -1406,9 +1418,21 @@ class _SddStageRenameRowState extends State<_SddStageRenameRow> {
     );
   }
 
+  /// Whether [_SddStageRenameRow.stage] has a real per-[TicketType] variant
+  /// today — only [SddStage.proposed]/[SddStage.applying], the two stages
+  /// Bug's own SDD cycle needed a dedicated override for. Every other stage
+  /// only ever has the shared graph, so showing a type picker there would
+  /// offer a choice with no second option behind it. Added for `AIO-2903`.
+  bool get _hasTypeVariant =>
+      widget.stage == SddStage.proposed || widget.stage == SddStage.applying;
+
   @override
   Widget build(BuildContext context) {
     final c = ThemeScope.of(context).colors;
+    final preconditionCount = widget.preconditionNodeCounts[(
+      widget.stage,
+      _selectedPreconditionType,
+    )];
     return DecoratedBox(
       decoration: BoxDecoration(
         border: widget.isLast
@@ -1473,12 +1497,27 @@ class _SddStageRenameRowState extends State<_SddStageRenameRow> {
                   Flexible(
                     child: _PreconditionAffordance(
                       stage: widget.stage,
-                      count: widget.preconditionNodeCount,
+                      type: _selectedPreconditionType,
+                      count: preconditionCount,
                     ),
                   ),
                 ],
               ],
             ),
+            // A second line's worth of choice, not squeezed onto the
+            // already-tight main row — only shown where it means anything
+            // (see [_hasTypeVariant]). Added for `AIO-2903`.
+            if (_hasTypeVariant) ...[
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.only(left: 116),
+                child: _PreconditionTypeToggle(
+                  selected: _selectedPreconditionType,
+                  onChanged: (type) =>
+                      setState(() => _selectedPreconditionType = type),
+                ),
+              ),
+            ],
             if (_attachmentFormOpen) ...[
               const SizedBox(height: 10),
               _AttachmentForm(
@@ -1490,6 +1529,107 @@ class _SddStageRenameRowState extends State<_SddStageRenameRow> {
               ),
             ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A 2-segment toggle between the shared/type-agnostic precondition graph
+/// ("All types") and [TicketType.bug]'s own override — the only stages that
+/// have one today are [SddStage.proposed]/[SddStage.applying] (see
+/// [_SddStageRenameRowState._hasTypeVariant]). Not a generic N-type picker:
+/// a future type-specific override would add its own segment here, not
+/// generalize this into a full type selector speculatively. Mirrors
+/// `_PaneModeToggle` (`sddstage_precondition_editor_screen.dart`)'s exact
+/// two-segment shape. Added for `AIO-2903`.
+class _PreconditionTypeToggle extends StatelessWidget {
+  const _PreconditionTypeToggle({
+    required this.selected,
+    required this.onChanged,
+  });
+
+  /// `null` selects the shared graph; [TicketType.bug] selects Bug's own
+  /// override.
+  final TicketType? selected;
+  final ValueChanged<TicketType?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: c.surfaceHover,
+        borderRadius: BorderRadius.all(AionRadius.md),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(3),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _PreconditionTypeSegment(
+              label: context.l10n.transitionPreconditionAllTypesOption,
+              selected: selected == null,
+              onTap: () => onChanged(null),
+            ),
+            _PreconditionTypeSegment(
+              label: ticketTypeLabel(context, TicketType.bug),
+              selected: selected == TicketType.bug,
+              onTap: () => onChanged(TicketType.bug),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One segment of [_PreconditionTypeToggle].
+class _PreconditionTypeSegment extends StatefulWidget {
+  const _PreconditionTypeSegment({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  State<_PreconditionTypeSegment> createState() =>
+      _PreconditionTypeSegmentState();
+}
+
+class _PreconditionTypeSegmentState extends State<_PreconditionTypeSegment> {
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: widget.selected ? c.surface : const Color(0x00000000),
+            border: widget.selected
+                ? Border.all(color: c.border, width: 1)
+                : null,
+            borderRadius: BorderRadius.all(AionRadius.sm),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            child: Text(
+              widget.label,
+              style: AionText.bodySm.copyWith(
+                color: widget.selected ? c.textPrimary : c.textSecondary,
+                fontWeight: widget.selected ? FontWeight.w600 : FontWeight.w400,
+              ),
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         ),
       ),
     );
@@ -1520,12 +1660,21 @@ String _fixedStageName(SddStage stage) => switch (stage) {
 /// Originally shipped always-compact, with no count wiring at all; both gaps
 /// were closed for AIO-1936's post-`/verify` follow-up.
 class _PreconditionAffordance extends StatefulWidget {
-  const _PreconditionAffordance({required this.stage, required this.count});
+  const _PreconditionAffordance({
+    required this.stage,
+    this.type,
+    required this.count,
+  });
 
   final SddStage stage;
 
-  /// This stage's current field-check count, or `null`/`0` if
-  /// unconfigured — [_SddStageRenameRow.preconditionNodeCount].
+  /// Which [TicketType]'s precondition graph this affordance opens — `null`
+  /// for the shared/type-agnostic graph — [_SddStageRenameRowState
+  /// ._selectedPreconditionType]. Added for `AIO-2903`.
+  final TicketType? type;
+
+  /// This `(stage, type)` combination's current field-check count, or
+  /// `null`/`0` if unconfigured — [_SddStageRenameRow.preconditionNodeCounts].
   final int? count;
 
   @override
@@ -1704,7 +1853,10 @@ class _PreconditionAffordanceState extends State<_PreconditionAffordance> {
         child: Semantics(
           button: true,
           label: context.l10n.transitionPreconditionConfigureAffordanceForStage(
-            _fixedStageName(widget.stage),
+            widget.type == null
+                ? _fixedStageName(widget.stage)
+                : '${_fixedStageName(widget.stage)} · '
+                      '${ticketTypeLabel(context, widget.type!)}',
           ),
           child: GestureDetector(onTap: () => _open(context), child: child),
         ),
@@ -1712,14 +1864,15 @@ class _PreconditionAffordanceState extends State<_PreconditionAffordance> {
     );
   }
 
-  /// Pushes the precondition editor for [_PreconditionAffordance.stage]
-  /// and, once it pops, reloads [WorkflowConfigCubit] so this row's count
-  /// reflects whatever was just edited there.
+  /// Pushes the precondition editor for [_PreconditionAffordance.stage]/
+  /// [_PreconditionAffordance.type] and, once it pops, reloads
+  /// [WorkflowConfigCubit] so this row's count reflects whatever was just
+  /// edited there. [type] became a `?type=` query param for `AIO-2903`.
   Future<void> _open(BuildContext context) async {
     final cubit = context.read<WorkflowConfigCubit>();
-    await context.push(
-      '/workspace/settings/workflow/sdd/${widget.stage.name}/precondition',
-    );
+    final type = widget.type;
+    final path = '/workspace/settings/workflow/sdd/${widget.stage.name}/precondition';
+    await context.push(type == null ? path : '$path?type=${type.name}');
     if (!mounted) return;
     cubit.load();
   }

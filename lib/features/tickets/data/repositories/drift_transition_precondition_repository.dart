@@ -6,25 +6,35 @@ import 'package:drift/drift.dart';
 
 import 'package:aion/core/database/app_database.dart';
 import 'package:aion/features/tickets/data/daos/transition_precondition_dao.dart';
+import 'package:aion/features/tickets/data/models/transition_precondition_graphs_table.dart'
+    show anyTicketTypeSentinel;
 import 'package:aion/features/tickets/domain/entities/transition_branch.dart';
 import 'package:aion/features/tickets/domain/entities/transition_node.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/enums/transition_outcome.dart';
 import 'package:aion/features/tickets/domain/repositories/transition_precondition_repository.dart';
 
 /// Drift-backed implementation of [TransitionPreconditionRepository]. No
-/// business logic here — maps [TransitionPreconditionNodeData] rows to
-/// [TransitionNode] entities and delegates every method straight to
+/// business logic here beyond the `TicketType?` ↔ raw `ticket_type` column
+/// translation and the "fall back to the shared graph" resolution rule (see
+/// [_column]/[getGraph]) — maps [TransitionPreconditionNodeData] rows to
+/// [TransitionNode] entities and delegates every other concern straight to
 /// [TransitionPreconditionDao], matching every other `Drift*Repository` in
 /// this codebase (mirrors
 /// `core/automation/data/drift_decision_graph_repository.dart`'s exact shape).
-/// Added for `AIO-1936`.
+/// Added for `AIO-1936`; widened to `(SddStage, TicketType)` for `AIO-2903`.
 class DriftTransitionPreconditionRepository
     implements TransitionPreconditionRepository {
   /// Creates a [DriftTransitionPreconditionRepository] backed by [_db].
   DriftTransitionPreconditionRepository(this._db);
 
   final AppDatabase _db;
+
+  /// [type]'s raw `ticket_type` column value — [anyTicketTypeSentinel] for
+  /// `null` (the shared graph), else [TicketType.name]. Added for
+  /// `AIO-2903`.
+  String _column(TicketType? type) => type?.name ?? anyTicketTypeSentinel;
 
   /// Broadcast controller backing [onChanged] — fired after every
   /// successful write below. `sync: true` since listeners (`TicketsCubit`/
@@ -37,12 +47,25 @@ class DriftTransitionPreconditionRepository
   Stream<void> get onChanged => _changeController.stream;
 
   @override
-  Future<TransitionGraph> getGraph(SddStage stage) async {
-    final row = await _db.transitionPreconditionDao.getGraph(stage);
-    if (row == null) {
+  Future<TransitionGraph> getGraph(SddStage stage, TicketType? type) async {
+    final row = await _db.transitionPreconditionDao.getGraph(
+      stage,
+      _column(type),
+    );
+    if (row != null) {
+      return TransitionGraph(stage: stage, rootNodeId: row.rootNodeId);
+    }
+    // No row for this exact (stage, type) — fall back to the shared graph,
+    // unless [type] already *was* the shared graph (nothing left to fall
+    // back to). Added for `AIO-2903`.
+    if (type == null) {
       return TransitionGraph(stage: stage, rootNodeId: null);
     }
-    return TransitionGraph(stage: stage, rootNodeId: row.rootNodeId);
+    final sharedRow = await _db.transitionPreconditionDao.getGraph(
+      stage,
+      anyTicketTypeSentinel,
+    );
+    return TransitionGraph(stage: stage, rootNodeId: sharedRow?.rootNodeId);
   }
 
   @override
@@ -52,8 +75,11 @@ class DriftTransitionPreconditionRepository
   }
 
   @override
-  Future<List<TransitionNode>> getAllNodes(SddStage stage) async {
-    final graph = await getGraph(stage);
+  Future<List<TransitionNode>> getAllNodes(
+    SddStage stage,
+    TicketType? type,
+  ) async {
+    final graph = await getGraph(stage, type);
     final rootId = graph.rootNodeId;
     if (rootId == null) return [];
 
@@ -90,8 +116,8 @@ class DriftTransitionPreconditionRepository
   }
 
   @override
-  Future<void> setRoot(SddStage stage, String? nodeId) async {
-    await _db.transitionPreconditionDao.setRoot(stage, nodeId);
+  Future<void> setRoot(SddStage stage, TicketType? type, String? nodeId) async {
+    await _db.transitionPreconditionDao.setRoot(stage, _column(type), nodeId);
     _changeController.add(null);
   }
 
@@ -101,21 +127,35 @@ class DriftTransitionPreconditionRepository
   }
 
   @override
-  Future<Map<SddStage, int>> getNodeCounts() async {
+  Future<Map<(SddStage, TicketType?), int>> getNodeCounts() async {
     final graphRows = await _db.transitionPreconditionDao.getAllGraphs();
     final nodeRows = await _db.transitionPreconditionDao.getAllNodes();
     final rowsById = {for (final row in nodeRows) row.id: row};
 
-    final counts = <SddStage, int>{};
+    final counts = <(SddStage, TicketType?), int>{};
     for (final graphRow in graphRows) {
       final stage = SddStage.values
           .where((s) => s.name == graphRow.sddStage)
           .firstOrNull;
       if (stage == null) continue;
+      // `null` for the shared-graph sentinel row, else the matching
+      // `TicketType` — an unrecognized value (defensive; every write path
+      // goes through [_column]) is skipped rather than mis-keyed. Added for
+      // `AIO-2903`.
+      final TicketType? type;
+      if (graphRow.ticketType == anyTicketTypeSentinel) {
+        type = null;
+      } else {
+        final match = TicketType.values
+            .where((t) => t.name == graphRow.ticketType)
+            .firstOrNull;
+        if (match == null) continue;
+        type = match;
+      }
 
       final rootId = graphRow.rootNodeId;
       if (rootId == null) {
-        counts[stage] = 0;
+        counts[(stage, type)] = 0;
         continue;
       }
 
@@ -134,7 +174,7 @@ class DriftTransitionPreconditionRepository
           if (branch is ToTransitionNodeBranch) toVisit.add(branch.nodeId);
         }
       }
-      counts[stage] = visited.length;
+      counts[(stage, type)] = visited.length;
     }
     return counts;
   }

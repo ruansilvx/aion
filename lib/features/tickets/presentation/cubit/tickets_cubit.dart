@@ -762,20 +762,24 @@ class TicketsCubit extends Cubit<TicketsState> {
     return evaluateDecisionGraph(graph, _decisionNodesById, effectiveInput);
   }
 
-  /// Every precondition-bearing `SddStage`'s currently-configured
-  /// `TransitionGraph`. Loaded once at construction ([_loadTransitionGraphs],
-  /// fired from the constructor body without being awaited, mirroring
-  /// [_decisionGraphsByContext]'s own load-then-upgrade shape) and refreshed
-  /// every time [_transitionPreconditionRepository] fires
+  /// Every loaded `(SddStage, TicketType?)` combination's currently-
+  /// configured `TransitionGraph` — `null` for a combination's [TicketType]
+  /// means the shared/type-agnostic graph. Loaded once at construction
+  /// ([_loadTransitionGraphs], fired from the constructor body without
+  /// being awaited, mirroring [_decisionGraphsByContext]'s own
+  /// load-then-upgrade shape) and refreshed every time
+  /// [_transitionPreconditionRepository] fires
   /// `TransitionPreconditionRepository.onChanged` (i.e. whenever
   /// `TransitionPreconditionConfigCubit` persists an edit). Empty until the
-  /// first load resolves. See `AIO-1936` §4.
-  Map<SddStage, TransitionGraph> _transitionGraphsByStage = const {};
+  /// first load resolves. See `AIO-1936` §4; widened from `SddStage`-only
+  /// keys for `AIO-2903`.
+  Map<(SddStage, TicketType?), TransitionGraph> _transitionGraphsByStage =
+      const {};
 
-  /// Every `TransitionNode` belonging to any stage's graph, keyed by
-  /// [TransitionNode.id] — the union of
+  /// Every `TransitionNode` belonging to any loaded combination's graph,
+  /// keyed by [TransitionNode.id] — the union of
   /// `TransitionPreconditionRepository.getAllNodes` across every
-  /// precondition-bearing `SddStage`, loaded alongside
+  /// combination [_loadTransitionGraphs] fetches, loaded alongside
   /// [_transitionGraphsByStage].
   Map<String, TransitionNode> _transitionNodesById = const {};
 
@@ -785,16 +789,32 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [TransitionPreconditionRepository]. Cancelled in [close].
   StreamSubscription<void>? _transitionGraphChangesSubscription;
 
-  /// The 5 `SddStage` values [_loadTransitionGraphs] fetches a graph for —
-  /// the only stages `_sddStageAdvanceCheck` ever gates. `null`/
-  /// [SddStage.archived] are excluded, mirroring
+  /// The 6 `SddStage` values [_loadTransitionGraphs] fetches a *shared*
+  /// (`type: null`) graph for — the only stages `_sddStageAdvanceCheck`
+  /// ever gates. `null`/[SddStage.archived] are excluded, mirroring
   /// `TransitionPreconditionRepository.seedDefaultsIfEmpty`'s own scope.
+  /// [SddStage.applying] joined this list for `AIO-2903` — Bug-only, but
+  /// fetched here the same as every other stage; only Bug ever actually
+  /// resolves a graph for it, since nothing else reaches that stage.
   static const _preconditionBearingStages = [
     SddStage.exploring,
     SddStage.proposed,
     SddStage.designBrief,
     SddStage.designSync,
+    SddStage.applying,
     SddStage.verifying,
+  ];
+
+  /// The `(SddStage, TicketType)` overrides [_loadTransitionGraphs] fetches
+  /// *in addition to* [_preconditionBearingStages]'s shared graphs — every
+  /// type-specific graph any project could have configured. Currently just
+  /// [TicketType.bug]'s own `proposed`/`applying`, the two gates that used
+  /// to bypass this system entirely (see `_sddStageAdvanceCheck`'s former
+  /// "Exception" note, retired by `AIO-2903`). A future type-specific
+  /// override would extend this list, not add a new lookup mechanism.
+  static const _typeSpecificOverrides = [
+    (SddStage.proposed, TicketType.bug),
+    (SddStage.applying, TicketType.bug),
   ];
 
   /// Reloads [_transitionGraphsByStage]/[_transitionNodesById] from
@@ -803,14 +823,22 @@ class TicketsCubit extends Cubit<TicketsState> {
   Future<void> _loadTransitionGraphs() async {
     final repository = _transitionPreconditionRepository;
     if (repository == null) return;
-    final graphsByStage = <SddStage, TransitionGraph>{};
+    final graphsByStage = <(SddStage, TicketType?), TransitionGraph>{};
     final nodesById = <String, TransitionNode>{};
-    for (final stage in _preconditionBearingStages) {
-      final graph = await repository.getGraph(stage);
-      graphsByStage[stage] = graph;
-      for (final node in await repository.getAllNodes(stage)) {
+
+    Future<void> loadOne(SddStage stage, TicketType? type) async {
+      final graph = await repository.getGraph(stage, type);
+      graphsByStage[(stage, type)] = graph;
+      for (final node in await repository.getAllNodes(stage, type)) {
         nodesById[node.id] = node;
       }
+    }
+
+    for (final stage in _preconditionBearingStages) {
+      await loadOne(stage, null);
+    }
+    for (final (stage, type) in _typeSpecificOverrides) {
+      await loadOne(stage, type);
     }
     if (isClosed) return;
     _transitionGraphsByStage = graphsByStage;
@@ -3600,20 +3628,27 @@ class TicketsCubit extends Cubit<TicketsState> {
   bool _linkedDesignPageHasContent(Ticket? page) =>
       page != null && (page.description?.trim().isNotEmpty ?? false);
 
-  /// Resolves [stage]'s currently-cached `TransitionGraph` against [input] via
-  /// `evaluateTransitionGraph`, translating the result into
-  /// `_sddStageAdvanceCheck`'s `(canAdvance, blockReason)` shape. Falls back
-  /// to `canAdvance: true` (never gating) when [stage]'s graph hasn't loaded
-  /// yet — either this cubit was constructed without a
-  /// [TransitionPreconditionRepository] at all, or [_loadTransitionGraphs]'s
-  /// first load hasn't resolved yet — mirroring
-  /// [_transitionPreconditionRepository]'s own documented "no repository, no
-  /// gate" contract. Added for `AIO-1936`.
+  /// Resolves [stage]/[ticketType]'s currently-cached `TransitionGraph`
+  /// against [input] via `evaluateTransitionGraph`, translating the result
+  /// into `_sddStageAdvanceCheck`'s `(canAdvance, blockReason)` shape. Looks
+  /// up [ticketType]'s own override first, falling back to the shared graph
+  /// (`type: null`) if [ticketType] never configured one — mirrors
+  /// `TransitionPreconditionRepository.getGraph`'s own fallback rule, cached
+  /// client-side rather than re-queried per call. Falls back further to
+  /// `canAdvance: true` (never gating) when *neither* has loaded yet — this
+  /// cubit was constructed without a [TransitionPreconditionRepository] at
+  /// all, or [_loadTransitionGraphs]'s first load hasn't resolved yet —
+  /// mirroring [_transitionPreconditionRepository]'s own documented "no
+  /// repository, no gate" contract. Added for `AIO-1936`; the [ticketType]
+  /// parameter/fallback lookup added for `AIO-2903`.
   ({bool canAdvance, String? blockReason}) _resolveTransition(
     SddStage stage,
+    TicketType ticketType,
     TransitionEvalContext input,
   ) {
-    final graph = _transitionGraphsByStage[stage];
+    final graph =
+        _transitionGraphsByStage[(stage, ticketType)] ??
+        _transitionGraphsByStage[(stage, null)];
     if (graph == null) return (canAdvance: true, blockReason: null);
     final result = evaluateTransitionGraph(graph, _transitionNodesById, input);
     return (
@@ -3633,23 +3668,24 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// disagree. `canAdvance` is `false` with `blockReason: null` for any type
   /// other than [TicketType.epic]/[TicketType.story]/[TicketType.bug]
   /// (`AIO-2898`), or once [SddStage.archived] is reached (nothing left to
-  /// advance to, not a "blocked" state). Most precondition-bearing branches
-  /// below build a [TransitionEvalContext] from the same signals the
+  /// advance to, not a "blocked" state). Every precondition-bearing branch
+  /// below builds a [TransitionEvalContext] from the same signals the
   /// pre-`sddstage-transition-preconditions` hardcoded checks used, then
-  /// consult [stage]'s project-configured `TransitionGraph` via
+  /// consults [stage]'s project-configured `TransitionGraph` via
   /// [_resolveTransition] rather than a fixed rule — see that change's
-  /// design.md §4. **Exception**: a [TicketType.bug]'s `proposed`/`applying`
-  /// branches are checked directly (`_proposeGateApproved`/
-  /// `_codingExecutionConcluded`), not routed through [_resolveTransition] —
-  /// the project-configurable graph system keys a precondition tree by
-  /// [SddStage] alone, shared across every type that reaches that stage, and
-  /// the existing seeded `proposed` tree checks `hasChildren`/
-  /// `allChildrenComplete`, which a Bug (a leaf, never has children) could
-  /// never satisfy — routing it through that same tree would permanently
-  /// stick every Bug at `proposed`. Making Bug's own gates project-
-  /// configurable too needs a schema change (keying by `(SddStage,
-  /// TicketType)`, not just `SddStage`) — deliberately deferred, not
-  /// overlooked; see `AIO-2898`/`AIO-2902`.
+  /// design.md §4. A [TicketType.bug]'s `proposed`/`applying` branches used
+  /// to be the one exception (checked directly, bypassing
+  /// [_resolveTransition] entirely) because the project-configurable graph
+  /// system originally keyed a precondition tree by [SddStage] alone, shared
+  /// across every type — the seeded `proposed` tree's `hasChildren`/
+  /// `allChildrenComplete` checks are meaningless for a Bug (a leaf, never
+  /// has children), so routing it through that same shared tree would have
+  /// permanently stuck every Bug at `proposed`. `AIO-2903` retired that
+  /// exception by widening the graph system to key by `(SddStage,
+  /// TicketType)` instead — Bug now has its own `(proposed, bug)`/
+  /// `(applying, bug)` override graphs, checking `proposeGateApproved`/
+  /// `codingExecutionConcluded` respectively, so both branches route through
+  /// [_resolveTransition] like every other stage.
   Future<({bool canAdvance, String? blockReason})> _sddStageAdvanceCheck(
     Ticket ticket,
   ) async {
@@ -3669,6 +3705,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         final ready = await _mostRecentChatHasTerminalReply(ticket.id);
         return _resolveTransition(
           SddStage.exploring,
+          ticket.type,
           TransitionEvalContext(mostRecentChatHasTerminalReply: ready),
         );
       case SddStage.verifying:
@@ -3683,29 +3720,34 @@ class TicketsCubit extends Cubit<TicketsState> {
         final approved = ready ? await _verifyGateApproved(ticket.id) : false;
         return _resolveTransition(
           SddStage.verifying,
+          ticket.type,
           TransitionEvalContext(
             mostRecentChatHasTerminalReply: ready,
             verifyGateApproved: approved,
           ),
         );
       case SddStage.proposed when ticket.type == TicketType.bug:
-        // See this method's own dartdoc "Exception" note for why this
-        // skips _resolveTransition entirely. Added for `AIO-2898`.
+        // Bug's own `(proposed, bug)` override graph checks
+        // `proposeGateApproved` — see this method's own dartdoc. Added for
+        // `AIO-2898`; routed through `_resolveTransition` since `AIO-2903`.
         final approved = await _proposeGateApproved(ticket.id);
-        return (
-          canAdvance: approved,
-          blockReason: approved ? null : 'Waiting on: Proposal approved',
+        return _resolveTransition(
+          SddStage.proposed,
+          ticket.type,
+          TransitionEvalContext(proposeGateApproved: approved),
         );
       case SddStage.applying:
         // Bug-only (an Epic/Story never reaches this stage — see
         // SddStage.applying's own dartdoc). Gates purely on the
         // coding-execution run having reached a terminal state, not on any
         // chat content — the human safety check happens next, in
-        // `verifying`. Added for `AIO-2898`.
+        // `verifying`. Added for `AIO-2898`; routed through
+        // `_resolveTransition` since `AIO-2903`.
         final concluded = await _codingExecutionConcluded(ticket.id);
-        return (
-          canAdvance: concluded,
-          blockReason: concluded ? null : 'Waiting on: Coding execution',
+        return _resolveTransition(
+          SddStage.applying,
+          ticket.type,
+          TransitionEvalContext(codingExecutionConcluded: concluded),
         );
       case SddStage.proposed:
         // Story branch: `designBrief`/`designSync` are supposed to run
@@ -3729,6 +3771,7 @@ class TicketsCubit extends Cubit<TicketsState> {
             await _storyNeedsDesignReview(children);
         return _resolveTransition(
           SddStage.proposed,
+          ticket.type,
           TransitionEvalContext(
             hasChildren: _hasChildren(children),
             storyNeedsDesignReview: needsDesign,
@@ -3739,6 +3782,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         final page = await _linkedDesignPage(ticket.id);
         return _resolveTransition(
           SddStage.designBrief,
+          ticket.type,
           TransitionEvalContext(
             linkedDesignPageHasContent: _linkedDesignPageHasContent(page),
           ),
@@ -3755,6 +3799,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         );
         return _resolveTransition(
           SddStage.designSync,
+          ticket.type,
           TransitionEvalContext(
             allTasksComplete: _allChildrenComplete(tasks, TicketType.task),
             designSyncApproved: approved,

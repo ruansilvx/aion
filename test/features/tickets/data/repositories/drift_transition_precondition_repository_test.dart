@@ -23,7 +23,9 @@ final _testProject = Project(
 /// [DriftTransitionPreconditionRepository] tests against a real in-memory
 /// drift instance — genuine persistence behavior (seeding idempotency,
 /// the baseline trees' shape), so this isn't mocked, per
-/// `automation_decision_dao_test.dart`'s own precedent.
+/// `automation_decision_dao_test.dart`'s own precedent. `type: null` means
+/// the shared/type-agnostic graph throughout — widened from a
+/// `SddStage`-only key for `AIO-2903`.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -40,12 +42,15 @@ void main() {
       await database.transitionPreconditionDao.deleteNode(row.id);
     }
     final existingGraphs = await database
-        .customSelect('SELECT sdd_stage FROM transition_precondition_graphs')
+        .customSelect(
+          'SELECT sdd_stage, ticket_type FROM transition_precondition_graphs',
+        )
         .get();
     for (final row in existingGraphs) {
       await database.customStatement(
-        'DELETE FROM transition_precondition_graphs WHERE sdd_stage = ?',
-        [row.read<String>('sdd_stage')],
+        'DELETE FROM transition_precondition_graphs '
+        'WHERE sdd_stage = ? AND ticket_type = ?',
+        [row.read<String>('sdd_stage'), row.read<String>('ticket_type')],
       );
     }
   });
@@ -55,99 +60,124 @@ void main() {
   });
 
   group('seedDefaultsIfEmpty', () {
-    test(
-      'seeds a graph for each of the 5 precondition-bearing stages',
-      () async {
-        await repository.seedDefaultsIfEmpty();
+    test('seeds a shared graph for each of the 5 originally '
+        'precondition-bearing stages', () async {
+      await repository.seedDefaultsIfEmpty();
 
-        for (final stage in [
-          SddStage.exploring,
-          SddStage.proposed,
-          SddStage.designBrief,
-          SddStage.designSync,
-          SddStage.verifying,
-        ]) {
-          final graph = await repository.getGraph(stage);
-          expect(
-            graph.rootNodeId,
-            isNotNull,
-            reason: '${stage.name} should be seeded',
-          );
-        }
-      },
-    );
+      for (final stage in [
+        SddStage.exploring,
+        SddStage.proposed,
+        SddStage.designBrief,
+        SddStage.designSync,
+        SddStage.verifying,
+      ]) {
+        final graph = await repository.getGraph(stage, null);
+        expect(
+          graph.rootNodeId,
+          isNotNull,
+          reason: '${stage.name} should be seeded',
+        );
+      }
+    });
 
     test('seeds no graph for null/archived', () async {
       await repository.seedDefaultsIfEmpty();
 
-      final archived = await repository.getGraph(SddStage.archived);
+      final archived = await repository.getGraph(SddStage.archived, null);
       expect(archived.rootNodeId, isNull);
     });
 
-    test(
-      'exploring seeds a single mostRecentChatHasTerminalReply node — '
-      'matched allowed, unmatched blocked',
-      () async {
-        await repository.seedDefaultsIfEmpty();
+    test("seeds Bug's own proposed/applying override graphs alongside the "
+        'shared ones (AIO-2903)', () async {
+      await repository.seedDefaultsIfEmpty();
 
-        final nodes = await repository.getAllNodes(SddStage.exploring);
-        expect(nodes, hasLength(1));
-        final node = nodes.single;
-        expect(node.fieldId, 'mostRecentChatHasTerminalReply');
-        expect(
-          node.matchedBranch,
-          const TransitionBranch.terminal(TransitionOutcome.allowed),
-        );
-        expect(
-          node.unmatchedBranch,
-          const TransitionBranch.terminal(TransitionOutcome.blocked),
-        );
-      },
-    );
+      final bugProposed = await repository.getGraph(
+        SddStage.proposed,
+        TicketType.bug,
+      );
+      expect(bugProposed.rootNodeId, isNotNull);
+      final bugProposedNodes = await repository.getAllNodes(
+        SddStage.proposed,
+        TicketType.bug,
+      );
+      expect(bugProposedNodes, hasLength(1));
+      expect(bugProposedNodes.single.fieldId, 'proposeGateApproved');
+
+      final bugApplying = await repository.getGraph(
+        SddStage.applying,
+        TicketType.bug,
+      );
+      expect(bugApplying.rootNodeId, isNotNull);
+      final bugApplyingNodes = await repository.getAllNodes(
+        SddStage.applying,
+        TicketType.bug,
+      );
+      expect(bugApplyingNodes, hasLength(1));
+      expect(bugApplyingNodes.single.fieldId, 'codingExecutionConcluded');
+
+      // `applying` has never had a shared graph — only Bug reaches it.
+      final sharedApplying = await repository.getGraph(SddStage.applying, null);
+      expect(sharedApplying.rootNodeId, isNull);
+    });
+
+    test('exploring seeds a single mostRecentChatHasTerminalReply node — '
+        'matched allowed, unmatched blocked', () async {
+      await repository.seedDefaultsIfEmpty();
+
+      final nodes = await repository.getAllNodes(SddStage.exploring, null);
+      expect(nodes, hasLength(1));
+      final node = nodes.single;
+      expect(node.fieldId, 'mostRecentChatHasTerminalReply');
+      expect(
+        node.matchedBranch,
+        const TransitionBranch.terminal(TransitionOutcome.allowed),
+      );
+      expect(
+        node.unmatchedBranch,
+        const TransitionBranch.terminal(TransitionOutcome.blocked),
+      );
+    });
 
     // verifying's 2-node tree — added for
     // aion-arch/changes/sdd-verify-quality-gate; mirrors designSync's own
     // 2-node shape test below.
-    test(
-      'verifying seeds the 2-node tree reproducing '
-      'mostRecentChatHasTerminalReply && verifyGateApproved',
-      () async {
-        await repository.seedDefaultsIfEmpty();
+    test('verifying seeds the 2-node tree reproducing '
+        'mostRecentChatHasTerminalReply && verifyGateApproved', () async {
+      await repository.seedDefaultsIfEmpty();
 
-        final nodes = await repository.getAllNodes(SddStage.verifying);
-        expect(nodes, hasLength(2));
+      final nodes = await repository.getAllNodes(SddStage.verifying, null);
+      expect(nodes, hasLength(2));
 
-        final graph = await repository.getGraph(SddStage.verifying);
-        final byId = {for (final n in nodes) n.id: n};
-        final root = byId[graph.rootNodeId]!;
-        expect(root.fieldId, 'mostRecentChatHasTerminalReply');
-        expect(
-          root.unmatchedBranch,
-          const TransitionBranch.terminal(TransitionOutcome.blocked),
-        );
+      final graph = await repository.getGraph(SddStage.verifying, null);
+      final byId = {for (final n in nodes) n.id: n};
+      final root = byId[graph.rootNodeId]!;
+      expect(root.fieldId, 'mostRecentChatHasTerminalReply');
+      expect(
+        root.unmatchedBranch,
+        const TransitionBranch.terminal(TransitionOutcome.blocked),
+      );
 
-        final verifyGateApproved =
-            byId[(root.matchedBranch as ToTransitionNodeBranch).nodeId]!;
-        expect(verifyGateApproved.fieldId, 'verifyGateApproved');
-        expect(
-          verifyGateApproved.matchedBranch,
-          const TransitionBranch.terminal(TransitionOutcome.allowed),
-        );
-        expect(
-          verifyGateApproved.unmatchedBranch,
-          const TransitionBranch.terminal(TransitionOutcome.blocked),
-        );
-      },
-    );
+      final verifyGateApproved =
+          byId[(root.matchedBranch as ToTransitionNodeBranch).nodeId]!;
+      expect(verifyGateApproved.fieldId, 'verifyGateApproved');
+      expect(
+        verifyGateApproved.matchedBranch,
+        const TransitionBranch.terminal(TransitionOutcome.allowed),
+      );
+      expect(
+        verifyGateApproved.unmatchedBranch,
+        const TransitionBranch.terminal(TransitionOutcome.blocked),
+      );
+    });
 
     test('proposed seeds the 3-node tree reproducing children.isNotEmpty && '
         '(needsDesign || children.every(...))', () async {
       await repository.seedDefaultsIfEmpty();
 
-      final nodes = await repository.getAllNodes(SddStage.proposed);
+      final nodes = await repository.getAllNodes(SddStage.proposed, null);
       expect(nodes, hasLength(3));
 
-      final graph = await repository.getGraph(SddStage.proposed);
+      final graph = await repository.getGraph(SddStage.proposed, null);
       final byId = {for (final n in nodes) n.id: n};
       final root = byId[graph.rootNodeId]!;
       expect(root.fieldId, 'hasChildren');
@@ -183,7 +213,7 @@ void main() {
         'allowed, unmatched blocked', () async {
       await repository.seedDefaultsIfEmpty();
 
-      final nodes = await repository.getAllNodes(SddStage.designBrief);
+      final nodes = await repository.getAllNodes(SddStage.designBrief, null);
       expect(nodes, hasLength(1));
       final node = nodes.single;
       expect(node.fieldId, 'linkedDesignPageHasContent');
@@ -201,10 +231,10 @@ void main() {
         'tasks.isNotEmpty && tasks.every(...)', () async {
       await repository.seedDefaultsIfEmpty();
 
-      final nodes = await repository.getAllNodes(SddStage.designSync);
+      final nodes = await repository.getAllNodes(SddStage.designSync, null);
       expect(nodes, hasLength(2));
 
-      final graph = await repository.getGraph(SddStage.designSync);
+      final graph = await repository.getGraph(SddStage.designSync, null);
       final byId = {for (final n in nodes) n.id: n};
       final root = byId[graph.rootNodeId]!;
       expect(root.fieldId, 'allTasksComplete');
@@ -231,17 +261,18 @@ void main() {
       await repository.seedDefaultsIfEmpty();
 
       // 1 (exploring) + 2 (verifying) + 3 (proposed) + 1 (designBrief) +
-      // 2 (designSync) = 9 baseline nodes total, never doubled.
+      // 2 (designSync) + 1 (bug proposed) + 1 (bug applying) = 11 baseline
+      // nodes total, never doubled.
       final allNodes = await database.transitionPreconditionDao.getAllNodes();
-      expect(allNodes, hasLength(9));
+      expect(allNodes, hasLength(11));
     });
 
     test('is a no-op on an already-populated graph table', () async {
-      await repository.setRoot(SddStage.exploring, null);
+      await repository.setRoot(SddStage.exploring, null, null);
 
       await repository.seedDefaultsIfEmpty();
 
-      final graph = await repository.getGraph(SddStage.proposed);
+      final graph = await repository.getGraph(SddStage.proposed, null);
       expect(graph.rootNodeId, isNull);
     });
   });
@@ -252,83 +283,70 @@ void main() {
   // (accessed via `AppDatabase.transitionPreconditionDao`, the same way
   // `app_database_test.dart`'s own migration coverage reaches other DAOs).
   group('upgradeVerifyingGraphIfDefault', () {
-    test(
-      'upgrades an untouched single-node verifying graph (the original '
-      'default fingerprint) to the new two-node shape, in place',
-      () async {
-        // The exact pre-this-change default: a single
-        // mostRecentChatHasTerminalReply node, matched -> allowed.
-        const oldRoot = TransitionNode(
-          id: 'old-root',
-          fieldId: 'mostRecentChatHasTerminalReply',
-          matchedBranch: TransitionBranch.terminal(TransitionOutcome.allowed),
-          unmatchedBranch: TransitionBranch.terminal(
-            TransitionOutcome.blocked,
-          ),
-        );
-        await repository.upsertNode(oldRoot);
-        await repository.setRoot(SddStage.verifying, 'old-root');
+    test('upgrades an untouched single-node verifying graph (the original '
+        'default fingerprint) to the new two-node shape, in place', () async {
+      // The exact pre-this-change default: a single
+      // mostRecentChatHasTerminalReply node, matched -> allowed.
+      const oldRoot = TransitionNode(
+        id: 'old-root',
+        fieldId: 'mostRecentChatHasTerminalReply',
+        matchedBranch: TransitionBranch.terminal(TransitionOutcome.allowed),
+        unmatchedBranch: TransitionBranch.terminal(TransitionOutcome.blocked),
+      );
+      await repository.upsertNode(oldRoot);
+      await repository.setRoot(SddStage.verifying, null, 'old-root');
 
-        await database.transitionPreconditionDao
-            .upgradeVerifyingGraphIfDefault();
+      await database.transitionPreconditionDao.upgradeVerifyingGraphIfDefault();
 
-        final nodes = await repository.getAllNodes(SddStage.verifying);
-        expect(nodes, hasLength(2));
-        final graph = await repository.getGraph(SddStage.verifying);
-        final byId = {for (final n in nodes) n.id: n};
-        final root = byId[graph.rootNodeId]!;
-        // Upgraded in place — the original node id survives, only its
-        // matched branch changes from a terminal to pointing at the new
-        // verifyGateApproved node.
-        expect(root.id, 'old-root');
-        expect(root.fieldId, 'mostRecentChatHasTerminalReply');
-        expect(
-          root.unmatchedBranch,
-          const TransitionBranch.terminal(TransitionOutcome.blocked),
-        );
+      final nodes = await repository.getAllNodes(SddStage.verifying, null);
+      expect(nodes, hasLength(2));
+      final graph = await repository.getGraph(SddStage.verifying, null);
+      final byId = {for (final n in nodes) n.id: n};
+      final root = byId[graph.rootNodeId]!;
+      // Upgraded in place — the original node id survives, only its
+      // matched branch changes from a terminal to pointing at the new
+      // verifyGateApproved node.
+      expect(root.id, 'old-root');
+      expect(root.fieldId, 'mostRecentChatHasTerminalReply');
+      expect(
+        root.unmatchedBranch,
+        const TransitionBranch.terminal(TransitionOutcome.blocked),
+      );
 
-        final verifyGateApproved =
-            byId[(root.matchedBranch as ToTransitionNodeBranch).nodeId]!;
-        expect(verifyGateApproved.fieldId, 'verifyGateApproved');
-        expect(
-          verifyGateApproved.matchedBranch,
-          const TransitionBranch.terminal(TransitionOutcome.allowed),
-        );
-        expect(
-          verifyGateApproved.unmatchedBranch,
-          const TransitionBranch.terminal(TransitionOutcome.blocked),
-        );
-      },
-    );
+      final verifyGateApproved =
+          byId[(root.matchedBranch as ToTransitionNodeBranch).nodeId]!;
+      expect(verifyGateApproved.fieldId, 'verifyGateApproved');
+      expect(
+        verifyGateApproved.matchedBranch,
+        const TransitionBranch.terminal(TransitionOutcome.allowed),
+      );
+      expect(
+        verifyGateApproved.unmatchedBranch,
+        const TransitionBranch.terminal(TransitionOutcome.blocked),
+      );
+    });
 
-    test(
-      'leaves an already-customized verifying graph untouched',
-      () async {
-        const customRoot = TransitionNode(
-          id: 'custom-root',
-          fieldId: 'verifyGateApproved',
-          matchedBranch: TransitionBranch.terminal(TransitionOutcome.allowed),
-          unmatchedBranch: TransitionBranch.terminal(
-            TransitionOutcome.blocked,
-          ),
-        );
-        await repository.upsertNode(customRoot);
-        await repository.setRoot(SddStage.verifying, 'custom-root');
+    test('leaves an already-customized verifying graph untouched', () async {
+      const customRoot = TransitionNode(
+        id: 'custom-root',
+        fieldId: 'verifyGateApproved',
+        matchedBranch: TransitionBranch.terminal(TransitionOutcome.allowed),
+        unmatchedBranch: TransitionBranch.terminal(TransitionOutcome.blocked),
+      );
+      await repository.upsertNode(customRoot);
+      await repository.setRoot(SddStage.verifying, null, 'custom-root');
 
-        await database.transitionPreconditionDao
-            .upgradeVerifyingGraphIfDefault();
+      await database.transitionPreconditionDao.upgradeVerifyingGraphIfDefault();
 
-        final nodes = await repository.getAllNodes(SddStage.verifying);
-        expect(nodes, hasLength(1));
-        expect(nodes.single.id, 'custom-root');
-      },
-    );
+      final nodes = await repository.getAllNodes(SddStage.verifying, null);
+      expect(nodes, hasLength(1));
+      expect(nodes.single.id, 'custom-root');
+    });
 
     test('no-ops when verifying has no graph row at all yet', () async {
-      await database.transitionPreconditionDao
-          .upgradeVerifyingGraphIfDefault();
+      await database.transitionPreconditionDao.upgradeVerifyingGraphIfDefault();
 
-      final nodes = await repository.getAllNodes(SddStage.verifying);
+      final nodes = await repository.getAllNodes(SddStage.verifying, null);
       expect(nodes, isEmpty);
     });
   });
@@ -363,19 +381,43 @@ void main() {
 
   group('setRoot', () {
     test('writes a graph row for a stage with no prior row', () async {
-      await repository.setRoot(SddStage.exploring, 'some-node');
+      await repository.setRoot(SddStage.exploring, null, 'some-node');
 
-      final graph = await repository.getGraph(SddStage.exploring);
+      final graph = await repository.getGraph(SddStage.exploring, null);
       expect(graph.rootNodeId, 'some-node');
     });
 
     test('clears an existing root back to null', () async {
-      await repository.setRoot(SddStage.exploring, 'some-node');
-      await repository.setRoot(SddStage.exploring, null);
+      await repository.setRoot(SddStage.exploring, null, 'some-node');
+      await repository.setRoot(SddStage.exploring, null, null);
 
-      final graph = await repository.getGraph(SddStage.exploring);
+      final graph = await repository.getGraph(SddStage.exploring, null);
       expect(graph.rootNodeId, isNull);
     });
+
+    test("writing Bug's own proposed override never mutates the shared "
+        'proposed graph (AIO-2903)', () async {
+      await repository.setRoot(SddStage.proposed, null, 'shared-node');
+      await repository.setRoot(SddStage.proposed, TicketType.bug, 'bug-node');
+
+      final shared = await repository.getGraph(SddStage.proposed, null);
+      final bug = await repository.getGraph(SddStage.proposed, TicketType.bug);
+      expect(shared.rootNodeId, 'shared-node');
+      expect(bug.rootNodeId, 'bug-node');
+    });
+
+    test(
+      'a type with no override falls back to the shared graph (AIO-2903)',
+      () async {
+        await repository.setRoot(SddStage.proposed, null, 'shared-node');
+
+        final story = await repository.getGraph(
+          SddStage.proposed,
+          TicketType.story,
+        );
+        expect(story.rootNodeId, 'shared-node');
+      },
+    );
   });
 
   group('onChanged', () {
@@ -418,7 +460,7 @@ void main() {
       final events = <void>[];
       final sub = repository.onChanged.listen(events.add);
 
-      await repository.setRoot(SddStage.exploring, 'n1');
+      await repository.setRoot(SddStage.exploring, null, 'n1');
 
       expect(events, hasLength(1));
       await sub.cancel();
@@ -431,70 +473,78 @@ void main() {
     });
 
     test('counts 0 for a graph row with a null root', () async {
-      await repository.setRoot(SddStage.exploring, null);
+      await repository.setRoot(SddStage.exploring, null, null);
 
-      expect(await repository.getNodeCounts(), {SddStage.exploring: 0});
+      expect(await repository.getNodeCounts(), {(SddStage.exploring, null): 0});
     });
 
-    test(
-      'counts every node reachable from each stage\'s root, in one batch',
-      () async {
-        // exploring: a single-node tree.
-        await repository.upsertNode(
-          const TransitionNode(
-            id: 'exploring-n1',
-            fieldId: 'mostRecentChatHasTerminalReply',
-            matchedBranch: TransitionBranch.terminal(TransitionOutcome.allowed),
-            unmatchedBranch: TransitionBranch.terminal(
-              TransitionOutcome.blocked,
-            ),
-          ),
-        );
-        await repository.setRoot(SddStage.exploring, 'exploring-n1');
+    test("counts every node reachable from each (stage, type) combination's "
+        'root, in one batch', () async {
+      // exploring: a single-node shared tree.
+      await repository.upsertNode(
+        const TransitionNode(
+          id: 'exploring-n1',
+          fieldId: 'mostRecentChatHasTerminalReply',
+          matchedBranch: TransitionBranch.terminal(TransitionOutcome.allowed),
+          unmatchedBranch: TransitionBranch.terminal(TransitionOutcome.blocked),
+        ),
+      );
+      await repository.setRoot(SddStage.exploring, null, 'exploring-n1');
 
-        // proposed: the 3-node baseline shape.
-        await repository.upsertNode(
-          const TransitionNode(
-            id: 'proposed-allChildrenComplete',
-            fieldId: 'allChildrenComplete',
-            matchedBranch: TransitionBranch.terminal(TransitionOutcome.allowed),
-            unmatchedBranch: TransitionBranch.terminal(
-              TransitionOutcome.blocked,
-            ),
+      // proposed: the 3-node baseline shared shape.
+      await repository.upsertNode(
+        const TransitionNode(
+          id: 'proposed-allChildrenComplete',
+          fieldId: 'allChildrenComplete',
+          matchedBranch: TransitionBranch.terminal(TransitionOutcome.allowed),
+          unmatchedBranch: TransitionBranch.terminal(TransitionOutcome.blocked),
+        ),
+      );
+      await repository.upsertNode(
+        const TransitionNode(
+          id: 'proposed-storyNeedsDesignReview',
+          fieldId: 'storyNeedsDesignReview',
+          matchedBranch: TransitionBranch.terminal(TransitionOutcome.allowed),
+          unmatchedBranch: TransitionBranch.toNode(
+            'proposed-allChildrenComplete',
           ),
-        );
-        await repository.upsertNode(
-          const TransitionNode(
-            id: 'proposed-storyNeedsDesignReview',
-            fieldId: 'storyNeedsDesignReview',
-            matchedBranch: TransitionBranch.terminal(TransitionOutcome.allowed),
-            unmatchedBranch: TransitionBranch.toNode(
-              'proposed-allChildrenComplete',
-            ),
+        ),
+      );
+      await repository.upsertNode(
+        const TransitionNode(
+          id: 'proposed-hasChildren',
+          fieldId: 'hasChildren',
+          matchedBranch: TransitionBranch.toNode(
+            'proposed-storyNeedsDesignReview',
           ),
-        );
-        await repository.upsertNode(
-          const TransitionNode(
-            id: 'proposed-hasChildren',
-            fieldId: 'hasChildren',
-            matchedBranch: TransitionBranch.toNode(
-              'proposed-storyNeedsDesignReview',
-            ),
-            unmatchedBranch: TransitionBranch.terminal(
-              TransitionOutcome.blocked,
-            ),
-          ),
-        );
-        await repository.setRoot(SddStage.proposed, 'proposed-hasChildren');
+          unmatchedBranch: TransitionBranch.terminal(TransitionOutcome.blocked),
+        ),
+      );
+      await repository.setRoot(SddStage.proposed, null, 'proposed-hasChildren');
 
-        // designBrief: no graph configured at all — absent from the
-        // result entirely (never seeded/setRoot-touched), distinct from
-        // a `0` count.
-        expect(await repository.getNodeCounts(), {
-          SddStage.exploring: 1,
-          SddStage.proposed: 3,
-        });
-      },
-    );
+      // proposed, bug: a separate single-node override tree.
+      await repository.upsertNode(
+        const TransitionNode(
+          id: 'proposed-bug-proposeGateApproved',
+          fieldId: 'proposeGateApproved',
+          matchedBranch: TransitionBranch.terminal(TransitionOutcome.allowed),
+          unmatchedBranch: TransitionBranch.terminal(TransitionOutcome.blocked),
+        ),
+      );
+      await repository.setRoot(
+        SddStage.proposed,
+        TicketType.bug,
+        'proposed-bug-proposeGateApproved',
+      );
+
+      // designBrief: no graph configured at all — absent from the
+      // result entirely (never seeded/setRoot-touched), distinct from
+      // a `0` count.
+      expect(await repository.getNodeCounts(), {
+        (SddStage.exploring, null): 1,
+        (SddStage.proposed, null): 3,
+        (SddStage.proposed, TicketType.bug): 1,
+      });
+    });
   });
 }
