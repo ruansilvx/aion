@@ -81,15 +81,17 @@ void main() {
   setUp(() {
     repository = MockTransitionPreconditionRepository();
     cubit = TransitionPreconditionConfigCubit(repository);
-    when(() => repository.getGraph(stage)).thenAnswer(
+    when(() => repository.getGraph(stage, null)).thenAnswer(
       (_) async => const TransitionGraph(stage: stage, rootNodeId: 'root'),
     );
     when(
-      () => repository.getAllNodes(stage),
+      () => repository.getAllNodes(stage, null),
     ).thenAnswer((_) async => const [rootNode, childNode]);
     when(() => repository.upsertNode(any())).thenAnswer((_) async {});
     when(() => repository.deleteNode(any())).thenAnswer((_) async {});
-    when(() => repository.setRoot(stage, any())).thenAnswer((_) async {});
+    when(
+      () => repository.setRoot(stage, null, any()),
+    ).thenAnswer((_) async {});
   });
 
   testWidgets(

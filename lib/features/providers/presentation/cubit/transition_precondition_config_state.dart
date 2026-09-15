@@ -4,6 +4,7 @@ import 'package:equatable/equatable.dart';
 
 import 'package:aion/features/tickets/domain/entities/transition_node.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/repositories/transition_precondition_repository.dart';
 
 /// The state emitted by
@@ -35,6 +36,7 @@ class TransitionPreconditionConfigLoaded
   /// Creates a [TransitionPreconditionConfigLoaded] state.
   const TransitionPreconditionConfigLoaded({
     required this.stage,
+    this.type,
     required this.graph,
     required this.nodesById,
   });
@@ -42,7 +44,11 @@ class TransitionPreconditionConfigLoaded
   /// Which [SddStage] this state is editing.
   final SddStage stage;
 
-  /// The currently-configured [TransitionGraph] for [stage].
+  /// Which [TicketType]'s precondition graph this state is editing — `null`
+  /// for the shared/type-agnostic graph. Added for `AIO-2903`.
+  final TicketType? type;
+
+  /// The currently-configured [TransitionGraph] for [stage]/[type].
   final TransitionGraph graph;
 
   /// Every [TransitionNode] reachable from [graph]'s root, keyed by
@@ -50,7 +56,7 @@ class TransitionPreconditionConfigLoaded
   final Map<String, TransitionNode> nodesById;
 
   @override
-  List<Object?> get props => [stage, graph, nodesById];
+  List<Object?> get props => [stage, type, graph, nodesById];
 }
 
 /// An attempted [TransitionPreconditionConfigCubit] write was rejected — a

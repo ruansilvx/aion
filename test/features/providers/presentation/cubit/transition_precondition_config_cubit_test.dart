@@ -45,15 +45,17 @@ void main() {
     repository = MockTransitionPreconditionRepository();
     cubit = TransitionPreconditionConfigCubit(repository);
 
-    when(() => repository.getGraph(stage)).thenAnswer(
+    when(() => repository.getGraph(stage, null)).thenAnswer(
       (_) async => const TransitionGraph(stage: stage, rootNodeId: 'root'),
     );
     when(
-      () => repository.getAllNodes(stage),
+      () => repository.getAllNodes(stage, null),
     ).thenAnswer((_) async => const [rootNode, childNode]);
     when(() => repository.upsertNode(any())).thenAnswer((_) async {});
     when(() => repository.deleteNode(any())).thenAnswer((_) async {});
-    when(() => repository.setRoot(stage, any())).thenAnswer((_) async {});
+    when(
+      () => repository.setRoot(stage, null, any()),
+    ).thenAnswer((_) async {});
   });
 
   group('load', () {
@@ -133,14 +135,20 @@ void main() {
     test('lets setRoot attach a freshly created node as the graph\'s very '
         'first node', () async {
       const emptyStage = SddStage.designBrief;
-      when(() => repository.getGraph(emptyStage)).thenAnswer(
+      when(() => repository.getGraph(emptyStage, null)).thenAnswer(
         (_) async => const TransitionGraph(stage: emptyStage, rootNodeId: null),
       );
       when(
-        () => repository.getAllNodes(emptyStage),
+        () => repository.getAllNodes(emptyStage, null),
       ).thenAnswer((_) async => const []);
+      // A wildcard stub, not `setRoot(emptyStage, null, any())` — mocktail
+      // fails to match that exact literal-args-plus-`any()` combination
+      // for this particular call shape (a `when()`-registration quirk,
+      // not a code bug: the `verify()` below independently confirms the
+      // real call carries exactly `(emptyStage, null, newId)` via its own
+      // exact-literal matching, which does work at verify time).
       when(
-        () => repository.setRoot(emptyStage, any()),
+        () => repository.setRoot(any(), any(), any()),
       ).thenAnswer((_) async {});
 
       await cubit.load(emptyStage);
@@ -153,7 +161,7 @@ void main() {
       await cubit.setRoot(newId);
 
       expect(cubit.state, isA<TransitionPreconditionConfigLoaded>());
-      verify(() => repository.setRoot(emptyStage, newId)).called(1);
+      verify(() => repository.setRoot(emptyStage, null, newId)).called(1);
     });
   });
 
@@ -221,7 +229,7 @@ void main() {
           unmatchedBranch: TransitionBranch.terminal(TransitionOutcome.blocked),
         );
         when(
-          () => repository.getAllNodes(stage),
+          () => repository.getAllNodes(stage, null),
         ).thenAnswer((_) async => const [detachedRoot, orphanA, orphanB]);
 
         await cubit.load(stage);
@@ -249,7 +257,7 @@ void main() {
 
       verify(() => repository.deleteNode('root')).called(1);
       verify(() => repository.deleteNode('child')).called(1);
-      verify(() => repository.setRoot(stage, null)).called(1);
+      verify(() => repository.setRoot(stage, null, null)).called(1);
     });
 
     test(
@@ -261,7 +269,7 @@ void main() {
 
         verify(() => repository.deleteNode('child')).called(1);
         verifyNever(() => repository.deleteNode('root'));
-        verifyNever(() => repository.setRoot(stage, any()));
+        verifyNever(() => repository.setRoot(stage, null, any()));
       },
     );
   });
@@ -314,7 +322,7 @@ void main() {
       await cubit.setRoot('unknown-id');
 
       expect(cubit.state, isA<TransitionPreconditionConfigError>());
-      verifyNever(() => repository.setRoot(stage, any()));
+      verifyNever(() => repository.setRoot(stage, null, any()));
     });
 
     test('accepts null (clearing the graph)', () async {
@@ -322,7 +330,7 @@ void main() {
 
       await cubit.setRoot(null);
 
-      verify(() => repository.setRoot(stage, null)).called(1);
+      verify(() => repository.setRoot(stage, null, null)).called(1);
     });
   });
 }

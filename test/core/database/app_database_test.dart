@@ -1,12 +1,17 @@
 // test/core/database/app_database_test.dart — AppDatabase schema-15 seeding tests.
 
+import 'dart:io';
+
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:aion/core/core.dart';
 import 'package:aion/features/projects/projects.dart';
+import 'package:aion/features/tickets/data/models/transition_precondition_graphs_table.dart'
+    show anyTicketTypeSentinel;
 import 'package:aion/features/tickets/domain/entities/default_workflow_statuses.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
 /// Dummy project — every test passes an explicit in-memory executor,
 /// mirroring `ticket_dao_test.dart`'s own precedent.
@@ -223,7 +228,7 @@ void main() {
 
         final nodes = await database.transitionPreconditionDao.getAllNodes();
         final verifyingGraph = await database.transitionPreconditionDao
-            .getGraph(SddStage.verifying);
+            .getGraph(SddStage.verifying, anyTicketTypeSentinel);
         final verifyingNodes = nodes
             .where(
               (n) =>
@@ -241,4 +246,116 @@ void main() {
       },
     );
   });
+
+  group(
+    'schema 22 — transition_precondition_graphs keyed by (SddStage, '
+    'TicketType)',
+    () {
+      // Same file-based "strip down to an earlier shape, then reopen"
+      // technique as `drift_ticket_repository_test.dart`'s own AIO-2888
+      // migration test (see `feedback_no_blanket_dart_format.md`-adjacent
+      // project convention: a real upgrade test, not just a fresh-seed
+      // one, for a migration that rewrites existing rows) — a genuine
+      // `NativeDatabase(File(...))`, not an in-memory `PRAGMA` stamp,
+      // since this migration's own correctness is about *preserving* an
+      // existing project's customized row through a primary-key rebuild,
+      // not just producing the right end shape from nothing. Added for
+      // `AIO-2903`.
+      test(
+        'a customized pre-existing proposed graph survives the rebuild as '
+        "the shared ('any') graph, and Bug's own proposed/applying "
+        'overrides are seeded alongside it',
+        () async {
+          final tempDir = Directory.systemTemp.createTempSync(
+            'aion_migration_v22_test',
+          );
+          final dbFile = File('${tempDir.path}/test.sqlite');
+          addTearDown(() => tempDir.deleteSync(recursive: true));
+
+          final v21Db = AppDatabase(_testProject, NativeDatabase(dbFile));
+          // Force past onCreate's already-current (post-AIO-2903) table
+          // shape: drop it and recreate the old SddStage-only-keyed shape
+          // by hand, then insert a customized row a project might really
+          // have configured (a single-node "always blocked" proposed
+          // graph, distinguishable from the seeded default's multi-node
+          // shape).
+          await v21Db.customStatement(
+            'DROP TABLE transition_precondition_graphs;',
+          );
+          await v21Db.customStatement('''
+            CREATE TABLE transition_precondition_graphs (
+              sdd_stage TEXT NOT NULL PRIMARY KEY,
+              root_node_id TEXT
+            );
+          ''');
+          const customNodeId = 'custom-always-blocked-node';
+          await v21Db.transitionPreconditionDao.upsertNode(
+            TransitionPreconditionNodesTableCompanion.insert(
+              id: customNodeId,
+              fieldId: 'hasChildren',
+              matchedBranchKind: 'blocked',
+              unmatchedBranchKind: 'blocked',
+            ),
+          );
+          await v21Db.customStatement('''
+            INSERT INTO transition_precondition_graphs (sdd_stage, root_node_id)
+            VALUES ('proposed', '$customNodeId');
+          ''');
+
+          await v21Db.customStatement('PRAGMA user_version = 21;');
+          await v21Db.close();
+
+          // Reopen against the same file at the current schemaVersion
+          // (22). Drift reads user_version=21, sees schemaVersion=22, and
+          // runs the real `from < 22` onUpgrade step.
+          final v22Db = AppDatabase(_testProject, NativeDatabase(dbFile));
+          addTearDown(v22Db.close);
+
+          final sharedProposed = await v22Db.transitionPreconditionDao
+              .getGraph(SddStage.proposed, anyTicketTypeSentinel);
+          expect(sharedProposed?.rootNodeId, customNodeId);
+
+          final bugProposed = await v22Db.transitionPreconditionDao.getGraph(
+            SddStage.proposed,
+            TicketType.bug.name,
+          );
+          expect(bugProposed?.rootNodeId, isNotNull);
+          final bugProposedNode = await v22Db.transitionPreconditionDao
+              .getNode(bugProposed!.rootNodeId!);
+          expect(bugProposedNode?.fieldId, 'proposeGateApproved');
+
+          final bugApplying = await v22Db.transitionPreconditionDao.getGraph(
+            SddStage.applying,
+            TicketType.bug.name,
+          );
+          expect(bugApplying?.rootNodeId, isNotNull);
+          final bugApplyingNode = await v22Db.transitionPreconditionDao
+              .getNode(bugApplying!.rootNodeId!);
+          expect(bugApplyingNode?.fieldId, 'codingExecutionConcluded');
+        },
+      );
+
+      test(
+        'a fresh onCreate install seeds proposed/applying overrides for Bug '
+        'alongside every shared graph',
+        () async {
+          final database = AppDatabase(_testProject, NativeDatabase.memory());
+          addTearDown(database.close);
+
+          final bugProposed = await database.transitionPreconditionDao
+              .getGraph(SddStage.proposed, TicketType.bug.name);
+          final bugApplying = await database.transitionPreconditionDao
+              .getGraph(SddStage.applying, TicketType.bug.name);
+          final sharedApplying = await database.transitionPreconditionDao
+              .getGraph(SddStage.applying, anyTicketTypeSentinel);
+
+          expect(bugProposed?.rootNodeId, isNotNull);
+          expect(bugApplying?.rootNodeId, isNotNull);
+          // `applying` has never had a shared/type-agnostic graph — only
+          // Bug reaches that stage.
+          expect(sharedApplying, isNull);
+        },
+      );
+    },
+  );
 }

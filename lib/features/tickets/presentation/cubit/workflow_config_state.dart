@@ -65,15 +65,18 @@ class WorkflowConfigLoaded extends WorkflowConfigState {
   /// `AIO-2650`.
   final List<WorkflowPromptTemplate> templates;
 
-  /// Each precondition-bearing [SddStage]'s current transition-precondition
-  /// field-check count — from
+  /// Each configured `(SddStage, TicketType?)` combination's current
+  /// transition-precondition field-check count — from
   /// `TransitionPreconditionRepository .getNodeCounts`, `0`/absent when
-  /// unconfigured. Powers `WorkflowStatusSettingsScreen`'s "Configure
-  /// precondition" affordance count badge. Defaults to `{}` — a project built
-  /// without a `TransitionPreconditionRepository` (see [WorkflowConfigCubit]'s
-  /// constructor) shows every stage as unconfigured rather than failing to
-  /// load. Added for `AIO-1936`'s post-`/verify` follow-up.
-  final Map<SddStage, int> transitionPreconditionNodeCounts;
+  /// unconfigured; `null` [TicketType] means the shared graph. Powers
+  /// `WorkflowStatusSettingsScreen`'s "Configure precondition" affordance
+  /// count badge. Defaults to `{}` — a project built without a
+  /// `TransitionPreconditionRepository` (see [WorkflowConfigCubit]'s
+  /// constructor) shows every combination as unconfigured rather than
+  /// failing to load. Added for `AIO-1936`'s post-`/verify` follow-up; keyed
+  /// by `(SddStage, TicketType?)` instead of `SddStage` alone since
+  /// `AIO-2903`.
+  final Map<(SddStage, TicketType?), int> transitionPreconditionNodeCounts;
 
   /// The shared-base statuses only (no per-type extensions), sorted by
   /// [WorkflowStatus.sortOrder] — the scope a cross-type surface (Board,

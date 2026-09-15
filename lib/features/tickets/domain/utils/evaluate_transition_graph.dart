@@ -27,6 +27,8 @@ class TransitionEvalContext {
     this.allTasksComplete,
     this.designSyncApproved,
     this.verifyGateApproved,
+    this.proposeGateApproved,
+    this.codingExecutionConcluded,
   });
 
   /// Value for [mostRecentChatHasTerminalReplyField].
@@ -52,6 +54,12 @@ class TransitionEvalContext {
 
   /// Value for [verifyGateApprovedField].
   final bool? verifyGateApproved;
+
+  /// Value for [proposeGateApprovedField]. Added for `AIO-2903`.
+  final bool? proposeGateApproved;
+
+  /// Value for [codingExecutionConcludedField]. Added for `AIO-2903`.
+  final bool? codingExecutionConcluded;
 }
 
 /// `TransitionFieldSpec.id → current value` accessor registry — how
@@ -71,6 +79,9 @@ final Map<String, bool? Function(TransitionEvalContext input)> _fieldAccessors =
       allTasksCompleteField.id: (input) => input.allTasksComplete,
       designSyncApprovedField.id: (input) => input.designSyncApproved,
       verifyGateApprovedField.id: (input) => input.verifyGateApproved,
+      proposeGateApprovedField.id: (input) => input.proposeGateApproved,
+      codingExecutionConcludedField.id: (input) =>
+          input.codingExecutionConcluded,
     };
 
 /// Walks [graph] from its `TransitionGraph.rootNodeId`, evaluating each

@@ -203,7 +203,7 @@ class AppDatabase extends _$AppDatabase {
     : super(executor ?? _openConnection(project));
 
   @override
-  int get schemaVersion => 21;
+  int get schemaVersion => 22;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -327,6 +327,10 @@ class AppDatabase extends _$AppDatabase {
       if (from < 21) {
         await _widenFtsIndexWithTicketId(m);
       }
+      if (from < 22) {
+        await _widenTransitionPreconditionGraphsWithTicketType(m);
+        await transitionPreconditionDao.seedBugStageDefaultsIfMissing();
+      }
     },
   );
 
@@ -446,6 +450,87 @@ class AppDatabase extends _$AppDatabase {
     );
     await m.database.customStatement('DROP TABLE IF EXISTS tickets_fts;');
     await _createSearchInfrastructure(m);
+  }
+
+  /// Widens `transition_precondition_graphs` from a `SddStage`-only primary
+  /// key to `(SddStage, TicketType)`, per `AIO-2903` — see
+  /// `TransitionPreconditionGraphsTable`'s own dartdoc for why the new
+  /// `ticket_type` column is a `NOT NULL` sentinel (`'any'`), not a nullable
+  /// one. SQLite has no `ALTER TABLE` support for changing a primary key, so
+  /// this does the standard rebuild: create the new-shape table under a
+  /// temporary name, copy every existing row across with `ticket_type`
+  /// backfilled to the shared-graph sentinel (preserving every project's
+  /// existing configuration exactly — a row that was `SddStage.proposed`'s
+  /// one shared tree stays exactly that tree, just addressable as
+  /// `(proposed, 'any')` now), drop the old table, then rename the new one
+  /// into its place. Unlike [_widenFtsIndexWithTicketId]'s FTS5
+  /// external-content index (which stores no data of its own, so dropping
+  /// and rebuilding it is a pure reindex), this table's rows *are* the
+  /// data — hence copy-then-drop, never drop-then-recreate-empty.
+  ///
+  /// No-ops if `transition_precondition_graphs` doesn't exist yet — mirrors
+  /// [_widenFtsIndexWithTicketId]'s own `tickets`-existence guard and for
+  /// the same reason: several of this file's own tests simulate "an install
+  /// upgraded from schema N" via a bare `PRAGMA user_version = N` on an
+  /// otherwise-empty in-memory database, and a low enough `N` reaches this
+  /// `from < 22` branch without the `from < 19` branch (which creates this
+  /// table) ever having run in that same simulated upgrade.
+  ///
+  /// Also no-ops if the table *already* has a `ticket_type` column — not
+  /// just a defensive nicety. `onUpgrade`'s `from < 19` branch calls
+  /// `m.createTable(transitionPreconditionGraphsTable)`, which always
+  /// builds *today's* table shape (this repo has no historical/versioned
+  /// Table classes) — so any real upgrade starting below schema 19 already
+  /// gets the post-`AIO-2903` composite-key table straight from that
+  /// `createTable` call, before this `from < 22` branch even runs. Without
+  /// this check, the rebuild below would still fire, re-inserting every
+  /// already-correctly-`ticket_type`-tagged row (including
+  /// `seedDefaultsIfEmpty`'s own fresh Bug `proposed`/`applying` rows) back
+  /// in as the literal `'any'` sentinel — colliding with the real `'any'`
+  /// row already sitting at the same `sdd_stage` and crashing the whole
+  /// migration on a primary-key conflict. Found via this file's own
+  /// schema-16/18/20 upgrade tests, which start below schema 19 and so
+  /// exercise exactly this path.
+  Future<void> _widenTransitionPreconditionGraphsWithTicketType(
+    Migrator m,
+  ) async {
+    final tableExists = await m.database
+        .customSelect(
+          "SELECT 1 FROM sqlite_master WHERE type = 'table' "
+          "AND name = 'transition_precondition_graphs'",
+        )
+        .getSingleOrNull();
+    if (tableExists == null) return;
+
+    final hasTicketTypeColumn = await m.database
+        .customSelect(
+          "SELECT 1 FROM pragma_table_info('transition_precondition_graphs') "
+          "WHERE name = 'ticket_type'",
+        )
+        .getSingleOrNull();
+    if (hasTicketTypeColumn != null) return;
+
+    await m.database.customStatement('''
+      CREATE TABLE transition_precondition_graphs_new (
+        sdd_stage TEXT NOT NULL,
+        ticket_type TEXT NOT NULL DEFAULT '$anyTicketTypeSentinel',
+        root_node_id TEXT,
+        PRIMARY KEY (sdd_stage, ticket_type)
+      );
+    ''');
+    await m.database.customStatement('''
+      INSERT INTO transition_precondition_graphs_new
+        (sdd_stage, ticket_type, root_node_id)
+      SELECT sdd_stage, '$anyTicketTypeSentinel', root_node_id
+      FROM transition_precondition_graphs;
+    ''');
+    await m.database.customStatement(
+      'DROP TABLE transition_precondition_graphs;',
+    );
+    await m.database.customStatement(
+      'ALTER TABLE transition_precondition_graphs_new '
+      'RENAME TO transition_precondition_graphs;',
+    );
   }
 
   /// One-time backfill of `estimate_rollup`/`time_spent_rollup` for every

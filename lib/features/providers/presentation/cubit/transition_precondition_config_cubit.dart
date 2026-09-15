@@ -7,6 +7,7 @@ import 'package:aion/features/providers/presentation/cubit/transition_preconditi
 import 'package:aion/features/tickets/domain/entities/transition_branch.dart';
 import 'package:aion/features/tickets/domain/entities/transition_node.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/enums/transition_outcome.dart';
 import 'package:aion/features/tickets/domain/repositories/transition_precondition_repository.dart';
 
@@ -41,15 +42,18 @@ class TransitionPreconditionConfigCubit
 
   static const _uuid = Uuid();
 
-  /// Loads [stage]'s currently-configured graph and every node reachable
-  /// from its root, and emits [TransitionPreconditionConfigLoaded].
-  Future<void> load(SddStage stage) async {
-    final graph = await _repository.getGraph(stage);
-    final nodes = await _repository.getAllNodes(stage);
+  /// Loads [stage]/[type]'s currently-configured graph and every node
+  /// reachable from its root, and emits [TransitionPreconditionConfigLoaded].
+  /// [type] `null` (the default) means the shared/type-agnostic graph.
+  /// Added the [type] parameter for `AIO-2903`.
+  Future<void> load(SddStage stage, {TicketType? type}) async {
+    final graph = await _repository.getGraph(stage, type);
+    final nodes = await _repository.getAllNodes(stage, type);
     if (isClosed) return;
     emit(
       TransitionPreconditionConfigLoaded(
         stage: stage,
+        type: type,
         graph: graph,
         nodesById: {for (final node in nodes) node.id: node},
       ),
@@ -101,13 +105,14 @@ class TransitionPreconditionConfigCubit
     }
 
     await _repository.upsertNode(node);
-    await load(loaded.stage);
+    await load(loaded.stage, type: loaded.type);
     if (isClosed) return node.id;
     final reloaded = _requireLoaded();
     if (reloaded != null && !reloaded.nodesById.containsKey(node.id)) {
       emit(
         TransitionPreconditionConfigLoaded(
           stage: reloaded.stage,
+          type: reloaded.type,
           graph: reloaded.graph,
           nodesById: {...reloaded.nodesById, node.id: node},
         ),
@@ -137,7 +142,7 @@ class TransitionPreconditionConfigCubit
     }
 
     await _repository.upsertNode(node);
-    await load(loaded.stage);
+    await load(loaded.stage, type: loaded.type);
   }
 
   /// Deletes the node with id [id] and every node transitively reachable
@@ -154,9 +159,9 @@ class TransitionPreconditionConfigCubit
       await _repository.deleteNode(nodeId);
     }
     if (loaded.graph.rootNodeId == id) {
-      await _repository.setRoot(loaded.stage, null);
+      await _repository.setRoot(loaded.stage, loaded.type, null);
     }
-    await load(loaded.stage);
+    await load(loaded.stage, type: loaded.type);
   }
 
   /// Sets the loaded graph's root to [nodeId] (`null` clears it, meaning
@@ -172,8 +177,8 @@ class TransitionPreconditionConfigCubit
       return;
     }
 
-    await _repository.setRoot(loaded.stage, nodeId);
-    await load(loaded.stage);
+    await _repository.setRoot(loaded.stage, loaded.type, nodeId);
+    await load(loaded.stage, type: loaded.type);
   }
 
   /// Returns [state] as a [TransitionPreconditionConfigLoaded] — from

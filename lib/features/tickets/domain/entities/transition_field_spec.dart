@@ -3,6 +3,7 @@
 import 'package:meta/meta.dart';
 
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 
 /// One plain-boolean field a `TransitionNode` can check — the vocabulary
 /// `TransitionNodeForm`'s field picker offers. Every field this proposal ships
@@ -17,6 +18,7 @@ class TransitionFieldSpec {
     required this.id,
     required this.displayName,
     required this.stages,
+    this.ticketTypes,
   });
 
   /// Stable identifier, stored as `TransitionNode.fieldId`.
@@ -29,6 +31,17 @@ class TransitionFieldSpec {
   /// Which [SddStage] values this field is valid for —
   /// [transitionFieldsFor] filters the full catalog down to this set.
   final List<SddStage> stages;
+
+  /// Which [TicketType]s this field is meaningful for, or `null` (every
+  /// field predating `AIO-2903`) meaning "only the type-agnostic/shared
+  /// graph" — the precondition tree every type reaching [stages] used to
+  /// share before preconditions could be keyed per `(SddStage, TicketType)`.
+  /// A field scoped to specific types (e.g. [proposeGateApprovedField]) only
+  /// ever gets a value from `TicketsCubit`'s evaluation call for one of
+  /// those types, so [transitionFieldsFor] hides it everywhere else —
+  /// offering it on the shared graph would build a check that can never
+  /// resolve to anything but "unmatched". Added for `AIO-2903`.
+  final List<TicketType>? ticketTypes;
 }
 
 /// Wraps `TicketsCubit._mostRecentChatHasTerminalReply` — whether the
@@ -44,6 +57,8 @@ const mostRecentChatHasTerminalReplyField = TransitionFieldSpec(
 /// Whether the ticket has at least one direct child at the next rank down
 /// — one of the three terms of [SddStage.proposed]'s current
 /// `children.isNotEmpty && (needsDesign || children.every(...))` check.
+/// Meaningless for a [TicketType.bug] (a leaf, never has children) — see
+/// [proposeGateApprovedField], its Bug-only replacement.
 const hasChildrenField = TransitionFieldSpec(
   id: 'hasChildren',
   displayName: 'Ticket has children',
@@ -103,9 +118,38 @@ const verifyGateApprovedField = TransitionFieldSpec(
   stages: [SddStage.verifying],
 );
 
-/// Every field this proposal ships, regardless of stage. Exactly the 8 entries
-/// reproducing the precondition-bearing stages' hardcoded checks as data — see
-/// `AIO-1936` §1 and `AIO-1905` §2.1.
+/// Wraps `TicketsCubit._proposeGateApproved` — whether a [TicketType.bug]'s
+/// Proposed-stage chat's most recent AI reply contains
+/// `PROPOSE GATE: APPROVED`. Bug's `proposed` replacement for
+/// [hasChildrenField]/[storyNeedsDesignReviewField]/[allChildrenCompleteField]
+/// (a Bug is a leaf, so none of those three can ever be true for it) — only
+/// offered when editing Bug's own `(proposed, bug)` precondition graph, never
+/// the shared one Epic/Story use. Added for `AIO-2903`.
+const proposeGateApprovedField = TransitionFieldSpec(
+  id: 'proposeGateApproved',
+  displayName: 'Proposal has been approved',
+  stages: [SddStage.proposed],
+  ticketTypes: [TicketType.bug],
+);
+
+/// Wraps `TicketsCubit._codingExecutionConcluded` — whether a
+/// [TicketType.bug]'s `applying`-stage coding-execution run has reached a
+/// terminal state (not in-flight/queued, and an execution chat exists).
+/// [SddStage.applying] is Bug-only (an Epic/Story never reaches it — see
+/// that enum value's own dartdoc), so this field is never offered outside
+/// Bug's own `(applying, bug)` precondition graph. Added for `AIO-2903`.
+const codingExecutionConcludedField = TransitionFieldSpec(
+  id: 'codingExecutionConcluded',
+  displayName: 'Coding execution has concluded',
+  stages: [SddStage.applying],
+  ticketTypes: [TicketType.bug],
+);
+
+/// Every field this proposal ships, regardless of stage. The original 8
+/// entries reproducing the precondition-bearing stages' hardcoded checks as
+/// data (`AIO-1936` §1, `AIO-1905` §2.1), plus the 2 Bug-only fields
+/// `AIO-2903` added when Bug's `proposed`/`applying` gates stopped bypassing
+/// this system.
 const List<TransitionFieldSpec> transitionFieldCatalog = [
   mostRecentChatHasTerminalReplyField,
   hasChildrenField,
@@ -115,15 +159,28 @@ const List<TransitionFieldSpec> transitionFieldCatalog = [
   allTasksCompleteField,
   designSyncApprovedField,
   verifyGateApprovedField,
+  proposeGateApprovedField,
+  codingExecutionConcludedField,
 ];
 
 /// The subset of [transitionFieldCatalog] valid for [stage] — what
 /// `TransitionNodeForm`'s field picker offers when editing that stage's
-/// graph.
-List<TransitionFieldSpec> transitionFieldsFor(SddStage stage) {
-  return transitionFieldCatalog
-      .where((field) => field.stages.contains(stage))
-      .toList();
+/// graph. [type] narrows further by which precondition graph is being
+/// edited: `null` (the type-agnostic/shared graph) offers only fields with
+/// [TransitionFieldSpec.ticketTypes] `null`; a concrete [TicketType] (a
+/// type-specific override graph, e.g. Bug's own `proposed`) offers only
+/// fields whose [TransitionFieldSpec.ticketTypes] includes it. Added for
+/// `AIO-2903`.
+List<TransitionFieldSpec> transitionFieldsFor(
+  SddStage stage, {
+  TicketType? type,
+}) {
+  return transitionFieldCatalog.where((field) {
+    if (!field.stages.contains(stage)) return false;
+    final restrictedTypes = field.ticketTypes;
+    if (restrictedTypes == null) return type == null;
+    return type != null && restrictedTypes.contains(type);
+  }).toList();
 }
 
 /// [fieldId]'s [TransitionFieldSpec] in [transitionFieldCatalog], or `null`
