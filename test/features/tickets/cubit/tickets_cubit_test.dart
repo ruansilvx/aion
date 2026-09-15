@@ -14799,6 +14799,66 @@ void main() {
       },
     );
 
+    test(
+      'a reply that puts a blank line before the Decomposition list, then '
+      'wraps it in a code fence, still materializes every child (AIO-2877) '
+      '— reproduces a real production reply that used to silently discard '
+      'the whole decomposition',
+      () async {
+        stubAdvanceToProposed();
+        stubStatefulComments(commentRepository, newStageChat.id);
+        // Shape mirrors a real captured Propose-stage reply verbatim: a
+        // blank line right after the heading (before either a code fence or
+        // the list itself is near-universal markdown style), then the list
+        // wrapped in ``` — previously, the old blank-line-terminated block
+        // search found that leading blank line as the block's own end
+        // before a single list line was captured, discarding the whole
+        // decomposition with no error.
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent(
+              'Here is the plan.\n\n'
+              '## Decomposition\n\n'
+              '```\n'
+              '- Story: Build backend\n'
+              '- Story: Build UI (blockedBy: Build backend)\n'
+              '```\n',
+            ),
+            AgentDoneEvent(),
+          ]),
+        );
+        final createdTickets = <Ticket>[];
+        when(() => repository.createTicket(any())).thenAnswer((
+          invocation,
+        ) async {
+          final t = invocation.positionalArguments[0] as Ticket;
+          createdTickets.add(t);
+        });
+
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+        await cubit.advanceSddStage(decompEpic);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        final children = createdTickets
+            .where(
+              (t) => t.parentId == decompEpic.id && t.type == TicketType.story,
+            )
+            .toList();
+        expect(children, hasLength(2));
+        final backend = children.firstWhere((t) => t.title == 'Build backend');
+        final ui = children.firstWhere((t) => t.title == 'Build UI');
+
+        verify(
+          () => linkRepository.createLink(
+            sourceTicketId: ui.id,
+            targetTicketId: backend.id,
+            linkType: TicketLinkType.blockedBy,
+          ),
+        ).called(1);
+      },
+    );
+
     test('an unresolved blockedByTitle still creates the child ticket, just '
         'no link', () async {
       stubAdvanceToProposed();

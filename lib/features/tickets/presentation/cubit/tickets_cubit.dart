@@ -7928,11 +7928,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [_assembleStageContext]'s [SddStage.proposed] prompt) into an ordered
   /// list of `(title, blockedByTitle)` pairs — `blockedByTitle` is `null` when
   /// the line has no `(blockedBy: ...)` suffix. Matched only against the
-  /// block's content: the text between `"## Decomposition"` and the next blank
-  /// line or the end of [reply]. Regex per line:
-  /// `^- (Story|Task): (.+?)(?: \(blockedBy: (.+)\))?$`; [childType] picks
-  /// which of `Story`/`Task` is accepted — a line whose literal doesn't match
-  /// [childType] is skipped, not an error. Returns an empty list if no
+  /// block's content, found via [_parseFencedChildLines] (see its own dartdoc
+  /// for exactly how the block's bounds are located, including the
+  /// leading-blank-line/code-fence handling added for `AIO-2877`). Regex per
+  /// line: `^- (Story|Task): (.+?)(?: \(blockedBy: (.+)\))?$`; [childType]
+  /// picks which of `Story`/`Task` is accepted — a line whose literal doesn't
+  /// match [childType] is skipped, not an error. Returns an empty list if no
   /// `"## Decomposition"` block is found, or no line matches at all — parse
   /// failure is silent, not an error (see proposal.md's fail-open note). Added
   /// for `AIO-392`.
@@ -7975,13 +7976,30 @@ class TicketsCubit extends Cubit<TicketsState> {
 
   /// Shared line-parsing core behind [_parseDecomposition]/
   /// [_parseVerifyFixes]: finds [heading] in [reply], takes the block of text
-  /// between it and the next blank line (or the end of [reply]), and matches
-  /// every `"- label: title"` line whose label is one of [childTypeLabels] —
-  /// optionally suffixed with an exact-title `" (blockedBy: ...)"` reference
-  /// to an earlier line in the same block. Regex per line:
-  /// `^- (label1|label2|...): (.+?)(?: \(blockedBy: (.+)\))?$`. Added for
-  /// `AIO-1905` (extracted from [_parseDecomposition], which previously
-  /// inlined this logic fixed to `"## Decomposition"`/`Story|Task`).
+  /// after it, and matches every `"- label: title"` line whose label is one
+  /// of [childTypeLabels] — optionally suffixed with an exact-title
+  /// `" (blockedBy: ...)"` reference to an earlier line in the same block.
+  /// Regex per line: `^- (label1|label2|...): (.+?)(?: \(blockedBy: (.+)\))?$`.
+  /// Added for `AIO-1905` (extracted from [_parseDecomposition], which
+  /// previously inlined this logic fixed to `"## Decomposition"`/
+  /// `Story|Task`).
+  ///
+  /// The text after [heading] is trimmed of leading blank lines before its
+  /// end is located, and an opening/closing ` ``` ` code-fence pair around
+  /// the list (if present) is stripped before searching for the block's own
+  /// end — otherwise wrapped, not bare — so both read the same way. Without
+  /// this, a reply that puts a blank line before the list (near-universal
+  /// markdown style after a heading, and something models reliably do when
+  /// they read this prompt's own "fenced block" wording as an instruction to
+  /// wrap the list in a literal code fence, itself preceded by a blank line)
+  /// made the old blank-line-terminated block search find that leading blank
+  /// line as the block's end before any list line was ever captured, so the
+  /// whole decomposition silently discarded — the root cause of `AIO-2877`
+  /// (a Story's real Propose-stage decomposition never materializing its own
+  /// child Tasks, confirmed against a live production reply that hit exactly
+  /// this shape), not a bug specific to any one [childTypeLabels] value or
+  /// ticket type — the identical prompt/parser pair had already worked for
+  /// other real replies that simply didn't happen to add that blank line.
   List<(String label, String title, String? blockedByTitle)>
   _parseFencedChildLines({
     required String reply,
@@ -7991,11 +8009,20 @@ class TicketsCubit extends Cubit<TicketsState> {
     final headingIndex = reply.indexOf(heading);
     if (headingIndex == -1) return [];
 
-    final afterHeading = reply.substring(headingIndex + heading.length);
-    final blockEnd = afterHeading.indexOf('\n\n');
-    final block = blockEnd == -1
-        ? afterHeading
-        : afterHeading.substring(0, blockEnd);
+    var block = reply.substring(headingIndex + heading.length).trimLeft();
+    final fenceOpen = RegExp(r'^```[^\n]*\n');
+    if (fenceOpen.hasMatch(block)) {
+      block = block.replaceFirst(fenceOpen, '');
+      final fenceCloseIndex = block.indexOf('\n```');
+      if (fenceCloseIndex != -1) {
+        block = block.substring(0, fenceCloseIndex);
+      }
+    } else {
+      final blockEnd = block.indexOf('\n\n');
+      if (blockEnd != -1) {
+        block = block.substring(0, blockEnd);
+      }
+    }
 
     final labelPattern = childTypeLabels.join('|');
     final linePattern = RegExp(
