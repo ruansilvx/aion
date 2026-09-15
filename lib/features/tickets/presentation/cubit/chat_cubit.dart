@@ -231,11 +231,16 @@ class ChatCubit extends Cubit<ChatState> {
   /// `TicketsCubit.updateTicketParent`'s reparent guard), so the parent-walk
   /// below would otherwise always hit its defensive fallback for them.
   /// Otherwise, fall back to the original parent-based inference: an
-  /// `epic`/`story` parent's current `Ticket.sddStage` (via
-  /// [SddStageModelPhase.modelPhase]), or [ModelPhase.execution] for a Task or
-  /// Bug parent (see `TicketTypeHierarchy.isExecutable` — `AIO-425` gave `bug`
-  /// full coding-execution parity with `task`, so a manual chat reply on a
-  /// Bug's execution transcript resolves to the same tier a Task's would).
+  /// `epic`/`story`/`bug` parent with a live `Ticket.sddStage` resolves via
+  /// [SddStageModelPhase.modelPhase] — a `bug` parent is checked for this
+  /// first, ahead of the `isExecutable` check below, since `AIO-2898` gave
+  /// `bug` its own SDD cycle (see `SddStage.applying`) and a mid-cycle chat
+  /// reply (Explore/Propose/Verify) is a judgment call that needs
+  /// [ModelPhase.frontier], not the weaker [ModelPhase.execution] tier a
+  /// Task's plain-status-flip execution shortcut resolves to (`AIO-2913`). A
+  /// `bug` parent with no `sddStage` yet (still on the older plain-execution
+  /// shortcut) or already `archived` falls back to [ModelPhase.execution],
+  /// matching a Task parent (see `TicketTypeHierarchy.isExecutable`).
   /// Every non-Inbox chat ticket in the app is spawned exclusively by
   /// `TicketsCubit._spawnStageChat`/`_runCodingExecution` (the only other
   /// `createTicket` call sites for `TicketType.chat` in the codebase), so such
@@ -251,6 +256,13 @@ class ChatCubit extends Cubit<ChatState> {
     if (parentId == null) return ModelPhase.capable;
     final parent = await _ticketRepository.getTicketById(parentId);
     if (parent == null) return ModelPhase.capable;
+    if (parent.type == TicketType.bug) {
+      final stage = parent.sddStage;
+      if (stage == null || stage == SddStage.archived) {
+        return ModelPhase.execution;
+      }
+      return stage.modelPhase;
+    }
     if (parent.type.isExecutable) return ModelPhase.execution;
     return parent.sddStage?.modelPhase ?? ModelPhase.capable;
   }

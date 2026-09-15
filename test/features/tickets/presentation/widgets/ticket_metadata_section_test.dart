@@ -59,6 +59,7 @@ Widget _wrap({
   String? executionFailureReason,
   bool canAdvanceSddStage = false,
   String? sddStageBlockReason,
+  AutomationConfidence? automationConfidence,
 }) {
   final state = TicketDetailLoaded(
     ticket,
@@ -115,7 +116,7 @@ Widget _wrap({
               child: SingleChildScrollView(
                 child: TicketMetadataSection(
                   ticket: ticket,
-                  automationConfidence: null,
+                  automationConfidence: automationConfidence,
                   onAdvanceSddStage: (_) {},
                   onMaybeAutoAdvance: (_, _) {},
                   executionTokenTotal: null,
@@ -282,6 +283,36 @@ void main() {
 
         expect(find.text('SDD STAGE'), findsNothing);
         expect(find.text('CODING EXECUTION'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'a bug at Proposed with the Advance action available offers '
+      '"Advance to Applying", not "Advance to Verifying" (AIO-2912)',
+      (tester) async {
+        final bugAtProposed = Ticket(
+          id: 'bug-proposed',
+          ticketId: 'AIO-202',
+          type: TicketType.bug,
+          title: 'A bug awaiting apply',
+          status: 'inProgress',
+          sddStage: SddStage.proposed,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+
+        await tester.pumpWidget(
+          _wrap(
+            ticket: bugAtProposed,
+            ticketsCubit: ticketsCubit,
+            canAdvanceSddStage: true,
+            automationConfidence: AutomationConfidence.manual,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Advance to Applying'), findsOneWidget);
+        expect(find.text('Advance to Verifying'), findsNothing);
       },
     );
   });

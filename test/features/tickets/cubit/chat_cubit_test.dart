@@ -733,6 +733,181 @@ void main() {
     );
 
     blocTest<ChatCubit, ChatState>(
+      'resolves ModelPhase.frontier (not ModelPhase.execution) for a chat '
+      "under a bug parent mid-SDD-cycle at SddStage.proposed (AIO-2913) — "
+      "isExecutable must not shadow a bug's own sddStage the way it "
+      'correctly still does for a plain, stage-less Task/Bug',
+      setUp: () {
+        final bugParent = Ticket(
+          id: 'bug-sdd-1',
+          ticketId: 'AIO-bug-sdd-1',
+          type: TicketType.bug,
+          title: 'Bug mid-cycle',
+          status: 'inProgress',
+          sddStage: SddStage.proposed,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final chatUnderBug = Ticket(
+          id: 'chat-bug-sdd',
+          ticketId: 'AIO-chat-bug-sdd',
+          type: TicketType.chat,
+          title: 'Proposed-stage chat',
+          status: 'backlog',
+          parentId: bugParent.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        when(
+          () => ticketRepository.getTicketById('chat-bug-sdd'),
+        ).thenAnswer((_) async => chatUnderBug);
+        when(
+          () => ticketRepository.getTicketById(bugParent.id),
+        ).thenAnswer((_) async => bugParent);
+        when(
+          () => modelRoutingRepository.getModelForPhase(ModelPhase.frontier),
+        ).thenAnswer((_) async => _opus);
+        when(() => repository.addComment(any())).thenAnswer((_) async {});
+        when(
+          () => repository.getCommentsForTicket('chat-bug-sdd'),
+        ).thenAnswer((_) async => []);
+        when(() => client.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) =>
+          cubit.sendMessage(chatTicketId: 'chat-bug-sdd', content: 'Hello'),
+      verify: (_) {
+        verify(
+          () => modelRoutingRepository.getModelForPhase(ModelPhase.frontier),
+        ).called(1);
+        verifyNever(
+          () => modelRoutingRepository.getModelForPhase(ModelPhase.execution),
+        );
+        verify(
+          () => client.run(
+            any(
+              that: predicate<AgentRequest>(
+                (request) => request.model == _opus.modelId,
+              ),
+            ),
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<ChatCubit, ChatState>(
+      'resolves ModelPhase.execution for a chat under a bug parent already '
+      'at SddStage.applying — the SDD-cycle stage that actually fires '
+      "coding execution, so it should keep execution's weaker tier "
+      '(AIO-2913)',
+      setUp: () {
+        final bugParent = Ticket(
+          id: 'bug-sdd-2',
+          ticketId: 'AIO-bug-sdd-2',
+          type: TicketType.bug,
+          title: 'Bug applying',
+          status: 'inProgress',
+          sddStage: SddStage.applying,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final chatUnderBug = Ticket(
+          id: 'chat-bug-applying',
+          ticketId: 'AIO-chat-bug-applying',
+          type: TicketType.chat,
+          title: 'Applying-stage execution chat',
+          status: 'backlog',
+          parentId: bugParent.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        when(
+          () => ticketRepository.getTicketById('chat-bug-applying'),
+        ).thenAnswer((_) async => chatUnderBug);
+        when(
+          () => ticketRepository.getTicketById(bugParent.id),
+        ).thenAnswer((_) async => bugParent);
+        when(
+          () => modelRoutingRepository.getModelForPhase(ModelPhase.execution),
+        ).thenAnswer((_) async => _haiku);
+        when(() => repository.addComment(any())).thenAnswer((_) async {});
+        when(
+          () => repository.getCommentsForTicket('chat-bug-applying'),
+        ).thenAnswer((_) async => []);
+        when(() => client.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.sendMessage(
+        chatTicketId: 'chat-bug-applying',
+        content: 'Hello',
+      ),
+      verify: (_) {
+        verify(
+          () => modelRoutingRepository.getModelForPhase(ModelPhase.execution),
+        ).called(1);
+      },
+    );
+
+    blocTest<ChatCubit, ChatState>(
+      'resolves ModelPhase.execution for a chat under a bug parent whose '
+      'SDD cycle already reached SddStage.archived, matching a stage-less '
+      'bug rather than reading archived.modelPhase (ModelPhase.capable) '
+      '(AIO-2913)',
+      setUp: () {
+        final bugParent = Ticket(
+          id: 'bug-sdd-3',
+          ticketId: 'AIO-bug-sdd-3',
+          type: TicketType.bug,
+          title: 'Bug archived',
+          status: 'done',
+          sddStage: SddStage.archived,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final chatUnderBug = Ticket(
+          id: 'chat-bug-archived',
+          ticketId: 'AIO-chat-bug-archived',
+          type: TicketType.chat,
+          title: 'Post-archive chat',
+          status: 'backlog',
+          parentId: bugParent.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        when(
+          () => ticketRepository.getTicketById('chat-bug-archived'),
+        ).thenAnswer((_) async => chatUnderBug);
+        when(
+          () => ticketRepository.getTicketById(bugParent.id),
+        ).thenAnswer((_) async => bugParent);
+        when(
+          () => modelRoutingRepository.getModelForPhase(ModelPhase.execution),
+        ).thenAnswer((_) async => _haiku);
+        when(() => repository.addComment(any())).thenAnswer((_) async {});
+        when(
+          () => repository.getCommentsForTicket('chat-bug-archived'),
+        ).thenAnswer((_) async => []);
+        when(() => client.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.sendMessage(
+        chatTicketId: 'chat-bug-archived',
+        content: 'Hello',
+      ),
+      verify: (_) {
+        verify(
+          () => modelRoutingRepository.getModelForPhase(ModelPhase.execution),
+        ).called(1);
+      },
+    );
+
+    blocTest<ChatCubit, ChatState>(
       "falls back to ModelPhase.capable when the chat's parent can't be "
       'resolved (defensive — never hit for a real, TicketsCubit-spawned '
       'chat)',
