@@ -1821,8 +1821,13 @@ class _SddStageSection extends StatelessWidget {
   SddStage? _nextStage(SddStage? current) => switch (current) {
     null => SddStage.exploring,
     SddStage.exploring => SddStage.proposed,
-    SddStage.proposed =>
-      needsDesignReview == true ? SddStage.designBrief : SddStage.verifying,
+    // A `bug` always goes `proposed → applying` (see `applying`'s own
+    // branch below), mirroring `TicketsCubit._nextSddStage` — `AIO-2912`.
+    SddStage.proposed => ticket.type == TicketType.bug
+        ? SddStage.applying
+        : needsDesignReview == true
+        ? SddStage.designBrief
+        : SddStage.verifying,
     SddStage.designBrief => SddStage.designSync,
     SddStage.designSync => SddStage.verifying,
     // Bug-only in practice (a Story/Epic never reaches `applying`) — the
