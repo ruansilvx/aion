@@ -291,6 +291,9 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
   /// order. Both branches apply [limit]/[offset] mechanically — this
   /// method makes no `hasMore` decision of its own; that's the caller's
   /// responsibility (see [DriftTicketRepository.searchTickets]).
+  /// Excludes `idea`, `knownGap`, and `openQuestion` types per AIO-934 —
+  /// these three types have no board presence and are not shown in the
+  /// unfiltered Tickets list.
   Future<List<TicketData>> searchTickets({
     String? query,
     Set<String> statuses = const {},
@@ -329,6 +332,14 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
       }
       if (types.isNotEmpty) {
         q.where((t) => t.type.isIn(types.map((v) => v.name)));
+      } else {
+        // When no type filter is explicitly applied, exclude idea/knownGap/
+        // openQuestion types per AIO-934's "no board presence" design
+        q.where((t) => t.type.isNotIn(<String>[
+          TicketType.idea.name,
+          TicketType.knownGap.name,
+          TicketType.openQuestion.name,
+        ]));
       }
       if (priorities.isNotEmpty) {
         q.where((t) => t.priority.isIn(priorities.map((v) => v.name)));
@@ -351,7 +362,22 @@ class TicketDao extends DatabaseAccessor<AppDatabase> with _$TicketDaoMixin {
     }
 
     addInClause('tickets.status', statuses);
-    addInClause('tickets.type', types.map((v) => v.name).toSet());
+    if (types.isNotEmpty) {
+      addInClause('tickets.type', types.map((v) => v.name).toSet());
+    } else {
+      // When no type filter is explicitly applied, exclude idea/knownGap/
+      // openQuestion types per AIO-934's "no board presence" design
+      final excludedTypes = <String>[
+        TicketType.idea.name,
+        TicketType.knownGap.name,
+        TicketType.openQuestion.name,
+      ];
+      final placeholders = List.filled(excludedTypes.length, '?').join(', ');
+      conditions.add('tickets.type NOT IN ($placeholders)');
+      for (final typeName in excludedTypes) {
+        variables.add(Variable(typeName));
+      }
+    }
     addInClause('tickets.priority', priorities.map((v) => v.name).toSet());
     variables.add(Variable(limit));
     variables.add(Variable(offset));
