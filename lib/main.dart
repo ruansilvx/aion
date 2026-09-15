@@ -185,6 +185,16 @@ class _AionAppState extends State<AionApp> with WidgetsBindingObserver {
             child: WidgetsApp.router(
               routerConfig: appRouter,
               color: aionThemeArctic.colors.primary,
+              // AIO-2905: the base ScrollBehavior excludes mouse from
+              // dragDevices, leaving every horizontal-only scrollable
+              // (MarkdownView's code blocks/tables) unreachable by a plain
+              // desktop mouse. WidgetsApp (unlike MaterialApp/CupertinoApp)
+              // has no scrollBehavior convenience param of its own, so this
+              // goes through builder + ScrollConfiguration instead.
+              builder: (context, child) => ScrollConfiguration(
+                behavior: const MouseDragScrollBehavior(),
+                child: child!,
+              ),
               // TextField (the sole permitted Material widget, see design.md
               // Material Coupling Audit) reads MaterialLocalizations
               // internally regardless of MaterialApp/Scaffold usage.
