@@ -362,6 +362,67 @@ void main() {
         verify(() => repository.addComment(any())).called(1);
       },
     );
+
+    blocTest<ChatCubit, ChatState>(
+      'closing the cubit mid-turn (e.g. navigating away from the ticket) '
+      'does not crash the run and still persists the full accumulated '
+      'reply, not a discarded "Execution failed" comment (AIO-2933)',
+      setUp: () {
+        when(
+          () => ticketRepository.getTicketById('chat-1'),
+        ).thenAnswer((_) async => chatTicket);
+        when(
+          () => modelRoutingRepository.getModelForPhase(ModelPhase.capable),
+        ).thenAnswer((_) async => _sonnet);
+        when(() => repository.addComment(any())).thenAnswer((_) async {});
+        when(
+          () => repository.getCommentsForTicket('chat-1'),
+        ).thenAnswer((_) async => [humanComment]);
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        final eventsController = StreamController<AgentEvent>();
+        when(
+          () => client.run(any()),
+        ).thenAnswer((_) async => eventsController.stream);
+
+        final sendFuture = cubit.sendMessage(
+          chatTicketId: 'chat-1',
+          content: 'Hello',
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        eventsController.add(const AgentTextEvent('Full '));
+        await Future<void>.delayed(Duration.zero);
+
+        // Simulate the user navigating away mid-stream — the screen's
+        // BlocProvider disposes this exact ChatCubit instance, exactly
+        // as `app_router.dart`'s route-scoped provider does.
+        await cubit.close();
+
+        // The underlying agent stream isn't tied to the (now-closed)
+        // cubit and keeps delivering — before the AIO-2933 fix, the next
+        // onChunk's `emit` would throw `Bad state: Cannot emit new
+        // states after calling close`, caught by runChatTurn's generic
+        // catch, discarding this entire reply in favor of a bare
+        // "Execution failed: ..." comment.
+        eventsController.add(const AgentTextEvent('reply text'));
+        eventsController.add(const AgentDoneEvent());
+        await eventsController.close();
+        await sendFuture;
+      },
+      verify: (_) {
+        final captured = verify(
+          () => repository.addComment(captureAny()),
+        ).captured;
+        // The human comment, plus the real, complete AI reply.
+        expect(captured, hasLength(2));
+        final aiComment = captured[1] as TicketComment;
+        expect(aiComment.authorType, CommentAuthorType.ai);
+        expect(aiComment.content, 'Full reply text');
+        expect(aiComment.content, isNot(contains('Execution failed')));
+      },
+    );
   });
 
   group('cancelReply', () {
