@@ -3923,19 +3923,52 @@ class TicketsCubit extends Cubit<TicketsState> {
     return proposedChats.isEmpty ? null : proposedChats.first;
   }
 
-  /// The [TicketType.bug] [bugId]'s current Exploring-stage chat — its most
-  /// recently created chat child whose title starts with `'${await
+  /// The parent ticket's (Bug, Story, or Epic) current Exploring-stage chat —
+  /// its most recently created chat child whose title starts with `'${await
   /// _stagePresentName(SddStage.exploring)} — '`. `null` if none exists yet.
-  /// Mirrors [_mostRecentProposedChat]'s exact shape. Added for `AIO-2919`.
-  Future<Ticket?> _mostRecentExploringChat(String bugId) async {
+  /// Mirrors [_mostRecentProposedChat]'s exact shape. Added for `AIO-2919`;
+  /// generalized to Epic/Story parents for the Epic/Story decomposition
+  /// findings prelude (see [_exploringFindingsSection]).
+  Future<Ticket?> _mostRecentExploringChat(String parentId) async {
     final prefix = '${await _stagePresentName(SddStage.exploring)} — ';
     final chats = await _repository.getTicketsByParent(
-      bugId,
+      parentId,
       types: const [TicketType.chat],
     );
     final exploringChats = chats.where((c) => c.title.startsWith(prefix)).toList()
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return exploringChats.isEmpty ? null : exploringChats.first;
+  }
+
+  /// The parent ticket's own `## Exploration findings` section for a
+  /// Proposed-stage prompt: its most recent Exploring-stage chat's non-system
+  /// transcript (see [_mostRecentExploringChat]/[_assembleChatTranscript]),
+  /// under the heading plus [intro]. Returns an empty string when there is no
+  /// Exploring chat or it has no non-system replies — the caller then omits
+  /// the section entirely, preserving the fail-open posture the Bug branch
+  /// had since AIO-2919. Used by both the Bug branch (AIO-2901) and the
+  /// Epic/Story branch (—THIS TICKET—) to ground the Proposed-stage prompt in
+  /// prior-stage conclusions. Added for —THIS TICKET—.
+  Future<String> _exploringFindingsSection(
+    String parentId,
+    String intro,
+  ) async {
+    final exploringChat = await _mostRecentExploringChat(parentId);
+    final commentRepo = _commentRepository;
+    final findings = exploringChat == null || commentRepo == null
+        ? const <TicketComment>[]
+        : (await commentRepo.getCommentsForTicket(exploringChat.id))
+            .where((c) => c.authorType != CommentAuthorType.system)
+            .toList();
+    if (findings.isEmpty) return '';
+    return (StringBuffer()
+          ..writeln()
+          ..writeln('## Exploration findings')
+          ..writeln()
+          ..writeln(intro)
+          ..writeln()
+          ..writeln(_assembleChatTranscript(findings)))
+        .toString();
   }
 
   /// Whether [bugId]'s Proposed-stage chat's most recent comment is an
@@ -7759,12 +7792,17 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// framing instead of generic "investigate the problem space" wording; for
   /// `proposed`, an optional `## Exploration findings` section (omitted when
   /// the Exploring chat has no non-system replies — see [_mostRecentExploringChat]
-  /// and [_assembleChatTranscript]) quoting the prior stage's diagnosis to
-  /// build upon, followed by a concrete-fix-plan request ending in exactly
-  /// one line — `PROPOSE GATE: APPROVED`/`PENDING`, mirroring `VERIFY GATE`'s
-  /// own approved-content convention exactly (see [_proposeGateApproved]) —
+  /// and [_assembleChatTranscript], built via [_exploringFindingsSection])
+  /// quoting the prior stage's diagnosis to build upon, followed by a
+  /// concrete-fix-plan request ending in exactly one line —
+  /// `PROPOSE GATE: APPROVED`/`PENDING`, mirroring `VERIFY GATE`'s own
+  /// approved-content convention exactly (see [_proposeGateApproved]) —
   /// instead of the `## Decomposition` block every other type gets at this
-  /// stage, since a Bug is a leaf with no children to decompose into.
+  /// stage, since a Bug is a leaf with no children to decompose into. As of
+  /// —THIS TICKET—, the [SddStage.proposed] branch for Story/Epic also emits
+  /// an optional `## Exploration findings` section (via the same
+  /// [_exploringFindingsSection] helper) before the `## Decomposition` ask,
+  /// grounding the decomposition in the prior stage's exploration.
   /// [SddStage.applying] needs no Bug-specific branch here: it fires
   /// coding-execution directly without a stage chat at all (see
   /// [advanceSddStage]'s dedicated branch). [SddStage.verifying] **does**
@@ -7960,27 +7998,14 @@ class TicketsCubit extends Cubit<TicketsState> {
           'if there are no issues, or "DESIGN GATE: PENDING" if there are.',
         );
     } else if (stage == SddStage.proposed && parent.type == TicketType.bug) {
-      final exploringChat = await _mostRecentExploringChat(parent.id);
-      final commentRepo = _commentRepository;
-      final findings = exploringChat == null || commentRepo == null
-          ? const <TicketComment>[]
-          : (await commentRepo.getCommentsForTicket(exploringChat.id))
-              .where((c) => c.authorType != CommentAuthorType.system)
-              .toList();
-      if (findings.isNotEmpty) {
-        buffer
-          ..writeln()
-          ..writeln('## Exploration findings')
-          ..writeln()
-          ..writeln(
-            "This bug's root cause was already investigated in its own "
+      final findings = await _exploringFindingsSection(
+        parent.id,
+        "This bug's root cause was already investigated in its own "
             'Exploring-stage review — build the fix plan on that diagnosis '
             'rather than re-investigating from the title/description alone. '
             'The full Exploring-stage conversation, in order:',
-          )
-          ..writeln()
-          ..writeln(_assembleChatTranscript(findings));
-      }
+      );
+      if (findings.isNotEmpty) buffer.write(findings);
       buffer
         ..writeln()
         ..writeln(
@@ -7997,6 +8022,15 @@ class TicketsCubit extends Cubit<TicketsState> {
       final childRank = parent.type == TicketType.epic
           ? TicketType.story
           : TicketType.task;
+      final findings = await _exploringFindingsSection(
+        parent.id,
+        "This ${parent.type.name}'s problem space was already explored in its "
+            'own Exploring-stage review — base the decomposition on that '
+            "exploration's conclusions, tradeoffs, and options rather than "
+            're-deriving them from the title and description alone. The full '
+            'Exploring-stage conversation, in order:',
+      );
+      if (findings.isNotEmpty) buffer.write(findings);
       buffer
         ..writeln()
         ..writeln(
