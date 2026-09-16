@@ -296,9 +296,12 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
   /// switch, and the selection bar's select-all wiring, so all three agree
   /// on "what's currently on screen." Excludes `resource`/`page` tickets —
   /// those moved to the Documentation section and are no longer shown
-  /// here, in either list or board mode — and `idea`/`knownGap`/
-  /// `openQuestion` tickets per AIO-934's design: these three types have no
-  /// board presence and are not shown in the default unfiltered Tickets list.
+  /// here, in either list or board mode. Also excludes `idea`/`knownGap`/
+  /// `openQuestion` tickets *unless explicitly selected in the Type filter*
+  /// — satisfying AIO-934's original "no board presence in the default
+  /// unfiltered view" while enabling opt-in browse/triage via the Filters
+  /// panel. When one or more of these three is selected, it surfaces in
+  /// both list and board views, enabling promotion workflows.
   ///
   /// A classified [TicketsError] (`reason` non-null — every toast-only
   /// reason `WorkspaceNavShell` already surfaces app-wide) falls back to
@@ -324,14 +327,25 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
       _ => const <Ticket>[],
     };
     if (tickets == null) return _lastKnownTickets;
+
+    final selectedTypes = context.read<TicketsCubit>().selectedTypes;
+
     final filtered = tickets
         .where(
-          (t) =>
-              t.type != TicketType.resource &&
-              t.type != TicketType.page &&
-              t.type != TicketType.idea &&
-              t.type != TicketType.knownGap &&
-              t.type != TicketType.openQuestion,
+          (t) {
+            // Always exclude resource/page (moved to Documentation)
+            if (t.type == TicketType.resource || t.type == TicketType.page) {
+              return false;
+            }
+            // Conditionally exclude idea/knownGap/openQuestion unless explicitly selected
+            if ((t.type == TicketType.idea ||
+                    t.type == TicketType.knownGap ||
+                    t.type == TicketType.openQuestion) &&
+                !selectedTypes.contains(t.type)) {
+              return false;
+            }
+            return true;
+          },
         )
         .toList();
     _lastKnownTickets = filtered;

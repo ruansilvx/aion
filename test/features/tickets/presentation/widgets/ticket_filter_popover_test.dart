@@ -17,20 +17,18 @@ void main() {
     );
 
     test(
-      'still excludes idea/knownGap/openQuestion — AIO-934 explicitly '
-      'scoped these out of the Board/list entirely, not just this filter',
+      'now includes idea/knownGap/openQuestion as opt-in Type filters — '
+      'invisible by default, selectable on demand for browse/triage, '
+      'satisfying both AIO-934\'s default exclusion and the backlog need',
       () {
+        expect(TicketFilterPopover.typeOptions, contains(TicketType.idea));
         expect(
           TicketFilterPopover.typeOptions,
-          isNot(contains(TicketType.idea)),
+          contains(TicketType.knownGap),
         );
         expect(
           TicketFilterPopover.typeOptions,
-          isNot(contains(TicketType.knownGap)),
-        );
-        expect(
-          TicketFilterPopover.typeOptions,
-          isNot(contains(TicketType.openQuestion)),
+          contains(TicketType.openQuestion),
         );
       },
     );
@@ -53,9 +51,6 @@ void main() {
       const excludedDeliberately = {
         TicketType.page,
         TicketType.resource,
-        TicketType.idea,
-        TicketType.knownGap,
-        TicketType.openQuestion,
       };
       for (final type in TicketType.values) {
         final inOptions = TicketFilterPopover.typeOptions.contains(type);
