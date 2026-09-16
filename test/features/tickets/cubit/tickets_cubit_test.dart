@@ -6237,6 +6237,29 @@ void main() {
       actualBehavior: bugWithRepro.actualBehavior,
     );
 
+    // Helpers for Epic/Story stage testing (—THIS TICKET—).
+    Ticket epicAt(SddStage? stage) => Ticket(
+      id: epic.id,
+      ticketId: epic.ticketId,
+      type: epic.type,
+      title: epic.title,
+      status: epic.status,
+      sddStage: stage,
+      createdAt: epic.createdAt,
+      updatedAt: epic.updatedAt,
+    );
+
+    Ticket storyAt(SddStage? stage) => Ticket(
+      id: story.id,
+      ticketId: story.ticketId,
+      type: story.type,
+      title: story.title,
+      status: story.status,
+      sddStage: stage,
+      createdAt: story.createdAt,
+      updatedAt: story.updatedAt,
+    );
+
     setUp(() {
       agentClient = MockAgentModelClient();
       registry = buildProviderStack(agentClient).registry;
@@ -7071,6 +7094,353 @@ void main() {
         ),
         TicketDetailLoaded(bugAt(SddStage.applying)),
       ],
+    );
+
+    // Epic/Story Proposed-stage findings tests — mirror the Bug findings
+    // tests above, but assert the decomposition ask is *still* present (inverse
+    // of the Bug case). Added for —THIS TICKET—.
+    blocTest<TicketsCubit, TicketsState>(
+      'an epic entering proposed gets a decomposition prompt with '
+      '## Exploration findings prelude when the Exploring chat has AI replies '
+      '(—THIS TICKET—)',
+      setUp: () {
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(
+          () => repository.getTicketById(epic.id),
+        ).thenAnswer((_) async => epicAt(SddStage.proposed));
+        when(
+          () => repository.updateTicketSddStage(epic.id, SddStage.proposed),
+        ).thenAnswer((_) async {});
+        // Exploring-stage precondition: the most recently created chat
+        // child needs an AI reply already.
+        when(
+          () => repository.getTicketsByParent(
+            epic.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer(
+          (_) async => [
+            Ticket(
+              id: 'epic-exploring-chat',
+              ticketId: 'AIO-200',
+              type: TicketType.chat,
+              title: 'Exploring — ${epic.title}',
+              status: 'backlog',
+              parentId: epic.id,
+              createdAt: DateTime(2026),
+              updatedAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(
+          () => commentRepository.getCommentsForTicket('epic-exploring-chat'),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'epic-existing-reply',
+              ticketId: 'epic-exploring-chat',
+              content: 'Epic problem space explored.',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        stubStatefulComments(commentRepository, dummyChatTicket.id);
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Decomposing...'),
+            AgentDoneEvent(),
+          ]),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        await cubit.advanceSddStage(epicAt(SddStage.exploring));
+      },
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verify(
+          () => agentClient.run(
+            any(
+              that: predicate<AgentRequest>(
+                (request) {
+                  // Verify exploration findings section is included
+                  if (!request.prompt.contains('## Exploration findings')) {
+                    return false;
+                  }
+                  // Verify the exploration reply is quoted
+                  if (!request.prompt.contains('Epic problem space explored.')) {
+                    return false;
+                  }
+                  // Verify exploration findings comes before decomposition
+                  final findingsIndex =
+                      request.prompt.indexOf('## Exploration findings');
+                  final decompIndex =
+                      request.prompt.indexOf('Decompose this epic');
+                  if (findingsIndex < 0 || decompIndex < 0) {
+                    return false;
+                  }
+                  if (findingsIndex >= decompIndex) {
+                    return false;
+                  }
+                  // Verify the decomposition instruction is still present
+                  return request.prompt.contains('Decompose this epic') &&
+                      request.prompt.contains('child Stories') &&
+                      request.prompt.contains('## Decomposition');
+                },
+              ),
+            ),
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'an epic entering proposed excludes system comments from exploration '
+      'findings (—THIS TICKET—)',
+      setUp: () {
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(
+          () => repository.getTicketById(epic.id),
+        ).thenAnswer((_) async => epicAt(SddStage.proposed));
+        when(
+          () => repository.updateTicketSddStage(epic.id, SddStage.proposed),
+        ).thenAnswer((_) async {});
+        // Stub with both system and AI comments
+        when(
+          () => repository.getTicketsByParent(
+            epic.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer(
+          (_) async => [
+            Ticket(
+              id: 'epic-exploring-chat',
+              ticketId: 'AIO-200',
+              type: TicketType.chat,
+              title: 'Exploring — ${epic.title}',
+              status: 'backlog',
+              parentId: epic.id,
+              createdAt: DateTime(2026),
+              updatedAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(
+          () => commentRepository.getCommentsForTicket('epic-exploring-chat'),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'system-comment',
+              ticketId: 'epic-exploring-chat',
+              content: 'Context assembled.',
+              authorType: CommentAuthorType.system,
+              createdAt: DateTime(2026),
+            ),
+            TicketComment(
+              id: 'ai-reply',
+              ticketId: 'epic-exploring-chat',
+              content: 'Problem is Y.',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026, 1, 2),
+            ),
+          ],
+        );
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        stubStatefulComments(commentRepository, dummyChatTicket.id);
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Decomposing...'),
+            AgentDoneEvent(),
+          ]),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        await cubit.advanceSddStage(epicAt(SddStage.exploring));
+      },
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verify(
+          () => agentClient.run(
+            any(
+              that: predicate<AgentRequest>(
+                (request) =>
+                    request.prompt.contains('## Exploration findings') &&
+                    request.prompt.contains('Problem is Y.') &&
+                    !request.prompt.contains('Context assembled.'),
+              ),
+            ),
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'an epic entering proposed whose most recent chat is not an '
+      'Exploring-stage chat omits the Exploration findings section but keeps '
+      'the decomposition ask (—THIS TICKET—)',
+      setUp: () {
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(
+          () => repository.getTicketById(epic.id),
+        ).thenAnswer((_) async => epicAt(SddStage.proposed));
+        when(
+          () => repository.updateTicketSddStage(epic.id, SddStage.proposed),
+        ).thenAnswer((_) async {});
+        // A real chat exists (satisfying the exploring->proposed
+        // advancement gate), but its title doesn't start with the
+        // Exploring-stage prefix.
+        when(
+          () => repository.getTicketsByParent(
+            epic.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer(
+          (_) async => [
+            Ticket(
+              id: 'stray-chat',
+              ticketId: 'AIO-200',
+              type: TicketType.chat,
+              title: 'Discussion — ${epic.title}',
+              status: 'backlog',
+              parentId: epic.id,
+              createdAt: DateTime(2026),
+              updatedAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(
+          () => commentRepository.getCommentsForTicket('stray-chat'),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'stray-ai-reply',
+              ticketId: 'stray-chat',
+              content: 'Unrelated reply.',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        stubStatefulComments(commentRepository, dummyChatTicket.id);
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Decomposing...'),
+            AgentDoneEvent(),
+          ]),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        await cubit.advanceSddStage(epicAt(SddStage.exploring));
+      },
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verify(
+          () => agentClient.run(
+            any(
+              that: predicate<AgentRequest>(
+                (request) =>
+                    !request.prompt.contains('## Exploration findings') &&
+                    !request.prompt.contains('Unrelated reply.') &&
+                    request.prompt.contains('Decompose this epic') &&
+                    request.prompt.contains('child Stories') &&
+                    request.prompt.contains('## Decomposition'),
+              ),
+            ),
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'a story entering proposed gets a decomposition prompt with '
+      '## Exploration findings prelude (—THIS TICKET—)',
+      setUp: () {
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(
+          () => repository.getTicketById(story.id),
+        ).thenAnswer((_) async => storyAt(SddStage.proposed));
+        when(
+          () => repository.updateTicketSddStage(story.id, SddStage.proposed),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketsByParent(
+            story.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer(
+          (_) async => [
+            Ticket(
+              id: 'story-exploring-chat',
+              ticketId: 'AIO-300',
+              type: TicketType.chat,
+              title: 'Exploring — ${story.title}',
+              status: 'backlog',
+              parentId: story.id,
+              createdAt: DateTime(2026),
+              updatedAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(
+          () => commentRepository.getCommentsForTicket('story-exploring-chat'),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'story-reply',
+              ticketId: 'story-exploring-chat',
+              content: 'Story exploration findings.',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        stubStatefulComments(commentRepository, dummyChatTicket.id);
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Decomposing...'),
+            AgentDoneEvent(),
+          ]),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        await cubit.advanceSddStage(storyAt(SddStage.exploring));
+      },
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verify(
+          () => agentClient.run(
+            any(
+              that: predicate<AgentRequest>(
+                (request) =>
+                    request.prompt.contains('## Exploration findings') &&
+                    request.prompt.contains('Story exploration findings.') &&
+                    request.prompt.contains('Decompose this story') &&
+                    request.prompt.contains('child Tasks') &&
+                    request.prompt.contains('## Decomposition'),
+              ),
+            ),
+          ),
+        ).called(1);
+      },
     );
 
     blocTest<TicketsCubit, TicketsState>(
