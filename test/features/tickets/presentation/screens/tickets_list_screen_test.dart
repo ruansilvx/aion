@@ -539,4 +539,88 @@ void main() {
     expect(find.text('A task'), findsOneWidget);
     expect(find.text('A bug'), findsOneWidget);
   });
+
+  testWidgets(
+    'board view excludes idea by default, includes it once explicitly '
+    'selected as a Type filter (AIO-2910)',
+    (tester) async {
+      final story = Ticket(
+        id: 'story-1',
+        ticketId: 'AIO-1',
+        type: TicketType.story,
+        title: 'A story',
+        status: 'backlog',
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+      final idea = Ticket(
+        id: 'idea-1',
+        ticketId: 'AIO-2',
+        type: TicketType.idea,
+        title: 'An idea',
+        status: 'backlog',
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+      final allTickets = [story, idea];
+      // Mirrors TicketDao.searchTickets' real server-side type filtering
+      // (types.isNotEmpty restricts to those types) rather than returning
+      // the same fixture regardless of the `types` argument — a blanket
+      // stub would mask a real Bloc-equality-skip pitfall: toggling a type
+      // filter whose server response happens to equal the prior one
+      // produces a TicketsLoaded state `==` the previous one, and Bloc
+      // silently skips notifying listeners, leaving the board stale.
+      when(
+        () => repository.searchTickets(
+          query: any(named: 'query'),
+          statuses: any(named: 'statuses'),
+          types: any(named: 'types'),
+          priorities: any(named: 'priorities'),
+          sort: any(named: 'sort'),
+          limit: any(named: 'limit'),
+          offset: any(named: 'offset'),
+        statusSortOrder: any(named: 'statusSortOrder'),
+              ),
+      ).thenAnswer((invocation) async {
+        final types =
+            invocation.namedArguments[#types] as Set<TicketType>? ?? {};
+        final matching = types.isEmpty
+            ? allTickets
+            : allTickets.where((t) => types.contains(t.type)).toList();
+        return TicketSearchPage(tickets: matching, hasMore: false);
+      });
+      when(
+        () => linkRepository.getLinksForTicket(any()),
+      ).thenAnswer((_) async => []);
+
+      final cubit = buildCubit();
+      await tester.pumpWidget(
+        _wrap(
+          ticketsCubit: cubit,
+          activeProjectProvider: activeProjectProvider,
+          baselineRepository: baselineRepository,
+          ticketLinkRepository: linkRepository,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Board is the default view mode (no toggle needed). Per AIO-934,
+      // idea has no board presence by default; story does.
+      expect(find.text('A story'), findsOneWidget);
+      expect(find.text('An idea'), findsNothing);
+
+      // Explicitly opting idea in via the Type filter (AIO-2911) surfaces
+      // it on the board too — through the same _boardCompatibleTickets
+      // path _TicketsBody's rendering and _visibleTickets' select-all
+      // bookkeeping now share (AIO-2910), so this also guards against the
+      // two ever drifting apart again. Selecting only `idea` restricts the
+      // server query to just that type, same as selecting any other single
+      // type would (standard Filters-panel semantics) — story drops out.
+      await cubit.toggleTypeFilter(TicketType.idea);
+      await tester.pumpAndSettle();
+
+      expect(find.text('A story'), findsNothing);
+      expect(find.text('An idea'), findsOneWidget);
+    },
+  );
 }
