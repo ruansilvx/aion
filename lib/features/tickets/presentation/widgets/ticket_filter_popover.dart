@@ -80,21 +80,17 @@ class TicketFilterPopover extends StatefulWidget {
 
   /// The `Type` group's fixed, client-side-filtered item list —
   /// `page`/`resource` moved to the Documentation section and no longer
-  /// appear here; `idea`/`knownGap`/`openQuestion` excluded because
-  /// `AIO-934`'s own proposal explicitly scoped them out of the Board/list
-  /// entirely ("these three types have no board presence today (`signal`
-  /// didn't either) and none is proposed" — its "Out of scope" section),
-  /// not merely omitted from this filter. `release`/`spec` have no such
-  /// exclusion on record (`release` was bundled into this list's
-  /// predecessor without a stated reason, and `spec` — added later,
-  /// `AIO-1998` — was simply never wired in here) and are real,
-  /// browsable board/list tickets, so both are included. Added for
-  /// `AIO-2887`; see that ticket for the fuller investigation, including a
-  /// separate, unrelated finding (`idea`/`openQuestion` tickets currently
-  /// do leak into the unfiltered list despite `AIO-934`'s "no board
-  /// presence" intent — filed separately, not fixed here since this
-  /// ticket's own scope is the filter panel, not the list's own exclusion
-  /// rule).
+  /// appear here. `idea`/`knownGap`/`openQuestion` are now opt-in Type
+  /// filters (invisible by default, selectable on demand), satisfying both
+  /// AIO-934's original "no board presence in the default unfiltered view"
+  /// intent and the need for a browse/triage surface for the backlog of
+  /// ideas and open questions. When selected, these three types are
+  /// visible in both the list view and the board (Backlog column), where
+  /// users can promote them via reclassify or by creating a linked real
+  /// ticket. `release`/`spec` have no such scoping and are real, browsable
+  /// board/list tickets, so both are included. Added for `AIO-2887`
+  /// (filter panel) and revised for AIO-2904 (re-enable opt-in backlog
+  /// types).
   static const typeOptions = [
     TicketType.epic,
     TicketType.story,
@@ -103,6 +99,9 @@ class TicketFilterPopover extends StatefulWidget {
     TicketType.chat,
     TicketType.release,
     TicketType.spec,
+    TicketType.idea,
+    TicketType.knownGap,
+    TicketType.openQuestion,
   ];
 
   @override
