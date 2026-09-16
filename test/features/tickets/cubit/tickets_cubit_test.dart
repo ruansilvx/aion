@@ -6828,6 +6828,97 @@ void main() {
     );
 
     blocTest<TicketsCubit, TicketsState>(
+      'a bug entering proposed whose most recent chat is not an '
+      'Exploring-stage chat (title prefix mismatch) omits the Exploration '
+      'findings section entirely, unchanged from before AIO-2919 — '
+      '_mostRecentChatHasTerminalReply\'s own advancement gate only checks '
+      'for *some* chat with an AI reply, not specifically an Exploring one, '
+      'so this is a real reachable state, not just a hypothetical '
+      '(AIO-2919)',
+      setUp: () {
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(
+          () => repository.getTicketById(bug.id),
+        ).thenAnswer((_) async => bugAt(SddStage.proposed));
+        when(
+          () => repository.updateTicketSddStage(bug.id, SddStage.proposed),
+        ).thenAnswer((_) async {});
+        // A real chat exists (satisfying the exploring->proposed
+        // advancement gate, which only requires *some* chat with an AI
+        // reply — see _mostRecentChatHasTerminalReply), but its title
+        // doesn't start with the Exploring-stage prefix, so
+        // _mostRecentExploringChat's own title-filtered lookup finds
+        // nothing.
+        when(
+          () => repository.getTicketsByParent(
+            bug.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer(
+          (_) async => [
+            Ticket(
+              id: 'stray-chat',
+              ticketId: 'AIO-101',
+              type: TicketType.chat,
+              title: 'Discussion — ${bug.title}',
+              status: 'backlog',
+              parentId: bug.id,
+              createdAt: DateTime(2026),
+              updatedAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(
+          () => commentRepository.getCommentsForTicket('stray-chat'),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'stray-ai-reply',
+              ticketId: 'stray-chat',
+              content: 'Unrelated reply.',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        stubStatefulComments(commentRepository, dummyChatTicket.id);
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Planning...'),
+            AgentDoneEvent(),
+          ]),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        await cubit.advanceSddStage(bugAt(SddStage.exploring));
+      },
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verify(
+          () => agentClient.run(
+            any(
+              that: predicate<AgentRequest>(
+                (request) =>
+                    !request.prompt.contains('## Exploration findings') &&
+                    !request.prompt.contains('Unrelated reply.') &&
+                    request.prompt.contains(
+                      'Write a concrete fix plan for this bug',
+                    ) &&
+                    request.prompt.contains('PROPOSE GATE: APPROVED') &&
+                    request.prompt.contains('PROPOSE GATE: PENDING'),
+              ),
+            ),
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
       'a bug at proposed cannot advance without PROPOSE GATE: APPROVED — '
       'not gated on children, unlike a story',
       setUp: () {
