@@ -3869,6 +3869,35 @@ class TicketsCubit extends Cubit<TicketsState> {
         mostRecent.content.contains('DESIGN GATE: APPROVED');
   }
 
+  /// The most-recent AI reply in [storyId]'s designSync chat — the comment
+  /// carrying the `DESIGN GATE` verdict and approval notes. Returns `null` if
+  /// no designSync chat exists, no comments were posted, or the most-recent
+  /// comment is not authored by an AI. Mirrors [_designSyncApproved]'s own
+  /// lookup shape exactly, but returns the whole comment rather than a bool so
+  /// the Verifying-stage context can quote both the verdict and the reply
+  /// content. Added for `AIO-2919`.
+  Future<TicketComment?> _latestDesignSyncReply(String storyId) async {
+    final commentRepo = _commentRepository;
+    if (commentRepo == null) return null;
+    final prefix = '${await _stagePresentName(SddStage.designSync)} — ';
+    final chats = await _repository.getTicketsByParent(
+      storyId,
+      types: const [TicketType.chat],
+    );
+    final designSyncChats =
+        chats.where((c) => c.title.startsWith(prefix)).toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    if (designSyncChats.isEmpty) return null;
+    final comments = await commentRepo.getCommentsForTicket(
+      designSyncChats.first.id,
+    );
+    if (comments.isEmpty) return null;
+    final mostRecent = comments.reduce(
+      (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
+    );
+    return mostRecent.authorType == CommentAuthorType.ai ? mostRecent : null;
+  }
+
   /// The Story/Epic [storyOrEpicId]'s current Verifying-stage chat — its most
   /// recently created chat child whose title starts with
   /// `'${await _stagePresentName(SddStage.verifying)} — '`. `null` if none
@@ -7945,6 +7974,59 @@ class TicketsCubit extends Cubit<TicketsState> {
                 ? child.status
                 : (child.sddStage?.name ?? 'not started');
             buffer.writeln('- ${child.title} ($statusLabel)');
+          }
+        }
+        // Design block for Stories — Epics carry no linked design page.
+        // Added for AIO-2919.
+        if (parent.type == TicketType.story) {
+          final page = await _linkedDesignPage(parent.id);
+          if (page != null) {
+            final designSyncReply = await _latestDesignSyncReply(parent.id);
+            buffer
+              ..writeln()
+              ..writeln('## Design');
+            if (designSyncReply != null &&
+                designSyncReply.content.contains('DESIGN GATE: APPROVED')) {
+              buffer.writeln(
+                'This story received design-sync approval. The approved export '
+                'and approval reply are below — verify the shipped implementation '
+                'against the export spec, and note any drift or incomplete '
+                'tokens. The approval reply is:',
+              );
+              buffer
+                ..writeln()
+                ..writeln('### Approved export')
+                ..writeln(page.description)
+                ..writeln()
+                ..writeln('### Approval reply')
+                ..writeln(designSyncReply.content);
+            } else if (designSyncReply != null &&
+                designSyncReply.content.contains('DESIGN GATE: PENDING')) {
+              buffer.writeln(
+                'This story has a design export, but the design-sync review '
+                'found issues (verdict: PENDING). The export and review reply '
+                'are below — verify the implementation against the unratified '
+                'design spec and scrutinize drift carefully, since the design '
+                'was not approved. The review reply is:',
+              );
+              buffer
+                ..writeln()
+                ..writeln('### Design export (not approved)')
+                ..writeln(page.description)
+                ..writeln()
+                ..writeln('### Design-sync review reply')
+                ..writeln(designSyncReply.content);
+            } else {
+              buffer.writeln(
+                'This story has a linked design export, but no design-sync '
+                'review reply was found. Verify the implementation against the '
+                'unratified export spec. The export is:',
+              );
+              buffer
+                ..writeln()
+                ..writeln('### Design export (not reviewed)')
+                ..writeln(page.description);
+            }
           }
         }
       }

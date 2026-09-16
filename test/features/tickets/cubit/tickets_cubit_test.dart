@@ -7594,6 +7594,628 @@ void main() {
         );
       },
     );
+
+    // AIO-2919: Story's Verify-stage prompt must reflect its own design-sync
+    // verdict. The Story/Epic arm builds context from child tickets, but never
+    // checked whether a Story had a linked design page or referenced the
+    // designSync chat's DESIGN GATE verdict. For design-track Stories, this
+    // meant Verify could confirm every Task is done but had no way to check
+    // shipped implementation against the approved design export.
+    blocTest<TicketsCubit, TicketsState>(
+      'a design-track Story entering verifying gets its design-sync approval '
+      'in the context, with both the approved export and the approval reply',
+      setUp: () {
+        final storyVerifying = Ticket(
+          id: 'story-verify',
+          ticketId: 'AIO-100',
+          type: TicketType.story,
+          title: 'Design-synced story',
+          status: 'backlog',
+          sddStage: SddStage.applying,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final designPage = Ticket(
+          id: 'design-page',
+          ticketId: 'AIO-101',
+          type: TicketType.page,
+          title: 'Design — Design-synced story',
+          description: 'Pasted Claude Design export.',
+          status: 'backlog',
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final designSyncChat = Ticket(
+          id: 'design-sync-chat',
+          ticketId: 'AIO-102',
+          type: TicketType.chat,
+          title: 'Design Sync — Design-synced story',
+          status: 'backlog',
+          parentId: storyVerifying.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final linkRepository = MockTicketLinkRepository();
+        final commentRepository = MockCommentRepository();
+        when(() => repository.getTicketById(any())).thenAnswer((
+          invocation,
+        ) async {
+          final id = invocation.positionalArguments[0] as String;
+          if (id == storyVerifying.id) return storyVerifying;
+          if (id == designPage.id) return designPage;
+          return Ticket(
+            id: id,
+            ticketId: '',
+            type: TicketType.chat,
+            title: 'Verifying — ${storyVerifying.title}',
+            status: 'backlog',
+            parentId: storyVerifying.id,
+            createdAt: DateTime(2026),
+            updatedAt: DateTime(2026),
+          );
+        });
+        when(
+          () => repository.getTicketsByParent(
+            storyVerifying.id,
+            types: TicketTypeHierarchy.executableTypes,
+          ),
+        ).thenAnswer((_) async => []);
+        when(
+          () => repository.getTicketsByParent(
+            storyVerifying.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [designSyncChat]);
+        when(() => linkRepository.getLinksForTicket(storyVerifying.id))
+            .thenAnswer((_) async => [
+          TicketLinkData(
+            id: 'design-link-approved',
+            sourceTicketId: storyVerifying.id,
+            targetTicketId: designPage.id,
+            linkType: TicketLinkType.relatesTo.name,
+          )
+        ]);
+        when(() => commentRepository.getCommentsForTicket(designSyncChat.id))
+            .thenAnswer((_) async => [
+          TicketComment(
+            id: 'c1',
+            ticketId: designSyncChat.id,
+            content: 'No issues found.\n\nDESIGN GATE: APPROVED',
+            authorType: CommentAuthorType.ai,
+            createdAt: DateTime(2026),
+          ),
+        ]);
+        when(
+          () => repository.updateTicketSddStage(
+            storyVerifying.id,
+            SddStage.verifying,
+          ),
+        ).thenAnswer((_) async {});
+        stubStatefulComments(commentRepository, 'verify-chat');
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Reviewing the story...'),
+            AgentDoneEvent(),
+          ]),
+        );
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+      },
+      build: () => TicketsCubit(
+        repository,
+        linkRepository: MockTicketLinkRepository(),
+        providerRegistry: buildProviderStack(agentClient).registry,
+        commentRepository: MockCommentRepository(),
+        transitionPreconditionRepository: FakeTransitionPreconditionRepository(),
+      ),
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        final storyVerifying = Ticket(
+          id: 'story-verify',
+          ticketId: 'AIO-100',
+          type: TicketType.story,
+          title: 'Design-synced story',
+          status: 'backlog',
+          sddStage: SddStage.applying,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        await cubit.advanceSddStage(storyVerifying);
+      },
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        final posted = verify(
+          () => commentRepository.addComment(captureAny()),
+        ).captured;
+        final context = (posted.first as TicketComment).content;
+        expect(
+          context,
+          allOf([
+            contains('## Design'),
+            contains('Pasted Claude Design export.'),
+            contains('DESIGN GATE: APPROVED'),
+            contains('No issues found.'),
+          ]),
+        );
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'a Story with design-sync PENDING verdict shows the export but flags '
+      'the design as not approved',
+      setUp: () {
+        final storyVerifying = Ticket(
+          id: 'story-verify-pending',
+          ticketId: 'AIO-104',
+          type: TicketType.story,
+          title: 'Design-pending story',
+          status: 'backlog',
+          sddStage: SddStage.applying,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final designPage = Ticket(
+          id: 'design-page-pending',
+          ticketId: 'AIO-105',
+          type: TicketType.page,
+          title: 'Design — Design-pending story',
+          description: 'Pasted Claude Design export.',
+          status: 'backlog',
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final designSyncChat = Ticket(
+          id: 'design-sync-chat-pending',
+          ticketId: 'AIO-106',
+          type: TicketType.chat,
+          title: 'Design Sync — Design-pending story',
+          status: 'backlog',
+          parentId: storyVerifying.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        when(() => repository.getTicketById(any())).thenAnswer((
+          invocation,
+        ) async {
+          final id = invocation.positionalArguments[0] as String;
+          if (id == storyVerifying.id) return storyVerifying;
+          if (id == designPage.id) return designPage;
+          return Ticket(
+            id: id,
+            ticketId: '',
+            type: TicketType.chat,
+            title: 'Verifying — ${storyVerifying.title}',
+            status: 'backlog',
+            parentId: storyVerifying.id,
+            createdAt: DateTime(2026),
+            updatedAt: DateTime(2026),
+          );
+        });
+        when(
+          () => repository.getTicketsByParent(
+            storyVerifying.id,
+            types: TicketTypeHierarchy.executableTypes,
+          ),
+        ).thenAnswer((_) async => []);
+        when(
+          () => repository.getTicketsByParent(
+            storyVerifying.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [designSyncChat]);
+        when(() => linkRepository.getLinksForTicket(storyVerifying.id))
+            .thenAnswer((_) async => [
+          TicketLinkData(
+            id: 'design-link-pending',
+            sourceTicketId: storyVerifying.id,
+            targetTicketId: designPage.id,
+            linkType: TicketLinkType.relatesTo.name,
+          )
+        ]);
+        when(() => commentRepository.getCommentsForTicket(designSyncChat.id))
+            .thenAnswer((_) async => [
+          TicketComment(
+            id: 'c2',
+            ticketId: designSyncChat.id,
+            content: 'Found Material widgets.\n\nDESIGN GATE: PENDING',
+            authorType: CommentAuthorType.ai,
+            createdAt: DateTime(2026),
+          ),
+        ]);
+        when(
+          () => repository.updateTicketSddStage(
+            storyVerifying.id,
+            SddStage.verifying,
+          ),
+        ).thenAnswer((_) async {});
+        stubStatefulComments(commentRepository, 'verify-chat');
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Reviewing the story...'),
+            AgentDoneEvent(),
+          ]),
+        );
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+      },
+      build: () => TicketsCubit(
+        repository,
+        linkRepository: MockTicketLinkRepository(),
+        providerRegistry: buildProviderStack(agentClient).registry,
+        commentRepository: MockCommentRepository(),
+        transitionPreconditionRepository: FakeTransitionPreconditionRepository(),
+      ),
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        final storyVerifying = Ticket(
+          id: 'story-verify-pending',
+          ticketId: 'AIO-104',
+          type: TicketType.story,
+          title: 'Design-pending story',
+          status: 'backlog',
+          sddStage: SddStage.applying,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        await cubit.advanceSddStage(storyVerifying);
+      },
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        final posted = verify(
+          () => commentRepository.addComment(captureAny()),
+        ).captured;
+        final context = (posted.first as TicketComment).content;
+        expect(
+          context,
+          allOf([
+            contains('## Design'),
+            contains('not approved'),
+            contains('Pasted Claude Design export.'),
+            contains('DESIGN GATE: PENDING'),
+            contains('Found Material widgets.'),
+          ]),
+        );
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'a non-UI Story with no design page does not emit a Design block',
+      setUp: () {
+        final storyVerifying = Ticket(
+          id: 'story-no-design',
+          ticketId: 'AIO-107',
+          type: TicketType.story,
+          title: 'Non-UI story',
+          status: 'backlog',
+          sddStage: SddStage.applying,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        when(() => repository.getTicketById(any())).thenAnswer((
+          invocation,
+        ) async {
+          final id = invocation.positionalArguments[0] as String;
+          if (id == storyVerifying.id) return storyVerifying;
+          return Ticket(
+            id: id,
+            ticketId: '',
+            type: TicketType.chat,
+            title: 'Verifying — ${storyVerifying.title}',
+            status: 'backlog',
+            parentId: storyVerifying.id,
+            createdAt: DateTime(2026),
+            updatedAt: DateTime(2026),
+          );
+        });
+        when(
+          () => repository.getTicketsByParent(
+            storyVerifying.id,
+            types: TicketTypeHierarchy.executableTypes,
+          ),
+        ).thenAnswer((_) async => []);
+        when(
+          () => repository.getTicketsByParent(
+            storyVerifying.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => []);
+        when(() => linkRepository.getLinksForTicket(storyVerifying.id))
+            .thenAnswer((_) async => []);
+        when(
+          () => repository.updateTicketSddStage(
+            storyVerifying.id,
+            SddStage.verifying,
+          ),
+        ).thenAnswer((_) async {});
+        stubStatefulComments(commentRepository, 'verify-chat');
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Reviewing the story...'),
+            AgentDoneEvent(),
+          ]),
+        );
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+      },
+      build: () => TicketsCubit(
+        repository,
+        linkRepository: MockTicketLinkRepository(),
+        providerRegistry: buildProviderStack(agentClient).registry,
+        commentRepository: MockCommentRepository(),
+        transitionPreconditionRepository: FakeTransitionPreconditionRepository(),
+      ),
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        final storyVerifying = Ticket(
+          id: 'story-no-design',
+          ticketId: 'AIO-107',
+          type: TicketType.story,
+          title: 'Non-UI story',
+          status: 'backlog',
+          sddStage: SddStage.applying,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        await cubit.advanceSddStage(storyVerifying);
+      },
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        final posted = verify(
+          () => commentRepository.addComment(captureAny()),
+        ).captured;
+        final context = (posted.first as TicketComment).content;
+        expect(
+          context,
+          isNot(contains('## Design')),
+        );
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'an Epic with a stray design link still does not emit a Design block '
+      '(design pages are Story-level only)',
+      setUp: () {
+        final epicVerifying = Ticket(
+          id: 'epic-verify',
+          ticketId: 'AIO-108',
+          type: TicketType.epic,
+          title: 'An epic',
+          status: 'backlog',
+          sddStage: SddStage.applying,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final designPage = Ticket(
+          id: 'design-page-epic',
+          ticketId: 'AIO-109',
+          type: TicketType.page,
+          title: 'Design — An epic',
+          description: 'Design export.',
+          status: 'backlog',
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        when(() => repository.getTicketById(any())).thenAnswer((
+          invocation,
+        ) async {
+          final id = invocation.positionalArguments[0] as String;
+          if (id == epicVerifying.id) return epicVerifying;
+          if (id == 'design-page-epic') return designPage;
+          return Ticket(
+            id: id,
+            ticketId: '',
+            type: TicketType.chat,
+            title: 'Verifying — ${epicVerifying.title}',
+            status: 'backlog',
+            parentId: epicVerifying.id,
+            createdAt: DateTime(2026),
+            updatedAt: DateTime(2026),
+          );
+        });
+        when(
+          () => repository.getTicketsByParent(
+            epicVerifying.id,
+            types: [TicketType.story],
+          ),
+        ).thenAnswer((_) async => []);
+        when(
+          () => repository.getTicketsByParent(
+            epicVerifying.id,
+            types: any(named: 'types'),
+          ),
+        ).thenAnswer((_) async => []);
+        when(() => linkRepository.getLinksForTicket(epicVerifying.id))
+            .thenAnswer((_) async => [
+          TicketLinkData(
+            id: 'design-link-epic',
+            sourceTicketId: epicVerifying.id,
+            targetTicketId: designPage.id,
+            linkType: TicketLinkType.relatesTo.name,
+          )
+        ]);
+        when(
+          () => repository.updateTicketSddStage(
+            epicVerifying.id,
+            SddStage.verifying,
+          ),
+        ).thenAnswer((_) async {});
+        stubStatefulComments(commentRepository, 'verify-chat');
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Reviewing the epic...'),
+            AgentDoneEvent(),
+          ]),
+        );
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+      },
+      build: () => TicketsCubit(
+        repository,
+        linkRepository: MockTicketLinkRepository(),
+        providerRegistry: buildProviderStack(agentClient).registry,
+        commentRepository: MockCommentRepository(),
+        transitionPreconditionRepository: FakeTransitionPreconditionRepository(),
+      ),
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        final epicVerifying = Ticket(
+          id: 'epic-verify',
+          ticketId: 'AIO-108',
+          type: TicketType.epic,
+          title: 'An epic',
+          status: 'backlog',
+          sddStage: SddStage.applying,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        await cubit.advanceSddStage(epicVerifying);
+      },
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        final posted = verify(
+          () => commentRepository.addComment(captureAny()),
+        ).captured;
+        final context = (posted.first as TicketComment).content;
+        expect(
+          context,
+          isNot(contains('## Design')),
+        );
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'a Story with a design page but no AI reply to designSync shows the '
+      'unreviewed export (only AI replies carry the verdict)',
+      setUp: () {
+        final storyVerifying = Ticket(
+          id: 'story-verify-no-ai',
+          ticketId: 'AIO-110',
+          type: TicketType.story,
+          title: 'Story with non-AI designSync reply',
+          status: 'backlog',
+          sddStage: SddStage.applying,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final designPage = Ticket(
+          id: 'design-page-no-ai',
+          ticketId: 'AIO-111',
+          type: TicketType.page,
+          title: 'Design — Story with non-AI designSync reply',
+          description: 'Pasted Claude Design export.',
+          status: 'backlog',
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final designSyncChat = Ticket(
+          id: 'design-sync-chat-no-ai',
+          ticketId: 'AIO-112',
+          type: TicketType.chat,
+          title: 'Design Sync — Story with non-AI designSync reply',
+          status: 'backlog',
+          parentId: storyVerifying.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        when(() => repository.getTicketById(any())).thenAnswer((
+          invocation,
+        ) async {
+          final id = invocation.positionalArguments[0] as String;
+          if (id == storyVerifying.id) return storyVerifying;
+          if (id == 'design-page-no-ai') return designPage;
+          return Ticket(
+            id: id,
+            ticketId: '',
+            type: TicketType.chat,
+            title: 'Verifying — ${storyVerifying.title}',
+            status: 'backlog',
+            parentId: storyVerifying.id,
+            createdAt: DateTime(2026),
+            updatedAt: DateTime(2026),
+          );
+        });
+        when(
+          () => repository.getTicketsByParent(
+            storyVerifying.id,
+            types: TicketTypeHierarchy.executableTypes,
+          ),
+        ).thenAnswer((_) async => []);
+        when(
+          () => repository.getTicketsByParent(
+            storyVerifying.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [designSyncChat]);
+        when(() => linkRepository.getLinksForTicket(storyVerifying.id))
+            .thenAnswer((_) async => [
+          TicketLinkData(
+            id: 'design-link-no-ai',
+            sourceTicketId: storyVerifying.id,
+            targetTicketId: designPage.id,
+            linkType: TicketLinkType.relatesTo.name,
+          )
+        ]);
+        // Only a human comment, not AI
+        when(() => commentRepository.getCommentsForTicket(designSyncChat.id))
+            .thenAnswer((_) async => [
+          TicketComment(
+            id: 'c3',
+            ticketId: designSyncChat.id,
+            content: 'Some user feedback',
+            authorType: CommentAuthorType.human,
+            createdAt: DateTime(2026),
+          ),
+        ]);
+        when(
+          () => repository.updateTicketSddStage(
+            storyVerifying.id,
+            SddStage.verifying,
+          ),
+        ).thenAnswer((_) async {});
+        stubStatefulComments(commentRepository, 'verify-chat');
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Reviewing the story...'),
+            AgentDoneEvent(),
+          ]),
+        );
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+      },
+      build: () => TicketsCubit(
+        repository,
+        linkRepository: MockTicketLinkRepository(),
+        providerRegistry: buildProviderStack(agentClient).registry,
+        commentRepository: MockCommentRepository(),
+        transitionPreconditionRepository: FakeTransitionPreconditionRepository(),
+      ),
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        final storyVerifying = Ticket(
+          id: 'story-verify-no-ai',
+          ticketId: 'AIO-110',
+          type: TicketType.story,
+          title: 'Story with non-AI designSync reply',
+          status: 'backlog',
+          sddStage: SddStage.applying,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        await cubit.advanceSddStage(storyVerifying);
+      },
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        final posted = verify(
+          () => commentRepository.addComment(captureAny()),
+        ).captured;
+        final context = (posted.first as TicketComment).content;
+        // When there's no AI reply, we emit the unreviewed export block
+        expect(
+          context,
+          allOf([
+            contains('## Design'),
+            contains('not reviewed'),
+            contains('Pasted Claude Design export.'),
+            isNot(contains('DESIGN GATE:')),
+          ]),
+        );
+      },
+    );
   });
 
   group('advanceSddStage — archived / _createEpicSpec (spec-ticket-type)', () {
