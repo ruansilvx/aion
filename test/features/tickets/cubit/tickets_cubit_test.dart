@@ -6706,14 +6706,120 @@ void main() {
           () => agentClient.run(
             any(
               that: predicate<AgentRequest>(
+                (request) {
+                  // Verify exploration findings section is included
+                  if (!request.prompt.contains('## Exploration findings')) {
+                    return false;
+                  }
+                  // Verify the diagnosis from exploring chat is quoted
+                  if (!request.prompt.contains('My diagnosis.')) {
+                    return false;
+                  }
+                  // Verify exploration findings comes before the fix plan
+                  // instruction
+                  final findingsIndex =
+                      request.prompt.indexOf('## Exploration findings');
+                  final planIndex =
+                      request.prompt.indexOf('Write a concrete fix plan');
+                  if (findingsIndex < 0 || planIndex < 0) {
+                    return false;
+                  }
+                  if (findingsIndex >= planIndex) {
+                    return false;
+                  }
+                  // Verify the rest of the expected content
+                  return request.prompt.contains(
+                        'Write a concrete fix plan for this bug',
+                      ) &&
+                      request.prompt.contains('PROPOSE GATE: APPROVED') &&
+                      request.prompt.contains('PROPOSE GATE: PENDING') &&
+                      !request.prompt.contains('## Decomposition') &&
+                      !request.prompt.contains('Decompose this bug');
+                },
+              ),
+            ),
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'a bug entering proposed excludes system comments from exploration '
+      'findings (AIO-2919)',
+      setUp: () {
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(
+          () => repository.getTicketById(bug.id),
+        ).thenAnswer((_) async => bugAt(SddStage.proposed));
+        when(
+          () => repository.updateTicketSddStage(bug.id, SddStage.proposed),
+        ).thenAnswer((_) async {});
+        // Stub with both system and AI comments
+        when(
+          () => repository.getTicketsByParent(
+            bug.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer(
+          (_) async => [
+            Ticket(
+              id: 'exploring-chat',
+              ticketId: 'AIO-101',
+              type: TicketType.chat,
+              title: 'Exploring — ${bug.title}',
+              status: 'backlog',
+              parentId: bug.id,
+              createdAt: DateTime(2026),
+              updatedAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(
+          () => commentRepository.getCommentsForTicket('exploring-chat'),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'system-comment',
+              ticketId: 'exploring-chat',
+              content: 'Context assembled.',
+              authorType: CommentAuthorType.system,
+              createdAt: DateTime(2026),
+            ),
+            TicketComment(
+              id: 'ai-reply',
+              ticketId: 'exploring-chat',
+              content: 'Root cause is X.',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026, 1, 2),
+            ),
+          ],
+        );
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        stubStatefulComments(commentRepository, dummyChatTicket.id);
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Planning...'),
+            AgentDoneEvent(),
+          ]),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        await cubit.advanceSddStage(bugAt(SddStage.exploring));
+      },
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verify(
+          () => agentClient.run(
+            any(
+              that: predicate<AgentRequest>(
                 (request) =>
-                    request.prompt.contains(
-                      'Write a concrete fix plan for this bug',
-                    ) &&
-                    request.prompt.contains('PROPOSE GATE: APPROVED') &&
-                    request.prompt.contains('PROPOSE GATE: PENDING') &&
-                    !request.prompt.contains('## Decomposition') &&
-                    !request.prompt.contains('Decompose this bug'),
+                    request.prompt.contains('## Exploration findings') &&
+                    request.prompt.contains('Root cause is X.') &&
+                    !request.prompt.contains('Context assembled.'),
               ),
             ),
           ),
