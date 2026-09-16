@@ -93,6 +93,16 @@ class ChatCubit extends Cubit<ChatState> {
   /// then reloads the thread and clears
   /// `streamingText`/`currentToolUse`/`activeRunId`. Added for `AIO-1400`; see
   /// its linked Documentation page, §3.
+  ///
+  /// This [ChatCubit] is route-scoped (see `app_router.dart`'s
+  /// `/workspace/tickets/:id`), so it can be closed by navigation while a
+  /// turn is still running. Every `emit` after an `await` is guarded with
+  /// `if (isClosed) return;`, including inside the [runChatTurn]
+  /// `onChunk`/`onToolUse` callbacks — without that guard, a closed-cubit
+  /// `emit` throws, `runChatTurn`'s own generic catch reports it as an
+  /// ordinary model failure, and the real accumulated reply is discarded
+  /// instead of persisted. Fixed for `AIO-2933`; confirmed live during
+  /// `AIO-2919`'s own follow-up-reply chat.
   Future<void> sendMessage({
     required String chatTicketId,
     required String content,
@@ -115,11 +125,13 @@ class ChatCubit extends Cubit<ChatState> {
         ),
       );
       final afterHuman = await _repository.getCommentsForTicket(chatTicketId);
+      if (isClosed) return;
       emit(ChatLoaded(afterHuman));
 
       final phase = await _phaseForChat(chatTicketId);
       final (model, provider) = await _resolveModelAndProvider(phase);
       final runId = _uuid.v4();
+      if (isClosed) return;
       // Emitted before the run itself starts (not just from the first
       // onChunk/onToolUse below) so a cancel button has something to act
       // on even before the model's first token streams in.
@@ -141,6 +153,18 @@ class ChatCubit extends Cubit<ChatState> {
         runId: runId,
         onChunk: (textSoFar) {
           latestStreamingText = textSoFar;
+          // The screen (and this cubit) may have been closed by
+          // navigation while this turn was still streaming — emitting
+          // into a closed cubit throws `StateError('Cannot emit new
+          // states after calling close')`, which runChatTurn's own
+          // generic catch then reports as an ordinary model failure,
+          // discarding the real accumulated reply instead of persisting
+          // it. Guarding here (matching this codebase's established
+          // `if (isClosed) return;` idiom, e.g.
+          // `TicketsCubit._loadWorkflowStatuses`) lets the `await for`
+          // loop finish normally so runChatTurn's own success path
+          // still persists the full reply. Added for `AIO-2933`.
+          if (isClosed) return;
           emit(
             ChatLoaded(
               afterHuman,
@@ -149,16 +173,19 @@ class ChatCubit extends Cubit<ChatState> {
             ),
           );
         },
-        onToolUse: (toolName, summary) => emit(
-          ChatLoaded(
-            afterHuman,
-            streamingText: latestStreamingText,
-            currentToolUse: summary == null
-                ? 'Running $toolName...'
-                : 'Running $toolName: $summary...',
-            activeRunId: runId,
-          ),
-        ),
+        onToolUse: (toolName, summary) {
+          if (isClosed) return;
+          emit(
+            ChatLoaded(
+              afterHuman,
+              streamingText: latestStreamingText,
+              currentToolUse: summary == null
+                  ? 'Running $toolName...'
+                  : 'Running $toolName: $summary...',
+              activeRunId: runId,
+            ),
+          );
+        },
         tools: await _toolsFor(chatTicketId),
         onToolCall: onToolCall,
       );
@@ -168,8 +195,10 @@ class ChatCubit extends Cubit<ChatState> {
           final afterReply = await _repository.getCommentsForTicket(
             chatTicketId,
           );
+          if (isClosed) return;
           emit(ChatLoaded(afterReply));
         case ChatTurnFailure():
+          if (isClosed) return;
           emit(ChatError('The model run failed. Please try again.'));
           emit(ChatLoaded(afterHuman));
         case ChatTurnCancelled(:final accumulatedText):
@@ -188,9 +217,11 @@ class ChatCubit extends Cubit<ChatState> {
           final afterCancel = await _repository.getCommentsForTicket(
             chatTicketId,
           );
+          if (isClosed) return;
           emit(ChatLoaded(afterCancel));
       }
     } catch (e) {
+      if (isClosed) return;
       emit(ChatError(e.toString()));
     }
   }
