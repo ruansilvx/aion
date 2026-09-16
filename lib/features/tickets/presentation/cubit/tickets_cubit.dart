@@ -3923,6 +3923,21 @@ class TicketsCubit extends Cubit<TicketsState> {
     return proposedChats.isEmpty ? null : proposedChats.first;
   }
 
+  /// The [TicketType.bug] [bugId]'s current Exploring-stage chat — its most
+  /// recently created chat child whose title starts with `'${await
+  /// _stagePresentName(SddStage.exploring)} — '`. `null` if none exists yet.
+  /// Mirrors [_mostRecentProposedChat]'s exact shape. Added for `AIO-2919`.
+  Future<Ticket?> _mostRecentExploringChat(String bugId) async {
+    final prefix = '${await _stagePresentName(SddStage.exploring)} — ';
+    final chats = await _repository.getTicketsByParent(
+      bugId,
+      types: const [TicketType.chat],
+    );
+    final exploringChats = chats.where((c) => c.title.startsWith(prefix)).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return exploringChats.isEmpty ? null : exploringChats.first;
+  }
+
   /// Whether [bugId]'s Proposed-stage chat's most recent comment is an
   /// [CommentAuthorType.ai] reply whose content contains the literal line
   /// `PROPOSE GATE: APPROVED` — mirrors [_verifyGateApproved]/
@@ -7742,9 +7757,12 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// context block (each omitted individually when the corresponding
   /// [Ticket] field is `null`/empty) followed by root-cause-diagnosis
   /// framing instead of generic "investigate the problem space" wording; for
-  /// `proposed`, a concrete-fix-plan request ending in exactly one line —
-  /// `PROPOSE GATE: APPROVED`/`PENDING`, mirroring `VERIFY GATE`'s own
-  /// approved-content convention exactly (see [_proposeGateApproved]) —
+  /// `proposed`, an optional `## Exploration findings` section (omitted when
+  /// the Exploring chat has no non-system replies — see [_mostRecentExploringChat]
+  /// and [_assembleChatTranscript]) quoting the prior stage's diagnosis to
+  /// build upon, followed by a concrete-fix-plan request ending in exactly
+  /// one line — `PROPOSE GATE: APPROVED`/`PENDING`, mirroring `VERIFY GATE`'s
+  /// own approved-content convention exactly (see [_proposeGateApproved]) —
   /// instead of the `## Decomposition` block every other type gets at this
   /// stage, since a Bug is a leaf with no children to decompose into.
   /// [SddStage.applying] needs no Bug-specific branch here: it fires
@@ -7942,6 +7960,27 @@ class TicketsCubit extends Cubit<TicketsState> {
           'if there are no issues, or "DESIGN GATE: PENDING" if there are.',
         );
     } else if (stage == SddStage.proposed && parent.type == TicketType.bug) {
+      final exploringChat = await _mostRecentExploringChat(parent.id);
+      final commentRepo = _commentRepository;
+      final findings = exploringChat == null || commentRepo == null
+          ? const <TicketComment>[]
+          : (await commentRepo.getCommentsForTicket(exploringChat.id))
+              .where((c) => c.authorType != CommentAuthorType.system)
+              .toList();
+      if (findings.isNotEmpty) {
+        buffer
+          ..writeln()
+          ..writeln('## Exploration findings')
+          ..writeln()
+          ..writeln(
+            "This bug's root cause was already investigated in its own "
+            'Exploring-stage review — build the fix plan on that diagnosis '
+            'rather than re-investigating from the title/description alone. '
+            'The full Exploring-stage conversation, in order:',
+          )
+          ..writeln()
+          ..writeln(_assembleChatTranscript(findings));
+      }
       buffer
         ..writeln()
         ..writeln(
