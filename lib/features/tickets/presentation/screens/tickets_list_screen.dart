@@ -369,23 +369,18 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
   };
 
   /// Narrows [tickets] to whatever `TicketsCubit.currentViewMode` actually
-  /// renders as selectable rows/cards — the board view shows story/task/bug
-  /// types by default (per AIO-934, idea/knownGap/openQuestion have no board
-  /// presence), but respects explicit type filters. "Select all" while
-  /// on the board must not silently include ids for tickets that have no
-  /// checkbox on screen.
+  /// renders as selectable rows/cards — delegates to
+  /// [_boardCompatibleTickets] in board mode so this and `_TicketsBody`'s
+  /// own board rendering never drift (AIO-2910). "Select all" while on the
+  /// board must not silently include ids for tickets that have no checkbox
+  /// on screen.
   List<Ticket> _visibleTickets(List<Ticket> tickets) {
     if (context.read<TicketsCubit>().currentViewMode ==
         TicketListViewMode.board) {
-      final selectedTypes = context.read<TicketsCubit>().selectedTypes;
-      if (selectedTypes.isEmpty) {
-        // No type filter: show default board-compatible types (AIO-934)
-        return tickets
-            .where((t) => t.type == TicketType.story || t.type.isExecutable)
-            .toList();
-      }
-      // Type filter applied: show all tickets (already filtered by search)
-      return tickets;
+      return _boardCompatibleTickets(
+        tickets,
+        context.read<TicketsCubit>().selectedTypes,
+      );
     }
     return tickets;
   }
@@ -745,6 +740,25 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
   }
 }
 
+/// The board's own default type filter: `story`/`isExecutable` types only,
+/// per AIO-934's "no board presence" scope for `idea`/`knownGap`/
+/// `openQuestion` — unless [selectedTypes] explicitly opts one or more
+/// types in via the Filters panel (AIO-2911), in which case [tickets] (already
+/// filtered by the caller's own search/type logic) passes through
+/// untouched. Shared by `_TicketsListScreenState._visibleTickets`
+/// (select-all bookkeeping) and `_TicketsBody`'s own board rendering below
+/// so the two can't silently drift apart — see AIO-2910, filed after they
+/// were found reimplementing this same predicate independently.
+List<Ticket> _boardCompatibleTickets(
+  List<Ticket> tickets,
+  Set<TicketType> selectedTypes,
+) {
+  if (selectedTypes.isNotEmpty) return tickets;
+  return tickets
+      .where((t) => t.type == TicketType.story || t.type.isExecutable)
+      .toList();
+}
+
 /// Renders the loaded ticket list as either the flat list or the board,
 /// depending on [viewMode]. An empty [tickets] list shows "No tickets
 /// match your search" when [hasActiveFilter], otherwise the generic "No
@@ -826,27 +840,10 @@ class _TicketsBody extends StatelessWidget {
     }
 
     if (viewMode == TicketListViewMode.board) {
-      // When no type filter is applied, show all ticket types that are
-      // compatible with board view (story/task/bug, per AIO-934). When a type
-      // filter is explicitly selected, show only those types to allow viewing
-      // other types like epic or chat on the board if the user chooses.
-      final selectedTypes = context.read<TicketsCubit>().selectedTypes;
-      List<Ticket> boardTickets;
-
-      if (selectedTypes.isEmpty) {
-        // No type filter: show default board-compatible types (AIO-934)
-        boardTickets = tickets
-            .where(
-              (ticket) =>
-                  ticket.type == TicketType.story || ticket.type.isExecutable,
-            )
-            .toList();
-      } else {
-        // Type filter applied: show all tickets (filters already respect the
-        // selected types from the search)
-        boardTickets = tickets;
-      }
-
+      final boardTickets = _boardCompatibleTickets(
+        tickets,
+        context.read<TicketsCubit>().selectedTypes,
+      );
       return TicketBoardView(
         tickets: boardTickets,
         hiddenStatuses: context.read<TicketsCubit>().hiddenBoardColumns,
