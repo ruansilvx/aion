@@ -7903,6 +7903,24 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// branch previously carried only title/description/design tokens,
   /// silently discarding whatever scoping was actually discussed in the
   /// Story's own Proposed-stage chat before the design brief gets written.
+  ///
+  /// The [SddStage.exploring]/[SddStage.proposed]/[SddStage.designBrief]/
+  /// [SddStage.designSync] branches also each read their own project-
+  /// effective baseline skill (`skills/explore`/`skills/propose`/
+  /// `skills/design-brief`/`skills/design-sync`, via
+  /// [_effectiveAssetContent]) and, when non-empty, include it under a
+  /// `## <Stage> guidelines` heading — added —THIS TICKET—, mirroring how
+  /// [_assembleExecutionContext] already reads `skills/apply`. Before this,
+  /// a project's local override of any of these four skill files had no
+  /// effect at all on the automated ticket cycle — the hardcoded
+  /// instruction text below was the only thing that ever ran, regardless of
+  /// configuration. [SddStage.verifying] deliberately gets no such addition:
+  /// `skills/verify` (read elsewhere by [_assembleVerificationContext]) is
+  /// written for the agentic, tool-using, in-worktree coding-execution
+  /// verify turn ("run whatever build, lint, and test commands..."), not
+  /// this ticket-level review chat, which has no file/tool access in the
+  /// common (no-attachment) case and reviews via ticket data instead — no
+  /// baseline skill file represents that distinct job today.
   Future<String> _assembleStageContext(Ticket parent, SddStage stage) async {
     final buffer = StringBuffer()..writeln('# ${parent.title}');
     final description = parent.description;
@@ -7945,6 +7963,14 @@ class TicketsCubit extends Cubit<TicketsState> {
             ..writeln(actual);
         }
       }
+      final exploreSkillBug = await _effectiveAssetContent('skills/explore');
+      if (exploreSkillBug != null && exploreSkillBug.isNotEmpty) {
+        buffer
+          ..writeln()
+          ..writeln('## Explore guidelines')
+          ..writeln()
+          ..writeln(exploreSkillBug);
+      }
       buffer
         ..writeln()
         ..writeln(
@@ -7965,6 +7991,14 @@ class TicketsCubit extends Cubit<TicketsState> {
           'fix plan, not a proposal or an implementation.',
         );
     } else if (stage == SddStage.exploring) {
+      final exploreSkill = await _effectiveAssetContent('skills/explore');
+      if (exploreSkill != null && exploreSkill.isNotEmpty) {
+        buffer
+          ..writeln()
+          ..writeln('## Explore guidelines')
+          ..writeln()
+          ..writeln(exploreSkill);
+      }
       buffer
         ..writeln()
         ..writeln(
@@ -8118,6 +8152,16 @@ class TicketsCubit extends Cubit<TicketsState> {
         ..writeln()
         ..writeln('## Existing design system')
         ..writeln(await _readTokenFilesForContext());
+      final designBriefSkill = await _effectiveAssetContent(
+        'skills/design-brief',
+      );
+      if (designBriefSkill != null && designBriefSkill.isNotEmpty) {
+        buffer
+          ..writeln()
+          ..writeln('## Design Brief guidelines')
+          ..writeln()
+          ..writeln(designBriefSkill);
+      }
       buffer
         ..writeln()
         ..writeln(
@@ -8135,7 +8179,16 @@ class TicketsCubit extends Cubit<TicketsState> {
         ..writeln(page?.description ?? '(none pasted yet)')
         ..writeln()
         ..writeln('## Existing design system')
-        ..writeln(await _readTokenFilesForContext())
+        ..writeln(await _readTokenFilesForContext());
+      final designSyncSkill = await _effectiveAssetContent('skills/design-sync');
+      if (designSyncSkill != null && designSyncSkill.isNotEmpty) {
+        buffer
+          ..writeln()
+          ..writeln('## Design Sync guidelines')
+          ..writeln()
+          ..writeln(designSyncSkill);
+      }
+      buffer
         ..writeln()
         ..writeln(
           'Check the pasted design export above for: (1) any Material '
@@ -8155,6 +8208,14 @@ class TicketsCubit extends Cubit<TicketsState> {
             'The full Exploring-stage conversation, in order:',
       );
       if (findings.isNotEmpty) buffer.write(findings);
+      final proposeSkillBug = await _effectiveAssetContent('skills/propose');
+      if (proposeSkillBug != null && proposeSkillBug.isNotEmpty) {
+        buffer
+          ..writeln()
+          ..writeln('## Propose guidelines')
+          ..writeln()
+          ..writeln(proposeSkillBug);
+      }
       buffer
         ..writeln()
         ..writeln(
@@ -8180,6 +8241,14 @@ class TicketsCubit extends Cubit<TicketsState> {
             'Exploring-stage conversation, in order:',
       );
       if (findings.isNotEmpty) buffer.write(findings);
+      final proposeSkill = await _effectiveAssetContent('skills/propose');
+      if (proposeSkill != null && proposeSkill.isNotEmpty) {
+        buffer
+          ..writeln()
+          ..writeln('## Propose guidelines')
+          ..writeln()
+          ..writeln(proposeSkill);
+      }
       buffer
         ..writeln()
         ..writeln(
