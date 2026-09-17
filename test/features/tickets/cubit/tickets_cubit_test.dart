@@ -9018,6 +9018,7 @@ void main() {
     late MockAgentModelClient agentClient;
     late MockProviderRegistry registry;
     late MockCommentRepository commentRepository;
+    late StreamController<AgentEvent> toolCallEvents;
 
     setUp(() {
       agentClient = MockAgentModelClient();
@@ -9238,11 +9239,86 @@ void main() {
       // same-id Loading-skip now covers (added for
       // `aion-arch/changes/live-refresh-open-ticket-detail-screen`).
       expect: () => [
-        isA<TicketDetailLoaded>().having(
-          (s) => s.isAdvancingStage,
-          'isAdvancingStage',
-          true,
-        ),
+        isA<TicketDetailLoaded>()
+            .having((s) => s.isAdvancingStage, 'isAdvancingStage', true)
+            .having(
+              (s) => s.stageAdvanceStartedAt,
+              'stageAdvanceStartedAt',
+              isNotNull,
+            ),
+        isA<TicketDetailLoaded>()
+            .having((s) => s.isAdvancingStage, 'isAdvancingStage', false)
+            .having(
+              (s) => s.stageAdvanceStartedAt,
+              'stageAdvanceStartedAt',
+              isNull,
+            ),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'a tool call fired mid-turn re-emits stageAdvanceLiveActivity for the '
+      'parent epic while its detail screen is the one open, via copyWith — '
+      'isAdvancingStage (and every other field) survives unchanged, unlike '
+      "_emitLiveExecutionActivity's own known lossy-reconstruction shape. A "
+      'later text chunk clears it again. Added for `AIO-2884`.',
+      setUp: () {
+        final events = StreamController<AgentEvent>();
+        when(
+          () => repository.updateTicketSddStage(epic.id, SddStage.exploring),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        when(
+          () => commentRepository.addComment(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => agentClient.run(any()),
+        ).thenAnswer((_) async => events.stream);
+        addTearDown(events.close);
+        toolCallEvents = events;
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        unawaited(cubit.advanceSddStage(epic));
+        // Lets advanceSddStage's own synchronous-ish setup (chat creation,
+        // etc.) run through to _runStageChatTurn's `showingDetailId`
+        // capture — by then `state` is already `TicketDetailLoaded(epic,
+        // isAdvancingStage: true)`, the state advanceSddStage itself just
+        // emitted — before this test injects any stream events.
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        toolCallEvents.add(const AgentToolUseEvent('Bash', 'flutter test'));
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        toolCallEvents.add(const AgentTextEvent('Reply so far'));
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        toolCallEvents.add(const AgentDoneEvent());
+        await toolCallEvents.close();
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      },
+      expect: () => [
+        isA<TicketDetailLoaded>()
+            .having((s) => s.isAdvancingStage, 'isAdvancingStage', true)
+            .having(
+              (s) => s.stageAdvanceLiveActivity,
+              'stageAdvanceLiveActivity',
+              isNull,
+            ),
+        isA<TicketDetailLoaded>()
+            .having((s) => s.isAdvancingStage, 'isAdvancingStage', true)
+            .having(
+              (s) => s.stageAdvanceLiveActivity,
+              'stageAdvanceLiveActivity',
+              'Running Bash: flutter test...',
+            ),
+        isA<TicketDetailLoaded>()
+            .having((s) => s.isAdvancingStage, 'isAdvancingStage', true)
+            .having(
+              (s) => s.stageAdvanceLiveActivity,
+              'stageAdvanceLiveActivity',
+              isNull,
+            ),
         isA<TicketDetailLoaded>().having(
           (s) => s.isAdvancingStage,
           'isAdvancingStage',

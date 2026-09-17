@@ -1,5 +1,8 @@
 // presentation/widgets/chat_transcript_pane.dart — ChatTranscriptPane collapsing-header transcript (presentation layer).
 
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -35,6 +38,8 @@ class ChatTranscriptPane extends StatefulWidget {
     required this.onAdvanceSddStage,
     required this.onMaybeAutoAdvance,
     this.isAdvancingStage = false,
+    this.stageAdvanceStartedAt,
+    this.stageAdvanceLiveActivity,
   });
 
   /// Internal id of the chat ticket whose transcript this pane renders.
@@ -61,6 +66,22 @@ class ChatTranscriptPane extends StatefulWidget {
   /// [_WaitingForReplyIndicator] at the transcript's tail while `true`. Added
   /// for `AIO-352`.
   final bool isAdvancingStage;
+
+  /// When the [isAdvancingStage] spawn actually started, `null` while
+  /// [isAdvancingStage] is `false` — or, for the older idea-Discuss-chat
+  /// spawn (`TicketsCubit.startIdeaDiscussion`, `AIO-2941`), which shares
+  /// [isAdvancingStage]'s underlying flag but doesn't populate this field.
+  /// Drives [_WaitingForReplyIndicator]'s elapsed-timer treatment when
+  /// non-`null`; falls back to the original static wording when `null` (so
+  /// idea-Discuss chats keep their pre-`AIO-2884` look unchanged). Added for
+  /// `AIO-2884`.
+  final DateTime? stageAdvanceStartedAt;
+
+  /// A live "Running `<tool>`..." status string for the [isAdvancingStage]
+  /// spawn, `null` whenever no tool call has happened yet (the common case).
+  /// Shown by [_WaitingForReplyIndicator] in place of its rotating status
+  /// word while non-`null`. Added for `AIO-2884`.
+  final String? stageAdvanceLiveActivity;
 
   @override
   State<ChatTranscriptPane> createState() => _ChatTranscriptPaneState();
@@ -162,8 +183,11 @@ class _ChatTranscriptPaneState extends State<ChatTranscriptPane> {
                           currentToolUse == null)
                         SliverPadding(
                           padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
-                          sliver: const SliverToBoxAdapter(
-                            child: _WaitingForReplyIndicator(),
+                          sliver: SliverToBoxAdapter(
+                            child: _WaitingForReplyIndicator(
+                              startedAt: widget.stageAdvanceStartedAt,
+                              toolActivity: widget.stageAdvanceLiveActivity,
+                            ),
                           ),
                         ),
                     ],
@@ -425,20 +449,48 @@ class _StaticExpandedHeader extends StatelessWidget {
   }
 }
 
+/// The rotating status words `_WaitingForReplyIndicatorState` cycles through
+/// while a stage-advance turn is in flight and no tool call is running —
+/// mirrors Claude Code's own "Pondering...", "Thinking..." style activity
+/// indicator. Deliberately a plain internal constant, not localized via
+/// `.arb` (which has no array/list construct suited to a rotating word set,
+/// and this is flavor text, not semantic content) — a deliberate, minor
+/// exception to this codebase's usual full-l10n convention. Added for
+/// `AIO-2884`.
+const _stageAdvanceStatusWords = [
+  'Thinking',
+  'Pondering',
+  'Considering',
+  'Reasoning',
+];
+
 /// Shown at the tail of a chat ticket's transcript while a spawned
-/// [TicketsCubit] stage-advance turn (see `TicketsCubit ._runStageChatTurn`)
+/// [TicketsCubit] stage-advance turn (see `TicketsCubit._runStageChatTurn`)
 /// hasn't posted its reply for *this* chat ticket yet. Reuses
-/// [_StreamingBubble]'s pulsing-dot pre-text treatment (design.md §2.3a) —
-/// fixed text only, no `{tool}` emphasis, since `_runStageChatTurn` calls
-/// `ChatCubit.runChatTurn`'s static helper directly rather than through this
-/// screen's own [ChatCubit], so there's no live
-/// `currentToolUse`/`streamingText` to show instead. Removed the instant the
-/// real reply lands and `ChatTranscriptPane.isAdvancingStage` flips to `false`
-/// (driving `ticket_detail_screen.dart`'s `BlocListener` to call
+/// [_StreamingBubble]'s pulsing-dot pre-text treatment (design.md §2.3a).
+/// When [startedAt] is non-`null`, renders an elapsed-timer + rotating
+/// status-word indicator ("Pondering... 14s"), driven by its own ~1s
+/// `Timer.periodic` — [toolActivity], when non-`null`, replaces the rotating
+/// word with the specific tool being run (elapsed timer stays), mirroring
+/// `_ExecutionLiveToolLine`'s treatment. [startedAt] is `null` for the
+/// older idea-Discuss-chat spawn (`TicketsCubit.startIdeaDiscussion`,
+/// `AIO-2941`, which shares `isAdvancingStage`'s underlying flag but doesn't
+/// populate it) — in that case, falls back to the original static
+/// "Waiting for reply..." wording unchanged, no timer. Removed the instant
+/// the real reply lands and `ChatTranscriptPane.isAdvancingStage` flips to
+/// `false` (driving `ticket_detail_screen.dart`'s `BlocListener` to call
 /// `ChatCubit.loadMessages`, which replaces this row with the real reply
-/// bubble). Added for `AIO-352`.
+/// bubble). Added for `AIO-352`; extended for `AIO-2884`.
 class _WaitingForReplyIndicator extends StatefulWidget {
-  const _WaitingForReplyIndicator();
+  const _WaitingForReplyIndicator({this.startedAt, this.toolActivity});
+
+  /// When the in-flight stage-advance turn started, or `null` to fall back
+  /// to the original static wording (see class dartdoc).
+  final DateTime? startedAt;
+
+  /// A live "Running `<tool>`..." status string, or `null` if no tool call
+  /// has happened yet this run.
+  final String? toolActivity;
 
   @override
   State<_WaitingForReplyIndicator> createState() =>
@@ -453,6 +505,17 @@ class _WaitingForReplyIndicatorState extends State<_WaitingForReplyIndicator>
   );
 
   bool _startedPulsing = false;
+  Timer? _elapsedTicker;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.startedAt != null) {
+      _elapsedTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) setState(() {});
+      });
+    }
+  }
 
   @override
   void didChangeDependencies() {
@@ -466,6 +529,7 @@ class _WaitingForReplyIndicatorState extends State<_WaitingForReplyIndicator>
   @override
   void dispose() {
     _pulseController.dispose();
+    _elapsedTicker?.cancel();
     super.dispose();
   }
 
@@ -477,6 +541,22 @@ class _WaitingForReplyIndicatorState extends State<_WaitingForReplyIndicator>
       decoration: BoxDecoration(color: c.primary, shape: BoxShape.circle),
       child: const SizedBox(width: 7, height: 7),
     );
+
+    final startedAt = widget.startedAt;
+    String label;
+    if (startedAt == null) {
+      label = context.l10n.ticketDetailWaitingForReply;
+    } else {
+      final elapsedSeconds = math.max(
+        0,
+        DateTime.now().difference(startedAt).inSeconds,
+      );
+      final toolActivity = widget.toolActivity;
+      final prefix =
+          toolActivity ??
+          '${_stageAdvanceStatusWords[(elapsedSeconds ~/ 3) % _stageAdvanceStatusWords.length]}...';
+      label = '$prefix ${elapsedSeconds}s';
+    }
 
     return Padding(
       padding: const EdgeInsets.only(left: 2),
@@ -501,7 +581,7 @@ class _WaitingForReplyIndicatorState extends State<_WaitingForReplyIndicator>
                 ),
           const SizedBox(width: 8),
           Text(
-            context.l10n.ticketDetailWaitingForReply,
+            label,
             style: AionText.streamStatus.copyWith(color: c.textSecondary),
           ),
         ],

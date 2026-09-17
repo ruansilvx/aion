@@ -425,6 +425,8 @@ class TicketDetailLoaded extends TicketsState {
     this.executionPrSubLine,
     this.executionLiveActivity,
     this.isAdvancingStage = false,
+    this.stageAdvanceStartedAt,
+    this.stageAdvanceLiveActivity,
     this.sddStageFailureReason,
     this.sddStageCanRetry = false,
     this.pendingToolProposal,
@@ -562,6 +564,35 @@ class TicketDetailLoaded extends TicketsState {
   /// exactly, one level up the ticket-type hierarchy. Added for `AIO-352`.
   final bool isAdvancingStage;
 
+  /// When the currently in-flight `TicketsCubit._runStageChatTurn` spawn
+  /// ([isAdvancingStage] `true`) actually started, `null` whenever
+  /// [isAdvancingStage] is `false`. Computed by [TicketsCubit.getTicketById]
+  /// from [TicketsCubit._stageAdvanceStartedAt] — unlike
+  /// [stageAdvanceLiveActivity], this survives a re-navigation back to
+  /// [ticket] mid-run (a fresh [getTicketById] call recomputes it from the
+  /// same start time), so `ChatTranscriptPane`'s elapsed-timer indicator
+  /// reads correctly even if the detail screen wasn't open when the turn
+  /// began. Added for `AIO-2884`.
+  final DateTime? stageAdvanceStartedAt;
+
+  /// A live "Running `<tool>`..." status string for [ticket] while
+  /// [isAdvancingStage] is `true`, re-emitted by
+  /// [TicketsCubit._runStageChatTurn] on every tool call of the in-flight
+  /// stage-chat turn (only while [ticket] or its stage-advance chat is the
+  /// one showing) — mirrors [executionLiveActivity]'s exact shape one level
+  /// up the ticket-type hierarchy. `null` whenever [isAdvancingStage] is
+  /// `false`, or no tool call has happened yet (the common case — most
+  /// stage-chat turns have no tools enabled). In-memory only — does not
+  /// survive an app restart or a re-navigation mid-run, like
+  /// [executionLiveActivity] itself. Unlike [executionLiveActivity] (whose
+  /// own live-update site reconstructs [TicketDetailLoaded] by hand and
+  /// silently drops several other fields back to their defaults — a known,
+  /// separate issue, not fixed here), this field's own live-update site
+  /// uses [copyWith] with a [TicketFieldSetter] (mirrors
+  /// [pendingIdeaPromotion]'s convention) so every other field survives
+  /// unchanged. Added for `AIO-2884`.
+  final String? stageAdvanceLiveActivity;
+
   /// Why [ticket]'s (an `epic`/`story`) most recent stage-advance attempt
   /// failed, `null` if it hasn't or the current attempt is still running.
   /// Survives an app restart — derived from the persisted comment thread, like
@@ -666,6 +697,8 @@ class TicketDetailLoaded extends TicketsState {
     executionPrSubLine,
     executionLiveActivity,
     isAdvancingStage,
+    stageAdvanceStartedAt,
+    stageAdvanceLiveActivity,
     sddStageFailureReason,
     sddStageCanRetry,
     pendingToolProposal,
@@ -717,6 +750,8 @@ class TicketDetailLoaded extends TicketsState {
     String? executionPrSubLine,
     String? executionLiveActivity,
     bool? isAdvancingStage,
+    DateTime? stageAdvanceStartedAt,
+    TicketFieldSetter<String?>? stageAdvanceLiveActivity,
     String? sddStageFailureReason,
     bool? sddStageCanRetry,
     PendingToolProposal? pendingToolProposal,
@@ -750,6 +785,11 @@ class TicketDetailLoaded extends TicketsState {
       executionLiveActivity:
           executionLiveActivity ?? this.executionLiveActivity,
       isAdvancingStage: isAdvancingStage ?? this.isAdvancingStage,
+      stageAdvanceStartedAt:
+          stageAdvanceStartedAt ?? this.stageAdvanceStartedAt,
+      stageAdvanceLiveActivity: stageAdvanceLiveActivity != null
+          ? stageAdvanceLiveActivity()
+          : this.stageAdvanceLiveActivity,
       sddStageFailureReason:
           sddStageFailureReason ?? this.sddStageFailureReason,
       sddStageCanRetry: sddStageCanRetry ?? this.sddStageCanRetry,
