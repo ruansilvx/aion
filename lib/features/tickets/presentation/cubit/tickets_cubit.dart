@@ -3638,11 +3638,7 @@ PROMOTION: NOT YET
       types: TicketTypeHierarchy.executableTypes,
     );
     if (children.isEmpty) {
-      return (
-        ready: false,
-        verifyChat: verifyChat,
-        pendingFixesRemaining: null,
-      );
+      return (ready: false, verifyChat: verifyChat, pendingFixesRemaining: null);
     }
     final notDoneCount = children
         .where((c) => _roleOf(c.status) != WorkflowStatusRole.done)
@@ -4148,9 +4144,8 @@ PROMOTION: NOT YET
       parentId,
       types: const [TicketType.chat],
     );
-    final proposedChats =
-        chats.where((c) => c.title.startsWith(prefix)).toList()
-          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final proposedChats = chats.where((c) => c.title.startsWith(prefix)).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return proposedChats.isEmpty ? null : proposedChats.first;
   }
 
@@ -4166,9 +4161,8 @@ PROMOTION: NOT YET
       parentId,
       types: const [TicketType.chat],
     );
-    final exploringChats =
-        chats.where((c) => c.title.startsWith(prefix)).toList()
-          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final exploringChats = chats.where((c) => c.title.startsWith(prefix)).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return exploringChats.isEmpty ? null : exploringChats.first;
   }
 
@@ -4189,9 +4183,9 @@ PROMOTION: NOT YET
     final commentRepo = _commentRepository;
     final findings = exploringChat == null || commentRepo == null
         ? const <TicketComment>[]
-        : (await commentRepo.getCommentsForTicket(
-            exploringChat.id,
-          )).where((c) => c.authorType != CommentAuthorType.system).toList();
+        : (await commentRepo.getCommentsForTicket(exploringChat.id))
+            .where((c) => c.authorType != CommentAuthorType.system)
+            .toList();
     if (findings.isEmpty) return '';
     return (StringBuffer()
           ..writeln()
@@ -4214,14 +4208,17 @@ PROMOTION: NOT YET
   /// scoping was actually discussed and approved in the Story's own
   /// Proposed-stage chat (same shape of gap as `AIO-2919`'s original two,
   /// one stage later in the design track).
-  Future<String> _proposedFindingsSection(String parentId, String intro) async {
+  Future<String> _proposedFindingsSection(
+    String parentId,
+    String intro,
+  ) async {
     final proposedChat = await _mostRecentProposedChat(parentId);
     final commentRepo = _commentRepository;
     final findings = proposedChat == null || commentRepo == null
         ? const <TicketComment>[]
-        : (await commentRepo.getCommentsForTicket(
-            proposedChat.id,
-          )).where((c) => c.authorType != CommentAuthorType.system).toList();
+        : (await commentRepo.getCommentsForTicket(proposedChat.id))
+            .where((c) => c.authorType != CommentAuthorType.system)
+            .toList();
     if (findings.isEmpty) return '';
     return (StringBuffer()
           ..writeln()
@@ -6253,9 +6250,9 @@ PROMOTION: NOT YET
       final commentRepo = _commentRepository;
       final planComments = proposedChat == null || commentRepo == null
           ? const <TicketComment>[]
-          : (await commentRepo.getCommentsForTicket(
-              proposedChat.id,
-            )).where((c) => c.authorType != CommentAuthorType.system).toList();
+          : (await commentRepo.getCommentsForTicket(proposedChat.id))
+              .where((c) => c.authorType != CommentAuthorType.system)
+              .toList();
       if (planComments.isNotEmpty) {
         buffer
           ..writeln()
@@ -6544,9 +6541,8 @@ PROMOTION: NOT YET
       epicOrStoryId,
       types: const [TicketType.chat],
     );
-    final matchingChats =
-        chats.where((c) => c.title.startsWith(prefix)).toList()
-          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final matchingChats = chats.where((c) => c.title.startsWith(prefix)).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     if (matchingChats.isEmpty) return (null, false);
     final mostRecentChat = matchingChats.first;
     const stalledMessage = 'Stage advance ended without a clear result.';
@@ -8284,12 +8280,10 @@ PROMOTION: NOT YET
               ..writeln('## Design');
             if (designReply != null &&
                 designReply.content.contains('DESIGN GATE: APPROVED')) {
-              final gateVerdictLine =
-                  designReply.content
-                      .split('\n')
-                      .where((line) => line.contains('DESIGN GATE'))
-                      .firstOrNull ??
-                  '';
+              final gateVerdictLine = designReply.content
+                  .split('\n')
+                  .where((line) => line.contains('DESIGN GATE'))
+                  .firstOrNull ?? '';
               buffer
                 ..writeln(
                   'This story\'s design was approved by a design-sync run. '
@@ -8309,12 +8303,10 @@ PROMOTION: NOT YET
                 ..writeln()
                 ..writeln(page.description ?? '(design export not available)');
               if (designReply != null) {
-                final gateVerdictLine =
-                    designReply.content
-                        .split('\n')
-                        .where((line) => line.contains('DESIGN GATE'))
-                        .firstOrNull ??
-                    '(status unknown)';
+                final gateVerdictLine = designReply.content
+                    .split('\n')
+                    .where((line) => line.contains('DESIGN GATE'))
+                    .firstOrNull ?? '(status unknown)';
                 buffer
                   ..writeln()
                   ..writeln('Design status: $gateVerdictLine');
@@ -8343,9 +8335,9 @@ PROMOTION: NOT YET
       final findings = await _proposedFindingsSection(
         parent.id,
         "This story's scope was already decided in its own Proposed-stage "
-        'review — ground the design brief in that decomposition and '
-        'discussion rather than the title/description alone. The full '
-        'Proposed-stage conversation, in order:',
+            'review — ground the design brief in that decomposition and '
+            'discussion rather than the title/description alone. The full '
+            'Proposed-stage conversation, in order:',
       );
       if (findings.isNotEmpty) buffer.write(findings);
       buffer
@@ -8380,9 +8372,7 @@ PROMOTION: NOT YET
         ..writeln()
         ..writeln('## Existing design system')
         ..writeln(await _readTokenFilesForContext());
-      final designSyncSkill = await _effectiveAssetContent(
-        'skills/design-sync',
-      );
+      final designSyncSkill = await _effectiveAssetContent('skills/design-sync');
       if (designSyncSkill != null && designSyncSkill.isNotEmpty) {
         buffer
           ..writeln()
@@ -8405,9 +8395,9 @@ PROMOTION: NOT YET
       final findings = await _exploringFindingsSection(
         parent.id,
         "This bug's root cause was already investigated in its own "
-        'Exploring-stage review — build the fix plan on that diagnosis '
-        'rather than re-investigating from the title/description alone. '
-        'The full Exploring-stage conversation, in order:',
+            'Exploring-stage review — build the fix plan on that diagnosis '
+            'rather than re-investigating from the title/description alone. '
+            'The full Exploring-stage conversation, in order:',
       );
       if (findings.isNotEmpty) buffer.write(findings);
       final proposeSkillBug = await _effectiveAssetContent('skills/propose');
@@ -8437,10 +8427,10 @@ PROMOTION: NOT YET
       final findings = await _exploringFindingsSection(
         parent.id,
         "This ${parent.type.name}'s problem space was already explored in its "
-        'own Exploring-stage review — base the decomposition on that '
-        "exploration's conclusions, tradeoffs, and options rather than "
-        're-deriving them from the title and description alone. The full '
-        'Exploring-stage conversation, in order:',
+            'own Exploring-stage review — base the decomposition on that '
+            "exploration's conclusions, tradeoffs, and options rather than "
+            're-deriving them from the title and description alone. The full '
+            'Exploring-stage conversation, in order:',
       );
       if (findings.isNotEmpty) buffer.write(findings);
       final proposeSkill = await _effectiveAssetContent('skills/propose');
@@ -8513,11 +8503,8 @@ PROMOTION: NOT YET
         heading: '## Fixes Needed',
         childTypeLabels: const ['Task', 'Bug'],
       ))
-        (
-          label == 'Task' ? TicketType.task : TicketType.bug,
-          title,
-          blockedByTitle,
-        ),
+        (label == 'Task' ? TicketType.task : TicketType.bug, title,
+            blockedByTitle),
     ];
   }
 
@@ -8601,10 +8588,13 @@ PROMOTION: NOT YET
         ? TicketType.story
         : TicketType.task;
     final parsed = _parseDecomposition(reply, childType);
-    await _materializeParsedChildren(parent, [
-      for (final (title, blockedByTitle) in parsed)
-        (childType, title, blockedByTitle),
-    ]);
+    await _materializeParsedChildren(
+      parent,
+      [
+        for (final (title, blockedByTitle) in parsed)
+          (childType, title, blockedByTitle),
+      ],
+    );
   }
 
   /// Runs once per `verifying`-stage chat turn whose reply contains
