@@ -8,6 +8,7 @@ import 'package:aion/features/tickets/domain/entities/gap_or_question_ref.dart';
 import 'package:aion/features/tickets/domain/entities/linked_ticket_ref.dart';
 import 'package:aion/features/tickets/domain/entities/skill_attachment.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/presentation/cubit/pending_tool_proposal.dart';
 
 /// The state emitted by [TicketsCubit].
@@ -293,6 +294,28 @@ class PendingSpecLinkSuggestion extends Equatable {
   List<Object?> get props => [specTicketId, specTicketTitle];
 }
 
+/// The gated outcome of an idea's Discuss conversation (`AIO-2940`/
+/// `AIO-2941`), surfaced on the idea's own
+/// [TicketDetailLoaded.pendingIdeaPromotion] once its chat's final reply ends
+/// in `PROMOTION: EPIC`/`PROMOTION: BUG` — one level simpler than
+/// [PendingSpecLinkSuggestion] (no target ticket is resolved yet; that's what
+/// confirming this actually decides). `PROMOTION: NOT YET` never reaches this
+/// class at all — it closes the conversation out directly, no pending
+/// confirmation created. Confirm/reject via
+/// `TicketsCubit.confirmPendingIdeaPromotion`/`rejectPendingIdeaPromotion`.
+/// Added for `AIO-2942`; see `TicketsCubit._runIdeaDiscussionTurn`.
+class PendingIdeaPromotion extends Equatable {
+  /// Creates a [PendingIdeaPromotion] recommending [recommendedType].
+  const PendingIdeaPromotion({required this.recommendedType});
+
+  /// Which type the Discuss conversation concluded this idea should become —
+  /// always [TicketType.epic] or [TicketType.bug].
+  final TicketType recommendedType;
+
+  @override
+  List<Object?> get props => [recommendedType];
+}
+
 /// A list, detail, or create operation failed. Carries either a classified
 /// [reason] — resolved to localized text at the widget layer — or a raw,
 /// unlocalized [message] (e.g. a forwarded repository exception) when no
@@ -408,6 +431,7 @@ class TicketDetailLoaded extends TicketsState {
     this.executionTokenTotal,
     this.pendingSkillAttachment,
     this.pendingSpecLinkSuggestion,
+    this.pendingIdeaPromotion,
     this.verifyRetryReady = false,
     this.verifyRetryConfidence,
     this.verifyPendingFixesRemaining,
@@ -580,6 +604,21 @@ class TicketDetailLoaded extends TicketsState {
   /// [pendingSkillAttachment]'s exact shape. Added for `AIO-1998`.
   final PendingSpecLinkSuggestion? pendingSpecLinkSuggestion;
 
+  /// A [PendingIdeaPromotion] (always gated, never auto/manual — see its own
+  /// dartdoc) awaiting user confirmation on [ticket] (an `idea`) — its
+  /// Discuss conversation just concluded `PROMOTION: EPIC`/`PROMOTION: BUG`.
+  /// `null` whenever no such promotion is pending. Drives
+  /// `_PendingIdeaPromotionBanner`. Unlike [pendingSkillAttachment], always
+  /// recomputed fresh from `TicketsCubit._pendingIdeaPromotions` on every
+  /// [TicketsCubit.getTicketById] call (mirrors [TicketDetailLoaded]'s own
+  /// [isAdvancingStage] live-map-membership pattern) rather than carried
+  /// forward from the previous emission — the discussion that produces this
+  /// runs in the background while a *different* ticket (the spawned chat) is
+  /// typically the one on screen, so there is usually no prior
+  /// [TicketDetailLoaded] for this idea to carry it forward from. Added for
+  /// `AIO-2942`.
+  final PendingIdeaPromotion? pendingIdeaPromotion;
+
   /// Whether [ticket] (an `epic`/`story`) is ready for a verify retry — its
   /// `sddStage` is [SddStage.verifying], the Verifying-stage chat's latest AI
   /// reply carries `VERIFY GATE: PENDING`, and every fix Task/Bug that verdict
@@ -633,6 +672,7 @@ class TicketDetailLoaded extends TicketsState {
     executionTokenTotal,
     pendingSkillAttachment,
     pendingSpecLinkSuggestion,
+    pendingIdeaPromotion,
     verifyRetryReady,
     verifyRetryConfidence,
     verifyPendingFixesRemaining,
@@ -683,6 +723,7 @@ class TicketDetailLoaded extends TicketsState {
     int? executionTokenTotal,
     TicketFieldSetter<SkillAttachment?>? pendingSkillAttachment,
     TicketFieldSetter<PendingSpecLinkSuggestion?>? pendingSpecLinkSuggestion,
+    TicketFieldSetter<PendingIdeaPromotion?>? pendingIdeaPromotion,
     bool? verifyRetryReady,
     AutomationConfidence? verifyRetryConfidence,
     int? verifyPendingFixesRemaining,
@@ -720,6 +761,9 @@ class TicketDetailLoaded extends TicketsState {
       pendingSpecLinkSuggestion: pendingSpecLinkSuggestion != null
           ? pendingSpecLinkSuggestion()
           : this.pendingSpecLinkSuggestion,
+      pendingIdeaPromotion: pendingIdeaPromotion != null
+          ? pendingIdeaPromotion()
+          : this.pendingIdeaPromotion,
       verifyRetryReady: verifyRetryReady ?? this.verifyRetryReady,
       verifyRetryConfidence:
           verifyRetryConfidence ?? this.verifyRetryConfidence,

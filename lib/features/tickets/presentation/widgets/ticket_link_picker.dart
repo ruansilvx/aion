@@ -271,6 +271,64 @@ class _TicketLinkPickerState extends State<TicketLinkPicker> {
   }
 }
 
+/// A back-caret + title header row for a multi-step ticket-picker overlay
+/// (e.g. `TicketOverflowMenu`'s `_ReclassifyChooser`, `TicketDetailScreen`'s
+/// idea-promotion picker) — tapping the caret calls [onBack]. Promoted from
+/// `TicketOverflowMenu`'s private `_ChooserHeader` for `AIO-2942`, so a
+/// picker hosted in a different file (the idea-promotion picker lives in
+/// `ticket_detail_screen.dart`, not the overflow menu) can reuse it instead
+/// of reimplementing the same header row.
+class ChooserHeader extends StatelessWidget {
+  /// Creates a [ChooserHeader] titled [title], calling [onBack] when its
+  /// back caret is tapped.
+  const ChooserHeader({super.key, required this.onBack, required this.title});
+
+  /// Called when the back caret is tapped.
+  final VoidCallback onBack;
+
+  /// This step's title, shown next to the back caret.
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 8, 12, 8),
+      child: Row(
+        children: [
+          Semantics(
+            button: true,
+            label: context.l10n.commonBack,
+            child: GestureDetector(
+              onTap: onBack,
+              child: SizedBox(
+                width: 26,
+                height: 26,
+                child: Center(
+                  child: PhosphorIcon(
+                    PhosphorIcons.caretLeftLight,
+                    size: 14,
+                    color: c.textSecondary,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AionText.label.copyWith(color: c.textSecondary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// [TicketLinkPicker]'s overlay-header link-type picker — a
 /// [SelectionMenu]<[TicketLinkType]> restricted to [options], with a trigger
 /// showing [value]'s directional glyph + label (Component Spec §1.2/§1.3) and

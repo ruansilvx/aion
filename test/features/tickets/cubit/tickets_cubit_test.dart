@@ -13941,17 +13941,20 @@ void main() {
     late MockAgentModelClient agentClient;
     late MockProviderRegistry registry;
     late MockCommentRepository commentRepository;
+    late MockTicketLinkRepository linkRepository;
 
     setUp(() {
       agentClient = MockAgentModelClient();
       registry = buildProviderStack(agentClient).registry;
       commentRepository = MockCommentRepository();
+      linkRepository = MockTicketLinkRepository();
     });
 
     TicketsCubit buildCubit() => TicketsCubit(
       repository,
       providerRegistry: registry,
       commentRepository: commentRepository,
+      linkRepository: linkRepository,
     );
 
     void stubHappyPath({required Completer<Stream<AgentEvent>> pauseOn}) {
@@ -13963,6 +13966,13 @@ void main() {
       ).thenAnswer((_) async => ideaTicket);
       when(() => repository.createTicket(any())).thenAnswer((_) async {});
       when(() => commentRepository.addComment(any())).thenAnswer((_) async {});
+      // AIO-2942's own gate-line read-back calls this on every succeeded
+      // turn — stubbed empty by default so the tests above (which predate
+      // that read-back and never stub it) don't trip a MissingStubError
+      // that then surfaces as a swallowed "Discussion failed: ..." comment.
+      when(
+        () => commentRepository.getCommentsForTicket(any()),
+      ).thenAnswer((_) async => const []);
       when(() => agentClient.run(any())).thenAnswer((_) => pauseOn.future);
     }
 
@@ -14129,6 +14139,303 @@ void main() {
           false,
         ),
       ],
+    );
+
+    // AIO-2942's own gate-line read-back, added directly to this
+    // AIO-2941 group rather than a separate one — it exercises the same
+    // _runIdeaDiscussionTurn background flow, just asserting on its
+    // PROMOTION: <...> handling instead of its plumbing.
+    blocTest<TicketsCubit, TicketsState>(
+      'a reply ending in PROMOTION: EPIC records a pending idea promotion, '
+      'visible on a subsequent getTicketById, with no extra system comment '
+      'posted',
+      setUp: () {
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(
+          () => repository.getTicketById(ideaTicket.id),
+        ).thenAnswer((_) async => ideaTicket);
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        stubStatefulComments(commentRepository, dummyChatTicket.id);
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Agreed, this is well scoped.\n\nPROMOTION: EPIC'),
+            AgentDoneEvent(),
+          ]),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        await cubit.startIdeaDiscussion(ideaTicket);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await cubit.getTicketById(ideaTicket.id);
+      },
+      skip: 1,
+      verify: (_) {
+        // Just the opening system prompt + the AI's own reply — no third
+        // "closing" comment, unlike the NOT YET path below.
+        verify(
+          () => commentRepository.addComment(any()),
+        ).called(2);
+      },
+      expect: () => [
+        isA<TicketDetailLoaded>().having(
+          (s) => s.pendingIdeaPromotion,
+          'pendingIdeaPromotion',
+          const PendingIdeaPromotion(recommendedType: TicketType.epic),
+        ),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'a reply ending in PROMOTION: BUG records a pending idea promotion '
+      'recommending bug, not epic',
+      setUp: () {
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(
+          () => repository.getTicketById(ideaTicket.id),
+        ).thenAnswer((_) async => ideaTicket);
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        stubStatefulComments(commentRepository, dummyChatTicket.id);
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Sounds like a defect.\n\nPROMOTION: BUG'),
+            AgentDoneEvent(),
+          ]),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        await cubit.startIdeaDiscussion(ideaTicket);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await cubit.getTicketById(ideaTicket.id);
+      },
+      skip: 1,
+      expect: () => [
+        isA<TicketDetailLoaded>().having(
+          (s) => s.pendingIdeaPromotion,
+          'pendingIdeaPromotion',
+          const PendingIdeaPromotion(recommendedType: TicketType.bug),
+        ),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'a reply ending in PROMOTION: NOT YET posts a closing system comment '
+      'and records no pending promotion',
+      setUp: () {
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(
+          () => repository.getTicketById(ideaTicket.id),
+        ).thenAnswer((_) async => ideaTicket);
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        stubStatefulComments(commentRepository, dummyChatTicket.id);
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Not quite ready yet.\n\nPROMOTION: NOT YET'),
+            AgentDoneEvent(),
+          ]),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        await cubit.startIdeaDiscussion(ideaTicket);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await cubit.getTicketById(ideaTicket.id);
+      },
+      skip: 1,
+      verify: (_) {
+        final comments = verify(
+          () => commentRepository.addComment(captureAny()),
+        ).captured.cast<TicketComment>();
+        // Opening system prompt, the AI's own reply, then the closing
+        // system comment this outcome adds on top.
+        expect(comments, hasLength(3));
+        expect(comments.last.authorType, CommentAuthorType.system);
+        expect(
+          comments.last.content,
+          "Discussion concluded: this idea isn't ready for promotion yet.",
+        );
+      },
+      expect: () => [
+        isA<TicketDetailLoaded>().having(
+          (s) => s.pendingIdeaPromotion,
+          'pendingIdeaPromotion',
+          isNull,
+        ),
+      ],
+    );
+
+    test(
+      'confirming a pending EPIC promotion with an existing target links '
+      'to it, calls promoteIdea unchanged, and clears the banner — even '
+      'though promoteIdea\'s own copyWith carries pendingIdeaPromotion '
+      'forward unchanged, since it has no idea this field exists',
+      () async {
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(
+          () => repository.getTicketById(ideaTicket.id),
+        ).thenAnswer((_) async => ideaTicket);
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        stubStatefulComments(commentRepository, dummyChatTicket.id);
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Agreed, this is well scoped.\n\nPROMOTION: EPIC'),
+            AgentDoneEvent(),
+          ]),
+        );
+        when(
+          () => linkRepository.createLink(
+            sourceTicketId: ideaTicket.id,
+            targetTicketId: epic.id,
+            linkType: TicketLinkType.relatesTo,
+          ),
+        ).thenAnswer((_) async {});
+
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+
+        await cubit.startIdeaDiscussion(ideaTicket);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        // Puts the idea's own detail screen "on screen" with the pending
+        // banner set — mirrors the real UI, where the user is looking at
+        // the idea when they tap Confirm on it.
+        await cubit.getTicketById(ideaTicket.id);
+        expect(
+          (cubit.state as TicketDetailLoaded).pendingIdeaPromotion,
+          const PendingIdeaPromotion(recommendedType: TicketType.epic),
+        );
+
+        await cubit.confirmPendingIdeaPromotion(
+          ideaTicket.id,
+          existingTicketId: epic.id,
+        );
+
+        // Only the "Discuss" chat ticket from startIdeaDiscussion above —
+        // no new epic/bug, since existingTicketId was given.
+        final created = verify(
+          () => repository.createTicket(captureAny()),
+        ).captured.cast<Ticket>();
+        expect(created, hasLength(1));
+        expect(created.single.type, TicketType.chat);
+        verify(
+          () => linkRepository.createLink(
+            sourceTicketId: ideaTicket.id,
+            targetTicketId: epic.id,
+            linkType: TicketLinkType.relatesTo,
+          ),
+        ).called(1);
+        expect(
+          (cubit.state as TicketDetailLoaded).pendingIdeaPromotion,
+          isNull,
+        );
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'confirming a pending BUG promotion with no existing target creates a '
+      'new bug with the picker-supplied severity',
+      setUp: () {
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(
+          () => repository.getTicketById(ideaTicket.id),
+        ).thenAnswer((_) async => ideaTicket);
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        stubStatefulComments(commentRepository, dummyChatTicket.id);
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Sounds like a defect.\n\nPROMOTION: BUG'),
+            AgentDoneEvent(),
+          ]),
+        );
+        when(
+          () => linkRepository.createLink(
+            sourceTicketId: ideaTicket.id,
+            targetTicketId: any(named: 'targetTicketId'),
+            linkType: TicketLinkType.relatesTo,
+          ),
+        ).thenAnswer((_) async {});
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        await cubit.startIdeaDiscussion(ideaTicket);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await cubit.confirmPendingIdeaPromotion(
+          ideaTicket.id,
+          severity: TicketSeverity.critical,
+        );
+      },
+      verify: (_) {
+        // Also includes the "Discuss" chat ticket from startIdeaDiscussion
+        // above — select the bug specifically rather than assuming index.
+        final created = verify(
+          () => repository.createTicket(captureAny()),
+        ).captured.cast<Ticket>();
+        final bug = created.singleWhere((t) => t.type == TicketType.bug);
+        expect(bug.severity, TicketSeverity.critical);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'rejecting a pending promotion never calls promoteIdea and clears '
+      'the banner',
+      setUp: () {
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(
+          () => repository.getTicketById(ideaTicket.id),
+        ).thenAnswer((_) async => ideaTicket);
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        stubStatefulComments(commentRepository, dummyChatTicket.id);
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Agreed, this is well scoped.\n\nPROMOTION: EPIC'),
+            AgentDoneEvent(),
+          ]),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        await cubit.startIdeaDiscussion(ideaTicket);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        cubit.rejectPendingIdeaPromotion(ideaTicket.id);
+        await cubit.getTicketById(ideaTicket.id);
+      },
+      skip: 1,
+      verify: (_) {
+        verifyZeroInteractions(linkRepository);
+      },
+      expect: () => [
+        isA<TicketDetailLoaded>().having(
+          (s) => s.pendingIdeaPromotion,
+          'pendingIdeaPromotion',
+          isNull,
+        ),
+      ],
+    );
+
+    test(
+      'confirming with nothing pending no-ops without touching the '
+      'repository',
+      () async {
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+
+        await cubit.confirmPendingIdeaPromotion(ideaTicket.id);
+
+        verifyNever(() => repository.createTicket(any()));
+        verifyZeroInteractions(linkRepository);
+      },
     );
   });
 

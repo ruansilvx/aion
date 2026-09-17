@@ -20,6 +20,7 @@ import 'package:aion/features/tickets/domain/enums/comment_author_type.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 import 'package:aion/features/tickets/domain/enums/skill_attachment_kind.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_link_type.dart';
+import 'package:aion/features/tickets/domain/enums/ticket_severity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/presentation/cubit/chat_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/chat_state.dart';
@@ -32,6 +33,7 @@ import 'package:aion/features/tickets/presentation/widgets/chat_compose_field.da
 import 'package:aion/features/tickets/presentation/widgets/chat_transcript_pane.dart';
 import 'package:aion/features/tickets/presentation/widgets/comment_author_avatar.dart';
 import 'package:aion/features/tickets/presentation/widgets/release_summary_section.dart';
+import 'package:aion/features/tickets/presentation/widgets/ticket_link_picker.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_metadata_section.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_overflow_menu.dart';
 import 'package:aion/features/tickets/presentation/screens/release_draft_screen.dart';
@@ -660,6 +662,21 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                                   child: _PendingSpecLinkBanner(
                                     ticket: ticket,
                                     pending: state.pendingSpecLinkSuggestion,
+                                  ),
+                                ),
+                                // `_PendingIdeaPromotionBanner` — same
+                                // placement pattern as the two banners
+                                // above. Added for `AIO-2942`.
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    20,
+                                    4,
+                                    20,
+                                    0,
+                                  ),
+                                  child: _PendingIdeaPromotionBanner(
+                                    ticket: ticket,
+                                    pending: state.pendingIdeaPromotion,
                                   ),
                                 ),
                                 Padding(
@@ -2650,6 +2667,453 @@ class _PendingSpecLinkBanner extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// A [PendingIdeaPromotion] awaiting confirmation on [ticket] (an `idea`) —
+/// its Discuss conversation concluded `PROMOTION: EPIC`/`PROMOTION: BUG`.
+/// Renders nothing when [pending] is `null`. Mirrors
+/// [_PendingSpecLinkBanner]'s exact visual shape, accented by [pending
+/// .recommendedType]'s own type color (`typeEpic`/`typeBug`) rather than a
+/// fixed accent, since which type is being recommended is the banner's whole
+/// point. Unlike [_PendingSpecLinkBanner]'s confirm button, this one doesn't
+/// call the cubit directly — it opens [_showIdeaPromotionPicker] first (the
+/// existing-vs-new/severity picker), which itself calls
+/// [TicketsCubit.confirmPendingIdeaPromotion] once that picker resolves.
+/// Reject calls [TicketsCubit.rejectPendingIdeaPromotion] directly, same as
+/// [_PendingSpecLinkBanner]'s reject button — no picker needed to say no.
+/// Added for `AIO-2942`.
+class _PendingIdeaPromotionBanner extends StatelessWidget {
+  const _PendingIdeaPromotionBanner({required this.ticket, this.pending});
+
+  final Ticket ticket;
+  final PendingIdeaPromotion? pending;
+
+  @override
+  Widget build(BuildContext context) {
+    final pending = this.pending;
+    if (pending == null) return const SizedBox.shrink();
+
+    final t = ThemeScope.of(context);
+    final c = t.colors;
+    final isEpic = pending.recommendedType == TicketType.epic;
+    final accent = isEpic ? c.typeEpic : c.typeBug;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: t.isDark ? 0.10 : 0.07),
+        border: Border.all(
+          color: accent.withValues(alpha: t.isDark ? 0.28 : 0.20),
+          width: 1,
+        ),
+        borderRadius: BorderRadius.all(AionRadius.lg),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: c.pressedAccentTint(accent, t.isDark),
+                    borderRadius: BorderRadius.all(AionRadius.iconBtn),
+                  ),
+                  child: SizedBox(
+                    width: 32,
+                    height: 32,
+                    child: Center(
+                      child: PhosphorIcon(
+                        isEpic
+                            ? PhosphorIcons.crownLight
+                            : PhosphorIcons.bugLight,
+                        size: 16,
+                        color: accent,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isEpic
+                            ? context
+                                  .l10n
+                                  .ticketDetailPendingIdeaPromotionTitleEpic
+                            : context
+                                  .l10n
+                                  .ticketDetailPendingIdeaPromotionTitleBug,
+                        style: AionText.dialogTitle.copyWith(
+                          color: c.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Row(
+                        children: [
+                          DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: accent,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const SizedBox(width: 6, height: 6),
+                          ),
+                          const SizedBox(width: 7),
+                          Expanded(
+                            child: Text(
+                              context
+                                  .l10n
+                                  .ticketDetailPendingIdeaPromotionStatusWaiting,
+                              style: AionText.time.copyWith(
+                                fontSize: 12.5,
+                                color: c.textSecondary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _ToolProposalButton(
+                    variant: _ToolProposalButtonVariant.reject,
+                    label: context.l10n.ticketDetailPendingIdeaPromotionReject,
+                    onPressed: () => context
+                        .read<TicketsCubit>()
+                        .rejectPendingIdeaPromotion(ticket.id),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _ToolProposalButton(
+                    variant: _ToolProposalButtonVariant.confirm,
+                    label: context.l10n.ticketDetailPendingIdeaPromotionConfirm,
+                    onPressed: () => _showIdeaPromotionPicker(
+                      context,
+                      ideaId: ticket.id,
+                      recommendedType: pending.recommendedType,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Opens the confirm-time existing-vs-new/severity picker for promoting
+/// idea [ideaId] to [recommendedType] — the UI [_PendingIdeaPromotionBanner]
+/// .Confirm needs before it can call
+/// [TicketsCubit.confirmPendingIdeaPromotion], since that call needs an
+/// [existingTicketId] or (for a new bug) a [TicketSeverity] the banner alone
+/// doesn't have. Built as a bespoke [OverlayEntry] following
+/// [showAppConfirmDialog]'s own insertion technique — never a Material
+/// `showDialog`/`AlertDialog`, banned in this codebase — since neither
+/// [showAppConfirmDialog] itself (single-step yes/no) nor a from-scratch
+/// dialog fits this picker's two-step (existing-vs-new, then a required
+/// severity step for a new bug) shape with back navigation. Mirrors the
+/// overall structure of `TicketOverflowMenu`'s now-deleted
+/// `_PromoteChooser`/`_BugSeverityPrompt` (`AIO-2941`/`aion#163`), rehosted
+/// here since the banner (unlike the old overflow menu) has direct
+/// [TicketsCubit] access. Tapping either step's back caret dismisses the
+/// picker outright (there's no root menu to return to) — the pending
+/// promotion itself is untouched, so the banner's own Confirm/Reject stay
+/// available to try again. Added for `AIO-2942`.
+void _showIdeaPromotionPicker(
+  BuildContext context, {
+  required String ideaId,
+  required TicketType recommendedType,
+}) {
+  final ticketsCubit = context.read<TicketsCubit>();
+  final overlay = Overlay.of(context);
+  late OverlayEntry entry;
+  var showSeverityStep = false;
+  TicketSeverity? selectedSeverity;
+
+  void removeOverlay() => entry.remove();
+
+  entry = OverlayEntry(
+    builder: (overlayContext) {
+      final t = ThemeScope.of(overlayContext);
+      final c = t.colors;
+      return Stack(
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: removeOverlay,
+              child: ColoredBox(
+                color: const Color(
+                  0xFF000000,
+                ).withValues(alpha: t.isDark ? 0.62 : 0.40),
+              ),
+            ),
+          ),
+          Center(
+            child: GestureDetector(
+              onTap: () {},
+              child: StatefulBuilder(
+                builder: (statefulContext, setOverlayState) {
+                  return DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: c.surface,
+                      border: Border.all(color: c.borderStrong, width: 1),
+                      borderRadius: BorderRadius.all(AionRadius.lg),
+                      boxShadow: AionShadows.overlay(c, t.isDark),
+                    ),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        minWidth: 300,
+                        maxWidth: 300,
+                      ),
+                      child: showSeverityStep
+                          ? _IdeaPromotionSeverityStep(
+                              value: selectedSeverity,
+                              onChanged: (severity) => setOverlayState(
+                                () => selectedSeverity = severity,
+                              ),
+                              onBack: () => setOverlayState(
+                                () => showSeverityStep = false,
+                              ),
+                              onConfirm: selectedSeverity == null
+                                  ? null
+                                  : () {
+                                      ticketsCubit.confirmPendingIdeaPromotion(
+                                        ideaId,
+                                        severity: selectedSeverity,
+                                      );
+                                      removeOverlay();
+                                    },
+                            )
+                          : _IdeaPromotionChooserStep(
+                              targetType: recommendedType,
+                              onBack: removeOverlay,
+                              candidatesLoader: () async {
+                                final all = await ticketsCubit.getAllTickets();
+                                return all
+                                    .where((t) => t.type == recommendedType)
+                                    .toList();
+                              },
+                              onLinkSelected: (existing) {
+                                ticketsCubit.confirmPendingIdeaPromotion(
+                                  ideaId,
+                                  existingTicketId: existing.id,
+                                );
+                                removeOverlay();
+                              },
+                              onCreateNewTap: recommendedType == TicketType.bug
+                                  ? () => setOverlayState(
+                                      () => showSeverityStep = true,
+                                    )
+                                  : () {
+                                      ticketsCubit.confirmPendingIdeaPromotion(
+                                        ideaId,
+                                      );
+                                      removeOverlay();
+                                    },
+                            ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
+      );
+    },
+  );
+
+  overlay.insert(entry);
+}
+
+/// The picker's first step: existing-vs-new for [targetType], identical in
+/// shape to `TicketOverflowMenu`'s now-deleted `_PromoteChooser` (see
+/// [_showIdeaPromotionPicker]'s dartdoc) — a back header, a
+/// [TicketLinkPicker]-embedded "link to existing" row, and a "create new"
+/// row. [onCreateNewTap] is [_showIdeaPromotionPicker]'s own responsibility
+/// to route (straight to [TicketsCubit.confirmPendingIdeaPromotion] for an
+/// epic, or to [_IdeaPromotionSeverityStep] for a bug) — this widget itself
+/// has no opinion on which. Added for `AIO-2942`.
+class _IdeaPromotionChooserStep extends StatelessWidget {
+  const _IdeaPromotionChooserStep({
+    required this.targetType,
+    required this.onBack,
+    required this.candidatesLoader,
+    required this.onLinkSelected,
+    required this.onCreateNewTap,
+  });
+
+  final TicketType targetType;
+  final VoidCallback onBack;
+  final Future<List<Ticket>> Function() candidatesLoader;
+  final ValueChanged<Ticket> onLinkSelected;
+  final VoidCallback onCreateNewTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    final isEpic = targetType == TicketType.epic;
+    final headerTitle = isEpic
+        ? context.l10n.ticketOverflowPromoteToEpic
+        : context.l10n.ticketOverflowPromoteToBug;
+    final linkExistingLabel = isEpic
+        ? context.l10n.ticketPromoteLinkExistingEpic
+        : context.l10n.ticketPromoteLinkExistingBug;
+    final createNewLabel = isEpic
+        ? context.l10n.ticketPromoteCreateNewEpic
+        : context.l10n.ticketPromoteCreateNewBug;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ChooserHeader(onBack: onBack, title: headerTitle),
+        Container(color: c.border, height: 1),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+          child: Row(
+            children: [
+              PhosphorIcon(
+                PhosphorIcons.linkLight,
+                size: 16,
+                color: c.textSecondary,
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Text(
+                  linkExistingLabel,
+                  style: AionText.bodySm.copyWith(
+                    color: c.textPrimary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              TicketLinkPicker(
+                candidatesLoader: candidatesLoader,
+                // Reused purely as a searchable "pick an existing
+                // epic/bug" control (see `confirmPendingIdeaPromotion`)
+                // — no `TicketLink` is created from this call site, so
+                // no link-type choice is offered and the picked type is
+                // discarded. Mirrors the deleted `_PromoteChooser`'s
+                // identical reuse.
+                linkTypeOptions: const [],
+                onSelected: (ticket, _) => onLinkSelected(ticket),
+              ),
+            ],
+          ),
+        ),
+        Container(color: c.border, height: 1),
+        OverlayMenuItem(
+          onTap: onCreateNewTap,
+          semanticsLabel: createNewLabel,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+            child: Row(
+              children: [
+                PhosphorIcon(
+                  PhosphorIcons.plusLight,
+                  size: 16,
+                  color: c.primary,
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Text(
+                    createNewLabel,
+                    style: AionText.bodySm.copyWith(
+                      color: c.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The picker's second step, shown only when [_IdeaPromotionChooserStep]'s
+/// "create new" row is tapped for a bug target — a required [SeverityPicker]
+/// plus a confirm row disabled until [value] is non-null. Identical in shape
+/// to `TicketOverflowMenu`'s now-deleted `_BugSeverityPrompt` (see
+/// [_showIdeaPromotionPicker]'s dartdoc), same required-severity UX as the
+/// New Ticket form's own Severity field. Added for `AIO-2942`.
+class _IdeaPromotionSeverityStep extends StatelessWidget {
+  const _IdeaPromotionSeverityStep({
+    required this.value,
+    required this.onChanged,
+    required this.onBack,
+    required this.onConfirm,
+  });
+
+  final TicketSeverity? value;
+  final ValueChanged<TicketSeverity> onChanged;
+  final VoidCallback onBack;
+  final VoidCallback? onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ChooserHeader(
+          onBack: onBack,
+          title: context.l10n.ticketPromoteBugSeverityStepTitle,
+        ),
+        Container(color: c.border, height: 1),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+          child: SeverityPicker(
+            value: value,
+            onChanged: onChanged,
+            labelText: context.l10n.ticketDetailSeverityCaption,
+            isRequired: true,
+          ),
+        ),
+        Container(color: c.border, height: 1),
+        OverlayMenuItem(
+          onTap: onConfirm ?? () {},
+          enabled: onConfirm != null,
+          semanticsLabel: context.l10n.ticketPromoteCreateNewBug,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+            child: Row(
+              children: [
+                PhosphorIcon(
+                  PhosphorIcons.plusLight,
+                  size: 16,
+                  color: c.primary,
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Text(
+                    context.l10n.ticketPromoteCreateNewBug,
+                    style: AionText.bodySm.copyWith(
+                      color: c.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
