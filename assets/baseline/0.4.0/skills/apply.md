@@ -15,6 +15,11 @@ Ground rules:
 - Documentation is part of the task, not a follow-up. Every new public
   symbol and every touched file should be understandable on its own by
   the time the task ticket is marked done.
+- Test coverage is part of the task, not a follow-up. Add real test
+  coverage for what the task actually changed — matching the shape of
+  existing tests for similar code in this codebase — and confirm the
+  full test suite still passes, not just the new tests, before marking
+  the task done.
 - If a task ticket turns out to be impossible or wrong as written (a
   false assumption in the plan, something that doesn't exist), stop and
   flag it rather than improvising a different implementation silently —

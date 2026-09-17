@@ -6527,6 +6527,109 @@ void main() {
       },
     );
 
+    // —THIS TICKET—: _assembleExecutionContext previously never read
+    // `skills/apply` at all, despite it being the one skill whose whole
+    // job is implementation ground rules (test coverage, documentation,
+    // no scope creep). A project with no `conventions/
+    // architecture-conventions` override yet still got nothing from
+    // the baseline apply skill either.
+    blocTest<TicketsCubit, TicketsState>(
+      'a bug entering applying includes the project\'s effective '
+      'skills/apply content under an ## Implementation guidelines '
+      'heading in the coding-execution prompt',
+      build: () {
+        final gitClient = MockGitRepositoryClient();
+        final gitHubClient = MockGitHubCliClient();
+        final baselineRepository = MockBaselineRepository();
+        final automationSettingsRepository = MockAutomationSettingsRepository();
+        stubSuccessfulCodingExecutionInfra(gitClient, gitHubClient);
+        const applyAsset = BaselineAsset(
+          key: 'skills/apply',
+          kind: BaselineAssetKind.skill,
+          bundledPath: 'assets/baseline/0.1.0/skills/apply.md',
+        );
+        when(() => baselineRepository.getManifest('0.1.0')).thenAnswer(
+          (_) async =>
+              const BaselineManifest(version: '0.1.0', assets: [applyAsset]),
+        );
+        when(
+          () => baselineRepository.readOverrides('project-1'),
+        ).thenAnswer((_) async => []);
+        when(
+          () => baselineRepository.readBundledContent(applyAsset),
+        ).thenAnswer(
+          (_) async => 'Test coverage is part of the task, not a follow-up.',
+        );
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecution,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.gated);
+
+        final execChat = Ticket(
+          id: 'exec-chat-apply-wiring',
+          ticketId: 'AIO-106',
+          type: TicketType.chat,
+          title: 'Coding Execution — ${bug.title}',
+          status: 'backlog',
+          parentId: bug.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        when(
+          () => repository.getTicketsByParent(
+            bug.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [execChat]);
+        stubStatefulComments(commentRepository, execChat.id);
+        when(
+          () => repository.getTicketById(bug.id),
+        ).thenAnswer((_) async => bugAt(SddStage.applying));
+        when(
+          () => repository.updateTicketSddStage(bug.id, SddStage.applying),
+        ).thenAnswer((_) async {});
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Implemented.\n\nIMPLEMENTATION: DONE'),
+            AgentDoneEvent(),
+          ]),
+        );
+
+        return TicketsCubit(
+          repository,
+          providerRegistry: registry,
+          commentRepository: commentRepository,
+          automationSettingsRepository: automationSettingsRepository,
+          projectRootPath: '/fake/project/root',
+          sourceRootPath: '/fake/project/root',
+          gitClient: gitClient,
+          gitHubClient: gitHubClient,
+          baselineRepository: baselineRepository,
+          projectId: 'project-1',
+          baselineVersion: '0.1.0',
+          linkRepository: linkRepository,
+          transitionPreconditionRepository:
+              FakeTransitionPreconditionRepository(),
+        );
+      },
+      act: (cubit) => cubit.advanceSddStage(bugAt(SddStage.proposed)),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        final posted = verify(
+          () => commentRepository.addComment(captureAny()),
+        ).captured;
+        final prompt = (posted.first as TicketComment).content;
+        expect(
+          prompt,
+          allOf([
+            contains('## Implementation guidelines'),
+            contains('Test coverage is part of the task, not a follow-up.'),
+          ]),
+        );
+      },
+    );
+
     TicketsCubit buildCubit() => TicketsCubit(
       repository,
       providerRegistry: registry,
@@ -7778,6 +7881,19 @@ void main() {
     late MockCommentRepository commentRepository;
     late MockTicketLinkRepository linkRepository;
 
+    // This group's own setUp below stubs linkRepository.createLink with
+    // `any(named: 'linkType')`, which needs a registered TicketLinkType
+    // fallback — registering it here makes this group self-sufficient
+    // regardless of what ran before it (registerFallbackValue is additive
+    // and idempotent in practice: it just appends to a global list, so
+    // re-registering the same value elsewhere in the file is harmless).
+    // Added —THIS TICKET—, found via a designBrief-focused test run that
+    // exercises only this group and none of the earlier ones that had been
+    // incidentally registering this fallback as a side effect.
+    setUpAll(() {
+      registerFallbackValue(TicketLinkType.relatesTo);
+    });
+
     setUp(() {
       agentClient = MockAgentModelClient();
       registry = buildProviderStack(agentClient).registry;
@@ -7856,6 +7972,97 @@ void main() {
             linkType: TicketLinkType.relatesTo,
           ),
         ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'designBrief prompt quotes the Story\'s own Proposed-stage chat under '
+      'a ## Proposed-stage findings heading, not just title/description '
+      '(—THIS TICKET—)',
+      setUp: () {
+        final proposedChat = Ticket(
+          id: 'proposed-chat-designbrief',
+          ticketId: 'AIO-201',
+          type: TicketType.chat,
+          title: 'Proposed — ${storyProposed.title}',
+          status: 'backlog',
+          parentId: storyProposed.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        when(
+          () => repository.getTicketsByParent(
+            storyProposed.id,
+            types: any(named: 'types'),
+          ),
+        ).thenAnswer((_) async => [taskChildUi]);
+        when(
+          () => repository.getTicketsByParent(
+            storyProposed.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [proposedChat]);
+        // advanceSddStage's own unawaited post-write detail refresh
+        // (_refreshDetailIfOpenAndAffected) computes needsDesignReview/
+        // linkedDesignPage for a story with a UI-indicating task, which
+        // calls linkRepository.getLinksForTicket — stub it so that
+        // background refresh doesn't crash on a missing stub.
+        when(
+          () => linkRepository.getLinksForTicket(any()),
+        ).thenAnswer((_) async => []);
+        when(
+          () => commentRepository.getCommentsForTicket(proposedChat.id),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'plan-designbrief',
+              ticketId: proposedChat.id,
+              content:
+                  'Scope: a settings-panel toggle only, no new screen. '
+                  '\n\nPROPOSE GATE: APPROVED',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(
+          () => repository.updateTicketSddStage(
+            storyProposed.id,
+            SddStage.designBrief,
+          ),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(() => repository.getTicketById(storyProposed.id)).thenAnswer(
+          (_) async => Ticket(
+            id: storyProposed.id,
+            ticketId: storyProposed.ticketId,
+            type: storyProposed.type,
+            title: storyProposed.title,
+            status: storyProposed.status,
+            sddStage: SddStage.designBrief,
+            createdAt: storyProposed.createdAt,
+            updatedAt: storyProposed.updatedAt,
+          ),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.advanceSddStage(storyProposed),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        final posted = verify(
+          () => commentRepository.addComment(captureAny()),
+        ).captured;
+        final prompt = (posted.first as TicketComment).content;
+        expect(
+          prompt,
+          allOf([
+            contains('## Proposed-stage findings'),
+            contains('Scope: a settings-panel toggle only, no new screen.'),
+            contains('## Existing design system'),
+          ]),
+        );
       },
     );
 

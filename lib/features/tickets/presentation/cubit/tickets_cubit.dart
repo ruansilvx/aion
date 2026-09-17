@@ -3940,14 +3940,16 @@ class TicketsCubit extends Cubit<TicketsState> {
         mostRecent.content.contains('VERIFY GATE: APPROVED');
   }
 
-  /// The [TicketType.bug] [bugId]'s current Proposed-stage chat — its most
-  /// recently created chat child whose title starts with `'${await
+  /// The parent ticket's (Bug or Story) current Proposed-stage chat — its
+  /// most recently created chat child whose title starts with `'${await
   /// _stagePresentName(SddStage.proposed)} — '`. `null` if none exists yet.
-  /// Mirrors [_mostRecentVerifyChat]'s exact shape. Added for `AIO-2898`.
-  Future<Ticket?> _mostRecentProposedChat(String bugId) async {
+  /// Mirrors [_mostRecentVerifyChat]'s exact shape. Added for `AIO-2898`
+  /// (Bug-only at first); reused for Story by [_proposedFindingsSection]
+  /// —THIS TICKET—, since the lookup itself was never Bug-specific.
+  Future<Ticket?> _mostRecentProposedChat(String parentId) async {
     final prefix = '${await _stagePresentName(SddStage.proposed)} — ';
     final chats = await _repository.getTicketsByParent(
-      bugId,
+      parentId,
       types: const [TicketType.chat],
     );
     final proposedChats = chats.where((c) => c.title.startsWith(prefix)).toList()
@@ -3996,6 +3998,39 @@ class TicketsCubit extends Cubit<TicketsState> {
     return (StringBuffer()
           ..writeln()
           ..writeln('## Exploration findings')
+          ..writeln()
+          ..writeln(intro)
+          ..writeln()
+          ..writeln(_assembleChatTranscript(findings)))
+        .toString();
+  }
+
+  /// The parent Story's own `## Proposed-stage findings` section for a
+  /// [SddStage.designBrief] prompt: its most recent Proposed-stage chat's
+  /// non-system transcript (see [_mostRecentProposedChat]/
+  /// [_assembleChatTranscript]), under the heading plus [intro]. Returns an
+  /// empty string when there is no Proposed chat or it has no non-system
+  /// replies — mirrors [_exploringFindingsSection]'s exact fail-open shape.
+  /// Added —THIS TICKET—: [SddStage.designBrief]'s prompt previously carried
+  /// only title/description/design tokens, silently discarding whatever
+  /// scoping was actually discussed and approved in the Story's own
+  /// Proposed-stage chat (same shape of gap as `AIO-2919`'s original two,
+  /// one stage later in the design track).
+  Future<String> _proposedFindingsSection(
+    String parentId,
+    String intro,
+  ) async {
+    final proposedChat = await _mostRecentProposedChat(parentId);
+    final commentRepo = _commentRepository;
+    final findings = proposedChat == null || commentRepo == null
+        ? const <TicketComment>[]
+        : (await commentRepo.getCommentsForTicket(proposedChat.id))
+            .where((c) => c.authorType != CommentAuthorType.system)
+            .toList();
+    if (findings.isEmpty) return '';
+    return (StringBuffer()
+          ..writeln()
+          ..writeln('## Proposed-stage findings')
           ..writeln()
           ..writeln(intro)
           ..writeln()
@@ -5940,7 +5975,14 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [TicketContextEnricher.relatedTicketsSection] — omitted entirely when it
   /// returns `''`), the project's effective `conventions/
   /// architecture-conventions` content (see [_effectiveAssetContent]) if any,
-  /// plus an instruction to implement the task using the available file, git,
+  /// the project's effective `skills/apply` content (see
+  /// [_effectiveAssetContent]) if any — added —THIS TICKET—, since this
+  /// method previously never read that asset at all despite it being the
+  /// skill whose whole job is implementation ground rules (no scope creep,
+  /// test coverage, documentation); a project with no `conventions/
+  /// architecture-conventions` override yet still got the baseline's own
+  /// requirements this way — plus an instruction to implement the task
+  /// using the available file, git,
   /// and bash tools, commit the result, and end the reply with exactly one
   /// line, `IMPLEMENTATION: DONE`. This no longer instructs the model to push
   /// or open a PR itself — that only happens after [_runCodingExecution]'s
@@ -6051,6 +6093,15 @@ class TicketsCubit extends Cubit<TicketsState> {
         ..writeln('## Project conventions')
         ..writeln()
         ..writeln(conventions);
+    }
+
+    final applySkill = await _effectiveAssetContent('skills/apply');
+    if (applySkill != null && applySkill.isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln('## Implementation guidelines')
+        ..writeln()
+        ..writeln(applySkill);
     }
 
     buffer
@@ -7845,6 +7896,13 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// most recent coding-execution chat/PR instead. Found live during
   /// `bug-sdd-cycle-proposal`'s end-to-end test (AIO-2914) — this dartdoc
   /// used to (wrongly) claim the empty-section case was fine.
+  ///
+  /// [SddStage.designBrief]'s branch also gets a `## Proposed-stage
+  /// findings` prelude (via [_proposedFindingsSection], mirroring
+  /// [_exploringFindingsSection]'s shape) — added —THIS TICKET—, since this
+  /// branch previously carried only title/description/design tokens,
+  /// silently discarding whatever scoping was actually discussed in the
+  /// Story's own Proposed-stage chat before the design brief gets written.
   Future<String> _assembleStageContext(Ticket parent, SddStage stage) async {
     final buffer = StringBuffer()..writeln('# ${parent.title}');
     final description = parent.description;
@@ -8048,6 +8106,14 @@ class TicketsCubit extends Cubit<TicketsState> {
           );
       }
     } else if (stage == SddStage.designBrief) {
+      final findings = await _proposedFindingsSection(
+        parent.id,
+        "This story's scope was already decided in its own Proposed-stage "
+            'review — ground the design brief in that decomposition and '
+            'discussion rather than the title/description alone. The full '
+            'Proposed-stage conversation, in order:',
+      );
+      if (findings.isNotEmpty) buffer.write(findings);
       buffer
         ..writeln()
         ..writeln('## Existing design system')
