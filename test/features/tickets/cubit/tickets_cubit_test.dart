@@ -6630,6 +6630,181 @@ void main() {
       },
     );
 
+    blocTest<TicketsCubit, TicketsState>(
+      'a bug entering exploring includes the project\'s effective '
+      'skills/explore content under an ## Explore guidelines heading',
+      build: () {
+        final baselineRepository = MockBaselineRepository();
+        const asset = BaselineAsset(
+          key: 'skills/explore',
+          kind: BaselineAssetKind.skill,
+          bundledPath: 'assets/baseline/0.1.0/skills/explore.md',
+        );
+        when(() => baselineRepository.getManifest('0.1.0')).thenAnswer(
+          (_) async =>
+              const BaselineManifest(version: '0.1.0', assets: [asset]),
+        );
+        when(
+          () => baselineRepository.readOverrides('project-1'),
+        ).thenAnswer((_) async => []);
+        when(() => baselineRepository.readBundledContent(asset)).thenAnswer(
+          (_) async => 'Read-only. Cheap and frequent.',
+        );
+
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(
+          () => repository.getTicketById(bug.id),
+        ).thenAnswer((_) async => bugAt(SddStage.exploring));
+        when(
+          () => repository.updateTicketSddStage(bug.id, SddStage.exploring),
+        ).thenAnswer((_) async {});
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        stubStatefulComments(commentRepository, dummyChatTicket.id);
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Investigating...'),
+            AgentDoneEvent(),
+          ]),
+        );
+
+        return TicketsCubit(
+          repository,
+          providerRegistry: registry,
+          commentRepository: commentRepository,
+          linkRepository: linkRepository,
+          baselineRepository: baselineRepository,
+          projectId: 'project-1',
+          baselineVersion: '0.1.0',
+          transitionPreconditionRepository:
+              FakeTransitionPreconditionRepository(),
+        );
+      },
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        await cubit.advanceSddStage(bug);
+      },
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        final posted = verify(
+          () => commentRepository.addComment(captureAny()),
+        ).captured;
+        final prompt = (posted.first as TicketComment).content;
+        expect(
+          prompt,
+          allOf([
+            contains('## Explore guidelines'),
+            contains('Read-only. Cheap and frequent.'),
+          ]),
+        );
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'a bug entering proposed includes the project\'s effective '
+      'skills/propose content under a ## Propose guidelines heading',
+      build: () {
+        final baselineRepository = MockBaselineRepository();
+        const asset = BaselineAsset(
+          key: 'skills/propose',
+          kind: BaselineAssetKind.skill,
+          bundledPath: 'assets/baseline/0.1.0/skills/propose.md',
+        );
+        when(() => baselineRepository.getManifest('0.1.0')).thenAnswer(
+          (_) async =>
+              const BaselineManifest(version: '0.1.0', assets: [asset]),
+        );
+        when(
+          () => baselineRepository.readOverrides('project-1'),
+        ).thenAnswer((_) async => []);
+        when(() => baselineRepository.readBundledContent(asset)).thenAnswer(
+          (_) async => 'Stops after decomposing, for human review.',
+        );
+
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(
+          () => repository.getTicketById(bug.id),
+        ).thenAnswer((_) async => bugAt(SddStage.proposed));
+        when(
+          () => repository.updateTicketSddStage(bug.id, SddStage.proposed),
+        ).thenAnswer((_) async {});
+        // exploring -> proposed requires *some* chat child with a terminal
+        // AI reply (see _mostRecentChatHasTerminalReply) — without one, the
+        // precondition check rejects the advance before ever reaching
+        // _createStageChat, and no comment gets posted at all.
+        final exploringChat = Ticket(
+          id: 'exploring-chat-propose-skill',
+          ticketId: 'AIO-107',
+          type: TicketType.chat,
+          title: 'Exploring — ${bug.title}',
+          status: 'backlog',
+          parentId: bug.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        when(
+          () => repository.getTicketsByParent(
+            bug.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [exploringChat]);
+        when(
+          () => commentRepository.getCommentsForTicket(exploringChat.id),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'exploring-reply',
+              ticketId: exploringChat.id,
+              content: 'Root cause found.',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        stubStatefulComments(commentRepository, dummyChatTicket.id);
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Planning...'),
+            AgentDoneEvent(),
+          ]),
+        );
+
+        return TicketsCubit(
+          repository,
+          providerRegistry: registry,
+          commentRepository: commentRepository,
+          linkRepository: linkRepository,
+          baselineRepository: baselineRepository,
+          projectId: 'project-1',
+          baselineVersion: '0.1.0',
+          transitionPreconditionRepository:
+              FakeTransitionPreconditionRepository(),
+        );
+      },
+      act: (cubit) async {
+        await Future<void>.delayed(Duration.zero);
+        await cubit.advanceSddStage(bugAt(SddStage.exploring));
+      },
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        final posted = verify(
+          () => commentRepository.addComment(captureAny()),
+        ).captured;
+        final prompt = (posted.first as TicketComment).content;
+        expect(
+          prompt,
+          allOf([
+            contains('## Propose guidelines'),
+            contains('Stops after decomposing, for human review.'),
+          ]),
+        );
+      },
+    );
+
     TicketsCubit buildCubit() => TicketsCubit(
       repository,
       providerRegistry: registry,
@@ -8067,6 +8242,89 @@ void main() {
     );
 
     blocTest<TicketsCubit, TicketsState>(
+      'designBrief includes the project\'s effective skills/design-brief '
+      'content under a ## Design Brief guidelines heading',
+      setUp: () {
+        when(
+          () => repository.getTicketsByParent(
+            storyProposed.id,
+            types: any(named: 'types'),
+          ),
+        ).thenAnswer((_) async => [taskChildUi]);
+        when(
+          () => repository.updateTicketSddStage(
+            storyProposed.id,
+            SddStage.designBrief,
+          ),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(() => repository.getTicketById(storyProposed.id)).thenAnswer(
+          (_) async => Ticket(
+            id: storyProposed.id,
+            ticketId: storyProposed.ticketId,
+            type: storyProposed.type,
+            title: storyProposed.title,
+            status: storyProposed.status,
+            sddStage: SddStage.designBrief,
+            createdAt: storyProposed.createdAt,
+            updatedAt: storyProposed.updatedAt,
+          ),
+        );
+        // advanceSddStage's own unawaited post-write detail refresh
+        // computes needsDesignReview/linkedDesignPage for a story with a
+        // UI-indicating task, which calls linkRepository.getLinksForTicket.
+        when(
+          () => linkRepository.getLinksForTicket(any()),
+        ).thenAnswer((_) async => []);
+      },
+      build: () {
+        final baselineRepository = MockBaselineRepository();
+        const asset = BaselineAsset(
+          key: 'skills/design-brief',
+          kind: BaselineAssetKind.skill,
+          bundledPath: 'assets/baseline/0.1.0/skills/design-brief.md',
+        );
+        when(() => baselineRepository.getManifest('0.1.0')).thenAnswer(
+          (_) async =>
+              const BaselineManifest(version: '0.1.0', assets: [asset]),
+        );
+        when(
+          () => baselineRepository.readOverrides('project-1'),
+        ).thenAnswer((_) async => []);
+        when(() => baselineRepository.readBundledContent(asset)).thenAnswer(
+          (_) async => 'Bridges a story ticket and a visual design tool.',
+        );
+        return TicketsCubit(
+          repository,
+          linkRepository: linkRepository,
+          providerRegistry: registry,
+          commentRepository: commentRepository,
+          transitionPreconditionRepository: FakeTransitionPreconditionRepository(),
+          baselineRepository: baselineRepository,
+          projectId: 'project-1',
+          baselineVersion: '0.1.0',
+        );
+      },
+      act: (cubit) => cubit.advanceSddStage(storyProposed),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        final posted = verify(
+          () => commentRepository.addComment(captureAny()),
+        ).captured;
+        final prompt = (posted.first as TicketComment).content;
+        expect(
+          prompt,
+          allOf([
+            contains('## Design Brief guidelines'),
+            contains('Bridges a story ticket and a visual design tool.'),
+          ]),
+        );
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
       'proposed advances to designBrief even when the UI-indicating child '
       'Task is not done yet — T12 regression: designBrief/designSync must '
       'run before code, so "Tasks exist" (not "Tasks done") gates this '
@@ -8336,6 +8594,96 @@ void main() {
             SddStage.designSync,
           ),
         ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'designSync includes the project\'s effective skills/design-sync '
+      'content under a ## Design Sync guidelines heading',
+      setUp: () {
+        when(
+          () => linkRepository.getLinksForTicket(storyDesignBrief.id),
+        ).thenAnswer(
+          (_) async => [
+            TicketLinkData(
+              id: 'link-1',
+              sourceTicketId: designPageFilled.id,
+              targetTicketId: storyDesignBrief.id,
+              linkType: 'relatesTo',
+            ),
+          ],
+        );
+        when(
+          () => repository.updateTicketSddStage(
+            storyDesignBrief.id,
+            SddStage.designSync,
+          ),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(
+          () => repository.getTicketById(designPageFilled.id),
+        ).thenAnswer((_) async => designPageFilled);
+        when(() => repository.getTicketById(storyDesignBrief.id)).thenAnswer(
+          (_) async => Ticket(
+            id: storyDesignBrief.id,
+            ticketId: storyDesignBrief.ticketId,
+            type: storyDesignBrief.type,
+            title: storyDesignBrief.title,
+            status: storyDesignBrief.status,
+            sddStage: SddStage.designSync,
+            createdAt: storyDesignBrief.createdAt,
+            updatedAt: storyDesignBrief.updatedAt,
+          ),
+        );
+      },
+      build: () {
+        final baselineRepository = MockBaselineRepository();
+        const asset = BaselineAsset(
+          key: 'skills/design-sync',
+          kind: BaselineAssetKind.skill,
+          bundledPath: 'assets/baseline/0.1.0/skills/design-sync.md',
+        );
+        when(() => baselineRepository.getManifest('0.1.0')).thenAnswer(
+          (_) async =>
+              const BaselineManifest(version: '0.1.0', assets: [asset]),
+        );
+        when(
+          () => baselineRepository.readOverrides('project-1'),
+        ).thenAnswer((_) async => []);
+        when(() => baselineRepository.readBundledContent(asset)).thenAnswer(
+          (_) async => 'The gate between a design existing and being safe '
+              'to build against.',
+        );
+        return TicketsCubit(
+          repository,
+          linkRepository: linkRepository,
+          providerRegistry: registry,
+          commentRepository: commentRepository,
+          transitionPreconditionRepository: FakeTransitionPreconditionRepository(),
+          baselineRepository: baselineRepository,
+          projectId: 'project-1',
+          baselineVersion: '0.1.0',
+        );
+      },
+      act: (cubit) => cubit.advanceSddStage(storyDesignBrief),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        final posted = verify(
+          () => commentRepository.addComment(captureAny()),
+        ).captured;
+        final prompt = (posted.first as TicketComment).content;
+        expect(
+          prompt,
+          allOf([
+            contains('## Design Sync guidelines'),
+            contains(
+              'The gate between a design existing and being safe to build '
+              'against.',
+            ),
+          ]),
+        );
       },
     );
 
