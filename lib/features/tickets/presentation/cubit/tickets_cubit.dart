@@ -3236,7 +3236,13 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// `showingDetailId` capture-and-refresh, for the identical reason —
   /// otherwise a detail screen left open never learns
   /// [TicketDetailLoaded.isAdvancingStage] flipped back to `false`). Added
-  /// for `AIO-2941`.
+  /// for `AIO-2941`. On a genuine `ChatTurnSuccess` (mirrors
+  /// [_runStageChatTurn]'s own `succeeded` gate — a failed/cancelled turn's
+  /// last comment is never treated as authoritative), reads back the
+  /// finished reply for its `PROMOTION:` gate line and acts on it: `EPIC`/
+  /// `BUG` records a `PendingIdeaPromotion` via [_recordPendingIdeaPromotion];
+  /// `NOT YET` posts a plain system comment closing out the conversation,
+  /// with no pending confirmation created at all. Added for `AIO-2942`.
   Future<void> _runIdeaDiscussionTurn(Ticket idea, String chatId) async {
     final providerRegistry = _providerRegistry;
     final commentRepo = _commentRepository;
@@ -3253,7 +3259,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       final (model, provider) = await _resolveModelAndProvider(
         ModelPhase.frontier,
       );
-      await ChatCubit.runChatTurn(
+      final result = await ChatCubit.runChatTurn(
         client: provider.client,
         provider: provider,
         commentRepo: commentRepo,
@@ -3263,6 +3269,35 @@ class TicketsCubit extends Cubit<TicketsState> {
         model: model,
         toolsEnabled: false,
       );
+      final succeeded = switch (result) {
+        ChatTurnSuccess() => true,
+        ChatTurnFailure() || ChatTurnCancelled() => false,
+      };
+      if (succeeded) {
+        final comments = await commentRepo.getCommentsForTicket(chatId);
+        if (comments.isNotEmpty) {
+          final mostRecent = comments.reduce(
+            (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
+          );
+          if (mostRecent.content.contains('PROMOTION: EPIC')) {
+            _recordPendingIdeaPromotion(idea, TicketType.epic);
+          } else if (mostRecent.content.contains('PROMOTION: BUG')) {
+            _recordPendingIdeaPromotion(idea, TicketType.bug);
+          } else if (mostRecent.content.contains('PROMOTION: NOT YET')) {
+            await commentRepo.addComment(
+              TicketComment(
+                id: '',
+                ticketId: chatId,
+                content:
+                    "Discussion concluded: this idea isn't ready for "
+                    'promotion yet.',
+                authorType: CommentAuthorType.system,
+                createdAt: DateTime.now(),
+              ),
+            );
+          }
+        }
+      }
     } catch (e) {
       await commentRepo.addComment(
         TicketComment(
@@ -3320,6 +3355,78 @@ PROMOTION: NOT YET
 
 `PROMOTION: NOT YET` is a legitimate outcome — this idea can stay an idea if it isn't ready for or doesn't warrant committed work yet.
 ''';
+  }
+
+  /// Ideas awaiting a human decision on their Discuss conversation's
+  /// `PROMOTION: EPIC`/`PROMOTION: BUG` outcome, keyed by idea id. Mirrors
+  /// [_pendingSpecLinkSuggestions]'s shape one level simpler (see
+  /// [PendingIdeaPromotion]'s own dartdoc). Added for `AIO-2942`.
+  final Map<String, PendingIdeaPromotion> _pendingIdeaPromotions = {};
+
+  /// Records a [PendingIdeaPromotion] recommending [recommendedType] for
+  /// [idea] in [_pendingIdeaPromotions] and, if [idea]'s detail screen is
+  /// currently open, re-emits [TicketDetailLoaded] carrying it. Mirrors
+  /// [_recordPendingSpecLinkSuggestion]'s shape. Added for `AIO-2942`.
+  void _recordPendingIdeaPromotion(Ticket idea, TicketType recommendedType) {
+    final pending = PendingIdeaPromotion(recommendedType: recommendedType);
+    _pendingIdeaPromotions[idea.id] = pending;
+    final current = state;
+    if (current is TicketDetailLoaded && current.ticket.id == idea.id) {
+      emit(current.copyWith(pendingIdeaPromotion: () => pending));
+    }
+  }
+
+  /// Confirms [ideaId]'s pending [PendingIdeaPromotion]: removes it from
+  /// [_pendingIdeaPromotions], then calls the existing [promoteIdea]
+  /// unchanged with its recommended type plus whatever [existingTicketId]/
+  /// [severity] the confirm-time existing-vs-new/severity picker collected
+  /// (`_showIdeaPromotionPicker`, `ticket_detail_screen.dart`). Awaited
+  /// (unlike [confirmPendingSpecLinkSuggestion]'s fire-and-forget
+  /// `unawaited` link creation) because [promoteIdea] itself performs the
+  /// state emission this method's own follow-up clear must not race —
+  /// clearing [TicketDetailLoaded.pendingIdeaPromotion] first would let a
+  /// stale, pre-clear `current` be captured by [promoteIdea]'s own
+  /// `copyWith`. No-ops if [ideaId] has no pending promotion, or no longer
+  /// resolves to a ticket. Added for `AIO-2942`.
+  Future<void> confirmPendingIdeaPromotion(
+    String ideaId, {
+    String? existingTicketId,
+    TicketSeverity? severity,
+  }) async {
+    final pending = _pendingIdeaPromotions.remove(ideaId);
+    if (pending == null) return;
+    final idea = await _repository.getTicketById(ideaId);
+    if (idea == null) return;
+
+    await promoteIdea(
+      idea,
+      targetType: pending.recommendedType,
+      existingTicketId: existingTicketId,
+      severity: severity,
+    );
+
+    final current = state;
+    if (current is TicketDetailLoaded && current.ticket.id == ideaId) {
+      emit(current.copyWith(pendingIdeaPromotion: () => null));
+    }
+  }
+
+  /// Rejects [ideaId]'s pending [PendingIdeaPromotion]: removes it from
+  /// [_pendingIdeaPromotions] without ever calling [promoteIdea] — the idea
+  /// stays an Idea, same outcome as `PROMOTION: NOT YET`, but here because a
+  /// human said no to a real recommendation rather than the model concluding
+  /// "not yet" itself. If [ideaId]'s detail screen is currently open,
+  /// re-emits [TicketDetailLoaded] with [TicketDetailLoaded
+  /// .pendingIdeaPromotion] cleared. No-ops if [ideaId] has no pending
+  /// promotion. Mirrors [rejectPendingSpecLinkSuggestion]'s shape. Added for
+  /// `AIO-2942`.
+  void rejectPendingIdeaPromotion(String ideaId) {
+    final pending = _pendingIdeaPromotions.remove(ideaId);
+    if (pending == null) return;
+    final current = state;
+    if (current is TicketDetailLoaded && current.ticket.id == ideaId) {
+      emit(current.copyWith(pendingIdeaPromotion: () => null));
+    }
   }
 
   /// Creates a [type] (`knownGap`/`openQuestion` only) ticket titled [title]
@@ -8999,8 +9106,15 @@ PROMOTION: NOT YET
   /// from [previousDetail], mirroring [pendingToolProposal]'s own
   /// carry-forward — this method never recomputes it, only
   /// [_resolveAndFireAttachment]/[confirmPendingSkillAttachment]/
-  /// [rejectPendingSkillAttachment] do. Added for `AIO-2650`. When
-  /// [TicketDetailLoaded.executionAwaitingReview] is `true`, also computes
+  /// [rejectPendingSkillAttachment] do. Added for `AIO-2650`. Unlike that,
+  /// [TicketDetailLoaded.pendingIdeaPromotion] is always recomputed fresh
+  /// from [_pendingIdeaPromotions] (mirrors [isAdvancingStage]'s own live
+  /// map-membership read below, not [pendingSkillAttachment]'s
+  /// carry-forward) — the Discuss conversation that records it runs in the
+  /// background while a *different* ticket (the spawned chat) is typically
+  /// the one on screen, so [previousDetail] usually doesn't exist yet for
+  /// the idea itself by the time this needs to show. Added for `AIO-2942`.
+  /// When [TicketDetailLoaded.executionAwaitingReview] is `true`, also computes
   /// [TicketDetailLoaded.executionPrSubLine] from this ticket's most recent
   /// [NotificationKind.executionPrOpened] notification (via
   /// [_notificationRepository] — `null` when constructed without one, or when
@@ -9161,6 +9275,7 @@ PROMOTION: NOT YET
               previousDetail?.gapsAndOpenQuestions ?? const [],
           pendingToolProposal: previousDetail?.pendingToolProposal,
           pendingSkillAttachment: previousDetail?.pendingSkillAttachment,
+          pendingIdeaPromotion: _pendingIdeaPromotions[ticket.id],
           canAdvanceSddStage: check.canAdvance,
           sddStageBlockReason: check.blockReason,
           needsDesignReview: needsDesignReview,

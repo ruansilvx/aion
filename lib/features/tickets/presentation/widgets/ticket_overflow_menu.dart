@@ -478,7 +478,7 @@ class _ReclassifyChooser extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _ChooserHeader(onBack: onBack, title: headerTitle),
+        ChooserHeader(onBack: onBack, title: headerTitle),
         Container(color: c.border, height: 1),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
@@ -513,53 +513,6 @@ class _ReclassifyChooser extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-/// The chooser's back-navigation header row: a back caret + [title].
-class _ChooserHeader extends StatelessWidget {
-  const _ChooserHeader({required this.onBack, required this.title});
-
-  final VoidCallback onBack;
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = ThemeScope.of(context).colors;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 8, 12, 8),
-      child: Row(
-        children: [
-          Semantics(
-            button: true,
-            label: context.l10n.commonBack,
-            child: GestureDetector(
-              onTap: onBack,
-              child: SizedBox(
-                width: 26,
-                height: 26,
-                child: Center(
-                  child: PhosphorIcon(
-                    PhosphorIcons.caretLeftLight,
-                    size: 14,
-                    color: c.textSecondary,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: AionText.label.copyWith(color: c.textSecondary),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
