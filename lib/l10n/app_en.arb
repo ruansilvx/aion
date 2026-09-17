@@ -396,6 +396,7 @@
       "ticketId": { "type": "String" }
     }
   },
+  "ticketOverflowDiscuss": "Discuss",
   "ticketOverflowPromoteToEpic": "Promote to Epic",
   "ticketOverflowPromoteToBug": "Promote to Bug",
   "ticketPromoteLinkExistingEpic": "Link to existing epic",
