@@ -3869,6 +3869,38 @@ class TicketsCubit extends Cubit<TicketsState> {
         mostRecent.content.contains('DESIGN GATE: APPROVED');
   }
 
+  /// The Story's most recent AI reply from its Design-Sync-stage chat —
+  /// returns the [TicketComment] whose [CommentAuthorType] is `ai` and
+  /// whose creation time is latest within the most-recent designSync chat,
+  /// or `null` if no such comment exists. Parallels [_designSyncApproved]'s
+  /// own chat-lookup shape exactly: used by [_assembleStageContext] to quote
+  /// both the approved design export and the approval/pending verdict into
+  /// the Verify-stage prompt, so the model can check the shipped
+  /// implementation against what was actually approved. The chat-title prefix
+  /// is resolved through [_stagePresentName] rather than hardcoded. Returns
+  /// `null` if constructed without a [CommentRepository]. Added for `AIO-2919`.
+  Future<TicketComment?> _latestDesignSyncReply(String storyId) async {
+    final commentRepo = _commentRepository;
+    if (commentRepo == null) return null;
+    final prefix = '${await _stagePresentName(SddStage.designSync)} — ';
+    final chats = await _repository.getTicketsByParent(
+      storyId,
+      types: const [TicketType.chat],
+    );
+    final designSyncChats =
+        chats.where((c) => c.title.startsWith(prefix)).toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    if (designSyncChats.isEmpty) return null;
+    final comments = await commentRepo.getCommentsForTicket(
+      designSyncChats.first.id,
+    );
+    if (comments.isEmpty) return null;
+    final mostRecent = comments.reduce(
+      (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
+    );
+    return mostRecent.authorType == CommentAuthorType.ai ? mostRecent : null;
+  }
+
   /// The Story/Epic [storyOrEpicId]'s current Verifying-stage chat — its most
   /// recently created chat child whose title starts with
   /// `'${await _stagePresentName(SddStage.verifying)} — '`. `null` if none
@@ -7945,6 +7977,57 @@ class TicketsCubit extends Cubit<TicketsState> {
                 ? child.status
                 : (child.sddStage?.name ?? 'not started');
             buffer.writeln('- ${child.title} ($statusLabel)');
+          }
+        }
+
+        // For a design-track Story, include the Design section with the
+        // approved design export and the sync verdict. Epics carry no linked
+        // design page (design pages hang off Stories), so this is Story-only.
+        // AIO-2919: Verify's own instruction says to check "against its
+        // proposal and design (if any)", but the original code never quoted
+        // the design verdict or export — a silent under-verification gap,
+        // fixed by adding this block.
+        if (parent.type == TicketType.story) {
+          final page = await _linkedDesignPage(parent.id);
+          if (page != null) {
+            final designReply = await _latestDesignSyncReply(parent.id);
+            buffer
+              ..writeln()
+              ..writeln('## Design');
+            if (designReply != null &&
+                designReply.content.contains('DESIGN GATE: APPROVED')) {
+              final gateVerdictLine = designReply.content
+                  .split('\n')
+                  .where((line) => line.contains('DESIGN GATE'))
+                  .firstOrNull ?? '';
+              buffer
+                ..writeln(
+                  'This story\'s design was approved by a design-sync run. '
+                  'Check the shipped implementation against this approved export:',
+                )
+                ..writeln()
+                ..writeln(page.description ?? '(design export not available)')
+                ..writeln()
+                ..writeln('Approved design verdict: $gateVerdictLine');
+            } else {
+              buffer
+                ..writeln(
+                  'A design page was linked to this story, but its design '
+                  'was not approved (status is PENDING or not yet reviewed). '
+                  'Check this export for issues, but treat it as unratified:',
+                )
+                ..writeln()
+                ..writeln(page.description ?? '(design export not available)');
+              if (designReply != null) {
+                final gateVerdictLine = designReply.content
+                    .split('\n')
+                    .where((line) => line.contains('DESIGN GATE'))
+                    .firstOrNull ?? '(status unknown)';
+                buffer
+                  ..writeln()
+                  ..writeln('Design status: $gateVerdictLine');
+              }
+            }
           }
         }
       }

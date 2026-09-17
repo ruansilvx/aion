@@ -8234,6 +8234,229 @@ void main() {
         ).called(1);
       },
     );
+
+    // AIO-2919: a design-track Story's Verify-stage prompt must reflect its
+    // own approved (or pending) design-sync decision — the verifying/archived
+    // branch of _assembleStageContext lists child Tasks but never referenced
+    // whether DESIGN GATE was reached or what the design export said, so
+    // Verify could confirm every Task is done but had no way to check the
+    // shipped implementation against the approved design itself.
+    blocTest<TicketsCubit, TicketsState>(
+      'a design-track Story entering verifying gets its approved design '
+      'export and DESIGN GATE verdict quoted under a ## Design heading '
+      '(AIO-2919)',
+      setUp: () {
+        when(
+          () => repository.getTicketsByParent(
+            storyDesignSync.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [designSyncChat]);
+        when(
+          () => repository.getTicketsByParent(
+            storyDesignSync.id,
+            types: TicketTypeHierarchy.executableTypes,
+          ),
+        ).thenAnswer((_) async => [taskChildDone]);
+        when(
+          () => commentRepository.getCommentsForTicket(designSyncChat.id),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'c-approved',
+              ticketId: designSyncChat.id,
+              content: 'No issues found.\n\nDESIGN GATE: APPROVED',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(
+          () => repository.updateTicketSddStage(
+            storyDesignSync.id,
+            SddStage.verifying,
+          ),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(
+          () => repository.getTicketById(storyDesignSync.id),
+        ).thenAnswer((_) async => storyDesignSync);
+        when(
+          () => repository.getTicketById(designPageFilled.id),
+        ).thenAnswer((_) async => designPageFilled);
+        when(
+          () => linkRepository.getLinksForTicket(storyDesignSync.id),
+        ).thenAnswer(
+          (_) async => [
+            TicketLinkData(
+              id: 'design-link-approved',
+              sourceTicketId: storyDesignSync.id,
+              targetTicketId: designPageFilled.id,
+              linkType: TicketLinkType.relatesTo.name,
+            ),
+          ],
+        );
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.advanceSddStage(storyDesignSync),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verify(
+          () => agentClient.run(
+            any(
+              that: predicate<AgentRequest>(
+                (request) =>
+                    request.prompt.contains('## Design') &&
+                    request.prompt.contains('Pasted Claude Design export.') &&
+                    request.prompt.contains('DESIGN GATE: APPROVED') &&
+                    request.prompt.contains('was approved by a design-sync run'),
+              ),
+            ),
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'a design-track Story entering verifying with a PENDING design-sync '
+      'verdict quotes the export but flags it as unratified (AIO-2919)',
+      setUp: () {
+        when(
+          () => repository.getTicketsByParent(
+            storyDesignSync.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [designSyncChat]);
+        when(
+          () => repository.getTicketsByParent(
+            storyDesignSync.id,
+            types: TicketTypeHierarchy.executableTypes,
+          ),
+        ).thenAnswer((_) async => [taskChildDone]);
+        when(
+          () => commentRepository.getCommentsForTicket(designSyncChat.id),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'c-pending',
+              ticketId: designSyncChat.id,
+              content: 'One issue found.\n\nDESIGN GATE: PENDING',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(
+          () => repository.updateTicketSddStage(
+            storyDesignSync.id,
+            SddStage.verifying,
+          ),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(
+          () => repository.getTicketById(storyDesignSync.id),
+        ).thenAnswer((_) async => storyDesignSync);
+        when(
+          () => repository.getTicketById(designPageFilled.id),
+        ).thenAnswer((_) async => designPageFilled);
+        when(
+          () => linkRepository.getLinksForTicket(storyDesignSync.id),
+        ).thenAnswer(
+          (_) async => [
+            TicketLinkData(
+              id: 'design-link-pending',
+              sourceTicketId: storyDesignSync.id,
+              targetTicketId: designPageFilled.id,
+              linkType: TicketLinkType.relatesTo.name,
+            ),
+          ],
+        );
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.advanceSddStage(storyDesignSync),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verify(
+          () => agentClient.run(
+            any(
+              that: predicate<AgentRequest>(
+                (request) =>
+                    request.prompt.contains('## Design') &&
+                    request.prompt.contains('Pasted Claude Design export.') &&
+                    request.prompt.contains('DESIGN GATE: PENDING') &&
+                    request.prompt.contains('was not approved') &&
+                    request.prompt.contains('treat it as unratified'),
+              ),
+            ),
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'a Story entering verifying with no linked design page gets no '
+      '## Design section at all (AIO-2919)',
+      setUp: () {
+        when(
+          () => repository.getTicketsByParent(
+            storyDesignSync.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [designSyncChat]);
+        when(
+          () => repository.getTicketsByParent(
+            storyDesignSync.id,
+            types: TicketTypeHierarchy.executableTypes,
+          ),
+        ).thenAnswer((_) async => [taskChildDone]);
+        when(
+          () => commentRepository.getCommentsForTicket(designSyncChat.id),
+        ).thenAnswer(
+          (_) async => [
+            TicketComment(
+              id: 'c-approved-no-page',
+              ticketId: designSyncChat.id,
+              content: 'No issues found.\n\nDESIGN GATE: APPROVED',
+              authorType: CommentAuthorType.ai,
+              createdAt: DateTime(2026),
+            ),
+          ],
+        );
+        when(
+          () => repository.updateTicketSddStage(
+            storyDesignSync.id,
+            SddStage.verifying,
+          ),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(
+          () => repository.getTicketById(storyDesignSync.id),
+        ).thenAnswer((_) async => storyDesignSync);
+        when(
+          () => linkRepository.getLinksForTicket(storyDesignSync.id),
+        ).thenAnswer((_) async => []);
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.advanceSddStage(storyDesignSync),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        verify(
+          () => agentClient.run(
+            any(
+              that: predicate<AgentRequest>(
+                (request) => !request.prompt.contains('## Design'),
+              ),
+            ),
+          ),
+        ).called(1);
+      },
+    );
   });
 
   group('advanceSddStage — backgrounded stage-chat turn', () {
