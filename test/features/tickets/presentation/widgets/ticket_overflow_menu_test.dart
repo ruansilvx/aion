@@ -1,53 +1,71 @@
 // test/features/tickets/presentation/widgets/ticket_overflow_menu_test.dart — TicketOverflowMenu widget tests.
 
-import 'package:flutter/widgets.dart';
+import 'package:bloc_test/bloc_test.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:mocktail/mocktail.dart';
 
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/tickets.dart';
 import 'package:aion/l10n/generated/app_localizations.dart';
 
-class MockTicketRepository extends Mock implements TicketRepository {}
+class MockTicketsCubit extends MockCubit<TicketsState>
+    implements TicketsCubit {}
 
-class MockTicketLinkRepository extends Mock implements TicketLinkRepository {}
+/// Wraps [child] in a real [GoRouter] (not a bare `WidgetsApp`/`Navigator`)
+/// so `TicketOverflowMenu`'s own `context.go` call on "Discuss" has
+/// somewhere to navigate to — the initial route renders [child], and
+/// `/workspace/tickets/:id` renders a plain [Text] of the id so a
+/// successful navigation is observable via `find.text`. [ticketsCubit] is
+/// fixed to [state] via `whenListen`, mirroring
+/// `ticket_metadata_section_test.dart`'s `_wrap` shape.
+Widget _wrap(
+  Widget child,
+  MockTicketsCubit ticketsCubit, {
+  TicketsState state = const TicketsInitial(),
+}) {
+  whenListen(ticketsCubit, Stream.value(state), initialState: state);
 
-/// Same wrapping shape as `ticket_link_picker_test.dart`'s `_wrap` — a
-/// `WidgetsApp` with `home` (not `builder`) so a `Navigator`/`Overlay`
-/// ancestor exists for both this widget's own overlay and the nested
-/// `TicketLinkPicker`'s overlay inside the promote chooser.
-Widget _wrap(Widget child, TicketsCubit cubit) {
+  final router = GoRouter(
+    initialLocation: '/',
+    routes: [
+      GoRoute(
+        path: '/',
+        builder: (context, state) => Align(
+          child: BlocProvider<TicketsCubit>.value(
+            value: ticketsCubit,
+            child: child,
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/workspace/tickets/:id',
+        builder: (context, state) => Text('chat:${state.pathParameters['id']}'),
+      ),
+    ],
+  );
   return MediaQuery(
     data: const MediaQueryData(),
     child: ThemeScope(
       theme: aionThemeArctic,
-      child: WidgetsApp(
-        color: aionThemeArctic.colors.primary,
+      child: MaterialApp.router(
+        routerConfig: router,
         localizationsDelegates: const [
           AppLocalizations.delegate,
           GlobalMaterialLocalizations.delegate,
           GlobalWidgetsLocalizations.delegate,
         ],
         supportedLocales: AppLocalizations.supportedLocales,
-        pageRouteBuilder: <T>(RouteSettings settings, WidgetBuilder builder) =>
-            PageRouteBuilder<T>(
-              settings: settings,
-              pageBuilder: (context, _, _) => builder(context),
-            ),
-        home: Align(
-          child: BlocProvider<TicketsCubit>.value(value: cubit, child: child),
-        ),
       ),
     ),
   );
 }
 
 void main() {
-  late MockTicketRepository repository;
-  late MockTicketLinkRepository linkRepository;
-  late TicketsCubit cubit;
+  late MockTicketsCubit ticketsCubit;
 
   final epic = Ticket(
     id: 'epic-1',
@@ -58,23 +76,13 @@ void main() {
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
   );
-  final bug = Ticket(
-    id: 'bug-1',
-    ticketId: 'AIO-3',
-    type: TicketType.bug,
-    title: 'Existing bug',
-    status: 'backlog',
-    createdAt: DateTime(2026),
-    updatedAt: DateTime(2026),
-  );
 
-  Ticket buildIdea({TicketType? suggestedType}) => Ticket(
+  Ticket buildIdea() => Ticket(
     id: 'idea-1',
     ticketId: 'AIO-1',
     type: TicketType.idea,
     title: 'A raw idea',
     status: 'backlog',
-    suggestedType: suggestedType,
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
   );
@@ -91,7 +99,7 @@ void main() {
         updatedAt: DateTime(2026),
       ),
     );
-    registerFallbackValue(TicketLinkType.relatesTo);
+    registerFallbackValue(TicketType.epic);
   });
 
   setUp(() {
@@ -104,272 +112,128 @@ void main() {
     addTearDown(view.resetPhysicalSize);
     addTearDown(view.resetDevicePixelRatio);
 
-    repository = MockTicketRepository();
-    linkRepository = MockTicketLinkRepository();
-    cubit = TicketsCubit(repository, linkRepository: linkRepository);
-
+    ticketsCubit = MockTicketsCubit();
+    when(() => ticketsCubit.getAllTickets()).thenAnswer((_) async => [epic]);
     when(
-      () => repository.getAllTickets(),
-    ).thenAnswer((_) async => [epic, bug]);
-    when(() => repository.createTicket(any())).thenAnswer((_) async {});
-    when(() => repository.updateTicket(any())).thenAnswer((_) async {});
-    when(
-      () => repository.getTicketById(epic.id),
-    ).thenAnswer((_) async => epic);
-    when(
-      () => repository.getTicketById('idea-1'),
-    ).thenAnswer((_) async => buildIdea().copyWith(type: TicketType.knownGap));
-    when(
-      () => linkRepository.createLink(
-        sourceTicketId: any(named: 'sourceTicketId'),
+      () => ticketsCubit.reclassifyIdea(
+        any(),
+        targetType: any(named: 'targetType'),
         targetTicketId: any(named: 'targetTicketId'),
-        linkType: any(named: 'linkType'),
       ),
     ).thenAnswer((_) async {});
+    when(
+      () => ticketsCubit.startIdeaDiscussion(any()),
+    ).thenAnswer((_) async => 'chat-1');
   });
 
   testWidgets(
-    'tapping the trigger for an idea ticket shows both promote rows '
-    'and the delete row',
+    'tapping the trigger for an idea ticket shows Discuss, both reclassify '
+    'rows, and the delete row',
     (tester) async {
       await tester.pumpWidget(
-        _wrap(TicketOverflowMenu(ticket: buildIdea()), cubit),
+        _wrap(TicketOverflowMenu(ticket: buildIdea()), ticketsCubit),
       );
       await tester.pump();
 
       await tester.tap(find.byType(TicketOverflowMenu));
       await tester.pumpAndSettle();
 
-      expect(find.text('Promote to Epic'), findsOneWidget);
-      expect(find.text('Promote to Bug'), findsOneWidget);
+      expect(find.text('Discuss'), findsOneWidget);
       expect(find.text('Change to Known Gap'), findsOneWidget);
       expect(find.text('Change to Open Question'), findsOneWidget);
       expect(find.text('Delete ticket'), findsOneWidget);
+      // The old one-click promote actions are gone (AIO-2941).
+      expect(find.text('Promote to Epic'), findsNothing);
+      expect(find.text('Promote to Bug'), findsNothing);
     },
   );
 
+  testWidgets('tapping "Discuss" for a non-idea ticket is not offered at all', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _wrap(TicketOverflowMenu(ticket: epic), ticketsCubit),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byType(TicketOverflowMenu));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Discuss'), findsNothing);
+    expect(find.text('Delete ticket'), findsOneWidget);
+  });
+
+  testWidgets('tapping "Change to Known Gap" opens a target picker; picking an '
+      'existing ticket calls reclassifyIdea', (tester) async {
+    final idea = buildIdea();
+    await tester.pumpWidget(
+      _wrap(TicketOverflowMenu(ticket: idea), ticketsCubit),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byType(TicketOverflowMenu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Change to Known Gap'));
+    await tester.pumpAndSettle();
+
+    // No "create new" option in the reclassify target picker.
+    expect(find.text('Create new epic'), findsNothing);
+
+    await tester.tap(find.text('Add'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Existing epic'));
+    await tester.pumpAndSettle();
+
+    verify(
+      () => ticketsCubit.reclassifyIdea(
+        idea,
+        targetType: TicketType.knownGap,
+        targetTicketId: epic.id,
+      ),
+    ).called(1);
+  });
+
   testWidgets(
-    'tapping "Change to Known Gap" opens a target picker; picking an '
-    'existing ticket calls reclassifyIdea',
+    'tapping "Discuss" starts the idea\'s discussion and navigates to the '
+    'spawned chat (AIO-2940/AIO-2941)',
     (tester) async {
+      final idea = buildIdea();
       await tester.pumpWidget(
-        _wrap(TicketOverflowMenu(ticket: buildIdea()), cubit),
+        _wrap(TicketOverflowMenu(ticket: idea), ticketsCubit),
       );
       await tester.pump();
 
       await tester.tap(find.byType(TicketOverflowMenu));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Change to Known Gap'));
+      await tester.tap(find.text('Discuss'));
       await tester.pumpAndSettle();
 
-      // No "create new" option in the reclassify target picker, unlike
-      // the promote chooser.
-      expect(find.text('Create new epic'), findsNothing);
-      expect(find.text('Create new bug'), findsNothing);
-
-      await tester.tap(find.text('Add'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Existing epic'));
-      await tester.pumpAndSettle();
-
-      final updated =
-          verify(() => repository.updateTicket(captureAny())).captured;
-      expect(updated, hasLength(1));
-      expect((updated.first as Ticket).type, TicketType.knownGap);
-      verify(
-        () => linkRepository.createLink(
-          sourceTicketId: 'idea-1',
-          targetTicketId: epic.id,
-          linkType: TicketLinkType.relatesTo,
-        ),
-      ).called(1);
+      verify(() => ticketsCubit.startIdeaDiscussion(idea)).called(1);
+      expect(find.text('chat:chat-1'), findsOneWidget);
     },
   );
 
   testWidgets(
-    'an idea with suggestedType epic shows exactly one "SUGGESTED" pill',
+    'tapping "Discuss" does not navigate when startIdeaDiscussion resolves '
+    'null (guard rejection or no provider registry)',
     (tester) async {
+      final idea = buildIdea();
+      when(
+        () => ticketsCubit.startIdeaDiscussion(any()),
+      ).thenAnswer((_) async => null);
       await tester.pumpWidget(
-        _wrap(
-          TicketOverflowMenu(ticket: buildIdea(suggestedType: TicketType.epic)),
-          cubit,
-        ),
+        _wrap(TicketOverflowMenu(ticket: idea), ticketsCubit),
       );
       await tester.pump();
 
       await tester.tap(find.byType(TicketOverflowMenu));
       await tester.pumpAndSettle();
-
-      expect(find.text('SUGGESTED'), findsOneWidget);
-    },
-  );
-
-  testWidgets(
-    'an idea with no suggestedType shows no "SUGGESTED" pill',
-    (tester) async {
-      await tester.pumpWidget(
-        _wrap(TicketOverflowMenu(ticket: buildIdea()), cubit),
-      );
-      await tester.pump();
-
-      await tester.tap(find.byType(TicketOverflowMenu));
+      await tester.tap(find.text('Discuss'));
       await tester.pumpAndSettle();
 
-      expect(find.text('SUGGESTED'), findsNothing);
-    },
-  );
-
-  testWidgets(
-    'tapping "Promote to Epic" opens a chooser offering only epic '
-    'candidates',
-    (tester) async {
-      await tester.pumpWidget(
-        _wrap(TicketOverflowMenu(ticket: buildIdea()), cubit),
-      );
-      await tester.pump();
-
-      await tester.tap(find.byType(TicketOverflowMenu));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Promote to Epic'));
-      await tester.pumpAndSettle();
-
-      // Chooser header + "Create new epic" both render "Promote to
-      // Epic"/"Create new epic" text; the root's own copy is gone since
-      // the chooser replaced it.
-      expect(find.text('Promote to Epic'), findsOneWidget);
-      expect(find.text('Create new epic'), findsOneWidget);
-
-      await tester.tap(find.text('Add'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Existing epic'), findsOneWidget);
-      expect(find.text('Existing bug'), findsNothing);
-    },
-  );
-
-  testWidgets(
-    'tapping "Promote to Bug" opens a chooser offering only bug candidates',
-    (tester) async {
-      await tester.pumpWidget(
-        _wrap(TicketOverflowMenu(ticket: buildIdea()), cubit),
-      );
-      await tester.pump();
-
-      await tester.tap(find.byType(TicketOverflowMenu));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Promote to Bug'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Promote to Bug'), findsOneWidget);
-      expect(find.text('Create new bug'), findsOneWidget);
-
-      await tester.tap(find.text('Add'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Existing bug'), findsOneWidget);
-      expect(find.text('Existing epic'), findsNothing);
-    },
-  );
-
-  testWidgets(
-    'tapping "Create new bug" opens a severity prompt instead of creating '
-    'immediately (AIO-2826)',
-    (tester) async {
-      await tester.pumpWidget(
-        _wrap(TicketOverflowMenu(ticket: buildIdea()), cubit),
-      );
-      await tester.pump();
-
-      await tester.tap(find.byType(TicketOverflowMenu));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Promote to Bug'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Create new bug'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Bug severity'), findsOneWidget);
-      expect(find.byType(SeverityPicker), findsOneWidget);
-      verifyNever(() => repository.createTicket(any()));
-    },
-  );
-
-  testWidgets(
-    'the severity prompt\'s confirm row is disabled until a severity is '
-    'picked (AIO-2826)',
-    (tester) async {
-      await tester.pumpWidget(
-        _wrap(TicketOverflowMenu(ticket: buildIdea()), cubit),
-      );
-      await tester.pump();
-
-      await tester.tap(find.byType(TicketOverflowMenu));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Promote to Bug'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Create new bug'));
-      await tester.pumpAndSettle();
-
-      // Only the header/confirm-row copy of "Create new bug" exists now
-      // (the chooser's own row is gone) — tapping it with no severity
-      // picked yet must not create anything.
-      await tester.tap(find.text('Create new bug'));
-      await tester.pumpAndSettle();
-      verifyNever(() => repository.createTicket(any()));
-    },
-  );
-
-  testWidgets(
-    'picking a severity then confirming calls promoteIdea, creating a bug '
-    'with that severity set (AIO-2826)',
-    (tester) async {
-      await tester.pumpWidget(
-        _wrap(TicketOverflowMenu(ticket: buildIdea()), cubit),
-      );
-      await tester.pump();
-
-      await tester.tap(find.byType(TicketOverflowMenu));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Promote to Bug'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Create new bug'));
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.byType(SeverityPicker));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('High'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Create new bug'));
-      await tester.pumpAndSettle();
-
-      final created =
-          verify(() => repository.createTicket(captureAny())).captured;
-      expect(created, hasLength(1));
-      expect((created.first as Ticket).type, TicketType.bug);
-      expect((created.first as Ticket).severity, TicketSeverity.high);
-    },
-  );
-
-  testWidgets(
-    'promoting an idea to an epic still creates immediately, with no '
-    'severity prompt (AIO-2826 only applies to bug targets)',
-    (tester) async {
-      await tester.pumpWidget(
-        _wrap(TicketOverflowMenu(ticket: buildIdea()), cubit),
-      );
-      await tester.pump();
-
-      await tester.tap(find.byType(TicketOverflowMenu));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Promote to Epic'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Create new epic'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Bug severity'), findsNothing);
-      final created =
-          verify(() => repository.createTicket(captureAny())).captured;
-      expect(created, hasLength(1));
-      expect((created.first as Ticket).type, TicketType.epic);
+      verify(() => ticketsCubit.startIdeaDiscussion(idea)).called(1);
+      // Still on the idea's own route — no chat id to navigate to.
+      expect(find.textContaining('chat:'), findsNothing);
     },
   );
 }

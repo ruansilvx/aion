@@ -2,12 +2,12 @@
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/domain/entities/ticket.dart';
-import 'package:aion/features/tickets/domain/enums/ticket_severity.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
 import 'package:aion/features/tickets/presentation/widgets/ticket_link_picker.dart';
@@ -15,13 +15,13 @@ import 'package:aion/features/tickets/presentation/widgets/ticket_link_picker.da
 /// The ticket "more actions" `⋯` trigger, shared across
 /// `TicketDetailScreen`'s header, `TicketListTile` (list rows), and
 /// `TicketBoardCard` (board cards). Opens a small overlay listing "Delete
-/// ticket" plus, for `idea` tickets only, "Promote to Epic"/"Promote to
-/// Bug" (linking to an existing ticket of that type via
-/// [TicketLinkPicker], or creating a new one, via
-/// [TicketsCubit.promoteIdea]) and "Change to Known Gap"/"Change to Open
-/// Question" (linking to an existing target ticket via [TicketLinkPicker],
-/// no "create new" option, via [TicketsCubit.reclassifyIdea]) above it.
-/// Same `Overlay`/
+/// ticket" plus, for `idea` tickets only, "Discuss" (starts a standalone
+/// human-gated conversation via [TicketsCubit.startIdeaDiscussion] and
+/// navigates straight to it — see `AIO-2940`/`AIO-2941`; replaces the old
+/// one-click "Promote to Epic"/"Promote to Bug" actions) and "Change to
+/// Known Gap"/"Change to Open Question" (linking to an existing target
+/// ticket via [TicketLinkPicker], no "create new" option, via
+/// [TicketsCubit.reclassifyIdea]) above it. Same `Overlay`/
 /// `LayerLink`/`CompositedTransformFollower`/`mounted`-guard mechanics as
 /// `MoveToStatusMenu` (`tickets_board_view.dart`) — a third instance of
 /// that pattern, since this is an *action list* rather than a *value
@@ -33,8 +33,8 @@ import 'package:aion/features/tickets/presentation/widgets/ticket_link_picker.da
 /// permanent delete. The trigger itself renders distinct default/hover/
 /// keyboard-focused/pressed/open fills and a focus ring, per the design
 /// spec's interaction-state table. The action-list rows opened by the
-/// trigger ("Delete ticket", "Promote to Epic/Bug", "Create new
-/// epic/bug") are themselves keyboard-focusable and `Enter`/`Space`-
+/// trigger ("Delete ticket", "Discuss", "Change to Known Gap/Open
+/// Question") are themselves keyboard-focusable and `Enter`/`Space`-
 /// activatable too, via [OverlayMenuItem].
 class TicketOverflowMenu extends StatefulWidget {
   /// Creates a [TicketOverflowMenu] for [ticket]. Set [compact] to `true`
@@ -66,31 +66,11 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
   bool _isFocused = false;
   bool _isPressed = false;
 
-  /// The target type of the existing-vs-new promote chooser (§5.2)
-  /// currently showing, or `null` when the overlay is showing the root
-  /// action list instead. Reset to `null` whenever the overlay closes.
-  TicketType? _promoteTargetType;
-
   /// The target type ([TicketType.knownGap]/[TicketType.openQuestion]) of the
   /// reclassify target picker currently showing, or `null` when the overlay is
-  /// showing the root action list (or the promote chooser) instead. Reset to
-  /// `null` whenever the overlay closes. Added for `AIO-934`.
+  /// showing the root action list instead. Reset to `null` whenever the
+  /// overlay closes. Added for `AIO-934`.
   TicketType? _reclassifyTargetType;
-
-  /// Whether the "create new bug" severity-prompt step (§5.2a) is currently
-  /// showing in place of [_PromoteChooser] — set when "Create new bug" is
-  /// tapped with [_promoteTargetType] at [TicketType.bug], since that flow
-  /// needs a severity chosen before [TicketsCubit.promoteIdea] is called
-  /// (mirrors the New Ticket form's own required Severity field — see
-  /// [TicketsCubit.promoteIdea]'s dartdoc). Not used for
-  /// [TicketType.epic], which has no severity to collect. Reset to `false`
-  /// whenever the overlay closes. Added for `AIO-2826`.
-  bool _promoteBugSeverityPrompt = false;
-
-  /// The severity chosen so far in the [_promoteBugSeverityPrompt] step, or
-  /// `null` before the user has picked one. Reset to `null` whenever the
-  /// overlay closes. Added for `AIO-2826`.
-  TicketSeverity? _selectedPromoteSeverity;
 
   @override
   void dispose() {
@@ -142,74 +122,13 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
                     minWidth: 180,
-                    maxWidth:
-                        (_promoteTargetType != null ||
-                            _reclassifyTargetType != null ||
-                            _promoteBugSeverityPrompt)
+                    maxWidth: _reclassifyTargetType != null
                         ? 210
-                        : (widget.ticket.type == TicketType.idea
-                              ? 210
-                              : 240),
+                        : (widget.ticket.type == TicketType.idea ? 210 : 240),
                   ),
                   child: StatefulBuilder(
                     builder: (context, setOverlayState) {
-                      final promoteTargetType = _promoteTargetType;
                       final reclassifyTargetType = _reclassifyTargetType;
-                      if (promoteTargetType != null &&
-                          _promoteBugSeverityPrompt) {
-                        return _BugSeverityPrompt(
-                          value: _selectedPromoteSeverity,
-                          onChanged: (severity) => setOverlayState(
-                            () => _selectedPromoteSeverity = severity,
-                          ),
-                          onBack: () => setOverlayState(
-                            () => _promoteBugSeverityPrompt = false,
-                          ),
-                          onConfirm: _selectedPromoteSeverity == null
-                              ? null
-                              : () {
-                                  ticketsCubit.promoteIdea(
-                                    widget.ticket,
-                                    targetType: promoteTargetType,
-                                    severity: _selectedPromoteSeverity,
-                                  );
-                                  _removeOverlay();
-                                },
-                        );
-                      }
-                      if (promoteTargetType != null) {
-                        return _PromoteChooser(
-                          targetType: promoteTargetType,
-                          onBack: () => setOverlayState(
-                            () => _promoteTargetType = null,
-                          ),
-                          candidatesLoader: () async {
-                            final all = await ticketsCubit.getAllTickets();
-                            return all
-                                .where((t) => t.type == promoteTargetType)
-                                .toList();
-                          },
-                          onLinkSelected: (existing) {
-                            ticketsCubit.promoteIdea(
-                              widget.ticket,
-                              targetType: promoteTargetType,
-                              existingTicketId: existing.id,
-                            );
-                            _removeOverlay();
-                          },
-                          onCreateNewTap: promoteTargetType == TicketType.bug
-                              ? () => setOverlayState(
-                                  () => _promoteBugSeverityPrompt = true,
-                                )
-                              : () {
-                                  ticketsCubit.promoteIdea(
-                                    widget.ticket,
-                                    targetType: promoteTargetType,
-                                  );
-                                  _removeOverlay();
-                                },
-                        );
-                      }
                       if (reclassifyTargetType != null) {
                         return _ReclassifyChooser(
                           targetType: reclassifyTargetType,
@@ -234,13 +153,12 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
                       }
                       return _RootMenu(
                         ticketType: widget.ticket.type,
-                        suggestedType: widget.ticket.suggestedType,
-                        onPromoteTap: (type) => setOverlayState(
-                          () => _promoteTargetType = type,
-                        ),
-                        onReclassifyTap: (type) => setOverlayState(
-                          () => _reclassifyTargetType = type,
-                        ),
+                        onDiscussTap: () {
+                          _removeOverlay();
+                          _onDiscussPressed(ticketsCubit);
+                        },
+                        onReclassifyTap: (type) =>
+                            setOverlayState(() => _reclassifyTargetType = type),
                         onDeleteTap: () {
                           _removeOverlay();
                           _onDeletePressed();
@@ -263,10 +181,7 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
   void _removeOverlay() {
     _overlayEntry?.remove();
     _overlayEntry = null;
-    _promoteTargetType = null;
     _reclassifyTargetType = null;
-    _promoteBugSeverityPrompt = false;
-    _selectedPromoteSeverity = null;
     // Guards against setState-after-dispose — the same class of bug
     // project.md's AppDropdown overlay-dismiss crash note warns about.
     if (mounted) {
@@ -290,6 +205,22 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
     );
     if (confirmed && mounted) {
       context.read<TicketsCubit>().trashTicket(widget.ticket.id);
+    }
+  }
+
+  /// Starts [widget.ticket]'s Discuss conversation via
+  /// [TicketsCubit.startIdeaDiscussion] and navigates straight to the
+  /// spawned chat ticket once it exists — mirrors
+  /// `TicketDetailScreen._advanceSddStage`'s identical "resolves once the
+  /// chat exists, not once its first AI reply lands" navigation shape.
+  /// [ticketsCubit] is passed in rather than re-read via `context.read`
+  /// here, since the overlay may already be removed (and this `State`
+  /// possibly unmounted) by the time the awaited call resolves. Added for
+  /// `AIO-2941`.
+  Future<void> _onDiscussPressed(TicketsCubit ticketsCubit) async {
+    final chatId = await ticketsCubit.startIdeaDiscussion(widget.ticket);
+    if (chatId != null && mounted) {
+      context.go('/workspace/tickets/$chatId');
     }
   }
 
@@ -370,31 +301,25 @@ class _TicketOverflowMenuState extends State<TicketOverflowMenu> {
   }
 }
 
-/// The root action-list content ("Promote to Epic"/"Promote to Bug" and
-/// "Change to Known Gap"/"Change to Open Question", for `idea` tickets only,
-/// then Delete ticket). Per design.md §7.1 Widened "Promote" menu and
-/// `AIO-934` §4.
+/// The root action-list content ("Discuss" and "Change to Known Gap"/
+/// "Change to Open Question", for `idea` tickets only, then Delete ticket).
+/// Per design.md §7.1 Widened "Promote" menu and `AIO-934` §4; "Discuss"
+/// replaced the previous "Promote to Epic"/"Promote to Bug" pair per
+/// `AIO-2940`/`AIO-2941`.
 class _RootMenu extends StatelessWidget {
   const _RootMenu({
     required this.ticketType,
-    required this.suggestedType,
-    required this.onPromoteTap,
+    required this.onDiscussTap,
     required this.onReclassifyTap,
     required this.onDeleteTap,
   });
 
-  /// The overflow menu's ticket's type — the promote/reclassify rows
+  /// The overflow menu's ticket's type — the discuss/reclassify rows
   /// render only when this is [TicketType.idea].
   final TicketType ticketType;
 
-  /// The idea's AI-suggested promotion target ([Ticket.suggestedType]),
-  /// if any — the matching promote row renders the "Suggested" treatment
-  /// (§7.3).
-  final TicketType? suggestedType;
-
-  /// Called with [TicketType.epic] or [TicketType.bug] when the
-  /// corresponding promote row is tapped.
-  final ValueChanged<TicketType> onPromoteTap;
+  /// Called when "Discuss" is tapped. Added for `AIO-2941`.
+  final VoidCallback onDiscussTap;
 
   /// Called with [TicketType.knownGap] or [TicketType.openQuestion] when the
   /// corresponding reclassify row is tapped. Added for `AIO-934`.
@@ -412,34 +337,27 @@ class _RootMenu extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (ticketType == TicketType.idea) ...[
-            _PromoteRootRow(
-              icon: PhosphorIcons.crownLight,
-              label: context.l10n.ticketOverflowPromoteToEpic,
-              accent: c.typeEpic,
-              suggested: suggestedType == TicketType.epic,
-              onTap: () => onPromoteTap(TicketType.epic),
+            _MenuActionRow(
+              icon: PhosphorIcons.chatCircleTextLight,
+              iconColor: c.typeIdea,
+              labelColor: c.textPrimary,
+              label: context.l10n.ticketOverflowDiscuss,
+              onTap: onDiscussTap,
               // First row in the list — claims keyboard focus on open.
               autofocus: true,
             ),
-            _PromoteRootRow(
-              icon: PhosphorIcons.bugLight,
-              label: context.l10n.ticketOverflowPromoteToBug,
-              accent: c.typeBug,
-              suggested: suggestedType == TicketType.bug,
-              onTap: () => onPromoteTap(TicketType.bug),
-            ),
-            _PromoteRootRow(
+            _MenuActionRow(
               icon: PhosphorIcons.warningCircleLight,
+              iconColor: c.typeKnownGap,
+              labelColor: c.textPrimary,
               label: context.l10n.ticketOverflowReclassifyToKnownGap,
-              accent: c.typeKnownGap,
-              suggested: false,
               onTap: () => onReclassifyTap(TicketType.knownGap),
             ),
-            _PromoteRootRow(
+            _MenuActionRow(
               icon: PhosphorIcons.questionMarkLight,
+              iconColor: c.typeOpenQuestion,
+              labelColor: c.textPrimary,
               label: context.l10n.ticketOverflowReclassifyToOpenQuestion,
-              accent: c.typeOpenQuestion,
-              suggested: false,
               onTap: () => onReclassifyTap(TicketType.openQuestion),
             ),
             Container(color: c.border, height: 1),
@@ -450,7 +368,7 @@ class _RootMenu extends StatelessWidget {
             labelColor: c.danger,
             label: context.l10n.ticketDeleteMenuItem,
             onTap: onDeleteTap,
-            // Only the promote/reclassify rows above it can precede it,
+            // Only the discuss/reclassify rows above it can precede it,
             // and those render only for idea tickets — so this is row 0
             // whenever they're absent.
             autofocus: ticketType != TicketType.idea,
@@ -461,100 +379,9 @@ class _RootMenu extends StatelessWidget {
   }
 }
 
-/// A single "Promote to Epic"/"Promote to Bug" root row (design.md §7.1).
-/// When [suggested] is `true`, the row gets a resting accent-tinted
-/// background (§7.3.1) plus a trailing "Suggested" pill (§7.3) — two
-/// redundant cues so the classifier's best-guess target reads instantly.
-class _PromoteRootRow extends StatelessWidget {
-  const _PromoteRootRow({
-    required this.icon,
-    required this.label,
-    required this.accent,
-    required this.suggested,
-    required this.onTap,
-    this.autofocus = false,
-  });
-
-  final IconData icon;
-  final String label;
-
-  /// The target type's own accent (`typeEpic`/`typeBug`) — used for the
-  /// resting tint and the "Suggested" pill when [suggested] is `true`.
-  final Color accent;
-
-  /// Whether this row matches the idea's `Ticket.suggestedType`.
-  final bool suggested;
-  final VoidCallback onTap;
-
-  /// Whether this row claims keyboard focus as soon as the menu opens —
-  /// set on the list's first row only.
-  final bool autofocus;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = ThemeScope.of(context).colors;
-    return OverlayMenuItem(
-      onTap: onTap,
-      semanticsLabel: label,
-      accent: accent,
-      restingTinted: suggested,
-      autofocus: autofocus,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
-        child: Row(
-          children: [
-            PhosphorIcon(icon, size: 16, color: c.textSecondary),
-            const SizedBox(width: AionSpacing.sp8),
-            Expanded(
-              child: Text(
-                label,
-                style: AionText.bodySm.copyWith(
-                  color: c.textPrimary,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            if (suggested) ...[
-              const SizedBox(width: 8),
-              _SuggestedPill(accent: accent),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// The "Suggested" pill (design.md §7.3) rendered on whichever promote
-/// root row matches [Ticket.suggestedType].
-class _SuggestedPill extends StatelessWidget {
-  const _SuggestedPill({required this.accent});
-
-  /// The suggested target type's own accent (`typeEpic`/`typeBug`).
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = ThemeScope.of(context);
-    final c = t.colors;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: c.accentTint(accent, t.isDark),
-        borderRadius: BorderRadius.all(AionRadius.sm),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
-        child: Text(
-          context.l10n.ticketOverflowSuggestedPill,
-          style: AionText.chip.copyWith(color: accent),
-        ),
-      ),
-    );
-  }
-}
-
-/// A single tappable icon+label row — used by [_RootMenu]'s "Delete
-/// ticket" action.
+/// A single tappable icon+label row — used by [_RootMenu]'s "Discuss",
+/// "Change to Known Gap"/"Change to Open Question", and "Delete ticket"
+/// actions.
 class _MenuActionRow extends StatelessWidget {
   const _MenuActionRow({
     required this.icon,
@@ -580,9 +407,9 @@ class _MenuActionRow extends StatelessWidget {
     return OverlayMenuItem(
       onTap: onTap,
       semanticsLabel: label,
-      // This row's only current caller is the destructive "Delete
-      // ticket" action, so its own icon/label color (always `c.danger`)
-      // doubles as the row's fill accent.
+      // Each row's own icon color doubles as its hover/pressed fill
+      // accent — always `c.danger` for the destructive "Delete ticket"
+      // row, each action's own type accent for the others.
       accent: iconColor,
       autofocus: autofocus,
       child: Padding(
@@ -609,218 +436,15 @@ class _MenuActionRow extends StatelessWidget {
   }
 }
 
-/// The "Promote to Epic"/"Promote to Bug" existing-vs-new chooser
-/// (§5.2/§5.3, filtered by [targetType]): a back header, then "Link to
-/// existing epic/bug" (an embedded [TicketLinkPicker]) and "Create new
-/// epic/bug" (a direct action, no further dialog).
-/// [candidatesLoader]/[onLinkSelected]/[onCreateNewTap] are supplied by
-/// [_TicketOverflowMenuState._showOverlay] using its own `context` —
-/// this widget itself never reads `TicketsCubit`, since it's mounted
-/// inside the [OverlayEntry]'s subtree, outside the ticket-detail
-/// route's provider scope.
-class _PromoteChooser extends StatelessWidget {
-  const _PromoteChooser({
-    required this.targetType,
-    required this.onBack,
-    required this.candidatesLoader,
-    required this.onLinkSelected,
-    required this.onCreateNewTap,
-  });
-
-  /// Which type this chooser's candidates/labels are filtered to —
-  /// [TicketType.epic] or [TicketType.bug].
-  final TicketType targetType;
-
-  /// Called when the back caret is tapped, returning to [_RootMenu].
-  final VoidCallback onBack;
-
-  /// Loads [TicketLinkPicker]'s candidates, already filtered to
-  /// [targetType].
-  final Future<List<Ticket>> Function() candidatesLoader;
-
-  /// Called with the selected ticket when "Link to existing" resolves.
-  final ValueChanged<Ticket> onLinkSelected;
-
-  /// Called when "Create new" is tapped.
-  final VoidCallback onCreateNewTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = ThemeScope.of(context).colors;
-    final isEpic = targetType == TicketType.epic;
-    final headerTitle = isEpic
-        ? context.l10n.ticketOverflowPromoteToEpic
-        : context.l10n.ticketOverflowPromoteToBug;
-    final linkExistingLabel = isEpic
-        ? context.l10n.ticketPromoteLinkExistingEpic
-        : context.l10n.ticketPromoteLinkExistingBug;
-    final createNewLabel = isEpic
-        ? context.l10n.ticketPromoteCreateNewEpic
-        : context.l10n.ticketPromoteCreateNewBug;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _ChooserHeader(onBack: onBack, title: headerTitle),
-        Container(color: c.border, height: 1),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
-          child: Row(
-            children: [
-              PhosphorIcon(
-                PhosphorIcons.linkLight,
-                size: 16,
-                color: c.textSecondary,
-              ),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Text(
-                  linkExistingLabel,
-                  style: AionText.bodySm.copyWith(
-                    color: c.textPrimary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              TicketLinkPicker(
-                candidatesLoader: candidatesLoader,
-                // This picker is reused here purely as a searchable
-                // "pick an existing epic/bug" control (see
-                // `promoteIdea`) — no `TicketLink` is ever created
-                // from this call site, so no link-type choice is
-                // offered and the picked type is discarded.
-                linkTypeOptions: const [],
-                onSelected: (ticket, _) => onLinkSelected(ticket),
-              ),
-            ],
-          ),
-        ),
-        Container(color: c.border, height: 1),
-        OverlayMenuItem(
-          onTap: onCreateNewTap,
-          semanticsLabel: createNewLabel,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
-            child: Row(
-              children: [
-                PhosphorIcon(
-                  PhosphorIcons.plusLight,
-                  size: 16,
-                  color: c.primary,
-                ),
-                const SizedBox(width: 11),
-                Expanded(
-                  child: Text(
-                    createNewLabel,
-                    style: AionText.bodySm.copyWith(
-                      color: c.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// The "Create new bug" severity-prompt step (§5.2a), shown in place of
-/// [_PromoteChooser] once its "Create new bug" row is tapped: a back header
-/// (returns to [_PromoteChooser], not the root menu), a required
-/// [SeverityPicker], and a confirm row — disabled until [value] is non-null
-/// — that actually creates the promoted bug. Mirrors the New Ticket form's
-/// own required-Severity UX (`createTicketSeverityRequired`'s "Choose a
-/// severity" copy), so promoting an idea to a bug can no longer silently
-/// skip the same invariant a manual bug ticket enforces (`AIO-2826`).
-/// [onChanged]/[onBack]/[onConfirm] are supplied by
-/// [_TicketOverflowMenuState._showOverlay] using its own `context` — this
-/// widget itself never reads `TicketsCubit`, same rationale as
-/// [_PromoteChooser]. Added for `AIO-2826`.
-class _BugSeverityPrompt extends StatelessWidget {
-  const _BugSeverityPrompt({
-    required this.value,
-    required this.onChanged,
-    required this.onBack,
-    required this.onConfirm,
-  });
-
-  /// The severity picked so far, or `null` before the user has chosen one.
-  final TicketSeverity? value;
-
-  /// Called with the newly picked severity.
-  final ValueChanged<TicketSeverity> onChanged;
-
-  /// Called when the back caret is tapped, returning to [_PromoteChooser].
-  final VoidCallback onBack;
-
-  /// Called to actually create the promoted bug with [value]. `null` (and
-  /// the confirm row renders disabled) until [value] is non-null.
-  final VoidCallback? onConfirm;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = ThemeScope.of(context).colors;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _ChooserHeader(
-          onBack: onBack,
-          title: context.l10n.ticketPromoteBugSeverityStepTitle,
-        ),
-        Container(color: c.border, height: 1),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
-          child: SeverityPicker(
-            value: value,
-            onChanged: onChanged,
-            labelText: context.l10n.ticketDetailSeverityCaption,
-            isRequired: true,
-          ),
-        ),
-        Container(color: c.border, height: 1),
-        OverlayMenuItem(
-          onTap: onConfirm ?? () {},
-          enabled: onConfirm != null,
-          semanticsLabel: context.l10n.ticketPromoteCreateNewBug,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
-            child: Row(
-              children: [
-                PhosphorIcon(
-                  PhosphorIcons.plusLight,
-                  size: 16,
-                  color: c.primary,
-                ),
-                const SizedBox(width: 11),
-                Expanded(
-                  child: Text(
-                    context.l10n.ticketPromoteCreateNewBug,
-                    style: AionText.bodySm.copyWith(
-                      color: c.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 /// The "Change to Known Gap"/"Change to Open Question" target picker
 /// (`AIO-934` §4.2): a back header, then a single "Pick target ticket" row
-/// embedding [TicketLinkPicker] as a searchable existing-ticket picker. Unlike
-/// [_PromoteChooser], there is no "create new" option — a reclassification
-/// target must already exist. [candidatesLoader]/[onTargetSelected] are
-/// supplied by [_TicketOverflowMenuState._showOverlay] using its own `context`
-/// — this widget itself never reads `TicketsCubit`, same rationale as
-/// [_PromoteChooser]. Added for `AIO-934`.
+/// embedding [TicketLinkPicker] as a searchable existing-ticket picker —
+/// there is no "create new" option, a reclassification target must already
+/// exist. [candidatesLoader]/[onTargetSelected] are supplied by
+/// [_TicketOverflowMenuState._showOverlay] using its own `context` — this
+/// widget itself never reads `TicketsCubit`, since it's mounted inside the
+/// [OverlayEntry]'s subtree, outside the ticket-detail route's provider
+/// scope. Added for `AIO-934`.
 class _ReclassifyChooser extends StatelessWidget {
   const _ReclassifyChooser({
     required this.targetType,

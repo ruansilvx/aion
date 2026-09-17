@@ -3062,12 +3062,16 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [severity] is the user-chosen severity for a newly-created
   /// [TicketType.bug] target (ignored for [TicketType.epic], and for a
   /// promotion to an [existingTicketId] — that ticket's own severity, if
-  /// any, is left untouched). The overflow menu collects this via a
-  /// [SeverityPicker] step before calling here, the same required-choice UX
-  /// as the New Ticket form's own Severity field — see
-  /// [_withRequiredBugSeverity]'s dartdoc for why an explicit choice
-  /// still passes through a default-supplying safety net rather than
-  /// skipping it. Added for `AIO-2826`.
+  /// any, is left untouched). A [SeverityPicker] step was expected to
+  /// collect this before calling here, the same required-choice UX as the
+  /// New Ticket form's own Severity field — see [_withRequiredBugSeverity]'s
+  /// dartdoc for why an explicit choice still passes through a
+  /// default-supplying safety net rather than skipping it. Added for
+  /// `AIO-2826`. This method itself is unchanged by `AIO-2941`, but its
+  /// only caller (the overflow menu's own "Create new bug" severity prompt)
+  /// was removed there, pending `AIO-2942` rebuilding an equivalent
+  /// confirm-time picker — currently reachable only from a test or a future
+  /// caller, not from any live UI.
   Future<void> promoteIdea(
     Ticket idea, {
     required TicketType targetType,
@@ -3128,6 +3132,194 @@ class TicketsCubit extends Cubit<TicketsState> {
     } catch (e) {
       emit(TicketsError(e.toString()));
     }
+  }
+
+  /// Spawns a standalone "Discuss" chat under [idea] and starts its opening
+  /// AI turn — the human-gated first step of idea promotion (`AIO-2940`/
+  /// `AIO-2941`), replacing the old one-click "Promote to Epic"/"Promote to
+  /// Bug" menu actions. Deliberately independent of [SddStage] (unlike
+  /// [_createStageChat]/[_runStageChatTurn]) — [SddStage] is scoped to
+  /// `epic`/`story`/`bug` only (see its own dartdoc), and a Discuss
+  /// conversation is a single adaptive turn, not a multi-stage cycle.
+  /// Mirrors [advanceSddStage]'s shape instead: creates the chat ticket (see
+  /// [_createIdeaDiscussionChat]), adds both [idea.id] and the new chat's id
+  /// to [_inFlightStageAdvanceIds] (reused here purely for what it already
+  /// gates — "a chat turn is in flight" — so the spawned chat's "Waiting for
+  /// reply…" indicator and refresh-on-completion work unchanged), then
+  /// backgrounds the AI turn via [_runIdeaDiscussionTurn]. Returns the
+  /// spawned chat ticket's id once persisted (so a caller can navigate
+  /// straight to it, mirroring [advanceSddStage]'s own return contract), or
+  /// `null` if [idea.type] isn't [TicketType.idea] (emits [TicketsError] and
+  /// recovers via [_emitTicketDetailIfFound], mirroring [promoteIdea]'s own
+  /// guard shape) or if constructed without a [ProviderRegistry]/
+  /// [CommentRepository]. No-ops (returns `null` without starting a second
+  /// concurrent spawn) if [idea.id] is already in [_inFlightStageAdvanceIds]
+  /// — a double-tap/rebuild race, mirroring [advanceSddStage]'s own guard.
+  /// Does not read the finished reply for a `PROMOTION:` gate line — that is
+  /// `AIO-2942`'s own read-back/pending-confirmation mechanism, out of this
+  /// story's scope. Added for `AIO-2941`.
+  Future<String?> startIdeaDiscussion(Ticket idea) async {
+    if (idea.type != TicketType.idea) {
+      emit(TicketsError('Only idea tickets can be discussed.'));
+      await _emitTicketDetailIfFound(idea.id);
+      return null;
+    }
+    if (_inFlightStageAdvanceIds.contains(idea.id)) return null;
+
+    final chatId = await _createIdeaDiscussionChat(idea);
+    if (chatId == null) return null;
+
+    _inFlightStageAdvanceIds
+      ..add(idea.id)
+      ..add(chatId);
+    _refreshInFlightBoardState();
+
+    unawaited(_runIdeaDiscussionTurn(idea, chatId));
+    return chatId;
+  }
+
+  /// Creates the `chat`-type child ticket [startIdeaDiscussion] spawns under
+  /// [idea] and posts its opening [CommentAuthorType.system] prompt (see
+  /// [_ideaDiscussionPrompt]) — the `await`ed half of the same
+  /// create-then-background-the-turn split [_createStageChat]/
+  /// [_runStageChatTurn] use, adapted for an idea rather than an [SddStage].
+  /// Returns the persisted chat ticket's id, or `null` if constructed
+  /// without a [ProviderRegistry]/[CommentRepository]. Added for `AIO-2941`.
+  Future<String?> _createIdeaDiscussionChat(Ticket idea) async {
+    final providerRegistry = _providerRegistry;
+    final commentRepo = _commentRepository;
+    if (providerRegistry == null || commentRepo == null) return null;
+
+    final now = DateTime.now();
+    final chatTicket = Ticket(
+      id: _uuid.v4(),
+      ticketId: '',
+      type: TicketType.chat,
+      title: 'Discuss — ${idea.title}',
+      status: _defaultCreationStatus,
+      parentId: idea.id,
+      createdAt: now,
+      updatedAt: now,
+    );
+    await _repository.createTicket(chatTicket);
+    final persistedChat = await _repository.getTicketById(chatTicket.id);
+    if (persistedChat == null) return null;
+
+    await commentRepo.addComment(
+      TicketComment(
+        id: '',
+        ticketId: persistedChat.id,
+        content: _ideaDiscussionPrompt(idea),
+        authorType: CommentAuthorType.system,
+        createdAt: DateTime.now(),
+      ),
+    );
+
+    return persistedChat.id;
+  }
+
+  /// Runs [chatId]'s opening AI turn for [idea] — the `unawaited` half
+  /// [startIdeaDiscussion] backgrounds, mirroring [_runStageChatTurn]'s
+  /// shape: resolves the model via [ModelPhase.frontier] (a real scoping
+  /// judgment call, the same tier `exploring`/`proposed`/`verifying` stage
+  /// chats use — this conversation has no [SddStage] of its own to read a
+  /// phase from), runs [ChatCubit.runChatTurn] text-only (no tools, no
+  /// working directory — matches a plain stage chat, never an
+  /// `applying`/`delegatedSkill` run), and on a hard error posts a
+  /// `"Discussion failed: <e>"` system comment (mirrors
+  /// [_runStageChatTurn]'s own `"Stage advance failed: ..."` catch shape)
+  /// rather than letting the error vanish into a discarded `unawaited`
+  /// future. Removes both [idea.id] and [chatId] from
+  /// [_inFlightStageAdvanceIds] on completion either way, and re-emits
+  /// [TicketDetailLoaded] for whichever of [idea]/[chatId] was already on
+  /// screen when the turn started (mirrors [_runStageChatTurn]'s own
+  /// `showingDetailId` capture-and-refresh, for the identical reason —
+  /// otherwise a detail screen left open never learns
+  /// [TicketDetailLoaded.isAdvancingStage] flipped back to `false`). Added
+  /// for `AIO-2941`.
+  Future<void> _runIdeaDiscussionTurn(Ticket idea, String chatId) async {
+    final providerRegistry = _providerRegistry;
+    final commentRepo = _commentRepository;
+    if (providerRegistry == null || commentRepo == null) return;
+
+    final showingDetailId = switch (state) {
+      TicketDetailLoaded(:final ticket)
+          when ticket.id == idea.id || ticket.id == chatId =>
+        ticket.id,
+      _ => null,
+    };
+
+    try {
+      final (model, provider) = await _resolveModelAndProvider(
+        ModelPhase.frontier,
+      );
+      await ChatCubit.runChatTurn(
+        client: provider.client,
+        provider: provider,
+        commentRepo: commentRepo,
+        ticketRepository: _repository,
+        chatTicketId: chatId,
+        prompt: _ideaDiscussionPrompt(idea),
+        model: model,
+        toolsEnabled: false,
+      );
+    } catch (e) {
+      await commentRepo.addComment(
+        TicketComment(
+          id: '',
+          ticketId: chatId,
+          content: 'Discussion failed: $e',
+          authorType: CommentAuthorType.system,
+          createdAt: DateTime.now(),
+        ),
+      );
+    } finally {
+      _inFlightStageAdvanceIds
+        ..remove(idea.id)
+        ..remove(chatId);
+      _refreshInFlightBoardState();
+    }
+
+    if (showingDetailId != null && !isClosed) {
+      await getTicketById(showingDetailId);
+    }
+  }
+
+  /// The opening (and, since a fresh chat has no prior turns, only) prompt
+  /// for [idea]'s Discuss conversation (`AIO-2940`/`AIO-2941`) — instructs
+  /// the model to scope [idea] adaptively (a light confirmation pass for a
+  /// diagnosed one-line bug; real scoping questions — what problem this
+  /// solves, what's explicitly out of scope, what it depends on, the risk of
+  /// getting the scope wrong — for a feature-shaped idea) and to end its
+  /// reply with exactly one of `PROMOTION: EPIC` / `PROMOTION: BUG` /
+  /// `PROMOTION: NOT YET`, the literal string `AIO-2942`'s gate-line reader
+  /// will match on (mirroring [_proposeGateApproved]'s existing exact-string
+  /// precedent, not a semantic read). Re-derived by both
+  /// [_createIdeaDiscussionChat] and [_runIdeaDiscussionTurn] rather than
+  /// threaded through as a parameter — mirrors [_runStageChatTurn] re-running
+  /// [_assembleStageContext] for the identical reason (cheap, local-only, no
+  /// network). Added for `AIO-2941`.
+  String _ideaDiscussionPrompt(Ticket idea) {
+    final description = idea.description?.trim();
+    return '''
+You're discussing whether and how to promote this idea into committed work, before anything is created. This conversation is the human-in-the-loop scoping step Aion's promotion flow was missing — treat it as a real conversation, not a formality to rush through.
+
+# Idea: ${idea.title}
+
+${description == null || description.isEmpty ? '(no description provided)' : description}
+
+Adapt your depth to what this idea actually is:
+- If it's already a diagnosed, well-scoped defect (a clear one-line bug with an obvious fix), a light confirmation pass is enough — restate what you understand the bug to be and ask only what's genuinely unclear.
+- If it's feature-shaped or open-ended, ask real scoping questions: what problem does this solve, what's explicitly out of scope, what does it depend on, and what's the risk of getting the scope wrong? Keep asking until you and the human actually agree on shape, not just intent.
+
+Once you and the human genuinely agree — not before — end your final reply with exactly one of these lines, and nothing else on that line:
+
+PROMOTION: EPIC
+PROMOTION: BUG
+PROMOTION: NOT YET
+
+`PROMOTION: NOT YET` is a legitimate outcome — this idea can stay an idea if it isn't ready for or doesn't warrant committed work yet.
+''';
   }
 
   /// Creates a [type] (`knownGap`/`openQuestion` only) ticket titled [title]

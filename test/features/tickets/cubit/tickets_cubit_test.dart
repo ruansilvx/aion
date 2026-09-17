@@ -13937,6 +13937,201 @@ void main() {
     );
   });
 
+  group('startIdeaDiscussion', () {
+    late MockAgentModelClient agentClient;
+    late MockProviderRegistry registry;
+    late MockCommentRepository commentRepository;
+
+    setUp(() {
+      agentClient = MockAgentModelClient();
+      registry = buildProviderStack(agentClient).registry;
+      commentRepository = MockCommentRepository();
+    });
+
+    TicketsCubit buildCubit() => TicketsCubit(
+      repository,
+      providerRegistry: registry,
+      commentRepository: commentRepository,
+    );
+
+    void stubHappyPath({required Completer<Stream<AgentEvent>> pauseOn}) {
+      when(
+        () => repository.getTicketById(any()),
+      ).thenAnswer((_) async => dummyChatTicket);
+      when(
+        () => repository.getTicketById(ideaTicket.id),
+      ).thenAnswer((_) async => ideaTicket);
+      when(() => repository.createTicket(any())).thenAnswer((_) async {});
+      when(() => commentRepository.addComment(any())).thenAnswer((_) async {});
+      when(() => agentClient.run(any())).thenAnswer((_) => pauseOn.future);
+    }
+
+    blocTest<TicketsCubit, TicketsState>(
+      'rejects a non-idea ticket without creating a chat, recovering the '
+      'detail screen',
+      setUp: () {
+        when(
+          () => repository.getTicketById(ticket.id),
+        ).thenAnswer((_) async => ticket);
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.startIdeaDiscussion(ticket),
+      verify: (_) {
+        verifyNever(() => repository.createTicket(any()));
+      },
+      expect: () => [isA<TicketsError>(), TicketDetailLoaded(ticket)],
+    );
+
+    test(
+      'returns the spawned chat id before the discussion turn resolves',
+      () async {
+        final pauseOn = Completer<Stream<AgentEvent>>();
+        stubHappyPath(pauseOn: pauseOn);
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+
+        final chatId = await cubit.startIdeaDiscussion(ideaTicket);
+
+        expect(chatId, dummyChatTicket.id);
+        // The stubbed agentClient.run call is still pending — proves
+        // startIdeaDiscussion didn't wait on it.
+        expect(pauseOn.isCompleted, isFalse);
+        pauseOn.complete(Stream.fromIterable(const [AgentDoneEvent()]));
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'a second call for an idea already mid-discussion no-ops without '
+      'creating another chat ticket',
+      setUp: () {
+        stubHappyPath(pauseOn: Completer<Stream<AgentEvent>>());
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        await cubit.startIdeaDiscussion(ideaTicket);
+        final secondResult = await cubit.startIdeaDiscussion(ideaTicket);
+        expect(secondResult, isNull);
+      },
+      verify: (_) {
+        verify(() => repository.createTicket(any())).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'creates a chat ticket parented to the idea, with an opening system '
+      'comment naming the idea and the three PROMOTION gate lines',
+      setUp: () {
+        stubHappyPath(
+          pauseOn: Completer<Stream<AgentEvent>>()
+            ..complete(Stream.fromIterable(const [AgentDoneEvent()])),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.startIdeaDiscussion(ideaTicket),
+      verify: (_) {
+        final created = verify(
+          () => repository.createTicket(captureAny()),
+        ).captured;
+        expect(created, hasLength(1));
+        final chat = created.first as Ticket;
+        expect(chat.type, TicketType.chat);
+        expect(chat.parentId, ideaTicket.id);
+        expect(chat.title, 'Discuss — ${ideaTicket.title}');
+
+        final comments = verify(
+          () => commentRepository.addComment(captureAny()),
+        ).captured;
+        expect(comments, hasLength(1));
+        final opening = comments.first as TicketComment;
+        expect(opening.authorType, CommentAuthorType.system);
+        expect(opening.content, contains(ideaTicket.title));
+        expect(opening.content, contains('PROMOTION: EPIC'));
+        expect(opening.content, contains('PROMOTION: BUG'));
+        expect(opening.content, contains('PROMOTION: NOT YET'));
+      },
+    );
+
+    // ChatCubit.runChatTurn already swallows an agentClient.run failure
+    // internally (posting its own AI-authored "Execution failed: ..."
+    // comment and returning normally, never rethrowing) — see its own
+    // dartdoc. So _runIdeaDiscussionTurn's own catch can only ever fire for
+    // a failure *outside* that scope: here, the AI-reply comment write
+    // itself throwing (e.g. a DB failure), mirroring
+    // advanceSddStage's identical hard-failure test above.
+    final hardFailurePostedComments = <TicketComment>[];
+    blocTest<TicketsCubit, TicketsState>(
+      "a hard failure in the discussion turn posts a "
+      '"Discussion failed: " comment rather than throwing',
+      setUp: () {
+        hardFailurePostedComments.clear();
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Reply text'),
+            AgentDoneEvent(),
+          ]),
+        );
+        var addCommentCallCount = 0;
+        when(() => commentRepository.addComment(any())).thenAnswer((
+          invocation,
+        ) async {
+          addCommentCallCount++;
+          if (addCommentCallCount == 2) {
+            throw Exception('boom');
+          }
+          hardFailurePostedComments.add(
+            invocation.positionalArguments[0] as TicketComment,
+          );
+        });
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        await cubit.startIdeaDiscussion(ideaTicket);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      },
+      verify: (_) {
+        verify(() => commentRepository.addComment(any())).called(3);
+        expect(
+          hardFailurePostedComments.last.authorType,
+          CommentAuthorType.system,
+        );
+        expect(
+          hardFailurePostedComments.last.content,
+          startsWith('Discussion failed: '),
+        );
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      '_inFlightStageAdvanceIds is cleared on the success path — a '
+      'subsequent getTicketById reports isAdvancingStage false',
+      setUp: () {
+        stubHappyPath(
+          pauseOn: Completer<Stream<AgentEvent>>()
+            ..complete(Stream.fromIterable(const [AgentDoneEvent()])),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        await cubit.startIdeaDiscussion(ideaTicket);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await cubit.getTicketById(ideaTicket.id);
+      },
+      verify: (_) {},
+      skip: 1,
+      expect: () => [
+        isA<TicketDetailLoaded>().having(
+          (s) => s.isAdvancingStage,
+          'isAdvancingStage',
+          false,
+        ),
+      ],
+    );
+  });
+
   group('createGapOrQuestion', () {
     late MockTicketLinkRepository linkRepository;
 
