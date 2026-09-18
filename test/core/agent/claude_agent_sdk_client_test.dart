@@ -1,5 +1,6 @@
 // test/core/agent/claude_agent_sdk_client_test.dart — ClaudeAgentSdkClient tests.
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -110,6 +111,59 @@ void main() {
 
         expect(events.whereType<AgentToolCallEvent>(), isEmpty);
         expect(events.last, isA<AgentDoneEvent>());
+      },
+      timeout: const Timeout(Duration(seconds: 15)),
+    );
+  });
+
+  group('ClaudeAgentSdkClient request shape', () {
+    test(
+      'readOnlyTools and workingDirectory are written into the request line '
+      'sent to the bridge process',
+      () async {
+        final client = ClaudeAgentSdkClient(
+          _FixtureBridgeLocator('fake_echo_request_bridge.mjs'),
+        );
+
+        final stream = await client.run(
+          AgentRequest(
+            prompt: 'irrelevant',
+            model: 'irrelevant',
+            readOnlyTools: true,
+            // A real, always-present directory — `Process.start` itself
+            // fails (surfaced as an AgentErrorEvent) if `workingDirectory`
+            // doesn't exist on disk, which isn't what this test is
+            // checking.
+            workingDirectory: Directory.systemTemp.path,
+          ),
+        );
+        final events = await stream.toList();
+
+        final echoed =
+            jsonDecode((events.first as AgentTextEvent).text)
+                as Map<String, dynamic>;
+        expect(echoed['toolsEnabled'], false);
+        expect(echoed['readOnlyTools'], true);
+      },
+      timeout: const Timeout(Duration(seconds: 15)),
+    );
+
+    test(
+      'readOnlyTools defaults to false, matching AgentRequest\'s default',
+      () async {
+        final client = ClaudeAgentSdkClient(
+          _FixtureBridgeLocator('fake_echo_request_bridge.mjs'),
+        );
+
+        final stream = await client.run(
+          const AgentRequest(prompt: 'irrelevant', model: 'irrelevant'),
+        );
+        final events = await stream.toList();
+
+        final echoed =
+            jsonDecode((events.first as AgentTextEvent).text)
+                as Map<String, dynamic>;
+        expect(echoed['readOnlyTools'], false);
       },
       timeout: const Timeout(Duration(seconds: 15)),
     );

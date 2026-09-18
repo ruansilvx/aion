@@ -356,8 +356,12 @@ class ChatCubit extends Cubit<ChatState> {
   /// the chat live. Returns `true` if the turn completed successfully, `false`
   /// otherwise. [toolsEnabled] and [workingDirectory] opt a run into real tool
   /// access (file edits, git, bash) scoped to that directory — only
-  /// `TicketsCubit`'s coding-execution path sets these; every other caller
-  /// leaves them at their text-only defaults. [provider] maps a raw
+  /// `TicketsCubit`'s coding-execution path sets these. [readOnlyTools], when
+  /// [toolsEnabled] is `false`, grants the narrower Read/Grep/Glob set
+  /// (still scoped to [workingDirectory]) — SDD-stage chats set this so they
+  /// can actually investigate the codebase without gaining Bash/Edit/Write;
+  /// every other caller leaves both at their text-only defaults. See
+  /// `AIO-2962`. [provider] maps a raw
   /// `AgentOverageDetectedEvent.message` into a [ConsumptionSignal] (via
   /// `AgentProvider.describeOverage`, reported to [onConsumptionSignal] if
   /// given, once per event) and a raw `AgentErrorEvent.message` into a
@@ -413,6 +417,7 @@ class ChatCubit extends Cubit<ChatState> {
     String? runId,
     void Function(String textSoFar)? onChunk,
     bool toolsEnabled = false,
+    bool readOnlyTools = false,
     String? workingDirectory,
     void Function(ConsumptionSignal signal)? onConsumptionSignal,
     void Function(String toolName, String? summary)? onToolUse,
@@ -437,6 +442,7 @@ class ChatCubit extends Cubit<ChatState> {
           prompt: prompt,
           model: model.modelId,
           toolsEnabled: toolsEnabled,
+          readOnlyTools: readOnlyTools,
           workingDirectory: workingDirectory,
           tools: tools,
           onToolCall: onToolCall,

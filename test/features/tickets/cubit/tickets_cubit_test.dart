@@ -18488,8 +18488,9 @@ void main() {
 
     group('auto confidence — WorkflowStatus entry', () {
       blocTest<TicketsCubit, TicketsState>(
-        'fires immediately: aionNativeTemplate renders the template '
-        'text-only against the ticket',
+        'fires immediately: aionNativeTemplate renders the template with '
+        'read-only codebase access against the project root, not '
+        'toolsEnabled',
         setUp: () {
           const template = WorkflowPromptTemplate(
             id: 'tmpl-1',
@@ -18533,7 +18534,8 @@ void main() {
                   (r) =>
                       r.prompt == 'Investigate Test ticket.' &&
                       r.toolsEnabled == false &&
-                      r.workingDirectory == null,
+                      r.readOnlyTools == true &&
+                      r.workingDirectory == '/project/root',
                 ),
               ),
             ),

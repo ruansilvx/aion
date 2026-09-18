@@ -2,11 +2,11 @@
 // (aion/lib/core/agent/claude_agent_sdk_client.dart). Not part of the
 // Flutter build — a plain Node/ESM script.
 //
-// Reads one JSON request line ({prompt, model, toolsEnabled, tools, resume,
-// forkSession}) from stdin and runs it through the Claude Agent SDK's
-// query(). Built-in tool access (file edits, git, bash) is disabled unless
-// the request sets toolsEnabled: true — set only by TicketsCubit's
-// coding-execution path
+// Reads one JSON request line ({prompt, model, toolsEnabled, readOnlyTools,
+// tools, resume, forkSession}) from stdin and runs it through the Claude
+// Agent SDK's query(). Built-in tool access (file edits, git, bash) is
+// disabled unless the request sets toolsEnabled: true — set only by
+// TicketsCubit's coding-execution path
 // (aion-arch/changes/task-to-coding-execution-trigger/design.md §1.3); every
 // other caller keeps today's text-only-plus-app-tools behavior, enforced via
 // the SDK's `options.tools` (the actual tool-*availability* restriction —
@@ -14,10 +14,16 @@
 // easily-confused option that only skips the permission *prompt* for
 // already-available tools, and was mistakenly used for this restriction
 // until AIO-2954 found (live) that it let a `toolsEnabled: false` run use
-// Bash freely. Independently, a non-empty `tools` array (AgentToolDefinition[]
-// — see aion/lib/core/contracts/agent_tool_definition.dart) registers
-// app-defined tools the model may call mid-run, regardless of toolsEnabled —
-// see aion-arch/changes/mid-task-chat-branching/design.md §3. `resume`
+// Bash freely. A `toolsEnabled: false` request that also sets
+// readOnlyTools: true (SDD-stage chats — explore/propose/design-brief/
+// design-sync, and their aionNativeTemplate SkillAttachment overrides) gets
+// Read/Grep/Glob back on top of that restriction — AIO-2954's fix, while
+// closing the Bash hole, also silently took away the codebase-reading
+// access those stages' own skill docs promise; see AIO-2962. Independently,
+// a non-empty `tools` array (AgentToolDefinition[] — see
+// aion/lib/core/contracts/agent_tool_definition.dart) registers app-defined
+// tools the model may call mid-run, regardless of toolsEnabled — see
+// aion-arch/changes/mid-task-chat-branching/design.md §3. `resume`
 // (session id string) and `forkSession` (boolean) resume/fork an existing
 // session rather than starting a fresh one — see
 // aion-arch/changes/decision-graph-agentjudgment-condition/design.md §3.
@@ -150,15 +156,21 @@ function buildToolsServer(tools, requestToolCall) {
   });
 }
 
+// Non-mutating built-in tools grantable to a toolsEnabled:false run via
+// readOnlyTools — deliberately excludes Bash (can do anything, including
+// mutate) and Edit/Write. See AIO-2962.
+const READ_ONLY_BUILTIN_TOOLS = ['Read', 'Grep', 'Glob'];
+
 // Builds the `options` object passed to the SDK's query() — pure and
 // side-effect-free so it can be unit-tested without invoking the real SDK
 // (see index.test.mjs). `toolsServer`/`aionToolNames` are `null`/empty
 // respectively when the request carried no app-defined `tools`. When
-// `toolsEnabled` is false, `tools: [...aionToolNames]` is the actual
-// availability restriction — an empty array here means the built-in tool
-// set is fully disabled, leaving only whatever app-defined MCP tools
-// `toolsServer` registers (or nothing at all). Do not swap this for
-// `allowedTools`: that option only skips the permission prompt for
+// `toolsEnabled` is false, `tools: [...]` is the actual availability
+// restriction — `readOnlyTools` adds back only Read/Grep/Glob
+// (READ_ONLY_BUILTIN_TOOLS) on top of `aionToolNames`; without it, the
+// built-in tool set is fully disabled, leaving only whatever app-defined
+// MCP tools `toolsServer` registers (or nothing at all). Do not swap this
+// for `allowedTools`: that option only skips the permission prompt for
 // already-available tools and does not restrict which tools exist — see
 // this file's own header comment and AIO-2954.
 function buildQueryOptions({
@@ -167,6 +179,7 @@ function buildQueryOptions({
   forkSession,
   toolsServer,
   toolsEnabled,
+  readOnlyTools,
   aionToolNames,
 }) {
   return {
@@ -189,7 +202,11 @@ function buildQueryOptions({
           permissionMode: 'bypassPermissions',
           allowDangerouslySkipPermissions: true,
         }
-      : { tools: [...aionToolNames] }),
+      : {
+          tools: readOnlyTools
+            ? [...READ_ONLY_BUILTIN_TOOLS, ...aionToolNames]
+            : [...aionToolNames],
+        }),
   };
 }
 
@@ -232,6 +249,7 @@ async function main() {
     prompt,
     model,
     toolsEnabled,
+    readOnlyTools = false,
     tools: toolDefs = [],
     resume,
     forkSession,
@@ -271,6 +289,7 @@ async function main() {
         forkSession,
         toolsServer,
         toolsEnabled,
+        readOnlyTools,
         aionToolNames,
       }),
     })) {
