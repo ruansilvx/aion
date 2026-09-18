@@ -4,15 +4,20 @@
 //
 // Reads one JSON request line ({prompt, model, toolsEnabled, tools, resume,
 // forkSession}) from stdin and runs it through the Claude Agent SDK's
-// query(). Tool access (file edits, git, bash, MCP) is disabled unless the
-// request sets toolsEnabled: true — set only by TicketsCubit's
+// query(). Built-in tool access (file edits, git, bash) is disabled unless
+// the request sets toolsEnabled: true — set only by TicketsCubit's
 // coding-execution path
 // (aion-arch/changes/task-to-coding-execution-trigger/design.md §1.3); every
-// other caller keeps today's text-only behavior. Independently, a non-empty
-// `tools` array (AgentToolDefinition[] — see
-// aion/lib/core/contracts/agent_tool_definition.dart) registers app-defined
-// tools the model may call mid-run, regardless of toolsEnabled — see
-// aion-arch/changes/mid-task-chat-branching/design.md §3. `resume`
+// other caller keeps today's text-only-plus-app-tools behavior, enforced via
+// the SDK's `options.tools` (the actual tool-*availability* restriction —
+// see buildQueryOptions below); `options.allowedTools` is a different,
+// easily-confused option that only skips the permission *prompt* for
+// already-available tools, and was mistakenly used for this restriction
+// until AIO-2954 found (live) that it let a `toolsEnabled: false` run use
+// Bash freely. Independently, a non-empty `tools` array (AgentToolDefinition[]
+// — see aion/lib/core/contracts/agent_tool_definition.dart) registers
+// app-defined tools the model may call mid-run, regardless of toolsEnabled —
+// see aion-arch/changes/mid-task-chat-branching/design.md §3. `resume`
 // (session id string) and `forkSession` (boolean) resume/fork an existing
 // session rather than starting a fresh one — see
 // aion-arch/changes/decision-graph-agentjudgment-condition/design.md §3.
@@ -39,6 +44,7 @@
 import { createSdkMcpServer, query } from '@anthropic-ai/claude-agent-sdk';
 import { randomUUID } from 'node:crypto';
 import { createInterface } from 'node:readline';
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 
 // The MCP server name app-defined tools are registered under. The Agent
@@ -144,6 +150,49 @@ function buildToolsServer(tools, requestToolCall) {
   });
 }
 
+// Builds the `options` object passed to the SDK's query() — pure and
+// side-effect-free so it can be unit-tested without invoking the real SDK
+// (see index.test.mjs). `toolsServer`/`aionToolNames` are `null`/empty
+// respectively when the request carried no app-defined `tools`. When
+// `toolsEnabled` is false, `tools: [...aionToolNames]` is the actual
+// availability restriction — an empty array here means the built-in tool
+// set is fully disabled, leaving only whatever app-defined MCP tools
+// `toolsServer` registers (or nothing at all). Do not swap this for
+// `allowedTools`: that option only skips the permission prompt for
+// already-available tools and does not restrict which tools exist — see
+// this file's own header comment and AIO-2954.
+function buildQueryOptions({
+  model,
+  resume,
+  forkSession,
+  toolsServer,
+  toolsEnabled,
+  aionToolNames,
+}) {
+  return {
+    model,
+    ...(resume ? { resume, forkSession } : {}),
+    ...(toolsServer
+      ? { mcpServers: { [AION_TOOLS_SERVER_NAME]: toolsServer } }
+      : {}),
+    ...(toolsEnabled
+      ? {
+          // This process has no TTY (spawned via dart:io Process with
+          // piped stdio, no interactive terminal), so the SDK's default
+          // 'default' permissionMode — which prompts for dangerous
+          // operations like file writes — has no one to answer its
+          // prompts. Confirmed empirically: without this, a tool-enabled
+          // run can Read but every Edit/Write/git-write attempt is
+          // denied, and the model burns its run narrating workarounds
+          // instead of ever touching a file. bypassPermissions requires
+          // allowDangerouslySkipPermissions: true as a companion flag.
+          permissionMode: 'bypassPermissions',
+          allowDangerouslySkipPermissions: true,
+        }
+      : { tools: [...aionToolNames] }),
+  };
+}
+
 async function readRequest() {
   const rl = createInterface({ input: process.stdin, terminal: false });
   for await (const line of rl) {
@@ -216,34 +265,14 @@ async function main() {
   try {
     for await (const message of query({
       prompt,
-      options: {
+      options: buildQueryOptions({
         model,
-        ...(resume ? { resume, forkSession } : {}),
-        ...(toolsServer
-          ? { mcpServers: { [AION_TOOLS_SERVER_NAME]: toolsServer } }
-          : {}),
-        // Tool-enabled runs (Task coding-execution) get the SDK's default
-        // tool set; every other caller (Settings' "Test Connection",
-        // SDD-stage chats) keeps today's text-only behavior — except that
-        // a non-empty `tools` request still needs its own app-defined
-        // tool(s) explicitly allowlisted, since `allowedTools: []` would
-        // otherwise block the MCP-backed tool too.
-        ...(toolsEnabled
-          ? {
-              // This process has no TTY (spawned via dart:io Process with
-              // piped stdio, no interactive terminal), so the SDK's default
-              // 'default' permissionMode — which prompts for dangerous
-              // operations like file writes — has no one to answer its
-              // prompts. Confirmed empirically: without this, a tool-enabled
-              // run can Read but every Edit/Write/git-write attempt is
-              // denied, and the model burns its run narrating workarounds
-              // instead of ever touching a file. bypassPermissions requires
-              // allowDangerouslySkipPermissions: true as a companion flag.
-              permissionMode: 'bypassPermissions',
-              allowDangerouslySkipPermissions: true,
-            }
-          : { allowedTools: [...aionToolNames] }),
-      },
+        resume,
+        forkSession,
+        toolsServer,
+        toolsEnabled,
+        aionToolNames,
+      }),
     })) {
       if (!sessionEmitted && message.session_id) {
         sessionEmitted = true;
@@ -317,7 +346,15 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  emit({ type: 'error', message: error?.message ?? String(error) });
-  process.exitCode = 1;
-});
+// Guarded so index.test.mjs can `import { buildQueryOptions }` without
+// triggering a real stdin-reading/SDK-invoking run — main() only fires when
+// this file is the actual process entry point, matching how
+// ClaudeAgentSdkClient spawns it (`node index.mjs`).
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  main().catch((error) => {
+    emit({ type: 'error', message: error?.message ?? String(error) });
+    process.exitCode = 1;
+  });
+}
+
+export { buildQueryOptions };
