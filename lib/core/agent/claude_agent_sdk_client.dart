@@ -107,6 +107,7 @@ class ClaudeAgentSdkClient implements AgentModelClient {
         'prompt': request.prompt,
         'model': request.model,
         'toolsEnabled': request.toolsEnabled,
+        'readOnlyTools': request.readOnlyTools,
         'tools': request.tools
             .map(
               (tool) => {

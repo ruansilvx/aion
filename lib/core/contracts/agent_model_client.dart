@@ -47,6 +47,7 @@ class AgentRequest extends Equatable {
     required this.prompt,
     required this.model,
     this.toolsEnabled = false,
+    this.readOnlyTools = false,
     this.workingDirectory,
     this.tools = const [],
     this.onToolCall,
@@ -66,14 +67,28 @@ class AgentRequest extends Equatable {
 
   /// When `true`, the run may edit files, run git/bash, and use MCP —
   /// only ever set by `TicketsCubit`'s coding-execution path. Every
-  /// existing caller (SDD-stage chats, Settings' connection test) leaves
-  /// this `false`, preserving today's text-only behavior.
+  /// other caller leaves this `false`; some of those set [readOnlyTools]
+  /// instead for a narrower grant.
   final bool toolsEnabled;
 
-  /// The directory the agent process should run in — required
-  /// (non-null) whenever [toolsEnabled] is `true`, so file edits/git land
-  /// in the actual project checkout rather than wherever the Flutter
-  /// process happens to be running from. `null` for every text-only call.
+  /// When `true` and [toolsEnabled] is `false`, the run gets the provider's
+  /// non-mutating built-in tools (`Read`/`Grep`/`Glob` — never `Bash`,
+  /// `Edit`, or `Write`) instead of a fully text-only run. For SDD-stage
+  /// chats (explore/propose/design-brief/design-sync) and their
+  /// `SkillAttachmentKind.aionNativeTemplate` overrides — each one's own
+  /// skill doc promises "investigate the codebase," which a purely
+  /// text-only run can't actually do. Ignored (and harmless) when
+  /// [toolsEnabled] is `true` — that grant is already a superset. `false`
+  /// (the default) for every other text-only caller, e.g. the
+  /// idea-promotion Discuss gate, which is a conversational judgment call,
+  /// not a codebase investigation. See `AIO-2962`.
+  final bool readOnlyTools;
+
+  /// The directory the agent process should run in. Required (non-null)
+  /// whenever [toolsEnabled] or [readOnlyTools] is `true` — otherwise
+  /// whatever built-in tools get granted resolve relative to wherever the
+  /// Flutter process happens to be running from, not the project (see
+  /// `AIO-2954`). `null` for a purely text-only call.
   final String? workingDirectory;
 
   /// App-defined tools the model may call mid-run, independent of
@@ -128,6 +143,7 @@ class AgentRequest extends Equatable {
     prompt,
     model,
     toolsEnabled,
+    readOnlyTools,
     workingDirectory,
     tools,
     runId,

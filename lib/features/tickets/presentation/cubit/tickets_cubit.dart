@@ -3720,6 +3720,8 @@ PROMOTION: NOT YET
       chatTicketId: designSyncChat.id,
       prompt: context,
       model: model,
+      readOnlyTools: true,
+      workingDirectory: _sourceRootPath,
       tools: await _toolsFor(designSyncChat.id),
       onToolCall: _onToolCallFor(designSyncChat),
     );
@@ -3770,6 +3772,8 @@ PROMOTION: NOT YET
       chatTicketId: verifyingChat.id,
       prompt: context,
       model: model,
+      readOnlyTools: true,
+      workingDirectory: _sourceRootPath,
       tools: await _toolsFor(verifyingChat.id),
       onToolCall: _onToolCallFor(verifyingChat),
     );
@@ -7372,6 +7376,9 @@ PROMOTION: NOT YET
           'aion/skill-${attachment!.id}-${_uuid.v4()}',
         );
       }
+      final stageToolsEnabled = attachment == null
+          ? false
+          : attachmentToolsEnabled;
       final result = await ChatCubit.runChatTurn(
         client: provider.client,
         provider: provider,
@@ -7380,8 +7387,15 @@ PROMOTION: NOT YET
         chatTicketId: chatId,
         prompt: context,
         model: model,
-        toolsEnabled: attachment == null ? false : attachmentToolsEnabled,
-        workingDirectory: worktreePath,
+        toolsEnabled: stageToolsEnabled,
+        // Every path that reaches this call with toolsEnabled false is
+        // either a plain SDD-stage chat (attachment == null) or its
+        // SkillAttachmentKind.aionNativeTemplate override — both are
+        // documented as investigating the codebase, so they get read-only
+        // codebase access rather than staying fully text-only. See
+        // AIO-2962.
+        readOnlyTools: !stageToolsEnabled,
+        workingDirectory: stageToolsEnabled ? worktreePath : _sourceRootPath,
         tools: tools,
         onToolCall: onToolCall,
         onChunk: (_) => _emitLiveStageActivity(showingDetailId, null),
@@ -7644,7 +7658,12 @@ PROMOTION: NOT YET
         prompt: prompt,
         model: model,
         toolsEnabled: toolsEnabled,
-        workingDirectory: worktreePath,
+        // An aionNativeTemplate attachment (the only kind reaching this
+        // call with toolsEnabled false) is documented as running "exactly
+        // like" a hardcoded SDD-stage prompt — same read-only codebase
+        // access, same reasoning as `_runStageChatTurn`. See AIO-2962.
+        readOnlyTools: !toolsEnabled,
+        workingDirectory: toolsEnabled ? worktreePath : _sourceRootPath,
       );
     } catch (e) {
       await commentRepo.addComment(
