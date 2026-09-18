@@ -584,6 +584,9 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                             onMaybeAutoAdvance: (t, canAdvance) =>
                                 _maybeAutoAdvanceSddStage(t, canAdvance),
                             isAdvancingStage: state.isAdvancingStage,
+                            stageAdvanceStartedAt: state.stageAdvanceStartedAt,
+                            stageAdvanceLiveActivity:
+                                state.stageAdvanceLiveActivity,
                           );
                         }
                         return SingleChildScrollView(

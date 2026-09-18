@@ -1179,6 +1179,16 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// (mirrors [_inFlightExecutionTaskId]). Added for `AIO-352`.
   final Set<String> _inFlightStageAdvanceIds = {};
 
+  /// When each id currently in [_inFlightStageAdvanceIds] started running —
+  /// same both-ids-added-together shape, populated/cleared alongside it at
+  /// every call site. Read by [getTicketById] to populate
+  /// [TicketDetailLoaded.stageAdvanceStartedAt], which survives a
+  /// re-navigation back to the ticket mid-run (unlike the live-only
+  /// [_emitLiveStageActivity] path) since it's recomputed fresh from this map
+  /// on every [getTicketById] call. In-memory only, does not survive an app
+  /// restart. Added for `AIO-2884`.
+  final Map<String, DateTime> _stageAdvanceStartedAt = {};
+
   /// Epic/Story ids currently mid-automatic-verify-retry (an
   /// [AutomationContext.verifyGateRetry] `auto`-confidence [retryVerify] call
   /// [_maybeRetryPendingVerify] fired hasn't finished yet). Mirrors
@@ -2481,6 +2491,8 @@ class TicketsCubit extends Cubit<TicketsState> {
       }
 
       _inFlightStageAdvanceIds.add(ticket.id);
+      final startedAt = DateTime.now();
+      _stageAdvanceStartedAt[ticket.id] = startedAt;
       // copyWith, not a bare TicketDetailLoaded(refreshed, ...) — see
       // TicketDetailLoaded.copyWith's dartdoc.
       final currentBeforeAdvance = state;
@@ -2490,14 +2502,20 @@ class TicketsCubit extends Cubit<TicketsState> {
             ? currentBeforeAdvance.copyWith(
                 ticket: refreshed,
                 isAdvancingStage: true,
+                stageAdvanceStartedAt: startedAt,
               )
-            : TicketDetailLoaded(refreshed, isAdvancingStage: true),
+            : TicketDetailLoaded(
+                refreshed,
+                isAdvancingStage: true,
+                stageAdvanceStartedAt: startedAt,
+              ),
       );
       _refreshInFlightBoardState();
 
       final chatId = await _createStageChat(refreshed, nextStage);
       if (chatId == null) {
         _inFlightStageAdvanceIds.remove(ticket.id);
+        _stageAdvanceStartedAt.remove(ticket.id);
         _refreshInFlightBoardState();
         return null;
       }
@@ -2507,9 +2525,11 @@ class TicketsCubit extends Cubit<TicketsState> {
         // No attachment configured for nextStage — identical to before
         // this change: unconditional, no confidence check.
         _inFlightStageAdvanceIds.add(chatId);
+        _stageAdvanceStartedAt[chatId] = DateTime.now();
         unawaited(_runStageChatTurn(refreshed, nextStage, chatId));
       } else if (attachment.confidence == AutomationConfidence.auto) {
         _inFlightStageAdvanceIds.add(chatId);
+        _stageAdvanceStartedAt[chatId] = DateTime.now();
         unawaited(
           _resolveAndFireAttachment(
             refreshed,
@@ -2523,6 +2543,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         // itself doesn't run yet — clear the momentary "advancing"
         // spinner (isAdvancingStage) rather than leave it stuck true.
         _inFlightStageAdvanceIds.remove(ticket.id);
+        _stageAdvanceStartedAt.remove(ticket.id);
         _refreshInFlightBoardState();
         final currentDetail = state;
         if (currentDetail is TicketDetailLoaded &&
@@ -2542,6 +2563,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       return chatId;
     } catch (e) {
       _inFlightStageAdvanceIds.remove(ticket.id);
+      _stageAdvanceStartedAt.remove(ticket.id);
       emit(TicketsError(e.toString()));
       return null;
     }
@@ -5880,6 +5902,28 @@ PROMOTION: NOT YET
     );
   }
 
+  /// Re-emits [TicketDetailLoaded] with `stageAdvanceLiveActivity` set to
+  /// [activity] — a live "Running `<tool>`..." status string, or `null` to
+  /// clear it — but only when [showingDetailId] (whichever of the parent
+  /// Epic/Story/Bug or its spawned stage chat was showing when
+  /// [_runStageChatTurn] started, already resolved by its caller) matches the
+  /// cubit's current [TicketDetailLoaded.ticket] id. Unlike
+  /// [_emitLiveExecutionActivity], uses [TicketDetailLoaded.copyWith] (with a
+  /// [TicketFieldSetter] so `null` genuinely clears the field rather than
+  /// being treated as "leave unchanged") so every other field — notably
+  /// [TicketDetailLoaded.isAdvancingStage] and
+  /// [TicketDetailLoaded.stageAdvanceStartedAt] — survives unchanged. Added
+  /// for `AIO-2884`.
+  void _emitLiveStageActivity(String? showingDetailId, String? activity) {
+    if (showingDetailId == null) return;
+    final current = state;
+    if (current is! TicketDetailLoaded ||
+        current.ticket.id != showingDetailId) {
+      return;
+    }
+    emit(current.copyWith(stageAdvanceLiveActivity: () => activity));
+  }
+
   /// [automationRepo]'s persisted [AutomationContext.codingExecutionRetry]
   /// confidence. Falls back to [AutomationConfidence.gated] (the safe default
   /// for a recovery action that re-spawns a tool-enabled run) when constructed
@@ -6960,6 +7004,13 @@ PROMOTION: NOT YET
         workingDirectory: worktreePath,
         tools: tools,
         onToolCall: onToolCall,
+        onChunk: (_) => _emitLiveStageActivity(showingDetailId, null),
+        onToolUse: (toolName, summary) => _emitLiveStageActivity(
+          showingDetailId,
+          summary == null
+              ? 'Running $toolName...'
+              : 'Running $toolName: $summary...',
+        ),
       );
       // No `runId` is passed above, so ChatTurnCancelled can never
       // actually occur here in practice (no stop-button UI is wired to
@@ -7023,6 +7074,9 @@ PROMOTION: NOT YET
         }
       }
       _inFlightStageAdvanceIds
+        ..remove(parent.id)
+        ..remove(chatId);
+      _stageAdvanceStartedAt
         ..remove(parent.id)
         ..remove(chatId);
       _refreshInFlightBoardState();
@@ -9287,6 +9341,9 @@ PROMOTION: NOT YET
           executionCanRetry: executionCanRetry,
           executionPrSubLine: executionPrSubLine,
           isAdvancingStage: isAdvancingStage,
+          stageAdvanceStartedAt: isAdvancingStage
+              ? _stageAdvanceStartedAt[ticket.id]
+              : null,
           sddStageFailureReason: sddStageFailureReason,
           sddStageCanRetry: sddStageCanRetry,
           executionTokenTotal: _executionTokenTotals[ticket.id],
