@@ -51,10 +51,13 @@ class BaselineTailoringService {
     }
     if (asset == null) return;
 
+    final checkCommands = detected.checkCommand
+        .map((c) => '`$c`')
+        .join(', then ');
     final content =
         '# Architecture conventions\n\n'
         'Detected stack: ${detected.language}.\n\n'
-        'Suggested build/verification command: `${detected.checkCommand}`'
+        'Suggested build/verification commands: $checkCommands'
         '${detected.setupCommand != null ? ' (after `${detected.setupCommand}`)' : ''}.\n\n'
         'Add your own conventions, formatting rules, and architectural '
         'constraints below.';
