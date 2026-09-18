@@ -291,6 +291,106 @@ void main() {
     });
   });
 
+  group('aheadCount / pushCurrentBranch', () {
+    Future<String> initRepoWithRemote(Directory bareDir) async {
+      await Process.run('git', [
+        'init',
+        '--bare',
+        '-b',
+        'main',
+      ], workingDirectory: bareDir.path);
+      await runGit(['init', '-b', 'main']);
+      await runGit(['config', 'user.email', 'test@example.com']);
+      await runGit(['config', 'user.name', 'Test']);
+      File(
+        '${tempDir.path}${Platform.pathSeparator}a.txt',
+      ).writeAsStringSync('a');
+      await runGit(['add', 'a.txt']);
+      await runGit(['commit', '-m', 'base']);
+      await runGit(['remote', 'add', 'origin', bareDir.path]);
+      await runGit(['push', '-u', 'origin', 'main']);
+      return tempDir.path;
+    }
+
+    test('aheadCount returns 0 with no upstream configured', () async {
+      await runGit(['init', '-b', 'main']);
+      final count = await client.aheadCount(tempDir.path);
+      expect(count, 0);
+    });
+
+    test('aheadCount returns 0 when in sync with the remote', () async {
+      final bareDir = await Directory.systemTemp.createTemp('git_bare_');
+      addTearDown(() async {
+        if (bareDir.existsSync()) await bareDir.delete(recursive: true);
+      });
+      final rootPath = await initRepoWithRemote(bareDir);
+
+      expect(await client.aheadCount(rootPath), 0);
+    });
+
+    test(
+      'aheadCount counts local commits not yet pushed to the upstream',
+      () async {
+        final bareDir = await Directory.systemTemp.createTemp('git_bare_');
+        addTearDown(() async {
+          if (bareDir.existsSync()) await bareDir.delete(recursive: true);
+        });
+        final rootPath = await initRepoWithRemote(bareDir);
+        File(
+          '$rootPath${Platform.pathSeparator}b.txt',
+        ).writeAsStringSync('b');
+        await runGit(['add', 'b.txt']);
+        await runGit(['commit', '-m', 'second']);
+        File(
+          '$rootPath${Platform.pathSeparator}c.txt',
+        ).writeAsStringSync('c');
+        await runGit(['add', 'c.txt']);
+        await runGit(['commit', '-m', 'third']);
+
+        expect(await client.aheadCount(rootPath), 2);
+      },
+    );
+
+    test(
+      'pushCurrentBranch pushes local commits, dropping aheadCount back '
+      'to 0',
+      () async {
+        final bareDir = await Directory.systemTemp.createTemp('git_bare_');
+        addTearDown(() async {
+          if (bareDir.existsSync()) await bareDir.delete(recursive: true);
+        });
+        final rootPath = await initRepoWithRemote(bareDir);
+        File(
+          '$rootPath${Platform.pathSeparator}b.txt',
+        ).writeAsStringSync('b');
+        await runGit(['add', 'b.txt']);
+        await runGit(['commit', '-m', 'second']);
+        expect(await client.aheadCount(rootPath), 1);
+
+        await client.pushCurrentBranch(rootPath);
+
+        expect(await client.aheadCount(rootPath), 0);
+      },
+    );
+
+    test(
+      'pushCurrentBranch throws ProcessException with no remote configured',
+      () async {
+        await runGit(['init', '-b', 'main']);
+        File(
+          '${tempDir.path}${Platform.pathSeparator}a.txt',
+        ).writeAsStringSync('a');
+        await runGit(['add', 'a.txt']);
+        await runGit(['commit', '-m', 'base']);
+
+        await expectLater(
+          client.pushCurrentBranch(tempDir.path),
+          throwsA(isA<ProcessException>()),
+        );
+      },
+    );
+  });
+
   group('createWorktree / removeWorktree / deleteBranch', () {
     Future<String> initRepoWithCommit() async {
       await runGit(['init', '-b', 'main']);

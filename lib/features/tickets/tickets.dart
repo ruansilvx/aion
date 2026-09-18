@@ -68,6 +68,7 @@ export 'presentation/cubit/ticket_repair_state.dart';
 export 'presentation/cubit/ticket_selection_cubit.dart';
 export 'presentation/cubit/ticket_selection_state.dart';
 export 'presentation/cubit/tickets_cubit.dart';
+export 'presentation/cubit/tickets_repo_sync_status.dart';
 export 'presentation/cubit/tickets_state.dart';
 export 'presentation/cubit/trash_cubit.dart';
 export 'presentation/cubit/trash_state.dart';

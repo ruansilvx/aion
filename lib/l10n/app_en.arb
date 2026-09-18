@@ -1205,6 +1205,15 @@
     }
   },
 
+  "ticketsRepoSyncAhead": "{count, plural, =1{1 commit to push} other{{count} commits to push}}",
+  "@ticketsRepoSyncAhead": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "ticketsRepoSyncPushing": "Pushing…",
+  "ticketsRepoSyncFailed": "Push failed",
+
   "releaseSummarySectionEyebrow": "RELEASE SCOPE",
   "releaseSummaryPrepareButton": "Prepare Release",
   "releaseSummaryPreparingLabel": "Drafting release…",
