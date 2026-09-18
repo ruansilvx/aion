@@ -391,6 +391,166 @@ void main() {
     );
   });
 
+  group('currentBranch / checkoutBranch / pull', () {
+    Future<String> initRepoWithRemote(Directory bareDir) async {
+      await Process.run('git', [
+        'init',
+        '--bare',
+        '-b',
+        'main',
+      ], workingDirectory: bareDir.path);
+      await runGit(['init', '-b', 'main']);
+      await runGit(['config', 'user.email', 'test@example.com']);
+      await runGit(['config', 'user.name', 'Test']);
+      File(
+        '${tempDir.path}${Platform.pathSeparator}a.txt',
+      ).writeAsStringSync('a');
+      await runGit(['add', 'a.txt']);
+      await runGit(['commit', '-m', 'base']);
+      await runGit(['remote', 'add', 'origin', bareDir.path]);
+      await runGit(['push', '-u', 'origin', 'main']);
+      return tempDir.path;
+    }
+
+    test('currentBranch returns the checked-out branch name', () async {
+      await runGit(['init', '-b', 'main']);
+      await runGit(['config', 'user.email', 'test@example.com']);
+      await runGit(['config', 'user.name', 'Test']);
+      File(
+        '${tempDir.path}${Platform.pathSeparator}a.txt',
+      ).writeAsStringSync('a');
+      await runGit(['add', 'a.txt']);
+      await runGit(['commit', '-m', 'base']);
+
+      final branch = await client.currentBranch(tempDir.path);
+
+      expect(branch, 'main');
+    });
+
+    test('currentBranch throws ProcessException on a detached HEAD-less '
+        'repo with no commits', () async {
+      await runGit(['init', '-b', 'main']);
+      // A brand-new branch with zero commits has no valid HEAD to
+      // rev-parse yet.
+      await expectLater(
+        client.currentBranch(tempDir.path),
+        throwsA(isA<ProcessException>()),
+      );
+    });
+
+    test('checkoutBranch switches the working tree to the given branch', () async {
+      await runGit(['init', '-b', 'main']);
+      await runGit(['config', 'user.email', 'test@example.com']);
+      await runGit(['config', 'user.name', 'Test']);
+      File(
+        '${tempDir.path}${Platform.pathSeparator}a.txt',
+      ).writeAsStringSync('a');
+      await runGit(['add', 'a.txt']);
+      await runGit(['commit', '-m', 'base']);
+      await runGit(['checkout', '-b', 'feature']);
+      expect(await client.currentBranch(tempDir.path), 'feature');
+
+      await client.checkoutBranch(tempDir.path, 'main');
+
+      expect(await client.currentBranch(tempDir.path), 'main');
+    });
+
+    test(
+      'checkoutBranch throws ProcessException for a branch that does not '
+      'exist',
+      () async {
+        await runGit(['init', '-b', 'main']);
+        await runGit(['config', 'user.email', 'test@example.com']);
+        await runGit(['config', 'user.name', 'Test']);
+        File(
+          '${tempDir.path}${Platform.pathSeparator}a.txt',
+        ).writeAsStringSync('a');
+        await runGit(['add', 'a.txt']);
+        await runGit(['commit', '-m', 'base']);
+
+        await expectLater(
+          client.checkoutBranch(tempDir.path, 'does-not-exist'),
+          throwsA(isA<ProcessException>()),
+        );
+      },
+    );
+
+    test('pull brings in a commit pushed from another clone', () async {
+      final bareDir = await Directory.systemTemp.createTemp('git_bare_');
+      addTearDown(() async {
+        if (bareDir.existsSync()) await bareDir.delete(recursive: true);
+      });
+      final rootPath = await initRepoWithRemote(bareDir);
+
+      // A second clone of the same bare remote, pushing a new commit —
+      // simulates another session/machine advancing `origin/main`.
+      final otherClone = await Directory.systemTemp.createTemp(
+        'git_other_clone_',
+      );
+      addTearDown(() async {
+        if (otherClone.existsSync()) await otherClone.delete(recursive: true);
+      });
+      await Process.run('git', [
+        'clone',
+        bareDir.path,
+        otherClone.path,
+      ]);
+      await Process.run('git', [
+        'config',
+        'user.email',
+        'test@example.com',
+      ], workingDirectory: otherClone.path);
+      await Process.run('git', [
+        'config',
+        'user.name',
+        'Test',
+      ], workingDirectory: otherClone.path);
+      File(
+        '${otherClone.path}${Platform.pathSeparator}b.txt',
+      ).writeAsStringSync('b');
+      await Process.run('git', [
+        'add',
+        'b.txt',
+      ], workingDirectory: otherClone.path);
+      await Process.run('git', [
+        'commit',
+        '-m',
+        'from other clone',
+      ], workingDirectory: otherClone.path);
+      await Process.run('git', [
+        'push',
+      ], workingDirectory: otherClone.path);
+
+      expect(
+        File('$rootPath${Platform.pathSeparator}b.txt').existsSync(),
+        isFalse,
+      );
+
+      await client.pull(rootPath);
+
+      expect(
+        File('$rootPath${Platform.pathSeparator}b.txt').existsSync(),
+        isTrue,
+      );
+    });
+
+    test('pull throws ProcessException with no upstream configured', () async {
+      await runGit(['init', '-b', 'main']);
+      await runGit(['config', 'user.email', 'test@example.com']);
+      await runGit(['config', 'user.name', 'Test']);
+      File(
+        '${tempDir.path}${Platform.pathSeparator}a.txt',
+      ).writeAsStringSync('a');
+      await runGit(['add', 'a.txt']);
+      await runGit(['commit', '-m', 'base']);
+
+      await expectLater(
+        client.pull(tempDir.path),
+        throwsA(isA<ProcessException>()),
+      );
+    });
+  });
+
   group('createWorktree / removeWorktree / deleteBranch', () {
     Future<String> initRepoWithCommit() async {
       await runGit(['init', '-b', 'main']);

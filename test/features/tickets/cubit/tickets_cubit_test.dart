@@ -19517,4 +19517,280 @@ void main() {
       },
     );
   });
+
+  group(
+    'checkMergedPrCleanup / confirmMergedPrCleanup / rejectMergedPrCleanup '
+    '(AIO-2946)',
+    () {
+      late MockGitRepositoryClient gitClient;
+      late MockGitHubCliClient gitHubClient;
+      late MockAutomationSettingsRepository automationSettingsRepository;
+
+      setUp(() {
+        gitClient = MockGitRepositoryClient();
+        gitHubClient = MockGitHubCliClient();
+        automationSettingsRepository = MockAutomationSettingsRepository();
+      });
+
+      TicketsCubit buildCubit() => TicketsCubit(
+        repository,
+        gitClient: gitClient,
+        gitHubClient: gitHubClient,
+        sourceRootPath: '/source',
+        automationSettingsRepository: automationSettingsRepository,
+      );
+
+      test(
+        'never calls the GitHub client when no PR is tracked',
+        () async {
+          final cubit = buildCubit();
+
+          await cubit.checkMergedPrCleanup();
+
+          verifyNever(() => gitHubClient.viewPullRequest(any(), any()));
+          await cubit.close();
+        },
+      );
+
+      test('leaves a still-open tracked PR untouched', () async {
+        when(
+          () => gitHubClient.viewPullRequest('/source', 7),
+        ).thenAnswer((_) async => (merged: false, closed: false));
+        final cubit = buildCubit();
+        cubit.debugTrackOpenAionPr('task-7', 7);
+
+        await cubit.checkMergedPrCleanup();
+
+        verifyNever(() => gitClient.deleteBranch(any(), any()));
+        verifyNever(() => gitClient.checkoutBranch(any(), any()));
+        await cubit.close();
+      });
+
+      test(
+        'auto confidence + already on the default branch: checks out, '
+        'pulls, and deletes the branch immediately',
+        () async {
+          when(
+            () => gitHubClient.viewPullRequest('/source', 7),
+          ).thenAnswer((_) async => (merged: true, closed: false));
+          when(
+            () => gitClient.defaultBranch('/source'),
+          ).thenAnswer((_) async => 'main');
+          when(
+            () => gitClient.currentBranch('/source'),
+          ).thenAnswer((_) async => 'main');
+          when(
+            () => gitClient.checkoutBranch('/source', 'main'),
+          ).thenAnswer((_) async {});
+          when(() => gitClient.pull('/source')).thenAnswer((_) async {});
+          when(
+            () => gitClient.deleteBranch('/source', 'aion/task-task-7'),
+          ).thenAnswer((_) async {});
+          when(
+            () => automationSettingsRepository.getConfidence(
+              AutomationContext.mergedPrCleanup,
+            ),
+          ).thenAnswer((_) async => AutomationConfidence.auto);
+          final cubit = buildCubit();
+          cubit.debugTrackOpenAionPr('task-7', 7);
+
+          await cubit.checkMergedPrCleanup();
+
+          verify(() => gitClient.checkoutBranch('/source', 'main')).called(1);
+          verify(() => gitClient.pull('/source')).called(1);
+          verify(
+            () => gitClient.deleteBranch('/source', 'aion/task-task-7'),
+          ).called(1);
+          await cubit.close();
+        },
+      );
+
+      test(
+        'auto confidence + NOT on the default branch: skips checkout/pull '
+        'but still deletes the branch (deletion gating is independent)',
+        () async {
+          when(
+            () => gitHubClient.viewPullRequest('/source', 7),
+          ).thenAnswer((_) async => (merged: true, closed: false));
+          when(
+            () => gitClient.defaultBranch('/source'),
+          ).thenAnswer((_) async => 'main');
+          when(
+            () => gitClient.currentBranch('/source'),
+          ).thenAnswer((_) async => 'some-other-branch');
+          when(
+            () => gitClient.deleteBranch('/source', 'aion/task-task-7'),
+          ).thenAnswer((_) async {});
+          when(
+            () => automationSettingsRepository.getConfidence(
+              AutomationContext.mergedPrCleanup,
+            ),
+          ).thenAnswer((_) async => AutomationConfidence.auto);
+          final cubit = buildCubit();
+          cubit.debugTrackOpenAionPr('task-7', 7);
+
+          await cubit.checkMergedPrCleanup();
+
+          verifyNever(() => gitClient.checkoutBranch(any(), any()));
+          verifyNever(() => gitClient.pull(any()));
+          verify(
+            () => gitClient.deleteBranch('/source', 'aion/task-task-7'),
+          ).called(1);
+          await cubit.close();
+        },
+      );
+
+      test(
+        'gated confidence: holds branch deletion pending rather than '
+        'deleting immediately',
+        () async {
+          when(
+            () => gitHubClient.viewPullRequest('/source', 7),
+          ).thenAnswer((_) async => (merged: true, closed: false));
+          when(
+            () => gitClient.defaultBranch('/source'),
+          ).thenAnswer((_) async => 'main');
+          when(
+            () => gitClient.currentBranch('/source'),
+          ).thenAnswer((_) async => 'main');
+          when(
+            () => gitClient.checkoutBranch('/source', 'main'),
+          ).thenAnswer((_) async {});
+          when(() => gitClient.pull('/source')).thenAnswer((_) async {});
+          when(
+            () => automationSettingsRepository.getConfidence(
+              AutomationContext.mergedPrCleanup,
+            ),
+          ).thenAnswer((_) async => AutomationConfidence.gated);
+          final cubit = buildCubit();
+          cubit.debugTrackOpenAionPr('task-7', 7);
+
+          await cubit.checkMergedPrCleanup();
+
+          verifyNever(() => gitClient.deleteBranch(any(), any()));
+          await cubit.close();
+        },
+      );
+
+      test(
+        'confirmMergedPrCleanup deletes a branch recorded pending by a '
+        'gated check',
+        () async {
+          when(
+            () => gitHubClient.viewPullRequest('/source', 7),
+          ).thenAnswer((_) async => (merged: true, closed: false));
+          when(
+            () => gitClient.defaultBranch('/source'),
+          ).thenAnswer((_) async => 'main');
+          when(
+            () => gitClient.currentBranch('/source'),
+          ).thenAnswer((_) async => 'main');
+          when(
+            () => gitClient.checkoutBranch('/source', 'main'),
+          ).thenAnswer((_) async {});
+          when(() => gitClient.pull('/source')).thenAnswer((_) async {});
+          when(
+            () => gitClient.deleteBranch('/source', 'aion/task-task-7'),
+          ).thenAnswer((_) async {});
+          when(
+            () => automationSettingsRepository.getConfidence(
+              AutomationContext.mergedPrCleanup,
+            ),
+          ).thenAnswer((_) async => AutomationConfidence.gated);
+          final cubit = buildCubit();
+          cubit.debugTrackOpenAionPr('task-7', 7);
+          await cubit.checkMergedPrCleanup();
+
+          await cubit.confirmMergedPrCleanup('task-7');
+
+          verify(
+            () => gitClient.deleteBranch('/source', 'aion/task-task-7'),
+          ).called(1);
+          await cubit.close();
+        },
+      );
+
+      test(
+        'rejectMergedPrCleanup never deletes the branch it was holding '
+        'pending',
+        () async {
+          when(
+            () => gitHubClient.viewPullRequest('/source', 7),
+          ).thenAnswer((_) async => (merged: true, closed: false));
+          when(
+            () => gitClient.defaultBranch('/source'),
+          ).thenAnswer((_) async => 'main');
+          when(
+            () => gitClient.currentBranch('/source'),
+          ).thenAnswer((_) async => 'main');
+          when(
+            () => gitClient.checkoutBranch('/source', 'main'),
+          ).thenAnswer((_) async {});
+          when(() => gitClient.pull('/source')).thenAnswer((_) async {});
+          when(
+            () => automationSettingsRepository.getConfidence(
+              AutomationContext.mergedPrCleanup,
+            ),
+          ).thenAnswer((_) async => AutomationConfidence.gated);
+          final cubit = buildCubit();
+          cubit.debugTrackOpenAionPr('task-7', 7);
+          await cubit.checkMergedPrCleanup();
+
+          cubit.rejectMergedPrCleanup('task-7');
+
+          verifyNever(() => gitClient.deleteBranch(any(), any()));
+          await cubit.close();
+        },
+      );
+
+      test(
+        'a PR the GitHub client fails to check stays tracked and is '
+        'retried on the next call',
+        () async {
+          var callCount = 0;
+          when(() => gitHubClient.viewPullRequest('/source', 7)).thenAnswer((
+            _,
+          ) async {
+            callCount++;
+            if (callCount == 1) {
+              throw const ProcessException('gh', [
+                'pr',
+                'view',
+              ], 'gh: not authenticated');
+            }
+            return (merged: true, closed: false);
+          });
+          when(
+            () => gitClient.defaultBranch('/source'),
+          ).thenAnswer((_) async => 'main');
+          when(
+            () => gitClient.currentBranch('/source'),
+          ).thenAnswer((_) async => 'main');
+          when(
+            () => gitClient.checkoutBranch('/source', 'main'),
+          ).thenAnswer((_) async {});
+          when(() => gitClient.pull('/source')).thenAnswer((_) async {});
+          when(
+            () => gitClient.deleteBranch('/source', 'aion/task-task-7'),
+          ).thenAnswer((_) async {});
+          when(
+            () => automationSettingsRepository.getConfidence(
+              AutomationContext.mergedPrCleanup,
+            ),
+          ).thenAnswer((_) async => AutomationConfidence.auto);
+          final cubit = buildCubit();
+          cubit.debugTrackOpenAionPr('task-7', 7);
+
+          await cubit.checkMergedPrCleanup();
+          verifyNever(() => gitClient.deleteBranch(any(), any()));
+
+          await cubit.checkMergedPrCleanup();
+          verify(
+            () => gitClient.deleteBranch('/source', 'aion/task-task-7'),
+          ).called(1);
+          await cubit.close();
+        },
+      );
+    },
+  );
 }

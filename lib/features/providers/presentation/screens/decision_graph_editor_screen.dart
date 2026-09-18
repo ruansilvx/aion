@@ -38,6 +38,8 @@ String decisionGraphContextTitle(
     context.l10n.decisionGraphContextTitleVerifyGateRetry,
   AutomationContext.codingExecutionTrigger =>
     context.l10n.decisionGraphContextTitleCodingExecutionTrigger,
+  AutomationContext.mergedPrCleanup =>
+    context.l10n.decisionGraphContextTitleMergedPrCleanup,
 };
 
 /// One node datum rendered by this screen's [GraphCanvas] instance —

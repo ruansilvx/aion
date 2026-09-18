@@ -873,6 +873,10 @@
   "ticketDetailPendingExecutionTriggerStatusWaiting": "Waiting for your decision",
   "ticketDetailPendingExecutionTriggerReject": "Not now",
   "ticketDetailPendingExecutionTriggerConfirm": "Start",
+  "ticketDetailPendingMergedPrCleanupTitle": "Delete the merged branch?",
+  "ticketDetailPendingMergedPrCleanupStatusWaiting": "Waiting for your decision",
+  "ticketDetailPendingMergedPrCleanupReject": "Keep it",
+  "ticketDetailPendingMergedPrCleanupConfirm": "Delete",
   "ticketDetailPendingIdeaPromotionTitleEpic": "Promote to Epic?",
   "ticketDetailPendingIdeaPromotionTitleBug": "Promote to Bug?",
   "ticketDetailPendingIdeaPromotionStatusWaiting": "Discuss concluded — waiting for your decision",
@@ -967,6 +971,8 @@
   "settingsAutomationVerifyGateRetryManualSubLabel": "You trigger the verification retry yourself",
   "settingsAutomationCodingExecutionTriggerAutoSubLabel": "Starts coding execution immediately when a status change fires it",
   "settingsAutomationCodingExecutionTriggerGatedSubLabel": "Asks before starting coding execution from a status change",
+  "settingsAutomationMergedPrCleanupAutoSubLabel": "Deletes a coding-execution branch as soon as its PR merges",
+  "settingsAutomationMergedPrCleanupGatedSubLabel": "Asks before deleting a merged PR's branch",
 
   "settingsAutomationCodingExecutionResumeLabel": "Resume After Restart",
   "settingsAutomationCodingExecutionResumeDescription": "When a coding-execution run was interrupted by an app restart, resume it automatically, ask first, or leave it for a manual retry.",
@@ -1006,6 +1012,7 @@
   "decisionGraphContextTitleSpecAutoLink": "Spec Auto-Link",
   "decisionGraphContextTitleVerifyGateRetry": "Verify Gate Retry",
   "decisionGraphContextTitleCodingExecutionTrigger": "Coding Execution Trigger",
+  "decisionGraphContextTitleMergedPrCleanup": "Merged PR Cleanup",
   "decisionGraphOutlineHeader": "OUTLINE · {count} CONDITIONS",
   "@decisionGraphOutlineHeader": {
     "placeholders": {

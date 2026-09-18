@@ -73,4 +73,16 @@ enum AutomationContext {
   /// coding-execution failure banner's manual "Retry" action. Added for
   /// `AIO-2885`; see `TicketsCubit._triggerOrGateCodingExecution`.
   codingExecutionTrigger,
+
+  /// Deleting a coding-execution branch (`aion/task-<id>`) once
+  /// `TicketsCubit.checkMergedPrCleanup` detects its PR was merged —
+  /// whether the now-stale local branch is deleted immediately, asks
+  /// first, or waits for confirmation, same as `gated` (there is no
+  /// dedicated manual-start action for this context, same shape as
+  /// [codingExecutionTrigger]). Governs branch deletion only — the
+  /// checkout-default+pull step that precedes it always runs
+  /// automatically (guarded instead by an "already on the default
+  /// branch" check, not this confidence tier — see
+  /// `checkMergedPrCleanup`'s own dartdoc). Added for `AIO-2946`.
+  mergedPrCleanup,
 }
