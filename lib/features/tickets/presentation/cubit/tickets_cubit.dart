@@ -1959,7 +1959,7 @@ class TicketsCubit extends Cubit<TicketsState> {
       if (updated != null) {
         if (updated.type.isExecutable &&
             _roleOf(status) == WorkflowStatusRole.executionTrigger) {
-          unawaited(_triggerOrQueueCodingExecution(updated));
+          unawaited(_triggerOrGateCodingExecution(updated));
         }
         if (updated.type == TicketType.bug &&
             _roleOf(status) == WorkflowStatusRole.done) {
@@ -2207,7 +2207,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         );
         if (refreshed.type.isExecutable &&
             _roleOf(status) == WorkflowStatusRole.executionTrigger) {
-          unawaited(_triggerOrQueueCodingExecution(refreshed));
+          unawaited(_triggerOrGateCodingExecution(refreshed));
         }
         if (refreshed.type.isExecutable &&
             _roleOf(status) == WorkflowStatusRole.done) {
@@ -4524,14 +4524,106 @@ PROMOTION: NOT YET
     return false;
   }
 
+  /// Coding-execution triggers awaiting a human decision, keyed by ticket
+  /// id — each entry's fire action is `() => _triggerOrQueueCodingExecution
+  /// (task)` for that exact ticket. Mirrors [_pendingIdeaPromotions]'s shape
+  /// one level simpler (a plain closure instead of a typed pending-domain
+  /// object — the confirm banner needs no payload beyond the ticket itself,
+  /// already passed to it separately). Cleared by
+  /// [confirmPendingExecutionTrigger]/[rejectPendingExecutionTrigger]. Added
+  /// for `AIO-2885`.
+  final Map<String, Future<void> Function()> _pendingExecutionTriggers = {};
+
+  /// Resolves [AutomationContext.codingExecutionTrigger]'s confidence for
+  /// [task] (a Task/Bug that just committed a plain status-dropdown write to
+  /// an `executionTrigger`-role status): `auto` fires
+  /// [_triggerOrQueueCodingExecution] immediately, unchanged from before this
+  /// context existed. `gated` and `manual` are treated identically — there is
+  /// no dedicated manual-start action for this context (unlike a
+  /// `SkillAttachment`'s own `manual` tier), so both record [task]'s fire
+  /// action in [_pendingExecutionTriggers] and, if [task]'s detail screen is
+  /// currently open, re-emit [TicketDetailLoaded.pendingExecutionTrigger] via
+  /// [TicketDetailLoaded.copyWith] (mirrors [_resolveAndFireAttachment]'s
+  /// own `gated` branch). Falls back to `auto` (fire immediately, unchanged
+  /// pre-`AIO-2885` behavior) when constructed without an
+  /// [AutomationSettingsRepository] at all — unlike most other
+  /// `AutomationContext`s' own "fall back to `gated`" convention, since a
+  /// `null` repository here means the automation-settings subsystem isn't
+  /// wired at all (the common shape of most of this cubit's existing unit
+  /// tests, none of which anticipated this new gate), not "a real project
+  /// with no persisted preference yet" — that case is already handled by
+  /// [SharedPrefsAutomationSettingsRepository.getConfidence]'s own `gated`
+  /// default, which every real, fully-wired project actually hits. Called
+  /// only from the 3 plain status-dropdown call sites ([updateTicketStatus],
+  /// [changeTicketStatus], [updateStatusForTickets]) — [advanceSddStage]'s
+  /// `SddStage.applying` branch and [retryCodingExecution] are
+  /// already-explicit confirmation gestures and call
+  /// [_triggerOrQueueCodingExecution] directly, unchanged. Added for
+  /// `AIO-2885`.
+  Future<void> _triggerOrGateCodingExecution(Ticket task) async {
+    final automationRepo = _automationSettingsRepository;
+    final confidence = automationRepo == null
+        ? AutomationConfidence.auto
+        : await automationRepo.getConfidence(
+            AutomationContext.codingExecutionTrigger,
+          );
+    if (confidence == AutomationConfidence.auto) {
+      unawaited(_triggerOrQueueCodingExecution(task));
+      return;
+    }
+    _pendingExecutionTriggers[task.id] = () =>
+        _triggerOrQueueCodingExecution(task);
+    final current = state;
+    if (current is TicketDetailLoaded && current.ticket.id == task.id) {
+      emit(current.copyWith(ticket: task, pendingExecutionTrigger: true));
+    }
+  }
+
+  /// Confirms [ticketId]'s pending coding-execution trigger: removes it from
+  /// [_pendingExecutionTriggers] and runs its recorded fire action,
+  /// `unawaited` (mirrors [confirmPendingSkillAttachment]'s own `auto`-like
+  /// immediate fire). If [ticketId]'s detail screen is currently open,
+  /// re-emits [TicketDetailLoaded] with [TicketDetailLoaded
+  /// .pendingExecutionTrigger] cleared, every other already-loaded field
+  /// preserved via [TicketDetailLoaded.copyWith]. No-ops if [ticketId] has no
+  /// pending trigger. Added for `AIO-2885`.
+  Future<void> confirmPendingExecutionTrigger(String ticketId) async {
+    final fire = _pendingExecutionTriggers.remove(ticketId);
+    if (fire == null) return;
+    unawaited(fire());
+    final current = state;
+    if (current is TicketDetailLoaded && current.ticket.id == ticketId) {
+      emit(current.copyWith(pendingExecutionTrigger: false));
+    }
+  }
+
+  /// Rejects [ticketId]'s pending coding-execution trigger: removes it from
+  /// [_pendingExecutionTriggers] without ever running its fire action —
+  /// [ticketId] stays at its already-committed `executionTrigger`-role
+  /// status, with nothing running, per the ticket's own resolved direction.
+  /// If [ticketId]'s detail screen is currently open, re-emits
+  /// [TicketDetailLoaded] with [TicketDetailLoaded.pendingExecutionTrigger]
+  /// cleared. No-ops if [ticketId] has no pending trigger. Mirrors
+  /// [rejectPendingIdeaPromotion]'s shape. Added for `AIO-2885`.
+  void rejectPendingExecutionTrigger(String ticketId) {
+    final fire = _pendingExecutionTriggers.remove(ticketId);
+    if (fire == null) return;
+    final current = state;
+    if (current is TicketDetailLoaded && current.ticket.id == ticketId) {
+      emit(current.copyWith(pendingExecutionTrigger: false));
+    }
+  }
+
   /// Enqueues [task]'s coding-execution run, then immediately tries to
   /// start it (and any other now-eligible queued run) via
   /// [_tryStartNextQueuedExecutions] — under
   /// [ExecutionSchedulingMode.strictFifo] (today's unchanged default),
   /// this only ever actually starts [task] when nothing else is running,
-  /// exactly as the old single-slot behavior did. Called by
-  /// [changeTicketStatus]/[updateTicketStatus] after a Task's status
-  /// write to an `executionTrigger`-role status succeeds.
+  /// exactly as the old single-slot behavior did. Called directly by
+  /// [advanceSddStage]'s `SddStage.applying` branch and
+  /// [retryCodingExecution] (already-explicit confirmation gestures), and by
+  /// [_triggerOrGateCodingExecution] for the plain status-dropdown path once
+  /// gated/confirmed.
   Future<void> _triggerOrQueueCodingExecution(Ticket task) async {
     _executionQueue.add(task.id);
     _refreshInFlightBoardState();
@@ -9330,6 +9422,9 @@ PROMOTION: NOT YET
           pendingToolProposal: previousDetail?.pendingToolProposal,
           pendingSkillAttachment: previousDetail?.pendingSkillAttachment,
           pendingIdeaPromotion: _pendingIdeaPromotions[ticket.id],
+          pendingExecutionTrigger: _pendingExecutionTriggers.containsKey(
+            ticket.id,
+          ),
           canAdvanceSddStage: check.canAdvance,
           sddStageBlockReason: check.blockReason,
           needsDesignReview: needsDesignReview,
@@ -9618,7 +9713,7 @@ PROMOTION: NOT YET
           if (updated != null) {
             if (updated.type.isExecutable &&
                 _roleOf(status) == WorkflowStatusRole.executionTrigger) {
-              unawaited(_triggerOrQueueCodingExecution(updated));
+              unawaited(_triggerOrGateCodingExecution(updated));
             }
             if (attachment != null) {
               pendingAttachmentFires.add((updated, attachment));

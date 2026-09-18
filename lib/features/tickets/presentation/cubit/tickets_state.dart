@@ -434,6 +434,7 @@ class TicketDetailLoaded extends TicketsState {
     this.pendingSkillAttachment,
     this.pendingSpecLinkSuggestion,
     this.pendingIdeaPromotion,
+    this.pendingExecutionTrigger = false,
     this.verifyRetryReady = false,
     this.verifyRetryConfidence,
     this.verifyPendingFixesRemaining,
@@ -650,6 +651,19 @@ class TicketDetailLoaded extends TicketsState {
   /// `AIO-2942`.
   final PendingIdeaPromotion? pendingIdeaPromotion;
 
+  /// Whether [ticket] (a `task`/`bug`) has a pending, gated coding-execution
+  /// trigger awaiting confirmation — its plain status-dropdown flip to an
+  /// `executionTrigger`-role status committed, but the actual execution fire
+  /// is held pending `AutomationContext.codingExecutionTrigger`'s `gated`/
+  /// `manual` confidence. Drives `_PendingExecutionTriggerBanner`. Mirrors
+  /// [pendingIdeaPromotion]'s own "always recomputed fresh from
+  /// `TicketsCubit._pendingExecutionTriggers` on every
+  /// [TicketsCubit.getTicketById] call" pattern, not [pendingSkillAttachment]
+  /// 's carry-forward one — a bulk (`TicketsCubit.updateStatusForTickets`) or
+  /// board-driven status change can make this pending while a *different*
+  /// ticket's detail screen is the one open. Added for `AIO-2885`.
+  final bool pendingExecutionTrigger;
+
   /// Whether [ticket] (an `epic`/`story`) is ready for a verify retry — its
   /// `sddStage` is [SddStage.verifying], the Verifying-stage chat's latest AI
   /// reply carries `VERIFY GATE: PENDING`, and every fix Task/Bug that verdict
@@ -706,6 +720,7 @@ class TicketDetailLoaded extends TicketsState {
     pendingSkillAttachment,
     pendingSpecLinkSuggestion,
     pendingIdeaPromotion,
+    pendingExecutionTrigger,
     verifyRetryReady,
     verifyRetryConfidence,
     verifyPendingFixesRemaining,
@@ -759,6 +774,7 @@ class TicketDetailLoaded extends TicketsState {
     TicketFieldSetter<SkillAttachment?>? pendingSkillAttachment,
     TicketFieldSetter<PendingSpecLinkSuggestion?>? pendingSpecLinkSuggestion,
     TicketFieldSetter<PendingIdeaPromotion?>? pendingIdeaPromotion,
+    bool? pendingExecutionTrigger,
     bool? verifyRetryReady,
     AutomationConfidence? verifyRetryConfidence,
     int? verifyPendingFixesRemaining,
@@ -804,6 +820,8 @@ class TicketDetailLoaded extends TicketsState {
       pendingIdeaPromotion: pendingIdeaPromotion != null
           ? pendingIdeaPromotion()
           : this.pendingIdeaPromotion,
+      pendingExecutionTrigger:
+          pendingExecutionTrigger ?? this.pendingExecutionTrigger,
       verifyRetryReady: verifyRetryReady ?? this.verifyRetryReady,
       verifyRetryConfidence:
           verifyRetryConfidence ?? this.verifyRetryConfidence,

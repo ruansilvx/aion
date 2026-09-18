@@ -61,4 +61,16 @@ enum AutomationContext {
   /// unmet gate). Added for `AIO-1905`; see
   /// `TicketsCubit._maybeRetryPendingVerify`.
   verifyGateRetry,
+
+  /// A Task/Bug's plain status-dropdown flip to an `executionTrigger`-role
+  /// status — whether it fires coding-execution immediately, asks first, or
+  /// waits for confirmation, same as `gated` (there is no dedicated
+  /// manual-start action for this context, unlike a `SkillAttachment`'s own
+  /// `manual` tier). Distinct from [codingExecution] (which governs the
+  /// unrelated post-run auto-advance-to-review behavior). Does *not* apply
+  /// to an already-explicit confirmation gesture — a Bug's own
+  /// `SddStage.applying` step (governed by [sddStage] instead), or the
+  /// coding-execution failure banner's manual "Retry" action. Added for
+  /// `AIO-2885`; see `TicketsCubit._triggerOrGateCodingExecution`.
+  codingExecutionTrigger,
 }
