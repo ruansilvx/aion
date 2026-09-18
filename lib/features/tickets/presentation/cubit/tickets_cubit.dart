@@ -109,6 +109,7 @@ import 'package:aion/features/tickets/presentation/cubit/ticket_estimation_sugge
 import 'package:aion/features/tickets/presentation/cubit/ticket_token_predictor.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_rollup_counts.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_rollup_recomputer.dart';
+import 'package:aion/features/tickets/presentation/cubit/tickets_repo_sync_status.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 import 'package:aion/l10n/generated/app_localizations_en.dart';
 
@@ -371,6 +372,12 @@ class TicketsCubit extends Cubit<TicketsState> {
             pageWikilinkRepository,
             activeTicketViewRegistry,
           );
+    if (gitClient != null && projectRootPath != null) {
+      _syncCheckTimer = Timer.periodic(
+        const Duration(seconds: 60),
+        (_) => unawaited(checkTicketsRepoSync()),
+      );
+    }
   }
 
   final TicketRepository _repository;
@@ -1035,6 +1042,59 @@ class TicketsCubit extends Cubit<TicketsState> {
     _detailTickTimer = null;
   }
 
+  /// Fires [checkTicketsRepoSync] every 60 seconds for the lifetime of
+  /// this app-wide instance whenever this cubit was constructed with both
+  /// a [GitRepositoryClient] and a tickets-repo [_projectRootPath] — see
+  /// the constructor. Unlike [_detailTickTimer], not screen-scoped: the
+  /// tickets-repo should stay pushed the whole time a project is open, not
+  /// only while a detail screen happens to be mounted. `null` when either
+  /// dependency is missing (mobile/web, or a project with no separate
+  /// tickets repo — [_projectRootPath] then equals [_sourceRootPath], the
+  /// developer's own application checkout, which this must never push to
+  /// unprompted). Cancelled in [close]. Added for `AIO-2945`.
+  Timer? _syncCheckTimer;
+
+  /// Live tickets-repo push-sync status, exposed outside the Bloc `state`
+  /// machinery for the same reason [unreadNotificationCount] is — so
+  /// `WorkspaceNavShell`'s `_SyncStatusIndicator` can render it from every
+  /// `/workspace/*` route regardless of which [TicketsState] variant is
+  /// currently active. Starts and stays [TicketsRepoSyncIdle] when
+  /// [_syncCheckTimer] never starts. Disposed in [close]. Added for
+  /// `AIO-2945`.
+  final ValueNotifier<TicketsRepoSyncStatus> ticketsRepoSyncStatus =
+      ValueNotifier(const TicketsRepoSyncIdle());
+
+  /// One tick of [_syncCheckTimer]: checks [_gitClient]'s [GitRepositoryClient.aheadCount]
+  /// against [_projectRootPath], and — if greater than zero — pushes it via
+  /// [GitRepositoryClient.pushCurrentBranch]. This is the user's own
+  /// private ticket data, not application code or anything PR-gated, so
+  /// pushing without confirmation is the ticket's own accepted risk (see
+  /// `AIO-2945`'s description) — unlike every other [_gitClient] call site
+  /// in this cubit ([confirmRelease], coding-execution's PR push), none of
+  /// which push without an explicit human trigger first. Deliberately
+  /// public (no leading underscore) rather than private, same rationale
+  /// as [startDetailTicker]/[stopDetailTicker]: a test can call this
+  /// directly to exercise one check deterministically instead of waiting
+  /// on the real 60-second interval.
+  Future<void> checkTicketsRepoSync() async {
+    final gitClient = _gitClient;
+    final rootPath = _projectRootPath;
+    if (gitClient == null || rootPath == null) return;
+    try {
+      final ahead = await gitClient.aheadCount(rootPath);
+      if (ahead == 0) {
+        ticketsRepoSyncStatus.value = const TicketsRepoSyncIdle();
+        return;
+      }
+      ticketsRepoSyncStatus.value = TicketsRepoSyncAhead(ahead);
+      ticketsRepoSyncStatus.value = const TicketsRepoSyncPushing();
+      await gitClient.pushCurrentBranch(rootPath);
+      ticketsRepoSyncStatus.value = const TicketsRepoSyncIdle();
+    } catch (e) {
+      ticketsRepoSyncStatus.value = TicketsRepoSyncFailed(e.toString());
+    }
+  }
+
   /// The active project's display name, if this cubit was constructed with one
   /// (`app_router.dart` always supplies it). Read by `CodebaseAnalysisBanner`
   /// to name the codebase in its offer copy — `null` falls back to generic
@@ -1051,6 +1111,8 @@ class TicketsCubit extends Cubit<TicketsState> {
     unawaited(_decisionGraphChangesSubscription?.cancel());
     unawaited(_transitionGraphChangesSubscription?.cancel());
     unreadNotificationCount.dispose();
+    _syncCheckTimer?.cancel();
+    ticketsRepoSyncStatus.dispose();
     return super.close();
   }
 

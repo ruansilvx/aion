@@ -8,6 +8,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_cubit.dart';
+import 'package:aion/features/tickets/presentation/cubit/tickets_repo_sync_status.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 import 'package:aion/features/tickets/presentation/screens/tickets_board_view.dart'
     show ticketsErrorMessage;
@@ -277,11 +278,11 @@ class _Sidebar extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: const [
-                    _NotificationBellTrigger(compact: false),
-                    SizedBox(width: AionSpacing.sp8),
-                    _SecondaryActionsTrigger(),
+                  children: [
+                    const Expanded(child: _SyncStatusIndicator(compact: false)),
+                    const _NotificationBellTrigger(compact: false),
+                    const SizedBox(width: AionSpacing.sp8),
+                    const _SecondaryActionsTrigger(),
                   ],
                 ),
               ),
@@ -338,15 +339,17 @@ class _CompactShell extends StatelessWidget {
 }
 
 /// The fixed-height (72px + bottom safe area) bottom tab bar rendered by
-/// [_CompactShell]: the three [_NavItem] destinations plus the
-/// [_NotificationBellTrigger] and [_SecondaryActionsTrigger]. Per `AIO-1300`
-/// §1.3, the trigger cell is a fixed 56px [SizedBox] (not `Expanded`) — the
-/// three destinations stay equal `Expanded` thirds of the remaining space,
-/// rather than all cells splitting evenly, since a destination must stay
-/// tappable/legible while the trailing triggers are just fixed 56px cells that
-/// never needed a full share. [_NotificationBellTrigger] gets its own fixed
-/// 56px cell, placed before [_SecondaryActionsTrigger]'s — see design.md
-/// Component Spec §3.1. Added for `AIO-1586`.
+/// [_CompactShell]: the three [_NavItem] destinations plus
+/// [_SyncStatusIndicator], [_NotificationBellTrigger], and
+/// [_SecondaryActionsTrigger]. Per `AIO-1300` §1.3, the trigger cells are
+/// fixed-width [SizedBox]es (not `Expanded`) — the three destinations stay
+/// equal `Expanded` thirds of the remaining space, rather than all cells
+/// splitting evenly, since a destination must stay tappable/legible while
+/// the trailing triggers never needed a full share. [_NotificationBellTrigger]
+/// gets its own fixed 56px cell, placed before [_SecondaryActionsTrigger]'s
+/// — see design.md Component Spec §3.1. Added for `AIO-1586`.
+/// [_SyncStatusIndicator] gets a narrower 40px cell before both (empty when
+/// idle, per its own dartdoc) — added for `AIO-2945`.
 class _BottomTabBar extends StatelessWidget {
   /// Creates a [_BottomTabBar].
   const _BottomTabBar({
@@ -424,6 +427,10 @@ class _BottomTabBar extends StatelessWidget {
                       label: context.l10n.inboxScreenTitle,
                       onTap: onSelectInbox,
                     ),
+                  ),
+                  const SizedBox(
+                    width: 40,
+                    child: Center(child: _SyncStatusIndicator(compact: true)),
                   ),
                   const SizedBox(
                     width: 56,
@@ -704,6 +711,84 @@ class _SecondaryActionsTriggerState extends State<_SecondaryActionsTrigger> {
         }
       },
       semanticsLabel: context.l10n.navShellSecondaryMenuLabel,
+    );
+  }
+}
+
+/// A small, non-interactive readout of
+/// `TicketsCubit.ticketsRepoSyncStatus` — renders nothing while
+/// [TicketsRepoSyncIdle] (the steady state: fully pushed, or no push
+/// configured), per the ticket's own "idle when synced" ask. Otherwise
+/// shows a small icon plus an inline text label; [compact] hides the
+/// label (icon + color only) so it fits [_BottomTabBar]'s narrower cell —
+/// a [Semantics] label still carries the full text either way. Same
+/// icon-plus-label-pill shape `design_system/molecules/sync_status_badge.dart`
+/// uses for a different, per-ticket-file sync concept, without pulling in
+/// its hover-tooltip machinery (this file has no other `Overlay`-based
+/// tooltip precedent to match). Added for `AIO-2945`.
+class _SyncStatusIndicator extends StatelessWidget {
+  /// Creates a [_SyncStatusIndicator]. Set [compact] `true` for
+  /// [_BottomTabBar]'s narrower cell (icon only, no inline label).
+  const _SyncStatusIndicator({required this.compact});
+
+  /// Whether to omit the inline text label, showing only the icon (plus
+  /// hover tooltip).
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final ticketsCubit = context.read<TicketsCubit>();
+
+    return ValueListenableBuilder<TicketsRepoSyncStatus>(
+      valueListenable: ticketsCubit.ticketsRepoSyncStatus,
+      builder: (context, status, _) {
+        if (status is TicketsRepoSyncIdle) return const SizedBox.shrink();
+
+        final t = ThemeScope.of(context);
+        final c = t.colors;
+        final (Widget icon, String label, Color foreground) = switch (status) {
+          TicketsRepoSyncAhead(:final count) => (
+            PhosphorIcon(
+              PhosphorIcons.cloudArrowUpLight,
+              size: 12,
+              color: c.textMuted,
+            ),
+            context.l10n.ticketsRepoSyncAhead(count),
+            c.textMuted,
+          ),
+          TicketsRepoSyncPushing() => (
+            const AppSpinner(size: 12),
+            context.l10n.ticketsRepoSyncPushing,
+            c.primary,
+          ),
+          TicketsRepoSyncFailed() => (
+            PhosphorIcon(PhosphorIcons.warningLight, size: 12, color: c.warning),
+            context.l10n.ticketsRepoSyncFailed,
+            c.warning,
+          ),
+          TicketsRepoSyncIdle() => (const SizedBox.shrink(), '', c.textMuted),
+        };
+
+        return Semantics(
+          label: label,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              icon,
+              if (!compact) ...[
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    label,
+                    style: AionText.chip.copyWith(color: foreground),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
     );
   }
 }

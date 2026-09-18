@@ -19406,4 +19406,115 @@ void main() {
       },
     );
   });
+
+  group('ticketsRepoSyncStatus / checkTicketsRepoSync (AIO-2945)', () {
+    late MockGitRepositoryClient gitClient;
+
+    setUp(() {
+      gitClient = MockGitRepositoryClient();
+    });
+
+    test(
+      'stays idle and never calls the git client when constructed without '
+      'a tickets-repo root path',
+      () async {
+        final cubit = TicketsCubit(repository, gitClient: gitClient);
+
+        await cubit.checkTicketsRepoSync();
+
+        expect(
+          cubit.ticketsRepoSyncStatus.value,
+          const TicketsRepoSyncIdle(),
+        );
+        verifyNever(() => gitClient.aheadCount(any()));
+        await cubit.close();
+      },
+    );
+
+    test('stays idle when aheadCount reports 0', () async {
+      when(() => gitClient.aheadCount('/tickets')).thenAnswer((_) async => 0);
+      final cubit = TicketsCubit(
+        repository,
+        gitClient: gitClient,
+        projectRootPath: '/tickets',
+      );
+
+      await cubit.checkTicketsRepoSync();
+
+      expect(cubit.ticketsRepoSyncStatus.value, const TicketsRepoSyncIdle());
+      verifyNever(() => gitClient.pushCurrentBranch(any()));
+      await cubit.close();
+    });
+
+    test(
+      'pushes and returns to idle when local commits are ahead of origin',
+      () async {
+        when(
+          () => gitClient.aheadCount('/tickets'),
+        ).thenAnswer((_) async => 2);
+        when(
+          () => gitClient.pushCurrentBranch('/tickets'),
+        ).thenAnswer((_) async {});
+        final cubit = TicketsCubit(
+          repository,
+          gitClient: gitClient,
+          projectRootPath: '/tickets',
+        );
+
+        await cubit.checkTicketsRepoSync();
+
+        verify(() => gitClient.pushCurrentBranch('/tickets')).called(1);
+        expect(cubit.ticketsRepoSyncStatus.value, const TicketsRepoSyncIdle());
+        await cubit.close();
+      },
+    );
+
+    test('surfaces TicketsRepoSyncFailed when the push throws', () async {
+      when(() => gitClient.aheadCount('/tickets')).thenAnswer((_) async => 1);
+      when(() => gitClient.pushCurrentBranch('/tickets')).thenThrow(
+        const ProcessException('git', ['push'], 'no upstream configured', 128),
+      );
+      final cubit = TicketsCubit(
+        repository,
+        gitClient: gitClient,
+        projectRootPath: '/tickets',
+      );
+
+      await cubit.checkTicketsRepoSync();
+
+      expect(cubit.ticketsRepoSyncStatus.value, isA<TicketsRepoSyncFailed>());
+      await cubit.close();
+    });
+
+    test(
+      'records the intermediate aheadBy/pushing states before settling '
+      'back to idle',
+      () async {
+        when(
+          () => gitClient.aheadCount('/tickets'),
+        ).thenAnswer((_) async => 3);
+        when(
+          () => gitClient.pushCurrentBranch('/tickets'),
+        ).thenAnswer((_) async {});
+        final cubit = TicketsCubit(
+          repository,
+          gitClient: gitClient,
+          projectRootPath: '/tickets',
+        );
+        final seen = <TicketsRepoSyncStatus>[];
+        cubit.ticketsRepoSyncStatus.addListener(
+          () => seen.add(cubit.ticketsRepoSyncStatus.value),
+        );
+
+        await cubit.checkTicketsRepoSync();
+
+        expect(seen, [
+          const TicketsRepoSyncAhead(3),
+          const TicketsRepoSyncPushing(),
+          const TicketsRepoSyncIdle(),
+        ]);
+        await cubit.close();
+      },
+    );
+  });
 }

@@ -166,6 +166,34 @@ class GitRepositoryClient {
     return output.isEmpty ? 0 : output.split('\n').length;
   }
 
+  /// Runs `git rev-list --count @{u}..HEAD` in [rootPath] — the number of
+  /// local commits on the current branch not yet on its upstream. Returns
+  /// `0` on any failure (no upstream configured, no remote at all, a
+  /// detached HEAD) rather than throwing, via [_run] not [_runChecked]:
+  /// unlike [add]/[commit]/[push], "can't tell if it's ahead" is a normal,
+  /// expected state here (e.g. a tickets-repo with no remote wired up yet)
+  /// and should read as "nothing to push," not surface as an error — same
+  /// fallback-on-failure shape as [defaultBranch]. Added for `AIO-2945`.
+  Future<int> aheadCount(String rootPath) async {
+    final result = await _run(
+      ['rev-list', '--count', '@{u}..HEAD'],
+      rootPath,
+    );
+    if (result.exitCode != 0) return 0;
+    return int.tryParse(result.stdout.toString().trim()) ?? 0;
+  }
+
+  /// Runs `git push` in [rootPath] — pushes the current branch to its
+  /// already-configured upstream (unlike [push], which takes an explicit
+  /// [worktreePath]/`branchName` pair and sets the upstream itself via
+  /// `-u`). Throws a [ProcessException] on failure — see [add]'s dartdoc
+  /// for why a swallowed failure here is the same class of bug: a caller
+  /// tracking sync status needs to know a push didn't actually land.
+  /// Added for `AIO-2945`.
+  Future<void> pushCurrentBranch(String rootPath) async {
+    await _runChecked(['push'], rootPath);
+  }
+
   /// Runs `git rev-parse --abbrev-ref origin/HEAD` in [rootPath] (the
   /// *original* checkout, not the worktree — `origin/HEAD` is a
   /// repository-wide ref, identical either place, but `rootPath` is already

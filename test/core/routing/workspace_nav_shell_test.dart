@@ -26,6 +26,7 @@ Widget _wrap({
   required StreamController<TicketsState> controller,
   required TicketsState initialState,
   int unreadCount = 0,
+  TicketsRepoSyncStatus syncStatus = const TicketsRepoSyncIdle(),
 }) {
   final ticketsCubit = MockTicketsCubit();
   when(() => ticketsCubit.state).thenReturn(initialState);
@@ -33,6 +34,9 @@ Widget _wrap({
   when(
     () => ticketsCubit.unreadNotificationCount,
   ).thenReturn(ValueNotifier<int>(unreadCount));
+  when(
+    () => ticketsCubit.ticketsRepoSyncStatus,
+  ).thenReturn(ValueNotifier<TicketsRepoSyncStatus>(syncStatus));
   when(
     () => ticketsCubit.getRecentNotifications(),
   ).thenAnswer((_) async => const []);
@@ -82,6 +86,9 @@ Widget _wrapRouted({required double width}) {
   when(
     () => ticketsCubit.unreadNotificationCount,
   ).thenReturn(ValueNotifier<int>(0));
+  when(
+    () => ticketsCubit.ticketsRepoSyncStatus,
+  ).thenReturn(ValueNotifier<TicketsRepoSyncStatus>(const TicketsRepoSyncIdle()));
 
   Widget shellFor(GoRouterState state, String label) => BlocProvider<TicketsCubit>.value(
     value: ticketsCubit,
@@ -291,5 +298,165 @@ void main() {
       expect(find.text('Notifications'), findsOneWidget);
       expect(find.text('No notifications yet'), findsOneWidget);
     });
+  });
+
+  group('_SyncStatusIndicator (AIO-2945)', () {
+    // _wrap's own MediaQuery override doesn't drive WorkspaceNavShell's
+    // internal LayoutBuilder (which reads the real incoming constraints,
+    // not the ambient MediaQueryData) — the actual test-surface size,
+    // below the 900px breakpoint by default, is what decides
+    // _WideShell/_Sidebar vs. _CompactShell/_BottomTabBar. Most of these
+    // assertions use bySemanticsLabel, which both layouts set identically
+    // (see _SyncStatusIndicator's own dartdoc), so they hold either way;
+    // the two "inline label" tests below set tester.view.physicalSize
+    // directly (mirroring tickets_board_view_test.dart's own precedent)
+    // to pin the layout each one actually needs.
+    testWidgets('renders nothing when idle', (tester) async {
+      final controller = StreamController<TicketsState>.broadcast();
+      addTearDown(controller.close);
+
+      await tester.pumpWidget(
+        _wrap(controller: controller, initialState: const TicketsInitial()),
+      );
+      await tester.pump();
+
+      expect(find.textContaining('to push'), findsNothing);
+      expect(find.text('Pushing…'), findsNothing);
+      expect(find.text('Push failed'), findsNothing);
+    });
+
+    testWidgets('shows the ahead-count label when commits are ahead', (
+      tester,
+    ) async {
+      final controller = StreamController<TicketsState>.broadcast();
+      addTearDown(controller.close);
+
+      await tester.pumpWidget(
+        _wrap(
+          controller: controller,
+          initialState: const TicketsInitial(),
+          syncStatus: const TicketsRepoSyncAhead(3),
+        ),
+      );
+      await tester.pump();
+
+      expect(
+        find.bySemanticsLabel(RegExp('3 commits to push')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('singular commit count reads "1 commit to push"', (
+      tester,
+    ) async {
+      final controller = StreamController<TicketsState>.broadcast();
+      addTearDown(controller.close);
+
+      await tester.pumpWidget(
+        _wrap(
+          controller: controller,
+          initialState: const TicketsInitial(),
+          syncStatus: const TicketsRepoSyncAhead(1),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.bySemanticsLabel(RegExp('1 commit to push')), findsOneWidget);
+    });
+
+    testWidgets('shows "Pushing…" while a push is in flight', (tester) async {
+      final controller = StreamController<TicketsState>.broadcast();
+      addTearDown(controller.close);
+
+      await tester.pumpWidget(
+        _wrap(
+          controller: controller,
+          initialState: const TicketsInitial(),
+          syncStatus: const TicketsRepoSyncPushing(),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.bySemanticsLabel(RegExp('Pushing…')), findsOneWidget);
+    });
+
+    testWidgets('shows "Push failed" after a failed push attempt', (
+      tester,
+    ) async {
+      final controller = StreamController<TicketsState>.broadcast();
+      addTearDown(controller.close);
+
+      await tester.pumpWidget(
+        _wrap(
+          controller: controller,
+          initialState: const TicketsInitial(),
+          syncStatus: const TicketsRepoSyncFailed('exit code 128'),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.bySemanticsLabel(RegExp('Push failed')), findsOneWidget);
+    });
+
+    testWidgets(
+      'shows the inline text label in the wide sidebar layout',
+      (tester) async {
+        final originalSize = tester.view.physicalSize;
+        final originalRatio = tester.view.devicePixelRatio;
+        tester.view.physicalSize = const Size(1200, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.physicalSize = originalSize;
+          tester.view.devicePixelRatio = originalRatio;
+        });
+
+        final controller = StreamController<TicketsState>.broadcast();
+        addTearDown(controller.close);
+
+        await tester.pumpWidget(
+          _wrap(
+            controller: controller,
+            initialState: const TicketsInitial(),
+            syncStatus: const TicketsRepoSyncAhead(3),
+          ),
+        );
+        await tester.pump();
+
+        expect(find.text('3 commits to push'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'hides the inline text label (icon + semantics only) in the '
+      'compact bottom-bar layout',
+      (tester) async {
+        final originalSize = tester.view.physicalSize;
+        final originalRatio = tester.view.devicePixelRatio;
+        tester.view.physicalSize = const Size(500, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.physicalSize = originalSize;
+          tester.view.devicePixelRatio = originalRatio;
+        });
+
+        final controller = StreamController<TicketsState>.broadcast();
+        addTearDown(controller.close);
+
+        await tester.pumpWidget(
+          _wrap(
+            controller: controller,
+            initialState: const TicketsInitial(),
+            syncStatus: const TicketsRepoSyncAhead(3),
+          ),
+        );
+        await tester.pump();
+
+        expect(find.text('3 commits to push'), findsNothing);
+        expect(
+          find.bySemanticsLabel(RegExp('3 commits to push')),
+          findsOneWidget,
+        );
+      },
+    );
   });
 }
