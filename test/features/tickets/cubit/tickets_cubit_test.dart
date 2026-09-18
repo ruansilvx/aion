@@ -9460,6 +9460,13 @@ void main() {
         when(
           () => notificationRepository.getUnreadCount(),
         ).thenAnswer((_) async => 0);
+        // Safe blanket default for every `AutomationContext` this group
+        // doesn't explicitly override per-test — `auto` preserves this
+        // group's pre-existing "fires immediately" assumption. Added for
+        // the new `codingExecutionTrigger` context, `AIO-2885`.
+        when(
+          () => automationSettingsRepository.getConfidence(any()),
+        ).thenAnswer((_) async => AutomationConfidence.auto);
       });
 
       TicketsCubit buildFullCubit() => TicketsCubit(
@@ -11184,6 +11191,16 @@ void main() {
       baselineRepository = MockBaselineRepository();
       stubSuccessfulCodingExecutionInfra(gitClient, gitHubClient);
       stubEmptyBaseline(baselineRepository);
+      // Safe blanket default for every `AutomationContext` this group
+      // doesn't explicitly override per-test (notably the new
+      // `codingExecutionTrigger`, `AIO-2885`) — `auto` preserves this
+      // group's pre-existing "fires immediately" assumption. A test-body
+      // `when(...)` for a specific context (e.g. `codingExecution`) is
+      // registered after this one and still takes precedence for that
+      // context.
+      when(
+        () => automationSettingsRepository.getConfidence(any()),
+      ).thenAnswer((_) async => AutomationConfidence.auto);
     });
 
     TicketsCubit buildFullCubit() => TicketsCubit(
@@ -11262,9 +11279,9 @@ void main() {
             'inProgress',
           ),
         ).thenAnswer((_) async {});
-        when(() => repository.getTicketById(taskNoStory.id)).thenAnswer(
-          (_) async => taskNoStory.copyWith(status: 'inProgress'),
-        );
+        when(
+          () => repository.getTicketById(taskNoStory.id),
+        ).thenAnswer((_) async => taskNoStory.copyWith(status: 'inProgress'));
       },
       act: (cubit) =>
           cubit.changeTicketStatus(taskNoStory, 'inProgress'),
@@ -12313,6 +12330,13 @@ void main() {
         baselineRepository = MockBaselineRepository();
         stubSuccessfulCodingExecutionInfra(gitClient, gitHubClient);
         stubEmptyBaseline(baselineRepository);
+        // Safe blanket default for every `AutomationContext` this group
+        // doesn't explicitly override per-test — `auto` preserves this
+        // group's pre-existing "fires immediately" assumption. Added for
+        // the new `codingExecutionTrigger` context, `AIO-2885`.
+        when(
+          () => automationSettingsRepository.getConfidence(any()),
+        ).thenAnswer((_) async => AutomationConfidence.auto);
       });
 
       TicketsCubit buildFullCubit() => TicketsCubit(
@@ -12414,8 +12438,15 @@ void main() {
           if (id == otherTask.id) {
             return otherTask.copyWith(status: 'inProgress');
           }
-          if (task1ChatCreated && !task2ChatCreated) return execChatTask1;
-          return execChatTask2;
+          // Keyed off the actually-requested id, not creation-order flags
+          // — `AIO-2885`'s new gate-check async gap before enqueueing means
+          // task2's own exec chat can now be created before task1's own
+          // chat-lookup calls resolve, so a "whichever was created most
+          // recently" heuristic would return the wrong ticket for task1's
+          // own in-flight operations.
+          if (id == execChatTask1.id && task1ChatCreated) return execChatTask1;
+          if (id == execChatTask2.id && task2ChatCreated) return execChatTask2;
+          return null;
         });
         when(
           () => repository.searchTickets(
@@ -12452,6 +12483,12 @@ void main() {
         await cubit.updateTicketStatus(taskNoStory.id, 'inProgress');
         await cubit.updateTicketStatus(otherTask.id, 'inProgress');
         await cubit.searchTickets();
+        // `_triggerOrGateCodingExecution` (`AIO-2885`) awaits a real
+        // (mocked) `getConfidence` call before enqueueing — unlike the old
+        // always-synchronous-up-to-its-first-`unawaited`-call enqueue, this
+        // is now a genuine async gap. Let both tasks' gate checks resolve
+        // and actually enqueue before resolving `firstRunPause` below.
+        await Future<void>.delayed(const Duration(milliseconds: 50));
 
         // Resolves taskNoStory's paused implement-turn call — the run
         // proceeds through its verify/push/PR steps and completes,
@@ -12977,6 +13014,16 @@ void main() {
             AutomationContext.codingExecution,
           ),
         ).thenAnswer((_) async => AutomationConfidence.gated);
+        // `AIO-2885`'s new execution-trigger confirm gate — `auto` so this
+        // group's plain status-dropdown-driven triggers still fire
+        // immediately, unchanged, matching what every test in this group
+        // (which exercises coding-execution's own reliability, not the new
+        // gate feature) already assumes.
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecutionTrigger,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.auto);
         // A handoff's link-back — literal linkType (not `any()`) so no
         // `registerFallbackValue(TicketLinkType...)` is needed here.
         when(
@@ -15982,6 +16029,13 @@ void main() {
       baselineRepository = MockBaselineRepository();
       stubSuccessfulCodingExecutionInfra(gitClient, gitHubClient);
       stubEmptyBaseline(baselineRepository);
+      // Safe blanket default for every `AutomationContext` this group
+      // doesn't explicitly override per-test — `auto` preserves this
+      // group's pre-existing "fires immediately" assumption. Added for
+      // the new `codingExecutionTrigger` context, `AIO-2885`.
+      when(
+        () => automationSettingsRepository.getConfidence(any()),
+      ).thenAnswer((_) async => AutomationConfidence.auto);
       when(
         () => agentClient.run(any()),
       ).thenAnswer((_) async => Stream.fromIterable(const [AgentDoneEvent()]));
@@ -18923,6 +18977,172 @@ void main() {
           ).called(1);
         },
       );
+    });
+  });
+
+  group('execution-trigger confirm gate (AIO-2885)', () {
+    late MockAutomationSettingsRepository automationSettingsRepository;
+
+    setUp(() {
+      automationSettingsRepository = MockAutomationSettingsRepository();
+    });
+
+    TicketsCubit buildCubit() => TicketsCubit(
+      repository,
+      automationSettingsRepository: automationSettingsRepository,
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'gated confidence commits the status write but does not fire '
+      'coding-execution, surfacing pendingExecutionTrigger on the open '
+      'detail screen instead',
+      setUp: () {
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecutionTrigger,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.gated);
+        when(
+          () => repository.updateTicketStatus(taskNoStory.id, 'inProgress'),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(taskNoStory.id),
+        ).thenAnswer((_) async => taskNoStory.copyWith(status: 'inProgress'));
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.changeTicketStatus(taskNoStory, 'inProgress'),
+      wait: const Duration(milliseconds: 20),
+      expect: () => [
+        isA<TicketDetailLoaded>().having(
+          (s) => s.pendingExecutionTrigger,
+          'pendingExecutionTrigger',
+          false,
+        ),
+        isA<TicketDetailLoaded>().having(
+          (s) => s.pendingExecutionTrigger,
+          'pendingExecutionTrigger',
+          true,
+        ),
+      ],
+      // No providerRegistry wired on this minimal cubit at all — a fired
+      // coding-execution attempt would hit a missing-deps guard immediately
+      // regardless, but the pending flag staying `true` above already
+      // confirms _triggerOrQueueCodingExecution was never even reached.
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'confirmPendingExecutionTrigger fires the recorded trigger and clears '
+      'the pending flag',
+      setUp: () {
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecutionTrigger,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.gated);
+        when(
+          () => repository.updateTicketStatus(taskNoStory.id, 'inProgress'),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(taskNoStory.id),
+        ).thenAnswer((_) async => taskNoStory.copyWith(status: 'inProgress'));
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        await cubit.changeTicketStatus(taskNoStory, 'inProgress');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.confirmPendingExecutionTrigger(taskNoStory.id);
+      },
+      wait: const Duration(milliseconds: 20),
+      verify: (cubit) {
+        // No git/baseline deps configured on this minimal cubit — the
+        // confirmed fire reaches _runCodingExecution's own missing-deps
+        // guard immediately rather than actually calling the agent; this
+        // test only needs to observe pendingExecutionTrigger itself
+        // clearing, not a full run.
+        expect(
+          (cubit.state as TicketDetailLoaded).pendingExecutionTrigger,
+          false,
+        );
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'rejectPendingExecutionTrigger clears the pending flag without ever '
+      'firing coding-execution',
+      setUp: () {
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecutionTrigger,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.gated);
+        when(
+          () => repository.updateTicketStatus(taskNoStory.id, 'inProgress'),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(taskNoStory.id),
+        ).thenAnswer((_) async => taskNoStory.copyWith(status: 'inProgress'));
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        await cubit.changeTicketStatus(taskNoStory, 'inProgress');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        cubit.rejectPendingExecutionTrigger(taskNoStory.id);
+      },
+      expect: () => [
+        isA<TicketDetailLoaded>().having(
+          (s) => s.pendingExecutionTrigger,
+          'pendingExecutionTrigger',
+          false,
+        ),
+        isA<TicketDetailLoaded>().having(
+          (s) => s.pendingExecutionTrigger,
+          'pendingExecutionTrigger',
+          true,
+        ),
+        isA<TicketDetailLoaded>().having(
+          (s) => s.pendingExecutionTrigger,
+          'pendingExecutionTrigger',
+          false,
+        ),
+      ],
+    );
+
+    test('auto confidence fires immediately, unchanged, with no pending state '
+        'at all', () async {
+      when(
+        () => automationSettingsRepository.getConfidence(
+          AutomationContext.codingExecutionTrigger,
+        ),
+      ).thenAnswer((_) async => AutomationConfidence.auto);
+      when(
+        () => repository.updateTicketStatus(taskNoStory.id, 'inProgress'),
+      ).thenAnswer((_) async {});
+      when(
+        () => repository.getTicketById(taskNoStory.id),
+      ).thenAnswer((_) async => taskNoStory.copyWith(status: 'inProgress'));
+
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      final states = <TicketsState>[];
+      final sub = cubit.stream.listen(states.add);
+      addTearDown(sub.cancel);
+
+      await cubit.changeTicketStatus(taskNoStory, 'inProgress');
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      // `auto` fires _triggerOrQueueCodingExecution's own queue/board-state
+      // machinery immediately (unchanged, pre-`AIO-2885` behavior) — this
+      // cubit has no providerRegistry wired, so the run itself never
+      // actually starts, but several intermediate TicketDetailLoaded
+      // states still emit along the way (queue position, isExecuting,
+      // then a missing-deps revert). Rather than pin that exact sequence,
+      // just assert none of them ever show pendingExecutionTrigger — the
+      // gate itself never engages under `auto`.
+      for (final s in states) {
+        if (s is TicketDetailLoaded) {
+          expect(s.pendingExecutionTrigger, isFalse);
+        }
+      }
     });
   });
 

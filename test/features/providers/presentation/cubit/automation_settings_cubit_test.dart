@@ -58,6 +58,12 @@ void main() {
         when(
           () => repository.getConfidence(AutomationContext.verifyGateRetry),
         ).thenAnswer((_) async => AutomationConfidence.gated);
+        // AutomationContext.codingExecutionTrigger — added for `AIO-2885`.
+        when(
+          () => repository.getConfidence(
+            AutomationContext.codingExecutionTrigger,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.gated);
       },
       build: () => AutomationSettingsCubit(repository),
       act: (cubit) => cubit.load(),
@@ -72,6 +78,7 @@ void main() {
           AutomationContext.ticketLinking: AutomationConfidence.gated,
           AutomationContext.specAutoLink: AutomationConfidence.gated,
           AutomationContext.verifyGateRetry: AutomationConfidence.gated,
+          AutomationContext.codingExecutionTrigger: AutomationConfidence.gated,
         }),
       ],
     );

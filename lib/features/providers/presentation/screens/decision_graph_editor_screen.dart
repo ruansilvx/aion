@@ -36,6 +36,8 @@ String decisionGraphContextTitle(
     context.l10n.decisionGraphContextTitleSpecAutoLink,
   AutomationContext.verifyGateRetry =>
     context.l10n.decisionGraphContextTitleVerifyGateRetry,
+  AutomationContext.codingExecutionTrigger =>
+    context.l10n.decisionGraphContextTitleCodingExecutionTrigger,
 };
 
 /// One node datum rendered by this screen's [GraphCanvas] instance —

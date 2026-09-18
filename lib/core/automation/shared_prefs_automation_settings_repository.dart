@@ -50,6 +50,10 @@ class SharedPrefsAutomationSettingsRepository
   static const _verifyGateRetryAutomationKey =
       'automation_settings.verify_gate_retry_automation';
 
+  /// [AutomationContext.codingExecutionTrigger]'s key. Added for `AIO-2885`.
+  static const _codingExecutionTriggerAutomationKey =
+      'automation_settings.coding_execution_trigger_automation';
+
   String _keyFor(AutomationContext context) => switch (context) {
     AutomationContext.sddStage => _sddStageAutomationKey,
     AutomationContext.codingExecution => _codingExecutionAutomationKey,
@@ -62,6 +66,8 @@ class SharedPrefsAutomationSettingsRepository
     AutomationContext.ticketLinking => _ticketLinkingAutomationKey,
     AutomationContext.specAutoLink => _specAutoLinkAutomationKey,
     AutomationContext.verifyGateRetry => _verifyGateRetryAutomationKey,
+    AutomationContext.codingExecutionTrigger =>
+      _codingExecutionTriggerAutomationKey,
   };
 
   @override

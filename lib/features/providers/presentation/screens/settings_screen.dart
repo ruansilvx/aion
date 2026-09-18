@@ -344,6 +344,19 @@ String _confidenceSubLabel(
     AutomationConfidence.manual =>
       context.l10n.settingsAutomationVerifyGateRetryManualSubLabel,
   },
+  // No `_AutomationSection` instance renders this context yet — mirrors
+  // `specAutoLink`/`verifyGateRetry`'s own "no dedicated Settings row yet"
+  // precedent immediately above; reachable via the generic decision-graph
+  // editor route only. `manual` intentionally reuses the same sub-label as
+  // `gated` — there is no dedicated manual-start action for this context, so
+  // the two tiers behave identically (see `AutomationContext
+  // .codingExecutionTrigger`'s own dartdoc). Added for `AIO-2885`.
+  AutomationContext.codingExecutionTrigger => switch (confidence) {
+    AutomationConfidence.auto =>
+      context.l10n.settingsAutomationCodingExecutionTriggerAutoSubLabel,
+    AutomationConfidence.gated || AutomationConfidence.manual =>
+      context.l10n.settingsAutomationCodingExecutionTriggerGatedSubLabel,
+  },
 };
 
 /// The mode dot's color, encoding [confidence] per design.md §7's
