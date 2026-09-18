@@ -30,7 +30,7 @@ void main() {
     final detected = detector.detect(tempDir.path);
     expect(detected?.language, 'Flutter/Dart');
     expect(detected?.setupCommand, 'flutter pub get');
-    expect(detected?.checkCommand, 'flutter analyze');
+    expect(detected?.checkCommand, ['flutter analyze', 'flutter test']);
   });
 
   test('detects Node.js from package.json', () {
@@ -38,7 +38,7 @@ void main() {
     final detected = detector.detect(tempDir.path);
     expect(detected?.language, 'Node.js');
     expect(detected?.setupCommand, 'npm install');
-    expect(detected?.checkCommand, 'npm test');
+    expect(detected?.checkCommand, ['npm test']);
   });
 
   test('detects Rust from Cargo.toml with no setup command', () {
@@ -46,7 +46,7 @@ void main() {
     final detected = detector.detect(tempDir.path);
     expect(detected?.language, 'Rust');
     expect(detected?.setupCommand, isNull);
-    expect(detected?.checkCommand, 'cargo check');
+    expect(detected?.checkCommand, ['cargo check']);
   });
 
   test('detects Go from go.mod with no setup command', () {
@@ -54,7 +54,7 @@ void main() {
     final detected = detector.detect(tempDir.path);
     expect(detected?.language, 'Go');
     expect(detected?.setupCommand, isNull);
-    expect(detected?.checkCommand, 'go build ./...');
+    expect(detected?.checkCommand, ['go build ./...']);
   });
 
   test('detects Python from pyproject.toml', () {
@@ -62,7 +62,7 @@ void main() {
     final detected = detector.detect(tempDir.path);
     expect(detected?.language, 'Python');
     expect(detected?.setupCommand, 'pip install -e .');
-    expect(detected?.checkCommand, 'pytest');
+    expect(detected?.checkCommand, ['pytest']);
   });
 
   test('detects Python from requirements.txt', () {
@@ -70,7 +70,7 @@ void main() {
     final detected = detector.detect(tempDir.path);
     expect(detected?.language, 'Python');
     expect(detected?.setupCommand, 'pip install -r requirements.txt');
-    expect(detected?.checkCommand, 'pytest');
+    expect(detected?.checkCommand, ['pytest']);
   });
 
   test('returns null when no known marker file exists', () {

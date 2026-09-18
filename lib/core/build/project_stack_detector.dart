@@ -6,11 +6,14 @@ import 'dart:io';
 /// A stack detected by [ProjectStackDetector.detect] — a display name
 /// plus a suggested setup/check command, written as guidance text into
 /// a project's `conventions/architecture-conventions` override by
-/// `BaselineTailoringService`. Purely informational: nothing in Aion's
-/// own Dart code runs [checkCommand] — it's read by the model during a
-/// coding-execution implement/verify turn (see `TicketsCubit`'s
-/// `_effectiveAssetContent`), the same way any other line of `Project
-/// conventions` is.
+/// `BaselineTailoringService`. [checkCommand] is also independently
+/// re-run for real by `TicketsCubit._runCodingExecution`, via
+/// `MechanicalVerificationRunner`, once a coding-execution run's own
+/// agentic verify turn claims `VERIFICATION: PASSED` — reversed from
+/// this class's original "purely informational" design for `AIO-2943`
+/// (see that ticket for the full rationale); [setupCommand] stays
+/// informational-only, read by the model the same way any other line of
+/// `Project conventions` is.
 class DetectedStack {
   /// Creates a [DetectedStack].
   const DetectedStack({
@@ -27,8 +30,14 @@ class DetectedStack {
   /// `null` if this stack typically needs none.
   final String? setupCommand;
 
-  /// A suggested build/lint/test command (e.g. `"flutter analyze"`).
-  final String checkCommand;
+  /// Build/lint/test commands (e.g. `['flutter analyze', 'flutter
+  /// test']`), run in order — see this class's own dartdoc for who reads
+  /// this and how. Widened from a single `String` to a list for
+  /// `AIO-2943`, so a stack needing more than one real check (Flutter's
+  /// own `flutter analyze` alone never ran its test suite) can express
+  /// that, and so `MechanicalVerificationRunner.run` can report exactly
+  /// which command in the chain failed.
+  final List<String> checkCommand;
 }
 
 /// Which per-stack version-file convention a [DetectedVersionFile] follows —
@@ -100,27 +109,27 @@ class ProjectStackDetector {
     'pubspec.yaml': DetectedStack(
       language: 'Flutter/Dart',
       setupCommand: 'flutter pub get',
-      checkCommand: 'flutter analyze',
+      checkCommand: ['flutter analyze', 'flutter test'],
     ),
     'package.json': DetectedStack(
       language: 'Node.js',
       setupCommand: 'npm install',
-      checkCommand: 'npm test',
+      checkCommand: ['npm test'],
     ),
     'Cargo.toml': DetectedStack(
       language: 'Rust',
-      checkCommand: 'cargo check',
+      checkCommand: ['cargo check'],
     ),
-    'go.mod': DetectedStack(language: 'Go', checkCommand: 'go build ./...'),
+    'go.mod': DetectedStack(language: 'Go', checkCommand: ['go build ./...']),
     'pyproject.toml': DetectedStack(
       language: 'Python',
       setupCommand: 'pip install -e .',
-      checkCommand: 'pytest',
+      checkCommand: ['pytest'],
     ),
     'requirements.txt': DetectedStack(
       language: 'Python',
       setupCommand: 'pip install -r requirements.txt',
-      checkCommand: 'pytest',
+      checkCommand: ['pytest'],
     ),
   };
 

@@ -16,6 +16,7 @@ import 'package:aion/core/automation/decision_graph_repository.dart';
 import 'package:aion/core/automation/decision_node.dart';
 import 'package:aion/core/automation/decision_outcome.dart';
 import 'package:aion/core/build/dependency_cache_service.dart';
+import 'package:aion/core/build/mechanical_verification_runner.dart';
 import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/core/contracts/agent_model_descriptor.dart';
 import 'package:aion/core/contracts/agent_provider.dart';
@@ -72,6 +73,9 @@ class MockBaselineRepository extends Mock implements BaselineRepository {}
 
 class MockDependencyCacheService extends Mock
     implements DependencyCacheService {}
+
+class MockMechanicalVerificationRunner extends Mock
+    implements MechanicalVerificationRunner {}
 
 class MockTicketListFilterRepository extends Mock
     implements TicketListFilterRepository {}
@@ -17218,6 +17222,233 @@ void main() {
         ),
         isEmpty,
       );
+    });
+  });
+
+  group('mechanical verification gate (AIO-2943)', () {
+    late Directory tempProjectDir;
+    late MockAgentModelClient agentClient;
+    late MockProviderRegistry registry;
+    late MockCommentRepository commentRepository;
+    late MockAutomationSettingsRepository automationSettingsRepository;
+    late MockGitRepositoryClient gitClient;
+    late MockGitHubCliClient gitHubClient;
+    late MockBaselineRepository baselineRepository;
+    late MockMechanicalVerificationRunner mechanicalVerificationRunner;
+
+    setUp(() async {
+      tempProjectDir = await Directory.systemTemp.createTemp(
+        'aion_mech_verify_test_',
+      );
+      File(
+        '${tempProjectDir.path}${Platform.pathSeparator}pubspec.yaml',
+      ).writeAsStringSync('');
+      agentClient = MockAgentModelClient();
+      registry = buildProviderStack(agentClient).registry;
+      commentRepository = MockCommentRepository();
+      automationSettingsRepository = MockAutomationSettingsRepository();
+      gitClient = MockGitRepositoryClient();
+      gitHubClient = MockGitHubCliClient();
+      baselineRepository = MockBaselineRepository();
+      mechanicalVerificationRunner = MockMechanicalVerificationRunner();
+      stubSuccessfulCodingExecutionInfra(gitClient, gitHubClient);
+      stubEmptyBaseline(baselineRepository);
+      when(
+        () => repository.getTicketsByParent(
+          taskNoStory.id,
+          types: const [TicketType.chat],
+        ),
+      ).thenAnswer((_) async => [dummyExecutionChatTicket]);
+      when(() => repository.getTicketById(any())).thenAnswer((
+        invocation,
+      ) async {
+        final id = invocation.positionalArguments[0] as String;
+        if (id == taskNoStory.id) {
+          return taskNoStory.copyWith(status: 'inProgress');
+        }
+        return dummyExecutionChatTicket;
+      });
+      stubStatefulComments(commentRepository, dummyExecutionChatTicket.id);
+      // getTicketById's post-run refresh always consults the
+      // completion-flip confidence too, regardless of what a given test
+      // is actually exercising — only reached once `verified` is `true`.
+      when(
+        () => automationSettingsRepository.getConfidence(
+          AutomationContext.codingExecution,
+        ),
+      ).thenAnswer((_) async => AutomationConfidence.gated);
+    });
+
+    tearDown(() async {
+      if (tempProjectDir.existsSync()) {
+        await tempProjectDir.delete(recursive: true);
+      }
+    });
+
+    TicketsCubit buildCubit() => TicketsCubit(
+      repository,
+      providerRegistry: registry,
+      commentRepository: commentRepository,
+      automationSettingsRepository: automationSettingsRepository,
+      projectRootPath: tempProjectDir.path,
+      sourceRootPath: tempProjectDir.path,
+      gitClient: gitClient,
+      gitHubClient: gitHubClient,
+      baselineRepository: baselineRepository,
+      projectId: 'project-1',
+      baselineVersion: '0.1.0',
+      mechanicalVerificationRunner: mechanicalVerificationRunner,
+    );
+
+    test(
+      'a mechanical check disagreeing with the model\'s own '
+      '"VERIFICATION: PASSED" claim forces gated confidence, blocks the PR, '
+      'and never retries even when codingExecutionRetry is configured auto',
+      () async {
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+            AgentDoneEvent(),
+          ]),
+        );
+        // Configured auto -- the mismatch must still force gated,
+        // regardless, per AIO-2943's own explicit instruction.
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecutionRetry,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.auto);
+        when(
+          () => mechanicalVerificationRunner.run([
+            'flutter analyze',
+            'flutter test',
+          ], any()),
+        ).thenAnswer(
+          (_) async => const [
+            MechanicalCheckResult(
+              command: 'flutter analyze',
+              exitCode: 0,
+              output: '',
+            ),
+            MechanicalCheckResult(
+              command: 'flutter test',
+              exitCode: 1,
+              output: '3 tests failed',
+            ),
+          ],
+        );
+
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+
+        await cubit.retryCodingExecution(taskNoStory);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        verifyNever(
+          () => gitHubClient.openPullRequest(
+            rootPath: any(named: 'rootPath'),
+            branch: any(named: 'branch'),
+            title: any(named: 'title'),
+            body: any(named: 'body'),
+          ),
+        );
+        // Exactly implement + verify -- a real auto-retry corrective turn
+        // (which the mismatch's forced-gated override must prevent, even
+        // though codingExecutionRetry is configured auto above) would add
+        // a third.
+        verify(() => agentClient.run(any())).called(2);
+        final posted = await commentRepository.getCommentsForTicket(
+          dummyExecutionChatTicket.id,
+        );
+        expect(
+          posted.last.content,
+          contains('Independent verification disagreed'),
+        );
+        expect(posted.last.content, contains('flutter test'));
+      },
+    );
+
+    test('a clean mechanical check alongside a PASSED claim opens the PR '
+        'normally', () async {
+      when(() => agentClient.run(any())).thenAnswer(
+        (_) async => Stream.fromIterable(const [
+          AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+          AgentDoneEvent(),
+        ]),
+      );
+      when(
+        () => mechanicalVerificationRunner.run([
+          'flutter analyze',
+          'flutter test',
+        ], any()),
+      ).thenAnswer(
+        (_) async => const [
+          MechanicalCheckResult(
+            command: 'flutter analyze',
+            exitCode: 0,
+            output: '',
+          ),
+          MechanicalCheckResult(
+            command: 'flutter test',
+            exitCode: 0,
+            output: 'All tests passed',
+          ),
+        ],
+      );
+
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      await cubit.retryCodingExecution(taskNoStory);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      verify(
+        () => gitHubClient.openPullRequest(
+          rootPath: any(named: 'rootPath'),
+          branch: any(named: 'branch'),
+          title: any(named: 'title'),
+          body: any(named: 'body'),
+        ),
+      ).called(1);
+    });
+
+    test('no MechanicalVerificationRunner configured no-ops the check entirely '
+        '-- opens the PR on the model\'s own claim alone, unchanged pre-'
+        'AIO-2943 behavior', () async {
+      when(() => agentClient.run(any())).thenAnswer(
+        (_) async => Stream.fromIterable(const [
+          AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+          AgentDoneEvent(),
+        ]),
+      );
+
+      final cubit = TicketsCubit(
+        repository,
+        providerRegistry: registry,
+        commentRepository: commentRepository,
+        automationSettingsRepository: automationSettingsRepository,
+        projectRootPath: tempProjectDir.path,
+        sourceRootPath: tempProjectDir.path,
+        gitClient: gitClient,
+        gitHubClient: gitHubClient,
+        baselineRepository: baselineRepository,
+        projectId: 'project-1',
+        baselineVersion: '0.1.0',
+      );
+      addTearDown(cubit.close);
+
+      await cubit.retryCodingExecution(taskNoStory);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      verify(
+        () => gitHubClient.openPullRequest(
+          rootPath: any(named: 'rootPath'),
+          branch: any(named: 'branch'),
+          title: any(named: 'title'),
+          body: any(named: 'body'),
+        ),
+      ).called(1);
+      verifyNever(() => mechanicalVerificationRunner.run(any(), any()));
     });
   });
 

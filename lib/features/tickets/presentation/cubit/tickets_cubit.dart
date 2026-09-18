@@ -20,6 +20,7 @@ import 'package:aion/core/automation/decision_node.dart';
 import 'package:aion/core/automation/decision_outcome.dart';
 import 'package:aion/core/automation/default_decision_graphs.dart';
 import 'package:aion/core/build/dependency_cache_service.dart';
+import 'package:aion/core/build/mechanical_verification_runner.dart';
 import 'package:aion/core/build/project_stack_detector.dart';
 import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/core/contracts/agent_model_descriptor.dart';
@@ -290,6 +291,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     DependencyCacheService? dependencyCacheService,
     DecisionGraphRepository? decisionGraphRepository,
     TransitionPreconditionRepository? transitionPreconditionRepository,
+    MechanicalVerificationRunner? mechanicalVerificationRunner,
   }) : super(const TicketsInitial()) {
     _embeddingProvider = embeddingProvider;
     _gitProjector = gitProjector;
@@ -322,6 +324,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     _dependencyCache = dependencyCacheService;
     _decisionGraphRepository = decisionGraphRepository;
     _transitionPreconditionRepository = transitionPreconditionRepository;
+    _mechanicalVerificationRunner = mechanicalVerificationRunner;
     _workflowStatusChangesSubscription = workflowStatusRepository?.onChanged
         .listen((_) => _loadWorkflowStatuses());
     unawaited(_loadWorkflowStatuses());
@@ -540,6 +543,15 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// [_gitClient]/[_gitHubClient]'s exact optional-dependency guard shape.
   /// Added for `AIO-722`.
   late final DependencyCacheService? _dependencyCache;
+
+  /// Independently re-runs the detected stack's own `checkCommand` list
+  /// after a coding-execution run's agentic verify turn claims
+  /// `VERIFICATION: PASSED` — see [MechanicalVerificationRunner] and
+  /// [_runCodingExecution]. `null` (every existing construction site
+  /// except `app_router.dart`) makes the mechanical-verification step a
+  /// no-op, mirroring [_dependencyCache]'s exact optional-dependency
+  /// guard shape. Added for `AIO-2943`.
+  late final MechanicalVerificationRunner? _mechanicalVerificationRunner;
 
   /// Persists every `AutomationContext`'s configured [DecisionGraph]. Backs
   /// [_evaluateDecisionGraph] — see [_decisionGraphsByContext]/
@@ -5662,17 +5674,28 @@ PROMOTION: NOT YET
         await _addExecutionTokens(task.id, chat.id);
 
         final verifyReply = await _lastCommentContent(chat.id);
-        final failureReason = _verificationFailureReason(verifyReply);
+        var failureReason = _verificationFailureReason(verifyReply);
+        var mechanicalCheckMismatch = false;
         if (failureReason == null) {
-          verified = true;
-          break;
+          final mechanicalFailure = await _mechanicalVerificationMismatch(
+            rootPath,
+            worktreePath,
+          );
+          if (mechanicalFailure == null) {
+            verified = true;
+            break;
+          }
+          failureReason = mechanicalFailure;
+          mechanicalCheckMismatch = true;
         }
 
         attempt += 1;
-        final retryConfidence = await _effectiveCodingExecutionRetryConfidence(
-          automationRepo,
-          attempt,
-        );
+        final retryConfidence = mechanicalCheckMismatch
+            ? AutomationConfidence.gated
+            : await _effectiveCodingExecutionRetryConfidence(
+                automationRepo,
+                attempt,
+              );
         // `showRetryFailureToast` starts mirroring `retryConfidence ==
         // AutomationConfidence.gated` (the toast's condition before this
         // graph-consultation step existed), then may be overridden below
@@ -6641,6 +6664,43 @@ PROMOTION: NOT YET
     final reason = match?.group(1)?.trim();
     if (reason != null && reason.isNotEmpty) return reason;
     return reply.length > 500 ? '${reply.substring(0, 500)}...' : reply;
+  }
+
+  /// Independently re-runs [rootPath]'s detected stack's own `checkCommand`
+  /// list (see [ProjectStackDetector.detect]/[DetectedStack.checkCommand])
+  /// against [worktreePath] via [_mechanicalVerificationRunner], only ever
+  /// called once the agentic verify turn has *already* claimed
+  /// `VERIFICATION: PASSED` (see [_verificationFailureReason]'s own call
+  /// site). Returns `null` — nothing to disagree with — when no
+  /// [_mechanicalVerificationRunner] is configured, no stack is detected,
+  /// or every command in [DetectedStack.checkCommand] exits `0`. Otherwise
+  /// returns a human-readable message naming the first failed command and
+  /// its captured output, for the exact same corrective/failure-comment
+  /// path [_verificationFailureReason] itself feeds. [rootPath] resolves
+  /// which stack/commands apply (mirrors this method's own Node.js
+  /// dependency-caching sibling call, one screen up in
+  /// [_runCodingExecution]); the commands themselves run against
+  /// [worktreePath], the isolated execution worktree. Reverses
+  /// [ProjectStackDetector.detect]'s original "purely informational"
+  /// design — see `AIO-2943`.
+  Future<String?> _mechanicalVerificationMismatch(
+    String rootPath,
+    String worktreePath,
+  ) async {
+    final runner = _mechanicalVerificationRunner;
+    if (runner == null) return null;
+    final detected = ProjectStackDetector().detect(rootPath);
+    if (detected == null || detected.checkCommand.isEmpty) return null;
+
+    final results = await runner.run(detected.checkCommand, worktreePath);
+    final failed = results.where((r) => !r.passed).firstOrNull;
+    if (failed == null) return null;
+
+    final output = failed.output.trim();
+    return 'Independent verification disagreed with the model\'s own '
+        '"VERIFICATION: PASSED" claim — `${failed.command}` exited '
+        '${failed.exitCode}'
+        '${output.isEmpty ? '.' : ':\n\n$output'}';
   }
 
   /// Assembles the corrective-turn prompt fed back to the model when
