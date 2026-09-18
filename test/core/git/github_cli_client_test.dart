@@ -114,4 +114,93 @@ https://github.com/example-owner/example-repo/pull/131
       },
     );
   });
+
+  group('viewPullRequest', () {
+    late String capturedExecutable;
+    late List<String> capturedArguments;
+    late String? capturedWorkingDirectory;
+
+    GitHubCliClient buildClient(String stdout, {int exitCode = 0}) {
+      return GitHubCliClient(
+        processRunner: (executable, arguments, {workingDirectory}) async {
+          capturedExecutable = executable;
+          capturedArguments = arguments;
+          capturedWorkingDirectory = workingDirectory;
+          return ProcessResult(0, exitCode, stdout, '');
+        },
+      );
+    }
+
+    test(
+      'shells out to `gh pr view <number> --json state,mergedAt` in '
+      'rootPath',
+      () async {
+        final client = buildClient('{"state":"OPEN","mergedAt":null}');
+
+        await client.viewPullRequest('/fake/root', 42);
+
+        expect(capturedExecutable, 'gh');
+        expect(capturedArguments, [
+          'pr',
+          'view',
+          '42',
+          '--json',
+          'state,mergedAt',
+        ]);
+        expect(capturedWorkingDirectory, '/fake/root');
+      },
+    );
+
+    test('reports merged: true for a MERGED state', () async {
+      final client = buildClient(
+        '{"state":"MERGED","mergedAt":"2026-09-18T00:00:00Z"}',
+      );
+
+      final result = await client.viewPullRequest('/fake/root', 42);
+
+      expect(result.merged, isTrue);
+      expect(result.closed, isFalse);
+    });
+
+    test('reports closed: true for a CLOSED (unmerged) state', () async {
+      final client = buildClient('{"state":"CLOSED","mergedAt":null}');
+
+      final result = await client.viewPullRequest('/fake/root', 42);
+
+      expect(result.merged, isFalse);
+      expect(result.closed, isTrue);
+    });
+
+    test('reports both false for a still-open PR', () async {
+      final client = buildClient('{"state":"OPEN","mergedAt":null}');
+
+      final result = await client.viewPullRequest('/fake/root', 42);
+
+      expect(result.merged, isFalse);
+      expect(result.closed, isFalse);
+    });
+
+    test(
+      'throws a ProcessException on a non-zero exit code, with stderr as '
+      'the message',
+      () async {
+        final client = GitHubCliClient(
+          processRunner: (executable, arguments, {workingDirectory}) async {
+            return ProcessResult(0, 1, '', 'gh: not authenticated');
+          },
+        );
+
+        await expectLater(
+          () => client.viewPullRequest('/fake/root', 42),
+          throwsA(
+            isA<ProcessException>().having(
+              (e) => e.message,
+              'message',
+              'gh: not authenticated',
+            ),
+          ),
+        );
+      },
+    );
+  });
 }

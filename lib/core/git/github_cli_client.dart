@@ -1,5 +1,6 @@
 // core/git/github_cli_client.dart — GitHubCliClient (core layer).
 
+import 'dart:convert';
 import 'dart:io';
 
 /// Signature matching [Process.run] (widened to only the parts this class
@@ -81,5 +82,34 @@ class GitHubCliClient {
     final url = result.stdout.toString().trim().split('\n').last;
     final number = int.parse(url.split('/').last);
     return (url: url, number: number);
+  }
+
+  /// Runs `gh pr view <number> --json state,mergedAt` in [rootPath],
+  /// returning whether GitHub reports it `merged` or `closed` (unmerged).
+  /// Both are `false` for a still-open PR. Throws a [ProcessException] on
+  /// failure (`gh` not installed/authenticated, or [number] doesn't exist
+  /// in this repo) — the caller (`TicketsCubit.checkMergedPrCleanup`)
+  /// treats this as best-effort, retrying on its own next tick rather than
+  /// surfacing it as a hard error. Added for `AIO-2946`.
+  Future<({bool merged, bool closed})> viewPullRequest(
+    String rootPath,
+    int number,
+  ) async {
+    final result = await _processRunner('gh', [
+      'pr',
+      'view',
+      '$number',
+      '--json',
+      'state,mergedAt',
+    ], workingDirectory: rootPath);
+    if (result.exitCode != 0) {
+      throw ProcessException('gh', [
+        'pr',
+        'view',
+      ], result.stderr.toString());
+    }
+    final json = jsonDecode(result.stdout.toString()) as Map<String, dynamic>;
+    final state = json['state'] as String?;
+    return (merged: state == 'MERGED', closed: state == 'CLOSED');
   }
 }

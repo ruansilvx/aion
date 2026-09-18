@@ -378,6 +378,12 @@ class TicketsCubit extends Cubit<TicketsState> {
         (_) => unawaited(checkTicketsRepoSync()),
       );
     }
+    if (gitClient != null && gitHubClient != null && sourceRootPath != null) {
+      _mergedPrCleanupTimer = Timer.periodic(
+        const Duration(seconds: 60),
+        (_) => unawaited(checkMergedPrCleanup()),
+      );
+    }
   }
 
   final TicketRepository _repository;
@@ -1054,6 +1060,14 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// unprompted). Cancelled in [close]. Added for `AIO-2945`.
   Timer? _syncCheckTimer;
 
+  /// Fires [checkMergedPrCleanup] every 60 seconds for the lifetime of
+  /// this app-wide instance whenever this cubit was constructed with a
+  /// [GitRepositoryClient], a [GitHubCliClient], and [_sourceRootPath] —
+  /// see the constructor. `null` when any dependency is missing
+  /// (mobile/web, or no coding-execution infra wired at all). Cancelled in
+  /// [close]. Added for `AIO-2946`.
+  Timer? _mergedPrCleanupTimer;
+
   /// Live tickets-repo push-sync status, exposed outside the Bloc `state`
   /// machinery for the same reason [unreadNotificationCount] is — so
   /// `WorkspaceNavShell`'s `_SyncStatusIndicator` can render it from every
@@ -1113,6 +1127,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     unreadNotificationCount.dispose();
     _syncCheckTimer?.cancel();
     ticketsRepoSyncStatus.dispose();
+    _mergedPrCleanupTimer?.cancel();
     return super.close();
   }
 
@@ -4688,6 +4703,156 @@ PROMOTION: NOT YET
     }
   }
 
+  /// PR numbers Aion has opened via coding-execution this session, keyed by
+  /// Task/Bug id — populated the instant [_runCodingExecution] posts its
+  /// own `EXECUTION: PR_OPENED` comment; removed by [checkMergedPrCleanup]
+  /// the moment a merge is detected, regardless of whether branch deletion
+  /// itself ends up gated (that's tracked separately, in
+  /// [_pendingMergedPrCleanups]). Deliberately session-scoped only, not
+  /// backed by any persisted store — a PR opened in a previous session
+  /// isn't tracked here; see `AIO-2946`'s own ticket description for why
+  /// that's an accepted scope, not an oversight. Added for `AIO-2946`.
+  final Map<String, int> _openAionPrs = {};
+
+  /// Test-only seam: records [taskId] as having opened PR [prNumber] this
+  /// session, exactly as `_runCodingExecution` does the instant a real PR
+  /// opens. Lets [checkMergedPrCleanup] be exercised directly without
+  /// driving a full coding-execution run end-to-end just to populate
+  /// [_openAionPrs] (a private field, otherwise unreachable from a test in
+  /// a different library). Added for `AIO-2946`.
+  @visibleForTesting
+  void debugTrackOpenAionPr(String taskId, int prNumber) {
+    _openAionPrs[taskId] = prNumber;
+  }
+
+  /// Branch-deletion fire actions awaiting a human decision, keyed by
+  /// ticket id — each entry's action deletes that task's coding-execution
+  /// branch (`aion/task-<id>`). Mirrors [_pendingExecutionTriggers]'s exact
+  /// closure-map shape. Cleared by [confirmMergedPrCleanup]/
+  /// [rejectMergedPrCleanup]. Added for `AIO-2946`.
+  final Map<String, Future<void> Function()> _pendingMergedPrCleanups = {};
+
+  /// One tick of [_mergedPrCleanupTimer]: for every `(taskId, prNumber)` in
+  /// [_openAionPrs], checks [GitHubCliClient.viewPullRequest] and — once
+  /// merged — checks out the default branch and pulls (only when
+  /// [_sourceRootPath] is *already* sitting on that default branch; see
+  /// below), then resolves [AutomationContext.mergedPrCleanup]'s
+  /// confidence to decide whether the now-stale branch is deleted
+  /// immediately or held pending confirmation. Deliberately public (no
+  /// leading underscore), same rationale as
+  /// `TicketsCubit.checkTicketsRepoSync` (`AIO-2945`): lets a test trigger
+  /// one poll deterministically instead of waiting on the real 60-second
+  /// interval.
+  ///
+  /// **Why checkout+pull is guarded by "already on the default branch"
+  /// rather than by [AutomationContext.mergedPrCleanup] itself**:
+  /// [_sourceRootPath] is the developer's own main checkout — the same one
+  /// this project's own development happens in. Running `git checkout` to
+  /// the default branch there unconditionally, the instant an unrelated
+  /// tracked PR merges, could silently switch the checkout out from under an
+  /// in-progress review with zero warning; failing the checkout outright
+  /// (uncommitted changes) is not guaranteed either, since a *clean* tree
+  /// on some other branch would switch without complaint. Skipping the
+  /// step entirely whenever the checkout isn't already on the default
+  /// branch avoids that risk without adding a second confidence gate to
+  /// the same context — [AutomationContext.mergedPrCleanup] governs
+  /// deletion only. A skip here is silent and not retried specially; the
+  /// next tick simply checks again.
+  Future<void> checkMergedPrCleanup() async {
+    final gitClient = _gitClient;
+    final gitHubClient = _gitHubClient;
+    final rootPath = _sourceRootPath;
+    if (gitClient == null || gitHubClient == null || rootPath == null) return;
+    if (_openAionPrs.isEmpty) return;
+
+    for (final entry in _openAionPrs.entries.toList()) {
+      final taskId = entry.key;
+      final prNumber = entry.value;
+      final ({bool merged, bool closed}) status;
+      try {
+        status = await gitHubClient.viewPullRequest(rootPath, prNumber);
+      } catch (_) {
+        // Best-effort, same rationale as AIO-2945's own sync check —
+        // `gh` may be unauthenticated or offline; retry on the next tick.
+        continue;
+      }
+      if (!status.merged) continue;
+      _openAionPrs.remove(taskId);
+
+      try {
+        final defaultBranch = await gitClient.defaultBranch(rootPath);
+        if (await gitClient.currentBranch(rootPath) == defaultBranch) {
+          await gitClient.checkoutBranch(rootPath, defaultBranch);
+          await gitClient.pull(rootPath);
+        }
+      } catch (_) {
+        // Best-effort — branch deletion below is still attempted/gated
+        // regardless of whether checkout+pull actually ran.
+      }
+
+      final branchName = 'aion/task-$taskId';
+      Future<void> deleteBranch() async {
+        try {
+          await gitClient.deleteBranch(rootPath, branchName);
+        } catch (_) {
+          // Best-effort, same rationale as _runCodingExecution's own
+          // finally-block deleteBranch call — the branch may already be
+          // gone for some other reason.
+        }
+      }
+
+      final automationRepo = _automationSettingsRepository;
+      final confidence = automationRepo == null
+          ? AutomationConfidence.auto
+          : await automationRepo.getConfidence(
+              AutomationContext.mergedPrCleanup,
+            );
+      if (confidence == AutomationConfidence.auto) {
+        await deleteBranch();
+        continue;
+      }
+      _pendingMergedPrCleanups[taskId] = deleteBranch;
+      final current = state;
+      if (current is TicketDetailLoaded && current.ticket.id == taskId) {
+        emit(current.copyWith(pendingMergedPrCleanup: true));
+      }
+    }
+  }
+
+  /// Confirms [ticketId]'s pending merged-PR branch cleanup: removes it
+  /// from [_pendingMergedPrCleanups] and runs its recorded deletion,
+  /// `unawaited`. If [ticketId]'s detail screen is currently open,
+  /// re-emits [TicketDetailLoaded] with
+  /// [TicketDetailLoaded.pendingMergedPrCleanup] cleared. No-ops if
+  /// [ticketId] has no pending cleanup. Mirrors
+  /// [confirmPendingExecutionTrigger]'s shape. Added for `AIO-2946`.
+  Future<void> confirmMergedPrCleanup(String ticketId) async {
+    final delete = _pendingMergedPrCleanups.remove(ticketId);
+    if (delete == null) return;
+    unawaited(delete());
+    final current = state;
+    if (current is TicketDetailLoaded && current.ticket.id == ticketId) {
+      emit(current.copyWith(pendingMergedPrCleanup: false));
+    }
+  }
+
+  /// Rejects [ticketId]'s pending merged-PR branch cleanup: removes it
+  /// from [_pendingMergedPrCleanups] without ever deleting the branch —
+  /// [ticketId]'s coding-execution branch survives, exactly as if this
+  /// mechanism had never run. If [ticketId]'s detail screen is currently
+  /// open, re-emits [TicketDetailLoaded] with
+  /// [TicketDetailLoaded.pendingMergedPrCleanup] cleared. No-ops if
+  /// [ticketId] has no pending cleanup. Mirrors
+  /// [rejectPendingExecutionTrigger]'s shape. Added for `AIO-2946`.
+  void rejectMergedPrCleanup(String ticketId) {
+    final delete = _pendingMergedPrCleanups.remove(ticketId);
+    if (delete == null) return;
+    final current = state;
+    if (current is TicketDetailLoaded && current.ticket.id == ticketId) {
+      emit(current.copyWith(pendingMergedPrCleanup: false));
+    }
+  }
+
   /// Enqueues [task]'s coding-execution run, then immediately tries to
   /// start it (and any other now-eligible queued run) via
   /// [_tryStartNextQueuedExecutions] — under
@@ -5834,6 +5999,7 @@ PROMOTION: NOT YET
           title: task.title,
           body: 'Implements "${task.title}" via Aion coding execution.',
         );
+        _openAionPrs[task.id] = pr.number;
         await commentRepo.addComment(
           TicketComment(
             id: '',
@@ -9545,6 +9711,9 @@ PROMOTION: NOT YET
           pendingSkillAttachment: previousDetail?.pendingSkillAttachment,
           pendingIdeaPromotion: _pendingIdeaPromotions[ticket.id],
           pendingExecutionTrigger: _pendingExecutionTriggers.containsKey(
+            ticket.id,
+          ),
+          pendingMergedPrCleanup: _pendingMergedPrCleanups.containsKey(
             ticket.id,
           ),
           canAdvanceSddStage: check.canAdvance,

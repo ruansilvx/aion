@@ -194,6 +194,39 @@ class GitRepositoryClient {
     await _runChecked(['push'], rootPath);
   }
 
+  /// Runs `git rev-parse --abbrev-ref HEAD` in [rootPath], returning the
+  /// currently checked-out branch's name. Throws a [ProcessException] on
+  /// failure (e.g. a detached HEAD) via [_runChecked] — unlike
+  /// [defaultBranch]'s deliberate fallback-on-failure, a caller checking
+  /// this before an automatic `checkout` needs to know it genuinely
+  /// couldn't tell, not silently assume a branch name. Added for
+  /// `AIO-2946`.
+  Future<String> currentBranch(String rootPath) async {
+    final result = await _runChecked(
+      ['rev-parse', '--abbrev-ref', 'HEAD'],
+      rootPath,
+    );
+    return result.stdout.toString().trim();
+  }
+
+  /// Runs `git checkout <branch>` in [rootPath]. Throws a
+  /// [ProcessException] on failure (e.g. uncommitted changes that would be
+  /// overwritten) — see [add]'s dartdoc for why a swallowed failure here is
+  /// the same class of bug: a caller automating post-merge housekeeping
+  /// needs to know the checkout didn't actually happen, not assume
+  /// [rootPath] is now on [branch]. Added for `AIO-2946`.
+  Future<void> checkoutBranch(String rootPath, String branch) async {
+    await _runChecked(['checkout', branch], rootPath);
+  }
+
+  /// Runs `git pull` in [rootPath] — pulls the currently checked-out
+  /// branch from its already-configured upstream, same shape as
+  /// [pushCurrentBranch]'s pull-direction counterpart. Throws a
+  /// [ProcessException] on failure. Added for `AIO-2946`.
+  Future<void> pull(String rootPath) async {
+    await _runChecked(['pull'], rootPath);
+  }
+
   /// Runs `git rev-parse --abbrev-ref origin/HEAD` in [rootPath] (the
   /// *original* checkout, not the worktree — `origin/HEAD` is a
   /// repository-wide ref, identical either place, but `rootPath` is already

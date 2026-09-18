@@ -64,6 +64,10 @@ void main() {
             AutomationContext.codingExecutionTrigger,
           ),
         ).thenAnswer((_) async => AutomationConfidence.gated);
+        // AutomationContext.mergedPrCleanup — added for `AIO-2946`.
+        when(
+          () => repository.getConfidence(AutomationContext.mergedPrCleanup),
+        ).thenAnswer((_) async => AutomationConfidence.gated);
       },
       build: () => AutomationSettingsCubit(repository),
       act: (cubit) => cubit.load(),
@@ -79,6 +83,7 @@ void main() {
           AutomationContext.specAutoLink: AutomationConfidence.gated,
           AutomationContext.verifyGateRetry: AutomationConfidence.gated,
           AutomationContext.codingExecutionTrigger: AutomationConfidence.gated,
+          AutomationContext.mergedPrCleanup: AutomationConfidence.gated,
         }),
       ],
     );

@@ -435,6 +435,7 @@ class TicketDetailLoaded extends TicketsState {
     this.pendingSpecLinkSuggestion,
     this.pendingIdeaPromotion,
     this.pendingExecutionTrigger = false,
+    this.pendingMergedPrCleanup = false,
     this.verifyRetryReady = false,
     this.verifyRetryConfidence,
     this.verifyPendingFixesRemaining,
@@ -664,6 +665,17 @@ class TicketDetailLoaded extends TicketsState {
   /// ticket's detail screen is the one open. Added for `AIO-2885`.
   final bool pendingExecutionTrigger;
 
+  /// Whether [ticket] (a `task`/`bug`) has a coding-execution branch
+  /// awaiting a gated confirm/reject to actually delete it — its PR was
+  /// detected merged, but the actual deletion is held pending
+  /// `AutomationContext.mergedPrCleanup`'s `gated`/`manual` confidence.
+  /// Drives `_PendingMergedPrCleanupBanner`. Mirrors
+  /// [pendingExecutionTrigger]'s own shape exactly — always recomputed
+  /// fresh from `TicketsCubit._pendingMergedPrCleanups` on every
+  /// [TicketsCubit.getTicketById] call, same staleness-safe rationale.
+  /// Added for `AIO-2946`.
+  final bool pendingMergedPrCleanup;
+
   /// Whether [ticket] (an `epic`/`story`) is ready for a verify retry — its
   /// `sddStage` is [SddStage.verifying], the Verifying-stage chat's latest AI
   /// reply carries `VERIFY GATE: PENDING`, and every fix Task/Bug that verdict
@@ -721,6 +733,7 @@ class TicketDetailLoaded extends TicketsState {
     pendingSpecLinkSuggestion,
     pendingIdeaPromotion,
     pendingExecutionTrigger,
+    pendingMergedPrCleanup,
     verifyRetryReady,
     verifyRetryConfidence,
     verifyPendingFixesRemaining,
@@ -775,6 +788,7 @@ class TicketDetailLoaded extends TicketsState {
     TicketFieldSetter<PendingSpecLinkSuggestion?>? pendingSpecLinkSuggestion,
     TicketFieldSetter<PendingIdeaPromotion?>? pendingIdeaPromotion,
     bool? pendingExecutionTrigger,
+    bool? pendingMergedPrCleanup,
     bool? verifyRetryReady,
     AutomationConfidence? verifyRetryConfidence,
     int? verifyPendingFixesRemaining,
@@ -822,6 +836,8 @@ class TicketDetailLoaded extends TicketsState {
           : this.pendingIdeaPromotion,
       pendingExecutionTrigger:
           pendingExecutionTrigger ?? this.pendingExecutionTrigger,
+      pendingMergedPrCleanup:
+          pendingMergedPrCleanup ?? this.pendingMergedPrCleanup,
       verifyRetryReady: verifyRetryReady ?? this.verifyRetryReady,
       verifyRetryConfidence:
           verifyRetryConfidence ?? this.verifyRetryConfidence,

@@ -67,7 +67,8 @@ DecisionGraph defaultDecisionGraphFor(AutomationContext context) {
     AutomationContext.ticketLinking ||
     AutomationContext.specAutoLink ||
     AutomationContext.verifyGateRetry ||
-    AutomationContext.codingExecutionTrigger => null,
+    AutomationContext.codingExecutionTrigger ||
+    AutomationContext.mergedPrCleanup => null,
   };
   return DecisionGraph(context: context, rootNodeId: rootNodeId);
 }

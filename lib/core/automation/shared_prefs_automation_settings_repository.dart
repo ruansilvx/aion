@@ -54,6 +54,10 @@ class SharedPrefsAutomationSettingsRepository
   static const _codingExecutionTriggerAutomationKey =
       'automation_settings.coding_execution_trigger_automation';
 
+  /// [AutomationContext.mergedPrCleanup]'s key. Added for `AIO-2946`.
+  static const _mergedPrCleanupAutomationKey =
+      'automation_settings.merged_pr_cleanup_automation';
+
   String _keyFor(AutomationContext context) => switch (context) {
     AutomationContext.sddStage => _sddStageAutomationKey,
     AutomationContext.codingExecution => _codingExecutionAutomationKey,
@@ -68,6 +72,7 @@ class SharedPrefsAutomationSettingsRepository
     AutomationContext.verifyGateRetry => _verifyGateRetryAutomationKey,
     AutomationContext.codingExecutionTrigger =>
       _codingExecutionTriggerAutomationKey,
+    AutomationContext.mergedPrCleanup => _mergedPrCleanupAutomationKey,
   };
 
   @override

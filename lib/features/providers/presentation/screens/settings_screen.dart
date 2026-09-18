@@ -357,6 +357,19 @@ String _confidenceSubLabel(
     AutomationConfidence.gated || AutomationConfidence.manual =>
       context.l10n.settingsAutomationCodingExecutionTriggerGatedSubLabel,
   },
+  // No `_AutomationSection` instance renders this context yet — same
+  // "no dedicated Settings row yet" precedent as `codingExecutionTrigger`
+  // immediately above; reachable via the generic decision-graph editor
+  // route only. `manual` reuses the same sub-label as `gated` for the
+  // same reason: no dedicated manual-start action exists for this context
+  // either (see `AutomationContext.mergedPrCleanup`'s own dartdoc). Added
+  // for `AIO-2946`.
+  AutomationContext.mergedPrCleanup => switch (confidence) {
+    AutomationConfidence.auto =>
+      context.l10n.settingsAutomationMergedPrCleanupAutoSubLabel,
+    AutomationConfidence.gated || AutomationConfidence.manual =>
+      context.l10n.settingsAutomationMergedPrCleanupGatedSubLabel,
+  },
 };
 
 /// The mode dot's color, encoding [confidence] per design.md §7's
