@@ -414,10 +414,9 @@ class _CanvasPaneState extends State<_CanvasPane> {
 class _TreeLayout {
   _TreeLayout(
     this._nodesById, {
-    required String? rootId,
-    required AutomationContext automationContext,
-  }) : _rootId = rootId,
-       _automationContext = automationContext;
+    required this._rootId,
+    required this._automationContext,
+  });
 
   final Map<String, DecisionNode> _nodesById;
   final String? _rootId;

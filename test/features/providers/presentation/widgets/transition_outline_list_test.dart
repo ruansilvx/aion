@@ -6,7 +6,6 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
-import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
 import 'package:aion/features/providers/presentation/cubit/transition_precondition_config_cubit.dart';
 import 'package:aion/features/providers/presentation/widgets/transition_outline_list.dart';

@@ -10,6 +10,8 @@ import 'package:uuid/uuid.dart';
 import 'package:aion/core/automation/data/automation_decision_dao.dart';
 import 'package:aion/core/automation/data/automation_decision_graphs_table.dart';
 import 'package:aion/core/automation/data/automation_decision_nodes_table.dart';
+import 'package:aion/core/automation/data/decision_log_dao.dart';
+import 'package:aion/core/automation/data/decision_log_table.dart';
 import 'package:aion/core/markdown/wikilink_extractor.dart';
 import 'package:aion/features/projects/domain/entities/project.dart';
 import 'package:aion/features/tickets/data/daos/comment_dao.dart';
@@ -161,7 +163,13 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
 /// ADD COLUMN` support isn't guaranteed across every bundled `sqlite3`
 /// version this app ships against); a fresh install's single
 /// [_createSearchInfrastructure] call already creates the 3-column shape
-/// directly. See `AIO-2888`.
+/// directly. See `AIO-2888`. Version 22 widens
+/// [TransitionPreconditionGraphsTable] from a `SddStage`-only primary key to
+/// `(SddStage, TicketType)`, per `AIO-2903` — see [_widenTransitionPreconditionGraphsWithTicketType]
+/// for the rebuild strategy. Version 23 adds [DecisionLogTable], with no
+/// backfill — a pre-23 database has no persisted decision-log history to
+/// migrate; the audit trail simply starts empty on first launch after upgrade.
+/// See `AIO-2947` §1.
 @DriftDatabase(
   tables: [
     TicketsTable,
@@ -178,6 +186,7 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
     AutomationDecisionNodesTable,
     TransitionPreconditionGraphsTable,
     TransitionPreconditionNodesTable,
+    DecisionLogTable,
   ],
   daos: [
     TicketDao,
@@ -191,6 +200,7 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
     NotificationDao,
     AutomationDecisionDao,
     TransitionPreconditionDao,
+    DecisionLogDao,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -203,7 +213,7 @@ class AppDatabase extends _$AppDatabase {
     : super(executor ?? _openConnection(project));
 
   @override
-  int get schemaVersion => 22;
+  int get schemaVersion => 23;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -330,6 +340,9 @@ class AppDatabase extends _$AppDatabase {
       if (from < 22) {
         await _widenTransitionPreconditionGraphsWithTicketType(m);
         await transitionPreconditionDao.seedBugStageDefaultsIfMissing();
+      }
+      if (from < 23) {
+        await m.createTable(decisionLogTable);
       }
     },
   );
