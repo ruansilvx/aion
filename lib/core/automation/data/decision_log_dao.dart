@@ -17,11 +17,10 @@ class DecisionLogDao extends DatabaseAccessor<AppDatabase>
 
   static const _uuid = Uuid();
 
-  /// Records a single decision-log entry. Must never throw into its caller —
-  /// a logging bug must never block or corrupt a real gate. Wraps the actual
-  /// DB write in try/catch, matching [MechanicalVerificationRunner]'s
-  /// "must not break a real decision" bar.
-  Future<void> record({
+  /// Inserts a single decision-log entry into the database without exception
+  /// handling. Callers should wrap this in try/catch if they need
+  /// non-throwing semantics.
+  Future<void> insert({
     required String ticketId,
     required String source,
     String? sourceDetail,
@@ -29,26 +28,19 @@ class DecisionLogDao extends DatabaseAccessor<AppDatabase>
     String? outcome,
     required String gateResult,
     String? detail,
-  }) async {
-    try {
-      await into(decisionLogTable).insert(
-        DecisionLogTableCompanion.insert(
-          id: _uuid.v4(),
-          ticketId: ticketId,
-          source: source,
-          sourceDetail: Value(sourceDetail),
-          confidence: Value(confidence),
-          outcome: Value(outcome),
-          gateResult: gateResult,
-          detail: Value(detail),
-          createdAt: DateTime.now().millisecondsSinceEpoch,
-        ),
-      );
-    } catch (e) {
-      // Swallow the exception to prevent logging bugs from breaking real
-      // decision gates. In production, this would be logged to a diagnostics
-      // service; for now, a silent failure is acceptable given this table's
-      // audit-trail-only purpose (it does not drive any business logic).
-    }
+  }) {
+    return into(decisionLogTable).insert(
+      DecisionLogTableCompanion.insert(
+        id: _uuid.v4(),
+        ticketId: ticketId,
+        source: source,
+        sourceDetail: Value(sourceDetail),
+        confidence: Value(confidence),
+        outcome: Value(outcome),
+        gateResult: gateResult,
+        detail: Value(detail),
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+      ),
+    );
   }
 }

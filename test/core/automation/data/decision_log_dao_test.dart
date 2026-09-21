@@ -20,13 +20,14 @@ final _testProject = Project(
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  group('DecisionLogDao', () {
+  group('DecisionLogService', () {
     test('record() inserts a decision-log entry with all fields', () async {
       final database = AppDatabase(_testProject, NativeDatabase.memory());
       addTearDown(database.close);
 
+      final service = DecisionLogService(database);
       final createdAt = DateTime.now().millisecondsSinceEpoch;
-      await database.decisionLogDao.record(
+      await service.record(
         ticketId: 'ticket-1',
         source: 'sddStage',
         sourceDetail: 'applied-context',
@@ -56,7 +57,8 @@ void main() {
       final database = AppDatabase(_testProject, NativeDatabase.memory());
       addTearDown(database.close);
 
-      await database.decisionLogDao.record(
+      final service = DecisionLogService(database);
+      await service.record(
         ticketId: 'ticket-2',
         source: 'ideaPromotion',
         gateResult: 'pending',
@@ -78,12 +80,14 @@ void main() {
       final database = AppDatabase(_testProject, NativeDatabase.memory());
       addTearDown(database.close);
 
+      final service = DecisionLogService(database);
+
       // Close the database to force a DB error on the next write
       await database.close();
 
       // This should not throw even though the database is closed
       expect(
-        () => database.decisionLogDao.record(
+        () => service.record(
           ticketId: 'ticket-3',
           source: 'codingExecution',
           gateResult: 'confirmed',
@@ -96,12 +100,13 @@ void main() {
       final database = AppDatabase(_testProject, NativeDatabase.memory());
       addTearDown(database.close);
 
-      await database.decisionLogDao.record(
+      final service = DecisionLogService(database);
+      await service.record(
         ticketId: 'ticket-4',
         source: 'sddStage',
         gateResult: 'fired',
       );
-      await database.decisionLogDao.record(
+      await service.record(
         ticketId: 'ticket-5',
         source: 'codingExecution',
         gateResult: 'fired',
