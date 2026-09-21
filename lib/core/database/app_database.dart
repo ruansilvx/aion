@@ -13,6 +13,7 @@ import 'package:aion/core/automation/data/automation_decision_nodes_table.dart';
 import 'package:aion/core/markdown/wikilink_extractor.dart';
 import 'package:aion/features/projects/domain/entities/project.dart';
 import 'package:aion/features/tickets/data/daos/comment_dao.dart';
+import 'package:aion/features/tickets/data/daos/decision_log_dao.dart';
 import 'package:aion/features/tickets/data/daos/execution_queue_dao.dart';
 import 'package:aion/features/tickets/data/daos/notification_dao.dart';
 import 'package:aion/features/tickets/data/daos/page_wikilink_dao.dart';
@@ -21,6 +22,7 @@ import 'package:aion/features/tickets/data/daos/ticket_link_dao.dart';
 import 'package:aion/features/tickets/data/daos/workflow_prompt_template_dao.dart';
 import 'package:aion/features/tickets/data/daos/workflow_skill_attachment_dao.dart';
 import 'package:aion/features/tickets/data/daos/workflow_status_dao.dart';
+import 'package:aion/features/tickets/data/models/decision_log_table.dart';
 import 'package:aion/features/tickets/data/models/execution_queue_table.dart';
 import 'package:aion/features/tickets/data/models/notification_table.dart';
 import 'package:aion/features/tickets/data/models/page_wikilink_model.dart';
@@ -161,7 +163,11 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
 /// ADD COLUMN` support isn't guaranteed across every bundled `sqlite3`
 /// version this app ships against); a fresh install's single
 /// [_createSearchInfrastructure] call already creates the 3-column shape
-/// directly. See `AIO-2888`.
+/// directly. See `AIO-2888`. Version 22 widens
+/// `transition_precondition_graphs` from a `SddStage`-only primary key to
+/// `(SddStage, TicketType)`, with no other changes. Version 23 adds
+/// [DecisionLogsTable], with no backfill — a pre-23 database has no decision
+/// audit history to migrate. See `AIO-2947` §1.
 @DriftDatabase(
   tables: [
     TicketsTable,
@@ -178,6 +184,7 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
     AutomationDecisionNodesTable,
     TransitionPreconditionGraphsTable,
     TransitionPreconditionNodesTable,
+    DecisionLogsTable,
   ],
   daos: [
     TicketDao,
@@ -191,6 +198,7 @@ Future<String> _resolveNativeDatabasePath(Project project) async {
     NotificationDao,
     AutomationDecisionDao,
     TransitionPreconditionDao,
+    DecisionLogDao,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -203,7 +211,7 @@ class AppDatabase extends _$AppDatabase {
     : super(executor ?? _openConnection(project));
 
   @override
-  int get schemaVersion => 22;
+  int get schemaVersion => 23;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -330,6 +338,9 @@ class AppDatabase extends _$AppDatabase {
       if (from < 22) {
         await _widenTransitionPreconditionGraphsWithTicketType(m);
         await transitionPreconditionDao.seedBugStageDefaultsIfMissing();
+      }
+      if (from < 23) {
+        await m.createTable(decisionLogsTable);
       }
     },
   );
