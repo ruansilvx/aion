@@ -12,6 +12,7 @@ export 'automation/decision_field_catalog.dart';
 export 'automation/decision_graph.dart';
 export 'automation/decision_graph_evaluator.dart';
 export 'automation/decision_graph_repository.dart';
+export 'automation/decision_log_service.dart';
 export 'automation/decision_node.dart';
 export 'automation/decision_outcome.dart';
 export 'automation/default_decision_graphs.dart';
