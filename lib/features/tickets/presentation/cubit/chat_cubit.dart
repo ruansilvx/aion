@@ -48,13 +48,24 @@ class ChatCubit extends Cubit<ChatState> {
     this._repository,
     this._providerRegistry,
     this._ticketRepository,
-    this._modelRoutingRepository,
-  ) : super(const ChatInitial());
+    this._modelRoutingRepository, {
+    String? sourceRootPath,
+  }) : super(const ChatInitial()) {
+    _sourceRootPath = sourceRootPath;
+  }
 
   final CommentRepository _repository;
   final ProviderRegistry _providerRegistry;
   final TicketRepository _ticketRepository;
   final ModelRoutingRepository _modelRoutingRepository;
+
+  /// The active project's checkout root, threaded through from
+  /// `app_router.dart` (mirrors `InboxCubit`'s own `sourceRootPath` wiring)
+  /// — `null` in tests/contexts with no project open. Used by
+  /// [_isLiveSddStageChat]'s caller ([sendMessage]) to give a live
+  /// SDD-stage chat's human follow-up turns the same codebase read access
+  /// its auto-fired first turn gets. See `AIO-2962` and the gap this fixes.
+  late final String? _sourceRootPath;
   static const _uuid = Uuid();
 
   /// Fetches all comments for [chatTicketId]. Emits [ChatLoaded] on
@@ -103,6 +114,13 @@ class ChatCubit extends Cubit<ChatState> {
   /// ordinary model failure, and the real accumulated reply is discarded
   /// instead of persisted. Fixed for `AIO-2933`; confirmed live during
   /// `AIO-2919`'s own follow-up-reply chat.
+  ///
+  /// Resolves [_isLiveSddStageChat] to decide this turn's `readOnlyTools`/
+  /// `workingDirectory` — a live SDD-stage chat's human follow-up gets the
+  /// same read-only codebase access (`Read`/`Grep`/`Glob`, scoped to
+  /// [_sourceRootPath]) its auto-fired first turn already does, instead of
+  /// silently falling back to [runChatTurn]'s text-only default. Discovered
+  /// live via AIO-2949's own Propose-stage chat.
   Future<void> sendMessage({
     required String chatTicketId,
     required String content,
@@ -142,6 +160,7 @@ class ChatCubit extends Cubit<ChatState> {
       // (after some text already streamed) would otherwise reset
       // ChatLoaded.streamingText to null via its constructor default.
       String? latestStreamingText;
+      final readOnlyTools = await _isLiveSddStageChat(chatTicketId);
       final result = await runChatTurn(
         client: provider.client,
         provider: provider,
@@ -188,6 +207,8 @@ class ChatCubit extends Cubit<ChatState> {
         },
         tools: await _toolsFor(chatTicketId),
         onToolCall: onToolCall,
+        readOnlyTools: readOnlyTools,
+        workingDirectory: readOnlyTools ? _sourceRootPath : null,
       );
 
       switch (result) {
@@ -334,6 +355,41 @@ class ChatCubit extends Cubit<ChatState> {
     ];
   }
 
+  /// Whether [chatTicketId]'s next follow-up turn should get read-only
+  /// codebase access (`Read`/`Grep`/`Glob`, scoped to [_sourceRootPath]) —
+  /// true whenever its parent is an epic/story/bug currently sitting in a
+  /// live SDD stage other than [SddStage.applying]/[SddStage.archived].
+  /// `applying` never spawns a stage chat via this mechanism at all — it
+  /// fires coding-execution directly instead (which runs in an isolated
+  /// worktree, not [_sourceRootPath], and is out of scope here); `archived`
+  /// has no stage chat either. Mirrors
+  /// `TicketsCubit._runStageChatTurn`'s own `readOnlyTools:
+  /// !stageToolsEnabled` grant for a plain (non-attachment) stage chat's
+  /// auto-fired first turn — before this, a human's follow-up reply in the
+  /// very same chat silently fell back to [runChatTurn]'s text-only
+  /// default, discovered live when AIO-2949's own Propose-stage chat could
+  /// not ground its decomposition in the real codebase. Deliberately does
+  /// not attempt to replicate `_runStageChatTurn`'s
+  /// `SkillAttachmentKind.delegatedSkill` case — that chat's worktree is a
+  /// temp directory that may already be removed by the time a human
+  /// replies, so those chats keep today's text-only follow-up behavior.
+  /// See `AIO-2962`.
+  Future<bool> _isLiveSddStageChat(String chatTicketId) async {
+    final chat = await _ticketRepository.getTicketById(chatTicketId);
+    final parentId = chat?.parentId;
+    if (parentId == null) return false;
+    final parent = await _ticketRepository.getTicketById(parentId);
+    if (parent == null) return false;
+    if (parent.type != TicketType.epic &&
+        parent.type != TicketType.story &&
+        parent.type != TicketType.bug) {
+      return false;
+    }
+    final stage = parent.sddStage;
+    if (stage == null) return false;
+    return stage != SddStage.applying && stage != SddStage.archived;
+  }
+
   /// Maps an Inbox-spawned chat's [InboxPurpose] to the [ModelPhase] its
   /// human-follow-up replies resolve through, per `AIO-1300` §2:
   /// brain-dump/what-next-guidance/release-planning are judgment-heavy
@@ -358,10 +414,13 @@ class ChatCubit extends Cubit<ChatState> {
   /// access (file edits, git, bash) scoped to that directory — only
   /// `TicketsCubit`'s coding-execution path sets these. [readOnlyTools], when
   /// [toolsEnabled] is `false`, grants the narrower Read/Grep/Glob set
-  /// (still scoped to [workingDirectory]) — SDD-stage chats set this so they
-  /// can actually investigate the codebase without gaining Bash/Edit/Write;
-  /// every other caller leaves both at their text-only defaults. See
-  /// `AIO-2962`. [provider] maps a raw
+  /// (still scoped to [workingDirectory]) — a live SDD-stage chat's turns
+  /// set this (both the auto-fired first turn, via
+  /// `TicketsCubit._runStageChatTurn`, and a human's follow-up reply, via
+  /// [sendMessage]/[_isLiveSddStageChat]) so they can actually investigate
+  /// the codebase without gaining Bash/Edit/Write; every other caller
+  /// leaves both at their text-only defaults. See `AIO-2962`. [provider]
+  /// maps a raw
   /// `AgentOverageDetectedEvent.message` into a [ConsumptionSignal] (via
   /// `AgentProvider.describeOverage`, reported to [onConsumptionSignal] if
   /// given, once per event) and a raw `AgentErrorEvent.message` into a
