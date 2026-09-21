@@ -6717,6 +6717,22 @@ PROMOTION: NOT YET
   /// APPROVED`, and a fresh execution run driven by it would have repeated
   /// the exact same failure this fix exists to close). Quoting the whole
   /// transcript sidesteps guessing which single reply is "the real plan."
+  ///
+  /// The same class of gap existed one ticket level up, for a plain
+  /// [TicketType.task] whose parent is a Story/Epic: its own description is
+  /// almost always blank (a Propose-stage decomposition only ever writes a
+  /// title — see `_materializeDecomposition`), so the real specification
+  /// lives in the parent's own description. [_contextEnricher]'s
+  /// `relatedTicketsSection` includes the parent, but truncates every
+  /// related ticket's description uniformly to 400 characters — too short
+  /// for a substantive spec. Confirmed live on `AIO-2967`: its parent's
+  /// schema definition was cut off mid-sentence, right before the column
+  /// list, and the execution agent silently invented an unrelated schema
+  /// instead of flagging the gap. Fixed by quoting the immediate parent's
+  /// full, untruncated description under its own `## Parent ...'s full
+  /// plan` heading whenever `task.type != TicketType.bug` — the bug branch
+  /// above already has its own, richer mechanism. Filed and fixed as
+  /// `AIO-2975` (found during `AIO-2947`'s own live-driven `/apply`).
   Future<String> _assembleExecutionContext(
     Ticket task, {
     String? handoffSummary,
@@ -6764,6 +6780,47 @@ PROMOTION: NOT YET
           )
           ..writeln()
           ..writeln(_assembleChatTranscript(planComments));
+      }
+    } else {
+      // A Task's own description is very often blank — its Propose-stage
+      // decomposition only writes a title (see _materializeDecomposition)
+      // — so the real specification lives in its parent Story/Epic's own
+      // description instead. relatedTicketsSection below still includes
+      // the parent, but truncated to _descriptionSnippetLength (400 chars,
+      // for every related ticket uniformly, not just the parent) — too
+      // short for a substantive technical spec. Confirmed live on
+      // AIO-2967: the parent's real schema definition was cut off
+      // mid-sentence, right before its column list, and the execution
+      // agent silently invented its own unrelated schema instead of
+      // flagging the gap (see this ticket's own file/PR history). Quoting
+      // the parent's full, untruncated description here closes that
+      // specific gap without touching relatedTicketsSection's shared
+      // truncation (still appropriate for indirect/similar tickets).
+      // Mirrors the bug branch above's own "approved plan" instinct, one
+      // ticket level up. See AIO-2967's own discovery, AIO-2949.
+      final parentId = task.parentId;
+      final parent = parentId == null
+          ? null
+          : await _repository.getTicketById(parentId);
+      final parentDescription = parent?.description;
+      if (parent != null &&
+          parentDescription != null &&
+          parentDescription.isNotEmpty) {
+        buffer
+          ..writeln()
+          ..writeln('## Parent ${parent.type.name}\'s full plan')
+          ..writeln()
+          ..writeln(
+            "This Task's own description is blank, or too thin to "
+            "implement from alone — its real specification lives in its "
+            "parent ${parent.type.name}'s description below, written "
+            'during Explore/Propose grounding. Implement against this '
+            "plan, not a re-derivation from this Task's title alone — if "
+            "it's ambiguous or looks wrong, flag that rather than "
+            'inventing an unrelated design:',
+          )
+          ..writeln()
+          ..writeln(parentDescription);
       }
     }
 

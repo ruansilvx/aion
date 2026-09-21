@@ -6531,6 +6531,128 @@ void main() {
       },
     );
 
+    // AIO-2975: the same class of gap as the two AIO-2920 tests above, one
+    // ticket level up — a plain Task's own description is almost always
+    // blank (Propose-stage decomposition only ever writes a title), so the
+    // real spec lives in its parent Story's description. relatedTickets
+    // Section truncates every related ticket uniformly to 400 characters,
+    // which silently cut off AIO-2949's real schema mid-sentence on a live
+    // run (AIO-2967) — the execution agent invented its own unrelated
+    // schema instead. This asserts the fix: the parent's full,
+    // untruncated description appears under its own heading.
+    final longMarker2975 =
+        'DISTINCTIVE_SCHEMA_MARKER: source, sourceDetail, confidence, '
+        'outcome, gateResult, detail, createdAt. ${'x' * 400}';
+    final storyParent2975 = Ticket(
+      id: 'story-2975',
+      ticketId: 'AIO-2949',
+      type: TicketType.story,
+      title: 'Decision-log table + writer service',
+      description: 'Story 1 of 4 -- pure infrastructure. $longMarker2975',
+      status: 'backlog',
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final taskChild2975 = Ticket(
+      id: 'task-2975',
+      ticketId: 'AIO-2967',
+      type: TicketType.task,
+      title: 'Add DecisionLogTable Drift table definition',
+      status: 'todo',
+      parentId: storyParent2975.id,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+    final execChat2975 = Ticket(
+      id: 'exec-chat-2975',
+      ticketId: 'AIO-105',
+      type: TicketType.chat,
+      title: 'Coding Execution — ${taskChild2975.title}',
+      status: 'backlog',
+      parentId: taskChild2975.id,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      "a Task's coding-execution prompt includes its parent Story's full, "
+      'untruncated description under a dedicated heading — not just the '
+      "400-char-truncated snippet relatedTicketsSection's own generic "
+      'related-tickets pass produces',
+      build: () {
+        final gitClient = MockGitRepositoryClient();
+        final gitHubClient = MockGitHubCliClient();
+        final baselineRepository = MockBaselineRepository();
+        final automationSettingsRepository = MockAutomationSettingsRepository();
+        stubSuccessfulCodingExecutionInfra(gitClient, gitHubClient);
+        stubEmptyBaseline(baselineRepository);
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecution,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.gated);
+
+        when(
+          () => repository.getTicketsByParent(
+            taskChild2975.id,
+            types: const [TicketType.chat],
+          ),
+        ).thenAnswer((_) async => [execChat2975]);
+        when(() => repository.getTicketById(any())).thenAnswer((
+          invocation,
+        ) async {
+          final id = invocation.positionalArguments[0] as String;
+          if (id == taskChild2975.id) {
+            return taskChild2975.copyWith(status: 'inProgress');
+          }
+          if (id == storyParent2975.id) return storyParent2975;
+          return execChat2975;
+        });
+        stubStatefulComments(commentRepository, execChat2975.id);
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Implemented.\n\nIMPLEMENTATION: DONE'),
+            AgentDoneEvent(),
+          ]),
+        );
+
+        return TicketsCubit(
+          repository,
+          providerRegistry: registry,
+          commentRepository: commentRepository,
+          automationSettingsRepository: automationSettingsRepository,
+          projectRootPath: '/fake/project/root',
+          sourceRootPath: '/fake/project/root',
+          gitClient: gitClient,
+          gitHubClient: gitHubClient,
+          baselineRepository: baselineRepository,
+          projectId: 'project-1',
+          baselineVersion: '0.1.0',
+          linkRepository: linkRepository,
+          transitionPreconditionRepository:
+              FakeTransitionPreconditionRepository(),
+        );
+      },
+      act: (cubit) => cubit.retryCodingExecution(taskChild2975),
+      wait: const Duration(milliseconds: 50),
+      verify: (_) {
+        final posted = verify(
+          () => commentRepository.addComment(captureAny()),
+        ).captured;
+        final prompt = (posted.first as TicketComment).content;
+        expect(
+          prompt,
+          allOf([
+            contains("## Parent story's full plan"),
+            contains(
+              'DISTINCTIVE_SCHEMA_MARKER: source, sourceDetail, confidence, '
+              'outcome, gateResult, detail, createdAt.',
+            ),
+          ]),
+        );
+      },
+    );
+
     // —THIS TICKET—: _assembleExecutionContext previously never read
     // `skills/apply` at all, despite it being the one skill whose whole
     // job is implementation ground rules (test coverage, documentation,
