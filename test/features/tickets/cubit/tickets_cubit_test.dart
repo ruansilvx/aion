@@ -10420,6 +10420,68 @@ void main() {
       },
       expect: () => <TicketsState>[],
     );
+
+    test(
+      'a second PENDING reply materializes its own Fixes Needed block — '
+      'not just the original auto-fired verify turn (AIO-2949 live '
+      'regression: retryVerify used to skip this post-turn step entirely)',
+      () async {
+        final linkRepository = MockTicketLinkRepository();
+        when(
+          () => linkRepository.getLinksForTicket(any()),
+        ).thenAnswer((_) async => []);
+
+        when(
+          () => repository.getTicketById(storyVerifyGateForRetry.id),
+        ).thenAnswer((_) async => storyVerifyGateForRetry);
+        when(
+          () => repository.getTicketById(verifyChatForRetry.id),
+        ).thenAnswer((_) async => verifyChatForRetry);
+        when(
+          () => repository.getTicketsByParent(
+            storyVerifyGateForRetry.id,
+            types: TicketTypeHierarchy.executableTypes,
+          ),
+        ).thenAnswer((_) async => <Ticket>[]);
+        stubStatefulComments(commentRepository, verifyChatForRetry.id);
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent(
+              'Still one issue.\n\n'
+              '## Fixes Needed\n'
+              '- Task: Fix the remaining edge case\n\n'
+              'VERIFY GATE: PENDING',
+            ),
+            AgentDoneEvent(),
+          ]),
+        );
+        final createdTickets = <Ticket>[];
+        when(() => repository.createTicket(any())).thenAnswer((
+          invocation,
+        ) async {
+          final t = invocation.positionalArguments[0] as Ticket;
+          createdTickets.add(t);
+        });
+
+        final cubit = TicketsCubit(
+          repository,
+          providerRegistry: registry,
+          commentRepository: commentRepository,
+          linkRepository: linkRepository,
+        );
+        addTearDown(cubit.close);
+        await cubit.retryVerify(verifyChatForRetry);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        final children = createdTickets.where(
+          (t) =>
+              t.parentId == storyVerifyGateForRetry.id &&
+              t.type != TicketType.chat,
+        );
+        expect(children, hasLength(1));
+        expect(children.single.title, 'Fix the remaining edge case');
+      },
+    );
   });
 
   // Added for `aion-arch/changes/sdd-verify-quality-gate`.
