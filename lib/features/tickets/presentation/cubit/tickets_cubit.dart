@@ -6915,6 +6915,26 @@ PROMOTION: NOT YET
   /// [worktreePath], the isolated execution worktree. Reverses
   /// [ProjectStackDetector.detect]'s original "purely informational"
   /// design — see `AIO-2943`.
+  ///
+  /// Before reporting a mismatch, re-runs the one failing command a second
+  /// time against [rootPath] itself (the pristine checkout, not the
+  /// worktree) — if it *also* fails there, the failure predates this
+  /// execution entirely and isn't attributable to the model's change, so
+  /// it's suppressed rather than reported. Without this, a command like
+  /// `flutter analyze` that exits non-zero on any lint (including
+  /// `info`-level ones) would permanently mismatch on a codebase carrying
+  /// even a single pre-existing, unrelated lint — which real ones do —
+  /// making every execution's mechanical check unpassable regardless of
+  /// the model's actual work. Confirmed live: AIO-2967's very first
+  /// execution run was blocked by exactly this, against 3 long-standing,
+  /// unrelated `flutter analyze` issues this codebase already carried.
+  /// Accepted limitation: if [rootPath] already fails a command *and* the
+  /// model's change adds a genuinely new failure on that same command,
+  /// this only compares pass/fail per command, not failure content/count,
+  /// so the new failure is also suppressed — a stack-agnostic issue-count
+  /// diff (this mechanism spans Flutter/Go/Rust/Python/npm via
+  /// [DetectedStack.checkCommand]) isn't attempted. See `AIO-2964`'s own
+  /// discovery session, `AIO-2943`.
   Future<String?> _mechanicalVerificationMismatch(
     String rootPath,
     String worktreePath,
@@ -6927,6 +6947,10 @@ PROMOTION: NOT YET
     final results = await runner.run(detected.checkCommand, worktreePath);
     final failed = results.where((r) => !r.passed).firstOrNull;
     if (failed == null) return null;
+
+    final baseline = await runner.run([failed.command], rootPath);
+    final baselineAlreadyFailed = !(baseline.firstOrNull?.passed ?? true);
+    if (baselineAlreadyFailed) return null;
 
     final output = failed.output.trim();
     return 'Independent verification disagreed with the model\'s own '

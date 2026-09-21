@@ -17337,6 +17337,20 @@ void main() {
             ),
           ],
         );
+        // Baseline re-run of the one failing command against the pristine
+        // rootPath -- passes cleanly here, so the worktree's failure is a
+        // genuinely new one and must still be reported (AIO-2964).
+        when(
+          () => mechanicalVerificationRunner.run(['flutter test'], any()),
+        ).thenAnswer(
+          (_) async => const [
+            MechanicalCheckResult(
+              command: 'flutter test',
+              exitCode: 0,
+              output: 'All tests passed',
+            ),
+          ],
+        );
 
         final cubit = buildCubit();
         addTearDown(cubit.close);
@@ -17365,6 +17379,65 @@ void main() {
           contains('Independent verification disagreed'),
         );
         expect(posted.last.content, contains('flutter test'));
+      },
+    );
+
+    test(
+      'a mechanical check failure that ALSO fails against the pristine '
+      'rootPath is treated as pre-existing noise, not a mismatch -- opens '
+      'the PR normally despite the worktree command failing (AIO-2964)',
+      () async {
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+            AgentDoneEvent(),
+          ]),
+        );
+        when(
+          () => mechanicalVerificationRunner.run([
+            'flutter analyze',
+            'flutter test',
+          ], any()),
+        ).thenAnswer(
+          (_) async => const [
+            MechanicalCheckResult(
+              command: 'flutter analyze',
+              exitCode: 1,
+              output:
+                  'info - prefer_initializing_formals\nwarning - unused_import\n3 issues found.',
+            ),
+          ],
+        );
+        // The pristine rootPath fails the exact same command -- these are
+        // pre-existing, unrelated issues this codebase already carried
+        // before this execution touched anything.
+        when(
+          () => mechanicalVerificationRunner.run(['flutter analyze'], any()),
+        ).thenAnswer(
+          (_) async => const [
+            MechanicalCheckResult(
+              command: 'flutter analyze',
+              exitCode: 1,
+              output:
+                  'info - prefer_initializing_formals\nwarning - unused_import\n3 issues found.',
+            ),
+          ],
+        );
+
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+
+        await cubit.retryCodingExecution(taskNoStory);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        verify(
+          () => gitHubClient.openPullRequest(
+            rootPath: any(named: 'rootPath'),
+            branch: any(named: 'branch'),
+            title: any(named: 'title'),
+            body: any(named: 'body'),
+          ),
+        ).called(1);
       },
     );
 
