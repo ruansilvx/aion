@@ -240,6 +240,7 @@ final appRouter = GoRouter(
                     context.read<ProviderRegistry>(),
                     context.read<TicketRepository>(),
                     context.read<ModelRoutingRepository>(),
+                    sourceRootPath: _activeProject(context).rootPath,
                   ),
                 ),
               ],

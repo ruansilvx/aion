@@ -1011,6 +1011,230 @@ void main() {
     );
   });
 
+  group('_isLiveSddStageChat (via sendMessage) — AIO-2962 follow-up gap', () {
+    ChatCubit buildCubitWithRoot() => ChatCubit(
+      repository,
+      registry,
+      ticketRepository,
+      modelRoutingRepository,
+      sourceRootPath: '/repo/root',
+    );
+
+    void stubCommonChatPlumbing(String chatId, ModelPhase phase) {
+      when(
+        () => modelRoutingRepository.getModelForPhase(phase),
+      ).thenAnswer((_) async => _opus);
+      when(() => repository.addComment(any())).thenAnswer((_) async {});
+      when(
+        () => repository.getCommentsForTicket(chatId),
+      ).thenAnswer((_) async => []);
+      when(() => client.run(any())).thenAnswer(
+        (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+      );
+    }
+
+    blocTest<ChatCubit, ChatState>(
+      'grants readOnlyTools + sourceRootPath for a follow-up reply in a '
+      'live Explore-stage chat under a Story parent',
+      setUp: () {
+        final storyParent = Ticket(
+          id: 'story-explore',
+          ticketId: 'AIO-story-explore',
+          type: TicketType.story,
+          title: 'Story exploring',
+          status: 'backlog',
+          sddStage: SddStage.exploring,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final chat = Ticket(
+          id: 'chat-explore',
+          ticketId: 'AIO-chat-explore',
+          type: TicketType.chat,
+          title: 'Exploring chat',
+          status: 'backlog',
+          parentId: storyParent.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        when(
+          () => ticketRepository.getTicketById('chat-explore'),
+        ).thenAnswer((_) async => chat);
+        when(
+          () => ticketRepository.getTicketById(storyParent.id),
+        ).thenAnswer((_) async => storyParent);
+        stubCommonChatPlumbing('chat-explore', ModelPhase.frontier);
+      },
+      build: buildCubitWithRoot,
+      act: (cubit) =>
+          cubit.sendMessage(chatTicketId: 'chat-explore', content: 'Hello'),
+      verify: (_) {
+        verify(
+          () => client.run(
+            any(
+              that: predicate<AgentRequest>(
+                (r) =>
+                    r.readOnlyTools == true &&
+                    r.workingDirectory == '/repo/root' &&
+                    r.toolsEnabled == false,
+              ),
+            ),
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<ChatCubit, ChatState>(
+      "does not grant tool access for a follow-up reply in a Bug's "
+      'Applying-stage (coding-execution) chat — that path runs in an '
+      'isolated worktree, not sourceRootPath',
+      setUp: () {
+        final bugParent = Ticket(
+          id: 'bug-applying-followup',
+          ticketId: 'AIO-bug-applying-followup',
+          type: TicketType.bug,
+          title: 'Bug applying',
+          status: 'inProgress',
+          sddStage: SddStage.applying,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final chat = Ticket(
+          id: 'chat-applying-followup',
+          ticketId: 'AIO-chat-applying-followup',
+          type: TicketType.chat,
+          title: 'Applying chat',
+          status: 'backlog',
+          parentId: bugParent.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        when(
+          () => ticketRepository.getTicketById('chat-applying-followup'),
+        ).thenAnswer((_) async => chat);
+        when(
+          () => ticketRepository.getTicketById(bugParent.id),
+        ).thenAnswer((_) async => bugParent);
+        stubCommonChatPlumbing('chat-applying-followup', ModelPhase.execution);
+      },
+      build: buildCubitWithRoot,
+      act: (cubit) => cubit.sendMessage(
+        chatTicketId: 'chat-applying-followup',
+        content: 'Hello',
+      ),
+      verify: (_) {
+        verify(
+          () => client.run(
+            any(
+              that: predicate<AgentRequest>(
+                (r) => r.readOnlyTools == false && r.workingDirectory == null,
+              ),
+            ),
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<ChatCubit, ChatState>(
+      'does not grant tool access for a follow-up reply in a chat under a '
+      'Task parent (no sddStage at all)',
+      setUp: () {
+        final taskParent = Ticket(
+          id: 'task-followup',
+          ticketId: 'AIO-task-followup',
+          type: TicketType.task,
+          title: 'Task',
+          status: 'backlog',
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final chat = Ticket(
+          id: 'chat-task-followup',
+          ticketId: 'AIO-chat-task-followup',
+          type: TicketType.chat,
+          title: 'Task chat',
+          status: 'backlog',
+          parentId: taskParent.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        when(
+          () => ticketRepository.getTicketById('chat-task-followup'),
+        ).thenAnswer((_) async => chat);
+        when(
+          () => ticketRepository.getTicketById(taskParent.id),
+        ).thenAnswer((_) async => taskParent);
+        stubCommonChatPlumbing('chat-task-followup', ModelPhase.execution);
+      },
+      build: buildCubitWithRoot,
+      act: (cubit) => cubit.sendMessage(
+        chatTicketId: 'chat-task-followup',
+        content: 'Hello',
+      ),
+      verify: (_) {
+        verify(
+          () => client.run(
+            any(
+              that: predicate<AgentRequest>(
+                (r) => r.readOnlyTools == false && r.workingDirectory == null,
+              ),
+            ),
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<ChatCubit, ChatState>(
+      'grants readOnlyTools but a null workingDirectory when the cubit has '
+      'no sourceRootPath configured (e.g. no project open)',
+      setUp: () {
+        final storyParent = Ticket(
+          id: 'story-explore-noroot',
+          ticketId: 'AIO-story-explore-noroot',
+          type: TicketType.story,
+          title: 'Story exploring',
+          status: 'backlog',
+          sddStage: SddStage.exploring,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        final chat = Ticket(
+          id: 'chat-explore-noroot',
+          ticketId: 'AIO-chat-explore-noroot',
+          type: TicketType.chat,
+          title: 'Exploring chat',
+          status: 'backlog',
+          parentId: storyParent.id,
+          createdAt: DateTime(2026),
+          updatedAt: DateTime(2026),
+        );
+        when(
+          () => ticketRepository.getTicketById('chat-explore-noroot'),
+        ).thenAnswer((_) async => chat);
+        when(
+          () => ticketRepository.getTicketById(storyParent.id),
+        ).thenAnswer((_) async => storyParent);
+        stubCommonChatPlumbing('chat-explore-noroot', ModelPhase.frontier);
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.sendMessage(
+        chatTicketId: 'chat-explore-noroot',
+        content: 'Hello',
+      ),
+      verify: (_) {
+        verify(
+          () => client.run(
+            any(
+              that: predicate<AgentRequest>(
+                (r) => r.readOnlyTools == true && r.workingDirectory == null,
+              ),
+            ),
+          ),
+        ).called(1);
+      },
+    );
+  });
+
   group('_phaseForChat — Inbox purpose (new-project-onboarding-inbox)', () {
     ChatCubit buildCubitForPurpose() => ChatCubit(
       repository,
