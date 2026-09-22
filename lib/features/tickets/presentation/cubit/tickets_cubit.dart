@@ -5571,9 +5571,20 @@ PROMOTION: NOT YET
   /// whatever tooling fits this codebase and end with a
   /// `VERIFICATION: PASSED`/`FAILED` terminal line — parsed by
   /// [_verificationFailureReason] (fail-closed: only an explicit `PASSED` line
-  /// counts). On a pass, resolves the changed-file count
-  /// ([GitRepositoryClient.defaultBranch]/[GitRepositoryClient.changedFileCount])
-  /// before pushing the branch ([GitRepositoryClient.push]) and opening the PR
+  /// counts). A `PASSED` claim is then re-checked mechanically
+  /// ([_mechanicalVerificationMismatch], `AIO-2943`), and — if that agrees — a
+  /// third, independent review turn judges the real diff
+  /// ([GitRepositoryClient.diffAgainstBase] against the default branch,
+  /// resolved once before the loop) against the Task's spec: the per-Task
+  /// verify gate (epic `AIO-2999`, `AIO-3002`). It runs in the same chat with
+  /// a model resolved via [ModelPhase.taskVerify], `readOnlyTools: true` and
+  /// no Aion ticket tools, fed [_assembleTaskVerificationContext]'s prompt;
+  /// only a terminal `TASK VERIFY GATE: APPROVED` line counts as a pass
+  /// ([_taskVerifyFailureReason]). An empty diff fails the attempt without a
+  /// review call. A `NEEDS FIXES` verdict is an ordinary verification failure
+  /// — it follows the configured retry confidence below, unlike a mechanical
+  /// mismatch, which forces `gated`. On a pass, resolves the changed-file
+  /// count ([GitRepositoryClient.changedFileCount]) before pushing the branch ([GitRepositoryClient.push]) and opening the PR
   /// itself ([GitHubCliClient.openPullRequest], no model call), posting a
   /// system comment ending `EXECUTION: PR_OPENED <url>` (the same
   /// terminal-signal convention [_executionSucceededWithPr] already looks
@@ -5817,6 +5828,11 @@ PROMOTION: NOT YET
         chat.id,
       );
 
+      // Resolved once, up front: the per-Task verify gate below needs it
+      // every attempt (to diff against), and the post-loop push/PR path
+      // reuses it. A cheap, idempotent read against the pristine checkout.
+      final baseBranch = await gitClient.defaultBranch(rootPath);
+
       var attempt = 0;
       var verified = false;
       // Each turn call below already retries itself in place on the
@@ -5943,12 +5959,93 @@ PROMOTION: NOT YET
             rootPath,
             worktreePath,
           );
-          if (mechanicalFailure == null) {
-            verified = true;
-            break;
+          if (mechanicalFailure != null) {
+            failureReason = mechanicalFailure;
+            mechanicalCheckMismatch = true;
+          } else {
+            // Per-Task semantic verify gate (epic AIO-2999): self-verify and
+            // the mechanical check both passed, but neither asks whether the
+            // diff did what *this Task* asked. An independent review turn —
+            // routed via ModelPhase.taskVerify, read-only — must approve the
+            // real diff before anything is pushed. A NEEDS FIXES verdict
+            // becomes an ordinary failureReason below, deliberately leaving
+            // mechanicalCheckMismatch false: it's a model's judgment, not a
+            // deterministic fact, so it follows the configured
+            // codingExecutionRetry confidence (auto retries correctively)
+            // rather than being forced to gated.
+            final diff = await gitClient.diffAgainstBase(
+              worktreePath,
+              baseBranch,
+              branchName,
+            );
+            if (diff.trim().isEmpty) {
+              failureReason = 'No changes were committed for this Task.';
+            } else {
+              final taskVerifyPrompt = await _assembleTaskVerificationContext(
+                task,
+                diff,
+              );
+              final (taskVerifyModel, taskVerifyProvider) =
+                  await _resolveModelAndProvider(ModelPhase.taskVerify);
+              final taskVerifyResult = await _runTurnRetryingDuplicateToolUseId(
+                chat.id,
+                () {
+                  final taskVerifyRunId = _uuid.v4();
+                  _inFlightRuns[task.id] = InFlightExecutionRun(
+                    taskVerifyRunId,
+                    taskVerifyProvider,
+                  );
+                  // No `tools`/`onToolCall`: the reviewer gets read-only
+                  // file access to the worktree and nothing that can create
+                  // or link tickets.
+                  return ChatCubit.runChatTurn(
+                    client: taskVerifyProvider.client,
+                    provider: taskVerifyProvider,
+                    commentRepo: commentRepo,
+                    ticketRepository: _repository,
+                    chatTicketId: chat.id,
+                    prompt: taskVerifyPrompt,
+                    model: taskVerifyModel,
+                    runId: taskVerifyRunId,
+                    readOnlyTools: true,
+                    workingDirectory: worktreePath,
+                    onChunk: onChunk,
+                    onToolUse: onToolUse,
+                    onConsumptionSignal: onConsumptionSignal,
+                  );
+                },
+              );
+              if (taskVerifyResult is ChatTurnCancelled) {
+                branchShouldSurvive = true;
+                await _handleExecutionCancelled(task, chat, taskVerifyResult);
+                break;
+              }
+              if (taskVerifyResult is! ChatTurnSuccess) {
+                // Same hard-error shape as the implement/verify turns above;
+                // `runChatTurn` already posted the failure comment.
+                if (!duplicateToolUseIdRecoveryAttempted) {
+                  duplicateToolUseIdRecoveryAttempted = true;
+                  final recovered = await _recoverFromDuplicateToolUseIdFailure(
+                    task,
+                    chat,
+                  );
+                  if (recovered != null) {
+                    (chat, prompt) = recovered;
+                    continue;
+                  }
+                }
+                break;
+              }
+              await _addExecutionTokens(task.id, chat.id);
+              failureReason = _taskVerifyFailureReason(
+                await _lastCommentContent(chat.id),
+              );
+              if (failureReason == null) {
+                verified = true;
+                break;
+              }
+            }
           }
-          failureReason = mechanicalFailure;
-          mechanicalCheckMismatch = true;
         }
 
         attempt += 1;
@@ -6018,7 +6115,6 @@ PROMOTION: NOT YET
       }
 
       if (verified) {
-        final baseBranch = await gitClient.defaultBranch(rootPath);
         final fileCount = await gitClient.changedFileCount(
           worktreePath,
           baseBranch,

@@ -327,6 +327,14 @@ class FakeTransitionPreconditionRepository
   }
 }
 
+/// A canned model reply that clears every coding-execution gate: the
+/// self-verify turn's `VERIFICATION: PASSED` and, on its last line, the
+/// per-Task verify gate's `TASK VERIFY GATE: APPROVED` (AIO-3002). Tests
+/// answer every `agentClient.run` call with the same reply, so the review
+/// turn sees this too.
+const _approvedExecutionReply =
+    'Done.\n\nVERIFICATION: PASSED\n\nTASK VERIFY GATE: APPROVED';
+
 /// Stubs [gitClient]/[gitHubClient] for a coding-execution run that
 /// isolates cleanly, pushes, and opens a PR — the happy path most
 /// `_runCodingExecution` tests exercise. Whether the run actually
@@ -347,6 +355,11 @@ void stubSuccessfulCodingExecutionInfra(
   when(
     () => gitClient.changedFileCount(any(), any(), any()),
   ).thenAnswer((_) async => 1);
+  // Non-empty by default, so the per-Task verify gate's empty-diff
+  // short-circuit (AIO-3002) only fires for a test that asks for it.
+  when(
+    () => gitClient.diffAgainstBase(any(), any(), any()),
+  ).thenAnswer((_) async => 'diff --git a/lib/a.dart b/lib/a.dart\n+change\n');
   when(() => gitClient.push(any(), any())).thenAnswer((_) async {});
   when(
     () => gitHubClient.openPullRequest(
@@ -9695,7 +9708,7 @@ void main() {
           });
           when(() => agentClient.run(any())).thenAnswer(
             (_) async => Stream.fromIterable(const [
-              AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+              AgentTextEvent(_approvedExecutionReply),
               AgentDoneEvent(),
             ]),
           );
@@ -11595,7 +11608,7 @@ void main() {
         });
         when(() => agentClient.run(any())).thenAnswer(
           (_) async => Stream.fromIterable(const [
-            AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+            AgentTextEvent(_approvedExecutionReply),
             AgentDoneEvent(),
           ]),
         );
@@ -11616,8 +11629,9 @@ void main() {
           ),
         ).called(1);
         verify(() => repository.createTicket(any())).called(1);
-        // 2 model turns: implement, then agentic verify.
-        verify(() => agentClient.run(any())).called(2);
+        // 3 model turns: implement, agentic verify, then the per-Task
+        // verify gate's review (AIO-3002).
+        verify(() => agentClient.run(any())).called(3);
         verify(
           () => repository.updateTicketStatus(
             taskUnderStory.id,
@@ -11694,7 +11708,7 @@ void main() {
         ).thenAnswer((_) async => [storyForExecution, taskUnderStory]);
         when(() => agentClient.run(any())).thenAnswer(
           (_) async => Stream.fromIterable(const [
-            AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+            AgentTextEvent(_approvedExecutionReply),
             AgentDoneEvent(),
           ]),
         );
@@ -11776,7 +11790,7 @@ void main() {
         // no ancestor/link/similarity matches, so the section is omitted.
         when(() => agentClient.run(any())).thenAnswer(
           (_) async => Stream.fromIterable(const [
-            AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+            AgentTextEvent(_approvedExecutionReply),
             AgentDoneEvent(),
           ]),
         );
@@ -11857,7 +11871,7 @@ void main() {
         when(() => repository.createTicket(any())).thenAnswer((_) async {});
         when(() => agentClient.run(any())).thenAnswer(
           (_) async => Stream.fromIterable(const [
-            AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+            AgentTextEvent(_approvedExecutionReply),
             AgentDoneEvent(),
           ]),
         );
@@ -12274,7 +12288,7 @@ void main() {
         when(() => agentClient.run(any())).thenAnswer(
           (_) async => Stream.fromIterable(const [
             AgentOverageDetectedEvent('Usage limit reached'),
-            AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+            AgentTextEvent(_approvedExecutionReply),
             AgentDoneEvent(),
           ]),
         );
@@ -12516,7 +12530,7 @@ void main() {
           });
           when(() => agentClient.run(any())).thenAnswer(
             (_) async => Stream.fromIterable(const [
-              AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+              AgentTextEvent(_approvedExecutionReply),
               AgentDoneEvent(),
             ]),
           );
@@ -12640,7 +12654,7 @@ void main() {
               ? firstRunPause.future
               : Future.value(
                   Stream<AgentEvent>.fromIterable(const [
-                    AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+                    AgentTextEvent(_approvedExecutionReply),
                     AgentDoneEvent(),
                   ]),
                 );
@@ -12772,7 +12786,7 @@ void main() {
         // TicketsLoaded is now current.
         firstRunPause.complete(
           Stream.fromIterable(const [
-            AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+            AgentTextEvent(_approvedExecutionReply),
             AgentDoneEvent(),
           ]),
         );
@@ -13340,7 +13354,7 @@ void main() {
         setUp: () {
           when(() => agentClient.run(any())).thenAnswer(
             (_) async => Stream.fromIterable(const [
-              AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+              AgentTextEvent(_approvedExecutionReply),
               AgentDoneEvent(),
             ]),
           );
@@ -13350,8 +13364,9 @@ void main() {
         wait: const Duration(milliseconds: 50),
         verify: (_) {
           verify(() => gitClient.createWorktree(any(), any(), any())).called(1);
-          // 2 model turns: implement, then agentic verify.
-          verify(() => agentClient.run(any())).called(2);
+          // 3 model turns: implement, agentic verify, then the per-Task
+          // verify gate's review (AIO-3002).
+          verify(() => agentClient.run(any())).called(3);
           verify(() => gitClient.push(any(), any())).called(1);
           verify(
             () => gitHubClient.openPullRequest(
@@ -13371,25 +13386,31 @@ void main() {
       );
 
       blocTest<TicketsCubit, TicketsState>(
-        'accumulates executionTokenTotal across the implement and verify '
-        'turns (token-cost-prediction)',
+        'accumulates executionTokenTotal across the implement, verify, and '
+        'task-verify review turns (token-cost-prediction, AIO-3002)',
         build: buildCubit,
         setUp: () {
           var call = 0;
           when(() => agentClient.run(any())).thenAnswer((_) async {
             call++;
             // Turn 1 (implement) reports 1000+500; turn 2 (agentic
-            // verify, which passes) reports 2000+800 — the running total
-            // should reflect both turns summed together.
-            return call == 1
-                ? Stream.fromIterable(const [
-                    AgentTextEvent('Implemented.'),
-                    AgentDoneEvent(inputTokens: 1000, outputTokens: 500),
-                  ])
-                : Stream.fromIterable(const [
-                    AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
-                    AgentDoneEvent(inputTokens: 2000, outputTokens: 800),
-                  ]);
+            // verify, which passes) reports 2000+800; turn 3 (the per-Task
+            // review, which approves) reports 300+100 — the running total
+            // should reflect all three turns summed together.
+            return switch (call) {
+              1 => Stream.fromIterable(const [
+                AgentTextEvent('Implemented.'),
+                AgentDoneEvent(inputTokens: 1000, outputTokens: 500),
+              ]),
+              2 => Stream.fromIterable(const [
+                AgentTextEvent(_approvedExecutionReply),
+                AgentDoneEvent(inputTokens: 2000, outputTokens: 800),
+              ]),
+              _ => Stream.fromIterable(const [
+                AgentTextEvent(_approvedExecutionReply),
+                AgentDoneEvent(inputTokens: 300, outputTokens: 100),
+              ]),
+            };
           });
         },
         act: (cubit) =>
@@ -13400,7 +13421,7 @@ void main() {
           expect(state, isA<TicketDetailLoaded>());
           expect(
             (state as TicketDetailLoaded).executionTokenTotal,
-            1000 + 500 + 2000 + 800,
+            1000 + 500 + 2000 + 800 + 300 + 100,
           );
         },
       );
@@ -13760,7 +13781,7 @@ void main() {
         setUp: () {
           when(() => agentClient.run(any())).thenAnswer(
             (_) async => Stream.fromIterable(const [
-              AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+              AgentTextEvent(_approvedExecutionReply),
               AgentDoneEvent(),
             ]),
           );
@@ -13769,8 +13790,9 @@ void main() {
         wait: const Duration(milliseconds: 50),
         verify: (_) {
           verifyNever(() => repository.createTicket(any()));
-          // 2 model turns: implement, then agentic verify.
-          verify(() => agentClient.run(any())).called(2);
+          // 3 model turns: implement, agentic verify, then the per-Task
+          // verify gate's review (AIO-3002).
+          verify(() => agentClient.run(any())).called(3);
           verify(() => gitClient.createWorktree(any(), any(), any())).called(1);
           verify(
             () => commentRepository.addComment(
@@ -13797,7 +13819,7 @@ void main() {
           ).thenAnswer((_) async => []);
           when(() => agentClient.run(any())).thenAnswer(
             (_) async => Stream.fromIterable(const [
-              AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+              AgentTextEvent(_approvedExecutionReply),
               AgentDoneEvent(),
             ]),
           );
@@ -13807,7 +13829,8 @@ void main() {
         wait: const Duration(milliseconds: 50),
         verify: (_) {
           verify(() => repository.createTicket(any())).called(1);
-          verify(() => agentClient.run(any())).called(2);
+          // implement, agentic verify, task-verify review (AIO-3002).
+          verify(() => agentClient.run(any())).called(3);
         },
       );
 
@@ -13843,7 +13866,7 @@ void main() {
           );
           when(() => agentClient.run(any())).thenAnswer(
             (_) async => Stream.fromIterable(const [
-              AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+              AgentTextEvent(_approvedExecutionReply),
               AgentDoneEvent(),
             ]),
           );
@@ -13933,9 +13956,10 @@ void main() {
                 AgentTextEvent('Implemented.\n\nIMPLEMENTATION: DONE'),
                 AgentDoneEvent(),
               ]),
-              // 3: agentic verify turn.
+              // 3: agentic verify turn; 4: the per-Task verify gate's
+              // review (AIO-3002).
               _ => Stream.fromIterable(const [
-                AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+                AgentTextEvent(_approvedExecutionReply),
                 AgentDoneEvent(),
               ]),
             };
@@ -13944,7 +13968,7 @@ void main() {
         act: (cubit) => cubit.retryCodingExecution(taskNoStory),
         wait: const Duration(milliseconds: 50),
         verify: (_) {
-          verify(() => agentClient.run(any())).called(3);
+          verify(() => agentClient.run(any())).called(4);
           // No handoff needed — the in-place retry alone recovered it, so
           // no new chat is ever created.
           verifyNever(() => repository.createTicket(any()));
@@ -13994,9 +14018,10 @@ void main() {
                 AgentTextEvent('Implemented.\n\nIMPLEMENTATION: DONE'),
                 AgentDoneEvent(),
               ]),
-              // 6: agentic verify turn.
+              // 6: agentic verify turn; 7: the per-Task verify gate's
+              // review (AIO-3002).
               _ => Stream.fromIterable(const [
-                AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+                AgentTextEvent(_approvedExecutionReply),
                 AgentDoneEvent(),
               ]),
             };
@@ -14005,7 +14030,7 @@ void main() {
         act: (cubit) => cubit.retryCodingExecution(taskNoStory),
         wait: const Duration(milliseconds: 50),
         verify: (_) {
-          verify(() => agentClient.run(any())).called(6);
+          verify(() => agentClient.run(any())).called(7);
           verify(() => repository.createTicket(any())).called(1);
           verify(
             () => linkRepository.createLink(
@@ -17579,7 +17604,7 @@ void main() {
       () async {
         when(() => agentClient.run(any())).thenAnswer(
           (_) async => Stream.fromIterable(const [
-            AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+            AgentTextEvent(_approvedExecutionReply),
             AgentDoneEvent(),
           ]),
         );
@@ -17661,7 +17686,7 @@ void main() {
       () async {
         when(() => agentClient.run(any())).thenAnswer(
           (_) async => Stream.fromIterable(const [
-            AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+            AgentTextEvent(_approvedExecutionReply),
             AgentDoneEvent(),
           ]),
         );
@@ -17717,7 +17742,7 @@ void main() {
         'normally', () async {
       when(() => agentClient.run(any())).thenAnswer(
         (_) async => Stream.fromIterable(const [
-          AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+          AgentTextEvent(_approvedExecutionReply),
           AgentDoneEvent(),
         ]),
       );
@@ -17762,7 +17787,7 @@ void main() {
         'AIO-2943 behavior', () async {
       when(() => agentClient.run(any())).thenAnswer(
         (_) async => Stream.fromIterable(const [
-          AgentTextEvent('Done.\n\nVERIFICATION: PASSED'),
+          AgentTextEvent(_approvedExecutionReply),
           AgentDoneEvent(),
         ]),
       );
@@ -17794,6 +17819,332 @@ void main() {
         ),
       ).called(1);
       verifyNever(() => mechanicalVerificationRunner.run(any(), any()));
+    });
+  });
+
+  group('task verify gate (AIO-3002)', () {
+    late MockAgentModelClient agentClient;
+    late MockProviderRegistry registry;
+    late MockCommentRepository commentRepository;
+    late MockAutomationSettingsRepository automationSettingsRepository;
+    late MockModelRoutingRepository modelRoutingRepository;
+    late MockGitRepositoryClient gitClient;
+    late MockGitHubCliClient gitHubClient;
+    late MockBaselineRepository baselineRepository;
+
+    const implementReply = 'Implemented.\n\nIMPLEMENTATION: DONE';
+    const selfVerifyPassedReply = 'Done.\n\nVERIFICATION: PASSED';
+    const needsFixesReply =
+        'Reviewed the diff.\n\n'
+        '## Issues Found\n'
+        '- Missing RepositoryProvider wiring in app_router.dart\n\n'
+        'TASK VERIFY GATE: NEEDS FIXES';
+    const approvedReply = 'Scope and tests look right.\n\nTASK VERIFY GATE: APPROVED';
+
+    Stream<AgentEvent> reply(String text) =>
+        Stream.fromIterable([AgentTextEvent(text), const AgentDoneEvent()]);
+
+    /// Answers each [agentClient.run] call by its 1-based position, so one
+    /// mock can play implement / self-verify / task-verify review across
+    /// several attempts. Each attempt is 3 calls: implement, self-verify,
+    /// review.
+    void answerByCall(String Function(int call) replyFor) {
+      var call = 0;
+      when(() => agentClient.run(any())).thenAnswer((_) async {
+        call++;
+        return reply(replyFor(call));
+      });
+    }
+
+    void stubRetryConfidence(AutomationConfidence confidence) {
+      when(
+        () => automationSettingsRepository.getConfidence(
+          AutomationContext.codingExecutionRetry,
+        ),
+      ).thenAnswer((_) async => confidence);
+    }
+
+    Matcher failureCommentContaining(String text) => predicate<TicketComment>(
+      (c) =>
+          c.content.startsWith('Execution failed verification:') &&
+          c.content.contains(text),
+    );
+
+    void verifyNoPullRequest() => verifyNever(
+      () => gitHubClient.openPullRequest(
+        rootPath: any(named: 'rootPath'),
+        branch: any(named: 'branch'),
+        title: any(named: 'title'),
+        body: any(named: 'body'),
+      ),
+    );
+
+    setUp(() {
+      agentClient = MockAgentModelClient();
+      registry = buildProviderStack(agentClient).registry;
+      commentRepository = MockCommentRepository();
+      automationSettingsRepository = MockAutomationSettingsRepository();
+      modelRoutingRepository = MockModelRoutingRepository();
+      gitClient = MockGitRepositoryClient();
+      gitHubClient = MockGitHubCliClient();
+      baselineRepository = MockBaselineRepository();
+      stubSuccessfulCodingExecutionInfra(gitClient, gitHubClient);
+      stubEmptyBaseline(baselineRepository);
+      when(
+        () => repository.getTicketsByParent(
+          taskNoStory.id,
+          types: const [TicketType.chat],
+        ),
+      ).thenAnswer((_) async => [dummyExecutionChatTicket]);
+      when(() => repository.getTicketById(any())).thenAnswer((
+        invocation,
+      ) async {
+        final id = invocation.positionalArguments[0] as String;
+        if (id == taskNoStory.id) {
+          return taskNoStory.copyWith(status: 'inProgress');
+        }
+        return dummyExecutionChatTicket;
+      });
+      stubStatefulComments(commentRepository, dummyExecutionChatTicket.id);
+      when(
+        () => automationSettingsRepository.getConfidence(
+          AutomationContext.codingExecution,
+        ),
+      ).thenAnswer((_) async => AutomationConfidence.gated);
+      // A cheap execution model and a distinct, stronger review model, so
+      // each captured request shows which phase resolved it.
+      when(
+        () => modelRoutingRepository.getModelForPhase(ModelPhase.execution),
+      ).thenAnswer((_) async => _haiku);
+      when(
+        () => modelRoutingRepository.getModelForPhase(ModelPhase.taskVerify),
+      ).thenAnswer((_) async => _opus);
+    });
+
+    TicketsCubit buildCubit() => TicketsCubit(
+      repository,
+      providerRegistry: registry,
+      commentRepository: commentRepository,
+      automationSettingsRepository: automationSettingsRepository,
+      modelRoutingRepository: modelRoutingRepository,
+      projectRootPath: '/fake/project/root',
+      sourceRootPath: '/fake/project/root',
+      gitClient: gitClient,
+      gitHubClient: gitHubClient,
+      baselineRepository: baselineRepository,
+      projectId: 'project-1',
+      baselineVersion: '0.1.0',
+    );
+
+    Future<void> runExecution() async {
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      await cubit.retryCodingExecution(taskNoStory);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+
+    test('APPROVED opens the PR after a third, read-only review turn routed '
+        'via ModelPhase.taskVerify and fed the real diff', () async {
+      answerByCall(
+        (call) => switch (call) {
+          1 => implementReply,
+          2 => selfVerifyPassedReply,
+          _ => approvedReply,
+        },
+      );
+
+      await runExecution();
+
+      final requests = verify(
+        () => agentClient.run(captureAny()),
+      ).captured.cast<AgentRequest>();
+      expect(requests, hasLength(3));
+      final implement = requests[0];
+      final review = requests[2];
+      // The review is routed separately from execution...
+      expect(implement.model, _haiku.modelId);
+      expect(requests[1].model, _haiku.modelId);
+      expect(review.model, _opus.modelId);
+      // ...runs read-only in the same worktree, with no ticket-mutating
+      // Aion tools...
+      expect(review.readOnlyTools, isTrue);
+      expect(review.toolsEnabled, isFalse);
+      expect(review.tools, isEmpty);
+      expect(review.workingDirectory, isNotNull);
+      expect(review.workingDirectory, implement.workingDirectory);
+      // ...and judges the real diff against the Task's spec.
+      expect(
+        review.prompt,
+        allOf([
+          contains('independent reviewer'),
+          contains('# ${taskNoStory.title}'),
+          contains('diff --git a/lib/a.dart b/lib/a.dart'),
+          contains('TASK VERIFY GATE: APPROVED'),
+        ]),
+      );
+      verify(
+        () => gitClient.diffAgainstBase(any(), 'main', any()),
+      ).called(1);
+      verify(() => gitClient.push(any(), any())).called(1);
+      verify(
+        () => gitHubClient.openPullRequest(
+          rootPath: any(named: 'rootPath'),
+          branch: any(named: 'branch'),
+          title: any(named: 'title'),
+          body: any(named: 'body'),
+        ),
+      ).called(1);
+    });
+
+    test('NEEDS FIXES under auto confidence retries correctively with the '
+        'Issues Found text, then opens the PR once a later review '
+        'approves', () async {
+      stubRetryConfidence(AutomationConfidence.auto);
+      answerByCall(
+        (call) => switch (call) {
+          2 || 5 => selfVerifyPassedReply,
+          3 => needsFixesReply,
+          6 => approvedReply,
+          _ => implementReply,
+        },
+      );
+
+      await runExecution();
+
+      final requests = verify(
+        () => agentClient.run(captureAny()),
+      ).captured.cast<AgentRequest>();
+      // Attempt 1 (implement, verify, review → NEEDS FIXES), then
+      // attempt 2 (corrective implement, verify, review → APPROVED).
+      expect(requests, hasLength(6));
+      expect(
+        requests[3].prompt,
+        contains('- Missing RepositoryProvider wiring in app_router.dart'),
+      );
+      verify(
+        () => gitHubClient.openPullRequest(
+          rootPath: any(named: 'rootPath'),
+          branch: any(named: 'branch'),
+          title: any(named: 'title'),
+          body: any(named: 'body'),
+        ),
+      ).called(1);
+    });
+
+    for (final confidence in [
+      AutomationConfidence.gated,
+      AutomationConfidence.manual,
+    ]) {
+      test('NEEDS FIXES under ${confidence.name} retry confidence stops with '
+          'a failure comment carrying the issues, and no PR — not forced '
+          'to gated like a mechanical mismatch', () async {
+        stubRetryConfidence(confidence);
+        answerByCall(
+          (call) => switch (call) {
+            1 => implementReply,
+            2 => selfVerifyPassedReply,
+            _ => needsFixesReply,
+          },
+        );
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+        final states = <TicketsState>[];
+        final subscription = cubit.stream.listen(states.add);
+        addTearDown(subscription.cancel);
+
+        await cubit.retryCodingExecution(taskNoStory);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        verify(() => agentClient.run(any())).called(3);
+        verifyNoPullRequest();
+        verifyNever(() => gitClient.push(any(), any()));
+        verify(
+          () => commentRepository.addComment(
+            any(
+              that: failureCommentContaining(
+                '- Missing RepositoryProvider wiring in app_router.dart',
+              ),
+            ),
+          ),
+        ).called(1);
+        // gated surfaces the one-shot toast; manual never surfaces
+        // proactively — same split a self-reported FAILED already gets.
+        final toasted = states.any(
+          (s) =>
+              s is TicketsError &&
+              s.reason == TicketsErrorReason.executionVerificationFailed,
+        );
+        expect(toasted, confidence == AutomationConfidence.gated);
+      });
+    }
+
+    test('a review that NEEDS FIXES every time still stops at the '
+        'automatic-retry cap under auto confidence', () async {
+      stubRetryConfidence(AutomationConfidence.auto);
+      // Passes self-verify (contains the PASSED line) but its last line is
+      // NEEDS FIXES, so every review fails.
+      when(() => agentClient.run(any())).thenAnswer(
+        (_) async => reply('$selfVerifyPassedReply\n\n$needsFixesReply'),
+      );
+
+      await runExecution();
+
+      // 1 initial attempt + 2 automatic retries (the cap) = 3 attempts of
+      // implement, verify, review = 9 model turns.
+      verify(() => agentClient.run(any())).called(9);
+      verifyNoPullRequest();
+      verify(
+        () => commentRepository.addComment(
+          any(that: failureCommentContaining('Missing RepositoryProvider')),
+        ),
+      ).called(1);
+    });
+
+    test('an empty diff fails the attempt without spending a review-model '
+        'call', () async {
+      stubRetryConfidence(AutomationConfidence.gated);
+      when(
+        () => gitClient.diffAgainstBase(any(), any(), any()),
+      ).thenAnswer((_) async => '  \n');
+      answerByCall(
+        (call) => call == 1 ? implementReply : selfVerifyPassedReply,
+      );
+
+      await runExecution();
+
+      // implement + self-verify only — no review turn.
+      verify(() => agentClient.run(any())).called(2);
+      verifyNever(
+        () => modelRoutingRepository.getModelForPhase(ModelPhase.taskVerify),
+      );
+      verifyNoPullRequest();
+      verify(
+        () => commentRepository.addComment(
+          any(
+            that: failureCommentContaining(
+              'No changes were committed for this Task.',
+            ),
+          ),
+        ),
+      ).called(1);
+    });
+
+    test('a review that quotes the APPROVED line but ends on NEEDS FIXES '
+        'does not open a PR', () async {
+      stubRetryConfidence(AutomationConfidence.gated);
+      answerByCall(
+        (call) => switch (call) {
+          1 => implementReply,
+          2 => selfVerifyPassedReply,
+          _ =>
+            "I can't give TASK VERIFY GATE: APPROVED yet.\n\n"
+                '$needsFixesReply',
+        },
+      );
+
+      await runExecution();
+
+      verifyNoPullRequest();
     });
   });
 
