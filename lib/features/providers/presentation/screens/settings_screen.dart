@@ -118,6 +118,13 @@ class SettingsScreen extends StatelessWidget {
                               context.l10n.settingsModelExecutionDescription,
                         ),
                         const SizedBox(height: 20),
+                        _ModelPhaseSection(
+                          phase: ModelPhase.taskVerify,
+                          label: context.l10n.settingsModelTaskVerifyLabel,
+                          description:
+                              context.l10n.settingsModelTaskVerifyDescription,
+                        ),
+                        const SizedBox(height: 20),
                         const _ExecutionContextCapSection(),
                         const SizedBox(height: 20),
                         const _ExecutionSchedulingSection(),

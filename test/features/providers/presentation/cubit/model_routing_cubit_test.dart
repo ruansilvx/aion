@@ -78,6 +78,9 @@ void main() {
         when(
           () => repository.getModelForPhase(ModelPhase.execution),
         ).thenAnswer((_) async => _haiku);
+        when(
+          () => repository.getModelForPhase(ModelPhase.taskVerify),
+        ).thenAnswer((_) async => _opus);
       },
       build: () => ModelRoutingCubit(repository, registry),
       act: (cubit) => cubit.load(),
@@ -87,11 +90,13 @@ void main() {
             ModelPhase.frontier: _opus,
             ModelPhase.capable: _sonnet,
             ModelPhase.execution: _haiku,
+            ModelPhase.taskVerify: _opus,
           },
           const {
             ModelPhase.frontier: [_opus, _sonnet, _haiku],
             ModelPhase.capable: [_opus, _sonnet, _haiku],
             ModelPhase.execution: [_opus, _sonnet, _haiku],
+            ModelPhase.taskVerify: [_opus, _sonnet, _haiku],
           },
         ),
       ],
@@ -146,8 +151,8 @@ void main() {
 
     blocTest<ModelRoutingCubit, ModelRoutingState>(
       'a second provider lacking full tool-access support is excluded '
-      "from execution's availableModels but still included in "
-      "frontier's/capable's",
+      "from execution's and taskVerify's availableModels but still "
+      "included in frontier's/capable's",
       setUp: () {
         final noToolsOnlyProvider = MockAgentProvider();
         when(
@@ -169,6 +174,9 @@ void main() {
         when(
           () => repository.getModelForPhase(ModelPhase.execution),
         ).thenAnswer((_) async => _haiku);
+        when(
+          () => repository.getModelForPhase(ModelPhase.taskVerify),
+        ).thenAnswer((_) async => _opus);
       },
       build: () => ModelRoutingCubit(repository, registry),
       act: (cubit) => cubit.load(),
@@ -176,6 +184,10 @@ void main() {
         final state = cubit.state as ModelRoutingReady;
         expect(
           state.availableModels[ModelPhase.execution],
+          unorderedEquals([_opus, _sonnet, _haiku]),
+        );
+        expect(
+          state.availableModels[ModelPhase.taskVerify],
           unorderedEquals([_opus, _sonnet, _haiku]),
         );
         expect(

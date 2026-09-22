@@ -37,6 +37,8 @@ class SharedPrefsModelRoutingRepository implements ModelRoutingRepository {
   static const _capableModelKey = 'model_routing.capable_model_id';
   static const _executionProviderKey = 'model_routing.execution_provider_id';
   static const _executionModelKey = 'model_routing.execution_model_id';
+  static const _taskVerifyProviderKey = 'model_routing.task_verify_provider_id';
+  static const _taskVerifyModelKey = 'model_routing.task_verify_model_id';
 
   /// The legacy single-model key, read as a fallback default only.
   static const _legacySelectedModelKey = 'agent_settings.selected_model_id';
@@ -45,12 +47,14 @@ class SharedPrefsModelRoutingRepository implements ModelRoutingRepository {
     ModelPhase.frontier => _frontierProviderKey,
     ModelPhase.capable => _capableProviderKey,
     ModelPhase.execution => _executionProviderKey,
+    ModelPhase.taskVerify => _taskVerifyProviderKey,
   };
 
   String _modelKeyFor(ModelPhase phase) => switch (phase) {
     ModelPhase.frontier => _frontierModelKey,
     ModelPhase.capable => _capableModelKey,
     ModelPhase.execution => _executionModelKey,
+    ModelPhase.taskVerify => _taskVerifyModelKey,
   };
 
   @override

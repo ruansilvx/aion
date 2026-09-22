@@ -893,6 +893,8 @@
   "settingsModelCapableDescription": "Used for design briefs, design sync, and archival — mechanical, checklist-style work.",
   "settingsModelExecutionLabel": "Execution Model",
   "settingsModelExecutionDescription": "Used for Task coding-execution runs.",
+  "settingsModelTaskVerifyLabel": "Task Review Model",
+  "settingsModelTaskVerifyDescription": "Independently reviews each Task's diff for scope and test coverage before its PR opens.",
   "settingsExecutionContextCapLabel": "Execution Context Cap",
   "settingsExecutionContextCapDescription": "Overrides when a coding-execution chat hands off to a new one. Leave blank to use the execution model's real limit.",
   "settingsExecutionContextCapEffective": "Effective cap: {tokens} tokens",
