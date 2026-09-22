@@ -127,6 +127,33 @@ void main() {
     );
 
     test(
+      'taskVerify round-trips independently of execution under its own keys',
+      () async {
+        final repository = SharedPrefsModelRoutingRepository(registry);
+        await repository.setModelForPhase(ModelPhase.execution, haiku);
+        await repository.setModelForPhase(ModelPhase.taskVerify, sonnet);
+
+        expect(
+          await repository.getModelForPhase(ModelPhase.execution),
+          haiku,
+        );
+        expect(
+          await repository.getModelForPhase(ModelPhase.taskVerify),
+          sonnet,
+        );
+        final prefs = await SharedPreferences.getInstance();
+        expect(
+          prefs.getString('model_routing.task_verify_model_id'),
+          sonnet.modelId,
+        );
+        expect(
+          prefs.getString('model_routing.task_verify_provider_id'),
+          sonnet.providerId.name,
+        );
+      },
+    );
+
+    test(
       'setModelForPhase persists both the provider id and model id keys',
       () async {
         final repository = SharedPrefsModelRoutingRepository(registry);
