@@ -795,6 +795,31 @@ void main() {
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
   );
+  // A Story whose only Task's title contains "ui" as a letter sequence
+  // inside an unrelated word ("genuinely") rather than as the standalone
+  // keyword — a plain substring match false-triggers on this; the
+  // whole-word match must not. Live regression: AIO-2984 (a test-fix Bug
+  // titled "...so it genuinely proves the DB failure is swallowed") got
+  // wrongly gated behind design review for a purely infrastructure Story.
+  final storyWithSubstringFalsePositive = Ticket(
+    id: '27',
+    ticketId: 'AIO-27',
+    type: TicketType.story,
+    title: 'Story with a false-positive-shaped Task title',
+    status: 'backlog',
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
+  final taskWithUiSubstringOnly = Ticket(
+    id: '28',
+    ticketId: 'AIO-28',
+    type: TicketType.task,
+    title: 'Fix the test so it genuinely proves the failure is swallowed',
+    status: 'todo',
+    parentId: storyWithSubstringFalsePositive.id,
+    createdAt: DateTime(2026),
+    updatedAt: DateTime(2026),
+  );
   // A Task parented directly under an Epic (ad hoc, no governing Story) —
   // _governingStory must stop walking at the Epic and return null.
   final taskUnderEpic = Ticket(
@@ -11981,6 +12006,69 @@ void main() {
         ),
         TicketDetailLoaded(
           taskUnderStoryNoDesign.copyWith(status: 'inProgress'),
+        ),
+      ],
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'allows a Task whose title merely contains "ui" inside an unrelated '
+      'word ("genuinely") to start unconditionally — a whole-word match, '
+      'not the substring match this regressed to once (AIO-2984 live find)',
+      build: () => TicketsCubit(repository),
+      setUp: () {
+        when(
+          () => repository.getTicketById(storyWithSubstringFalsePositive.id),
+        ).thenAnswer((_) async => storyWithSubstringFalsePositive);
+        when(
+          () => repository.getTicketsByParent(
+            storyWithSubstringFalsePositive.id,
+            types: TicketTypeHierarchy.executableTypes,
+          ),
+        ).thenAnswer((_) async => [taskWithUiSubstringOnly]);
+        when(
+          () => repository.updateTicketStatus(
+            taskWithUiSubstringOnly.id,
+            'inProgress',
+          ),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(taskWithUiSubstringOnly.id),
+        ).thenAnswer(
+          (_) async => taskWithUiSubstringOnly.copyWith(status: 'inProgress'),
+        );
+      },
+      act: (cubit) => cubit.changeTicketStatus(
+        taskWithUiSubstringOnly,
+        'inProgress',
+      ),
+      verify: (_) {
+        verify(
+          () => repository.updateTicketStatus(
+            taskWithUiSubstringOnly.id,
+            'inProgress',
+          ),
+        ).called(1);
+        verifyNever(
+          () => repository.getTicketsByParent(
+            storyWithSubstringFalsePositive.id,
+            types: const [TicketType.chat],
+          ),
+        );
+      },
+      expect: () => [
+        TicketDetailLoaded(
+          taskWithUiSubstringOnly.copyWith(status: 'inProgress'),
+        ),
+        TicketDetailLoaded(
+          taskWithUiSubstringOnly.copyWith(status: 'inProgress'),
+          executionQueuePosition: 1,
+        ),
+        TicketDetailLoaded(
+          taskWithUiSubstringOnly.copyWith(status: 'inProgress'),
+          isExecuting: true,
+        ),
+        TicketDetailLoaded(
+          taskWithUiSubstringOnly.copyWith(status: 'inProgress'),
         ),
       ],
     );
