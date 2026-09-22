@@ -4009,11 +4009,18 @@ PROMOTION: NOT YET
   /// Whether any of [tasks] indicates UI work, using the same keyword
   /// heuristic `/propose`'s own design-gate block already applies to a
   /// change's touched files — here applied to each Task/Bug's title +
-  /// description instead of a file path. Case-insensitive substring match
-  /// against: "widget", "screen", "component", "ui". Computed fresh every
-  /// time, not persisted — mirrors how the existing `proposed` precondition
-  /// already re-fetches children on every check rather than caching. Added for
-  /// `AIO-1834`.
+  /// description instead of a file path. Case-insensitive **whole-word**
+  /// match against: "widget", "screen", "component", "ui" — a plain
+  /// substring match (this method's original form) false-triggers on any
+  /// word that merely contains one of these as letters, e.g. "ui" inside
+  /// "genuinely" or "requi**ui**tion"-shaped words; confirmed live when a
+  /// test-fix Bug titled "...so it genuinely proves the DB failure is
+  /// swallowed" got wrongly gated behind design review for a purely
+  /// infrastructure Story with zero UI work (`AIO-2949`/`AIO-2984`, no
+  /// tracking ticket — fixed directly alongside the `retryVerify` fix in the
+  /// same session). Computed fresh every time, not persisted — mirrors how
+  /// the existing `proposed` precondition already re-fetches children on
+  /// every check rather than caching. Added for `AIO-1834`.
   ///
   /// Short-circuits to `false` before that heuristic runs at all when
   /// [_designStagesEnabled] resolves `false` — a project that's turned off
@@ -4024,9 +4031,13 @@ PROMOTION: NOT YET
   Future<bool> _storyNeedsDesignReview(List<Ticket> tasks) async {
     if (!(await _designStagesEnabled())) return false;
     const keywords = ['widget', 'screen', 'component', 'ui'];
+    final pattern = RegExp(
+      r'\b(' + keywords.map(RegExp.escape).join('|') + r')\b',
+      caseSensitive: false,
+    );
     return tasks.any((t) {
-      final text = '${t.title} ${t.description ?? ''}'.toLowerCase();
-      return keywords.any(text.contains);
+      final text = '${t.title} ${t.description ?? ''}';
+      return pattern.hasMatch(text);
     });
   }
 
