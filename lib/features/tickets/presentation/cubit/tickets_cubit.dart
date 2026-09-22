@@ -3764,7 +3764,7 @@ PROMOTION: NOT YET
     final (model, provider) = await _resolveModelAndProvider(
       SddStage.verifying.modelPhase,
     );
-    await ChatCubit.runChatTurn(
+    final result = await ChatCubit.runChatTurn(
       client: provider.client,
       provider: provider,
       commentRepo: commentRepo,
@@ -3777,6 +3777,26 @@ PROMOTION: NOT YET
       tools: await _toolsFor(verifyingChat.id),
       onToolCall: _onToolCallFor(verifyingChat),
     );
+    // Mirrors _runStageChatTurn's own post-turn PENDING-verdict handling —
+    // without this, a retried verify turn that comes back PENDING again
+    // never creates its next round of fix Tasks/Bugs, leaving the ticket
+    // permanently stuck showing "Ready to retry verification" with no way
+    // to actually progress. Confirmed live: AIO-2949's second PENDING
+    // verdict (after its first round of fixes landed) produced a real
+    // "Fixes Needed" block that was silently dropped before this fix.
+    if (result is ChatTurnSuccess) {
+      final comments = await commentRepo.getCommentsForTicket(
+        verifyingChat.id,
+      );
+      if (comments.isNotEmpty) {
+        final mostRecent = comments.reduce(
+          (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
+        );
+        if (mostRecent.content.contains('VERIFY GATE: PENDING')) {
+          await _materializeVerifyFixes(parent, mostRecent.content);
+        }
+      }
+    }
   }
 
   /// Public wrapper resolving [storyOrEpic]'s current Verifying-stage chat
