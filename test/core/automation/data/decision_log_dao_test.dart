@@ -85,14 +85,17 @@ void main() {
       // Close the database to force a DB error on the next write
       await database.close();
 
-      // This should not throw even though the database is closed
-      expect(
-        () => service.record(
+      // This should not throw even though the database is closed.
+      // Use expectLater to properly await the Future and verify it completes
+      // successfully rather than returnsNormally which only checks the
+      // synchronous completion of the closure.
+      await expectLater(
+        service.record(
           ticketId: 'ticket-3',
           source: 'codingExecution',
           gateResult: 'confirmed',
         ),
-        returnsNormally,
+        completes,
       );
     });
 
