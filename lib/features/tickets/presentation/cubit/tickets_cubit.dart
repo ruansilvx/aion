@@ -6790,69 +6790,11 @@ PROMOTION: NOT YET
         ..writeln(description);
     }
 
-    if (task.type == TicketType.bug) {
-      final proposedChat = await _mostRecentProposedChat(task.id);
-      final commentRepo = _commentRepository;
-      final planComments = proposedChat == null || commentRepo == null
-          ? const <TicketComment>[]
-          : (await commentRepo.getCommentsForTicket(proposedChat.id))
-              .where((c) => c.authorType != CommentAuthorType.system)
-              .toList();
-      if (planComments.isNotEmpty) {
-        buffer
-          ..writeln()
-          ..writeln('## Approved plan')
-          ..writeln()
-          ..writeln(
-            "This bug's fix was already planned and approved in its own "
-            'Proposed-stage review — implement that reviewed plan, not a '
-            'fresh reading of the title/description alone. The full '
-            'Proposed-stage conversation, in order:',
-          )
-          ..writeln()
-          ..writeln(_assembleChatTranscript(planComments));
-      }
-    } else {
-      // A Task's own description is very often blank — its Propose-stage
-      // decomposition only writes a title (see _materializeDecomposition)
-      // — so the real specification lives in its parent Story/Epic's own
-      // description instead. relatedTicketsSection below still includes
-      // the parent, but truncated to _descriptionSnippetLength (400 chars,
-      // for every related ticket uniformly, not just the parent) — too
-      // short for a substantive technical spec. Confirmed live on
-      // AIO-2967: the parent's real schema definition was cut off
-      // mid-sentence, right before its column list, and the execution
-      // agent silently invented its own unrelated schema instead of
-      // flagging the gap (see this ticket's own file/PR history). Quoting
-      // the parent's full, untruncated description here closes that
-      // specific gap without touching relatedTicketsSection's shared
-      // truncation (still appropriate for indirect/similar tickets).
-      // Mirrors the bug branch above's own "approved plan" instinct, one
-      // ticket level up. See AIO-2967's own discovery, AIO-2949.
-      final parentId = task.parentId;
-      final parent = parentId == null
-          ? null
-          : await _repository.getTicketById(parentId);
-      final parentDescription = parent?.description;
-      if (parent != null &&
-          parentDescription != null &&
-          parentDescription.isNotEmpty) {
-        buffer
-          ..writeln()
-          ..writeln('## Parent ${parent.type.name}\'s full plan')
-          ..writeln()
-          ..writeln(
-            "This Task's own description is blank, or too thin to "
-            "implement from alone — its real specification lives in its "
-            "parent ${parent.type.name}'s description below, written "
-            'during Explore/Propose grounding. Implement against this '
-            "plan, not a re-derivation from this Task's title alone — if "
-            "it's ambiguous or looks wrong, flag that rather than "
-            'inventing an unrelated design:',
-          )
-          ..writeln()
-          ..writeln(parentDescription);
-      }
+    final planSection = await _specPlanSection(task);
+    if (planSection != null) {
+      buffer
+        ..writeln()
+        ..writeln(planSection);
     }
 
     final related = await _contextEnricher.relatedTicketsSection(task);
@@ -6896,6 +6838,224 @@ PROMOTION: NOT YET
       );
     return buffer.toString().trim();
   }
+
+  /// The "real spec" section for [task] beyond its own title/description —
+  /// [_approvedPlanSection] for a [TicketType.bug], [_parentPlanSection]
+  /// otherwise — or `null` when neither has content. Shared by
+  /// [_assembleExecutionContext] and [_assembleTaskVerificationContext] so the
+  /// implementer and the independent reviewer can never disagree about what
+  /// the Task actually asked for. Extracted for `AIO-3001`.
+  Future<String?> _specPlanSection(Ticket task) => task.type == TicketType.bug
+      ? _approvedPlanSection(task)
+      : _parentPlanSection(task);
+
+  /// A bug's `## Approved plan` section — its most recent Proposed-stage
+  /// chat's full non-system transcript (see [_assembleExecutionContext]'s
+  /// dartdoc for why the whole transcript, `AIO-2920`), or `null` when there
+  /// is no such chat or it has no human/AI comments. Extracted verbatim from
+  /// [_assembleExecutionContext] for `AIO-3001`.
+  Future<String?> _approvedPlanSection(Ticket task) async {
+    final proposedChat = await _mostRecentProposedChat(task.id);
+    final commentRepo = _commentRepository;
+    final planComments = proposedChat == null || commentRepo == null
+        ? const <TicketComment>[]
+        : (await commentRepo.getCommentsForTicket(proposedChat.id))
+              .where((c) => c.authorType != CommentAuthorType.system)
+              .toList();
+    if (planComments.isEmpty) return null;
+    return (StringBuffer()
+          ..writeln('## Approved plan')
+          ..writeln()
+          ..writeln(
+            "This bug's fix was already planned and approved in its own "
+            'Proposed-stage review — implement that reviewed plan, not a '
+            'fresh reading of the title/description alone. The full '
+            'Proposed-stage conversation, in order:',
+          )
+          ..writeln()
+          ..write(_assembleChatTranscript(planComments)))
+        .toString();
+  }
+
+  /// A non-bug Task's `## Parent <type>'s full plan` section — its immediate
+  /// parent's full, untruncated description — or `null` when it has no parent
+  /// or the parent's description is empty.
+  ///
+  /// A Task's own description is very often blank — its Propose-stage
+  /// decomposition only writes a title (see [_materializeDecomposition]) — so
+  /// the real specification lives in its parent Story/Epic's description.
+  /// `relatedTicketsSection` still includes the parent, but truncated to 400
+  /// characters (for every related ticket uniformly) — too short for a
+  /// substantive technical spec. Confirmed live on `AIO-2967`: the parent's
+  /// schema definition was cut off mid-sentence, right before its column
+  /// list, and the execution agent silently invented an unrelated schema
+  /// instead of flagging the gap. Mirrors [_approvedPlanSection]'s own
+  /// instinct, one ticket level up (`AIO-2975`). Extracted verbatim from
+  /// [_assembleExecutionContext] for `AIO-3001`.
+  Future<String?> _parentPlanSection(Ticket task) async {
+    final parentId = task.parentId;
+    final parent = parentId == null
+        ? null
+        : await _repository.getTicketById(parentId);
+    final parentDescription = parent?.description;
+    if (parent == null ||
+        parentDescription == null ||
+        parentDescription.isEmpty) {
+      return null;
+    }
+    return (StringBuffer()
+          ..writeln('## Parent ${parent.type.name}\'s full plan')
+          ..writeln()
+          ..writeln(
+            "This Task's own description is blank, or too thin to "
+            "implement from alone — its real specification lives in its "
+            "parent ${parent.type.name}'s description below, written "
+            'during Explore/Propose grounding. Implement against this '
+            "plan, not a re-derivation from this Task's title alone — if "
+            "it's ambiguous or looks wrong, flag that rather than "
+            'inventing an unrelated design:',
+          )
+          ..writeln()
+          ..write(parentDescription))
+        .toString();
+  }
+
+  /// Maximum number of diff characters [_assembleTaskVerificationContext]
+  /// quotes before truncating. Deliberately far larger than
+  /// [_verificationFailureReason]'s 500-character status-string cap: the diff
+  /// is the reviewer's evidence, not a status line. Added for `AIO-3001`.
+  static const _taskVerifyDiffCharCap = 60000;
+
+  /// Assembles the prompt for the per-Task semantic verify gate (epic
+  /// `AIO-2999`): an independent review, run after mechanical verification
+  /// passes and before the PR opens, of whether [diff] (the Task branch's
+  /// full diff against the default branch) does exactly what [task] asked
+  /// and adds real test coverage for new logic.
+  ///
+  /// Unlike [_assembleVerificationContext] — the implementer re-checking its
+  /// own work — this frames the model as a reviewer who did not write the
+  /// change and must not treat a prior `VERIFICATION: PASSED` line or passing
+  /// tests as evidence. The spec it judges against comes from the same
+  /// [_specPlanSection] the implement prompt used. Fully inline (no baseline
+  /// asset), mirroring [_assembleCorrectiveContext]. The reply must end with
+  /// `TASK VERIFY GATE: APPROVED` or `TASK VERIFY GATE: NEEDS FIXES`, parsed
+  /// by [_taskVerifyFailureReason]. Added for `AIO-3001`.
+  Future<String> _assembleTaskVerificationContext(
+    Ticket task,
+    String diff,
+  ) async {
+    final buffer = StringBuffer()
+      ..writeln(
+        'You are an independent reviewer for a coding Task. You did not '
+        'write this change. The implementer already reported its own '
+        'verification as passing, and the project\'s build/lint/test '
+        'commands already passed — neither of those is evidence that the '
+        'Task was done correctly, so do not rely on them. Judge the diff '
+        'below against the Task\'s specification.',
+      )
+      ..writeln()
+      ..writeln('# ${task.title}');
+    final description = task.description;
+    if (description != null && description.isNotEmpty) {
+      buffer
+        ..writeln()
+        ..writeln(description);
+    }
+    final planSection = await _specPlanSection(task);
+    if (planSection != null) {
+      buffer
+        ..writeln()
+        ..writeln(planSection);
+    }
+
+    final truncated = diff.length > _taskVerifyDiffCharCap;
+    final shownDiff = truncated
+        ? diff.substring(0, _taskVerifyDiffCharCap)
+        : diff;
+    buffer
+      ..writeln()
+      ..writeln('## Diff')
+      ..writeln()
+      ..writeln('```diff')
+      ..writeln(shownDiff.trimRight())
+      ..writeln('```');
+    if (truncated) {
+      buffer
+        ..writeln()
+        ..writeln(
+          '[diff truncated — $_taskVerifyDiffCharCap of ${diff.length} '
+          'characters shown] Anything you cannot confirm from the visible '
+          'portion counts as unverified: report it under Issues Found '
+          'rather than assuming it is fine.',
+        );
+    }
+
+    buffer
+      ..writeln()
+      ..writeln('## Required checks')
+      ..writeln()
+      ..writeln(
+        '1. Scope: does this diff do exactly what the Task and its '
+        'specification ask — no more, no less? Flag anything the Task '
+        'asked for that is missing, and anything implemented that belongs '
+        'to a different Task or was never asked for.',
+      )
+      ..writeln(
+        '2. Tests: does the diff add real test coverage for the new logic '
+        'it introduces? "Existing tests still pass" does not count as '
+        'coverage for new behavior.',
+      )
+      ..writeln()
+      ..writeln(
+        'You may read files in the worktree to check your conclusions, but '
+        'do not modify anything. If any check fails, list each concrete '
+        'problem as a bullet under a "## Issues Found" heading — this is '
+        'feedback for the implementer\'s next attempt at this same Task, '
+        'not a request to create new tickets. End your reply with exactly '
+        'one line: "TASK VERIFY GATE: APPROVED" if both checks pass, or '
+        '"TASK VERIFY GATE: NEEDS FIXES" otherwise.',
+      );
+    return buffer.toString().trim();
+  }
+
+  /// Parses a per-Task verify gate reply ([reply], from
+  /// [_lastCommentContent]; see [_assembleTaskVerificationContext]). Returns
+  /// `null` **only** when [reply] contains the literal
+  /// `TASK VERIFY GATE: APPROVED` line. Otherwise it fails closed, the same
+  /// way [_verificationFailureReason] does: the trimmed body of an
+  /// `## Issues Found` section when one is present, else the reply itself
+  /// (truncated to 1000 characters), or a generic reason for a `null` reply.
+  /// The returned text becomes the corrective feedback for the Task's next
+  /// attempt. Added for `AIO-3001`.
+  String? _taskVerifyFailureReason(String? reply) {
+    if (reply == null) {
+      return 'The task-verify review turn produced no reply.';
+    }
+    if (reply.contains('TASK VERIFY GATE: APPROVED')) return null;
+    final match = RegExp(
+      r'## Issues Found[^\n]*\n([\s\S]*?)(?=\n#|\nTASK VERIFY GATE:|$)',
+    ).firstMatch(reply);
+    final issues = match?.group(1)?.trim();
+    if (issues != null && issues.isNotEmpty) return issues;
+    return reply.length > 1000 ? '${reply.substring(0, 1000)}...' : reply;
+  }
+
+  /// Test-only seam onto [_assembleTaskVerificationContext] — the prompt is
+  /// otherwise reachable only by driving a full coding-execution run to its
+  /// review turn. Mirrors [debugTrackOpenAionPr]'s precedent. Added for
+  /// `AIO-3001`.
+  @visibleForTesting
+  Future<String> debugAssembleTaskVerificationContext(
+    Ticket task,
+    String diff,
+  ) => _assembleTaskVerificationContext(task, diff);
+
+  /// Test-only seam onto [_taskVerifyFailureReason], for exercising every
+  /// parse branch directly. Mirrors [debugTrackOpenAionPr]'s precedent. Added
+  /// for `AIO-3001`.
+  @visibleForTesting
+  String? debugTaskVerifyFailureReason(String? reply) =>
+      _taskVerifyFailureReason(reply);
 
   /// Assembles the verify-turn prompt run immediately after a successful
   /// implement turn (see [_runCodingExecution]) — the project's effective

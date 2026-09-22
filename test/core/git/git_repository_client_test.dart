@@ -255,6 +255,54 @@ void main() {
     });
   });
 
+  group('diffAgainstBase', () {
+    Future<void> initWithBase() async {
+      await runGit(['init', '-b', 'main']);
+      await runGit(['config', 'user.email', 'test@example.com']);
+      await runGit(['config', 'user.name', 'Test']);
+      File(
+        '${tempDir.path}${Platform.pathSeparator}a.txt',
+      ).writeAsStringSync('a\n');
+      await runGit(['add', 'a.txt']);
+      await runGit(['commit', '-m', 'base']);
+      await runGit(['checkout', '-b', 'feature']);
+    }
+
+    test('returns the unified diff of the branch against base', () async {
+      await initWithBase();
+      File(
+        '${tempDir.path}${Platform.pathSeparator}a.txt',
+      ).writeAsStringSync('a changed\n');
+      File(
+        '${tempDir.path}${Platform.pathSeparator}b.txt',
+      ).writeAsStringSync('b\n');
+      await runGit(['add', 'a.txt', 'b.txt']);
+      await runGit(['commit', '-m', 'feature work']);
+
+      final diff = await client.diffAgainstBase(
+        tempDir.path,
+        'main',
+        'feature',
+      );
+      expect(diff, contains('diff --git a/a.txt b/a.txt'));
+      expect(diff, contains('-a'));
+      expect(diff, contains('+a changed'));
+      expect(diff, contains('diff --git a/b.txt b/b.txt'));
+      expect(diff, contains('+b'));
+    });
+
+    test('returns an empty string when nothing changed', () async {
+      await initWithBase();
+
+      final diff = await client.diffAgainstBase(
+        tempDir.path,
+        'main',
+        'feature',
+      );
+      expect(diff.trim(), isEmpty);
+    });
+  });
+
   group('defaultBranch', () {
     test('falls back to main when origin/HEAD is not set', () async {
       await runGit(['init', '-b', 'main']);

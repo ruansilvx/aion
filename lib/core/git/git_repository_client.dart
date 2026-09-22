@@ -166,6 +166,24 @@ class GitRepositoryClient {
     return output.isEmpty ? 0 : output.split('\n').length;
   }
 
+  /// Runs `git diff <baseBranch>...<branch>` in [worktreePath] and returns the
+  /// full unified diff — [changedFileCount]'s sibling minus `--name-only`.
+  /// Read by `TicketsCubit`'s per-Task verify gate so an independent reviewer
+  /// judges the real change rather than a model's summary of it. Returns an
+  /// empty string when the branch has no changes relative to [baseBranch].
+  /// Added for `AIO-3001`.
+  Future<String> diffAgainstBase(
+    String worktreePath,
+    String baseBranch,
+    String branch,
+  ) async {
+    final result = await _runChecked(
+      ['diff', '$baseBranch...$branch'],
+      worktreePath,
+    );
+    return result.stdout.toString();
+  }
+
   /// Runs `git rev-list --count @{u}..HEAD` in [rootPath] — the number of
   /// local commits on the current branch not yet on its upstream. Returns
   /// `0` on any failure (no upstream configured, no remote at all, a
