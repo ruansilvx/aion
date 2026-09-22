@@ -6972,22 +6972,45 @@ PROMOTION: NOT YET
     final shownDiff = truncated
         ? diff.substring(0, _taskVerifyDiffCharCap)
         : diff;
+    // A fence longer than any backtick run inside the diff (CommonMark's own
+    // rule), so a changed Markdown file's own ``` blocks can't close it early.
+    var longestBacktickRun = 0;
+    for (final run in RegExp(r'`+').allMatches(shownDiff)) {
+      final length = run.end - run.start;
+      if (length > longestBacktickRun) longestBacktickRun = length;
+    }
+    final fence = '`' * (longestBacktickRun < 3 ? 3 : longestBacktickRun + 1);
     buffer
       ..writeln()
       ..writeln('## Diff')
       ..writeln()
-      ..writeln('```diff')
+      ..writeln('${fence}diff')
       ..writeln(shownDiff.trimRight())
-      ..writeln('```');
+      ..writeln(fence);
     if (truncated) {
+      // Every changed path, taken from the *full* diff's headers, so the
+      // reviewer knows exactly what the cut-off portion covers and can read
+      // those files itself (it runs with read-only tools in the worktree)
+      // instead of failing a large-but-correct change by default.
+      final changedPaths = RegExp(r'^diff --git a/(.+?) b/', multiLine: true)
+          .allMatches(diff)
+          .map((m) => m.group(1)!)
+          .toList();
       buffer
         ..writeln()
         ..writeln(
           '[diff truncated — $_taskVerifyDiffCharCap of ${diff.length} '
-          'characters shown] Anything you cannot confirm from the visible '
-          'portion counts as unverified: report it under Issues Found '
-          'rather than assuming it is fine.',
-        );
+          'characters shown] Every file this change touches is listed '
+          'below. For any file whose changes are cut off above, read its '
+          'current contents in the worktree with your read tools before '
+          'judging it. Report under Issues Found only what you still '
+          'cannot confirm after doing so — do not assume the hidden part is '
+          'fine, and do not fail it just because it was hidden.',
+        )
+        ..writeln();
+      for (final path in changedPaths) {
+        buffer.writeln('- $path');
+      }
     }
 
     buffer
@@ -7020,18 +7043,27 @@ PROMOTION: NOT YET
 
   /// Parses a per-Task verify gate reply ([reply], from
   /// [_lastCommentContent]; see [_assembleTaskVerificationContext]). Returns
-  /// `null` **only** when [reply] contains the literal
-  /// `TASK VERIFY GATE: APPROVED` line. Otherwise it fails closed, the same
-  /// way [_verificationFailureReason] does: the trimmed body of an
-  /// `## Issues Found` section when one is present, else the reply itself
-  /// (truncated to 1000 characters), or a generic reason for a `null` reply.
-  /// The returned text becomes the corrective feedback for the Task's next
-  /// attempt. Added for `AIO-3001`.
+  /// `null` **only** when [reply]'s last non-empty line is
+  /// `TASK VERIFY GATE: APPROVED` (tolerating surrounding `*`/`` ` ``/`"`
+  /// Markdown decoration). Deliberately stricter than
+  /// [_verificationFailureReason]'s anywhere-in-the-reply `contains` check: a
+  /// reviewer that quotes the approve line mid-reply ("can't give TASK
+  /// VERIFY GATE: APPROVED because…") while ending on NEEDS FIXES must not
+  /// pass. Otherwise it fails closed: the trimmed body of an `## Issues
+  /// Found` section when one is present, else the reply itself (truncated to
+  /// 1000 characters), or a generic reason for a `null` reply. The returned
+  /// text becomes the corrective feedback for the Task's next attempt. Added
+  /// for `AIO-3001`.
   String? _taskVerifyFailureReason(String? reply) {
     if (reply == null) {
       return 'The task-verify review turn produced no reply.';
     }
-    if (reply.contains('TASK VERIFY GATE: APPROVED')) return null;
+    final lastLine = reply
+        .trimRight()
+        .split('\n')
+        .last
+        .replaceAll(RegExp(r'^[\s*`"]+|[\s*`"]+$'), '');
+    if (lastLine == 'TASK VERIFY GATE: APPROVED') return null;
     final match = RegExp(
       r'## Issues Found[^\n]*\n([\s\S]*?)(?=\n#|\nTASK VERIFY GATE:|$)',
     ).firstMatch(reply);

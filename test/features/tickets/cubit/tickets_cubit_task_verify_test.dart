@@ -117,9 +117,14 @@ void main() {
       expect(prompt, contains('# Standalone task'));
     });
 
-    test('truncates a diff over 60,000 characters and says so explicitly, '
-        'telling the reviewer not to assume the hidden part is fine', () async {
-      final hugeDiff = '+${'x' * 70000}\nTAIL_MARKER\n';
+    test('truncates a diff over 60,000 characters, says so explicitly, and '
+        'lists every changed file — including ones past the cut — so the '
+        'reviewer can read them instead of failing by default', () async {
+      final hugeDiff =
+          'diff --git a/lib/big.dart b/lib/big.dart\n'
+          '+${'x' * 70000}\n'
+          'diff --git a/lib/hidden.dart b/lib/hidden.dart\n'
+          '+TAIL_MARKER\n';
 
       final prompt = await TicketsCubit(
         repository,
@@ -131,9 +136,38 @@ void main() {
           '[diff truncated — 60000 of ${hugeDiff.length} characters shown]',
         ),
       );
-      expect(prompt, contains('counts as unverified'));
+      expect(prompt, contains('read its current contents in the worktree'));
+      expect(prompt, contains('- lib/big.dart'));
+      expect(prompt, contains('- lib/hidden.dart'));
       expect(prompt, isNot(contains('TAIL_MARKER')));
     });
+
+    test('an untruncated diff gets no changed-file list', () async {
+      final prompt = await TicketsCubit(
+        repository,
+      ).debugAssembleTaskVerificationContext(task, diff);
+
+      expect(prompt, isNot(contains('- lib/a.dart')));
+    });
+
+    test(
+      'fences the diff with more backticks than any run inside it, so a '
+      "changed Markdown file's own code fences can't end the block early",
+      () async {
+        const markdownDiff =
+            'diff --git a/README.md b/README.md\n'
+            '+```dart\n'
+            '+void main() {}\n'
+            '+```\n'
+            '+````\n';
+
+        final prompt = await TicketsCubit(
+          repository,
+        ).debugAssembleTaskVerificationContext(task, markdownDiff);
+
+        expect(prompt, contains('`````diff\n$markdownDiff`````'));
+      },
+    );
   });
 
   group('_taskVerifyFailureReason (AIO-3001)', () {
@@ -199,6 +233,53 @@ void main() {
       final reply = 'y' * 1500;
 
       expect(cubit.debugTaskVerifyFailureReason(reply), '${'y' * 1000}...');
+    });
+
+    test('quoting the APPROVED line mid-reply while ending on NEEDS FIXES '
+        'does not pass', () {
+      const reply =
+          "I can't give TASK VERIFY GATE: APPROVED yet.\n\n"
+          '## Issues Found\n'
+          '- Missing RepositoryProvider wiring\n\n'
+          'TASK VERIFY GATE: NEEDS FIXES';
+
+      expect(
+        cubit.debugTaskVerifyFailureReason(reply),
+        '- Missing RepositoryProvider wiring',
+      );
+    });
+
+    test('APPROVED followed by more text is not a terminal verdict and does '
+        'not pass', () {
+      const reply =
+          'TASK VERIFY GATE: APPROVED\n\nActually, tests are missing.';
+
+      expect(cubit.debugTaskVerifyFailureReason(reply), reply);
+    });
+
+    test('a terminal APPROVED line wrapped in Markdown bold or backticks, '
+        'with trailing whitespace, still passes', () {
+      expect(
+        cubit.debugTaskVerifyFailureReason(
+          'All good.\n\n**TASK VERIFY GATE: APPROVED**\n\n',
+        ),
+        isNull,
+      );
+      expect(
+        cubit.debugTaskVerifyFailureReason(
+          'All good.\n`TASK VERIFY GATE: APPROVED`',
+        ),
+        isNull,
+      );
+    });
+
+    test('a Windows-style CRLF reply ending in APPROVED still passes', () {
+      expect(
+        cubit.debugTaskVerifyFailureReason(
+          'All good.\r\nTASK VERIFY GATE: APPROVED\r\n',
+        ),
+        isNull,
+      );
     });
 
     test('an empty Issues Found block falls back to the reply', () {
