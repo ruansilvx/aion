@@ -1,8 +1,9 @@
 // test/features/tickets/cubit/tickets_cubit_task_verify_test.dart —
 // TicketsCubit's per-Task semantic verify gate building blocks (AIO-3001,
-// epic AIO-2999): the review prompt (_assembleTaskVerificationContext) and
-// its gate-line parser (_taskVerifyFailureReason), exercised through their
-// @visibleForTesting seams.
+// epic AIO-2999): the review prompt (_assembleTaskVerificationContext), its
+// gate-line parser (_taskVerifyFailureReason), and its non-blocking
+// suggestions parser (_taskVerifySuggestions, AIO-3003), exercised through
+// their @visibleForTesting seams.
 //
 // Self-contained (own Mock classes and fixtures), mirroring
 // tickets_cubit_decision_graph_test.dart's precedent for a cohesive slice of
@@ -140,6 +141,32 @@ void main() {
       expect(prompt, contains('- lib/big.dart'));
       expect(prompt, contains('- lib/hidden.dart'));
       expect(prompt, isNot(contains('TAIL_MARKER')));
+    });
+
+    test('limits blocking to the two required checks and routes every other '
+        'improvement idea to a separate, non-blocking Suggestions section '
+        '(AIO-3003)', () async {
+      final prompt = await TicketsCubit(
+        repository,
+      ).debugAssembleTaskVerificationContext(task, diff);
+
+      expect(
+        prompt,
+        allOf([
+          contains(
+            'Only failures of the two required checks above are '
+            'blocking',
+          ),
+          contains('must NOT go under Issues Found'),
+          contains('"## Suggestions" heading'),
+          contains('even if you listed suggestions'),
+        ]),
+      );
+      // The terminal-line instruction still comes last.
+      expect(
+        prompt.indexOf('## Suggestions'),
+        lessThan(prompt.lastIndexOf('TASK VERIFY GATE: APPROVED')),
+      );
     });
 
     test('an untruncated diff gets no changed-file list', () async {
@@ -282,10 +309,95 @@ void main() {
       );
     });
 
+    test('Issues Found stops at a following Suggestions section, so '
+        'non-blocking ideas never reach the implementer (AIO-3003)', () {
+      const reply =
+          '## Issues Found\n'
+          '- No tests for the new parser\n\n'
+          '## Suggestions\n'
+          '- Consider renaming _foo to _bar\n\n'
+          'TASK VERIFY GATE: NEEDS FIXES';
+
+      expect(
+        cubit.debugTaskVerifyFailureReason(reply),
+        '- No tests for the new parser',
+      );
+    });
+
+    test('NEEDS FIXES without Issues Found falls back to the reply minus its '
+        'Suggestions section (AIO-3003)', () {
+      const reply =
+          'Tests are missing for the new branch.\n\n'
+          '## Suggestions\n'
+          '- SUGGESTION_MARKER rename the helper\n\n'
+          'TASK VERIFY GATE: NEEDS FIXES';
+
+      final reason = cubit.debugTaskVerifyFailureReason(reply)!;
+      expect(reason, contains('Tests are missing for the new branch.'));
+      expect(reason, contains('TASK VERIFY GATE: NEEDS FIXES'));
+      expect(reason, isNot(contains('SUGGESTION_MARKER')));
+      expect(reason, isNot(contains('## Suggestions')));
+    });
+
     test('an empty Issues Found block falls back to the reply', () {
       const reply = '## Issues Found\n\nTASK VERIFY GATE: NEEDS FIXES';
 
       expect(cubit.debugTaskVerifyFailureReason(reply), reply);
+    });
+  });
+
+  group('_taskVerifySuggestions (AIO-3003)', () {
+    late TicketsCubit cubit;
+
+    setUp(() => cubit = TicketsCubit(repository));
+
+    test('a null reply has no suggestions', () {
+      expect(cubit.debugTaskVerifySuggestions(null), isNull);
+    });
+
+    test('returns the Suggestions body, stopping before the terminal gate '
+        'line', () {
+      const reply =
+          'Scope and tests look right.\n\n'
+          '## Suggestions\n'
+          '- Extract the retry-confidence switch into a helper\n'
+          '- The dartdoc on _foo is stale\n\n'
+          'TASK VERIFY GATE: APPROVED';
+
+      expect(
+        cubit.debugTaskVerifySuggestions(reply),
+        '- Extract the retry-confidence switch into a helper\n'
+        '- The dartdoc on _foo is stale',
+      );
+    });
+
+    test('stops at the next heading', () {
+      const reply =
+          '## Suggestions\n'
+          '- Rename x\n'
+          '## Notes\n'
+          'Nothing else.\n'
+          'TASK VERIFY GATE: APPROVED';
+
+      expect(cubit.debugTaskVerifySuggestions(reply), '- Rename x');
+    });
+
+    test('a reply without a Suggestions section has none', () {
+      expect(
+        cubit.debugTaskVerifySuggestions(
+          'All good.\nTASK VERIFY GATE: APPROVED',
+        ),
+        isNull,
+      );
+    });
+
+    test('an empty Suggestions section has none', () {
+      expect(
+        cubit.debugTaskVerifySuggestions(
+          '## Suggestions\n\nTASK VERIFY GATE: APPROVED',
+        ),
+        isNull,
+      );
     });
   });
 }

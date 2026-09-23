@@ -17995,14 +17995,80 @@ void main() {
         () => gitClient.diffAgainstBase(any(), 'main', any()),
       ).called(1);
       verify(() => gitClient.push(any(), any())).called(1);
+      // No suggestions → the PR body is exactly what it was before AIO-3003.
       verify(
         () => gitHubClient.openPullRequest(
           rootPath: any(named: 'rootPath'),
           branch: any(named: 'branch'),
           title: any(named: 'title'),
-          body: any(named: 'body'),
+          body: 'Implements "${taskNoStory.title}" via Aion coding execution.',
         ),
       ).called(1);
+    });
+
+    test('an approving review\'s non-blocking Suggestions are appended to '
+        'the PR body (AIO-3003)', () async {
+      answerByCall(
+        (call) => switch (call) {
+          1 => implementReply,
+          2 => selfVerifyPassedReply,
+          _ =>
+            'Scope and tests look right.\n\n'
+                '## Suggestions\n'
+                '- Extract the retry switch into a helper\n\n'
+                'TASK VERIFY GATE: APPROVED',
+        },
+      );
+
+      await runExecution();
+
+      final body =
+          verify(
+                () => gitHubClient.openPullRequest(
+                  rootPath: any(named: 'rootPath'),
+                  branch: any(named: 'branch'),
+                  title: any(named: 'title'),
+                  body: captureAny(named: 'body'),
+                ),
+              ).captured.single
+              as String;
+      expect(
+        body,
+        'Implements "${taskNoStory.title}" via Aion coding execution.\n\n'
+        '## Reviewer suggestions (non-blocking)\n\n'
+        '- Extract the retry switch into a helper',
+      );
+    });
+
+    test('a NEEDS FIXES review\'s Suggestions are never fed back to the '
+        'implementer — only its Issues Found are (AIO-3003)', () async {
+      stubRetryConfidence(AutomationConfidence.auto);
+      answerByCall(
+        (call) => switch (call) {
+          2 || 5 => selfVerifyPassedReply,
+          3 =>
+            '## Issues Found\n'
+                '- Missing RepositoryProvider wiring in app_router.dart\n\n'
+                '## Suggestions\n'
+                '- SUGGESTION_MARKER rename the service\n\n'
+                'TASK VERIFY GATE: NEEDS FIXES',
+          6 => approvedReply,
+          _ => implementReply,
+        },
+      );
+
+      await runExecution();
+
+      final requests = verify(
+        () => agentClient.run(captureAny()),
+      ).captured.cast<AgentRequest>();
+      expect(requests, hasLength(6));
+      final correctivePrompt = requests[3].prompt;
+      expect(
+        correctivePrompt,
+        contains('- Missing RepositoryProvider wiring in app_router.dart'),
+      );
+      expect(correctivePrompt, isNot(contains('SUGGESTION_MARKER')));
     });
 
     test('NEEDS FIXES under auto confidence retries correctively with the '

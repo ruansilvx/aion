@@ -5580,8 +5580,11 @@ PROMOTION: NOT YET
   /// a model resolved via [ModelPhase.taskVerify], `readOnlyTools: true` and
   /// no Aion ticket tools, fed [_assembleTaskVerificationContext]'s prompt;
   /// only a terminal `TASK VERIFY GATE: APPROVED` line counts as a pass
-  /// ([_taskVerifyFailureReason]). An empty diff fails the attempt without a
-  /// review call. A `NEEDS FIXES` verdict is an ordinary verification failure
+  /// ([_taskVerifyFailureReason]). Only failures of the review's two required
+  /// checks (scope, test coverage) block; an approving review's non-blocking
+  /// `## Suggestions` ([_taskVerifySuggestions], `AIO-3003`) are appended to
+  /// the PR body, never fed back to the implementer. An empty diff fails the
+  /// attempt without a review call. A `NEEDS FIXES` verdict is an ordinary verification failure
   /// — it follows the configured retry confidence below, unlike a mechanical
   /// mismatch, which forces `gated`. On a pass, resolves the changed-file
   /// count ([GitRepositoryClient.changedFileCount]) before pushing the branch ([GitRepositoryClient.push]) and opening the PR
@@ -5832,6 +5835,9 @@ PROMOTION: NOT YET
       // every attempt (to diff against), and the post-loop push/PR path
       // reuses it. A cheap, idempotent read against the pristine checkout.
       final baseBranch = await gitClient.defaultBranch(rootPath);
+      // The approving per-Task review's `## Suggestions`, if any — carried
+      // into the PR body once verified (AIO-3003).
+      String? reviewerSuggestions;
 
       var attempt = 0;
       var verified = false;
@@ -6037,10 +6043,12 @@ PROMOTION: NOT YET
                 break;
               }
               await _addExecutionTokens(task.id, chat.id);
-              failureReason = _taskVerifyFailureReason(
-                await _lastCommentContent(chat.id),
-              );
+              final taskVerifyReply = await _lastCommentContent(chat.id);
+              failureReason = _taskVerifyFailureReason(taskVerifyReply);
               if (failureReason == null) {
+                // Non-blocking ideas from the approving review go to the PR
+                // body below — never back to the implementer (AIO-3003).
+                reviewerSuggestions = _taskVerifySuggestions(taskVerifyReply);
                 verified = true;
                 break;
               }
@@ -6128,7 +6136,11 @@ PROMOTION: NOT YET
           rootPath: worktreePath,
           branch: branchName,
           title: task.title,
-          body: 'Implements "${task.title}" via Aion coding execution.',
+          body: reviewerSuggestions == null
+              ? 'Implements "${task.title}" via Aion coding execution.'
+              : 'Implements "${task.title}" via Aion coding execution.\n\n'
+                    '## Reviewer suggestions (non-blocking)\n\n'
+                    '$reviewerSuggestions',
         );
         _openAionPrs[task.id] = pr.number;
         await commentRepo.addComment(
@@ -7127,15 +7139,53 @@ PROMOTION: NOT YET
       ..writeln()
       ..writeln(
         'You may read files in the worktree to check your conclusions, but '
-        'do not modify anything. If any check fails, list each concrete '
-        'problem as a bullet under a "## Issues Found" heading — this is '
-        'feedback for the implementer\'s next attempt at this same Task, '
-        'not a request to create new tickets. End your reply with exactly '
-        'one line: "TASK VERIFY GATE: APPROVED" if both checks pass, or '
+        'do not modify anything. If either required check fails, list each '
+        'concrete failure as a bullet under a "## Issues Found" heading — '
+        'this is feedback for the implementer\'s next attempt at this same '
+        'Task, not a request to create new tickets.',
+      )
+      ..writeln()
+      ..writeln(
+        'Only failures of the two required checks above are blocking. Style, '
+        'naming, refactoring, performance, or any other improvement idea '
+        'must NOT go under Issues Found and must never change the verdict — '
+        'the implementer would otherwise be sent back to do work this Task '
+        'never asked for. If you have such ideas, list them as bullets under '
+        'a separate "## Suggestions" heading instead; they are passed on to '
+        'the human reviewing the pull request and are otherwise ignored.',
+      )
+      ..writeln()
+      ..writeln(
+        'End your reply with exactly one line: "TASK VERIFY GATE: APPROVED" '
+        'if both required checks pass (even if you listed suggestions), or '
         '"TASK VERIFY GATE: NEEDS FIXES" otherwise.',
       );
     return buffer.toString().trim();
   }
+
+  /// The trimmed body of [reply]'s `## <heading>` section — everything after
+  /// that heading line up to the next Markdown heading, the terminal
+  /// `TASK VERIFY GATE:` line, or the end of the reply — or `null` when the
+  /// section is absent or empty. Shared by [_taskVerifyFailureReason]
+  /// (`## Issues Found`) and [_taskVerifySuggestions] (`## Suggestions`), so a
+  /// reply carrying both keeps them strictly apart. Added for `AIO-3003`.
+  String? _gateReplySection(String reply, String heading) {
+    final match = RegExp(
+      '## ${RegExp.escape(heading)}[^\\n]*\\n([\\s\\S]*?)'
+      '(?=\\n#|\\nTASK VERIFY GATE:|\$)',
+    ).firstMatch(reply);
+    final body = match?.group(1)?.trim();
+    return body == null || body.isEmpty ? null : body;
+  }
+
+  /// The non-blocking `## Suggestions` body of an approving per-Task review
+  /// reply (see [_assembleTaskVerificationContext]), or `null` when [reply] is
+  /// `null` or has none. [_runCodingExecution] appends it to the pull
+  /// request's body so improvement ideas reach the human reviewer instead of
+  /// being lost in the execution chat — and, crucially, are never fed back to
+  /// the implementer as required fixes. Added for `AIO-3003`.
+  String? _taskVerifySuggestions(String? reply) =>
+      reply == null ? null : _gateReplySection(reply, 'Suggestions');
 
   /// Parses a per-Task verify gate reply ([reply], from
   /// [_lastCommentContent]; see [_assembleTaskVerificationContext]). Returns
@@ -7146,10 +7196,11 @@ PROMOTION: NOT YET
   /// reviewer that quotes the approve line mid-reply ("can't give TASK
   /// VERIFY GATE: APPROVED because…") while ending on NEEDS FIXES must not
   /// pass. Otherwise it fails closed: the trimmed body of an `## Issues
-  /// Found` section when one is present, else the reply itself (truncated to
-  /// 1000 characters), or a generic reason for a `null` reply. The returned
-  /// text becomes the corrective feedback for the Task's next attempt. Added
-  /// for `AIO-3001`.
+  /// Found` section when one is present, else the reply itself with any
+  /// non-blocking `## Suggestions` section removed (truncated to 1000
+  /// characters), or a generic reason for a `null` reply. The returned text
+  /// becomes the corrective feedback for the Task's next attempt, so it never
+  /// carries suggestions (`AIO-3003`). Added for `AIO-3001`.
   String? _taskVerifyFailureReason(String? reply) {
     if (reply == null) {
       return 'The task-verify review turn produced no reply.';
@@ -7160,12 +7211,23 @@ PROMOTION: NOT YET
         .last
         .replaceAll(RegExp(r'^[\s*`"]+|[\s*`"]+$'), '');
     if (lastLine == 'TASK VERIFY GATE: APPROVED') return null;
-    final match = RegExp(
-      r'## Issues Found[^\n]*\n([\s\S]*?)(?=\n#|\nTASK VERIFY GATE:|$)',
-    ).firstMatch(reply);
-    final issues = match?.group(1)?.trim();
-    if (issues != null && issues.isNotEmpty) return issues;
-    return reply.length > 1000 ? '${reply.substring(0, 1000)}...' : reply;
+    final issues = _gateReplySection(reply, 'Issues Found');
+    if (issues != null) return issues;
+    // No Issues Found section: fall back to the reply itself, minus any
+    // non-blocking `## Suggestions` section — those must never reach the
+    // implementer as required fixes (AIO-3003).
+    final fallback = reply
+        .replaceFirst(
+          RegExp(
+            r'## Suggestions[^\n]*\n[\s\S]*?'
+            r'(?=\n#|\nTASK VERIFY GATE:|$)',
+          ),
+          '',
+        )
+        .trim();
+    return fallback.length > 1000
+        ? '${fallback.substring(0, 1000)}...'
+        : fallback;
   }
 
   /// Test-only seam onto [_assembleTaskVerificationContext] — the prompt is
@@ -7184,6 +7246,12 @@ PROMOTION: NOT YET
   @visibleForTesting
   String? debugTaskVerifyFailureReason(String? reply) =>
       _taskVerifyFailureReason(reply);
+
+  /// Test-only seam onto [_taskVerifySuggestions]. Mirrors
+  /// [debugTrackOpenAionPr]'s precedent. Added for `AIO-3003`.
+  @visibleForTesting
+  String? debugTaskVerifySuggestions(String? reply) =>
+      _taskVerifySuggestions(reply);
 
   /// Assembles the verify-turn prompt run immediately after a successful
   /// implement turn (see [_runCodingExecution]) — the project's effective
