@@ -7444,8 +7444,15 @@ PROMOTION: NOT YET
   }
 
   /// Whether [taskId]'s most recently created `"Coding Execution — "`-
-  /// prefixed `chat` child's most recent comment contains the literal
-  /// `EXECUTION: PR_OPENED` line — mirrors [_designSyncApproved]'s own lookup
+  /// prefixed `chat` child's most recent comment *is* the literal
+  /// `EXECUTION: PR_OPENED` line (checked via [String.startsWith], not
+  /// [String.contains] — a large system-authored failure comment can embed
+  /// a full `flutter test` output blob, and this project's own test suite
+  /// has test names that literally contain the phrase "EXECUTION:
+  /// PR_OPENED" as English prose; a substring check false-matched on one
+  /// live, root-caused after a real coding-execution failure was
+  /// misreported as a successful PR-opened run) — mirrors
+  /// [_designSyncApproved]'s own lookup
   /// shape exactly (that one takes the *Story's* id and finds its
   /// `"Design Sync — "`-prefixed chat; this takes the *Task's* id and finds
   /// its `"Coding Execution — "`-prefixed chat via
@@ -7468,7 +7475,7 @@ PROMOTION: NOT YET
     );
     return (mostRecent.authorType == CommentAuthorType.ai ||
             mostRecent.authorType == CommentAuthorType.system) &&
-        mostRecent.content.contains('EXECUTION: PR_OPENED');
+        mostRecent.content.startsWith('EXECUTION: PR_OPENED');
   }
 
   /// Computes the `(executionFailureReason, executionCanRetry)` pair for
@@ -9248,13 +9255,17 @@ PROMOTION: NOT YET
         // actually matters here: what the Applying-stage coding-execution
         // run changed. Point the model at that run's own chat/PR instead.
         // Found live during `bug-sdd-cycle-proposal`'s end-to-end test —
-        // filed as AIO-2914. Added for `AIO-2898`.
+        // filed as AIO-2914. Added for `AIO-2898`. `startsWith`, not
+        // `contains` — see `_executionSucceededWithPr`'s dartdoc for the
+        // live false-positive this avoids (a failure comment embedding a
+        // `flutter test` output blob whose own test names contain this
+        // phrase as prose).
         final executionChat = await _mostRecentExecutionChat(parent.id);
         final commentRepo = _commentRepository;
         final prComments = executionChat == null || commentRepo == null
             ? const <TicketComment>[]
             : (await commentRepo.getCommentsForTicket(executionChat.id))
-                  .where((c) => c.content.contains('EXECUTION: PR_OPENED'))
+                  .where((c) => c.content.startsWith('EXECUTION: PR_OPENED'))
                   .toList();
         buffer
           ..writeln()
