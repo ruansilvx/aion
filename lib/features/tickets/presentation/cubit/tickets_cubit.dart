@@ -7190,10 +7190,15 @@ PROMOTION: NOT YET
   /// `skills/verify` content (see [_effectiveAssetContent]), which is written
   /// as operative instructions (see
   /// `assets/baseline/ 0.3.0/skills/verify.md`), plus a one-line reminder of
-  /// what's being verified. Runs in the same chat/worktree as the implement
-  /// turn, so the model still has the diff it just produced in context; this
-  /// reminder is cheap insurance against that continuity, not a full
-  /// re-statement of the task. Added for AIO-1654 — replaces the
+  /// what's being verified. Runs in the same chat ticket and worktree as the
+  /// implement turn, but **not** the same model session:
+  /// `ChatCubit.runChatTurn` sends only this prompt (no `resumeSessionId`),
+  /// so the model starts fresh and sees the implement turn's work only
+  /// through the worktree's files and git history, not its prior reasoning.
+  /// The one-line reminder is therefore the model's only statement of which
+  /// Task it is checking. (Corrected during `AIO-3002`: this dartdoc
+  /// previously claimed the model kept the implement turn's diff in
+  /// context.) Added for AIO-1654 — replaces the
   /// `FlutterVerifier`-based mechanical verify gate with this agentic one.
   Future<String> _assembleVerificationContext(Ticket task) async {
     final verifySkill = await _effectiveAssetContent('skills/verify');

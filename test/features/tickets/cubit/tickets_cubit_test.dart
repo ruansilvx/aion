@@ -17831,6 +17831,7 @@ void main() {
     late MockGitRepositoryClient gitClient;
     late MockGitHubCliClient gitHubClient;
     late MockBaselineRepository baselineRepository;
+    late MockNotificationRepository notificationRepository;
 
     const implementReply = 'Implemented.\n\nIMPLEMENTATION: DONE';
     const selfVerifyPassedReply = 'Done.\n\nVERIFICATION: PASSED';
@@ -17888,6 +17889,7 @@ void main() {
       gitClient = MockGitRepositoryClient();
       gitHubClient = MockGitHubCliClient();
       baselineRepository = MockBaselineRepository();
+      notificationRepository = MockNotificationRepository();
       stubSuccessfulCodingExecutionInfra(gitClient, gitHubClient);
       stubEmptyBaseline(baselineRepository);
       when(
@@ -17906,6 +17908,12 @@ void main() {
         return dummyExecutionChatTicket;
       });
       stubStatefulComments(commentRepository, dummyExecutionChatTicket.id);
+      when(
+        () => notificationRepository.addNotification(any()),
+      ).thenAnswer((_) async {});
+      when(
+        () => notificationRepository.getUnreadCount(),
+      ).thenAnswer((_) async => 1);
       when(
         () => automationSettingsRepository.getConfidence(
           AutomationContext.codingExecution,
@@ -17927,6 +17935,7 @@ void main() {
       commentRepository: commentRepository,
       automationSettingsRepository: automationSettingsRepository,
       modelRoutingRepository: modelRoutingRepository,
+      notificationRepository: notificationRepository,
       projectRootPath: '/fake/project/root',
       sourceRootPath: '/fake/project/root',
       gitClient: gitClient,
@@ -18067,6 +18076,10 @@ void main() {
             ),
           ),
         ).called(1);
+        final kinds = verify(
+          () => notificationRepository.addNotification(captureAny()),
+        ).captured.cast<Notification>().map((n) => n.kind);
+        expect(kinds, [NotificationKind.executionVerificationFailed]);
         // gated surfaces the one-shot toast; manual never surfaces
         // proactively — same split a self-reported FAILED already gets.
         final toasted = states.any(
