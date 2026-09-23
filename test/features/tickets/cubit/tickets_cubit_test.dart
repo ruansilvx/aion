@@ -13710,6 +13710,95 @@ void main() {
       );
 
       blocTest<TicketsCubit, TicketsState>(
+        'getTicketById surfaces a verify-failure comment for a bug at/past '
+        'SddStage.applying even though it never left an executionTrigger-'
+        'role status — that stage fires coding-execution directly without '
+        'ever flipping ticket.status',
+        build: () =>
+            TicketsCubit(repository, commentRepository: commentRepository),
+        setUp: () {
+          final bugAtApplying = Ticket(
+            id: taskNoStory.id,
+            ticketId: taskNoStory.ticketId,
+            type: TicketType.bug,
+            title: taskNoStory.title,
+            status: 'backlog',
+            sddStage: SddStage.applying,
+            createdAt: taskNoStory.createdAt,
+            updatedAt: taskNoStory.updatedAt,
+          );
+          when(
+            () => repository.getTicketById(taskNoStory.id),
+          ).thenAnswer((_) async => bugAtApplying);
+          when(
+            () => repository.getTicketsByParent(
+              taskNoStory.id,
+              types: const [TicketType.chat],
+            ),
+          ).thenAnswer((_) async => [dummyExecutionChatTicket]);
+          when(
+            () => commentRepository.getCommentsForTicket(
+              dummyExecutionChatTicket.id,
+            ),
+          ).thenAnswer(
+            (_) async => [
+              TicketComment(
+                id: 'c-verify-fail-sdd-stage',
+                ticketId: dummyExecutionChatTicket.id,
+                content: 'Execution failed verification:\n\nerror output',
+                authorType: CommentAuthorType.system,
+                createdAt: DateTime(2026),
+              ),
+            ],
+          );
+        },
+        act: (cubit) => cubit.getTicketById(taskNoStory.id),
+        expect: () => [
+          const TicketsLoading(),
+          TicketDetailLoaded(
+            Ticket(
+              id: taskNoStory.id,
+              ticketId: taskNoStory.ticketId,
+              type: TicketType.bug,
+              title: taskNoStory.title,
+              status: 'backlog',
+              sddStage: SddStage.applying,
+              createdAt: taskNoStory.createdAt,
+              updatedAt: taskNoStory.updatedAt,
+            ),
+            // The Apply stage's own precondition ("coding execution has
+            // concluded") is satisfied by a failed run just as much as a
+            // successful one — mirrors the live-reproduced UI, which showed
+            // "Ready to advance to Verifying" for this exact scenario.
+            canAdvanceSddStage: true,
+            executionFailureReason:
+                'Execution failed verification:\n\nerror output',
+            executionCanRetry: true,
+          ),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'getTicketById does NOT compute executionFailureReason for a task '
+        '(never reaches SddStage.applying) sitting at a non-executionTrigger '
+        'status, even if the repository would otherwise error on the new '
+        'chat lookup — proves the bug-at-applying fallback is narrowly '
+        'scoped and adds no new repository call for every other ticket',
+        build: () =>
+            TicketsCubit(repository, commentRepository: commentRepository),
+        setUp: () {
+          when(() => repository.getTicketById(taskNoStory.id)).thenAnswer(
+            (_) async => taskNoStory.copyWith(status: 'backlog'),
+          );
+        },
+        act: (cubit) => cubit.getTicketById(taskNoStory.id),
+        expect: () => [
+          const TicketsLoading(),
+          TicketDetailLoaded(taskNoStory.copyWith(status: 'backlog')),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
         'getTicketById treats a chat with no comments at all as an '
         'orphaned/stalled run, still offering a retry',
         build: () =>

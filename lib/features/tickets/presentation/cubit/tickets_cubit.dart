@@ -10099,9 +10099,24 @@ PROMOTION: NOT YET
         // queue* is ahead of it. The in-flight run itself never reaches
         // this branch (isExecuting is checked separately above).
         executionQueuePosition = queueIndex >= 0 ? queueIndex + 1 : null;
+        // The `executionTrigger`-role check alone only covers the plain
+        // status-flip trigger path. A `bug` driven through its own
+        // `SddStage.applying` (the only ticket type/stage that ever fires
+        // `_triggerOrQueueCodingExecution` this way — see that stage's
+        // dartdoc) never touches `ticket.status`, so it would otherwise
+        // never surface a failure or an awaiting-review PR here. Narrowly
+        // falling back to "does an execution chat exist" only for a bug
+        // at/past `applying` covers that path too, without adding a new
+        // repository call for every other executable ticket (a `task`
+        // never reaches `applying` at all, and a `bug` earlier in its own
+        // cycle can't have an execution chat yet).
         if (!isExecuting &&
             executionQueuePosition == null &&
-            _roleOf(ticket.status) == WorkflowStatusRole.executionTrigger) {
+            (_roleOf(ticket.status) == WorkflowStatusRole.executionTrigger ||
+                (ticket.type == TicketType.bug &&
+                    (ticket.sddStage?.index ?? -1) >=
+                        SddStage.applying.index &&
+                    await _mostRecentExecutionChat(ticket.id) != null))) {
           final prConfirmed = await _executionSucceededWithPr(ticket.id);
           final automationRepo = _automationSettingsRepository;
           final confidence = automationRepo == null
