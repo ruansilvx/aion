@@ -13863,6 +13863,62 @@ void main() {
       );
 
       blocTest<TicketsCubit, TicketsState>(
+        '_executionSucceededWithPr does NOT treat a failure comment that '
+        'merely embeds the phrase "EXECUTION: PR_OPENED" elsewhere in its '
+        'text (e.g. a flutter test output blob whose own test names '
+        'contain it) as a real PR-opened marker — live-found false '
+        'positive, the marker must be the start of the comment',
+        build: () => TicketsCubit(
+          repository,
+          commentRepository: commentRepository,
+          automationSettingsRepository: automationSettingsRepository,
+        ),
+        setUp: () {
+          when(
+            () => commentRepository.getCommentsForTicket(
+              dummyExecutionChatTicket.id,
+            ),
+          ).thenAnswer(
+            (_) async => [
+              TicketComment(
+                id: 'c-mechanical-mismatch',
+                ticketId: dummyExecutionChatTicket.id,
+                content:
+                    'Execution failed verification:\n\n'
+                    'Independent verification disagreed with the model\'s '
+                    "own \"VERIFICATION: PASSED\" claim — flutter test "
+                    'exited 1:\n\n'
+                    "...accepts a system-authored EXECUTION: PR_OPENED "
+                    "comment, not just ai...",
+                authorType: CommentAuthorType.system,
+                createdAt: DateTime(2026),
+              ),
+            ],
+          );
+          when(
+            () => automationSettingsRepository.getConfidence(
+              AutomationContext.codingExecution,
+            ),
+          ).thenAnswer((_) async => AutomationConfidence.gated);
+        },
+        act: (cubit) => cubit.getTicketById(taskNoStory.id),
+        expect: () => [
+          const TicketsLoading(),
+          TicketDetailLoaded(
+            taskNoStory.copyWith(status: 'inProgress'),
+            executionFailureReason:
+                'Execution failed verification:\n\n'
+                'Independent verification disagreed with the model\'s '
+                "own \"VERIFICATION: PASSED\" claim — flutter test "
+                'exited 1:\n\n'
+                "...accepts a system-authored EXECUTION: PR_OPENED "
+                "comment, not just ai...",
+            executionCanRetry: true,
+          ),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
         'retryCodingExecution reuses the Task\'s existing, under-cap '
         'execution chat — no new chat ticket is created, and the run '
         'posts to the existing chat\'s id',
