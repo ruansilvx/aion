@@ -410,4 +410,55 @@ void main() {
     // take noticeably longer than in isolation.
     timeout: const Timeout(Duration(minutes: 3)),
   );
+
+  testWidgets(
+    'WorkspaceShell provides a real, database-backed DecisionLogService — '
+    'the AIO-2989 gap where TicketsCubit\'s _decisionLogService stayed '
+    'permanently null in the real app because no RepositoryProvider '
+    'existed (AIO-3013\'s wiring fix, see app_router.dart)',
+    (tester) async {
+      final activeProjectCubit = MockActiveProjectCubit();
+      when(() => activeProjectCubit.state).thenReturn(
+        ActiveProjectOpen(project),
+      );
+      when(
+        () => activeProjectCubit.stream,
+      ).thenAnswer((_) => const Stream<ActiveProjectState>.empty());
+
+      await tester.runAsync(() async {
+        appRouter.go('/workspace/inbox');
+        await tester.pumpWidget(wrap(activeProjectCubit));
+        for (var i = 0; i < 20; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+          await tester.pump();
+        }
+      });
+
+      // Reads whatever DecisionLogService WorkspaceShell's own provider
+      // tree actually constructed for this project — proves the DI wiring
+      // itself, not a re-implementation of it. Before AIO-3013's fix, no
+      // RepositoryProvider<DecisionLogService> existed in app_router.dart
+      // at all, so this `read` would throw a ProviderNotFoundException
+      // rather than reach the `record` call below. `record`'s own actual
+      // insert behavior (args, table columns) is covered at the cubit
+      // level, against a mock, in tickets_cubit_test.dart's "execution-
+      // trigger confirm gate" group — this test's job is narrower: does a
+      // real DecisionLogService, backed by a real database connection,
+      // exist on this path at all.
+      final decisionLogService = tester
+          .element(find.byType(InboxScreen))
+          .read<DecisionLogService>();
+
+      await tester.runAsync(() async {
+        await decisionLogService.record(
+          ticketId: 'aio3013-wiring-check',
+          source: 'appRouterTest',
+          gateResult: 'fired',
+        );
+      });
+
+      await tester.pumpWidget(const SizedBox());
+    },
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
 }

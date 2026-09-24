@@ -16,6 +16,7 @@ import 'package:aion/core/automation/automation_settings_repository.dart';
 import 'package:aion/core/automation/decision_graph.dart';
 import 'package:aion/core/automation/decision_graph_evaluator.dart';
 import 'package:aion/core/automation/decision_graph_repository.dart';
+import 'package:aion/core/automation/decision_log_service.dart';
 import 'package:aion/core/automation/decision_node.dart';
 import 'package:aion/core/automation/decision_outcome.dart';
 import 'package:aion/core/automation/default_decision_graphs.dart';
@@ -293,6 +294,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     DecisionGraphRepository? decisionGraphRepository,
     TransitionPreconditionRepository? transitionPreconditionRepository,
     MechanicalVerificationRunner? mechanicalVerificationRunner,
+    DecisionLogService? decisionLogService,
   }) : super(const TicketsInitial()) {
     _embeddingProvider = embeddingProvider;
     _gitProjector = gitProjector;
@@ -326,6 +328,7 @@ class TicketsCubit extends Cubit<TicketsState> {
     _decisionGraphRepository = decisionGraphRepository;
     _transitionPreconditionRepository = transitionPreconditionRepository;
     _mechanicalVerificationRunner = mechanicalVerificationRunner;
+    _decisionLogService = decisionLogService;
     _workflowStatusChangesSubscription = workflowStatusRepository?.onChanged
         .listen((_) => _loadWorkflowStatuses());
     unawaited(_loadWorkflowStatuses());
@@ -565,6 +568,14 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// no-op, mirroring [_dependencyCache]'s exact optional-dependency
   /// guard shape. Added for `AIO-2943`.
   late final MechanicalVerificationRunner? _mechanicalVerificationRunner;
+
+  /// Records every [AutomationContext]-gated decision to the audit trail.
+  /// `null` (every existing construction site except `app_router.dart`) makes
+  /// decision logging a no-op; real usage (`app_router.dart`) always supplies
+  /// one. A best-effort observability layer — exceptions are silently swallowed
+  /// to prevent logging bugs from breaking real decision gates. Added for
+  /// `AIO-2949`.
+  late final DecisionLogService? _decisionLogService;
 
   /// Persists every `AutomationContext`'s configured [DecisionGraph]. Backs
   /// [_evaluateDecisionGraph] — see [_decisionGraphsByContext]/
@@ -3922,12 +3933,27 @@ PROMOTION: NOT YET
         : await automationRepo.getConfidence(AutomationContext.verifyGateRetry);
 
     if (confidence == AutomationConfidence.auto) {
+      // Log the auto retry decision
+      await _decisionLogService?.record(
+        ticketId: task.id,
+        source: AutomationContext.verifyGateRetry.name,
+        confidence: confidence?.name,
+        gateResult: 'fired',
+      );
       if (_inFlightVerifyRetryIds.contains(parent.id)) return;
       _inFlightVerifyRetryIds.add(parent.id);
       unawaited(
         retryVerify(verifyChat).whenComplete(() {
           _inFlightVerifyRetryIds.remove(parent.id);
         }),
+      );
+    } else if (confidence != null) {
+      // Log gated/manual decision
+      await _decisionLogService?.record(
+        ticketId: task.id,
+        source: AutomationContext.verifyGateRetry.name,
+        confidence: confidence.name,
+        gateResult: 'pending',
       );
     }
     // gated/manual: no direct action — the ready-to-retry footer tier
@@ -4712,9 +4738,23 @@ PROMOTION: NOT YET
             AutomationContext.codingExecutionTrigger,
           );
     if (confidence == AutomationConfidence.auto) {
+      // Log the auto trigger decision
+      await _decisionLogService?.record(
+        ticketId: task.id,
+        source: AutomationContext.codingExecutionTrigger.name,
+        confidence: confidence.name,
+        gateResult: 'fired',
+      );
       unawaited(_triggerOrQueueCodingExecution(task));
       return;
     }
+    // Log the gated decision
+    await _decisionLogService?.record(
+      ticketId: task.id,
+      source: AutomationContext.codingExecutionTrigger.name,
+      confidence: confidence.name,
+      gateResult: 'pending',
+    );
     _pendingExecutionTriggers[task.id] = () =>
         _triggerOrQueueCodingExecution(task);
     final current = state;
@@ -4734,6 +4774,12 @@ PROMOTION: NOT YET
   Future<void> confirmPendingExecutionTrigger(String ticketId) async {
     final fire = _pendingExecutionTriggers.remove(ticketId);
     if (fire == null) return;
+    // Log the confirmation
+    await _decisionLogService?.record(
+      ticketId: ticketId,
+      source: AutomationContext.codingExecutionTrigger.name,
+      gateResult: 'confirmed',
+    );
     unawaited(fire());
     final current = state;
     if (current is TicketDetailLoaded && current.ticket.id == ticketId) {
@@ -4752,6 +4798,14 @@ PROMOTION: NOT YET
   void rejectPendingExecutionTrigger(String ticketId) {
     final fire = _pendingExecutionTriggers.remove(ticketId);
     if (fire == null) return;
+    // Log the rejection
+    unawaited(
+      _decisionLogService?.record(
+        ticketId: ticketId,
+        source: AutomationContext.codingExecutionTrigger.name,
+        gateResult: 'rejected',
+      ),
+    );
     final current = state;
     if (current is TicketDetailLoaded && current.ticket.id == ticketId) {
       emit(current.copyWith(pendingExecutionTrigger: false));
@@ -4863,9 +4917,25 @@ PROMOTION: NOT YET
               AutomationContext.mergedPrCleanup,
             );
       if (confidence == AutomationConfidence.auto) {
+        // Log the auto cleanup decision
+        await _decisionLogService?.record(
+          ticketId: taskId,
+          source: AutomationContext.mergedPrCleanup.name,
+          sourceDetail: 'prNumber: $prNumber',
+          confidence: confidence.name,
+          gateResult: 'fired',
+        );
         await deleteBranch();
         continue;
       }
+      // Log the gated decision
+      await _decisionLogService?.record(
+        ticketId: taskId,
+        source: AutomationContext.mergedPrCleanup.name,
+        sourceDetail: 'prNumber: $prNumber',
+        confidence: confidence.name,
+        gateResult: 'pending',
+      );
       _pendingMergedPrCleanups[taskId] = deleteBranch;
       final current = state;
       if (current is TicketDetailLoaded && current.ticket.id == taskId) {
@@ -4884,6 +4954,12 @@ PROMOTION: NOT YET
   Future<void> confirmMergedPrCleanup(String ticketId) async {
     final delete = _pendingMergedPrCleanups.remove(ticketId);
     if (delete == null) return;
+    // Log the confirmation
+    await _decisionLogService?.record(
+      ticketId: ticketId,
+      source: AutomationContext.mergedPrCleanup.name,
+      gateResult: 'confirmed',
+    );
     unawaited(delete());
     final current = state;
     if (current is TicketDetailLoaded && current.ticket.id == ticketId) {
@@ -4902,6 +4978,14 @@ PROMOTION: NOT YET
   void rejectMergedPrCleanup(String ticketId) {
     final delete = _pendingMergedPrCleanups.remove(ticketId);
     if (delete == null) return;
+    // Log the rejection
+    unawaited(
+      _decisionLogService?.record(
+        ticketId: ticketId,
+        source: AutomationContext.mergedPrCleanup.name,
+        gateResult: 'rejected',
+      ),
+    );
     final current = state;
     if (current is TicketDetailLoaded && current.ticket.id == ticketId) {
       emit(current.copyWith(pendingMergedPrCleanup: false));
@@ -6095,12 +6179,13 @@ PROMOTION: NOT YET
         var shouldRetry = retryConfidence == AutomationConfidence.auto;
         var showRetryFailureToast =
             retryConfidence == AutomationConfidence.gated;
+        DecisionOutcome? retryOutcome;
         if (shouldRetry) {
-          final outcome = await _evaluateDecisionGraph(
+          retryOutcome = await _evaluateDecisionGraph(
             AutomationContext.codingExecutionRetry,
             DecisionEvalContext(attempt: attempt),
           );
-          switch (outcome) {
+          switch (retryOutcome) {
             case DecisionOutcome.proceed:
             case DecisionOutcome.modelJudgment:
               break;
@@ -6111,6 +6196,16 @@ PROMOTION: NOT YET
               shouldRetry = false;
           }
         }
+        // Log the retry decision
+        final retryGateResult = retryConfidence == AutomationConfidence.auto ? 'fired' : 'pending';
+        await _decisionLogService?.record(
+          ticketId: task.id,
+          source: AutomationContext.codingExecutionRetry.name,
+          sourceDetail: 'attempt: $attempt',
+          confidence: retryConfidence.name,
+          outcome: retryOutcome?.name,
+          gateResult: retryGateResult,
+        );
         if (shouldRetry) {
           prompt = _assembleCorrectiveContext(failureReason);
           continue;
@@ -6227,8 +6322,9 @@ PROMOTION: NOT YET
         automationRepo,
       );
       var shouldFlipToReview = confidence == AutomationConfidence.auto;
+      DecisionOutcome? outcome;
       if (shouldFlipToReview) {
-        final outcome = await _evaluateDecisionGraph(
+        outcome = await _evaluateDecisionGraph(
           AutomationContext.codingExecution,
           DecisionEvalContext(
             sessionOverageDetected: _overageDetectedThisSession,
@@ -6241,6 +6337,15 @@ PROMOTION: NOT YET
       if (shouldFlipToReview) {
         await _repository.updateTicketStatus(task.id, _reviewReadyStatus);
       }
+      // Log the decision to the audit trail
+      final gateResult = confidence == AutomationConfidence.auto ? 'fired' : 'pending';
+      await _decisionLogService?.record(
+        ticketId: task.id,
+        source: AutomationContext.codingExecution.name,
+        confidence: confidence.name,
+        outcome: outcome?.name,
+        gateResult: gateResult,
+      );
       // `gated`/`manual` (and a decision-graph `gated`/`decline` outcome):
       // leave status as-is; getTicketById's re-check surfaces the "ready
       // for review" banner or leaves it to a manual status change.
@@ -6732,6 +6837,16 @@ PROMOTION: NOT YET
           AutomationContext.codingExecutionResume,
           const DecisionEvalContext(),
         );
+        // Log each surviving ticket's resume decision
+        for (final ticket in survivingTickets) {
+          await _decisionLogService?.record(
+            ticketId: ticket.id,
+            source: AutomationContext.codingExecutionResume.name,
+            confidence: confidence.name,
+            outcome: outcome.name,
+            gateResult: 'fired',
+          );
+        }
         switch (outcome) {
           case DecisionOutcome.decline:
             unawaited(_persistExecutionQueueSnapshot());
@@ -6742,8 +6857,26 @@ PROMOTION: NOT YET
             resume();
         }
       case AutomationConfidence.gated:
+        // Log gated decision for each ticket
+        for (final ticket in survivingTickets) {
+          await _decisionLogService?.record(
+            ticketId: ticket.id,
+            source: AutomationContext.codingExecutionResume.name,
+            confidence: confidence.name,
+            gateResult: 'pending',
+          );
+        }
         gate();
       case AutomationConfidence.manual:
+        // Log manual decision for each ticket
+        for (final ticket in survivingTickets) {
+          await _decisionLogService?.record(
+            ticketId: ticket.id,
+            source: AutomationContext.codingExecutionResume.name,
+            confidence: confidence.name,
+            gateResult: 'pending',
+          );
+        }
         unawaited(_persistExecutionQueueSnapshot());
     }
   }
@@ -6757,6 +6890,14 @@ PROMOTION: NOT YET
   Future<void> resumePendingExecutions() async {
     final pending = _pendingResumeTickets;
     if (pending == null) return;
+    // Log the resume confirmation for each pending ticket
+    for (final ticket in pending) {
+      await _decisionLogService?.record(
+        ticketId: ticket.id,
+        source: AutomationContext.codingExecutionResume.name,
+        gateResult: 'confirmed',
+      );
+    }
     _executionQueue.addAll(pending.map((t) => t.id));
     _pendingResumeTickets = null;
     _refreshInFlightBoardState();
@@ -6770,7 +6911,16 @@ PROMOTION: NOT YET
   /// still available per ticket). Called by `ResumeRunsPrompt`'s Dismiss
   /// action. Added for `AIO-1400`.
   Future<void> dismissPendingResumePrompt() async {
-    if (_pendingResumeTickets == null) return;
+    final pending = _pendingResumeTickets;
+    if (pending == null) return;
+    // Log the resume rejection for each pending ticket
+    for (final ticket in pending) {
+      await _decisionLogService?.record(
+        ticketId: ticket.id,
+        source: AutomationContext.codingExecutionResume.name,
+        gateResult: 'rejected',
+      );
+    }
     _pendingResumeTickets = null;
     _refreshInFlightBoardState();
     unawaited(_persistExecutionQueueSnapshot());
@@ -8362,6 +8512,15 @@ PROMOTION: NOT YET
             AutomationContext.specAutoLink,
             const DecisionEvalContext(),
           );
+          // Log the decision
+          await _decisionLogService?.record(
+            ticketId: ticket.id,
+            source: AutomationContext.specAutoLink.name,
+            sourceDetail: 'match: ${match.id}',
+            confidence: confidence.name,
+            outcome: outcome.name,
+            gateResult: 'fired',
+          );
           switch (outcome) {
             case DecisionOutcome.decline:
               break;
@@ -8376,8 +8535,24 @@ PROMOTION: NOT YET
               );
           }
         case AutomationConfidence.gated:
+          // Log gated decision
+          await _decisionLogService?.record(
+            ticketId: ticket.id,
+            source: AutomationContext.specAutoLink.name,
+            sourceDetail: 'match: ${match.id}',
+            confidence: confidence.name,
+            gateResult: 'pending',
+          );
           _recordPendingSpecLinkSuggestion(ticket, match);
         case AutomationConfidence.manual:
+          // Log manual decision
+          await _decisionLogService?.record(
+            ticketId: ticket.id,
+            source: AutomationContext.specAutoLink.name,
+            sourceDetail: 'match: ${match.id}',
+            confidence: confidence.name,
+            gateResult: 'pending',
+          );
           break;
       }
     } catch (_) {
@@ -8417,6 +8592,12 @@ PROMOTION: NOT YET
     final pending = _pendingSpecLinkSuggestions.remove(ticketId);
     final linkRepo = _linkRepository;
     if (pending == null || linkRepo == null) return;
+    // Log the confirmation
+    await _decisionLogService?.record(
+      ticketId: ticketId,
+      source: AutomationContext.specAutoLink.name,
+      gateResult: 'confirmed',
+    );
     unawaited(
       linkRepo.createLink(
         sourceTicketId: ticketId,
@@ -8440,6 +8621,12 @@ PROMOTION: NOT YET
   Future<void> rejectPendingSpecLinkSuggestion(String ticketId) async {
     final pending = _pendingSpecLinkSuggestions.remove(ticketId);
     if (pending == null) return;
+    // Log the rejection
+    await _decisionLogService?.record(
+      ticketId: ticketId,
+      source: AutomationContext.specAutoLink.name,
+      gateResult: 'rejected',
+    );
     final current = state;
     if (current is TicketDetailLoaded && current.ticket.id == ticketId) {
       emit(current.copyWith(pendingSpecLinkSuggestion: () => null));
@@ -8761,12 +8948,27 @@ PROMOTION: NOT YET
 
     switch (confidence) {
       case AutomationConfidence.manual:
+        // Log manual decision
+        await _decisionLogService?.record(
+          ticketId: chat.id,
+          source: AutomationContext.chatBranching.name,
+          confidence: confidence.name,
+          gateResult: 'pending',
+        );
         return {'accepted': false, 'reason': 'Automation set to manual.'};
       case AutomationConfidence.auto:
         final outcome = await _evaluateDecisionGraph(
           AutomationContext.chatBranching,
           const DecisionEvalContext(),
           session: session,
+        );
+        // Log the decision
+        await _decisionLogService?.record(
+          ticketId: chat.id,
+          source: AutomationContext.chatBranching.name,
+          confidence: confidence.name,
+          outcome: outcome.name,
+          gateResult: 'fired',
         );
         return switch (outcome) {
           DecisionOutcome.decline => {
@@ -8781,6 +8983,13 @@ PROMOTION: NOT YET
           DecisionOutcome.proceed || DecisionOutcome.modelJudgment => branch(),
         };
       case AutomationConfidence.gated:
+        // Log gated decision
+        await _decisionLogService?.record(
+          ticketId: chat.id,
+          source: AutomationContext.chatBranching.name,
+          confidence: confidence.name,
+          gateResult: 'pending',
+        );
         return _awaitProposalConfirmation(
           chat,
           PendingToolProposal.branch(title: title, description: description),
@@ -8826,11 +9035,26 @@ PROMOTION: NOT YET
 
     switch (confidence) {
       case AutomationConfidence.manual:
+        // Log manual decision
+        await _decisionLogService?.record(
+          ticketId: chat.id,
+          source: AutomationContext.chatBranching.name,
+          confidence: confidence.name,
+          gateResult: 'pending',
+        );
         return {'accepted': false, 'reason': 'Automation set to manual.'};
       case AutomationConfidence.auto:
         final outcome = await _evaluateDecisionGraph(
           AutomationContext.chatBranching,
           const DecisionEvalContext(),
+        );
+        // Log the decision
+        await _decisionLogService?.record(
+          ticketId: chat.id,
+          source: AutomationContext.chatBranching.name,
+          confidence: confidence.name,
+          outcome: outcome.name,
+          gateResult: 'fired',
         );
         return switch (outcome) {
           DecisionOutcome.decline => {
@@ -8845,6 +9069,13 @@ PROMOTION: NOT YET
           DecisionOutcome.proceed || DecisionOutcome.modelJudgment => close(),
         };
       case AutomationConfidence.gated:
+        // Log gated decision
+        await _decisionLogService?.record(
+          ticketId: chat.id,
+          source: AutomationContext.chatBranching.name,
+          confidence: confidence.name,
+          gateResult: 'pending',
+        );
         return _awaitProposalConfirmation(
           chat,
           PendingToolProposal.close(summary: summary),
@@ -8909,12 +9140,27 @@ PROMOTION: NOT YET
 
     switch (confidence) {
       case AutomationConfidence.manual:
+        // Log manual decision
+        await _decisionLogService?.record(
+          ticketId: chat.id,
+          source: AutomationContext.ticketCreation.name,
+          confidence: confidence.name,
+          gateResult: 'pending',
+        );
         return {'accepted': false, 'reason': 'Ticket creation set to manual.'};
       case AutomationConfidence.auto:
         final outcome = await _evaluateDecisionGraph(
           AutomationContext.ticketCreation,
           const DecisionEvalContext(),
           session: session,
+        );
+        // Log the decision
+        await _decisionLogService?.record(
+          ticketId: chat.id,
+          source: AutomationContext.ticketCreation.name,
+          confidence: confidence.name,
+          outcome: outcome.name,
+          gateResult: 'fired',
         );
         return switch (outcome) {
           DecisionOutcome.decline => {
@@ -8933,6 +9179,13 @@ PROMOTION: NOT YET
           DecisionOutcome.proceed || DecisionOutcome.modelJudgment => create(),
         };
       case AutomationConfidence.gated:
+        // Log gated decision
+        await _decisionLogService?.record(
+          ticketId: chat.id,
+          source: AutomationContext.ticketCreation.name,
+          confidence: confidence.name,
+          gateResult: 'pending',
+        );
         return _awaitProposalConfirmation(
           chat,
           PendingToolProposal.createTicket(
@@ -9015,12 +9268,27 @@ PROMOTION: NOT YET
 
     switch (confidence) {
       case AutomationConfidence.manual:
+        // Log manual decision
+        await _decisionLogService?.record(
+          ticketId: chat.id,
+          source: AutomationContext.ticketLinking.name,
+          confidence: confidence.name,
+          gateResult: 'pending',
+        );
         return {'accepted': false, 'reason': 'Ticket linking set to manual.'};
       case AutomationConfidence.auto:
         final outcome = await _evaluateDecisionGraph(
           AutomationContext.ticketLinking,
           const DecisionEvalContext(),
           session: session,
+        );
+        // Log the decision
+        await _decisionLogService?.record(
+          ticketId: chat.id,
+          source: AutomationContext.ticketLinking.name,
+          confidence: confidence.name,
+          outcome: outcome.name,
+          gateResult: 'fired',
         );
         return switch (outcome) {
           DecisionOutcome.decline => {
@@ -9039,6 +9307,13 @@ PROMOTION: NOT YET
           DecisionOutcome.proceed || DecisionOutcome.modelJudgment => addLink(),
         };
       case AutomationConfidence.gated:
+        // Log gated decision
+        await _decisionLogService?.record(
+          ticketId: chat.id,
+          source: AutomationContext.ticketLinking.name,
+          confidence: confidence.name,
+          gateResult: 'pending',
+        );
         return _awaitProposalConfirmation(
           chat,
           PendingToolProposal.addLink(
