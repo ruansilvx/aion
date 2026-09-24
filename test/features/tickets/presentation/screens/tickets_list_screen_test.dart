@@ -8,6 +8,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mocktail/mocktail.dart';
 
+import 'package:aion/core/automation/automation_confidence.dart';
+import 'package:aion/core/automation/automation_context.dart';
+import 'package:aion/core/automation/automation_settings_repository.dart';
 import 'package:aion/core/contracts/active_project_provider.dart';
 import 'package:aion/core/contracts/agent_model_client.dart';
 import 'package:aion/core/contracts/agent_model_descriptor.dart';
@@ -15,7 +18,10 @@ import 'package:aion/core/contracts/agent_provider.dart';
 import 'package:aion/core/contracts/consumption_signal.dart';
 import 'package:aion/core/contracts/provider_id.dart';
 import 'package:aion/core/contracts/provider_registry.dart';
+import 'package:aion/core/git/git_repository_client.dart';
+import 'package:aion/core/git/github_cli_client.dart';
 import 'package:aion/design_system/design_system.dart';
+import 'package:aion/features/projects/domain/entities/baseline_manifest.dart';
 import 'package:aion/features/projects/domain/entities/project.dart';
 import 'package:aion/features/projects/domain/repositories/baseline_repository.dart';
 import 'package:aion/features/providers/domain/enums/execution_scheduling_mode.dart';
@@ -40,6 +46,15 @@ class MockProviderRegistry extends Mock implements ProviderRegistry {}
 class MockActiveProjectProvider extends Mock implements ActiveProjectProvider {}
 
 class MockBaselineRepository extends Mock implements BaselineRepository {}
+
+class MockGitRepositoryClient extends Mock implements GitRepositoryClient {}
+
+class MockGitHubCliClient extends Mock implements GitHubCliClient {}
+
+class MockAutomationSettingsRepository extends Mock
+    implements AutomationSettingsRepository {}
+
+class MockCommentRepository extends Mock implements CommentRepository {}
 
 class MockExecutionSchedulingRepository extends Mock
     implements ExecutionSchedulingRepository {}
@@ -153,6 +168,14 @@ void main() {
   late MockProviderRegistry registry;
   late MockActiveProjectProvider activeProjectProvider;
   late MockBaselineRepository baselineRepository;
+  // Coding-execution infra — only wired into `buildFullCubit()`'s cubit
+  // (below), for the AIO-506 board-survives-a-background-failure
+  // regression test. `buildCubit()`'s plain cubit deliberately omits all
+  // of this, matching every other test in this file.
+  late MockGitRepositoryClient gitClient;
+  late MockGitHubCliClient gitHubClient;
+  late MockAutomationSettingsRepository automationSettingsRepository;
+  late MockCommentRepository commentRepository;
 
   final activeProject = Project(
     id: '1',
@@ -183,6 +206,16 @@ void main() {
         direction: TicketSortDirection.descending,
       ),
     );
+    registerFallbackValue(
+      TicketComment(
+        id: 'fallback',
+        ticketId: 'fallback',
+        content: '',
+        authorType: CommentAuthorType.system,
+        createdAt: DateTime(2026),
+      ),
+    );
+    registerFallbackValue(AutomationContext.ticketCreation);
   });
 
   setUp(() {
@@ -279,6 +312,28 @@ void main() {
     when(
       () => baselineRepository.getAvailableBaselineVersions(),
     ).thenAnswer((_) async => ['0.1.0']);
+
+    // Coding-execution infra, only actually exercised by
+    // `buildFullCubit()`'s AIO-506 regression test below — harmless to set
+    // up unconditionally alongside everything else in this shared `setUp`.
+    gitClient = MockGitRepositoryClient();
+    gitHubClient = MockGitHubCliClient();
+    automationSettingsRepository = MockAutomationSettingsRepository();
+    commentRepository = MockCommentRepository();
+    when(
+      () => gitClient.createWorktree(any(), any(), any()),
+    ).thenAnswer((_) async {});
+    when(() => gitClient.defaultBranch(any())).thenAnswer((_) async => 'main');
+    when(() => gitClient.removeWorktree(any(), any())).thenAnswer((_) async {});
+    when(
+      () => gitClient.deleteBranch(any(), any()),
+    ).thenAnswer((_) async {});
+    when(
+      () => baselineRepository.getManifest('0.1.0'),
+    ).thenAnswer(
+      (_) async =>
+          const BaselineManifest(version: '0.1.0', assets: []),
+    );
   });
 
   TicketsCubit buildCubit() => TicketsCubit(
@@ -288,6 +343,26 @@ void main() {
     projectRootPath: '/fake/project/root',
     sourceRootPath: '/fake/project/root',
     projectName: 'Fake Project',
+  );
+
+  /// [buildCubit] plus the coding-execution infra `_runCodingExecution`
+  /// needs to actually run (rather than bailing out on its own missing-deps
+  /// guard) — for the AIO-506 regression test, which needs a real
+  /// background coding-execution failure, not just a board load.
+  TicketsCubit buildFullCubit() => TicketsCubit(
+    repository,
+    linkRepository: linkRepository,
+    providerRegistry: registry,
+    commentRepository: commentRepository,
+    automationSettingsRepository: automationSettingsRepository,
+    projectRootPath: '/fake/project/root',
+    sourceRootPath: '/fake/project/root',
+    projectName: 'Fake Project',
+    gitClient: gitClient,
+    gitHubClient: gitHubClient,
+    baselineRepository: baselineRepository,
+    projectId: 'project-1',
+    baselineVersion: '0.1.0',
   );
 
   testWidgets(
@@ -621,6 +696,149 @@ void main() {
 
       expect(find.text('A story'), findsNothing);
       expect(find.text('An idea'), findsOneWidget);
+    },
+  );
+
+  // AIO-506: `TicketsCubit._runCodingExecution`'s `executionVerificationFailed`
+  // background failure used to leave the cubit wedged on the bare
+  // `TicketsError` it emitted for the one-shot toast, which this screen's
+  // body switch then rendered as a full-screen error+Retry — replacing the
+  // whole board for every ticket, not just the one that actually failed.
+  // `TicketsCubit._emitTransientError` fixes this at the cubit layer (see
+  // its own dartdoc and `tickets_cubit_test.dart`'s cubit-level coverage);
+  // this is the end-to-end confirmation that the fix actually reaches the
+  // widget — the board (and the failed Task's own card) is still rendered
+  // once the toast has fired. Passes whether or not `_currentTickets`'s own
+  // `_lastKnownTickets` defense-in-depth fallback (see its dartdoc) is kept.
+  testWidgets(
+    'a background executionVerificationFailed failure never blanks the '
+    'board underneath its one-shot toast',
+    (tester) async {
+      final task = Ticket(
+        id: 'aio506-task',
+        ticketId: 'AIO-501',
+        type: TicketType.task,
+        title: 'A lone task',
+        status: 'todo',
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+
+      when(
+        () => repository.searchTickets(
+          query: any(named: 'query'),
+          statuses: any(named: 'statuses'),
+          types: any(named: 'types'),
+          priorities: any(named: 'priorities'),
+          sort: any(named: 'sort'),
+          limit: any(named: 'limit'),
+          offset: any(named: 'offset'),
+          statusSortOrder: any(named: 'statusSortOrder'),
+        ),
+      ).thenAnswer(
+        (_) async => TicketSearchPage(tickets: [task], hasMore: false),
+      );
+
+      // `_createExecutionChat` mints its own chat with a fresh `_uuid.v4()`
+      // id — track whichever real Ticket its own `createTicket` call
+      // actually mints, mirroring the equivalent cubit-level regression
+      // test's own setup (`tickets_cubit_test.dart`), rather than
+      // hardcoding a placeholder id that can never match it.
+      Ticket? chat;
+      final chatComments = <TicketComment>[];
+      when(
+        () => repository.updateTicketStatus(task.id, 'inProgress'),
+      ).thenAnswer((_) async {});
+      // _interceptBlockedDependencyTrigger's own gate, checked before every
+      // executionTrigger-role status write — unrelated to this test, but
+      // required so it doesn't throw for want of a stub.
+      when(
+        () => linkRepository.getLinksForTicket(any()),
+      ).thenAnswer((_) async => []);
+      when(
+        () => repository.getTicketsByParent(
+          task.id,
+          types: const [TicketType.chat],
+        ),
+      ).thenAnswer((_) async => chat == null ? [] : [chat!]);
+      when(() => repository.createTicket(any())).thenAnswer((
+        invocation,
+      ) async {
+        final created = invocation.positionalArguments[0] as Ticket;
+        if (created.parentId == task.id) chat = created;
+      });
+      when(() => repository.getTicketById(any())).thenAnswer((
+        invocation,
+      ) async {
+        final id = invocation.positionalArguments[0] as String;
+        if (id == task.id) return task.copyWith(status: 'inProgress');
+        if (chat != null && id == chat!.id) return chat;
+        return null;
+      });
+      when(
+        () => commentRepository.getCommentsForTicket(any()),
+      ).thenAnswer((invocation) async {
+        final id = invocation.positionalArguments[0] as String;
+        return chat != null && id == chat!.id
+            ? List<TicketComment>.of(chatComments)
+            : [];
+      });
+      when(() => commentRepository.addComment(any())).thenAnswer((
+        invocation,
+      ) async {
+        final comment = invocation.positionalArguments[0] as TicketComment;
+        if (chat != null && comment.ticketId == chat!.id) {
+          chatComments.add(comment);
+        }
+      });
+      when(() => agentClient.run(any())).thenAnswer(
+        (_) async => Stream.fromIterable(const [
+          AgentTextEvent('VERIFICATION: FAILED — board regression check'),
+          AgentDoneEvent(),
+        ]),
+      );
+      when(
+        () => automationSettingsRepository.getConfidence(any()),
+      ).thenAnswer((_) async => AutomationConfidence.auto);
+      // `gated`: no automatic retry, immediate failure + the one-shot
+      // toast this test is actually about.
+      when(
+        () => automationSettingsRepository.getConfidence(
+          AutomationContext.codingExecutionRetry,
+        ),
+      ).thenAnswer((_) async => AutomationConfidence.gated);
+
+      final cubit = buildFullCubit();
+      await tester.pumpWidget(
+        _wrap(
+          ticketsCubit: cubit,
+          activeProjectProvider: activeProjectProvider,
+          baselineRepository: baselineRepository,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The board renders the Task before anything happens.
+      expect(find.text('A lone task'), findsOneWidget);
+
+      // The board-drag path: moves it to `inProgress`, which fires
+      // coding-execution in the background — its self-verify turn fails.
+      await cubit.updateTicketStatus(task.id, 'inProgress');
+      await tester.pumpAndSettle();
+
+      // The bug: this used to replace the whole board with a full-screen
+      // error and a Retry button. The fix: the board — and this Task's own
+      // card on it — is still there, untouched by the toast fired above.
+      expect(find.text('A lone task'), findsOneWidget);
+      expect(find.text('Retry'), findsNothing);
+
+      // Unlike `buildCubit()`, this constructs with `gitClient`/
+      // `gitHubClient`/`sourceRootPath` all set, which starts a
+      // `Timer.periodic` background merged-PR-cleanup check — closed
+      // explicitly (rather than via `addTearDown`, which the test
+      // framework's own pending-timer invariant check runs before) so it
+      // doesn't get flagged as a leaked timer.
+      await cubit.close();
     },
   );
 }

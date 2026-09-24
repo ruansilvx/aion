@@ -2676,9 +2676,11 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// the model's reply as its content, then links it to [epic] via
   /// [TicketLinkRepository.createLink] ([TicketLinkType.relatesTo]). A failure
   /// anywhere in this call — including an [AgentErrorEvent] — is caught and
-  /// emits `TicketsError(reason: TicketsErrorReason.specWriteFailed)`; the
-  /// Epic itself stays `archived` regardless (that write already persisted
-  /// several lines before this call starts — see [advanceSddStage]). The
+  /// surfaces a one-shot `TicketsErrorReason.specWriteFailed` toast via
+  /// [_emitTransientError], which restores whatever board/detail state was
+  /// showing rather than replacing it (see `AIO-506`); the Epic itself stays
+  /// `archived` regardless (that write already persisted several lines
+  /// before this call starts — see [advanceSddStage]). The
   /// fallback for a failed write is manually creating the missing spec ticket
   /// via the ordinary New Ticket flow, since [TicketType.spec] is generically
   /// creatable there. No-ops silently (no ticket created, no error emitted) if
@@ -2760,9 +2762,7 @@ class TicketsCubit extends Cubit<TicketsState> {
         linkType: TicketLinkType.relatesTo,
       );
     } catch (e) {
-      emit(
-        TicketsError(e.toString(), reason: TicketsErrorReason.specWriteFailed),
-      );
+      _emitTransientError(TicketsErrorReason.specWriteFailed);
     }
   }
 
@@ -2792,14 +2792,16 @@ class TicketsCubit extends Cubit<TicketsState> {
   /// guard) if this cubit was constructed without a
   /// [ProviderRegistry]/[TicketLinkRepository]/
   /// [GitRepositoryClient]/`sourceRootPath`, or if [releaseTicketId] doesn't
-  /// resolve to a live `release`-type ticket. On a model failure, emits
-  /// `TicketsError(reason: TicketsErrorReason.releasePreparationFailed)` and
-  /// returns `null` — the release ticket itself is untouched either way,
-  /// mirroring [_createEpicSpec]'s "the source ticket's own state never
-  /// depends on this call succeeding" behavior. Added for `AIO-1782`; see that
-  /// change's design.md §4.1, extended by the `/verify` round-1 fix-up's T15
-  /// to also resolve `releaseKey`/`targetBranch`, and by T22 to feed the
-  /// current version into the prompt.
+  /// resolve to a live `release`-type ticket. On a model failure, surfaces a
+  /// one-shot `TicketsErrorReason.releasePreparationFailed` toast via
+  /// [_emitTransientError] (restoring the release detail screen rather than
+  /// wedging on the error, per `AIO-506`) and returns `null` — the release
+  /// ticket itself is untouched either way, mirroring [_createEpicSpec]'s
+  /// "the source ticket's own state never depends on this call succeeding"
+  /// behavior. Added for `AIO-1782`; see that change's design.md §4.1,
+  /// extended by the `/verify` round-1 fix-up's T15 to also resolve
+  /// `releaseKey`/`targetBranch`, and by T22 to feed the current version
+  /// into the prompt.
   Future<ReleaseDraft?> prepareReleaseDraft(String releaseTicketId) async {
     final providerRegistry = _providerRegistry;
     final linkRepo = _linkRepository;
@@ -2904,25 +2906,17 @@ class TicketsCubit extends Cubit<TicketsState> {
         detectedVersionFile: detected,
       );
     } catch (e) {
-      emit(
-        TicketsError(
-          e.toString(),
-          reason: TicketsErrorReason.releasePreparationFailed,
-        ),
-      );
-      // Without this, the release ticket's own detail screen — the one
-      // the failure toast tells the user to retry from — is stuck
-      // rendering nothing: `TicketDetailScreen`'s body only renders for
-      // `TicketDetailLoaded`, and a bare `TicketsError` here is a dead
-      // end with no other emission to recover it. Confirmed live during
-      // this change's `/verify` round-1 T14 manual pass. Uses
-      // [_restoreDocumentTicketDetail] rather than the simpler
-      // [_emitTicketDetailIfFound] — `ReleaseSummarySection` reads
-      // [TicketDetailLoaded.linkedTickets], and that field isn't
-      // preserved by a bare re-emit (`TicketDetailScreen`'s own
-      // `loadDocumentRelations` trigger is guarded to fire only once per
-      // ticket id, so it wouldn't refill it on its own here).
-      await _restoreDocumentTicketDetail(releaseTicketId);
+      // _emitTransientError re-emits the exact pre-error `state` — the
+      // release ticket's already-loaded TicketDetailLoaded, linkedTickets
+      // included — synchronously, so the detail screen never goes blank
+      // even for a frame. This supersedes the previous fix-up here (an
+      // async `_restoreDocumentTicketDetail` re-fetch, kept only for
+      // `AIO-1782`'s "detail screen stuck rendering nothing" symptom): that
+      // approach re-emitted a bare `TicketDetailLoaded(ticket)` before its
+      // own `loadDocumentRelations` refilled `linkedTickets`, which is the
+      // same kind of transient wedge `AIO-506` fixes generally — see
+      // [_emitTransientError]'s dartdoc.
+      _emitTransientError(TicketsErrorReason.releasePreparationFailed);
       return null;
     }
   }
@@ -4648,6 +4642,32 @@ PROMOTION: NOT YET
     return false;
   }
 
+  /// Surfaces a transient, app-wide classified error — one of the
+  /// toast-only [TicketsErrorReason]s raised from background async work
+  /// (coding execution, SDD-stage advance, spec/release synthesis) —
+  /// without wedging the shared [TicketsState] channel: emits
+  /// `TicketsError('', reason: reason)` so `WorkspaceNavShell`'s
+  /// `BlocListener` fires its one-shot `AppToast` on the transition, then
+  /// immediately re-emits the pre-error [state] so whatever the Tickets
+  /// board/detail screen was already showing is never replaced. Mirrors the
+  /// snapshot-and-restore idiom [_interceptTaskExecutionTrigger] /
+  /// [_interceptBlockedDependencyTrigger] already use for action-rejection
+  /// reasons, generalized here for reasons emitted mid-background-task
+  /// rather than synchronously inside a user-action handler. The two emits
+  /// are synchronous with no `await` between them, so no frame ever paints
+  /// the intermediate [TicketsError] and concurrent background failures
+  /// can't interleave mid-pair. Fixes `AIO-506` (the reported wedge from
+  /// [TicketsErrorReason.executionVerificationFailed]) and the same latent
+  /// wedge for [TicketsErrorReason.executionBudgetOverageDetected],
+  /// [TicketsErrorReason.sddStageAdvanceFailed],
+  /// [TicketsErrorReason.specWriteFailed], and
+  /// [TicketsErrorReason.releasePreparationFailed].
+  void _emitTransientError(TicketsErrorReason reason) {
+    final previous = state;
+    emit(TicketsError('', reason: reason));
+    emit(previous);
+  }
+
   /// Coding-execution triggers awaiting a human decision, keyed by ticket
   /// id — each entry's fire action is `() => _triggerOrQueueCodingExecution
   /// (task)` for that exact ticket. Mirrors [_pendingIdeaPromotions]'s shape
@@ -5688,6 +5708,13 @@ PROMOTION: NOT YET
   /// run against the same project starts warm. A failed install is not fatal
   /// to the run; see the inline comment at that call site. Added for
   /// `AIO-722`.
+  ///
+  /// The two toast-only failures raised mid-run —
+  /// `onConsumptionSignal`'s [TicketsErrorReason.executionBudgetOverageDetected]
+  /// and, on exhausted retries, [TicketsErrorReason.executionVerificationFailed]
+  /// — go through [_emitTransientError] rather than a bare `emit`, so the
+  /// one-shot toast fires without ever wedging the Tickets board or whatever
+  /// detail screen was already on screen. Fixed for `AIO-506`.
   Future<void> _runCodingExecution(Ticket task) async {
     final providerRegistry = _providerRegistry;
     final commentRepo = _commentRepository;
@@ -5816,11 +5843,8 @@ PROMOTION: NOT YET
       void onConsumptionSignal(ConsumptionSignal _) {
         if (!_overageDetectedThisSession) {
           _overageDetectedThisSession = true;
-          emit(
-            const TicketsError(
-              '',
-              reason: TicketsErrorReason.executionBudgetOverageDetected,
-            ),
+          _emitTransientError(
+            TicketsErrorReason.executionBudgetOverageDetected,
           );
         }
       }
@@ -6107,12 +6131,7 @@ PROMOTION: NOT YET
         // forced to gated above, and a decision-graph `gated` outcome)
         // gets the one-shot toast too.
         if (showRetryFailureToast) {
-          emit(
-            const TicketsError(
-              '',
-              reason: TicketsErrorReason.executionVerificationFailed,
-            ),
-          );
+          _emitTransientError(TicketsErrorReason.executionVerificationFailed);
         }
         await _recordNotification(
           ticketId: task.id,
@@ -7735,9 +7754,11 @@ PROMOTION: NOT YET
   /// `unawaited`, so nothing else would ever observe it — is caught, posts a
   /// `"Stage advance failed: <e>"` system comment (mirrors
   /// [_runCodingExecution]'s own `"Execution failed: ..."` catch-comment
-  /// shape) and emits [TicketsErrorReason.sddStageAdvanceFailed] so the
-  /// failure surfaces in the chat transcript and as a one-shot toast instead
-  /// of silently vanishing into a discarded `unawaited` future. On completion
+  /// shape) and surfaces [TicketsErrorReason.sddStageAdvanceFailed] via
+  /// [_emitTransientError] so the failure shows in the chat transcript and
+  /// as a one-shot toast — without wedging the board/detail screen already
+  /// on screen (`AIO-506`) — instead of silently vanishing into a discarded
+  /// `unawaited` future. On completion
   /// (success or failure), removes both [parent]'s id and [chatId] from
   /// [_inFlightStageAdvanceIds] and calls [_refreshInFlightBoardState]. When
   /// `stage == SddStage.proposed` and the turn succeeds, also reads [chatId]'s
@@ -7933,12 +7954,7 @@ PROMOTION: NOT YET
           createdAt: DateTime.now(),
         ),
       );
-      emit(
-        const TicketsError(
-          '',
-          reason: TicketsErrorReason.sddStageAdvanceFailed,
-        ),
-      );
+      _emitTransientError(TicketsErrorReason.sddStageAdvanceFailed);
     } finally {
       if (worktreePath != null) {
         final gitClient = _gitClient;

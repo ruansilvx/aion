@@ -8212,6 +8212,165 @@ void main() {
         );
       },
     );
+
+    // AIO-506: a `specWriteFailed` background failure used to leave the
+    // cubit wedged on the bare `TicketsError` it emitted for the one-shot
+    // toast — replacing whatever the Epic's own just-archived detail
+    // screen was showing. `_emitTransientError` fixes this by atomically
+    // restoring the pre-error state right after the toast-triggering emit.
+    blocTest<TicketsCubit, TicketsState>(
+      "an Epic's spec-write failure fires a one-shot specWriteFailed toast "
+      "but never wedges the Epic's own archived detail screen",
+      setUp: () {
+        final archivedEpic = Ticket(
+          id: epicVerifying.id,
+          ticketId: epicVerifying.ticketId,
+          type: epicVerifying.type,
+          title: epicVerifying.title,
+          status: epicVerifying.status,
+          sddStage: SddStage.archived,
+          createdAt: epicVerifying.createdAt,
+          updatedAt: epicVerifying.updatedAt,
+        );
+        when(
+          () => repository.getTicketById(epicVerifying.id),
+        ).thenAnswer((_) async => archivedEpic);
+        when(
+          () => repository.getTicketsByParent(
+            epicVerifying.id,
+            types: const [TicketType.story],
+          ),
+        ).thenAnswer((_) async => [storyVerifying]);
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async =>
+              Stream.fromIterable(const [AgentErrorEvent('Model unavailable')]),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.advanceSddStage(epicVerifying),
+      wait: const Duration(milliseconds: 50),
+      expect: () => [
+        isA<TicketDetailLoaded>().having(
+          (s) => s.ticket.sddStage,
+          'sddStage',
+          SddStage.archived,
+        ),
+        const TicketsError('', reason: TicketsErrorReason.specWriteFailed),
+        // _emitTransientError's atomic restore (AIO-506) — the exact
+        // pre-error state (the just-archived Epic's own detail screen).
+        isA<TicketDetailLoaded>().having(
+          (s) => s.ticket.sddStage,
+          'sddStage',
+          SddStage.archived,
+        ),
+      ],
+      verify: (_) {
+        verifyNever(() => repository.createTicket(any()));
+      },
+    );
+  });
+
+  group('prepareReleaseDraft (AIO-1782 / AIO-506)', () {
+    late MockAgentModelClient agentClient;
+    late MockProviderRegistry registry;
+    late MockTicketLinkRepository linkRepository;
+    late MockGitRepositoryClient gitClient;
+
+    setUp(() {
+      agentClient = MockAgentModelClient();
+      registry = buildProviderStack(agentClient).registry;
+      linkRepository = MockTicketLinkRepository();
+      gitClient = MockGitRepositoryClient();
+      when(
+        () => linkRepository.getLinksForTicket(releaseTicket.id),
+      ).thenAnswer((_) async => []);
+      when(
+        () => gitClient.defaultBranch(any()),
+      ).thenAnswer((_) async => 'main');
+      when(
+        () => repository.getTicketById(releaseTicket.id),
+      ).thenAnswer((_) async => releaseTicket);
+    });
+
+    TicketsCubit buildCubit() => TicketsCubit(
+      repository,
+      providerRegistry: registry,
+      linkRepository: linkRepository,
+      sourceRootPath: '/fake/project/root',
+      gitClient: gitClient,
+    );
+
+    test(
+      'returns a ReleaseDraft carrying the model changelog + suggested '
+      'version on success, without emitting any TicketsState',
+      () async {
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent('- Fixed a bug.\n\nVERSION: 1.2.3'),
+            AgentDoneEvent(),
+          ]),
+        );
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+        final draft = await cubit.prepareReleaseDraft(releaseTicket.id);
+        expect(draft, isNotNull);
+        expect(draft!.changelogMarkdown, contains('Fixed a bug.'));
+        expect(draft.suggestedVersion, '1.2.3');
+        expect(draft.releaseTicketId, releaseTicket.id);
+        expect(draft.targetBranch, 'main');
+      },
+    );
+
+    // AIO-506: a model failure inside prepareReleaseDraft used to leave the
+    // cubit wedged on the bare `releasePreparationFailed` TicketsError it
+    // emitted for the one-shot toast, replacing whatever the release
+    // ticket's own detail screen was showing underneath — the exact class
+    // of bug the reported ticket describes for `executionVerificationFailed`.
+    // `_emitTransientError` fixes this by atomically restoring the
+    // pre-error state, superseding this call site's own previous ad hoc
+    // fix-up (an async `_restoreDocumentTicketDetail` re-fetch — see that
+    // call site's own updated comment).
+    test(
+      'a model failure fires a one-shot releasePreparationFailed toast and '
+      "restores the release ticket's own detail screen rather than "
+      'wedging on TicketsError',
+      () async {
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async =>
+              Stream.fromIterable(const [AgentErrorEvent('Model unavailable')]),
+        );
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+        // The release ticket's own detail screen is open when the draft is
+        // requested — the realistic trigger context (a button on that
+        // screen).
+        await cubit.getTicketById(releaseTicket.id);
+        expect(cubit.state, isA<TicketDetailLoaded>());
+
+        final states = <TicketsState>[];
+        final sub = cubit.stream.listen(states.add);
+        addTearDown(sub.cancel);
+
+        final draft = await cubit.prepareReleaseDraft(releaseTicket.id);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(draft, isNull);
+        expect(states, [
+          const TicketsError(
+            '',
+            reason: TicketsErrorReason.releasePreparationFailed,
+          ),
+          // _emitTransientError's atomic restore (AIO-506) — the exact
+          // pre-error state re-emitted so the toast fires without wedging.
+          isA<TicketDetailLoaded>().having(
+            (s) => s.ticket.id,
+            'ticket.id',
+            releaseTicket.id,
+          ),
+        ]);
+        expect(cubit.state, isA<TicketDetailLoaded>());
+      },
+    );
   });
 
   group('advanceSddStage — design gate (designBrief/designSync)', () {
@@ -9353,11 +9512,22 @@ void main() {
           '',
           reason: TicketsErrorReason.sddStageAdvanceFailed,
         ),
+        // _emitTransientError's atomic restore (AIO-506) — the exact
+        // pre-error state re-emitted so the toast fires without wedging the
+        // detail screen that was already showing.
+        isA<TicketDetailLoaded>().having(
+          (s) => s.isAdvancingStage,
+          'isAdvancingStage',
+          true,
+        ),
         // _runStageChatTurn's post-finally refresh (this Epic's detail
         // screen was open when the turn started) — see that method's own
         // dartdoc for why neither the success nor the failure path above
-        // otherwise re-emits.
-        const TicketsLoading(),
+        // otherwise re-emits. No separate TicketsLoading() here (unlike
+        // before AIO-506): getTicketById's own "skip TicketsLoading when
+        // re-entering for the ticket already shown" short-circuit now
+        // applies, since the restore just above already left `state` on
+        // TicketDetailLoaded for this exact Epic.
         isA<TicketDetailLoaded>()
             .having((s) => s.isAdvancingStage, 'isAdvancingStage', false)
             .having(
@@ -12329,7 +12499,24 @@ void main() {
           '',
           reason: TicketsErrorReason.executionBudgetOverageDetected,
         ),
-        const TicketsLoading(),
+        // _emitTransientError's atomic restore (AIO-506) — the exact
+        // pre-error state re-emitted so the toast fires without wedging.
+        TicketDetailLoaded(
+          taskUnderStory.copyWith(status: 'inProgress'),
+          isExecuting: true,
+        ),
+        // The post-run refresh (_refreshTaskDetailIfShowing/getTicketById)
+        // — genuinely two emissions, not one: no separate TicketsLoading()
+        // here (unlike before AIO-506, since getTicketById's own "skip
+        // TicketsLoading when re-entering for the ticket already shown"
+        // short-circuit now applies — the restore just above already left
+        // `state` on TicketDetailLoaded for this exact Task), but the bare
+        // re-fetched Task (isExecuting/executionAwaitingReview not yet
+        // recomputed) is still its own distinct emission before the
+        // fully-recomputed one right after.
+        TicketDetailLoaded(
+          taskUnderStory.copyWith(status: 'inProgress'),
+        ),
         // The forced-`gated` override applies here too (not just to the
         // skipped auto-flip above) — the ready-for-review banner must
         // still surface even though the configured confidence is `auto`.
@@ -12854,6 +13041,173 @@ void main() {
             otherTask.copyWith(status: 'inProgress'),
           ),
         ],
+      );
+
+      // AIO-506: `_runCodingExecution`'s `executionVerificationFailed`
+      // background failure used to leave `TicketsCubit` wedged on the bare
+      // `TicketsError` it emitted for the toast — replacing the entire
+      // Tickets board with a full-screen error rather than scoping the
+      // failure to the one ticket. `_emitTransientError` fixes this by
+      // atomically restoring whatever state was showing right after the
+      // toast-triggering emit. This test drives *two* Tasks through that
+      // exact failure concurrently from a loaded board — the repro's own
+      // concurrency shape — and asserts the board survives both. The
+      // trigger is `updateTicketStatus` (the board-drag path), whose own
+      // successful terminal state is `TicketStatusUpdated`, not
+      // `TicketsLoaded` — `_emitTransientError` restoring back to exactly
+      // that (rather than replacing it with `TicketsError`) is what "the
+      // board survives" means here.
+      test(
+        'two concurrent Tasks that both fail verification from a loaded '
+        'board each fire their own toast and the cubit settles back on the '
+        'board, never wedged on TicketsError (AIO-506)',
+        () async {
+          // `_createExecutionChat` mints its own chat with a fresh
+          // `_uuid.v4()` id — a fixed placeholder chat id (as the sibling
+          // "queued Task" test above uses, for a scenario that never reads
+          // the chat's own content back) can't stand in for it here, since
+          // this test's whole point is the *verify-turn's* content, which
+          // is read back from `getCommentsForTicket` by that same
+          // never-predictable id. Track whichever real Ticket each Task's
+          // `createTicket` call actually mints instead, and resolve every
+          // other stub off of it.
+          Ticket? chat1;
+          Ticket? chat2;
+          final chat1Comments = <TicketComment>[];
+          final chat2Comments = <TicketComment>[];
+          when(
+            () => repository.updateTicketStatus(taskNoStory.id, 'inProgress'),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.updateTicketStatus(otherTask.id, 'inProgress'),
+          ).thenAnswer((_) async {});
+          when(
+            () => repository.getTicketsByParent(
+              taskNoStory.id,
+              types: const [TicketType.chat],
+            ),
+          ).thenAnswer((_) async => chat1 == null ? [] : [chat1!]);
+          when(
+            () => repository.getTicketsByParent(
+              otherTask.id,
+              types: const [TicketType.chat],
+            ),
+          ).thenAnswer((_) async => chat2 == null ? [] : [chat2!]);
+          when(() => repository.createTicket(any())).thenAnswer((
+            invocation,
+          ) async {
+            final created = invocation.positionalArguments[0] as Ticket;
+            if (created.parentId == taskNoStory.id) chat1 = created;
+            if (created.parentId == otherTask.id) chat2 = created;
+          });
+          when(() => repository.getTicketById(any())).thenAnswer((
+            invocation,
+          ) async {
+            final id = invocation.positionalArguments[0] as String;
+            if (id == taskNoStory.id) {
+              return taskNoStory.copyWith(status: 'inProgress');
+            }
+            if (id == otherTask.id) {
+              return otherTask.copyWith(status: 'inProgress');
+            }
+            if (chat1 != null && id == chat1!.id) return chat1;
+            if (chat2 != null && id == chat2!.id) return chat2;
+            return null;
+          });
+          when(
+            () => repository.searchTickets(
+              query: any(named: 'query'),
+              statuses: any(named: 'statuses'),
+              types: any(named: 'types'),
+              priorities: any(named: 'priorities'),
+              sort: any(named: 'sort'),
+              limit: any(named: 'limit'),
+              statusSortOrder: any(named: 'statusSortOrder'),
+            ),
+          ).thenAnswer(
+            (_) async => TicketSearchPage(
+              tickets: [taskNoStory, otherTask],
+              hasMore: false,
+            ),
+          );
+          // Not two separate `stubStatefulComments` calls — that helper
+          // registers its own blanket `addComment(any())` stub each time it
+          // runs, and the second call's registration would silently replace
+          // the first's, dropping every comment `_runCodingExecution` posts
+          // for task1's own chat. One shared handler routes each posted
+          // comment to whichever of chat1/chat2 it actually belongs to,
+          // resolved dynamically since neither chat's real id is known
+          // until its own `createTicket` call above has run.
+          when(() => commentRepository.getCommentsForTicket(any())).thenAnswer((
+            invocation,
+          ) async {
+            final id = invocation.positionalArguments[0] as String;
+            if (chat1 != null && id == chat1!.id) {
+              return List<TicketComment>.of(chat1Comments);
+            }
+            if (chat2 != null && id == chat2!.id) {
+              return List<TicketComment>.of(chat2Comments);
+            }
+            return [];
+          });
+          when(() => commentRepository.addComment(any())).thenAnswer((
+            invocation,
+          ) async {
+            final comment = invocation.positionalArguments[0] as TicketComment;
+            if (chat1 != null && comment.ticketId == chat1!.id) {
+              chat1Comments.add(comment);
+            } else if (chat2 != null && comment.ticketId == chat2!.id) {
+              chat2Comments.add(comment);
+            }
+          });
+          // Both Tasks' self-verify turns fail, and `codingExecutionRetry`
+          // is forced `gated` below — no retry, immediate failure + toast
+          // for each, matching the single-Task "gated confidence stops
+          // after the first verify failure" test elsewhere in this file.
+          when(() => agentClient.run(any())).thenAnswer(
+            (_) async => Stream.fromIterable(const [
+              AgentTextEvent('VERIFICATION: FAILED — both tasks fail'),
+              AgentDoneEvent(),
+            ]),
+          );
+          when(
+            () => automationSettingsRepository.getConfidence(
+              AutomationContext.codingExecutionRetry,
+            ),
+          ).thenAnswer((_) async => AutomationConfidence.gated);
+
+          final cubit = buildFullCubit();
+          addTearDown(cubit.close);
+
+          await cubit.searchTickets();
+          expect(cubit.state, isA<TicketsLoaded>());
+
+          final states = <TicketsState>[];
+          final sub = cubit.stream.listen(states.add);
+          addTearDown(sub.cancel);
+
+          await cubit.updateTicketStatus(taskNoStory.id, 'inProgress');
+          await cubit.updateTicketStatus(otherTask.id, 'inProgress');
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+
+          // Each failure fired its own one-shot toast ...
+          final toastCount = states
+              .whereType<TicketsError>()
+              .where(
+                (s) =>
+                    s.reason == TicketsErrorReason.executionVerificationFailed,
+              )
+              .length;
+          expect(toastCount, 2);
+          // ... but the board itself is never left showing that error —
+          // this is the exact bug: before the fix, the second (or first,
+          // depending on interleaving) toast's `TicketsError` was the last
+          // emission observed, replacing the whole board. `TicketStatusUpdated`
+          // (not `TicketsLoaded`) is the correct settled state here — it's
+          // `updateTicketStatus`'s own normal terminal state for a
+          // successful board-drag write, unrelated to this fix.
+          expect(cubit.state, isA<TicketStatusUpdated>());
+        },
       );
     },
   );
@@ -13580,10 +13934,27 @@ void main() {
             '',
             reason: TicketsErrorReason.executionVerificationFailed,
           ),
-          const TicketsLoading(),
-          // The post-run refresh — `getCommentsForTicket` now genuinely
-          // reflects the failure comment `_runCodingExecution` posted
-          // (see `stubStatefulComments`), so it's echoed verbatim here.
+          // _emitTransientError's atomic restore (AIO-506) — the exact
+          // pre-error state re-emitted so the toast fires without wedging.
+          TicketDetailLoaded(
+            taskNoStory.copyWith(status: 'inProgress'),
+            isExecuting: true,
+          ),
+          // The post-run refresh (_refreshTaskDetailIfShowing/getTicketById)
+          // — genuinely two emissions, not one: no separate TicketsLoading()
+          // here (unlike before AIO-506, since getTicketById's own "skip
+          // TicketsLoading when re-entering for the ticket already shown"
+          // short-circuit now applies — the restore just above already left
+          // `state` on TicketDetailLoaded for this exact Task), but the
+          // bare re-fetched Task (isExecuting/executionFailureReason not
+          // yet recomputed) is still its own distinct emission before the
+          // fully-recomputed one right after.
+          TicketDetailLoaded(
+            taskNoStory.copyWith(status: 'inProgress'),
+          ),
+          // `getCommentsForTicket` now genuinely reflects the failure
+          // comment `_runCodingExecution` posted (see
+          // `stubStatefulComments`), so it's echoed verbatim here.
           // executionTokenTotal is 0, not null — both the implement and
           // verify turns completed (each with a bare AgentDoneEvent()
           // reporting no usage) before the verify reply was found to
