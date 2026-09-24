@@ -13,6 +13,7 @@ import 'package:aion/core/automation/automation_context.dart';
 import 'package:aion/core/automation/automation_settings_repository.dart';
 import 'package:aion/core/automation/decision_graph.dart';
 import 'package:aion/core/automation/decision_graph_repository.dart';
+import 'package:aion/core/automation/decision_log_service.dart';
 import 'package:aion/core/automation/decision_node.dart';
 import 'package:aion/core/automation/decision_outcome.dart';
 import 'package:aion/core/build/dependency_cache_service.dart';
@@ -108,6 +109,8 @@ class MockNotificationRepository extends Mock
 
 class MockDecisionGraphRepository extends Mock
     implements DecisionGraphRepository {}
+
+class MockDecisionLogService extends Mock implements DecisionLogService {}
 
 /// In-memory [TransitionPreconditionRepository] fake, pre-seeded (at
 /// construction) with the exact baseline graphs
@@ -19560,14 +19563,28 @@ void main() {
 
   group('execution-trigger confirm gate (AIO-2885)', () {
     late MockAutomationSettingsRepository automationSettingsRepository;
+    late MockDecisionLogService decisionLogService;
 
     setUp(() {
       automationSettingsRepository = MockAutomationSettingsRepository();
+      decisionLogService = MockDecisionLogService();
+      when(
+        () => decisionLogService.record(
+          ticketId: any(named: 'ticketId'),
+          source: any(named: 'source'),
+          sourceDetail: any(named: 'sourceDetail'),
+          confidence: any(named: 'confidence'),
+          outcome: any(named: 'outcome'),
+          gateResult: any(named: 'gateResult'),
+          detail: any(named: 'detail'),
+        ),
+      ).thenAnswer((_) async {});
     });
 
     TicketsCubit buildCubit() => TicketsCubit(
       repository,
       automationSettingsRepository: automationSettingsRepository,
+      decisionLogService: decisionLogService,
     );
 
     blocTest<TicketsCubit, TicketsState>(
@@ -19722,6 +19739,155 @@ void main() {
         }
       }
     });
+
+    // Decision-log coverage for this gate's own four `_decisionLogService
+    // .record` call sites (`AIO-2989` plumbed the field/call sites in but
+    // added no assertions of its own — added here directly, alongside the
+    // `app_router.dart` DI wiring fix that made `_decisionLogService`
+    // non-null in the real app for the first time).
+    blocTest<TicketsCubit, TicketsState>(
+      'gated confidence records a "pending" decision-log entry',
+      setUp: () {
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecutionTrigger,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.gated);
+        when(
+          () => repository.updateTicketStatus(taskNoStory.id, 'inProgress'),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(taskNoStory.id),
+        ).thenAnswer((_) async => taskNoStory.copyWith(status: 'inProgress'));
+      },
+      build: buildCubit,
+      act: (cubit) => cubit.changeTicketStatus(taskNoStory, 'inProgress'),
+      wait: const Duration(milliseconds: 20),
+      verify: (_) {
+        verify(
+          () => decisionLogService.record(
+            ticketId: taskNoStory.id,
+            source: AutomationContext.codingExecutionTrigger.name,
+            sourceDetail: any(named: 'sourceDetail'),
+            confidence: AutomationConfidence.gated.name,
+            outcome: any(named: 'outcome'),
+            gateResult: 'pending',
+            detail: any(named: 'detail'),
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'confirmPendingExecutionTrigger records a "confirmed" decision-log '
+      'entry',
+      setUp: () {
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecutionTrigger,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.gated);
+        when(
+          () => repository.updateTicketStatus(taskNoStory.id, 'inProgress'),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(taskNoStory.id),
+        ).thenAnswer((_) async => taskNoStory.copyWith(status: 'inProgress'));
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        await cubit.changeTicketStatus(taskNoStory, 'inProgress');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.confirmPendingExecutionTrigger(taskNoStory.id);
+      },
+      wait: const Duration(milliseconds: 20),
+      verify: (_) {
+        verify(
+          () => decisionLogService.record(
+            ticketId: taskNoStory.id,
+            source: AutomationContext.codingExecutionTrigger.name,
+            sourceDetail: any(named: 'sourceDetail'),
+            confidence: any(named: 'confidence'),
+            outcome: any(named: 'outcome'),
+            gateResult: 'confirmed',
+            detail: any(named: 'detail'),
+          ),
+        ).called(1);
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'rejectPendingExecutionTrigger records a "rejected" decision-log '
+      'entry',
+      setUp: () {
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecutionTrigger,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.gated);
+        when(
+          () => repository.updateTicketStatus(taskNoStory.id, 'inProgress'),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(taskNoStory.id),
+        ).thenAnswer((_) async => taskNoStory.copyWith(status: 'inProgress'));
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        await cubit.changeTicketStatus(taskNoStory, 'inProgress');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        cubit.rejectPendingExecutionTrigger(taskNoStory.id);
+      },
+      wait: const Duration(milliseconds: 20),
+      verify: (_) {
+        verify(
+          () => decisionLogService.record(
+            ticketId: taskNoStory.id,
+            source: AutomationContext.codingExecutionTrigger.name,
+            sourceDetail: any(named: 'sourceDetail'),
+            confidence: any(named: 'confidence'),
+            outcome: any(named: 'outcome'),
+            gateResult: 'rejected',
+            detail: any(named: 'detail'),
+          ),
+        ).called(1);
+      },
+    );
+
+    test(
+      'auto confidence records a "fired" decision-log entry',
+      () async {
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecutionTrigger,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.auto);
+        when(
+          () => repository.updateTicketStatus(taskNoStory.id, 'inProgress'),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(taskNoStory.id),
+        ).thenAnswer((_) async => taskNoStory.copyWith(status: 'inProgress'));
+
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+
+        await cubit.changeTicketStatus(taskNoStory, 'inProgress');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        verify(
+          () => decisionLogService.record(
+            ticketId: taskNoStory.id,
+            source: AutomationContext.codingExecutionTrigger.name,
+            sourceDetail: any(named: 'sourceDetail'),
+            confidence: AutomationConfidence.auto.name,
+            outcome: any(named: 'outcome'),
+            gateResult: 'fired',
+            detail: any(named: 'detail'),
+          ),
+        ).called(1);
+      },
+    );
   });
 
   group('detailTick', () {

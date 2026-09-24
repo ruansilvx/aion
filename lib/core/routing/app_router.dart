@@ -11,6 +11,7 @@ import 'package:aion/core/automation/automation_context.dart';
 import 'package:aion/core/automation/automation_settings_repository.dart';
 import 'package:aion/core/automation/data/drift_decision_graph_repository.dart';
 import 'package:aion/core/automation/decision_graph_repository.dart';
+import 'package:aion/core/automation/decision_log_service.dart';
 import 'package:aion/core/contracts/active_project_provider.dart';
 import 'package:aion/core/contracts/embedding_provider.dart';
 import 'package:aion/core/contracts/page_ticket_provider.dart';
@@ -714,6 +715,15 @@ class _WorkspaceShellState extends State<WorkspaceShell>
         RepositoryProvider<DecisionGraphRepository>(
           create: (_) => DriftDecisionGraphRepository(_database),
         ),
+        // Non-throwing decision-log writer for every AutomationContext-gated
+        // decision `TicketsCubit` makes — same per-project Drift-backed
+        // `_database` shape as DecisionGraphRepository above. This is the
+        // one real construction site `_decisionLogService`'s own dartdoc
+        // refers to; every other `TicketsCubit` construction (tests) leaves
+        // it `null`, making decision logging a no-op there. See AIO-2947 §1.
+        RepositoryProvider<DecisionLogService>(
+          create: (_) => DecisionLogService(_database),
+        ),
         // Project-scoped transition-precondition configuration — same
         // Drift-backed shape as DecisionGraphRepository above. See AIO-1936
         // §2.
@@ -853,6 +863,7 @@ class _WorkspaceShellState extends State<WorkspaceShell>
                           const MechanicalVerificationRunner(),
                       decisionGraphRepository: context
                           .read<DecisionGraphRepository>(),
+                      decisionLogService: context.read<DecisionLogService>(),
                       transitionPreconditionRepository: context
                           .read<TransitionPreconditionRepository>(),
                     )
