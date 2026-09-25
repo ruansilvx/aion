@@ -9368,6 +9368,12 @@ PROMOTION: NOT YET
     final pending = _pendingProposals.remove(chatId);
     if (pending == null) return;
     final (:proposal, :completer, :onConfirm, :source, :confidence) = pending;
+    await _decisionLogService?.record(
+      ticketId: chatId,
+      source: source.name,
+      confidence: confidence.name,
+      gateResult: 'confirmed',
+    );
     final result = await onConfirm();
     completer.complete(result);
     final chat = await _repository.getTicketById(chatId);
@@ -9384,10 +9390,14 @@ PROMOTION: NOT YET
   Future<void> rejectPendingToolProposal(String chatId) async {
     final pending = _pendingProposals.remove(chatId);
     if (pending == null) return;
-    pending.completer.complete({
-      'accepted': false,
-      'reason': 'Declined by user.',
-    });
+    final (:proposal, :completer, :onConfirm, :source, :confidence) = pending;
+    await _decisionLogService?.record(
+      ticketId: chatId,
+      source: source.name,
+      confidence: confidence.name,
+      gateResult: 'rejected',
+    );
+    completer.complete({'accepted': false, 'reason': 'Declined by user.'});
     final chat = await _repository.getTicketById(chatId);
     if (chat != null) emit(TicketDetailLoaded(chat));
   }
