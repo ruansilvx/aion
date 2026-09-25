@@ -8690,19 +8690,28 @@ PROMOTION: NOT YET
   // gated by AutomationContext.chatBranching. See AIO-1118 §6.
   // ---------------------------------------------------------------------
 
-  /// Pending `branch_ticket`/`close_branch` proposals awaiting user
-  /// confirmation (`AutomationConfidence.gated`), keyed by the chat ticket id
-  /// whose turn is paused. Each entry pairs the [PendingToolProposal] shown by
-  /// [TicketDetailLoaded.pendingToolProposal] with the [Completer]
-  /// [AgentRequest.onToolCall] is awaiting and the action to run on confirm.
-  /// Cleared by [confirmPendingToolProposal]/[rejectPendingToolProposal].
-  /// Added for `AIO-1118`; see its linked Documentation page, §6.
+  /// Pending `branch_ticket`/`close_branch`/`create_ticket`/`add_link`
+  /// proposals awaiting user confirmation (`AutomationConfidence.gated`),
+  /// keyed by the chat ticket id whose turn is paused. Each entry pairs the
+  /// [PendingToolProposal] shown by [TicketDetailLoaded.pendingToolProposal]
+  /// with the [Completer] [AgentRequest.onToolCall] is awaiting and the
+  /// action to run on confirm. [source]/[confidence] carry the resolving
+  /// call site's own [AutomationContext] and the [AutomationConfidence] that
+  /// led to gating (`gated` direct, or `auto` when the decision graph itself
+  /// resolved `gated`) — since [confirmPendingToolProposal]/
+  /// [rejectPendingToolProposal] are shared across every context, they
+  /// cannot otherwise tell which context/tier a given pending entry came
+  /// from when logging the eventual `confirmed`/`rejected` decision. Added
+  /// for `AIO-1118`; see its linked Documentation page, §6. `source`/
+  /// `confidence` added for `AIO-3019`.
   final Map<
     String,
     ({
       PendingToolProposal proposal,
       Completer<Map<String, dynamic>> completer,
       Future<Map<String, dynamic>> Function() onConfirm,
+      AutomationContext source,
+      AutomationConfidence confidence,
     })
   >
   _pendingProposals = {};
@@ -8894,18 +8903,25 @@ PROMOTION: NOT YET
   /// contract (see proposal.md's Non-goals). [onConfirm] runs only if the user
   /// confirms, and its result becomes the resolved map; a reject resolves with
   /// a fixed decline map instead — see
-  /// [confirmPendingToolProposal]/[rejectPendingToolProposal]. Added for
-  /// `AIO-1118`; see its linked Documentation page, §6.
+  /// [confirmPendingToolProposal]/[rejectPendingToolProposal]. [source]/
+  /// [confidence] are stored on the [_pendingProposals] entry for those two
+  /// methods to log with — see that field's dartdoc. Added for `AIO-1118`;
+  /// see its linked Documentation page, §6. `source`/`confidence` added for
+  /// `AIO-3019`.
   Future<Map<String, dynamic>> _awaitProposalConfirmation(
     Ticket chat,
     PendingToolProposal proposal, {
     required Future<Map<String, dynamic>> Function() onConfirm,
+    required AutomationContext source,
+    required AutomationConfidence confidence,
   }) {
     final completer = Completer<Map<String, dynamic>>();
     _pendingProposals[chat.id] = (
       proposal: proposal,
       completer: completer,
       onConfirm: onConfirm,
+      source: source,
+      confidence: confidence,
     );
     emit(TicketDetailLoaded(chat, pendingToolProposal: proposal));
     return completer.future;
@@ -8979,6 +8995,8 @@ PROMOTION: NOT YET
             chat,
             PendingToolProposal.branch(title: title, description: description),
             onConfirm: branch,
+            source: AutomationContext.chatBranching,
+            confidence: confidence,
           ),
           DecisionOutcome.proceed || DecisionOutcome.modelJudgment => branch(),
         };
@@ -8994,6 +9012,8 @@ PROMOTION: NOT YET
           chat,
           PendingToolProposal.branch(title: title, description: description),
           onConfirm: branch,
+          source: AutomationContext.chatBranching,
+          confidence: confidence,
         );
     }
   }
@@ -9065,6 +9085,8 @@ PROMOTION: NOT YET
             chat,
             PendingToolProposal.close(summary: summary),
             onConfirm: close,
+            source: AutomationContext.chatBranching,
+            confidence: confidence,
           ),
           DecisionOutcome.proceed || DecisionOutcome.modelJudgment => close(),
         };
@@ -9080,6 +9102,8 @@ PROMOTION: NOT YET
           chat,
           PendingToolProposal.close(summary: summary),
           onConfirm: close,
+          source: AutomationContext.chatBranching,
+          confidence: confidence,
         );
     }
   }
@@ -9175,6 +9199,8 @@ PROMOTION: NOT YET
               description: description,
             ),
             onConfirm: create,
+            source: AutomationContext.ticketCreation,
+            confidence: confidence,
           ),
           DecisionOutcome.proceed || DecisionOutcome.modelJudgment => create(),
         };
@@ -9194,6 +9220,8 @@ PROMOTION: NOT YET
             description: description,
           ),
           onConfirm: create,
+          source: AutomationContext.ticketCreation,
+          confidence: confidence,
         );
     }
   }
@@ -9303,6 +9331,8 @@ PROMOTION: NOT YET
               linkType: linkType,
             ),
             onConfirm: addLink,
+            source: AutomationContext.ticketLinking,
+            confidence: confidence,
           ),
           DecisionOutcome.proceed || DecisionOutcome.modelJudgment => addLink(),
         };
@@ -9322,6 +9352,8 @@ PROMOTION: NOT YET
             linkType: linkType,
           ),
           onConfirm: addLink,
+          source: AutomationContext.ticketLinking,
+          confidence: confidence,
         );
     }
   }
@@ -9335,7 +9367,7 @@ PROMOTION: NOT YET
   Future<void> confirmPendingToolProposal(String chatId) async {
     final pending = _pendingProposals.remove(chatId);
     if (pending == null) return;
-    final (:proposal, :completer, :onConfirm) = pending;
+    final (:proposal, :completer, :onConfirm, :source, :confidence) = pending;
     final result = await onConfirm();
     completer.complete(result);
     final chat = await _repository.getTicketById(chatId);
