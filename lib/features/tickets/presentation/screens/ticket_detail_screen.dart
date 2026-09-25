@@ -263,7 +263,17 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
           .then((confidence) async {
             if (!mounted) return;
             setState(() => _automationConfidence = confidence);
-            if (confidence != AutomationConfidence.auto) return;
+            if (confidence != AutomationConfidence.auto) {
+              unawaited(
+                context.read<DecisionLogService>().record(
+                  ticketId: widget.ticketId,
+                  source: AutomationContext.sddStage.name,
+                  confidence: confidence.name,
+                  gateResult: 'pending',
+                ),
+              );
+              return;
+            }
             final decisionGraphRepository = context
                 .read<DecisionGraphRepository>();
             final graph = await decisionGraphRepository.getGraph(
@@ -283,6 +293,15 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
             }, const DecisionEvalContext());
             if (!mounted) return;
             setState(() => _sddStageDecisionOutcome = outcome);
+            unawaited(
+              context.read<DecisionLogService>().record(
+                ticketId: widget.ticketId,
+                source: AutomationContext.sddStage.name,
+                confidence: confidence.name,
+                outcome: outcome.name,
+                gateResult: 'fired',
+              ),
+            );
           }),
     );
   }
@@ -320,6 +339,13 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   /// destination screen shows a "Waiting for reply…" indicator (see
   /// `ChatTranscriptPane`) until that reply arrives.
   Future<void> _advanceSddStage(Ticket ticket) async {
+    unawaited(
+      context.read<DecisionLogService>().record(
+        ticketId: ticket.id,
+        source: AutomationContext.sddStage.name,
+        gateResult: 'confirmed',
+      ),
+    );
     final chatId = await context.read<TicketsCubit>().advanceSddStage(ticket);
     if (chatId != null && mounted) {
       context.go('/workspace/tickets/$chatId');

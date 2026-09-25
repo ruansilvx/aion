@@ -9,6 +9,7 @@ import 'package:mocktail/mocktail.dart';
 
 import 'package:aion/core/core.dart';
 import 'package:aion/design_system/design_system.dart';
+import 'package:aion/features/tickets/presentation/widgets/ticket_metadata_section.dart';
 import 'package:aion/features/tickets/tickets.dart';
 import 'package:aion/l10n/generated/app_localizations.dart';
 
@@ -28,6 +29,8 @@ class MockAutomationSettingsRepository extends Mock
 
 class MockDecisionGraphRepository extends Mock
     implements DecisionGraphRepository {}
+
+class MockDecisionLogService extends Mock implements DecisionLogService {}
 
 final WorkflowConfigLoaded _defaultWorkflowConfigLoaded = WorkflowConfigLoaded(
   statuses: defaultWorkflowStatuses,
@@ -65,6 +68,7 @@ Widget _wrap({
   required MockTicketsCubit ticketsCubit,
   required MockAutomationSettingsRepository automationRepo,
   MockDecisionGraphRepository? decisionGraphRepository,
+  MockDecisionLogService? decisionLogService,
   AutomationConfidence sddStageConfidence = AutomationConfidence.gated,
   // Overridable so the loading/error-view tests below can pin
   // `ticketsCubit`'s state stream to something other than the
@@ -105,6 +109,28 @@ Widget _wrap({
         rootNodeId: null,
       ),
     );
+  }
+
+  // Every `TicketDetailScreen` reach in the real app also has this provided
+  // at the project shell level (`app_router.dart`) — `initState`'s
+  // confidence-resolution callback and `_advanceSddStage` both read it
+  // unconditionally (AIO-2994). Callers that care about its calls pass
+  // their own mock and `verify()` afterward; everyone else gets a
+  // default no-op stub.
+  final resolvedDecisionLogService =
+      decisionLogService ?? MockDecisionLogService();
+  if (decisionLogService == null) {
+    when(
+      () => resolvedDecisionLogService.record(
+        ticketId: any(named: 'ticketId'),
+        source: any(named: 'source'),
+        sourceDetail: any(named: 'sourceDetail'),
+        confidence: any(named: 'confidence'),
+        outcome: any(named: 'outcome'),
+        gateResult: any(named: 'gateResult'),
+        detail: any(named: 'detail'),
+      ),
+    ).thenAnswer((_) async {});
   }
 
   final chatCubit = MockChatCubit();
@@ -148,6 +174,9 @@ Widget _wrap({
           ),
           RepositoryProvider<DecisionGraphRepository>.value(
             value: resolvedDecisionGraphRepository,
+          ),
+          RepositoryProvider<DecisionLogService>.value(
+            value: resolvedDecisionLogService,
           ),
         ],
         child: MultiBlocProvider(
@@ -409,6 +438,191 @@ void main() {
 
           verifyNever(() => decisionGraphRepository.getGraph(any()));
           verifyNever(() => decisionGraphRepository.getAllNodes(any()));
+        },
+      );
+
+      testWidgets(
+        'auto confidence + configured graph resolving gated: logs a '
+        "'fired' decision with the resolved outcome (AIO-2994)",
+        (tester) async {
+          final ticket = _ticketOf(TicketType.task);
+          final ticketsCubit = MockTicketsCubit();
+          final automationRepo = MockAutomationSettingsRepository();
+          final decisionGraphRepository = MockDecisionGraphRepository();
+          final decisionLogService = MockDecisionLogService();
+          _stubTicketsCubit(ticketsCubit);
+          when(
+            () => decisionLogService.record(
+              ticketId: any(named: 'ticketId'),
+              source: any(named: 'source'),
+              sourceDetail: any(named: 'sourceDetail'),
+              confidence: any(named: 'confidence'),
+              outcome: any(named: 'outcome'),
+              gateResult: any(named: 'gateResult'),
+              detail: any(named: 'detail'),
+            ),
+          ).thenAnswer((_) async {});
+          when(
+            () => decisionGraphRepository.getGraph(AutomationContext.sddStage),
+          ).thenAnswer(
+            (_) async => const DecisionGraph(
+              context: AutomationContext.sddStage,
+              rootNodeId: 'sdd-node-1',
+            ),
+          );
+          when(
+            () =>
+                decisionGraphRepository.getAllNodes(AutomationContext.sddStage),
+          ).thenAnswer(
+            (_) async => [
+              DecisionNode(
+                id: 'sdd-node-1',
+                conditionId: 'sessionOverageDetected',
+                conditionParams: const {},
+                matchedBranch: const DecisionBranch.terminal(
+                  DecisionOutcome.proceed,
+                ),
+                unmatchedBranch: const DecisionBranch.terminal(
+                  DecisionOutcome.gated,
+                ),
+              ),
+            ],
+          );
+
+          await tester.pumpWidget(
+            _wrap(
+              ticket: ticket,
+              ticketsCubit: ticketsCubit,
+              automationRepo: automationRepo,
+              decisionGraphRepository: decisionGraphRepository,
+              decisionLogService: decisionLogService,
+              sddStageConfidence: AutomationConfidence.auto,
+            ),
+          );
+          await tester.pump();
+          await tester.pump();
+
+          verify(
+            () => decisionLogService.record(
+              ticketId: ticket.id,
+              source: AutomationContext.sddStage.name,
+              sourceDetail: null,
+              confidence: AutomationConfidence.auto.name,
+              outcome: DecisionOutcome.gated.name,
+              gateResult: 'fired',
+              detail: null,
+            ),
+          ).called(1);
+        },
+      );
+
+      testWidgets(
+        "gated confidence: logs a 'pending' decision as soon as it "
+        'resolves, with no outcome (never walks the graph) (AIO-2994)',
+        (tester) async {
+          final ticket = _ticketOf(TicketType.task);
+          final ticketsCubit = MockTicketsCubit();
+          final automationRepo = MockAutomationSettingsRepository();
+          final decisionLogService = MockDecisionLogService();
+          _stubTicketsCubit(ticketsCubit);
+          when(
+            () => decisionLogService.record(
+              ticketId: any(named: 'ticketId'),
+              source: any(named: 'source'),
+              sourceDetail: any(named: 'sourceDetail'),
+              confidence: any(named: 'confidence'),
+              outcome: any(named: 'outcome'),
+              gateResult: any(named: 'gateResult'),
+              detail: any(named: 'detail'),
+            ),
+          ).thenAnswer((_) async {});
+
+          await tester.pumpWidget(
+            _wrap(
+              ticket: ticket,
+              ticketsCubit: ticketsCubit,
+              automationRepo: automationRepo,
+              decisionLogService: decisionLogService,
+            ),
+          );
+          // `_wrap`'s own blanket stub resolves every context to `gated`.
+          await tester.pump();
+          await tester.pump();
+
+          verify(
+            () => decisionLogService.record(
+              ticketId: ticket.id,
+              source: AutomationContext.sddStage.name,
+              sourceDetail: null,
+              confidence: AutomationConfidence.gated.name,
+              outcome: null,
+              gateResult: 'pending',
+              detail: null,
+            ),
+          ).called(1);
+        },
+      );
+
+      testWidgets(
+        "an explicit Advance tap logs a 'confirmed' decision before "
+        'calling TicketsCubit.advanceSddStage (AIO-2994)',
+        (tester) async {
+          final ticket = _ticketOf(TicketType.task);
+          final ticketsCubit = MockTicketsCubit();
+          final automationRepo = MockAutomationSettingsRepository();
+          final decisionLogService = MockDecisionLogService();
+          _stubTicketsCubit(ticketsCubit);
+          when(
+            () => decisionLogService.record(
+              ticketId: any(named: 'ticketId'),
+              source: any(named: 'source'),
+              sourceDetail: any(named: 'sourceDetail'),
+              confidence: any(named: 'confidence'),
+              outcome: any(named: 'outcome'),
+              gateResult: any(named: 'gateResult'),
+              detail: any(named: 'detail'),
+            ),
+          ).thenAnswer((_) async {});
+          when(
+            () => ticketsCubit.advanceSddStage(any()),
+          ).thenAnswer((_) async => null);
+
+          await tester.pumpWidget(
+            _wrap(
+              ticket: ticket,
+              ticketsCubit: ticketsCubit,
+              automationRepo: automationRepo,
+              decisionLogService: decisionLogService,
+            ),
+          );
+          await tester.pump();
+          await tester.pump();
+
+          // Pulls the callback TicketDetailScreen wires into
+          // TicketMetadataSection directly, rather than satisfying every
+          // precondition needed to actually render and tap the Advance
+          // button — the button's own rendering/gating is
+          // TicketMetadataSection's concern, already covered by its own
+          // test suite; this test targets only TicketDetailScreen's
+          // `_advanceSddStage` handler wiring.
+          final metadataSection = tester.widget<TicketMetadataSection>(
+            find.byType(TicketMetadataSection),
+          );
+          metadataSection.onAdvanceSddStage(ticket);
+          await tester.pump();
+
+          verify(
+            () => decisionLogService.record(
+              ticketId: ticket.id,
+              source: AutomationContext.sddStage.name,
+              sourceDetail: null,
+              confidence: null,
+              outcome: null,
+              gateResult: 'confirmed',
+              detail: null,
+            ),
+          ).called(1);
+          verify(() => ticketsCubit.advanceSddStage(ticket)).called(1);
         },
       );
     },
