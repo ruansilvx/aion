@@ -11571,6 +11571,313 @@ void main() {
     });
   });
 
+  group(
+    'confirmPendingToolProposal/rejectPendingToolProposal decision-log gate '
+    '(AIO-3020)',
+    () {
+      late MockAutomationSettingsRepository automationSettingsRepository;
+      late MockDecisionLogService decisionLogService;
+      late MockTicketLinkRepository linkRepository;
+      Map<String, dynamic>? result;
+
+      final chat = Ticket(
+        id: 'log-gate-chat',
+        ticketId: 'AIO-40',
+        type: TicketType.chat,
+        title: 'Gate chat',
+        status: 'backlog',
+        parentId: ticket.id,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+
+      final linkTarget = Ticket(
+        id: 'log-gate-target',
+        ticketId: 'AIO-41',
+        type: TicketType.task,
+        title: 'Link target',
+        status: 'backlog',
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+
+      setUp(() {
+        automationSettingsRepository = MockAutomationSettingsRepository();
+        decisionLogService = MockDecisionLogService();
+        linkRepository = MockTicketLinkRepository();
+        result = null;
+        when(
+          () => decisionLogService.record(
+            ticketId: any(named: 'ticketId'),
+            source: any(named: 'source'),
+            sourceDetail: any(named: 'sourceDetail'),
+            confidence: any(named: 'confidence'),
+            outcome: any(named: 'outcome'),
+            gateResult: any(named: 'gateResult'),
+            detail: any(named: 'detail'),
+          ),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(ticket.id),
+        ).thenAnswer((_) async => ticket);
+        when(
+          () => repository.getTicketById(chat.id),
+        ).thenAnswer((_) async => chat);
+      });
+
+      TicketsCubit buildCubit() => TicketsCubit(
+        repository,
+        automationSettingsRepository: automationSettingsRepository,
+        decisionLogService: decisionLogService,
+        linkRepository: linkRepository,
+      );
+
+      group('chatBranching', () {
+        setUp(() {
+          when(
+            () => automationSettingsRepository.getConfidence(
+              AutomationContext.chatBranching,
+            ),
+          ).thenAnswer((_) async => AutomationConfidence.gated);
+          when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        });
+
+        blocTest<TicketsCubit, TicketsState>(
+          'confirm logs gateResult confirmed with source chatBranching',
+          build: buildCubit,
+          act: (cubit) async {
+            unawaited(
+              cubit
+                  .handleChatToolCall(chat, 'call-1', 'branch_ticket', {
+                    'title': 'Sub-issue',
+                  }, null)
+                  .then((value) => result = value),
+            );
+            await Future<void>.delayed(Duration.zero);
+            await cubit.confirmPendingToolProposal(chat.id);
+          },
+          verify: (_) {
+            expect(result?['accepted'], true);
+            verify(
+              () => decisionLogService.record(
+                ticketId: chat.id,
+                source: 'chatBranching',
+                confidence: 'gated',
+                gateResult: 'confirmed',
+              ),
+            ).called(1);
+          },
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          'reject logs gateResult rejected with source chatBranching',
+          build: buildCubit,
+          act: (cubit) async {
+            unawaited(
+              cubit
+                  .handleChatToolCall(chat, 'call-1', 'branch_ticket', {
+                    'title': 'Sub-issue',
+                  }, null)
+                  .then((value) => result = value),
+            );
+            await Future<void>.delayed(Duration.zero);
+            await cubit.rejectPendingToolProposal(chat.id);
+          },
+          verify: (_) {
+            expect(result?['accepted'], false);
+            verify(
+              () => decisionLogService.record(
+                ticketId: chat.id,
+                source: 'chatBranching',
+                confidence: 'gated',
+                gateResult: 'rejected',
+              ),
+            ).called(1);
+          },
+        );
+      });
+
+      group('ticketCreation', () {
+        setUp(() {
+          when(
+            () => automationSettingsRepository.getConfidence(
+              AutomationContext.ticketCreation,
+            ),
+          ).thenAnswer((_) async => AutomationConfidence.gated);
+          when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        });
+
+        blocTest<TicketsCubit, TicketsState>(
+          'confirm logs gateResult confirmed with source ticketCreation',
+          build: buildCubit,
+          act: (cubit) async {
+            unawaited(
+              cubit
+                  .handleChatToolCall(chat, 'call-1', 'create_ticket', {
+                    'title': 'New task',
+                    'type': 'task',
+                  }, null)
+                  .then((value) => result = value),
+            );
+            await Future<void>.delayed(Duration.zero);
+            await cubit.confirmPendingToolProposal(chat.id);
+          },
+          verify: (_) {
+            expect(result?['accepted'], true);
+            verify(
+              () => decisionLogService.record(
+                ticketId: chat.id,
+                source: 'ticketCreation',
+                confidence: 'gated',
+                gateResult: 'confirmed',
+              ),
+            ).called(1);
+          },
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          'reject logs gateResult rejected with source ticketCreation',
+          build: buildCubit,
+          act: (cubit) async {
+            unawaited(
+              cubit
+                  .handleChatToolCall(chat, 'call-1', 'create_ticket', {
+                    'title': 'New task',
+                    'type': 'task',
+                  }, null)
+                  .then((value) => result = value),
+            );
+            await Future<void>.delayed(Duration.zero);
+            await cubit.rejectPendingToolProposal(chat.id);
+          },
+          verify: (_) {
+            expect(result?['accepted'], false);
+            verify(
+              () => decisionLogService.record(
+                ticketId: chat.id,
+                source: 'ticketCreation',
+                confidence: 'gated',
+                gateResult: 'rejected',
+              ),
+            ).called(1);
+          },
+        );
+      });
+
+      group('ticketLinking', () {
+        setUp(() {
+          when(
+            () => automationSettingsRepository.getConfidence(
+              AutomationContext.ticketLinking,
+            ),
+          ).thenAnswer((_) async => AutomationConfidence.gated);
+          when(
+            () => repository.getTicketByTicketId(linkTarget.ticketId),
+          ).thenAnswer((_) async => linkTarget);
+          when(
+            () => linkRepository.createLink(
+              sourceTicketId: chat.parentId!,
+              targetTicketId: linkTarget.id,
+              linkType: TicketLinkType.relatesTo,
+            ),
+          ).thenAnswer((_) async {});
+        });
+
+        blocTest<TicketsCubit, TicketsState>(
+          'confirm logs gateResult confirmed with source ticketLinking',
+          build: buildCubit,
+          act: (cubit) async {
+            unawaited(
+              cubit
+                  .handleChatToolCall(chat, 'call-1', 'add_link', {
+                    'targetTicketId': linkTarget.ticketId,
+                    'linkType': 'relatesTo',
+                  }, null)
+                  .then((value) => result = value),
+            );
+            await Future<void>.delayed(Duration.zero);
+            await cubit.confirmPendingToolProposal(chat.id);
+          },
+          verify: (_) {
+            expect(result?['accepted'], true);
+            verify(
+              () => decisionLogService.record(
+                ticketId: chat.id,
+                source: 'ticketLinking',
+                confidence: 'gated',
+                gateResult: 'confirmed',
+              ),
+            ).called(1);
+          },
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          'reject logs gateResult rejected with source ticketLinking',
+          build: buildCubit,
+          act: (cubit) async {
+            unawaited(
+              cubit
+                  .handleChatToolCall(chat, 'call-1', 'add_link', {
+                    'targetTicketId': linkTarget.ticketId,
+                    'linkType': 'relatesTo',
+                  }, null)
+                  .then((value) => result = value),
+            );
+            await Future<void>.delayed(Duration.zero);
+            await cubit.rejectPendingToolProposal(chat.id);
+          },
+          verify: (_) {
+            expect(result?['accepted'], false);
+            verify(
+              () => decisionLogService.record(
+                ticketId: chat.id,
+                source: 'ticketLinking',
+                confidence: 'gated',
+                gateResult: 'rejected',
+              ),
+            ).called(1);
+          },
+        );
+      });
+
+      group('no pending proposal', () {
+        blocTest<TicketsCubit, TicketsState>(
+          'confirmPendingToolProposal records nothing for a chat id with no '
+          'pending proposal',
+          build: buildCubit,
+          act: (cubit) => cubit.confirmPendingToolProposal('no-such-chat'),
+          verify: (_) {
+            verifyNever(
+              () => decisionLogService.record(
+                ticketId: any(named: 'ticketId'),
+                source: any(named: 'source'),
+                confidence: any(named: 'confidence'),
+                gateResult: any(named: 'gateResult'),
+              ),
+            );
+          },
+        );
+
+        blocTest<TicketsCubit, TicketsState>(
+          'rejectPendingToolProposal records nothing for a chat id with no '
+          'pending proposal',
+          build: buildCubit,
+          act: (cubit) => cubit.rejectPendingToolProposal('no-such-chat'),
+          verify: (_) {
+            verifyNever(
+              () => decisionLogService.record(
+                ticketId: any(named: 'ticketId'),
+                source: any(named: 'source'),
+                confidence: any(named: 'confidence'),
+                gateResult: any(named: 'gateResult'),
+              ),
+            );
+          },
+        );
+      });
+    },
+  );
+
   group('coding-execution trigger', () {
     late MockAgentModelClient agentClient;
     late MockProviderRegistry registry;
