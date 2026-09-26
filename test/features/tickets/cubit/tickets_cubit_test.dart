@@ -11878,6 +11878,237 @@ void main() {
     },
   );
 
+  group(
+    'manual tier tool-proposal handlers decision-log gate '
+    '(AIO-3021/AIO-3034)',
+    () {
+      late MockAutomationSettingsRepository automationSettingsRepository;
+      late MockDecisionLogService decisionLogService;
+      late MockTicketLinkRepository linkRepository;
+      Map<String, dynamic>? result;
+
+      final branchChat = Ticket(
+        id: 'manual-gate-chat',
+        ticketId: 'AIO-40',
+        type: TicketType.chat,
+        title: 'Gate chat',
+        status: 'backlog',
+        parentId: ticket.id,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+
+      final closeBranchParentChat = Ticket(
+        id: 'manual-gate-close-branch-parent',
+        ticketId: 'AIO-42',
+        type: TicketType.chat,
+        title: 'Branch parent chat',
+        status: 'backlog',
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+
+      final closeBranchChat = Ticket(
+        id: 'manual-gate-close-branch-chat',
+        ticketId: 'AIO-43',
+        type: TicketType.chat,
+        title: 'Branch chat',
+        status: 'backlog',
+        parentId: closeBranchParentChat.id,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+
+      final linkTarget = Ticket(
+        id: 'manual-gate-link-target',
+        ticketId: 'AIO-41',
+        type: TicketType.task,
+        title: 'Link target',
+        status: 'backlog',
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+
+      setUp(() {
+        automationSettingsRepository = MockAutomationSettingsRepository();
+        decisionLogService = MockDecisionLogService();
+        linkRepository = MockTicketLinkRepository();
+        result = null;
+        when(
+          () => decisionLogService.record(
+            ticketId: any(named: 'ticketId'),
+            source: any(named: 'source'),
+            sourceDetail: any(named: 'sourceDetail'),
+            confidence: any(named: 'confidence'),
+            outcome: any(named: 'outcome'),
+            gateResult: any(named: 'gateResult'),
+            detail: any(named: 'detail'),
+          ),
+        ).thenAnswer((_) async {});
+        when(
+          () => repository.getTicketById(ticket.id),
+        ).thenAnswer((_) async => ticket);
+        when(
+          () => repository.getTicketById(closeBranchParentChat.id),
+        ).thenAnswer((_) async => closeBranchParentChat);
+        when(
+          () => repository.getTicketByTicketId(linkTarget.ticketId),
+        ).thenAnswer((_) async => linkTarget);
+      });
+
+      TicketsCubit buildCubit() => TicketsCubit(
+        repository,
+        automationSettingsRepository: automationSettingsRepository,
+        decisionLogService: decisionLogService,
+        linkRepository: linkRepository,
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'branch_ticket manual tier declines and logs gateResult declined '
+        'with source chatBranching',
+        build: buildCubit,
+        setUp: () {
+          when(
+            () => automationSettingsRepository.getConfidence(
+              AutomationContext.chatBranching,
+            ),
+          ).thenAnswer((_) async => AutomationConfidence.manual);
+        },
+        act: (cubit) async {
+          result = await cubit.handleChatToolCall(
+            branchChat,
+            'call-1',
+            'branch_ticket',
+            {'title': 'Sub-issue'},
+            null,
+          );
+        },
+        verify: (_) {
+          expect(result, {
+            'accepted': false,
+            'reason': 'Automation set to manual.',
+          });
+          verify(
+            () => decisionLogService.record(
+              ticketId: branchChat.id,
+              source: 'chatBranching',
+              confidence: 'manual',
+              gateResult: 'declined',
+            ),
+          ).called(1);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'close_branch manual tier declines and logs gateResult declined '
+        'with source chatBranching',
+        build: buildCubit,
+        setUp: () {
+          when(
+            () => automationSettingsRepository.getConfidence(
+              AutomationContext.chatBranching,
+            ),
+          ).thenAnswer((_) async => AutomationConfidence.manual);
+        },
+        act: (cubit) async {
+          result = await cubit.handleChatToolCall(
+            closeBranchChat,
+            'call-1',
+            'close_branch',
+            {'summary': 'Done.'},
+            null,
+          );
+        },
+        verify: (_) {
+          expect(result, {
+            'accepted': false,
+            'reason': 'Automation set to manual.',
+          });
+          verify(
+            () => decisionLogService.record(
+              ticketId: closeBranchChat.id,
+              source: 'chatBranching',
+              confidence: 'manual',
+              gateResult: 'declined',
+            ),
+          ).called(1);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'create_ticket manual tier declines and logs gateResult declined '
+        'with source ticketCreation',
+        build: buildCubit,
+        setUp: () {
+          when(
+            () => automationSettingsRepository.getConfidence(
+              AutomationContext.ticketCreation,
+            ),
+          ).thenAnswer((_) async => AutomationConfidence.manual);
+        },
+        act: (cubit) async {
+          result = await cubit.handleChatToolCall(
+            branchChat,
+            'call-1',
+            'create_ticket',
+            {'title': 'New task', 'type': 'task'},
+            null,
+          );
+        },
+        verify: (_) {
+          expect(result, {
+            'accepted': false,
+            'reason': 'Ticket creation set to manual.',
+          });
+          verify(
+            () => decisionLogService.record(
+              ticketId: branchChat.id,
+              source: 'ticketCreation',
+              confidence: 'manual',
+              gateResult: 'declined',
+            ),
+          ).called(1);
+        },
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
+        'add_link manual tier declines and logs gateResult declined '
+        'with source ticketLinking',
+        build: buildCubit,
+        setUp: () {
+          when(
+            () => automationSettingsRepository.getConfidence(
+              AutomationContext.ticketLinking,
+            ),
+          ).thenAnswer((_) async => AutomationConfidence.manual);
+        },
+        act: (cubit) async {
+          result = await cubit.handleChatToolCall(
+            branchChat,
+            'call-1',
+            'add_link',
+            {'targetTicketId': linkTarget.ticketId, 'linkType': 'relatesTo'},
+            null,
+          );
+        },
+        verify: (_) {
+          expect(result, {
+            'accepted': false,
+            'reason': 'Ticket linking set to manual.',
+          });
+          verify(
+            () => decisionLogService.record(
+              ticketId: branchChat.id,
+              source: 'ticketLinking',
+              confidence: 'manual',
+              gateResult: 'declined',
+            ),
+          ).called(1);
+        },
+      );
+    },
+  );
+
   group('coding-execution trigger', () {
     late MockAgentModelClient agentClient;
     late MockProviderRegistry registry;

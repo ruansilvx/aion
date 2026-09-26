@@ -8969,7 +8969,7 @@ PROMOTION: NOT YET
           ticketId: chat.id,
           source: AutomationContext.chatBranching.name,
           confidence: confidence.name,
-          gateResult: 'pending',
+          gateResult: 'declined',
         );
         return {'accepted': false, 'reason': 'Automation set to manual.'};
       case AutomationConfidence.auto:
@@ -9060,7 +9060,7 @@ PROMOTION: NOT YET
           ticketId: chat.id,
           source: AutomationContext.chatBranching.name,
           confidence: confidence.name,
-          gateResult: 'pending',
+          gateResult: 'declined',
         );
         return {'accepted': false, 'reason': 'Automation set to manual.'};
       case AutomationConfidence.auto:
@@ -9169,7 +9169,7 @@ PROMOTION: NOT YET
           ticketId: chat.id,
           source: AutomationContext.ticketCreation.name,
           confidence: confidence.name,
-          gateResult: 'pending',
+          gateResult: 'declined',
         );
         return {'accepted': false, 'reason': 'Ticket creation set to manual.'};
       case AutomationConfidence.auto:
@@ -9301,7 +9301,7 @@ PROMOTION: NOT YET
           ticketId: chat.id,
           source: AutomationContext.ticketLinking.name,
           confidence: confidence.name,
-          gateResult: 'pending',
+          gateResult: 'declined',
         );
         return {'accepted': false, 'reason': 'Ticket linking set to manual.'};
       case AutomationConfidence.auto:
