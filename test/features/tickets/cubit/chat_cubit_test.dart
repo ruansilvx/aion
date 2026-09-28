@@ -1028,9 +1028,9 @@ void main() {
       when(
         () => repository.getCommentsForTicket(chatId),
       ).thenAnswer((_) async => []);
-      when(() => client.run(any())).thenAnswer(
-        (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
-      );
+      when(
+        () => client.run(any()),
+      ).thenAnswer((_) async => Stream.fromIterable(const [AgentDoneEvent()]));
     }
 
     blocTest<ChatCubit, ChatState>(
@@ -1693,6 +1693,104 @@ void main() {
       );
 
       verifyNever(() => ticketRepository.addTimeSpent(any(), any()));
+    });
+  });
+
+  group('runChatTurn inactivityTimeout (Fix 2 — AIO-2998)', () {
+    // Real (short) durations rather than `fakeAsync` — `Stream.timeout`'s
+    // internal `Timer` did not reliably advance under `FakeAsync.elapse`
+    // in this package's Dart SDK/test-tooling combination (the `.then`
+    // callback never fired even after elapsing well past the window),
+    // so these use small real delays instead of virtual time.
+    test('timeout converts a stalled stream into a ChatTurnFailure with a '
+        'persisted "Execution failed" comment', () async {
+      final stalled = StreamController<AgentEvent>();
+      addTearDown(stalled.close);
+      when(() => client.run(any())).thenAnswer((_) async => stalled.stream);
+      when(() => repository.addComment(any())).thenAnswer((_) async {});
+      // _logElapsedTime's unconditional tail lookup — a `null` parent (no
+      // such chat) means it no-ops without needing addTimeSpent.
+      when(
+        () => ticketRepository.getTicketById('chat-1'),
+      ).thenAnswer((_) async => null);
+
+      final result = await ChatCubit.runChatTurn(
+        client: client,
+        provider: provider,
+        commentRepo: repository,
+        ticketRepository: ticketRepository,
+        chatTicketId: 'chat-1',
+        prompt: 'Hello',
+        model: _sonnet,
+        inactivityTimeout: const Duration(milliseconds: 100),
+      );
+
+      expect(result, isA<ChatTurnFailure>());
+      // A failure comment was persisted.
+      verify(
+        () => repository.addComment(any()),
+      ).called(greaterThanOrEqualTo(1));
+    });
+
+    test('no timeout fires when events arrive within the window', () async {
+      Stream<AgentEvent> eventStream() async* {
+        for (var i = 0; i < 3; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          yield AgentTextEvent('event $i');
+        }
+        yield const AgentDoneEvent();
+      }
+
+      when(() => client.run(any())).thenAnswer((_) async => eventStream());
+      when(() => repository.addComment(any())).thenAnswer((_) async {});
+      when(
+        () => ticketRepository.getTicketById('chat-1'),
+      ).thenAnswer((_) async => null);
+
+      final result = await ChatCubit.runChatTurn(
+        client: client,
+        provider: provider,
+        commentRepo: repository,
+        ticketRepository: ticketRepository,
+        chatTicketId: 'chat-1',
+        prompt: 'Hello',
+        model: _sonnet,
+        // Each gap (20ms) is well within this window.
+        inactivityTimeout: const Duration(milliseconds: 200),
+      );
+
+      expect(result, isA<ChatTurnSuccess>());
+    });
+
+    test('null inactivityTimeout leaves the stream untouched (sendMessage '
+        'path, which may legitimately take indefinite time)', () async {
+      // A stream that emits one event after a gap longer than what a
+      // *non-null* timeout in this suite would tolerate, then completes.
+      Stream<AgentEvent> eventStream() async* {
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+        yield AgentTextEvent('delayed event');
+        yield const AgentDoneEvent();
+      }
+
+      when(() => client.run(any())).thenAnswer((_) async => eventStream());
+      when(() => repository.addComment(any())).thenAnswer((_) async {});
+      when(
+        () => ticketRepository.getTicketById('chat-1'),
+      ).thenAnswer((_) async => null);
+
+      final result = await ChatCubit.runChatTurn(
+        client: client,
+        provider: provider,
+        commentRepo: repository,
+        ticketRepository: ticketRepository,
+        chatTicketId: 'chat-1',
+        prompt: 'Hello',
+        model: _sonnet,
+        // No timeout specified — the 150ms gap above must not time out.
+        inactivityTimeout: null,
+      );
+
+      expect(result, isA<ChatTurnSuccess>());
     });
   });
 }
