@@ -10693,6 +10693,183 @@ void main() {
         expect(children.single.title, 'Fix the remaining edge case');
       },
     );
+
+    // Added for `AIO-2998` — retryVerify's in-flight registration,
+    // reentrancy guard, and tail re-emit (Fix 1).
+    late StreamController<AgentEvent> events;
+
+    test('a mid-flight getTicketById reports isAdvancingStage true and no '
+        'false sddStageFailureReason while the retried turn is still '
+        'running — even though the newest persisted comment is the system '
+        'context comment retryVerify itself just posted', () async {
+      events = StreamController<AgentEvent>();
+      when(
+        () => repository.getTicketById(storyVerifyGateForRetry.id),
+      ).thenAnswer((_) async => storyVerifyGateForRetry);
+      when(
+        () => repository.getTicketById(verifyChatForRetry.id),
+      ).thenAnswer((_) async => verifyChatForRetry);
+      when(
+        () => repository.getTicketsByParent(
+          storyVerifyGateForRetry.id,
+          types: TicketTypeHierarchy.executableTypes,
+        ),
+      ).thenAnswer((_) async => <Ticket>[]);
+      when(
+        () => repository.getTicketsByParent(
+          storyVerifyGateForRetry.id,
+          types: const [TicketType.chat],
+        ),
+      ).thenAnswer((_) async => [verifyChatForRetry]);
+      when(() => commentRepository.addComment(any())).thenAnswer((_) async {});
+      // The only comment present mid-flight is the system context
+      // comment retryVerify posts before the turn runs — this is the
+      // exact window Session 2's bug fired in.
+      when(
+        () => commentRepository.getCommentsForTicket(verifyChatForRetry.id),
+      ).thenAnswer(
+        (_) async => [
+          TicketComment(
+            id: 'c-system-context',
+            ticketId: verifyChatForRetry.id,
+            content: 'Re-verify context...',
+            authorType: CommentAuthorType.system,
+            createdAt: DateTime(2026),
+          ),
+        ],
+      );
+      when(() => agentClient.run(any())).thenAnswer((_) async => events.stream);
+
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      // Seeds `state` to the parent's detail screen being open, the way
+      // `showingDetailId`'s capture expects — done via a real
+      // getTicketById call (not bloc_test's `seed`) so this plain `test`
+      // can inspect `cubit.state` directly at each point.
+      when(
+        () => repository.getTicketsByParent(
+          storyVerifyGateForRetry.id,
+          types: TicketTypeHierarchy.executableTypes,
+        ),
+      ).thenAnswer((_) async => <Ticket>[]);
+      await cubit.getTicketById(storyVerifyGateForRetry.id);
+
+      final retryFuture = cubit.retryVerify(verifyChatForRetry);
+      // Let retryVerify run past its `await`s (parent lookup, context
+      // assembly, the context-comment post) up to the point where its
+      // stream is open and blocked on `events`, before checking state.
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      await cubit.getTicketById(storyVerifyGateForRetry.id);
+      final midFlightState = cubit.state;
+      expect(midFlightState, isA<TicketDetailLoaded>());
+      final midFlight = midFlightState as TicketDetailLoaded;
+      expect(midFlight.isAdvancingStage, isTrue);
+      expect(midFlight.sddStageFailureReason, isNull);
+
+      // Let the still-open turn wind down so the test can tear down
+      // cleanly rather than leaking a pending retryVerify future.
+      events.add(const AgentDoneEvent());
+      await events.close();
+      await retryFuture;
+    });
+
+    test('the detail screen re-emits on completion, clearing isAdvancingStage, '
+        'without the caller making its own getTicketById call — resolves the '
+        'stale-banner-until-restart shape of Session 2', () async {
+      when(
+        () => repository.getTicketById(storyVerifyGateForRetry.id),
+      ).thenAnswer((_) async => storyVerifyGateForRetry);
+      when(
+        () => repository.getTicketById(verifyChatForRetry.id),
+      ).thenAnswer((_) async => verifyChatForRetry);
+      when(
+        () => repository.getTicketsByParent(
+          storyVerifyGateForRetry.id,
+          types: TicketTypeHierarchy.executableTypes,
+        ),
+      ).thenAnswer((_) async => <Ticket>[]);
+      when(
+        () => repository.getTicketsByParent(
+          storyVerifyGateForRetry.id,
+          types: const [TicketType.chat],
+        ),
+      ).thenAnswer((_) async => [verifyChatForRetry]);
+      stubStatefulComments(commentRepository, verifyChatForRetry.id);
+      when(() => agentClient.run(any())).thenAnswer(
+        (_) async => Stream.fromIterable(const [
+          AgentTextEvent('No issues found.\n\nVERIFY GATE: APPROVED'),
+          AgentDoneEvent(),
+        ]),
+      );
+
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      // Seed `state` to the chat's own detail screen being open — the
+      // other branch of showingDetailId's `ticket.id == verifyingChat.id`
+      // check, distinct from the parent-open case above.
+      await cubit.getTicketById(verifyChatForRetry.id);
+      expect(cubit.state, isA<TicketDetailLoaded>());
+
+      await cubit.retryVerify(verifyChatForRetry);
+
+      final finalState = cubit.state;
+      expect(finalState, isA<TicketDetailLoaded>());
+      expect((finalState as TicketDetailLoaded).isAdvancingStage, isFalse);
+    });
+
+    blocTest<TicketsCubit, TicketsState>(
+      'two overlapping retryVerify calls on the same parent collapse into '
+      'one — only one system context comment and one agent run',
+      setUp: () {
+        events = StreamController<AgentEvent>();
+        when(
+          () => repository.getTicketById(storyVerifyGateForRetry.id),
+        ).thenAnswer((_) async => storyVerifyGateForRetry);
+        when(
+          () => repository.getTicketById(verifyChatForRetry.id),
+        ).thenAnswer((_) async => verifyChatForRetry);
+        when(
+          () => repository.getTicketsByParent(
+            storyVerifyGateForRetry.id,
+            types: TicketTypeHierarchy.executableTypes,
+          ),
+        ).thenAnswer((_) async => <Ticket>[]);
+        when(
+          () => commentRepository.addComment(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => commentRepository.getCommentsForTicket(verifyChatForRetry.id),
+        ).thenAnswer((_) async => <TicketComment>[]);
+        when(
+          () => agentClient.run(any()),
+        ).thenAnswer((_) async => events.stream);
+      },
+      build: buildCubit,
+      act: (cubit) async {
+        unawaited(cubit.retryVerify(verifyChatForRetry));
+        // Fired while the first call is still registered in-flight — the
+        // reentrancy guard should make this second call a no-op.
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        unawaited(cubit.retryVerify(verifyChatForRetry));
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        events.add(const AgentDoneEvent());
+        await events.close();
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      },
+      verify: (_) {
+        verify(() => agentClient.run(any())).called(1);
+        verify(
+          () => commentRepository.addComment(
+            any(
+              that: predicate<TicketComment>(
+                (c) => c.authorType == CommentAuthorType.system,
+              ),
+            ),
+          ),
+        ).called(1);
+      },
+    );
   });
 
   // Added for `aion-arch/changes/sdd-verify-quality-gate`.

@@ -40,7 +40,10 @@ class CommentsCubit extends Cubit<CommentsState> {
   /// [CommentAuthorType.ai] with [aiModel] set for AI-authored comments.
   /// Emits [CommentAdding] (carrying the list as it was before this call)
   /// then [CommentAdded] (carrying the refreshed list) on success, or
-  /// [CommentsError] if the repository call throws.
+  /// [CommentsError] if the repository call throws — and rethrows, so a
+  /// caller awaiting this call (e.g. `TicketDetailScreen._sendComment`) can
+  /// detect the failure and retain the user's typed text instead of
+  /// clearing it. Added for `AIO-2998`.
   Future<void> addComment({
     required String ticketId,
     required String content,
@@ -70,6 +73,7 @@ class CommentsCubit extends Cubit<CommentsState> {
       emit(CommentAdded(comments));
     } catch (e) {
       emit(CommentsError(e.toString()));
+      rethrow;
     }
   }
 }

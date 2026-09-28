@@ -1,6 +1,9 @@
 // test/features/tickets/presentation/screens/ticket_detail_screen_test.dart — TicketDetailScreen widget tests.
 
+import 'dart:async';
+
 import 'package:bloc_test/bloc_test.dart';
+import 'package:flutter/material.dart' show TextField;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -69,6 +72,11 @@ Widget _wrap({
   required MockAutomationSettingsRepository automationRepo,
   MockDecisionGraphRepository? decisionGraphRepository,
   MockDecisionLogService? decisionLogService,
+  // Overridable so the Fix-3 compose-field tests below can stub/verify
+  // against the same `CommentsCubit` instance the widget actually reads,
+  // instead of the fresh default this function otherwise creates and
+  // never exposes. Added for `AIO-2998`.
+  MockCommentsCubit? commentsCubit,
   AutomationConfidence sddStageConfidence = AutomationConfidence.gated,
   // Overridable so the loading/error-view tests below can pin
   // `ticketsCubit`'s state stream to something other than the
@@ -141,13 +149,15 @@ Widget _wrap({
   );
   when(() => chatCubit.loadMessages(any())).thenAnswer((_) async {});
 
-  final commentsCubit = MockCommentsCubit();
+  final resolvedCommentsCubit = commentsCubit ?? MockCommentsCubit();
   whenListen(
-    commentsCubit,
+    resolvedCommentsCubit,
     const Stream<CommentsState>.empty(),
     initialState: const CommentsInitial(),
   );
-  when(() => commentsCubit.loadComments(any())).thenAnswer((_) async {});
+  when(
+    () => resolvedCommentsCubit.loadComments(any()),
+  ).thenAnswer((_) async {});
 
   final workflowConfigCubit = MockWorkflowConfigCubit();
   whenListen(
@@ -183,7 +193,7 @@ Widget _wrap({
           providers: [
             BlocProvider<TicketsCubit>.value(value: ticketsCubit),
             BlocProvider<ChatCubit>.value(value: chatCubit),
-            BlocProvider<CommentsCubit>.value(value: commentsCubit),
+            BlocProvider<CommentsCubit>.value(value: resolvedCommentsCubit),
             BlocProvider<WorkflowConfigCubit>.value(value: workflowConfigCubit),
           ],
           child: WidgetsApp(
@@ -194,8 +204,18 @@ Widget _wrap({
               GlobalWidgetsLocalizations.delegate,
             ],
             supportedLocales: AppLocalizations.supportedLocales,
-            builder: (context, _) =>
-                TicketDetailScreen(ticketId: ticket.id),
+            // Wrapped in an `Overlay` so the non-`chat` compose row's plain
+            // `TextField` (which needs one for its `EditableText`'s
+            // selection handling) works under test — transparent to every
+            // other test in this file, which don't interact with it.
+            // Added for `AIO-2998`.
+            builder: (context, _) => Overlay(
+              initialEntries: [
+                OverlayEntry(
+                  builder: (_) => TicketDetailScreen(ticketId: ticket.id),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -746,6 +766,138 @@ void main() {
 
         expect(find.byType(AppSpinner), findsNothing);
         expect(find.text('Retry'), findsNothing);
+      },
+    );
+  });
+
+  // Added for `AIO-2998` — `_sendComment`'s await-then-clear and
+  // reentrancy-guard behavior (Fix 3). Exercised via the non-`chat` (plain
+  // `TextField` + `Semantics(button: true, label: 'Send comment')`) compose
+  // row, since `_sendComment` is shared by both routing branches and this
+  // one needs no extra `ChatCubit`/`ChatComposeField` scaffolding.
+  group('TicketDetailScreen — compose field send (AIO-2998)', () {
+    testWidgets('a successful send clears the compose field', (tester) async {
+      final ticket = _ticketOf(TicketType.task);
+      final ticketsCubit = MockTicketsCubit();
+      final automationRepo = MockAutomationSettingsRepository();
+      final commentsCubit = MockCommentsCubit();
+      _stubTicketsCubit(ticketsCubit);
+      when(
+        () => commentsCubit.addComment(
+          ticketId: any(named: 'ticketId'),
+          content: any(named: 'content'),
+        ),
+      ).thenAnswer((_) async {});
+
+      await tester.pumpWidget(
+        _wrap(
+          ticket: ticket,
+          ticketsCubit: ticketsCubit,
+          automationRepo: automationRepo,
+          commentsCubit: commentsCubit,
+        ),
+      );
+      await tester.pump();
+
+      await tester.enterText(find.byType(TextField), 'hello world');
+      await tester.tap(find.bySemanticsLabel('Send comment'));
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        isEmpty,
+      );
+      verify(
+        () => commentsCubit.addComment(
+          ticketId: ticket.id,
+          content: 'hello world',
+        ),
+      ).called(1);
+    });
+
+    testWidgets('a failed send retains the typed text instead of clearing it', (
+      tester,
+    ) async {
+      final ticket = _ticketOf(TicketType.task);
+      final ticketsCubit = MockTicketsCubit();
+      final automationRepo = MockAutomationSettingsRepository();
+      final commentsCubit = MockCommentsCubit();
+      _stubTicketsCubit(ticketsCubit);
+      when(
+        () => commentsCubit.addComment(
+          ticketId: any(named: 'ticketId'),
+          content: any(named: 'content'),
+        ),
+      ).thenThrow(Exception('write failed'));
+
+      await tester.pumpWidget(
+        _wrap(
+          ticket: ticket,
+          ticketsCubit: ticketsCubit,
+          automationRepo: automationRepo,
+          commentsCubit: commentsCubit,
+        ),
+      );
+      await tester.pump();
+
+      await tester.enterText(find.byType(TextField), 'hello world');
+      await tester.tap(find.bySemanticsLabel('Send comment'));
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'hello world',
+      );
+    });
+
+    testWidgets(
+      'tapping send twice while the first send is still in flight only '
+      'fires addComment once — the reentrancy guard collapses the second '
+      'tap',
+      (tester) async {
+        final ticket = _ticketOf(TicketType.task);
+        final ticketsCubit = MockTicketsCubit();
+        final automationRepo = MockAutomationSettingsRepository();
+        final commentsCubit = MockCommentsCubit();
+        _stubTicketsCubit(ticketsCubit);
+        final completer = Completer<void>();
+        when(
+          () => commentsCubit.addComment(
+            ticketId: any(named: 'ticketId'),
+            content: any(named: 'content'),
+          ),
+        ).thenAnswer((_) => completer.future);
+
+        await tester.pumpWidget(
+          _wrap(
+            ticket: ticket,
+            ticketsCubit: ticketsCubit,
+            automationRepo: automationRepo,
+            commentsCubit: commentsCubit,
+          ),
+        );
+        await tester.pump();
+
+        await tester.enterText(find.byType(TextField), 'hello world');
+        await tester.tap(find.bySemanticsLabel('Send comment'));
+        await tester.pump();
+        // First send is now in flight (blocked on `completer`) — a second
+        // tap here should no-op under the `_sending` guard.
+        await tester.tap(find.bySemanticsLabel('Send comment'));
+        await tester.pump();
+
+        completer.complete();
+        await tester.pump();
+        await tester.pump();
+
+        verify(
+          () => commentsCubit.addComment(
+            ticketId: any(named: 'ticketId'),
+            content: any(named: 'content'),
+          ),
+        ).called(1);
       },
     );
   });

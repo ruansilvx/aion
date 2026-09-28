@@ -2,6 +2,7 @@
 
 import 'dart:math' show max;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:uuid/uuid.dart';
 
@@ -68,6 +69,13 @@ class ChatCubit extends Cubit<ChatState> {
   late final String? _sourceRootPath;
   static const _uuid = Uuid();
 
+  /// Max gap between provider stream events before a turn is treated as
+  /// stalled. Generous enough to survive one long individual tool call —
+  /// tool execution does not block the event stream from eventually emitting
+  /// a completion event, so the gap we guard against is a genuinely dead
+  /// stream, not a slow AgentToolCallEvent.
+  static const Duration turnInactivityTimeout = Duration(minutes: 3);
+
   /// Fetches all comments for [chatTicketId]. Emits [ChatLoaded] on
   /// success (with no `streamingText`), or [ChatError] if the repository
   /// call throws.
@@ -132,7 +140,13 @@ class ChatCubit extends Cubit<ChatState> {
     )?
     onToolCall,
   }) async {
+    final List<TicketComment> afterHuman;
     try {
+      // Diagnostic logging: record the human message persist attempt.
+      debugPrint(
+        '[ChatCubit.sendMessage] persisting human comment '
+        '(chatTicketId=$chatTicketId, contentLength=${content.length})',
+      );
       await _repository.addComment(
         TicketComment(
           id: '',
@@ -142,10 +156,27 @@ class ChatCubit extends Cubit<ChatState> {
           createdAt: DateTime.now(),
         ),
       );
-      final afterHuman = await _repository.getCommentsForTicket(chatTicketId);
+      debugPrint(
+        '[ChatCubit.sendMessage] human comment persisted successfully',
+      );
+      afterHuman = await _repository.getCommentsForTicket(chatTicketId);
+    } catch (e) {
+      // The human message itself failed to persist — rethrow (after the
+      // existing internal-state emit) so the caller (`_sendComment`'s
+      // await-then-clear) can detect this specific failure and retain the
+      // user's typed text, per AIO-2998's "failure can't silently swallow
+      // the user's typed text" requirement. Distinct from a downstream
+      // model-turn failure below, where the human message DID persist and
+      // clearing the compose field is the correct behavior.
       if (isClosed) return;
-      emit(ChatLoaded(afterHuman));
+      emit(ChatError(e.toString()));
+      rethrow;
+    }
 
+    if (isClosed) return;
+    emit(ChatLoaded(afterHuman));
+
+    try {
       final phase = await _phaseForChat(chatTicketId);
       final (model, provider) = await _resolveModelAndProvider(phase);
       final runId = _uuid.v4();
@@ -488,6 +519,7 @@ class ChatCubit extends Cubit<ChatState> {
       AgentSessionHandle? session,
     )?
     onToolCall,
+    Duration? inactivityTimeout,
   }) async {
     final startedAt = DateTime.now();
     final buffer = StringBuffer();
@@ -508,7 +540,10 @@ class ChatCubit extends Cubit<ChatState> {
           runId: runId,
         ),
       );
-      await for (final event in events) {
+      final eventStream = inactivityTimeout != null
+          ? events.timeout(inactivityTimeout)
+          : events;
+      await for (final event in eventStream) {
         switch (event) {
           case AgentTextEvent(:final text):
             buffer.write(text);

@@ -3742,10 +3742,9 @@ PROMOTION: NOT YET
   /// No-ops (returns without posting) if [verifyingChat] isn't a `chat`
   /// ticket, its parent isn't at [SddStage.verifying], or the cubit was
   /// constructed without a [ProviderRegistry]/[CommentRepository] (see the
-  /// constructor's dartdoc). Reentrancy for the *automatic* trigger
-  /// ([_maybeRetryPendingVerify]) is guarded there, not here — this method
-  /// itself stays a plain, repeatable action, the same way [retryDesignSync]
-  /// is. Added for `AIO-1905`.
+  /// constructor's dartdoc). Also no-ops if the parent ticket is already in
+  /// [_inFlightStageAdvanceIds], preventing concurrent retries. Added for
+  /// `AIO-1905`.
   Future<void> retryVerify(Ticket verifyingChat) async {
     if (verifyingChat.type != TicketType.chat) return;
     final providerRegistry = _providerRegistry;
@@ -3756,51 +3755,89 @@ PROMOTION: NOT YET
     final parent = await _repository.getTicketById(parentId);
     if (parent == null || parent.sddStage != SddStage.verifying) return;
 
-    final context = await _assembleStageContext(parent, SddStage.verifying);
-    await commentRepo.addComment(
-      TicketComment(
-        id: '',
-        ticketId: verifyingChat.id,
-        content: context,
-        authorType: CommentAuthorType.system,
-        createdAt: DateTime.now(),
-      ),
-    );
-    final (model, provider) = await _resolveModelAndProvider(
-      SddStage.verifying.modelPhase,
-    );
-    final result = await ChatCubit.runChatTurn(
-      client: provider.client,
-      provider: provider,
-      commentRepo: commentRepo,
-      ticketRepository: _repository,
-      chatTicketId: verifyingChat.id,
-      prompt: context,
-      model: model,
-      readOnlyTools: true,
-      workingDirectory: _sourceRootPath,
-      tools: await _toolsFor(verifyingChat.id),
-      onToolCall: _onToolCallFor(verifyingChat),
-    );
-    // Mirrors _runStageChatTurn's own post-turn PENDING-verdict handling —
-    // without this, a retried verify turn that comes back PENDING again
-    // never creates its next round of fix Tasks/Bugs, leaving the ticket
-    // permanently stuck showing "Ready to retry verification" with no way
-    // to actually progress. Confirmed live: AIO-2949's second PENDING
-    // verdict (after its first round of fixes landed) produced a real
-    // "Fixes Needed" block that was silently dropped before this fix.
-    if (result is ChatTurnSuccess) {
-      final comments = await commentRepo.getCommentsForTicket(
-        verifyingChat.id,
+    // Reentrancy guard: prevent concurrent retries of the same parent.
+    if (_inFlightStageAdvanceIds.contains(parentId)) return;
+
+    // Captured before the run starts, mirroring _runStageChatTurn's own
+    // showingDetailId capture: either the parent or the chat may be on screen.
+    final showingDetailId = switch (state) {
+      TicketDetailLoaded(:final ticket)
+          when ticket.id == parentId || ticket.id == verifyingChat.id =>
+        ticket.id,
+      _ => null,
+    };
+
+    // Register the turn in flight so mid-run recomputes see it as advancing.
+    _inFlightStageAdvanceIds
+      ..add(parentId)
+      ..add(verifyingChat.id);
+    _stageAdvanceStartedAt[parentId] = DateTime.now();
+    _stageAdvanceStartedAt[verifyingChat.id] = DateTime.now();
+    _refreshInFlightBoardState();
+
+    try {
+      final context = await _assembleStageContext(parent, SddStage.verifying);
+      await commentRepo.addComment(
+        TicketComment(
+          id: '',
+          ticketId: verifyingChat.id,
+          content: context,
+          authorType: CommentAuthorType.system,
+          createdAt: DateTime.now(),
+        ),
       );
-      if (comments.isNotEmpty) {
-        final mostRecent = comments.reduce(
-          (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
+      final (model, provider) = await _resolveModelAndProvider(
+        SddStage.verifying.modelPhase,
+      );
+      final result = await ChatCubit.runChatTurn(
+        client: provider.client,
+        provider: provider,
+        commentRepo: commentRepo,
+        ticketRepository: _repository,
+        chatTicketId: verifyingChat.id,
+        prompt: context,
+        model: model,
+        readOnlyTools: true,
+        workingDirectory: _sourceRootPath,
+        tools: await _toolsFor(verifyingChat.id),
+        onToolCall: _onToolCallFor(verifyingChat),
+        inactivityTimeout: ChatCubit.turnInactivityTimeout,
+      );
+      // Mirrors _runStageChatTurn's own post-turn PENDING-verdict handling —
+      // without this, a retried verify turn that comes back PENDING again
+      // never creates its next round of fix Tasks/Bugs, leaving the ticket
+      // permanently stuck showing "Ready to retry verification" with no way
+      // to actually progress. Confirmed live: AIO-2949's second PENDING
+      // verdict (after its first round of fixes landed) produced a real
+      // "Fixes Needed" block that was silently dropped before this fix.
+      if (result is ChatTurnSuccess) {
+        final comments = await commentRepo.getCommentsForTicket(
+          verifyingChat.id,
         );
-        if (mostRecent.content.contains('VERIFY GATE: PENDING')) {
-          await _materializeVerifyFixes(parent, mostRecent.content);
+        if (comments.isNotEmpty) {
+          final mostRecent = comments.reduce(
+            (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
+          );
+          if (mostRecent.content.contains('VERIFY GATE: PENDING')) {
+            await _materializeVerifyFixes(parent, mostRecent.content);
+          }
         }
       }
+    } finally {
+      // Clean up the in-flight registration.
+      _inFlightStageAdvanceIds
+        ..remove(parentId)
+        ..remove(verifyingChat.id);
+      _stageAdvanceStartedAt
+        ..remove(parentId)
+        ..remove(verifyingChat.id);
+      _refreshInFlightBoardState();
+    }
+
+    // Re-emit the detail for whichever of parent/chat was on screen,
+    // so the banner updates and isAdvancingStage clears.
+    if (showingDetailId != null && !isClosed) {
+      await getTicketById(showingDetailId);
     }
   }
 
@@ -3885,7 +3922,11 @@ PROMOTION: NOT YET
       types: TicketTypeHierarchy.executableTypes,
     );
     if (children.isEmpty) {
-      return (ready: false, verifyChat: verifyChat, pendingFixesRemaining: null);
+      return (
+        ready: false,
+        verifyChat: verifyChat,
+        pendingFixesRemaining: null,
+      );
     }
     final notDoneCount = children
         .where((c) => _roleOf(c.status) != WorkflowStatusRole.done)
@@ -4417,8 +4458,9 @@ PROMOTION: NOT YET
       parentId,
       types: const [TicketType.chat],
     );
-    final proposedChats = chats.where((c) => c.title.startsWith(prefix)).toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final proposedChats =
+        chats.where((c) => c.title.startsWith(prefix)).toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return proposedChats.isEmpty ? null : proposedChats.first;
   }
 
@@ -4434,8 +4476,9 @@ PROMOTION: NOT YET
       parentId,
       types: const [TicketType.chat],
     );
-    final exploringChats = chats.where((c) => c.title.startsWith(prefix)).toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final exploringChats =
+        chats.where((c) => c.title.startsWith(prefix)).toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return exploringChats.isEmpty ? null : exploringChats.first;
   }
 
@@ -4456,9 +4499,9 @@ PROMOTION: NOT YET
     final commentRepo = _commentRepository;
     final findings = exploringChat == null || commentRepo == null
         ? const <TicketComment>[]
-        : (await commentRepo.getCommentsForTicket(exploringChat.id))
-            .where((c) => c.authorType != CommentAuthorType.system)
-            .toList();
+        : (await commentRepo.getCommentsForTicket(
+            exploringChat.id,
+          )).where((c) => c.authorType != CommentAuthorType.system).toList();
     if (findings.isEmpty) return '';
     return (StringBuffer()
           ..writeln()
@@ -4481,17 +4524,14 @@ PROMOTION: NOT YET
   /// scoping was actually discussed and approved in the Story's own
   /// Proposed-stage chat (same shape of gap as `AIO-2919`'s original two,
   /// one stage later in the design track).
-  Future<String> _proposedFindingsSection(
-    String parentId,
-    String intro,
-  ) async {
+  Future<String> _proposedFindingsSection(String parentId, String intro) async {
     final proposedChat = await _mostRecentProposedChat(parentId);
     final commentRepo = _commentRepository;
     final findings = proposedChat == null || commentRepo == null
         ? const <TicketComment>[]
-        : (await commentRepo.getCommentsForTicket(proposedChat.id))
-            .where((c) => c.authorType != CommentAuthorType.system)
-            .toList();
+        : (await commentRepo.getCommentsForTicket(
+            proposedChat.id,
+          )).where((c) => c.authorType != CommentAuthorType.system).toList();
     if (findings.isEmpty) return '';
     return (StringBuffer()
           ..writeln()
@@ -6197,7 +6237,9 @@ PROMOTION: NOT YET
           }
         }
         // Log the retry decision
-        final retryGateResult = retryConfidence == AutomationConfidence.auto ? 'fired' : 'pending';
+        final retryGateResult = retryConfidence == AutomationConfidence.auto
+            ? 'fired'
+            : 'pending';
         await _decisionLogService?.record(
           ticketId: task.id,
           source: AutomationContext.codingExecutionRetry.name,
@@ -6338,7 +6380,9 @@ PROMOTION: NOT YET
         await _repository.updateTicketStatus(task.id, _reviewReadyStatus);
       }
       // Log the decision to the audit trail
-      final gateResult = confidence == AutomationConfidence.auto ? 'fired' : 'pending';
+      final gateResult = confidence == AutomationConfidence.auto
+          ? 'fired'
+          : 'pending';
       await _decisionLogService?.record(
         ticketId: task.id,
         source: AutomationContext.codingExecution.name,
@@ -7136,9 +7180,9 @@ PROMOTION: NOT YET
     final commentRepo = _commentRepository;
     final planComments = proposedChat == null || commentRepo == null
         ? const <TicketComment>[]
-        : (await commentRepo.getCommentsForTicket(proposedChat.id))
-              .where((c) => c.authorType != CommentAuthorType.system)
-              .toList();
+        : (await commentRepo.getCommentsForTicket(
+            proposedChat.id,
+          )).where((c) => c.authorType != CommentAuthorType.system).toList();
     if (planComments.isEmpty) return null;
     return (StringBuffer()
           ..writeln('## Approved plan')
@@ -7269,10 +7313,10 @@ PROMOTION: NOT YET
       // reviewer knows exactly what the cut-off portion covers and can read
       // those files itself (it runs with read-only tools in the worktree)
       // instead of failing a large-but-correct change by default.
-      final changedPaths = RegExp(r'^diff --git a/(.+?) b/', multiLine: true)
-          .allMatches(diff)
-          .map((m) => m.group(1)!)
-          .toList();
+      final changedPaths = RegExp(
+        r'^diff --git a/(.+?) b/',
+        multiLine: true,
+      ).allMatches(diff).map((m) => m.group(1)!).toList();
       buffer
         ..writeln()
         ..writeln(
@@ -7725,8 +7769,9 @@ PROMOTION: NOT YET
       epicOrStoryId,
       types: const [TicketType.chat],
     );
-    final matchingChats = chats.where((c) => c.title.startsWith(prefix)).toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final matchingChats =
+        chats.where((c) => c.title.startsWith(prefix)).toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     if (matchingChats.isEmpty) return (null, false);
     final mostRecentChat = matchingChats.first;
     const stalledMessage = 'Stage advance ended without a clear result.';
@@ -8056,6 +8101,7 @@ PROMOTION: NOT YET
               ? 'Running $toolName...'
               : 'Running $toolName: $summary...',
         ),
+        inactivityTimeout: ChatCubit.turnInactivityTimeout,
       );
       // No `runId` is passed above, so ChatTurnCancelled can never
       // actually occur here in practice (no stop-button UI is wired to
@@ -9657,10 +9703,12 @@ PROMOTION: NOT YET
               ..writeln('## Design');
             if (designReply != null &&
                 designReply.content.contains('DESIGN GATE: APPROVED')) {
-              final gateVerdictLine = designReply.content
-                  .split('\n')
-                  .where((line) => line.contains('DESIGN GATE'))
-                  .firstOrNull ?? '';
+              final gateVerdictLine =
+                  designReply.content
+                      .split('\n')
+                      .where((line) => line.contains('DESIGN GATE'))
+                      .firstOrNull ??
+                  '';
               buffer
                 ..writeln(
                   'This story\'s design was approved by a design-sync run. '
@@ -9680,10 +9728,12 @@ PROMOTION: NOT YET
                 ..writeln()
                 ..writeln(page.description ?? '(design export not available)');
               if (designReply != null) {
-                final gateVerdictLine = designReply.content
-                    .split('\n')
-                    .where((line) => line.contains('DESIGN GATE'))
-                    .firstOrNull ?? '(status unknown)';
+                final gateVerdictLine =
+                    designReply.content
+                        .split('\n')
+                        .where((line) => line.contains('DESIGN GATE'))
+                        .firstOrNull ??
+                    '(status unknown)';
                 buffer
                   ..writeln()
                   ..writeln('Design status: $gateVerdictLine');
@@ -9712,9 +9762,9 @@ PROMOTION: NOT YET
       final findings = await _proposedFindingsSection(
         parent.id,
         "This story's scope was already decided in its own Proposed-stage "
-            'review — ground the design brief in that decomposition and '
-            'discussion rather than the title/description alone. The full '
-            'Proposed-stage conversation, in order:',
+        'review — ground the design brief in that decomposition and '
+        'discussion rather than the title/description alone. The full '
+        'Proposed-stage conversation, in order:',
       );
       if (findings.isNotEmpty) buffer.write(findings);
       buffer
@@ -9749,7 +9799,9 @@ PROMOTION: NOT YET
         ..writeln()
         ..writeln('## Existing design system')
         ..writeln(await _readTokenFilesForContext());
-      final designSyncSkill = await _effectiveAssetContent('skills/design-sync');
+      final designSyncSkill = await _effectiveAssetContent(
+        'skills/design-sync',
+      );
       if (designSyncSkill != null && designSyncSkill.isNotEmpty) {
         buffer
           ..writeln()
@@ -9772,9 +9824,9 @@ PROMOTION: NOT YET
       final findings = await _exploringFindingsSection(
         parent.id,
         "This bug's root cause was already investigated in its own "
-            'Exploring-stage review — build the fix plan on that diagnosis '
-            'rather than re-investigating from the title/description alone. '
-            'The full Exploring-stage conversation, in order:',
+        'Exploring-stage review — build the fix plan on that diagnosis '
+        'rather than re-investigating from the title/description alone. '
+        'The full Exploring-stage conversation, in order:',
       );
       if (findings.isNotEmpty) buffer.write(findings);
       final proposeSkillBug = await _effectiveAssetContent('skills/propose');
@@ -9804,10 +9856,10 @@ PROMOTION: NOT YET
       final findings = await _exploringFindingsSection(
         parent.id,
         "This ${parent.type.name}'s problem space was already explored in its "
-            'own Exploring-stage review — base the decomposition on that '
-            "exploration's conclusions, tradeoffs, and options rather than "
-            're-deriving them from the title and description alone. The full '
-            'Exploring-stage conversation, in order:',
+        'own Exploring-stage review — base the decomposition on that '
+        "exploration's conclusions, tradeoffs, and options rather than "
+        're-deriving them from the title and description alone. The full '
+        'Exploring-stage conversation, in order:',
       );
       if (findings.isNotEmpty) buffer.write(findings);
       final proposeSkill = await _effectiveAssetContent('skills/propose');
@@ -9880,8 +9932,11 @@ PROMOTION: NOT YET
         heading: '## Fixes Needed',
         childTypeLabels: const ['Task', 'Bug'],
       ))
-        (label == 'Task' ? TicketType.task : TicketType.bug, title,
-            blockedByTitle),
+        (
+          label == 'Task' ? TicketType.task : TicketType.bug,
+          title,
+          blockedByTitle,
+        ),
     ];
   }
 
@@ -9965,13 +10020,10 @@ PROMOTION: NOT YET
         ? TicketType.story
         : TicketType.task;
     final parsed = _parseDecomposition(reply, childType);
-    await _materializeParsedChildren(
-      parent,
-      [
-        for (final (title, blockedByTitle) in parsed)
-          (childType, title, blockedByTitle),
-      ],
-    );
+    await _materializeParsedChildren(parent, [
+      for (final (title, blockedByTitle) in parsed)
+        (childType, title, blockedByTitle),
+    ]);
   }
 
   /// Runs once per `verifying`-stage chat turn whose reply contains
@@ -10458,8 +10510,7 @@ PROMOTION: NOT YET
             executionQueuePosition == null &&
             (_roleOf(ticket.status) == WorkflowStatusRole.executionTrigger ||
                 (ticket.type == TicketType.bug &&
-                    (ticket.sddStage?.index ?? -1) >=
-                        SddStage.applying.index &&
+                    (ticket.sddStage?.index ?? -1) >= SddStage.applying.index &&
                     await _mostRecentExecutionChat(ticket.id) != null))) {
           final prConfirmed = await _executionSucceededWithPr(ticket.id);
           final automationRepo = _automationSettingsRepository;

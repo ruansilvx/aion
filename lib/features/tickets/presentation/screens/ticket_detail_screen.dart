@@ -146,6 +146,13 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   /// `AIO-1905`.
   bool _retryingVerify = false;
 
+  /// Whether a message send ([ChatCubit.sendMessage] or
+  /// [CommentsCubit.addComment]) is currently in flight — guards the compose
+  /// affordance against overlapping submits so two turns can't race the same
+  /// buffer. Also ensures [_commentController.clear] only happens after the
+  /// message is confirmed persisted. Added for `AIO-2998`.
+  bool _sending = false;
+
   /// [SddStage.verifying]'s override-aware display name (via
   /// [TicketsCubit.stagePresentName]), resolved once in [initState] — mirrors
   /// [_automationConfidence]'s own "loaded once per screen instance" pattern.
@@ -185,9 +192,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     setState(() => _preparingRelease = true);
     final ReleaseDraft? draft;
     try {
-      draft = await context.read<TicketsCubit>().prepareReleaseDraft(
-        ticket.id,
-      );
+      draft = await context.read<TicketsCubit>().prepareReleaseDraft(ticket.id);
     } finally {
       if (mounted) setState(() => _preparingRelease = false);
     }
@@ -408,31 +413,62 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   /// `ChatCubit` resolves which tool(s) the turn offers itself (see
   /// [ChatCubit.sendMessage]'s dartdoc) but can't execute a
   /// `branch_ticket`/`close_branch` call itself, since that logic lives on
-  /// [TicketsCubit]. Added for `AIO-1118`.
-  void _sendComment() {
+  /// [TicketsCubit]. Added for `AIO-1118`. Awaits the send to completion,
+  /// clears the controller only on success, and retains the text on failure
+  /// so the user can retry or edit. Guarded by a reentrancy lock
+  /// ([_sending]) to prevent overlapping sends. Added for `AIO-2998`.
+  Future<void> _sendComment() async {
     final content = _commentController.text.trim();
     if (content.isEmpty) return;
-    final chat = _currentTicket;
-    if (chat?.type == TicketType.chat) {
-      context.read<ChatCubit>().sendMessage(
-        chatTicketId: widget.ticketId,
-        content: content,
-        onToolCall: (toolCallId, toolName, arguments, session) =>
-            context.read<TicketsCubit>().handleChatToolCall(
-              chat!,
-              toolCallId,
-              toolName,
-              arguments,
-              session,
-            ),
-      );
-    } else {
-      context.read<CommentsCubit>().addComment(
-        ticketId: widget.ticketId,
-        content: content,
-      );
+    if (_sending) return;
+
+    setState(() => _sending = true);
+    try {
+      final chat = _currentTicket;
+      if (chat?.type == TicketType.chat) {
+        // Diagnostic logging: routing branch for chat tickets.
+        // If this path is unexpectedly taken for a non-chat ticket,
+        // or if the send fails silently, these logs will capture it.
+        debugPrint(
+          '[_sendComment] routing: chat (id=${chat!.id}, '
+          'type=${chat.type})',
+        );
+        await context.read<ChatCubit>().sendMessage(
+          chatTicketId: widget.ticketId,
+          content: content,
+          onToolCall: (toolCallId, toolName, arguments, session) =>
+              context.read<TicketsCubit>().handleChatToolCall(
+                chat,
+                toolCallId,
+                toolName,
+                arguments,
+                session,
+              ),
+        );
+      } else {
+        // Diagnostic logging: routing branch for non-chat tickets.
+        debugPrint(
+          '[_sendComment] routing: comments (currentTicket=${chat == null ? 'null' : 'id=${chat.id}, type=${chat.type}'}, '
+          'ticketId=${widget.ticketId})',
+        );
+        await context.read<CommentsCubit>().addComment(
+          ticketId: widget.ticketId,
+          content: content,
+        );
+      }
+      // Clear the controller only after the send succeeds.
+      if (mounted) {
+        _commentController.clear();
+      }
+    } catch (e) {
+      // On failure, retain the text so the user can retry or edit.
+      // Diagnostic logging captures the failure for debugging.
+      debugPrint('[_sendComment] send failed: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _sending = false);
+      }
     }
-    _commentController.clear();
   }
 
   @override
