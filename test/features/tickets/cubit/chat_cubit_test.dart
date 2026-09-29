@@ -1696,6 +1696,102 @@ void main() {
     });
   });
 
+  group('buildContinuationPrompt / follow-up session continuity', () {
+    TicketComment c(int n, CommentAuthorType type, String content) =>
+        TicketComment(
+          id: 'c$n',
+          ticketId: 'chat-1',
+          content: content,
+          authorType: type,
+          createdAt: DateTime(2026, 1, 1, 0, 0, n),
+        );
+
+    test('returns the message unchanged when the thread has no history', () {
+      final prompt = ChatCubit.buildContinuationPrompt([
+        c(1, CommentAuthorType.human, 'Hello'),
+      ], 'Hello');
+      expect(prompt, 'Hello');
+    });
+
+    test('replays earlier comments, labelled and in order, before the new '
+        'message', () {
+      final prompt = ChatCubit.buildContinuationPrompt([
+        c(3, CommentAuthorType.human, 'Second question'),
+        c(1, CommentAuthorType.system, 'Reply with GATE: APPROVED when done.'),
+        c(2, CommentAuthorType.ai, 'First answer'),
+      ], 'Second question');
+      expect(prompt, contains('[Instructions]\nReply with GATE: APPROVED'));
+      expect(prompt, contains('[Assistant]\nFirst answer'));
+      expect(
+        prompt.indexOf('Instructions]'),
+        lessThan(prompt.indexOf('[Assistant]')),
+      );
+      expect(prompt.trimRight(), endsWith('Second question'));
+      // The new message appears once, as the trailing message only.
+      expect(prompt.split('Second question').length - 1, 1);
+    });
+
+    test('skips persisted "Execution failed" AI comments', () {
+      final prompt = ChatCubit.buildContinuationPrompt([
+        c(1, CommentAuthorType.system, 'Opening'),
+        c(2, CommentAuthorType.ai, 'Execution failed: boom'),
+        c(3, CommentAuthorType.human, 'Retry'),
+      ], 'Retry');
+      expect(prompt, isNot(contains('boom')));
+    });
+
+    test('keeps the opening comment and drops the oldest others past the '
+        'budget', () {
+      final big = 'x' * (ChatCubit.continuationHistoryBudget ~/ 2 + 1);
+      final prompt = ChatCubit.buildContinuationPrompt([
+        c(1, CommentAuthorType.system, 'Opening instructions'),
+        c(2, CommentAuthorType.ai, 'OLD$big'),
+        c(3, CommentAuthorType.human, 'MID$big'),
+        c(4, CommentAuthorType.ai, 'NEW$big'),
+        c(5, CommentAuthorType.human, 'Latest'),
+      ], 'Latest');
+      expect(prompt, contains('Opening instructions'));
+      expect(prompt, contains('NEW'));
+      expect(prompt, isNot(contains('OLD')));
+      expect(prompt, contains('earlier message(s) omitted'));
+    });
+
+    blocTest<ChatCubit, ChatState>(
+      'sendMessage passes the earlier thread to the model, not just the '
+      'new message',
+      setUp: () {
+        when(
+          () => ticketRepository.getTicketById('chat-1'),
+        ).thenAnswer((_) async => chatTicket);
+        when(
+          () => modelRoutingRepository.getModelForPhase(ModelPhase.capable),
+        ).thenAnswer((_) async => _sonnet);
+        when(() => repository.addComment(any())).thenAnswer((_) async {});
+        when(() => repository.getCommentsForTicket('chat-1')).thenAnswer(
+          (_) async => [
+            c(1, CommentAuthorType.system, 'Opening instructions'),
+            c(2, CommentAuthorType.ai, 'Earlier reply'),
+            c(3, CommentAuthorType.human, 'Follow-up'),
+          ],
+        );
+        when(() => client.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+        );
+      },
+      build: buildCubit,
+      act: (cubit) =>
+          cubit.sendMessage(chatTicketId: 'chat-1', content: 'Follow-up'),
+      verify: (_) {
+        final request =
+            verify(() => client.run(captureAny())).captured.single
+                as AgentRequest;
+        expect(request.prompt, contains('Opening instructions'));
+        expect(request.prompt, contains('Earlier reply'));
+        expect(request.prompt.trimRight(), endsWith('Follow-up'));
+      },
+    );
+  });
+
   group('runChatTurn inactivityTimeout (Fix 2 — AIO-2998)', () {
     // Real (short) durations rather than `fakeAsync` — `Stream.timeout`'s
     // internal `Timer` did not reliably advance under `FakeAsync.elapse`
