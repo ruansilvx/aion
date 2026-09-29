@@ -38,7 +38,9 @@ class DecisionLogTable extends Table {
   TextColumn get outcome => text().nullable()();
 
   /// The terminal gate state: `'fired'` / `'pending'` / `'confirmed'` /
-  /// `'rejected'` / `'declined'`.
+  /// `'rejected'` / `'declined'`, plus `'mismatch'` for a
+  /// `'mechanicalVerification'` row where the independent check disagreed
+  /// with the model's own verdict.
   TextColumn get gateResult => text().named('gate_result')();
 
   /// Free-form context: resolved asset version, mechanical-check command +

@@ -6134,6 +6134,7 @@ PROMOTION: NOT YET
           final mechanicalFailure = await _mechanicalVerificationMismatch(
             rootPath,
             worktreePath,
+            ticketId: task.id,
           );
           if (mechanicalFailure != null) {
             failureReason = mechanicalFailure;
@@ -7006,12 +7007,36 @@ PROMOTION: NOT YET
   /// `conventions/architecture-conventions`/`skills/verify` content into a
   /// coding-execution prompt; no other prompt in this class consults
   /// [_baselineRepository].
-  Future<String?> _effectiveAssetContent(String assetKey) async {
+  ///
+  /// Also records one decision-log row for [ticketId] (the ticket the
+  /// resolved content is being assembled into a prompt for): `source` is
+  /// [assetKey] itself, `gate_result` is `fired` when non-empty content
+  /// resolved and `declined` when the asset is absent from the manifest or
+  /// resolved empty, and `detail` names which asset actually resolved —
+  /// `override: <path>`, `baseline: <version>`, or `absent`. Logged here
+  /// rather than at the callers because only this method can see the
+  /// override-vs-baseline fact; every caller includes the content in its
+  /// prompt exactly when it is non-empty, so `fired` matches "actually
+  /// included". Nothing is logged when the baseline dependencies are unset
+  /// (there is no asset to resolve at all). Extended for `AIO-2952`.
+  Future<String?> _effectiveAssetContent(
+    String assetKey, {
+    required String ticketId,
+  }) async {
     final baselineRepo = _baselineRepository;
     final projectId = _projectId;
     final baselineVersion = _baselineVersion;
     if (baselineRepo == null || projectId == null || baselineVersion == null) {
       return null;
+    }
+
+    Future<void> log(String gateResult, String detail) async {
+      await _decisionLogService?.record(
+        ticketId: ticketId,
+        source: assetKey,
+        gateResult: gateResult,
+        detail: detail,
+      );
     }
 
     final manifest = await baselineRepo.getManifest(baselineVersion);
@@ -7022,15 +7047,30 @@ PROMOTION: NOT YET
         break;
       }
     }
-    if (asset == null) return null;
+    if (asset == null) {
+      await log('declined', 'absent');
+      return null;
+    }
 
     final overrides = await baselineRepo.readOverrides(projectId);
     for (final override in overrides) {
       if (override.assetKey == assetKey) {
-        return baselineRepo.readOverrideContent(override.overridePath);
+        final content = await baselineRepo.readOverrideContent(
+          override.overridePath,
+        );
+        await log(
+          content.isEmpty ? 'declined' : 'fired',
+          'override: ${override.overridePath}',
+        );
+        return content;
       }
     }
-    return baselineRepo.readBundledContent(asset);
+    final content = await baselineRepo.readBundledContent(asset);
+    await log(
+      content.isEmpty ? 'declined' : 'fired',
+      'baseline: $baselineVersion',
+    );
+    return content;
   }
 
   /// Assembles the plain-text context a spawned coding-execution chat opens
@@ -7150,6 +7190,7 @@ PROMOTION: NOT YET
 
     final conventions = await _effectiveAssetContent(
       'conventions/architecture-conventions',
+      ticketId: task.id,
     );
     if (conventions != null && conventions.isNotEmpty) {
       buffer
@@ -7159,7 +7200,10 @@ PROMOTION: NOT YET
         ..writeln(conventions);
     }
 
-    final applySkill = await _effectiveAssetContent('skills/apply');
+    final applySkill = await _effectiveAssetContent(
+      'skills/apply',
+      ticketId: task.id,
+    );
     if (applySkill != null && applySkill.isNotEmpty) {
       buffer
         ..writeln()
@@ -7466,6 +7510,12 @@ PROMOTION: NOT YET
         : fallback;
   }
 
+  /// Test hook exposing [_assembleVerificationContext] — the smallest public
+  /// path that exercises [_effectiveAssetContent] (`AIO-2952`).
+  @visibleForTesting
+  Future<String> debugAssembleVerificationContext(Ticket task) =>
+      _assembleVerificationContext(task);
+
   /// Test-only seam onto [_assembleTaskVerificationContext] — the prompt is
   /// otherwise reachable only by driving a full coding-execution run to its
   /// review turn. Mirrors [debugTrackOpenAionPr]'s precedent. Added for
@@ -7505,7 +7555,10 @@ PROMOTION: NOT YET
   /// context.) Added for AIO-1654 — replaces the
   /// `FlutterVerifier`-based mechanical verify gate with this agentic one.
   Future<String> _assembleVerificationContext(Ticket task) async {
-    final verifySkill = await _effectiveAssetContent('skills/verify');
+    final verifySkill = await _effectiveAssetContent(
+      'skills/verify',
+      ticketId: task.id,
+    );
     final buffer = StringBuffer();
     if (verifySkill != null && verifySkill.isNotEmpty) {
       buffer
@@ -7620,23 +7673,62 @@ PROMOTION: NOT YET
   /// diff (this mechanism spans Flutter/Go/Rust/Python/npm via
   /// [DetectedStack.checkCommand]) isn't attempted. See `AIO-2964`'s own
   /// discovery session, `AIO-2943`.
+  ///
+  /// Also records one decision-log row for [ticketId] — logged in here, not
+  /// at the call site, because this method returns `null` for four
+  /// structurally different reasons the caller cannot tell apart. `source` is
+  /// the literal `mechanicalVerification`. `gate_result` is `fired` only when
+  /// the check genuinely ran and passed (the one true agreement),
+  /// `mismatch` when it disagreed with the model (`detail` carries the failing
+  /// command and its exit code), and `declined` when it couldn't run (no
+  /// runner, or no detected stack/check command) or its failure was
+  /// discounted because the pristine checkout fails the same command. The
+  /// epic's first non-`AutomationContext` `gate_result` value is `mismatch`
+  /// (`AIO-2952`).
   Future<String?> _mechanicalVerificationMismatch(
     String rootPath,
-    String worktreePath,
-  ) async {
+    String worktreePath, {
+    required String ticketId,
+  }) async {
+    Future<void> log(String gateResult, String detail) async {
+      await _decisionLogService?.record(
+        ticketId: ticketId,
+        source: 'mechanicalVerification',
+        gateResult: gateResult,
+        detail: detail,
+      );
+    }
+
     final runner = _mechanicalVerificationRunner;
-    if (runner == null) return null;
+    if (runner == null) {
+      await log('declined', 'no mechanical verification runner configured');
+      return null;
+    }
     final detected = ProjectStackDetector().detect(rootPath);
-    if (detected == null || detected.checkCommand.isEmpty) return null;
+    if (detected == null || detected.checkCommand.isEmpty) {
+      await log('declined', 'no stack detected or no check command');
+      return null;
+    }
 
     final results = await runner.run(detected.checkCommand, worktreePath);
     final failed = results.where((r) => !r.passed).firstOrNull;
-    if (failed == null) return null;
+    if (failed == null) {
+      await log('fired', 'all ${results.length} check command(s) passed');
+      return null;
+    }
 
     final baseline = await runner.run([failed.command], rootPath);
     final baselineAlreadyFailed = !(baseline.firstOrNull?.passed ?? true);
-    if (baselineAlreadyFailed) return null;
+    if (baselineAlreadyFailed) {
+      await log(
+        'declined',
+        'discounted: `${failed.command}` also fails on the base checkout '
+            '(exit ${failed.exitCode})',
+      );
+      return null;
+    }
 
+    await log('mismatch', '`${failed.command}` exited ${failed.exitCode}');
     final output = failed.output.trim();
     return 'Independent verification disagreed with the model\'s own '
         '"VERIFICATION: PASSED" claim — `${failed.command}` exited '
@@ -9643,7 +9735,10 @@ PROMOTION: NOT YET
             ..writeln(actual);
         }
       }
-      final exploreSkillBug = await _effectiveAssetContent('skills/explore');
+      final exploreSkillBug = await _effectiveAssetContent(
+        'skills/explore',
+        ticketId: parent.id,
+      );
       if (exploreSkillBug != null && exploreSkillBug.isNotEmpty) {
         buffer
           ..writeln()
@@ -9671,7 +9766,10 @@ PROMOTION: NOT YET
           'fix plan, not a proposal or an implementation.',
         );
     } else if (stage == SddStage.exploring) {
-      final exploreSkill = await _effectiveAssetContent('skills/explore');
+      final exploreSkill = await _effectiveAssetContent(
+        'skills/explore',
+        ticketId: parent.id,
+      );
       if (exploreSkill != null && exploreSkill.isNotEmpty) {
         buffer
           ..writeln()
@@ -9842,6 +9940,7 @@ PROMOTION: NOT YET
         ..writeln(await _readTokenFilesForContext());
       final designBriefSkill = await _effectiveAssetContent(
         'skills/design-brief',
+        ticketId: parent.id,
       );
       if (designBriefSkill != null && designBriefSkill.isNotEmpty) {
         buffer
@@ -9870,6 +9969,7 @@ PROMOTION: NOT YET
         ..writeln(await _readTokenFilesForContext());
       final designSyncSkill = await _effectiveAssetContent(
         'skills/design-sync',
+        ticketId: parent.id,
       );
       if (designSyncSkill != null && designSyncSkill.isNotEmpty) {
         buffer
@@ -9898,7 +9998,10 @@ PROMOTION: NOT YET
         'The full Exploring-stage conversation, in order:',
       );
       if (findings.isNotEmpty) buffer.write(findings);
-      final proposeSkillBug = await _effectiveAssetContent('skills/propose');
+      final proposeSkillBug = await _effectiveAssetContent(
+        'skills/propose',
+        ticketId: parent.id,
+      );
       if (proposeSkillBug != null && proposeSkillBug.isNotEmpty) {
         buffer
           ..writeln()
@@ -9931,7 +10034,10 @@ PROMOTION: NOT YET
         'Exploring-stage conversation, in order:',
       );
       if (findings.isNotEmpty) buffer.write(findings);
-      final proposeSkill = await _effectiveAssetContent('skills/propose');
+      final proposeSkill = await _effectiveAssetContent(
+        'skills/propose',
+        ticketId: parent.id,
+      );
       if (proposeSkill != null && proposeSkill.isNotEmpty) {
         buffer
           ..writeln()
