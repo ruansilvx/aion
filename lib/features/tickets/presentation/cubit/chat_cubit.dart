@@ -198,7 +198,7 @@ class ChatCubit extends Cubit<ChatState> {
         commentRepo: _repository,
         ticketRepository: _ticketRepository,
         chatTicketId: chatTicketId,
-        prompt: content,
+        prompt: buildContinuationPrompt(afterHuman, content),
         model: model,
         runId: runId,
         onChunk: (textSoFar) {
@@ -276,6 +276,92 @@ class ChatCubit extends Cubit<ChatState> {
       if (isClosed) return;
       emit(ChatError(e.toString()));
     }
+  }
+
+  /// Maximum characters of prior-thread history [buildContinuationPrompt]
+  /// replays into a follow-up turn, excluding the thread's opening comment
+  /// (always kept) and the new message itself.
+  static const int continuationHistoryBudget = 60000;
+
+  /// Builds the prompt for a human follow-up turn in an existing chat.
+  /// Every [AgentModelClient.run] starts a fresh, non-resumed model session
+  /// (see [runChatTurn]), so sending only [newMessage] leaves the model with
+  /// no memory of the thread — including the opening instructions a stage
+  /// chat's gate depends on. [thread] is the chat's comments *including* the
+  /// just-persisted human [newMessage] as its latest entry; the earlier ones
+  /// are replayed as a labelled transcript ahead of [newMessage]. A thread
+  /// with nothing before [newMessage] returns it unchanged.
+  ///
+  /// The opening comment is always kept; beyond it, the oldest comments are
+  /// dropped first once the transcript exceeds [continuationHistoryBudget],
+  /// with a marker noting how many were omitted. Persisted
+  /// `'Execution failed: ...'` AI comments are skipped as noise. Added to fix
+  /// missing session continuity across stage-chat follow-up replies.
+  @visibleForTesting
+  static String buildContinuationPrompt(
+    List<TicketComment> thread,
+    String newMessage,
+  ) {
+    final ordered = [...thread]
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    // Drop the just-persisted new message itself (the latest human entry).
+    final lastHuman = ordered.lastIndexWhere(
+      (c) => c.authorType == CommentAuthorType.human,
+    );
+    if (lastHuman != -1 && ordered[lastHuman].content == newMessage) {
+      ordered.removeAt(lastHuman);
+    }
+    final history = ordered
+        .where(
+          (c) =>
+              !(c.authorType == CommentAuthorType.ai &&
+                  c.content.startsWith('Execution failed:')),
+        )
+        .toList();
+    if (history.isEmpty) return newMessage;
+
+    String label(TicketComment c) => switch (c.authorType) {
+      CommentAuthorType.human => 'User',
+      CommentAuthorType.ai => 'Assistant',
+      CommentAuthorType.system => 'Instructions',
+    };
+    String render(TicketComment c) => '[${label(c)}]\n${c.content}';
+
+    final first = history.first;
+    final rest = history.sublist(1);
+    var used = 0;
+    var keepFrom = rest.length;
+    while (keepFrom > 0) {
+      final cost = render(rest[keepFrom - 1]).length;
+      if (used + cost > continuationHistoryBudget) break;
+      used += cost;
+      keepFrom--;
+    }
+    final omitted = keepFrom;
+
+    final buffer = StringBuffer()
+      ..writeln(
+        'This is a continuing conversation. The earlier messages are '
+        'reproduced below, oldest first, so you have the full context.',
+      )
+      ..writeln()
+      ..writeln(render(first));
+    if (omitted > 0) {
+      buffer
+        ..writeln()
+        ..writeln('[... $omitted earlier message(s) omitted ...]');
+    }
+    for (final c in rest.sublist(keepFrom)) {
+      buffer
+        ..writeln()
+        ..writeln(render(c));
+    }
+    buffer
+      ..writeln()
+      ..writeln('The user has just sent this new message — reply to it:')
+      ..writeln()
+      ..write(newMessage);
+    return buffer.toString();
   }
 
   /// Cancels [chatTicketId]'s currently in-flight reply, if any — no-op if
