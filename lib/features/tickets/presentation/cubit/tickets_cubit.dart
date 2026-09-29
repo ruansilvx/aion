@@ -6912,13 +6912,14 @@ PROMOTION: NOT YET
         }
         gate();
       case AutomationConfidence.manual:
-        // Log manual decision for each ticket
+        // Log manual decision for each ticket — no resume prompt is ever
+        // surfaced (no confirm/dismiss row can follow), so 'declined'.
         for (final ticket in survivingTickets) {
           await _decisionLogService?.record(
             ticketId: ticket.id,
             source: AutomationContext.codingExecutionResume.name,
             confidence: confidence.name,
-            gateResult: 'pending',
+            gateResult: 'declined',
           );
         }
         unawaited(_persistExecutionQueueSnapshot());
@@ -8591,13 +8592,15 @@ PROMOTION: NOT YET
           );
           _recordPendingSpecLinkSuggestion(ticket, match);
         case AutomationConfidence.manual:
-          // Log manual decision
+          // Log manual decision — an outright, terminal decline (no pending
+          // suggestion is recorded, so no confirm/reject row can follow),
+          // hence 'declined' rather than 'pending'.
           await _decisionLogService?.record(
             ticketId: ticket.id,
             source: AutomationContext.specAutoLink.name,
             sourceDetail: 'match: ${match.id}',
             confidence: confidence.name,
-            gateResult: 'pending',
+            gateResult: 'declined',
           );
           break;
       }
