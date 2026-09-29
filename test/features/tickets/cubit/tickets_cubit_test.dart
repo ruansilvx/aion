@@ -112,6 +112,24 @@ class MockDecisionGraphRepository extends Mock
 
 class MockDecisionLogService extends Mock implements DecisionLogService {}
 
+/// A [MockDecisionLogService] whose `record` succeeds — the shape every
+/// decision-log wiring test below needs.
+MockDecisionLogService stubbedDecisionLogService() {
+  final service = MockDecisionLogService();
+  when(
+    () => service.record(
+      ticketId: any(named: 'ticketId'),
+      source: any(named: 'source'),
+      sourceDetail: any(named: 'sourceDetail'),
+      confidence: any(named: 'confidence'),
+      outcome: any(named: 'outcome'),
+      gateResult: any(named: 'gateResult'),
+      detail: any(named: 'detail'),
+    ),
+  ).thenAnswer((_) async {});
+  return service;
+}
+
 /// In-memory [TransitionPreconditionRepository] fake, pre-seeded (at
 /// construction) with the exact baseline graphs
 /// `TransitionPreconditionDao.seedDefaultsIfEmpty` persists — see
@@ -15608,12 +15626,14 @@ void main() {
       linkRepository = MockTicketLinkRepository();
     });
 
-    TicketsCubit buildCubit() => TicketsCubit(
-      repository,
-      providerRegistry: registry,
-      commentRepository: commentRepository,
-      linkRepository: linkRepository,
-    );
+    TicketsCubit buildCubit({DecisionLogService? decisionLogService}) =>
+        TicketsCubit(
+          repository,
+          providerRegistry: registry,
+          commentRepository: commentRepository,
+          linkRepository: linkRepository,
+          decisionLogService: decisionLogService,
+        );
 
     void stubHappyPath({required Completer<Stream<AgentEvent>> pauseOn}) {
       when(
@@ -16081,6 +16101,103 @@ void main() {
         ),
       ],
     );
+
+    group('decision-log wiring (AIO-2951)', () {
+      void stubDiscussion(String reply) {
+        when(
+          () => repository.getTicketById(any()),
+        ).thenAnswer((_) async => dummyChatTicket);
+        when(
+          () => repository.getTicketById(ideaTicket.id),
+        ).thenAnswer((_) async => ideaTicket);
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        stubStatefulComments(commentRepository, dummyChatTicket.id);
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable([
+            AgentTextEvent(reply),
+            const AgentDoneEvent(),
+          ]),
+        );
+        when(
+          () => linkRepository.createLink(
+            sourceTicketId: any(named: 'sourceTicketId'),
+            targetTicketId: any(named: 'targetTicketId'),
+            linkType: TicketLinkType.relatesTo,
+          ),
+        ).thenAnswer((_) async {});
+      }
+
+      void verifyRow(
+        MockDecisionLogService log,
+        String gateResult, {
+        String? detail,
+      }) => verify(
+        () => log.record(
+          ticketId: ideaTicket.id,
+          source: 'ideaPromotion',
+          sourceDetail: 'epic',
+          gateResult: gateResult,
+          detail: detail,
+        ),
+      ).called(1);
+
+      test('a PROMOTION: EPIC gate line logs a "pending" row keyed by the '
+          'idea, with no confidence tier', () async {
+        stubDiscussion('Well scoped.\n\nPROMOTION: EPIC');
+        final log = stubbedDecisionLogService();
+        final cubit = buildCubit(decisionLogService: log);
+        addTearDown(cubit.close);
+        await cubit.startIdeaDiscussion(ideaTicket);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        verifyRow(log, 'pending');
+        verifyNever(
+          () => log.record(
+            ticketId: any(named: 'ticketId'),
+            source: any(named: 'source'),
+            sourceDetail: any(named: 'sourceDetail'),
+            confidence: any(named: 'confidence'),
+            gateResult: any(named: 'gateResult'),
+          ),
+        );
+      });
+
+      test('PROMOTION: NOT YET logs nothing, since no gate was raised', () async {
+        stubDiscussion('Not ready.\n\nPROMOTION: NOT YET');
+        final log = stubbedDecisionLogService();
+        final cubit = buildCubit(decisionLogService: log);
+        addTearDown(cubit.close);
+        await cubit.startIdeaDiscussion(ideaTicket);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        verifyZeroInteractions(log);
+      });
+
+      test('confirming logs "confirmed" carrying the existing target', () async {
+        stubDiscussion('Well scoped.\n\nPROMOTION: EPIC');
+        final log = stubbedDecisionLogService();
+        final cubit = buildCubit(decisionLogService: log);
+        addTearDown(cubit.close);
+        await cubit.startIdeaDiscussion(ideaTicket);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await cubit.confirmPendingIdeaPromotion(
+          ideaTicket.id,
+          existingTicketId: epic.id,
+        );
+        verifyRow(log, 'pending');
+        verifyRow(log, 'confirmed', detail: 'existing: ${epic.id}');
+      });
+
+      test('rejecting logs "rejected"', () async {
+        stubDiscussion('Well scoped.\n\nPROMOTION: EPIC');
+        final log = stubbedDecisionLogService();
+        final cubit = buildCubit(decisionLogService: log);
+        addTearDown(cubit.close);
+        await cubit.startIdeaDiscussion(ideaTicket);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await cubit.rejectPendingIdeaPromotion(ideaTicket.id);
+        verifyRow(log, 'pending');
+        verifyRow(log, 'rejected');
+      });
+    });
 
     test(
       'confirming with nothing pending no-ops without touching the '
@@ -20609,7 +20726,9 @@ void main() {
       });
     });
 
-    TicketsCubit buildAttachmentCubit() => TicketsCubit(
+    TicketsCubit buildAttachmentCubit({
+      DecisionLogService? decisionLogService,
+    }) => TicketsCubit(
       repository,
       providerRegistry: registry,
       commentRepository: commentRepository,
@@ -20618,7 +20737,105 @@ void main() {
       gitClient: gitClient,
       projectRootPath: '/project/root',
       sourceRootPath: '/project/root',
+      decisionLogService: decisionLogService,
     );
+
+    group('decision-log wiring (AIO-2951)', () {
+      SkillAttachment attachmentWith(AutomationConfidence confidence) =>
+          SkillAttachment(
+            id: 'attach-log',
+            workflowStatusId: backlogStatusId,
+            kind: SkillAttachmentKind.delegatedSkill,
+            skillName: 'code-review',
+            confidence: confidence,
+          );
+
+      void stubAttachment(SkillAttachment attachment) {
+        when(
+          () => attachmentRepository.getAll(),
+        ).thenAnswer((_) async => [attachment]);
+        when(
+          () => repository.getTicketById(ticket.id),
+        ).thenAnswer((_) async => ticket);
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+        );
+      }
+
+      void verifyRow(
+        MockDecisionLogService log,
+        String gateResult,
+        AutomationConfidence confidence,
+      ) => verify(
+        () => log.record(
+          ticketId: ticket.id,
+          source: 'skillAttachment',
+          sourceDetail: 'attach-log',
+          confidence: confidence.name,
+          gateResult: gateResult,
+        ),
+      ).called(1);
+
+      test('auto confidence logs a "fired" row', () async {
+        stubAttachment(attachmentWith(AutomationConfidence.auto));
+        final log = stubbedDecisionLogService();
+        final cubit = buildAttachmentCubit(decisionLogService: log);
+        addTearDown(cubit.close);
+        await Future<void>.delayed(Duration.zero);
+        await cubit.updateTicketStatus(ticket.id, 'backlog');
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        verifyRow(log, 'fired', AutomationConfidence.auto);
+      });
+
+      test('gated confidence logs "pending", then "confirmed" on confirm, '
+          'sharing ticket + attachment id as the correlation key', () async {
+        stubAttachment(attachmentWith(AutomationConfidence.gated));
+        final log = stubbedDecisionLogService();
+        final cubit = buildAttachmentCubit(decisionLogService: log);
+        addTearDown(cubit.close);
+        await Future<void>.delayed(Duration.zero);
+        await cubit.updateTicketStatus(ticket.id, 'backlog');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        verifyRow(log, 'pending', AutomationConfidence.gated);
+        verifyNever(
+          () => log.record(
+            ticketId: any(named: 'ticketId'),
+            source: any(named: 'source'),
+            sourceDetail: any(named: 'sourceDetail'),
+            confidence: any(named: 'confidence'),
+            gateResult: 'confirmed',
+          ),
+        );
+
+        await cubit.confirmPendingSkillAttachment(ticket.id);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        verifyRow(log, 'confirmed', AutomationConfidence.gated);
+      });
+
+      test('gated confidence logs "rejected" on reject', () async {
+        stubAttachment(attachmentWith(AutomationConfidence.gated));
+        final log = stubbedDecisionLogService();
+        final cubit = buildAttachmentCubit(decisionLogService: log);
+        addTearDown(cubit.close);
+        await Future<void>.delayed(Duration.zero);
+        await cubit.updateTicketStatus(ticket.id, 'backlog');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await cubit.rejectPendingSkillAttachment(ticket.id);
+        verifyRow(log, 'pending', AutomationConfidence.gated);
+        verifyRow(log, 'rejected', AutomationConfidence.gated);
+      });
+
+      test('manual confidence writes no row at all', () async {
+        stubAttachment(attachmentWith(AutomationConfidence.manual));
+        final log = stubbedDecisionLogService();
+        final cubit = buildAttachmentCubit(decisionLogService: log);
+        addTearDown(cubit.close);
+        await Future<void>.delayed(Duration.zero);
+        await cubit.updateTicketStatus(ticket.id, 'backlog');
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        verifyZeroInteractions(log);
+      });
+    });
 
     group('auto confidence — WorkflowStatus entry', () {
       blocTest<TicketsCubit, TicketsState>(

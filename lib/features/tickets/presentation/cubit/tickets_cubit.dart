@@ -3396,9 +3396,9 @@ class TicketsCubit extends Cubit<TicketsState> {
             (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
           );
           if (mostRecent.content.contains('PROMOTION: EPIC')) {
-            _recordPendingIdeaPromotion(idea, TicketType.epic);
+            await _recordPendingIdeaPromotion(idea, TicketType.epic);
           } else if (mostRecent.content.contains('PROMOTION: BUG')) {
-            _recordPendingIdeaPromotion(idea, TicketType.bug);
+            await _recordPendingIdeaPromotion(idea, TicketType.bug);
           } else if (mostRecent.content.contains('PROMOTION: NOT YET')) {
             await commentRepo.addComment(
               TicketComment(
@@ -3483,7 +3483,16 @@ PROMOTION: NOT YET
   /// [idea] in [_pendingIdeaPromotions] and, if [idea]'s detail screen is
   /// currently open, re-emits [TicketDetailLoaded] carrying it. Mirrors
   /// [_recordPendingSpecLinkSuggestion]'s shape. Added for `AIO-2942`.
-  void _recordPendingIdeaPromotion(Ticket idea, TicketType recommendedType) {
+  Future<void> _recordPendingIdeaPromotion(
+    Ticket idea,
+    TicketType recommendedType,
+  ) async {
+    await _decisionLogService?.record(
+      ticketId: idea.id,
+      source: 'ideaPromotion',
+      sourceDetail: recommendedType.name,
+      gateResult: 'pending',
+    );
     final pending = PendingIdeaPromotion(recommendedType: recommendedType);
     _pendingIdeaPromotions[idea.id] = pending;
     final current = state;
@@ -3513,6 +3522,13 @@ PROMOTION: NOT YET
     if (pending == null) return;
     final idea = await _repository.getTicketById(ideaId);
     if (idea == null) return;
+    await _decisionLogService?.record(
+      ticketId: ideaId,
+      source: 'ideaPromotion',
+      sourceDetail: pending.recommendedType.name,
+      gateResult: 'confirmed',
+      detail: existingTicketId == null ? null : 'existing: $existingTicketId',
+    );
 
     await promoteIdea(
       idea,
@@ -3536,9 +3552,15 @@ PROMOTION: NOT YET
   /// .pendingIdeaPromotion] cleared. No-ops if [ideaId] has no pending
   /// promotion. Mirrors [rejectPendingSpecLinkSuggestion]'s shape. Added for
   /// `AIO-2942`.
-  void rejectPendingIdeaPromotion(String ideaId) {
+  Future<void> rejectPendingIdeaPromotion(String ideaId) async {
     final pending = _pendingIdeaPromotions.remove(ideaId);
     if (pending == null) return;
+    await _decisionLogService?.record(
+      ticketId: ideaId,
+      source: 'ideaPromotion',
+      sourceDetail: pending.recommendedType.name,
+      gateResult: 'rejected',
+    );
     final current = state;
     if (current is TicketDetailLoaded && current.ticket.id == ideaId) {
       emit(current.copyWith(pendingIdeaPromotion: () => null));
@@ -8425,8 +8447,18 @@ PROMOTION: NOT YET
     final fireAction = fire ?? () => _fireSkillAttachment(parent, attachment);
     switch (attachment.confidence) {
       case AutomationConfidence.auto:
+        await _logSkillAttachmentDecision(
+          ticketId: parent.id,
+          attachment: attachment,
+          gateResult: 'fired',
+        );
         unawaited(fireAction());
       case AutomationConfidence.gated:
+        await _logSkillAttachmentDecision(
+          ticketId: parent.id,
+          attachment: attachment,
+          gateResult: 'pending',
+        );
         _pendingSkillAttachments[parent.id] = (
           attachment: attachment,
           fire: fireAction,
@@ -8450,6 +8482,30 @@ PROMOTION: NOT YET
     }
   }
 
+  /// Records one append-only decision-log row for [attachment]'s gating on
+  /// [ticketId]: `source` is the literal `'skillAttachment'`, `source_detail`
+  /// the attachment's own id, `confidence` its tier, and `outcome` stays null
+  /// (this mechanism has no decision-graph layer). `fired` (auto) and
+  /// `pending` (gated) are written by [_resolveAndFireAttachment]; the later
+  /// human-driven `confirmed`/`rejected` follow-up rows by
+  /// [confirmPendingSkillAttachment]/[rejectPendingSkillAttachment], sharing
+  /// [ticketId] + the attachment id as their correlation key. A `manual`
+  /// attachment never fires automatically, so it writes nothing. Added for
+  /// `AIO-2951`.
+  Future<void> _logSkillAttachmentDecision({
+    required String ticketId,
+    required SkillAttachment attachment,
+    required String gateResult,
+  }) async {
+    await _decisionLogService?.record(
+      ticketId: ticketId,
+      source: 'skillAttachment',
+      sourceDetail: attachment.id,
+      confidence: attachment.confidence.name,
+      gateResult: gateResult,
+    );
+  }
+
   /// Confirms [ticketId]'s pending [SkillAttachment] (if any): removes it
   /// from [_pendingSkillAttachments] and runs its recorded fire action,
   /// `unawaited` (mirrors [_resolveAndFireAttachment]'s own `auto`
@@ -8464,6 +8520,11 @@ PROMOTION: NOT YET
   Future<void> confirmPendingSkillAttachment(String ticketId) async {
     final pending = _pendingSkillAttachments.remove(ticketId);
     if (pending == null) return;
+    await _logSkillAttachmentDecision(
+      ticketId: ticketId,
+      attachment: pending.attachment,
+      gateResult: 'confirmed',
+    );
     unawaited(pending.fire());
     final current = state;
     if (current is TicketDetailLoaded && current.ticket.id == ticketId) {
@@ -8483,6 +8544,11 @@ PROMOTION: NOT YET
   Future<void> rejectPendingSkillAttachment(String ticketId) async {
     final pending = _pendingSkillAttachments.remove(ticketId);
     if (pending == null) return;
+    await _logSkillAttachmentDecision(
+      ticketId: ticketId,
+      attachment: pending.attachment,
+      gateResult: 'rejected',
+    );
     final current = state;
     if (current is TicketDetailLoaded && current.ticket.id == ticketId) {
       emit(current.copyWith(pendingSkillAttachment: () => null));
