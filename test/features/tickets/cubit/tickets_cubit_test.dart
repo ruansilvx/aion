@@ -16238,6 +16238,7 @@ void main() {
     late MockTicketLinkRepository linkRepository;
     late MockEmbeddingProvider embeddingProvider;
     late MockAutomationSettingsRepository automationSettingsRepository;
+    late MockDecisionLogService decisionLogService;
 
     // Identical unit vectors → cosine similarity 1.0 (above the 0.75
     // threshold); orthogonal vectors → 0.0 (below it). Raw Float32
@@ -16274,6 +16275,7 @@ void main() {
       linkRepository = MockTicketLinkRepository();
       embeddingProvider = MockEmbeddingProvider();
       automationSettingsRepository = MockAutomationSettingsRepository();
+      decisionLogService = MockDecisionLogService();
       when(() => repository.getAllTickets()).thenAnswer((_) async => []);
       when(
         () => repository.getTicketById(gapTarget.id),
@@ -16425,6 +16427,60 @@ void main() {
             linkType: TicketLinkType.relatesTo,
           ),
         );
+      },
+    );
+
+    blocTest<TicketsCubit, TicketsState>(
+      'manual confidence logs gateResult declined, never pending — no '
+      'pending suggestion is recorded, so no confirm/reject row can '
+      'follow (AIO-3039)',
+      setUp: () {
+        when(
+          () => embeddingProvider.embed(any()),
+        ).thenAnswer((_) async => vec([1, 0, 0]));
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.specAutoLink,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.manual);
+        when(() => repository.createTicket(any())).thenAnswer((_) async {});
+        when(
+          () => decisionLogService.record(
+            ticketId: any(named: 'ticketId'),
+            source: any(named: 'source'),
+            sourceDetail: any(named: 'sourceDetail'),
+            confidence: any(named: 'confidence'),
+            outcome: any(named: 'outcome'),
+            gateResult: any(named: 'gateResult'),
+            detail: any(named: 'detail'),
+          ),
+        ).thenAnswer((_) async {});
+      },
+      build: () => TicketsCubit(
+        repository,
+        linkRepository: linkRepository,
+        embeddingProvider: embeddingProvider,
+        automationSettingsRepository: automationSettingsRepository,
+        decisionLogService: decisionLogService,
+      ),
+      act: (cubit) => cubit.createGapOrQuestion(
+        TicketType.knownGap,
+        title: 'A gap',
+        targetTicketId: gapTarget.id,
+      ),
+      wait: const Duration(milliseconds: 20),
+      verify: (_) {
+        verify(
+          () => decisionLogService.record(
+            ticketId: any(named: 'ticketId'),
+            source: AutomationContext.specAutoLink.name,
+            sourceDetail: 'match: ${matchingSpec.id}',
+            confidence: AutomationConfidence.manual.name,
+            outcome: any(named: 'outcome'),
+            gateResult: 'declined',
+            detail: any(named: 'detail'),
+          ),
+        ).called(1);
       },
     );
 
@@ -19621,10 +19677,12 @@ void main() {
       ExecutionQueueRepository? executionQueueRepository,
       AutomationSettingsRepository? automationSettingsRepository,
       DecisionGraphRepository? decisionGraphRepository,
+      DecisionLogService? decisionLogService,
     }) => TicketsCubit(
       repository,
       providerRegistry: registry,
       commentRepository: commentRepository,
+      decisionLogService: decisionLogService,
       automationSettingsRepository: automationSettingsRepository,
       projectRootPath: '/fake/project/root',
       sourceRootPath: '/fake/project/root',
@@ -20204,6 +20262,73 @@ void main() {
           ),
         ).called(1);
         verify(() => executionQueueRepository.replaceSnapshot([])).called(1);
+      },
+    );
+
+    test(
+      'restoreExecutionQueue (manual): logs gateResult declined, never '
+      'pending, for each surviving ticket — no resume prompt is ever '
+      'surfaced, so no confirm/dismiss row can follow (AIO-3040)',
+      () async {
+        liveStatus[siblingA.id] = 'inProgress';
+        final decisionLogService = MockDecisionLogService();
+        when(
+          () => decisionLogService.record(
+            ticketId: any(named: 'ticketId'),
+            source: any(named: 'source'),
+            sourceDetail: any(named: 'sourceDetail'),
+            confidence: any(named: 'confidence'),
+            outcome: any(named: 'outcome'),
+            gateResult: any(named: 'gateResult'),
+            detail: any(named: 'detail'),
+          ),
+        ).thenAnswer((_) async {});
+        when(
+          () => executionQueueRepository.getSnapshot(),
+        ).thenAnswer(
+          (_) async => [
+            const ExecutionQueueEntry(taskId: 'sched-sibling-a', inFlight: true),
+          ],
+        );
+        when(
+          () => executionQueueRepository.replaceSnapshot(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => automationSettingsRepository.getConfidence(
+            AutomationContext.codingExecutionResume,
+          ),
+        ).thenAnswer((_) async => AutomationConfidence.manual);
+        when(
+          () => schedulingRepository.getMode(),
+        ).thenAnswer((_) async => ExecutionSchedulingMode.strictFifo);
+
+        final cubit = buildSchedulingCubit(
+          executionSchedulingRepository: schedulingRepository,
+          executionQueueRepository: executionQueueRepository,
+          automationSettingsRepository: automationSettingsRepository,
+          decisionLogService: decisionLogService,
+        );
+        addTearDown(cubit.close);
+
+        await cubit.restoreExecutionQueue();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        verify(
+          () => decisionLogService.record(
+            ticketId: siblingA.id,
+            source: AutomationContext.codingExecutionResume.name,
+            confidence: AutomationConfidence.manual.name,
+            gateResult: 'declined',
+          ),
+        ).called(1);
+        verifyNever(
+          () => decisionLogService.record(
+            ticketId: any(named: 'ticketId'),
+            source: any(named: 'source'),
+            confidence: any(named: 'confidence'),
+            gateResult: 'pending',
+          ),
+        );
       },
     );
 
