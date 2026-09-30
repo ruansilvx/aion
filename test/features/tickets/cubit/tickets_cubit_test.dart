@@ -19229,6 +19229,305 @@ void main() {
     });
   });
 
+  group('mechanical verification decision-log wiring (AIO-2952)', () {
+    late Directory tempProjectDir;
+    late MockAgentModelClient agentClient;
+    late MockProviderRegistry registry;
+    late MockCommentRepository commentRepository;
+    late MockAutomationSettingsRepository automationSettingsRepository;
+    late MockGitRepositoryClient gitClient;
+    late MockGitHubCliClient gitHubClient;
+    late MockBaselineRepository baselineRepository;
+    late MockMechanicalVerificationRunner mechanicalVerificationRunner;
+    late MockDecisionLogService log;
+
+    setUp(() async {
+      tempProjectDir = await Directory.systemTemp.createTemp(
+        'aion_mech_log_test_',
+      );
+      File(
+        '${tempProjectDir.path}${Platform.pathSeparator}pubspec.yaml',
+      ).writeAsStringSync('');
+      agentClient = MockAgentModelClient();
+      registry = buildProviderStack(agentClient).registry;
+      commentRepository = MockCommentRepository();
+      automationSettingsRepository = MockAutomationSettingsRepository();
+      gitClient = MockGitRepositoryClient();
+      gitHubClient = MockGitHubCliClient();
+      baselineRepository = MockBaselineRepository();
+      mechanicalVerificationRunner = MockMechanicalVerificationRunner();
+      log = stubbedDecisionLogService();
+      stubSuccessfulCodingExecutionInfra(gitClient, gitHubClient);
+      stubEmptyBaseline(baselineRepository);
+      when(
+        () => repository.getTicketsByParent(
+          taskNoStory.id,
+          types: const [TicketType.chat],
+        ),
+      ).thenAnswer((_) async => [dummyExecutionChatTicket]);
+      when(() => repository.getTicketById(any())).thenAnswer((
+        invocation,
+      ) async {
+        final id = invocation.positionalArguments[0] as String;
+        if (id == taskNoStory.id) {
+          return taskNoStory.copyWith(status: 'inProgress');
+        }
+        return dummyExecutionChatTicket;
+      });
+      stubStatefulComments(commentRepository, dummyExecutionChatTicket.id);
+      when(
+        () => automationSettingsRepository.getConfidence(any()),
+      ).thenAnswer((_) async => AutomationConfidence.gated);
+      when(() => agentClient.run(any())).thenAnswer(
+        (_) async => Stream.fromIterable(const [
+          AgentTextEvent(_approvedExecutionReply),
+          AgentDoneEvent(),
+        ]),
+      );
+    });
+
+    tearDown(() async {
+      if (tempProjectDir.existsSync()) {
+        await tempProjectDir.delete(recursive: true);
+      }
+    });
+
+    TicketsCubit buildCubit({bool withRunner = true}) => TicketsCubit(
+      repository,
+      providerRegistry: registry,
+      commentRepository: commentRepository,
+      automationSettingsRepository: automationSettingsRepository,
+      projectRootPath: tempProjectDir.path,
+      sourceRootPath: tempProjectDir.path,
+      gitClient: gitClient,
+      gitHubClient: gitHubClient,
+      baselineRepository: baselineRepository,
+      projectId: 'project-1',
+      baselineVersion: '0.1.0',
+      mechanicalVerificationRunner: withRunner
+          ? mechanicalVerificationRunner
+          : null,
+      decisionLogService: log,
+    );
+
+    Future<void> run(TicketsCubit cubit) async {
+      addTearDown(cubit.close);
+      await cubit.retryCodingExecution(taskNoStory);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+
+    void verifyRow(String gateResult, String detail) => verify(
+      () => log.record(
+        ticketId: taskNoStory.id,
+        source: 'mechanicalVerification',
+        gateResult: gateResult,
+        detail: detail,
+      ),
+    ).called(1);
+
+    test('a genuine disagreement logs "mismatch" with the failing command '
+        'and exit code', () async {
+      when(
+        () => mechanicalVerificationRunner.run([
+          'flutter analyze',
+          'flutter test',
+        ], any()),
+      ).thenAnswer(
+        (_) async => const [
+          MechanicalCheckResult(
+            command: 'flutter test',
+            exitCode: 1,
+            output: '3 tests failed',
+          ),
+        ],
+      );
+      when(
+        () => mechanicalVerificationRunner.run(['flutter test'], any()),
+      ).thenAnswer(
+        (_) async => const [
+          MechanicalCheckResult(
+            command: 'flutter test',
+            exitCode: 0,
+            output: 'ok',
+          ),
+        ],
+      );
+      await run(buildCubit());
+      verifyRow('mismatch', '`flutter test` exited 1');
+    });
+
+    test('a clean check logs "fired" — the one true agreement', () async {
+      when(
+        () => mechanicalVerificationRunner.run([
+          'flutter analyze',
+          'flutter test',
+        ], any()),
+      ).thenAnswer(
+        (_) async => const [
+          MechanicalCheckResult(
+            command: 'flutter analyze',
+            exitCode: 0,
+            output: '',
+          ),
+          MechanicalCheckResult(
+            command: 'flutter test',
+            exitCode: 0,
+            output: 'ok',
+          ),
+        ],
+      );
+      await run(buildCubit());
+      verifyRow('fired', 'all 2 check command(s) passed');
+    });
+
+    test('a failure that also fails on the base checkout logs "declined", '
+        'not "mismatch"', () async {
+      const failing = MechanicalCheckResult(
+        command: 'flutter analyze',
+        exitCode: 1,
+        output: '3 issues found.',
+      );
+      when(
+        () => mechanicalVerificationRunner.run([
+          'flutter analyze',
+          'flutter test',
+        ], any()),
+      ).thenAnswer((_) async => const [failing]);
+      when(
+        () => mechanicalVerificationRunner.run(['flutter analyze'], any()),
+      ).thenAnswer((_) async => const [failing]);
+      await run(buildCubit());
+      verifyRow(
+        'declined',
+        'discounted: `flutter analyze` also fails on the base checkout '
+            '(exit 1)',
+      );
+    });
+
+    test('no runner configured logs "declined"', () async {
+      await run(buildCubit(withRunner: false));
+      verifyRow('declined', 'no mechanical verification runner configured');
+    });
+
+    test('no detected stack logs "declined"', () async {
+      File(
+        '${tempProjectDir.path}${Platform.pathSeparator}pubspec.yaml',
+      ).deleteSync();
+      await run(buildCubit());
+      verifyRow('declined', 'no stack detected or no check command');
+      verifyNever(() => mechanicalVerificationRunner.run(any(), any()));
+    });
+  });
+
+  group('stage-asset resolution decision-log wiring (AIO-2952)', () {
+    late MockBaselineRepository baselineRepository;
+    late MockDecisionLogService log;
+
+    const verifyAsset = BaselineAsset(
+      key: 'skills/verify',
+      kind: BaselineAssetKind.skill,
+      bundledPath: 'assets/baseline/0.1.0/skills/verify.md',
+    );
+    final task = Ticket(
+      id: 'task-asset-log',
+      ticketId: 'AIO-9999',
+      type: TicketType.task,
+      title: 'A task',
+      status: 'backlog',
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    setUp(() {
+      baselineRepository = MockBaselineRepository();
+      log = stubbedDecisionLogService();
+    });
+
+    TicketsCubit buildCubit() => TicketsCubit(
+      repository,
+      baselineRepository: baselineRepository,
+      projectId: 'project-1',
+      baselineVersion: '0.1.0',
+      decisionLogService: log,
+    );
+
+    void stubManifest(List<BaselineAsset> assets) => when(
+      () => baselineRepository.getManifest('0.1.0'),
+    ).thenAnswer(
+      (_) async => BaselineManifest(version: '0.1.0', assets: assets),
+    );
+
+    void verifyRow(String gateResult, String detail) => verify(
+      () => log.record(
+        ticketId: task.id,
+        source: 'skills/verify',
+        gateResult: gateResult,
+        detail: detail,
+      ),
+    ).called(1);
+
+    test('a bundled asset resolving non-empty logs "fired" with a baseline '
+        'detail', () async {
+      stubManifest([verifyAsset]);
+      when(
+        () => baselineRepository.readOverrides('project-1'),
+      ).thenAnswer((_) async => []);
+      when(
+        () => baselineRepository.readBundledContent(verifyAsset),
+      ).thenAnswer((_) async => 'Verify things.');
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      await cubit.debugAssembleVerificationContext(task);
+      verifyRow('fired', 'baseline: 0.1.0');
+    });
+
+    test('a project override wins and logs "fired" with the override '
+        'path', () async {
+      stubManifest([verifyAsset]);
+      when(() => baselineRepository.readOverrides('project-1')).thenAnswer(
+        (_) async => [
+          ProjectOverride(
+            projectId: 'project-1',
+            assetKey: 'skills/verify',
+            overridePath: '.aion/overrides/skills/verify.md',
+          ),
+        ],
+      );
+      when(
+        () => baselineRepository.readOverrideContent(
+          '.aion/overrides/skills/verify.md',
+        ),
+      ).thenAnswer((_) async => 'Custom verify.');
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      await cubit.debugAssembleVerificationContext(task);
+      verifyRow('fired', 'override: .aion/overrides/skills/verify.md');
+    });
+
+    test('an asset resolving empty logs "declined"', () async {
+      stubManifest([verifyAsset]);
+      when(
+        () => baselineRepository.readOverrides('project-1'),
+      ).thenAnswer((_) async => []);
+      when(
+        () => baselineRepository.readBundledContent(verifyAsset),
+      ).thenAnswer((_) async => '');
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      await cubit.debugAssembleVerificationContext(task);
+      verifyRow('declined', 'baseline: 0.1.0');
+    });
+
+    test('an asset absent from the pinned manifest logs "declined" with '
+        'detail absent', () async {
+      stubManifest(const []);
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      await cubit.debugAssembleVerificationContext(task);
+      verifyRow('declined', 'absent');
+    });
+  });
+
   group('task verify gate (AIO-3002)', () {
     late MockAgentModelClient agentClient;
     late MockProviderRegistry registry;
