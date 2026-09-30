@@ -19024,6 +19024,7 @@ void main() {
         ).thenAnswer((_) async => AutomationConfidence.auto);
         when(
           () => mechanicalVerificationRunner.run([
+            'flutter pub get',
             'flutter analyze',
             'flutter test',
           ], any()),
@@ -19099,6 +19100,7 @@ void main() {
         );
         when(
           () => mechanicalVerificationRunner.run([
+            'flutter pub get',
             'flutter analyze',
             'flutter test',
           ], any()),
@@ -19155,6 +19157,7 @@ void main() {
       );
       when(
         () => mechanicalVerificationRunner.run([
+          'flutter pub get',
           'flutter analyze',
           'flutter test',
         ], any()),
@@ -19329,6 +19332,7 @@ void main() {
         'and exit code', () async {
       when(
         () => mechanicalVerificationRunner.run([
+          'flutter pub get',
           'flutter analyze',
           'flutter test',
         ], any()),
@@ -19359,6 +19363,7 @@ void main() {
     test('a clean check logs "fired" — the one true agreement', () async {
       when(
         () => mechanicalVerificationRunner.run([
+          'flutter pub get',
           'flutter analyze',
           'flutter test',
         ], any()),
@@ -19389,6 +19394,7 @@ void main() {
       );
       when(
         () => mechanicalVerificationRunner.run([
+          'flutter pub get',
           'flutter analyze',
           'flutter test',
         ], any()),

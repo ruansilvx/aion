@@ -109,7 +109,7 @@ class ProjectStackDetector {
     'pubspec.yaml': DetectedStack(
       language: 'Flutter/Dart',
       setupCommand: 'flutter pub get',
-      checkCommand: ['flutter analyze', 'flutter test'],
+      checkCommand: ['flutter pub get', 'flutter analyze', 'flutter test'],
     ),
     'package.json': DetectedStack(
       language: 'Node.js',
@@ -139,14 +139,44 @@ class ProjectStackDetector {
   /// in place for the model to reason from directly.
   DetectedStack? detect(String rootPath) {
     for (final entry in _markers.entries) {
-      if (File(
-        '$rootPath${Platform.pathSeparator}${entry.key}',
-      ).existsSync()) {
-        return entry.value;
+      final marker = File('$rootPath${Platform.pathSeparator}${entry.key}');
+      if (marker.existsSync()) {
+        return entry.key == 'pubspec.yaml'
+            ? _withCodegenStep(entry.value, marker)
+            : entry.value;
       }
     }
     return null;
   }
+
+  /// Generated files (`*.g.dart`, `lib/l10n/generated`) are gitignored, so a
+  /// fresh coding-execution worktree has none and `flutter analyze` fails on
+  /// every missing file — a spurious mismatch, since the pristine checkout
+  /// (which has them) passes. [stack]'s `flutter pub get` step regenerates the
+  /// localizations; when [pubspec] also declares `build_runner`, a codegen
+  /// step is inserted right after it, so the worktree is on a good codegen
+  /// baseline before anything is analyzed. Added for `AIO-3028`.
+  DetectedStack _withCodegenStep(DetectedStack stack, File pubspec) {
+    final String content;
+    try {
+      content = pubspec.readAsStringSync();
+    } on FileSystemException {
+      return stack;
+    }
+    if (!content.contains('build_runner')) return stack;
+    return DetectedStack(
+      language: stack.language,
+      setupCommand: stack.setupCommand,
+      checkCommand: [
+        stack.checkCommand.first,
+        _flutterCodegenCommand,
+        ...stack.checkCommand.skip(1),
+      ],
+    );
+  }
+
+  static const _flutterCodegenCommand =
+      'dart run build_runner build --delete-conflicting-outputs';
 
   /// Locates [rootPath]'s version file and reads its current version, per
   /// [VersionFileKind]'s per-stack table (see that enum's dartdoc).

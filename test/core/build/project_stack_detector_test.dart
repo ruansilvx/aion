@@ -30,7 +30,24 @@ void main() {
     final detected = detector.detect(tempDir.path);
     expect(detected?.language, 'Flutter/Dart');
     expect(detected?.setupCommand, 'flutter pub get');
-    expect(detected?.checkCommand, ['flutter analyze', 'flutter test']);
+    expect(detected?.checkCommand, [
+      'flutter pub get',
+      'flutter analyze',
+      'flutter test',
+    ]);
+  });
+
+  test('prepends a codegen step for a Flutter project using build_runner', () {
+    File(
+      '${tempDir.path}${Platform.pathSeparator}pubspec.yaml',
+    ).writeAsStringSync('dev_dependencies:\n  build_runner: ^2.4.0\n');
+    final detected = detector.detect(tempDir.path);
+    expect(detected?.checkCommand, [
+      'flutter pub get',
+      'dart run build_runner build --delete-conflicting-outputs',
+      'flutter analyze',
+      'flutter test',
+    ]);
   });
 
   test('detects Node.js from package.json', () {
