@@ -6130,6 +6130,7 @@ PROMOTION: NOT YET
         final verifyReply = await _lastCommentContent(chat.id);
         var failureReason = _verificationFailureReason(verifyReply);
         var mechanicalCheckMismatch = false;
+        String? planDefectEvidence;
         if (failureReason == null) {
           final mechanicalFailure = await _mechanicalVerificationMismatch(
             rootPath,
@@ -6216,6 +6217,9 @@ PROMOTION: NOT YET
               await _addExecutionTokens(task.id, chat.id);
               final taskVerifyReply = await _lastCommentContent(chat.id);
               failureReason = _taskVerifyFailureReason(taskVerifyReply);
+              if (failureReason != null) {
+                planDefectEvidence = _taskVerifyPlanDefect(taskVerifyReply);
+              }
               if (failureReason == null) {
                 // Non-blocking ideas from the approving review go to the PR
                 // body below — never back to the implementer (AIO-3003).
@@ -6225,6 +6229,37 @@ PROMOTION: NOT YET
               }
             }
           }
+        }
+
+        // A plan defect (AIO-3049) can't be fixed by retrying — the agent has no
+        // way to decide whether the plan or the code is right — so it skips
+        // the retry decision entirely and stops for a human. Only reachable
+        // from the task-verify gate: both self-verify and the mechanical check
+        // pass before it runs, and a mechanical mismatch is never a plan
+        // defect.
+        if (planDefectEvidence != null) {
+          await _decisionLogService?.record(
+            ticketId: task.id,
+            source: 'planDefect',
+            gateResult: 'declined',
+            detail: planDefectEvidence,
+          );
+          await commentRepo.addComment(
+            TicketComment(
+              id: '',
+              ticketId: chat.id,
+              content: '$_planDefectCommentPrefix\n\n$planDefectEvidence',
+              authorType: CommentAuthorType.system,
+              createdAt: DateTime.now(),
+            ),
+          );
+          _emitTransientError(TicketsErrorReason.executionVerificationFailed);
+          await _recordNotification(
+            ticketId: task.id,
+            kind: NotificationKind.executionVerificationFailed,
+            message: _l10n.notificationExecutionVerificationFailed,
+          );
+          break;
         }
 
         attempt += 1;
@@ -7440,6 +7475,23 @@ PROMOTION: NOT YET
         'if both required checks pass (even if you listed suggestions), or '
         '"TASK VERIFY GATE: NEEDS FIXES" otherwise.',
       );
+    if (planSection != null) {
+      buffer
+        ..writeln()
+        ..writeln(
+          'If you fail the Task, also classify the failure. When the plan '
+          'above itself contradicts the codebase — e.g. it claims a call '
+          'site, file, or behavior that does not exist, so no implementation '
+          'could satisfy it — that is a plan defect, not an implementation '
+          'defect: retrying cannot fix it. Confirm it by reading the code, '
+          'then add a "## Plan Defect" section quoting the plan\'s claim and '
+          'the code fact that contradicts it, and write "DEFECT: PLAN" on its '
+          'own line immediately before the "TASK VERIFY GATE: NEEDS FIXES" '
+          'line. For any other failure write "DEFECT: IMPLEMENTATION" there '
+          'instead. When unsure, choose IMPLEMENTATION — only a plan defect '
+          'you can quote both sides of counts.',
+        );
+    }
     return buffer.toString().trim();
   }
 
@@ -7452,10 +7504,36 @@ PROMOTION: NOT YET
   String? _gateReplySection(String reply, String heading) {
     final match = RegExp(
       '## ${RegExp.escape(heading)}[^\\n]*\\n([\\s\\S]*?)'
-      '(?=\\n#|\\nTASK VERIFY GATE:|\$)',
+      '(?=\\n#|\\n[\\s*`"]*(?:DEFECT:|TASK VERIFY GATE:)|\$)',
     ).firstMatch(reply);
     final body = match?.group(1)?.trim();
     return body == null || body.isEmpty ? null : body;
+  }
+
+  /// Prefix of the system comment [_runCodingExecution] posts when the
+  /// per-Task review reports a plan defect (see [_taskVerifyPlanDefect]).
+  /// [_computeExecutionFailure] recognizes it so the failure banner and manual
+  /// retry appear exactly as for any other failed run. Added for `AIO-3049`.
+  static const _planDefectCommentPrefix = 'Execution stopped - plan defect:';
+
+  /// The `## Plan Defect` evidence of a failed per-Task review [reply] —
+  /// non-`null` **only** when the reviewer classified the failure with a
+  /// standalone `DEFECT: PLAN` line *and* quoted evidence under a `## Plan
+  /// Defect` heading (the plan's claim plus the contradicting code fact).
+  /// Fail-closed toward today's behavior: a missing, `IMPLEMENTATION`, unknown,
+  /// or unevidenced classification returns `null`, i.e. an ordinary
+  /// implementation defect that follows the normal retry path. Only
+  /// meaningful for a reply already known to have failed (see
+  /// [_taskVerifyFailureReason]); an approving reply never reaches it.
+  /// Added for `AIO-3049`.
+  String? _taskVerifyPlanDefect(String? reply) {
+    if (reply == null) return null;
+    final declaresPlanDefect = reply.split('\n').any((line) {
+      final cleaned = line.replaceAll(RegExp(r'^[\s*`"]+|[\s*`"]+$'), '');
+      return cleaned == 'DEFECT: PLAN';
+    });
+    if (!declaresPlanDefect) return null;
+    return _gateReplySection(reply, 'Plan Defect');
   }
 
   /// The non-blocking `## Suggestions` body of an approving per-Task review
@@ -7500,7 +7578,7 @@ PROMOTION: NOT YET
         .replaceFirst(
           RegExp(
             r'## Suggestions[^\n]*\n[\s\S]*?'
-            r'(?=\n#|\nTASK VERIFY GATE:|$)',
+            r'(?=\n#|\n[\s*`"]*(?:DEFECT:|TASK VERIFY GATE:)|$)',
           ),
           '',
         )
@@ -7532,6 +7610,12 @@ PROMOTION: NOT YET
   @visibleForTesting
   String? debugTaskVerifyFailureReason(String? reply) =>
       _taskVerifyFailureReason(reply);
+
+  /// Test-only seam onto [_taskVerifyPlanDefect]. Mirrors
+  /// [debugTrackOpenAionPr]'s precedent. Added for `AIO-3049`.
+  @visibleForTesting
+  String? debugTaskVerifyPlanDefect(String? reply) =>
+      _taskVerifyPlanDefect(reply);
 
   /// Test-only seam onto [_taskVerifySuggestions]. Mirrors
   /// [debugTrackOpenAionPr]'s precedent. Added for `AIO-3003`.
@@ -7838,6 +7922,7 @@ PROMOTION: NOT YET
         mostRecent.authorType == CommentAuthorType.ai;
     if (isSystemOrAi &&
         (mostRecent.content.startsWith('Execution failed verification:') ||
+            mostRecent.content.startsWith(_planDefectCommentPrefix) ||
             mostRecent.content.startsWith('Execution failed:'))) {
       return (mostRecent.content, true);
     }

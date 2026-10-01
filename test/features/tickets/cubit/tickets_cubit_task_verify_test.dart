@@ -400,4 +400,152 @@ void main() {
       );
     });
   });
+
+  group('plan-defect instruction in the review prompt (AIO-3049)', () {
+    test('a Task with a parent plan is told how to classify a failure: '
+        'quote both sides under Plan Defect, DEFECT: PLAN before the gate '
+        'line, IMPLEMENTATION when unsure', () async {
+      final prompt = await TicketsCubit(
+        repository,
+      ).debugAssembleTaskVerificationContext(task, diff);
+
+      expect(
+        prompt,
+        allOf([
+          contains('plan defect'),
+          contains('## Plan Defect'),
+          contains('DEFECT: PLAN'),
+          contains('DEFECT: IMPLEMENTATION'),
+          contains('When unsure, choose IMPLEMENTATION'),
+        ]),
+      );
+      // The classification instruction comes after the gate-line instruction.
+      expect(
+        prompt.indexOf('DEFECT: PLAN'),
+        greaterThan(prompt.indexOf('TASK VERIFY GATE: NEEDS FIXES')),
+      );
+    });
+
+    test('an orphan Task has no plan to contradict, so the prompt carries no '
+        'classification instruction', () async {
+      final orphan = Ticket(
+        id: 'task-2',
+        ticketId: 'AIO-12',
+        type: TicketType.task,
+        title: 'Standalone task',
+        status: 'inProgress',
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+
+      final prompt = await TicketsCubit(
+        repository,
+      ).debugAssembleTaskVerificationContext(orphan, diff);
+
+      expect(prompt, isNot(contains('DEFECT:')));
+      expect(prompt, isNot(contains('## Plan Defect')));
+    });
+  });
+
+  group('_taskVerifyPlanDefect (AIO-3049)', () {
+    late TicketsCubit cubit;
+
+    setUp(() => cubit = TicketsCubit(repository));
+
+    const evidence =
+        '- Plan claims the call site is in tickets_cubit.dart; it is '
+        'actually in ticket_detail_screen.dart:120.';
+
+    test('DEFECT: PLAN with a Plan Defect section returns the evidence, '
+        'not the heading or the DEFECT/gate lines', () {
+      const reply =
+          'Reviewed.\n\n'
+          '## Plan Defect\n'
+          '$evidence\n\n'
+          'DEFECT: PLAN\n'
+          'TASK VERIFY GATE: NEEDS FIXES';
+
+      expect(cubit.debugTaskVerifyPlanDefect(reply), evidence);
+    });
+
+    test('the DEFECT line may carry Markdown decoration or CRLF', () {
+      expect(
+        cubit.debugTaskVerifyPlanDefect(
+          '## Plan Defect\r\n$evidence\r\n\r\n**DEFECT: PLAN**\r\n'
+          'TASK VERIFY GATE: NEEDS FIXES\r\n',
+        ),
+        evidence,
+      );
+    });
+
+    test('DEFECT: PLAN without a Plan Defect section is unevidenced, so it is '
+        'an implementation defect', () {
+      expect(
+        cubit.debugTaskVerifyPlanDefect(
+          '## Issues Found\n- something\n\nDEFECT: PLAN\n'
+          'TASK VERIFY GATE: NEEDS FIXES',
+        ),
+        isNull,
+      );
+    });
+
+    test('an empty Plan Defect section is unevidenced', () {
+      expect(
+        cubit.debugTaskVerifyPlanDefect(
+          '## Plan Defect\n\nDEFECT: PLAN\nTASK VERIFY GATE: NEEDS FIXES',
+        ),
+        isNull,
+      );
+    });
+
+    test('DEFECT: IMPLEMENTATION, an unknown value, a missing line and a null '
+        'reply are all implementation defects', () {
+      expect(
+        cubit.debugTaskVerifyPlanDefect(
+          '## Plan Defect\n$evidence\n\nDEFECT: IMPLEMENTATION\n'
+          'TASK VERIFY GATE: NEEDS FIXES',
+        ),
+        isNull,
+      );
+      expect(
+        cubit.debugTaskVerifyPlanDefect(
+          '## Plan Defect\n$evidence\n\nDEFECT: MAYBE\n'
+          'TASK VERIFY GATE: NEEDS FIXES',
+        ),
+        isNull,
+      );
+      expect(
+        cubit.debugTaskVerifyPlanDefect(
+          '## Plan Defect\n$evidence\n\nTASK VERIFY GATE: NEEDS FIXES',
+        ),
+        isNull,
+      );
+      expect(cubit.debugTaskVerifyPlanDefect(null), isNull);
+    });
+
+    test('quoting DEFECT: PLAN inside a sentence is not a classification', () {
+      expect(
+        cubit.debugTaskVerifyPlanDefect(
+          '## Plan Defect\n$evidence\n\n'
+          'I would write DEFECT: PLAN here but I am not sure.\n'
+          'TASK VERIFY GATE: NEEDS FIXES',
+        ),
+        isNull,
+      );
+    });
+
+    test('Issues Found stops at a DEFECT line, so the classification line '
+        'is never fed back to the implementer', () {
+      const reply =
+          '## Issues Found\n'
+          '- No tests for the new parser\n\n'
+          'DEFECT: IMPLEMENTATION\n'
+          'TASK VERIFY GATE: NEEDS FIXES';
+
+      expect(
+        cubit.debugTaskVerifyFailureReason(reply),
+        '- No tests for the new parser',
+      );
+    });
+  });
 }
