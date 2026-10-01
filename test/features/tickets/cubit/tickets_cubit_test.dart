@@ -19641,21 +19641,23 @@ void main() {
       ).thenAnswer((_) async => _opus);
     });
 
-    TicketsCubit buildCubit() => TicketsCubit(
-      repository,
-      providerRegistry: registry,
-      commentRepository: commentRepository,
-      automationSettingsRepository: automationSettingsRepository,
-      modelRoutingRepository: modelRoutingRepository,
-      notificationRepository: notificationRepository,
-      projectRootPath: '/fake/project/root',
-      sourceRootPath: '/fake/project/root',
-      gitClient: gitClient,
-      gitHubClient: gitHubClient,
-      baselineRepository: baselineRepository,
-      projectId: 'project-1',
-      baselineVersion: '0.1.0',
-    );
+    TicketsCubit buildCubit({DecisionLogService? decisionLogService}) =>
+        TicketsCubit(
+          repository,
+          providerRegistry: registry,
+          commentRepository: commentRepository,
+          automationSettingsRepository: automationSettingsRepository,
+          modelRoutingRepository: modelRoutingRepository,
+          notificationRepository: notificationRepository,
+          decisionLogService: decisionLogService,
+          projectRootPath: '/fake/project/root',
+          sourceRootPath: '/fake/project/root',
+          gitClient: gitClient,
+          gitHubClient: gitHubClient,
+          baselineRepository: baselineRepository,
+          projectId: 'project-1',
+          baselineVersion: '0.1.0',
+        );
 
     Future<void> runExecution() async {
       final cubit = buildCubit();
@@ -19781,6 +19783,97 @@ void main() {
         contains('- Missing RepositoryProvider wiring in app_router.dart'),
       );
       expect(correctivePrompt, isNot(contains('SUGGESTION_MARKER')));
+    });
+
+    const planDefectEvidence =
+        '- The plan claims the call site is in tickets_cubit.dart, but it is '
+        'in ticket_detail_screen.dart.';
+    const planDefectReply =
+        'Reviewed the diff.\n\n'
+        '## Plan Defect\n'
+        '$planDefectEvidence\n\n'
+        'DEFECT: PLAN\n'
+        'TASK VERIFY GATE: NEEDS FIXES';
+
+    test('a quoted plan defect stops the run even under auto retry: no '
+        'corrective turn, no PR, a plan-defect comment, a planDefect '
+        'decision-log row and a notification (AIO-3049)', () async {
+      stubRetryConfidence(AutomationConfidence.auto);
+      final log = stubbedDecisionLogService();
+      answerByCall(
+        (call) => switch (call) {
+          2 => selfVerifyPassedReply,
+          3 => planDefectReply,
+          _ => implementReply,
+        },
+      );
+
+      final cubit = buildCubit(decisionLogService: log);
+      addTearDown(cubit.close);
+      await cubit.retryCodingExecution(taskNoStory);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      // implement, self-verify, review — and nothing further.
+      verify(() => agentClient.run(any())).called(3);
+      verifyNoPullRequest();
+      final comments = verify(
+        () => commentRepository.addComment(captureAny()),
+      ).captured.cast<TicketComment>();
+      expect(
+        comments.any(
+          (c) =>
+              c.authorType == CommentAuthorType.system &&
+              c.content.startsWith('Execution stopped - plan defect:') &&
+              c.content.contains(planDefectEvidence),
+        ),
+        isTrue,
+      );
+      verify(
+        () => log.record(
+          ticketId: taskNoStory.id,
+          source: 'planDefect',
+          gateResult: 'declined',
+          detail: planDefectEvidence,
+        ),
+      ).called(1);
+      verify(() => notificationRepository.addNotification(any())).called(1);
+    });
+
+    test('DEFECT: PLAN without quoted evidence is an ordinary implementation '
+        'defect and still retries under auto (AIO-3049)', () async {
+      stubRetryConfidence(AutomationConfidence.auto);
+      answerByCall(
+        (call) => switch (call) {
+          2 || 5 => selfVerifyPassedReply,
+          3 =>
+            '## Issues Found\n- Missing wiring\n\n'
+                'DEFECT: PLAN\nTASK VERIFY GATE: NEEDS FIXES',
+          6 => approvedReply,
+          _ => implementReply,
+        },
+      );
+
+      await runExecution();
+
+      verify(() => agentClient.run(any())).called(6);
+    });
+
+    test('DEFECT: IMPLEMENTATION follows the normal retry path (AIO-3049)', () async {
+      stubRetryConfidence(AutomationConfidence.auto);
+      answerByCall(
+        (call) => switch (call) {
+          2 || 5 => selfVerifyPassedReply,
+          3 =>
+            '## Issues Found\n- Missing wiring\n\n'
+                'DEFECT: IMPLEMENTATION\nTASK VERIFY GATE: NEEDS FIXES',
+          6 => approvedReply,
+          _ => implementReply,
+        },
+      );
+
+      await runExecution();
+
+      verify(() => agentClient.run(any())).called(6);
     });
 
     test('NEEDS FIXES under auto confidence retries correctively with the '
