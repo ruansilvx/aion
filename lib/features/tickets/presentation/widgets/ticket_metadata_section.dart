@@ -204,6 +204,7 @@ class TicketMetadataSection extends StatelessWidget {
                   :final executionQueuePosition,
                   :final executionAwaitingReview,
                   :final executionFailureReason,
+                  :final executionFailureIsPlanDefect,
                   :final executionPrSubLine,
                   :final executionLiveActivity,
                   :final isAdvancingStage,
@@ -781,6 +782,8 @@ class TicketMetadataSection extends StatelessWidget {
                                 executionAwaitingReview:
                                     executionAwaitingReview,
                                 executionFailureReason: executionFailureReason,
+                                executionFailureIsPlanDefect:
+                                    executionFailureIsPlanDefect,
                                 executionPrSubLine: executionPrSubLine,
                                 executionLiveActivity: executionLiveActivity,
                                 executionTokenTotal: executionTokenTotal,
@@ -2631,6 +2634,7 @@ class _CodingExecutionSection extends StatelessWidget {
     required this.executionQueuePosition,
     required this.executionAwaitingReview,
     required this.executionFailureReason,
+    required this.executionFailureIsPlanDefect,
     required this.executionPrSubLine,
     required this.executionLiveActivity,
     required this.executionTokenTotal,
@@ -2643,6 +2647,11 @@ class _CodingExecutionSection extends StatelessWidget {
   final int? executionQueuePosition;
   final bool executionAwaitingReview;
   final String? executionFailureReason;
+
+  /// Whether [executionFailureReason] is a plan-defect stop — swaps the failure
+  /// banner's title. See `TicketDetailLoaded.executionFailureIsPlanDefect`.
+  /// Added for `AIO-3050`.
+  final bool executionFailureIsPlanDefect;
 
   /// A short, pre-formatted PR-metadata detail (e.g. "PR #42 · 5 files
   /// changed") shown as `_ExecutionActionBanner`'s success-tone `subLine` —
@@ -2718,7 +2727,9 @@ class _CodingExecutionSection extends StatelessWidget {
         else if (executionFailureReason != null)
           _ExecutionActionBanner(
             tone: _BannerTone.failure,
-            title: context.l10n.ticketDetailCodingExecutionFailedTitle,
+            title: executionFailureIsPlanDefect
+                ? context.l10n.ticketDetailPlanDefectFailedTitle
+                : context.l10n.ticketDetailCodingExecutionFailedTitle,
             errorDetail: executionFailureReason,
             actionLabel: context.l10n.ticketDetailCodingExecutionRetryButton,
             onAction: onRetry,

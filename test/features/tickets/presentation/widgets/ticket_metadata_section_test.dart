@@ -57,6 +57,7 @@ Widget _wrap({
   bool isExecuting = false,
   int? executionQueuePosition,
   String? executionFailureReason,
+  bool executionFailureIsPlanDefect = false,
   bool canAdvanceSddStage = false,
   String? sddStageBlockReason,
   AutomationConfidence? automationConfidence,
@@ -69,6 +70,7 @@ Widget _wrap({
     isExecuting: isExecuting,
     executionQueuePosition: executionQueuePosition,
     executionFailureReason: executionFailureReason,
+    executionFailureIsPlanDefect: executionFailureIsPlanDefect,
     canAdvanceSddStage: canAdvanceSddStage,
     sddStageBlockReason: sddStageBlockReason,
   );
@@ -787,4 +789,51 @@ void main() {
       );
     },
   );
+
+  group('_ExecutionActionBanner failure title (AIO-3050)', () {
+    final failedTask = Ticket(
+      id: 'task-failed',
+      ticketId: 'AIO-61',
+      type: TicketType.task,
+      title: 'A failed Task',
+      status: 'inProgress',
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    testWidgets('a plan-defect stop shows "Plan defect — PR not opened", not '
+        'the generic verification-failed title, with Retry still offered', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          ticket: failedTask,
+          ticketsCubit: ticketsCubit,
+          executionFailureReason: 'Execution stopped - plan defect:\n\nevidence',
+          executionFailureIsPlanDefect: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Plan defect — PR not opened'), findsOneWidget);
+      expect(find.text('Verification failed — PR not opened'), findsNothing);
+      expect(find.text('Retry'), findsOneWidget);
+    });
+
+    testWidgets('an ordinary verification failure keeps the generic title', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          ticket: failedTask,
+          ticketsCubit: ticketsCubit,
+          executionFailureReason: 'Execution failed verification:\n\nerror',
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Verification failed — PR not opened'), findsOneWidget);
+      expect(find.text('Plan defect — PR not opened'), findsNothing);
+    });
+  });
 }

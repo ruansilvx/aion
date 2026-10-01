@@ -5157,6 +5157,7 @@ PROMOTION: NOT YET
         executionQueuePosition: executionQueuePosition,
         executionAwaitingReview: current.executionAwaitingReview,
         executionFailureReason: current.executionFailureReason,
+        executionFailureIsPlanDefect: current.executionFailureIsPlanDefect,
         executionCanRetry: current.executionCanRetry,
         executionLiveActivity: current.executionLiveActivity,
       ),
@@ -6253,11 +6254,11 @@ PROMOTION: NOT YET
               createdAt: DateTime.now(),
             ),
           );
-          _emitTransientError(TicketsErrorReason.executionVerificationFailed);
+          _emitTransientError(TicketsErrorReason.executionPlanDefect);
           await _recordNotification(
             ticketId: task.id,
-            kind: NotificationKind.executionVerificationFailed,
-            message: _l10n.notificationExecutionVerificationFailed,
+            kind: NotificationKind.executionPlanDefect,
+            message: _l10n.notificationExecutionPlanDefect,
           );
           break;
         }
@@ -6608,6 +6609,7 @@ PROMOTION: NOT YET
         executionQueuePosition: current.executionQueuePosition,
         executionAwaitingReview: current.executionAwaitingReview,
         executionFailureReason: current.executionFailureReason,
+        executionFailureIsPlanDefect: current.executionFailureIsPlanDefect,
         executionCanRetry: current.executionCanRetry,
         executionLiveActivity: activity,
       ),
@@ -10745,6 +10747,7 @@ PROMOTION: NOT YET
       int? executionQueuePosition;
       var executionAwaitingReview = false;
       String? executionFailureReason;
+      var executionFailureIsPlanDefect = false;
       var executionCanRetry = false;
       String? executionPrSubLine;
       if (ticket.type.isExecutable) {
@@ -10803,6 +10806,8 @@ PROMOTION: NOT YET
               ticket.id,
             );
             executionFailureReason = reason;
+            executionFailureIsPlanDefect =
+                reason?.startsWith(_planDefectCommentPrefix) ?? false;
             executionCanRetry = canRetry;
           }
         }
@@ -10886,6 +10891,7 @@ PROMOTION: NOT YET
           executionQueuePosition: executionQueuePosition,
           executionAwaitingReview: executionAwaitingReview,
           executionFailureReason: executionFailureReason,
+          executionFailureIsPlanDefect: executionFailureIsPlanDefect,
           executionCanRetry: executionCanRetry,
           executionPrSubLine: executionPrSubLine,
           isAdvancingStage: isAdvancingStage,

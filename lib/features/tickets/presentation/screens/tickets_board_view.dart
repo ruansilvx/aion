@@ -92,6 +92,7 @@ String ticketsErrorMessage(BuildContext context, TicketsErrorReason reason) {
       l10n.executionBudgetOverageDetectedToast,
     TicketsErrorReason.executionVerificationFailed =>
       l10n.executionVerificationFailedToast,
+    TicketsErrorReason.executionPlanDefect => l10n.executionPlanDefectToast,
     TicketsErrorReason.sddStageAdvanceFailed => l10n.sddStageAdvanceFailedToast,
     TicketsErrorReason.blockedByOpenDependency =>
       l10n.ticketBlockedByOpenDependencyError,
