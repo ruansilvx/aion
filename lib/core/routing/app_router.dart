@@ -242,6 +242,8 @@ final appRouter = GoRouter(
                     context.read<TicketRepository>(),
                     context.read<ModelRoutingRepository>(),
                     sourceRootPath: _activeProject(context).rootPath,
+                    sddStageConfigRepository: context
+                        .read<SddStageConfigRepository>(),
                   ),
                 ),
               ],

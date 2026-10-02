@@ -31,6 +31,9 @@ class MockTicketRepository extends Mock implements TicketRepository {}
 class MockModelRoutingRepository extends Mock
     implements ModelRoutingRepository {}
 
+class MockSddStageConfigRepository extends Mock
+    implements SddStageConfigRepository {}
+
 const _sonnet = AgentModelDescriptor(
   providerId: ProviderId.claudeAgentSdk,
   modelId: 'claude-sonnet-5',
@@ -966,6 +969,136 @@ void main() {
           () => modelRoutingRepository.getModelForPhase(ModelPhase.execution),
         ).called(1);
       },
+    );
+
+    // A stage chat's tier follows the stage the chat itself belongs to, read
+    // from its title prefix, not wherever the parent has since moved
+    // (AIO-3056).
+    void stageChatTierTest(
+      String description, {
+      required TicketType parentType,
+      required SddStage parentStage,
+      required String chatTitle,
+      required ModelPhase expectedPhase,
+      String? overrideFor,
+      SddStage? overriddenStage,
+    }) {
+      blocTest<ChatCubit, ChatState>(
+        description,
+        setUp: () {
+          final parent = Ticket(
+            id: 'parent-3056',
+            ticketId: 'AIO-parent-3056',
+            type: parentType,
+            title: 'Parent',
+            status: 'backlog',
+            sddStage: parentStage,
+            createdAt: DateTime(2026),
+            updatedAt: DateTime(2026),
+          );
+          final chat = Ticket(
+            id: 'chat-3056',
+            ticketId: 'AIO-chat-3056',
+            type: TicketType.chat,
+            title: chatTitle,
+            status: 'backlog',
+            parentId: parent.id,
+            createdAt: DateTime(2026),
+            updatedAt: DateTime(2026),
+          );
+          when(
+            () => ticketRepository.getTicketById('chat-3056'),
+          ).thenAnswer((_) async => chat);
+          when(
+            () => ticketRepository.getTicketById(parent.id),
+          ).thenAnswer((_) async => parent);
+          when(
+            () => modelRoutingRepository.getModelForPhase(expectedPhase),
+          ).thenAnswer((_) async => _opus);
+          when(() => repository.addComment(any())).thenAnswer((_) async {});
+          when(
+            () => repository.getCommentsForTicket('chat-3056'),
+          ).thenAnswer((_) async => []);
+          when(() => client.run(any())).thenAnswer(
+            (_) async => Stream.fromIterable(const [AgentDoneEvent()]),
+          );
+        },
+        build: () {
+          if (overrideFor == null) return buildCubit();
+          final config = MockSddStageConfigRepository();
+          for (final stage in SddStage.values) {
+            when(() => config.getDisplayNameOverride(stage)).thenAnswer(
+              (_) async => stage == overriddenStage ? overrideFor : null,
+            );
+          }
+          return ChatCubit(
+            repository,
+            registry,
+            ticketRepository,
+            modelRoutingRepository,
+            sddStageConfigRepository: config,
+          );
+        },
+        act: (cubit) =>
+            cubit.sendMessage(chatTicketId: 'chat-3056', content: 'Hello'),
+        verify: (_) {
+          verify(
+            () => modelRoutingRepository.getModelForPhase(expectedPhase),
+          ).called(1);
+        },
+      );
+    }
+
+    stageChatTierTest(
+      'a Proposed-stage chat under a story that is now archived stays on '
+      'frontier, not archived.modelPhase (capable) (AIO-3056)',
+      parentType: TicketType.story,
+      parentStage: SddStage.archived,
+      chatTitle: 'Proposed — Some story',
+      expectedPhase: ModelPhase.frontier,
+    );
+    stageChatTierTest(
+      'an Exploring-stage chat under a story that has moved on to '
+      'SddStage.designBrief stays on frontier (AIO-3056)',
+      parentType: TicketType.story,
+      parentStage: SddStage.designBrief,
+      chatTitle: 'Exploring — Some story',
+      expectedPhase: ModelPhase.frontier,
+    );
+    stageChatTierTest(
+      'a Proposed-stage chat under a bug that is now archived stays on '
+      'frontier, not the execution tier (AIO-3056, the AIO-2932 case)',
+      parentType: TicketType.bug,
+      parentStage: SddStage.archived,
+      chatTitle: 'Proposed — Some bug',
+      expectedPhase: ModelPhase.frontier,
+    );
+    stageChatTierTest(
+      'a Design Brief chat keeps its own (capable) tier even though the '
+      'parent has since reached a frontier stage (AIO-3056)',
+      parentType: TicketType.story,
+      parentStage: SddStage.verifying,
+      chatTitle: 'Design Brief — Some story',
+      expectedPhase: ModelPhase.capable,
+    );
+    stageChatTierTest(
+      "a stage chat titled with the project's display-name override is "
+      'recognized too (AIO-3056)',
+      parentType: TicketType.story,
+      parentStage: SddStage.archived,
+      chatTitle: 'Scoping — Some story',
+      expectedPhase: ModelPhase.frontier,
+      overrideFor: 'Scoping',
+      overriddenStage: SddStage.exploring,
+    );
+    stageChatTierTest(
+      'a Coding Execution chat is not a stage chat: it still falls back to '
+      "the parent-based inference (an archived bug's execution tier) "
+      '(AIO-3056)',
+      parentType: TicketType.bug,
+      parentStage: SddStage.archived,
+      chatTitle: 'Coding Execution — Some bug',
+      expectedPhase: ModelPhase.execution,
     );
 
     blocTest<ChatCubit, ChatState>(

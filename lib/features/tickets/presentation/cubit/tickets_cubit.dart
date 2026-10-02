@@ -10423,15 +10423,8 @@ PROMOTION: NOT YET
 
   /// [stage]'s own hardcoded present-progressive name — the fallback
   /// [_stagePresentName] uses when no override is configured.
-  String _stageHardcodedPresentName(SddStage stage) => switch (stage) {
-    SddStage.exploring => 'Exploring',
-    SddStage.proposed => 'Proposed',
-    SddStage.designBrief => 'Design Brief',
-    SddStage.designSync => 'Design Sync',
-    SddStage.applying => 'Applying',
-    SddStage.verifying => 'Verifying',
-    SddStage.archived => 'Archived',
-  };
+  String _stageHardcodedPresentName(SddStage stage) =>
+      stage.hardcodedPresentName;
 
   /// Fires an async embedding-regen call for [ticket] and writes the
   /// result back via [TicketRepository.updateEmbedding] once it
