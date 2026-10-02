@@ -18837,6 +18837,91 @@ void main() {
       },
     );
 
+    test(
+      'a "### Decomposition rationale" section before the real "## '
+      'Decomposition" block does not hide the block (AIO-3048) — reproduces '
+      'the live AIO-2952 Propose reply, whose rationale heading was matched '
+      'as the Decomposition heading so no children were ever created',
+      () async {
+        stubAdvanceToProposed();
+        stubStatefulComments(commentRepository, newStageChat.id);
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent(
+              '### Decomposition rationale\n\n'
+              'Two coherent, independent slices - they can proceed in '
+              'parallel.\n\n'
+              '## Decomposition\n'
+              '- Story: Build backend\n'
+              '- Story: Build UI (blockedBy: Build backend)\n',
+            ),
+            AgentDoneEvent(),
+          ]),
+        );
+        final createdTickets = <Ticket>[];
+        when(() => repository.createTicket(any())).thenAnswer((
+          invocation,
+        ) async {
+          createdTickets.add(invocation.positionalArguments[0] as Ticket);
+        });
+
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+        await cubit.advanceSddStage(decompEpic);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        final children = createdTickets
+            .where(
+              (t) => t.parentId == decompEpic.id && t.type == TicketType.story,
+            )
+            .toList();
+        expect(children.map((t) => t.title), [
+          'Build backend',
+          'Build UI',
+        ]);
+      },
+    );
+
+    test(
+      'the last exact "## Decomposition" heading wins when the reply '
+      'mentions the heading earlier in prose (AIO-3048)',
+      () async {
+        stubAdvanceToProposed();
+        stubStatefulComments(commentRepository, newStageChat.id);
+        when(() => agentClient.run(any())).thenAnswer(
+          (_) async => Stream.fromIterable(const [
+            AgentTextEvent(
+              'I will end with a ## Decomposition block as asked.\n\n'
+              '## Decomposition\n'
+              '- Story: Only story\n',
+            ),
+            AgentDoneEvent(),
+          ]),
+        );
+        final createdTickets = <Ticket>[];
+        when(() => repository.createTicket(any())).thenAnswer((
+          invocation,
+        ) async {
+          createdTickets.add(invocation.positionalArguments[0] as Ticket);
+        });
+
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+        await cubit.advanceSddStage(decompEpic);
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        expect(
+          createdTickets
+              .where(
+                (t) =>
+                    t.parentId == decompEpic.id && t.type == TicketType.story,
+              )
+              .map((t) => t.title),
+          ['Only story'],
+        );
+      },
+    );
+
     test('an unresolved blockedByTitle still creates the child ticket, just '
         'no link', () async {
       stubAdvanceToProposed();
