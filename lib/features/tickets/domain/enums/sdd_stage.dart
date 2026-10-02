@@ -65,6 +65,26 @@ enum SddStage {
   archived,
 }
 
+/// A stage's own hardcoded display name, used in a spawned stage chat's title
+/// (`"<present name> — <parent title>"`) unless the project overrides it (see
+/// `SddStageConfigRepository.getDisplayNameOverride`). Present-progressive for
+/// every stage except [SddStage.designBrief]/[SddStage.designSync], which read
+/// naturally as their plain node name. Shared by `TicketsCubit` (which writes
+/// the title) and `ChatCubit` (which reads the stage back out of it). Added for
+/// `AIO-3056`; moved from `TicketsCubit`.
+extension SddStagePresentName on SddStage {
+  /// This stage's hardcoded display name.
+  String get hardcodedPresentName => switch (this) {
+    SddStage.exploring => 'Exploring',
+    SddStage.proposed => 'Proposed',
+    SddStage.designBrief => 'Design Brief',
+    SddStage.designSync => 'Design Sync',
+    SddStage.applying => 'Applying',
+    SddStage.verifying => 'Verifying',
+    SddStage.archived => 'Archived',
+  };
+}
+
 /// Maps each [SddStage] to the [ModelPhase] that drives its spawned chat's
 /// model choice, per `AIO-1491` §1.2's confirmed split:
 /// `exploring`/`proposed`/`verifying` are epic/story-level judgment calls

@@ -16,12 +16,14 @@ import 'package:aion/core/contracts/provider_registry.dart';
 import 'package:aion/features/providers/domain/enums/model_phase.dart';
 import 'package:aion/features/providers/domain/repositories/model_routing_repository.dart';
 import 'package:aion/features/tickets/domain/entities/chat_turn_result.dart';
+import 'package:aion/features/tickets/domain/entities/ticket.dart';
 import 'package:aion/features/tickets/domain/entities/ticket_comment.dart';
 import 'package:aion/features/tickets/domain/enums/comment_author_type.dart';
 import 'package:aion/features/tickets/domain/enums/inbox_purpose.dart';
 import 'package:aion/features/tickets/domain/enums/sdd_stage.dart';
 import 'package:aion/features/tickets/domain/enums/ticket_type.dart';
 import 'package:aion/features/tickets/domain/repositories/comment_repository.dart';
+import 'package:aion/features/tickets/domain/repositories/sdd_stage_config_repository.dart';
 import 'package:aion/features/tickets/domain/repositories/ticket_repository.dart';
 import 'package:aion/features/tickets/presentation/cubit/chat_branch_tool_definitions.dart';
 import 'package:aion/features/tickets/presentation/cubit/chat_state.dart';
@@ -51,14 +53,22 @@ class ChatCubit extends Cubit<ChatState> {
     this._ticketRepository,
     this._modelRoutingRepository, {
     String? sourceRootPath,
+    SddStageConfigRepository? sddStageConfigRepository,
   }) : super(const ChatInitial()) {
     _sourceRootPath = sourceRootPath;
+    _sddStageConfigRepository = sddStageConfigRepository;
   }
 
   final CommentRepository _repository;
   final ProviderRegistry _providerRegistry;
   final TicketRepository _ticketRepository;
   final ModelRoutingRepository _modelRoutingRepository;
+
+  /// Resolves a project's per-stage display-name overrides, so
+  /// [_stageOwningChat] can recognize a stage chat whose title uses an
+  /// overridden name. `null` (tests, contexts with no project) means only the
+  /// hardcoded names are matched. Added for `AIO-3056`.
+  late final SddStageConfigRepository? _sddStageConfigRepository;
 
   /// The active project's checkout root, threaded through from
   /// `app_router.dart` (mirrors `InboxCubit`'s own `sourceRootPath` wiring)
@@ -425,6 +435,18 @@ class ChatCubit extends Cubit<ChatState> {
     if (parentId == null) return ModelPhase.capable;
     final parent = await _ticketRepository.getTicketById(parentId);
     if (parent == null) return ModelPhase.capable;
+    // The stage the chat itself belongs to wins over wherever the parent has
+    // since moved: a follow-up in a Proposed chat is still a Proposed-stage
+    // judgment call after the parent reaches Design Brief or Archived
+    // (`AIO-3056`). A chat whose title names no stage (a Coding Execution
+    // chat, a stage renamed after the chat was created) falls through to the
+    // parent-based inference below, unchanged.
+    if (parent.type == TicketType.epic ||
+        parent.type == TicketType.story ||
+        parent.type == TicketType.bug) {
+      final ownStage = await _stageOwningChat(chat!);
+      if (ownStage != null) return ownStage.modelPhase;
+    }
     if (parent.type == TicketType.bug) {
       final stage = parent.sddStage;
       if (stage == null || stage == SddStage.archived) {
@@ -434,6 +456,24 @@ class ChatCubit extends Cubit<ChatState> {
     }
     if (parent.type.isExecutable) return ModelPhase.execution;
     return parent.sddStage?.modelPhase ?? ModelPhase.capable;
+  }
+
+  /// The [SddStage] [chat] was spawned for, read back from its title's
+  /// `"<stage name> — "` prefix (`TicketsCubit._createStageChat` writes it) —
+  /// matching either the stage's project display-name override or its
+  /// hardcoded name — or `null` when the title names no stage (e.g. a
+  /// `Coding Execution — ` chat, or a stage renamed after this chat was
+  /// created). Added for `AIO-3056`.
+  Future<SddStage?> _stageOwningChat(Ticket chat) async {
+    for (final stage in SddStage.values) {
+      final override = await _sddStageConfigRepository?.getDisplayNameOverride(
+        stage,
+      );
+      for (final name in {?override, stage.hardcodedPresentName}) {
+        if (chat.title.startsWith('$name — ')) return stage;
+      }
+    }
+    return null;
   }
 
   /// Tools offered on [chatTicketId]'s next turn, mirroring [_phaseForChat]'s
