@@ -128,6 +128,29 @@ void main() {
     },
   );
 
+  testWidgets('a plan-defect notification renders its message and ticket', (
+    tester,
+  ) async {
+    final notification = Notification(
+      id: 'n-plan',
+      ticketId: 'task-7',
+      ticketKey: 'AIO-7',
+      ticketTitle: 'Wire the thing',
+      kind: NotificationKind.executionPlanDefect,
+      message: 'Plan defect — PR not opened',
+      createdAt: DateTime(2026, 1, 1),
+    );
+    when(
+      () => ticketsCubit.getRecentNotifications(),
+    ).thenAnswer((_) async => [notification]);
+
+    await tester.pumpWidget(_wrap(ticketsCubit: ticketsCubit, onDismiss: () {}));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Wire the thing'), findsOneWidget);
+    expect(find.textContaining('Plan defect — PR not opened'), findsOneWidget);
+  });
+
   testWidgets(
     '"Mark all read" clears every row\'s unread dot without navigating',
     (tester) async {

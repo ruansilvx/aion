@@ -215,6 +215,13 @@ enum TicketsErrorReason {
   /// Added for `AIO-506`.
   executionVerificationFailed,
 
+  /// A coding-execution run was stopped because the per-Task reviewer found
+  /// the plan itself contradicts the codebase (a plan defect) — no retry was
+  /// consumed and a human has to resolve the plan or the code. Surfaced once
+  /// via `AppToast`, alongside the Task detail screen's failure banner. Added
+  /// for `AIO-3050`.
+  executionPlanDefect,
+
   /// A spawned SDD-stage chat's turn (see `TicketsCubit ._runStageChatTurn`)
   /// hard-failed. Informational, surfaced once via `AppToast`, alongside the
   /// Epic/Story detail screen's failure banner
@@ -421,6 +428,7 @@ class TicketDetailLoaded extends TicketsState {
     this.executionQueuePosition,
     this.executionAwaitingReview = false,
     this.executionFailureReason,
+    this.executionFailureIsPlanDefect = false,
     this.executionCanRetry = false,
     this.executionPrSubLine,
     this.executionLiveActivity,
@@ -531,6 +539,14 @@ class TicketDetailLoaded extends TicketsState {
   /// since it's derived from the persisted comment thread rather than
   /// in-memory queue state. Added for `AIO-506`.
   final String? executionFailureReason;
+
+  /// Whether [executionFailureReason] is a plan-defect stop (the per-Task
+  /// reviewer found the plan contradicting the codebase) rather than an
+  /// ordinary verification failure — so the banner can say so. Derived by
+  /// [TicketsCubit.getTicketById] from the same persisted comment as
+  /// [executionFailureReason], so it survives an app restart. Added for
+  /// `AIO-3050`.
+  final bool executionFailureIsPlanDefect;
 
   /// Whether [executionFailureReason] has a retry action available — always
   /// `true` whenever [executionFailureReason] is non-`null`, kept as a
@@ -719,6 +735,7 @@ class TicketDetailLoaded extends TicketsState {
     executionQueuePosition,
     executionAwaitingReview,
     executionFailureReason,
+    executionFailureIsPlanDefect,
     executionCanRetry,
     executionPrSubLine,
     executionLiveActivity,
@@ -774,6 +791,7 @@ class TicketDetailLoaded extends TicketsState {
     int? executionQueuePosition,
     bool? executionAwaitingReview,
     String? executionFailureReason,
+    bool? executionFailureIsPlanDefect,
     bool? executionCanRetry,
     String? executionPrSubLine,
     String? executionLiveActivity,
@@ -810,6 +828,8 @@ class TicketDetailLoaded extends TicketsState {
           executionAwaitingReview ?? this.executionAwaitingReview,
       executionFailureReason:
           executionFailureReason ?? this.executionFailureReason,
+      executionFailureIsPlanDefect:
+          executionFailureIsPlanDefect ?? this.executionFailureIsPlanDefect,
       executionCanRetry: executionCanRetry ?? this.executionCanRetry,
       executionPrSubLine: executionPrSubLine ?? this.executionPrSubLine,
       executionLiveActivity:

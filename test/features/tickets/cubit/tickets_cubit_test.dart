@@ -14817,6 +14817,42 @@ void main() {
       );
 
       blocTest<TicketsCubit, TicketsState>(
+        'getTicketById flags a plan-defect stop comment so the banner can say '
+        'so, while still surfacing it as the failure reason with retry '
+        'available (AIO-3050)',
+        build: () =>
+            TicketsCubit(repository, commentRepository: commentRepository),
+        setUp: () {
+          when(
+            () => commentRepository.getCommentsForTicket(
+              dummyExecutionChatTicket.id,
+            ),
+          ).thenAnswer(
+            (_) async => [
+              TicketComment(
+                id: 'c-plan-defect',
+                ticketId: dummyExecutionChatTicket.id,
+                content: 'Execution stopped - plan defect:\n\nthe evidence',
+                authorType: CommentAuthorType.system,
+                createdAt: DateTime(2026),
+              ),
+            ],
+          );
+        },
+        act: (cubit) => cubit.getTicketById(taskNoStory.id),
+        expect: () => [
+          const TicketsLoading(),
+          TicketDetailLoaded(
+            taskNoStory.copyWith(status: 'inProgress'),
+            executionFailureReason:
+                'Execution stopped - plan defect:\n\nthe evidence',
+            executionFailureIsPlanDefect: true,
+            executionCanRetry: true,
+          ),
+        ],
+      );
+
+      blocTest<TicketsCubit, TicketsState>(
         'getTicketById surfaces a verify-failure comment for a bug at/past '
         'SddStage.applying even though it never left an executionTrigger-'
         'role status — that stage fires coding-execution directly without '
@@ -19836,7 +19872,12 @@ void main() {
           detail: planDefectEvidence,
         ),
       ).called(1);
-      verify(() => notificationRepository.addNotification(any())).called(1);
+      final notification =
+          verify(
+                () => notificationRepository.addNotification(captureAny()),
+              ).captured.single
+              as Notification;
+      expect(notification.kind, NotificationKind.executionPlanDefect);
     });
 
     test('DEFECT: PLAN without quoted evidence is an ordinary implementation '

@@ -313,6 +313,7 @@
   "ticketDetailCodingExecutionReadyTitle": "Coding run finished — PR opened",
   "ticketDetailCodingExecutionMarkReadyButton": "Mark ready for review",
   "ticketDetailCodingExecutionFailedTitle": "Verification failed — PR not opened",
+  "ticketDetailPlanDefectFailedTitle": "Plan defect — PR not opened",
   "ticketDetailCodingExecutionRetryButton": "Retry",
   "ticketDetailStageAdvancingHintPrefix": "Advancing to ",
   "ticketDetailStageAdvancingHintSuffix": " — running the stage chat.",
@@ -453,6 +454,7 @@
   "executionBudgetOverageDetectedToast": "Usage limit reached — coding execution now requires confirmation for the rest of this session.",
 
   "executionVerificationFailedToast": "Coding run failed verification — see the Task for details.",
+  "executionPlanDefectToast": "Coding run stopped: the plan contradicts the code — see the Task for details.",
   "sddStageAdvanceFailedToast": "Stage advance failed — see the ticket for details.",
   "specWriteFailedToast": "Couldn't write the spec ticket — you can create it by hand from the Epic instead.",
   "releasePreparationFailedToast": "Couldn't draft the release — you can try again from the release ticket.",
@@ -1195,6 +1197,7 @@
     }
   },
   "notificationExecutionVerificationFailed": "Verification failed — PR not opened",
+  "notificationExecutionPlanDefect": "Plan defect — PR not opened",
   "notificationExecutionFailed": "Coding execution failed",
   "notificationStageAdvanceCompleted": "Advanced to {stage}",
   "@notificationStageAdvanceCompleted": {

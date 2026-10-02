@@ -13,6 +13,11 @@ enum NotificationKind {
   /// A coding-execution run's verify gate failed — no PR opened.
   executionVerificationFailed,
 
+  /// A coding-execution run was stopped because the per-Task reviewer found
+  /// the plan itself contradicts the codebase — no retry consumed, a human
+  /// has to resolve it. Added for `AIO-3050`.
+  executionPlanDefect,
+
   /// A coding-execution run failed for an infra/setup reason (worktree,
   /// push, PR-open failure) before verification was even reached.
   executionFailed,
