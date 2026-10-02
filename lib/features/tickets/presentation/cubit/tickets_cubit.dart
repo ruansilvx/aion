@@ -10212,6 +10212,10 @@ PROMOTION: NOT YET
   /// previously inlined this logic fixed to `"## Decomposition"`/
   /// `Story|Task`).
   ///
+  /// [heading] is matched only as a whole line (optionally followed by a colon)
+  /// and the last such line is used; see the comment at the match for why
+  /// (`AIO-3048`).
+  ///
   /// The text after [heading] is trimmed of leading blank lines before its
   /// end is located, and an opening/closing ` ``` ` code-fence pair around
   /// the list (if present) is stripped before searching for the block's own
@@ -10234,10 +10238,20 @@ PROMOTION: NOT YET
     required String heading,
     required List<String> childTypeLabels,
   }) {
-    final headingIndex = reply.indexOf(heading);
-    if (headingIndex == -1) return [];
+    // The heading must be a whole line, and the *last* such line wins. A bare
+    // `indexOf(heading)` also matched the prefix of a longer heading such as
+    // `### Decomposition rationale` (or a prose mention) appearing earlier in
+    // the reply, so the "block" read was the rest of that line up to the next
+    // blank line — no list line ever matched and the real, later block was
+    // never reached: the root cause of `AIO-3048` (AIO-2952's Propose reply
+    // had exactly that rationale heading, so no child Tasks were created).
+    final headingLine = RegExp(
+      '^${RegExp.escape(heading)}[ \\t]*:?[ \\t]*\$',
+      multiLine: true,
+    ).allMatches(reply).lastOrNull;
+    if (headingLine == null) return [];
 
-    var block = reply.substring(headingIndex + heading.length).trimLeft();
+    var block = reply.substring(headingLine.end).trimLeft();
     final fenceOpen = RegExp(r'^```[^\n]*\n');
     if (fenceOpen.hasMatch(block)) {
       block = block.replaceFirst(fenceOpen, '');
