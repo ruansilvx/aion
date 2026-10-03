@@ -25,6 +25,7 @@ import 'package:aion/core/contracts/consumption_signal.dart';
 import 'package:aion/core/contracts/embedding_provider.dart';
 import 'package:aion/core/contracts/provider_id.dart';
 import 'package:aion/core/contracts/provider_registry.dart';
+import 'package:aion/core/contracts/tool_access_tier.dart';
 import 'package:aion/core/database/app_database.dart';
 import 'package:aion/core/git/git_repository_client.dart';
 import 'package:aion/core/git/github_cli_client.dart';
@@ -483,6 +484,12 @@ buildProviderStack(MockAgentModelClient client) {
   // stub (see the dedicated non-discovering-provider test below). Added
   // for aion-arch/changes/delegated-skill-provider-portability.
   when(() => provider.supportsSkillDiscovery).thenReturn(true);
+  // Matches ClaudeAgentSdkProvider's real declared value, so the escalation
+  // ladder (AIO-3057) sees a Capable model it can actually climb to.
+  when(() => provider.supportedToolAccessTiers).thenReturn(const {
+    ToolAccessTier.noTools,
+    ToolAccessTier.full,
+  });
   when(() => registry.availableProviders).thenReturn([provider]);
   when(
     () => registry.providerById(ProviderId.claudeAgentSdk),
@@ -18021,14 +18028,16 @@ void main() {
           cubit.changeTicketStatus(taskUnderStory, 'inProgress'),
       wait: const Duration(milliseconds: 50),
       verify: (_) {
-        // Resolved three times: once by _resolveExecutionChat's cap check
+        // Resolved four times: once by _resolveExecutionChat's cap check
         // against the existing dummyExecutionChatTicket
         // (_effectiveExecutionContextCap needs the model to know its real
-        // contextWindowTokens), then once each for the implement turn and
-        // the agentic verify turn that follows it.
+        // contextWindowTokens), once by _buildEscalationLadder (to tell
+        // whether the Capable rung would change the model, AIO-3057), then
+        // once each for the implement turn and the agentic verify turn that
+        // follows it.
         verify(
           () => modelRoutingRepository.getModelForPhase(ModelPhase.execution),
-        ).called(3);
+        ).called(4);
         // Single capture (mocktail's `verify()` only matches calls an
         // earlier `verify()` in the same test hasn't already consumed —
         // a second separate `verify()` on the same invocations finds
@@ -20155,6 +20164,357 @@ void main() {
       await runExecution();
 
       verifyNoPullRequest();
+    });
+  });
+
+  group('escalation ladder wiring (AIO-3060, AIO-3061)', () {
+    late MockAgentModelClient agentClient;
+    late MockProviderRegistry registry;
+    late MockCommentRepository commentRepository;
+    late MockAutomationSettingsRepository automationSettingsRepository;
+    late MockModelRoutingRepository modelRoutingRepository;
+    late MockGitRepositoryClient gitClient;
+    late MockGitHubCliClient gitHubClient;
+    late MockBaselineRepository baselineRepository;
+    late MockNotificationRepository notificationRepository;
+
+    const implementReply = 'Implemented.\n\nIMPLEMENTATION: DONE';
+    const selfVerifyPassedReply = 'Done.\n\nVERIFICATION: PASSED';
+    const selfVerifyFailedReply = 'Tests broke.\n\nVERIFICATION: FAILED — x';
+    const needsFixesReply =
+        '## Issues Found\n- Missing wiring\n\nTASK VERIFY GATE: NEEDS FIXES';
+    const approvedReply = 'Fine.\n\nTASK VERIFY GATE: APPROVED';
+
+    Stream<AgentEvent> reply(String text) =>
+        Stream.fromIterable([AgentTextEvent(text), const AgentDoneEvent()]);
+
+    void answerByCall(String Function(int call) replyFor) {
+      var call = 0;
+      when(() => agentClient.run(any())).thenAnswer((_) async {
+        call++;
+        return reply(replyFor(call));
+      });
+    }
+
+    void stubRetryConfidence(AutomationConfidence confidence) {
+      when(
+        () => automationSettingsRepository.getConfidence(
+          AutomationContext.codingExecutionRetry,
+        ),
+      ).thenAnswer((_) async => confidence);
+    }
+
+    void stubCapable(AgentModelDescriptor model) {
+      when(
+        () => modelRoutingRepository.getModelForPhase(ModelPhase.capable),
+      ).thenAnswer((_) async => model);
+    }
+
+    setUp(() {
+      agentClient = MockAgentModelClient();
+      registry = buildProviderStack(agentClient).registry;
+      commentRepository = MockCommentRepository();
+      automationSettingsRepository = MockAutomationSettingsRepository();
+      modelRoutingRepository = MockModelRoutingRepository();
+      gitClient = MockGitRepositoryClient();
+      gitHubClient = MockGitHubCliClient();
+      baselineRepository = MockBaselineRepository();
+      notificationRepository = MockNotificationRepository();
+      stubSuccessfulCodingExecutionInfra(gitClient, gitHubClient);
+      stubEmptyBaseline(baselineRepository);
+      when(
+        () => repository.getTicketsByParent(
+          taskNoStory.id,
+          types: const [TicketType.chat],
+        ),
+      ).thenAnswer((_) async => [dummyExecutionChatTicket]);
+      when(() => repository.getTicketById(any())).thenAnswer((
+        invocation,
+      ) async {
+        final id = invocation.positionalArguments[0] as String;
+        if (id == taskNoStory.id) {
+          return taskNoStory.copyWith(status: 'inProgress');
+        }
+        return dummyExecutionChatTicket;
+      });
+      stubStatefulComments(commentRepository, dummyExecutionChatTicket.id);
+      when(
+        () => notificationRepository.addNotification(any()),
+      ).thenAnswer((_) async {});
+      when(
+        () => notificationRepository.getUnreadCount(),
+      ).thenAnswer((_) async => 1);
+      when(
+        () => automationSettingsRepository.getConfidence(
+          AutomationContext.codingExecution,
+        ),
+      ).thenAnswer((_) async => AutomationConfidence.gated);
+      when(
+        () => modelRoutingRepository.getModelForPhase(ModelPhase.execution),
+      ).thenAnswer((_) async => _haiku);
+      when(
+        () => modelRoutingRepository.getModelForPhase(ModelPhase.taskVerify),
+      ).thenAnswer((_) async => _opus);
+      stubCapable(_sonnet);
+    });
+
+    TicketsCubit buildCubit({DecisionLogService? decisionLogService}) =>
+        TicketsCubit(
+          repository,
+          providerRegistry: registry,
+          commentRepository: commentRepository,
+          automationSettingsRepository: automationSettingsRepository,
+          modelRoutingRepository: modelRoutingRepository,
+          notificationRepository: notificationRepository,
+          decisionLogService: decisionLogService,
+          projectRootPath: '/fake/project/root',
+          sourceRootPath: '/fake/project/root',
+          gitClient: gitClient,
+          gitHubClient: gitHubClient,
+          baselineRepository: baselineRepository,
+          projectId: 'project-1',
+          baselineVersion: '0.1.0',
+        );
+
+    Future<void> settle() =>
+        Future<void>.delayed(const Duration(milliseconds: 50));
+
+    List<AgentRequest> capturedRequests() => verify(
+      () => agentClient.run(captureAny()),
+    ).captured.cast<AgentRequest>();
+
+    List<TicketComment> capturedComments() => verify(
+      () => commentRepository.addComment(captureAny()),
+    ).captured.cast<TicketComment>();
+
+    test('auto: two self-verify failures escalate the next implement and '
+        'self-verify turns from Execution to the Capable model, log it, '
+        'and post a Model escalation comment (AIO-3060)', () async {
+      stubRetryConfidence(AutomationConfidence.auto);
+      final log = stubbedDecisionLogService();
+      answerByCall(
+        (call) => switch (call) {
+          2 || 4 => selfVerifyFailedReply,
+          6 => selfVerifyPassedReply,
+          7 => approvedReply,
+          _ => implementReply,
+        },
+      );
+
+      final cubit = buildCubit(decisionLogService: log);
+      addTearDown(cubit.close);
+      await cubit.retryCodingExecution(taskNoStory);
+      await settle();
+
+      final requests = capturedRequests();
+      expect(requests, hasLength(7));
+      expect(requests.take(4).map((r) => r.model).toSet(), {_haiku.modelId});
+      expect(requests[4].model, _sonnet.modelId);
+      expect(requests[5].model, _sonnet.modelId);
+      expect(requests[6].model, _opus.modelId);
+      expect(
+        capturedComments().any(
+          (c) =>
+              c.authorType == CommentAuthorType.system &&
+              c.content.startsWith('Model escalation: execution -> capable'),
+        ),
+        isTrue,
+      );
+      verify(
+        () => log.record(
+          ticketId: taskNoStory.id,
+          source: 'modelEscalation',
+          sourceDetail: 'execution -> capable',
+          confidence: 'auto',
+          outcome: any(named: 'outcome'),
+          gateResult: 'fired',
+          detail: any(named: 'detail'),
+        ),
+      ).called(1);
+      verify(() => gitClient.push(any(), any())).called(1);
+    });
+
+    test('a task-verify NEEDS FIXES neither counts toward nor resets the '
+        'budget: one NEEDS FIXES plus one self-verify failure never '
+        'escalates (AIO-3060)', () async {
+      stubRetryConfidence(AutomationConfidence.auto);
+      answerByCall(
+        (call) => switch (call) {
+          2 || 7 => selfVerifyPassedReply,
+          3 => needsFixesReply,
+          5 => selfVerifyFailedReply,
+          8 => approvedReply,
+          _ => implementReply,
+        },
+      );
+
+      await () async {
+        final cubit = buildCubit();
+        addTearDown(cubit.close);
+        await cubit.retryCodingExecution(taskNoStory);
+        await settle();
+      }();
+
+      final requests = capturedRequests();
+      expect(requests, hasLength(8));
+      expect(
+        requests.where((r) => r.model == _sonnet.modelId),
+        isEmpty,
+      );
+      verify(() => gitClient.push(any(), any())).called(1);
+    });
+
+    test('Capable skipped when it resolves to the Execution model: with no '
+        'plan check yet the pre-ladder retry budget applies unchanged '
+        '(three attempts), no PR (AIO-3060)', () async {
+      stubRetryConfidence(AutomationConfidence.auto);
+      stubCapable(_haiku);
+      answerByCall(
+        (call) => call.isEven ? selfVerifyFailedReply : implementReply,
+      );
+
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      await cubit.retryCodingExecution(taskNoStory);
+      await settle();
+
+      final requests = capturedRequests();
+      expect(requests, hasLength(6));
+      expect(requests.map((r) => r.model).toSet(), {_haiku.modelId});
+      verifyNever(() => gitClient.push(any(), any()));
+      final comments = capturedComments();
+      final stop = comments.lastWhere(
+        (c) => c.content.startsWith('Execution failed verification:'),
+      );
+      expect(stop.content, contains('[ladder: rung=execution failures=3]'));
+      expect(
+        comments.any((c) => c.content.startsWith('Model escalation:')),
+        isFalse,
+      );
+    });
+
+    test('Capable skipped when its provider has no full tool access '
+        '(AIO-3060)', () async {
+      stubRetryConfidence(AutomationConfidence.auto);
+      final stack = buildProviderStack(agentClient);
+      when(
+        () => stack.provider.supportedToolAccessTiers,
+      ).thenReturn(const {ToolAccessTier.noTools});
+      registry = stack.registry;
+      answerByCall(
+        (call) => call.isEven ? selfVerifyFailedReply : implementReply,
+      );
+
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      await cubit.retryCodingExecution(taskNoStory);
+      await settle();
+
+      expect(
+        capturedRequests().map((r) => r.model).toSet(),
+        {_haiku.modelId},
+      );
+    });
+
+    test('gated: each self-verify failure stops with a resumable marker; '
+        'the second escalates only at the next retry, which runs on '
+        'Capable (AIO-3061)', () async {
+      stubRetryConfidence(AutomationConfidence.gated);
+      answerByCall(
+        (call) => switch (call) {
+          2 || 4 => selfVerifyFailedReply,
+          6 => selfVerifyPassedReply,
+          7 => approvedReply,
+          _ => implementReply,
+        },
+      );
+
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      await cubit.retryCodingExecution(taskNoStory);
+      await settle();
+      var comments = capturedComments();
+      expect(
+        comments
+            .lastWhere(
+              (c) => c.content.startsWith('Execution failed verification:'),
+            )
+            .content,
+        endsWith('[ladder: rung=execution failures=1]'),
+      );
+      clearInteractions(commentRepository);
+
+      await cubit.retryCodingExecution(taskNoStory);
+      await settle();
+      comments = capturedComments();
+      final escalationStop = comments.lastWhere(
+        (c) => c.content.startsWith('Execution failed verification:'),
+      );
+      expect(escalationStop.content, contains('escalates to the capable'));
+      expect(
+        escalationStop.content,
+        endsWith('[ladder: rung=capable failures=0]'),
+      );
+      clearInteractions(commentRepository);
+
+      await cubit.retryCodingExecution(taskNoStory);
+      await settle();
+
+      final requests = verify(
+        () => agentClient.run(captureAny()),
+      ).captured.cast<AgentRequest>();
+      // Runs 1 and 2 on Haiku (2 calls each); run 3's implement and
+      // self-verify on Sonnet, then the Opus review.
+      expect(requests, hasLength(7));
+      expect(requests[4].model, _sonnet.modelId);
+      expect(requests[5].model, _sonnet.modelId);
+      verify(() => gitClient.push(any(), any())).called(1);
+    });
+
+    test('manual: no ladder — the first failure stops with no marker '
+        '(AIO-3061)', () async {
+      stubRetryConfidence(AutomationConfidence.manual);
+      answerByCall(
+        (call) => call.isEven ? selfVerifyFailedReply : implementReply,
+      );
+
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      await cubit.retryCodingExecution(taskNoStory);
+      await settle();
+
+      expect(capturedRequests(), hasLength(2));
+      final stop = capturedComments().lastWhere(
+        (c) => c.content.startsWith('Execution failed verification:'),
+      );
+      expect(stop.content, isNot(contains('[ladder:')));
+    });
+
+    test('a manual retry after a stop with no marker restarts at Execution '
+        '(AIO-3061)', () async {
+      stubRetryConfidence(AutomationConfidence.auto);
+      stubCapable(_haiku);
+      answerByCall(
+        (call) => switch (call) {
+          2 || 4 => selfVerifyFailedReply,
+          6 => selfVerifyPassedReply,
+          7 => approvedReply,
+          _ => implementReply,
+        },
+      );
+
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      await cubit.retryCodingExecution(taskNoStory);
+      await settle();
+      stubCapable(_sonnet);
+      await cubit.retryCodingExecution(taskNoStory);
+      await settle();
+
+      final requests = capturedRequests();
+      // First run: 4 calls on Haiku. Second run starts fresh on Haiku too.
+      expect(requests.take(6).map((r) => r.model).toSet(), {_haiku.modelId});
     });
   });
 
