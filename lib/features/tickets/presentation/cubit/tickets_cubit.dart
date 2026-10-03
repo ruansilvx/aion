@@ -32,6 +32,7 @@ import 'package:aion/core/contracts/consumption_signal.dart';
 import 'package:aion/core/contracts/embedding_provider.dart';
 import 'package:aion/core/contracts/provider_id.dart';
 import 'package:aion/core/contracts/provider_registry.dart';
+import 'package:aion/core/contracts/tool_access_tier.dart';
 import 'package:aion/core/git/git_repository_client.dart';
 import 'package:aion/core/git/github_cli_client.dart';
 import 'package:aion/features/projects/domain/entities/baseline_asset.dart';
@@ -102,6 +103,7 @@ import 'package:aion/features/tickets/domain/utils/ticket_rollup_calculator.dart
 import 'package:aion/features/tickets/presentation/cubit/chat_branch_tool_definitions.dart';
 import 'package:aion/features/tickets/presentation/cubit/chat_cubit.dart';
 import 'package:aion/features/tickets/presentation/cubit/codebase_analysis_status.dart';
+import 'package:aion/features/tickets/presentation/cubit/escalation_ladder.dart';
 import 'package:aion/features/tickets/presentation/cubit/in_flight_execution_run.dart';
 import 'package:aion/features/tickets/presentation/cubit/pending_tool_proposal.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_context_enricher.dart';
@@ -5797,6 +5799,14 @@ PROMOTION: NOT YET
   /// also calls [_recordNotification] alongside its own system comment — see
   /// `AIO-1586` §4.4.
   ///
+  /// Repeated self-verify failures climb an [EscalationLadder] (`AIO-3057`):
+  /// the implement and self-verify turns resolve their model from the
+  /// ladder's current rung rather than always [ModelPhase.execution], and
+  /// `attempt` resets on each escalation so the decision graph's budget
+  /// applies per rung. Under `gated` retry confidence a failure stops with a
+  /// `[ladder: ...]` marker the next run resumes from (see
+  /// [_buildEscalationLadder]); under `manual` the ladder is not consulted.
+  ///
   /// If a PR was confirmed (see [_executionSucceededWithPr]) and
   /// [_automationSettingsRepository] is configured, flips [task] straight
   /// to a `reviewReady`-role status when [AutomationContext.codingExecution]'s
@@ -5961,6 +5971,10 @@ PROMOTION: NOT YET
         }
       }
 
+      // Read before this run's own prompt comment below becomes the chat's
+      // newest — a gated stop's ladder marker (AIO-3057) is only resumable
+      // while it is still the last comment.
+      final resumeComment = await _lastCommentContent(chat.id);
       var prompt = await _assembleExecutionContext(
         task,
         handoffSummary: handoffSummary,
@@ -6010,6 +6024,7 @@ PROMOTION: NOT YET
       // into the PR body once verified (AIO-3003).
       String? reviewerSuggestions;
 
+      final ladder = await _buildEscalationLadder(resumeComment);
       var attempt = 0;
       var verified = false;
       // Each turn call below already retries itself in place on the
@@ -6021,7 +6036,7 @@ PROMOTION: NOT YET
       var duplicateToolUseIdRecoveryAttempted = false;
       while (true) {
         final (implementModel, implementProvider) =
-            await _resolveModelAndProvider(ModelPhase.execution);
+            await _resolveModelAndProvider(ladder.implementPhase);
         final implementResult = await _runTurnRetryingDuplicateToolUseId(
           chat.id,
           () {
@@ -6076,7 +6091,7 @@ PROMOTION: NOT YET
 
         final verifyPrompt = await _assembleVerificationContext(task);
         final (verifyModel, verifyProvider) = await _resolveModelAndProvider(
-          ModelPhase.execution,
+          ladder.implementPhase,
         );
         final verifyResult = await _runTurnRetryingDuplicateToolUseId(
           chat.id,
@@ -6130,6 +6145,10 @@ PROMOTION: NOT YET
 
         final verifyReply = await _lastCommentContent(chat.id);
         var failureReason = _verificationFailureReason(verifyReply);
+        // Only the model's own self-verify FAILED moves the escalation ladder
+        // (AIO-3057) — a mechanical mismatch or task-verify NEEDS FIXES below
+        // never reaches it, so neither counts toward a rung nor resets it.
+        final selfVerifyFailed = failureReason != null;
         var mechanicalCheckMismatch = false;
         String? planDefectEvidence;
         if (failureReason == null) {
@@ -6278,6 +6297,11 @@ PROMOTION: NOT YET
         var shouldRetry = retryConfidence == AutomationConfidence.auto;
         var showRetryFailureToast =
             retryConfidence == AutomationConfidence.gated;
+        final rungBefore = ladder.rung;
+        final ladderStep =
+            selfVerifyFailed && retryConfidence != AutomationConfidence.manual
+            ? ladder.onSelfVerifyFailed(failureReason)
+            : null;
         DecisionOutcome? retryOutcome;
         if (shouldRetry) {
           retryOutcome = await _evaluateDecisionGraph(
@@ -6307,16 +6331,50 @@ PROMOTION: NOT YET
           outcome: retryOutcome?.name,
           gateResult: retryGateResult,
         );
+        if (ladderStep == LadderStep.escalate) {
+          await _decisionLogService?.record(
+            ticketId: task.id,
+            source: 'modelEscalation',
+            sourceDetail: '${rungBefore.name} -> ${ladder.rung.name}',
+            confidence: retryConfidence.name,
+            outcome: retryOutcome?.name,
+            gateResult: shouldRetry ? 'fired' : 'pending',
+            detail: failureReason,
+          );
+        }
         if (shouldRetry) {
+          if (ladderStep == LadderStep.escalate) {
+            await commentRepo.addComment(
+              TicketComment(
+                id: '',
+                ticketId: chat.id,
+                content:
+                    'Model escalation: ${rungBefore.name} -> '
+                    '${ladder.rung.name} after ${ladder.threshold} '
+                    'consecutive self-verify failures.',
+                authorType: CommentAuthorType.system,
+                createdAt: DateTime.now(),
+              ),
+            );
+            // The decision graph's attempt budget applies per rung.
+            attempt = 0;
+          }
           prompt = _assembleCorrectiveContext(failureReason);
           continue;
         }
 
+        final ladderMarker = ladder.stateMarker;
+        final escalationNote = ladderStep == LadderStep.escalate
+            ? '\n\nThe next retry escalates to the ${ladder.rung.name} model.'
+            : '';
         await commentRepo.addComment(
           TicketComment(
             id: '',
             ticketId: chat.id,
-            content: 'Execution failed verification:\n\n$failureReason',
+            content:
+                'Execution failed verification:\n\n$failureReason'
+                '$escalationNote'
+                '${ladderMarker == null ? '' : '\n\n$ladderMarker'}',
             authorType: CommentAuthorType.system,
             createdAt: DateTime.now(),
           ),
@@ -6511,6 +6569,44 @@ PROMOTION: NOT YET
     if (previousStatus != null) {
       await _repository.updateTicketStatus(task.id, previousStatus);
     }
+  }
+
+  /// Builds this run's [EscalationLadder] (`AIO-3057`): resumes the rung and
+  /// failure count from [resumeComment] (the execution chat's newest comment
+  /// before this run posted anything) when it still ends with a ladder marker,
+  /// otherwise starts fresh on [ExecutionRung.execution]. The Capable rung is
+  /// only usable when its model differs from the Execution model (otherwise
+  /// escalating changes nothing) and its provider supports
+  /// [ToolAccessTier.full] (coding execution needs file/git/bash tools, which a
+  /// `noTools`-only provider such as the Messages API cannot give). Any failure
+  /// resolving the Capable model leaves the rung unusable rather than failing
+  /// the run.
+  Future<EscalationLadder> _buildEscalationLadder(String? resumeComment) async {
+    var capableUsable = false;
+    try {
+      final executionModel = await _resolveModel(ModelPhase.execution);
+      final (capableModel, capableProvider) = await _resolveModelAndProvider(
+        ModelPhase.capable,
+      );
+      capableUsable =
+          (capableModel.providerId != executionModel.providerId ||
+              capableModel.modelId != executionModel.modelId) &&
+          capableProvider.supportedToolAccessTiers.contains(
+            ToolAccessTier.full,
+          );
+    } catch (_) {
+      // An unresolvable Capable model (misconfigured routing, a provider no
+      // longer registered) just means no Capable rung — it must never stop
+      // the run itself from starting.
+    }
+    // No Frontier plan check yet (Story AIO-3062): once the implement rungs
+    // are spent the ladder says giveUp and the pre-ladder retry decision
+    // (decision graph, then stop) applies unchanged.
+    return EscalationLadder.resume(
+      capableUsable: capableUsable,
+      planCheckAvailable: false,
+      lastComment: resumeComment,
+    );
   }
 
   /// Re-enters the coding-execution flow for [task] from scratch in the
@@ -7926,7 +8022,8 @@ PROMOTION: NOT YET
         (mostRecent.content.startsWith('Execution failed verification:') ||
             mostRecent.content.startsWith(_planDefectCommentPrefix) ||
             mostRecent.content.startsWith('Execution failed:'))) {
-      return (mostRecent.content, true);
+      // The ladder's resume marker is machine state, not part of the message.
+      return (EscalationLadder.stripMarker(mostRecent.content), true);
     }
     return (stalledMessage, true);
   }
