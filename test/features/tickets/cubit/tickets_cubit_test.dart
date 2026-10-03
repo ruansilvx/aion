@@ -20782,7 +20782,124 @@ void main() {
       ).captured.cast<AgentRequest>();
       expect(requests, hasLength(8));
       expect(requests[4].readOnlyTools, isTrue);
+      // The plan check ran in a later retry than the failures it reviews: the
+      // trail is rebuilt from the tagged stop comments, not lost with the run.
+      expect(
+        requests[4].prompt,
+        allOf([
+          contains('failed 2 times'),
+          contains('1. [execution model]'),
+          contains('2. [execution model]'),
+        ]),
+      );
       verify(() => gitClient.push(any(), any())).called(1);
+    });
+
+    test('a rewrite identical to the current description proves nothing: '
+        'no edit, no final attempt, and the report claims no rewrite '
+        '(AIO-3064)', () async {
+      stubRetryConfidence(AutomationConfidence.auto);
+      stubCapable(_haiku);
+      stubFrontier(_opus);
+      final withDescription = taskNoStory.copyWith(
+        description: () => 'SAME_DESC',
+      );
+      when(() => repository.getTicketById(taskNoStory.id)).thenAnswer(
+        (_) async => withDescription.copyWith(status: 'inProgress'),
+      );
+      answerByCall(
+        (call) => switch (call) {
+          2 || 4 => selfVerifyFailedReply,
+          5 =>
+            '## Revised Task Description\nSAME_DESC\n\n'
+                'PLAN CHECK: TASK REWRITE',
+          _ => implementReply,
+        },
+      );
+
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      await cubit.retryCodingExecution(withDescription);
+      await settle();
+
+      expect(capturedRequests(), hasLength(5));
+      verifyNever(() => repository.updateTicket(any()));
+      final report = capturedComments().lastWhere(
+        (c) => c.content.startsWith('Escalation exhausted:'),
+      );
+      expect(report.content, contains('no provable plan defect'));
+      expect(report.content, isNot(contains('Task description rewritten')));
+    });
+
+    test('the Archived-stage observations read every execution chat of a '
+        'Task, not just the newest (AIO-3069)', () async {
+      final olderChat = Ticket(
+        id: 'older-chat',
+        ticketId: 'AIO-96',
+        type: TicketType.chat,
+        title: dummyExecutionChatTicket.title,
+        status: 'backlog',
+        parentId: taskNoStory.id,
+        createdAt: DateTime(2025),
+        updatedAt: DateTime(2025),
+      );
+      when(
+        () => repository.getTicketsByParent(
+          storyForExecution.id,
+          types: any(named: 'types'),
+        ),
+      ).thenAnswer((_) async => [taskNoStory]);
+      when(
+        () => repository.getTicketsByParent(
+          taskNoStory.id,
+          types: const [TicketType.chat],
+        ),
+      ).thenAnswer((_) async => [dummyExecutionChatTicket, olderChat]);
+      when(
+        () => commentRepository.getCommentsForTicket(olderChat.id),
+      ).thenAnswer(
+        (_) async => [
+          TicketComment(
+            id: 'old-1',
+            ticketId: olderChat.id,
+            content:
+                'Model escalation: execution -> capable after 2 consecutive '
+                'self-verify failures.',
+            authorType: CommentAuthorType.system,
+            createdAt: DateTime(2025),
+          ),
+        ],
+      );
+      when(
+        () => commentRepository.getCommentsForTicket(
+          dummyExecutionChatTicket.id,
+        ),
+      ).thenAnswer(
+        (_) async => [
+          TicketComment(
+            id: 'new-1',
+            ticketId: dummyExecutionChatTicket.id,
+            content: 'EXECUTION: PR_OPENED https://x/pr/1',
+            authorType: CommentAuthorType.system,
+            createdAt: DateTime(2026),
+          ),
+        ],
+      );
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      final context = await cubit.debugAssembleStageContext(
+        storyForExecution,
+        SddStage.archived,
+      );
+
+      expect(
+        context,
+        contains(
+          '- ${taskNoStory.ticketId} "${taskNoStory.title}": '
+          'escalated execution -> capable',
+        ),
+      );
     });
 
     // ---- Surfacing, approval and recording (AIO-3067-3069) ----

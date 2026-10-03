@@ -132,6 +132,15 @@ class PlanCheckResult {
     return body.isEmpty ? null : body;
   }
 
+  /// This result with its verdict reduced to [PlanCheckVerdict.ok], keeping
+  /// the reply and suspected causes — for a verdict whose action turned out to
+  /// be a no-op (a `TASK REWRITE` that changes nothing).
+  PlanCheckResult asOk() => PlanCheckResult(
+    verdict: PlanCheckVerdict.ok,
+    rawReply: rawReply,
+    suspectedCauses: suspectedCauses,
+  );
+
   /// A short human-readable account of what the check found: the suspected
   /// causes when given, else the reply itself (truncated).
   String get summary {
