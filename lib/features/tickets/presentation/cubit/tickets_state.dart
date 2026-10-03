@@ -222,6 +222,15 @@ enum TicketsErrorReason {
   /// for `AIO-3050`.
   executionPlanDefect,
 
+  /// A coding-execution run exhausted its escalation ladder — surfaced once
+  /// via `AppToast`, alongside the Task detail screen's failure banner. Added
+  /// for `AIO-3057`.
+  executionEscalationExhausted,
+
+  /// A coding-execution run paused after a plan-check rewrite, waiting for a
+  /// human to start the final attempt. Added for `AIO-3057`.
+  executionEscalationPaused,
+
   /// A spawned SDD-stage chat's turn (see `TicketsCubit ._runStageChatTurn`)
   /// hard-failed. Informational, surfaced once via `AppToast`, alongside the
   /// Epic/Story detail screen's failure banner
@@ -270,6 +279,36 @@ enum CodingExecutionBlockReason {
 // `TicketsCubit._sddStageAdvanceCheck` from the failing
 // `TransitionFieldSpec`'s `displayName` rather than resolved from a fixed enum
 // at the widget layer. See `AIO-1936`'s linked Documentation page, §4.
+
+/// Why a coding-execution run's escalation ladder stopped (`AIO-3057`).
+enum ExecutionLadderStopKind {
+  /// Every rung was spent (or the plan check found nothing provable): read the
+  /// lead report.
+  exhausted,
+
+  /// The plan check rewrote the Task description and the run is waiting for a
+  /// human to start the final attempt.
+  paused,
+}
+
+/// A coding-execution run stopped by its escalation ladder, as shown on the
+/// Task detail screen's failure banner (`AIO-3057`).
+class ExecutionLadderStop extends Equatable {
+  /// Creates an [ExecutionLadderStop] of [kind], with an optional unanswered
+  /// [storyChangeRequest].
+  const ExecutionLadderStop(this.kind, {this.storyChangeRequest});
+
+  /// Why the ladder stopped.
+  final ExecutionLadderStopKind kind;
+
+  /// The Frontier plan check's still-unanswered Story change request (its
+  /// "was -> now, because" bullets), or `null` when there is none or a human
+  /// already approved/rejected it.
+  final String? storyChangeRequest;
+
+  @override
+  List<Object?> get props => [kind, storyChangeRequest];
+}
 
 /// A deterministic, code-computed embedding-similarity match from a ticket to
 /// the single most relevant live `TicketType.spec` ticket, surfaced on that
@@ -429,6 +468,7 @@ class TicketDetailLoaded extends TicketsState {
     this.executionAwaitingReview = false,
     this.executionFailureReason,
     this.executionFailureIsPlanDefect = false,
+    this.executionLadderStop,
     this.executionCanRetry = false,
     this.executionPrSubLine,
     this.executionLiveActivity,
@@ -547,6 +587,13 @@ class TicketDetailLoaded extends TicketsState {
   /// [executionFailureReason], so it survives an app restart. Added for
   /// `AIO-3050`.
   final bool executionFailureIsPlanDefect;
+
+  /// Set when [executionFailureReason] is an escalation-ladder stop
+  /// (`AIO-3057`) rather than an ordinary failure, so the banner can retitle
+  /// itself and offer a pending Story change request for approval. Derived by
+  /// [TicketsCubit.getTicketById] from the same persisted comments as
+  /// [executionFailureReason], so it survives an app restart.
+  final ExecutionLadderStop? executionLadderStop;
 
   /// Whether [executionFailureReason] has a retry action available — always
   /// `true` whenever [executionFailureReason] is non-`null`, kept as a
@@ -736,6 +783,7 @@ class TicketDetailLoaded extends TicketsState {
     executionAwaitingReview,
     executionFailureReason,
     executionFailureIsPlanDefect,
+    executionLadderStop,
     executionCanRetry,
     executionPrSubLine,
     executionLiveActivity,
@@ -792,6 +840,7 @@ class TicketDetailLoaded extends TicketsState {
     bool? executionAwaitingReview,
     String? executionFailureReason,
     bool? executionFailureIsPlanDefect,
+    ExecutionLadderStop? executionLadderStop,
     bool? executionCanRetry,
     String? executionPrSubLine,
     String? executionLiveActivity,
@@ -830,6 +879,7 @@ class TicketDetailLoaded extends TicketsState {
           executionFailureReason ?? this.executionFailureReason,
       executionFailureIsPlanDefect:
           executionFailureIsPlanDefect ?? this.executionFailureIsPlanDefect,
+      executionLadderStop: executionLadderStop ?? this.executionLadderStop,
       executionCanRetry: executionCanRetry ?? this.executionCanRetry,
       executionPrSubLine: executionPrSubLine ?? this.executionPrSubLine,
       executionLiveActivity:

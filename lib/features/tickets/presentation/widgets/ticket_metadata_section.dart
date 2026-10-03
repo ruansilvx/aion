@@ -205,6 +205,7 @@ class TicketMetadataSection extends StatelessWidget {
                   :final executionAwaitingReview,
                   :final executionFailureReason,
                   :final executionFailureIsPlanDefect,
+                  :final executionLadderStop,
                   :final executionPrSubLine,
                   :final executionLiveActivity,
                   :final isAdvancingStage,
@@ -784,6 +785,7 @@ class TicketMetadataSection extends StatelessWidget {
                                 executionFailureReason: executionFailureReason,
                                 executionFailureIsPlanDefect:
                                     executionFailureIsPlanDefect,
+                                executionLadderStop: executionLadderStop,
                                 executionPrSubLine: executionPrSubLine,
                                 executionLiveActivity: executionLiveActivity,
                                 executionTokenTotal: executionTokenTotal,
@@ -802,6 +804,12 @@ class TicketMetadataSection extends StatelessWidget {
                                 onRetry: () => context
                                     .read<TicketsCubit>()
                                     .retryCodingExecution(ticket),
+                                onApproveStoryChange: () => context
+                                    .read<TicketsCubit>()
+                                    .approveStoryChangeRequest(ticket),
+                                onRejectStoryChange: () => context
+                                    .read<TicketsCubit>()
+                                    .rejectStoryChangeRequest(ticket),
                                 onCancel: () => context
                                     .read<TicketsCubit>()
                                     .cancelCodingExecution(ticket),
@@ -2635,11 +2643,14 @@ class _CodingExecutionSection extends StatelessWidget {
     required this.executionAwaitingReview,
     required this.executionFailureReason,
     required this.executionFailureIsPlanDefect,
+    required this.executionLadderStop,
     required this.executionPrSubLine,
     required this.executionLiveActivity,
     required this.executionTokenTotal,
     required this.onMarkReadyForReview,
     required this.onRetry,
+    required this.onApproveStoryChange,
+    required this.onRejectStoryChange,
     required this.onCancel,
   });
 
@@ -2652,6 +2663,12 @@ class _CodingExecutionSection extends StatelessWidget {
   /// banner's title. See `TicketDetailLoaded.executionFailureIsPlanDefect`.
   /// Added for `AIO-3050`.
   final bool executionFailureIsPlanDefect;
+
+  /// Set when [executionFailureReason] is an escalation-ladder stop — swaps the
+  /// failure banner's title and, while it carries an unanswered Story change
+  /// request, offers Approve/Reject. See
+  /// `TicketDetailLoaded.executionLadderStop`. Added for `AIO-3057`.
+  final ExecutionLadderStop? executionLadderStop;
 
   /// A short, pre-formatted PR-metadata detail (e.g. "PR #42 · 5 files
   /// changed") shown as `_ExecutionActionBanner`'s success-tone `subLine` —
@@ -2667,6 +2684,14 @@ class _CodingExecutionSection extends StatelessWidget {
   final int? executionTokenTotal;
   final VoidCallback onMarkReadyForReview;
   final VoidCallback onRetry;
+
+  /// Called when the human approves the pending Story change request shown
+  /// on the failure banner. Added for `AIO-3057`.
+  final VoidCallback onApproveStoryChange;
+
+  /// Called when the human rejects the pending Story change request. Added for
+  /// `AIO-3057`.
+  final VoidCallback onRejectStoryChange;
 
   /// Called when the running/queued Cancel button (see
   /// [ExecutionCancelControl]) is activated. Only rendered while [isExecuting]
@@ -2729,10 +2754,19 @@ class _CodingExecutionSection extends StatelessWidget {
             tone: _BannerTone.failure,
             title: executionFailureIsPlanDefect
                 ? context.l10n.ticketDetailPlanDefectFailedTitle
-                : context.l10n.ticketDetailCodingExecutionFailedTitle,
+                : switch (executionLadderStop?.kind) {
+                    ExecutionLadderStopKind.exhausted =>
+                      context.l10n.ticketDetailEscalationExhaustedTitle,
+                    ExecutionLadderStopKind.paused =>
+                      context.l10n.ticketDetailEscalationPausedTitle,
+                    null => context.l10n.ticketDetailCodingExecutionFailedTitle,
+                  },
             errorDetail: executionFailureReason,
             actionLabel: context.l10n.ticketDetailCodingExecutionRetryButton,
             onAction: onRetry,
+            storyChangeRequest: executionLadderStop?.storyChangeRequest,
+            onApproveStoryChange: onApproveStoryChange,
+            onRejectStoryChange: onRejectStoryChange,
           )
         else if (executionAwaitingReview)
           _ExecutionActionBanner(
@@ -3099,6 +3133,9 @@ class _ExecutionActionBanner extends StatelessWidget {
     this.errorDetail,
     required this.actionLabel,
     required this.onAction,
+    this.storyChangeRequest,
+    this.onApproveStoryChange,
+    this.onRejectStoryChange,
   });
 
   /// Which visual treatment this banner renders.
@@ -3129,6 +3166,17 @@ class _ExecutionActionBanner extends StatelessWidget {
 
   /// Called when the action button is pressed.
   final VoidCallback onAction;
+
+  /// The escalation ladder's unanswered Story change request — the
+  /// "was -> now, because" bullets a human must approve or reject before the
+  /// plan changes. `null` renders no request block. Added for `AIO-3057`.
+  final String? storyChangeRequest;
+
+  /// Called when the human approves [storyChangeRequest].
+  final VoidCallback? onApproveStoryChange;
+
+  /// Called when the human rejects [storyChangeRequest].
+  final VoidCallback? onRejectStoryChange;
 
   @override
   Widget build(BuildContext context) {
@@ -3195,6 +3243,32 @@ class _ExecutionActionBanner extends StatelessWidget {
               ],
             ),
             SizedBox(height: isFailure ? 11 : 12),
+            if (storyChangeRequest != null) ...[
+              Text(
+                context.l10n.ticketDetailStoryChangeTitle,
+                style: AionText.body.copyWith(color: c.textPrimary),
+              ),
+              const SizedBox(height: 8),
+              _ExecutionErrorWell(text: storyChangeRequest!),
+              const SizedBox(height: 11),
+              Row(
+                children: [
+                  Expanded(
+                    child: _ExecutionActionButton(
+                      tone: tone,
+                      label: context.l10n.ticketDetailStoryChangeApproveButton,
+                      onConfirm: onApproveStoryChange ?? () {},
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  _ExecutionSecondaryAction(
+                    label: context.l10n.ticketDetailStoryChangeRejectButton,
+                    onPressed: onRejectStoryChange ?? () {},
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+            ],
             if (errorDetail != null) ...[
               _ExecutionErrorWell(text: errorDetail!),
               const SizedBox(height: 11),
@@ -3205,6 +3279,46 @@ class _ExecutionActionBanner extends StatelessWidget {
               onConfirm: onAction,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A low-emphasis text action beside [_ExecutionActionButton] — used for
+/// "Reject" next to "Approve change" on a Story change request, so the
+/// destructive-by-omission choice never competes with the primary one.
+/// Added for `AIO-3057`.
+class _ExecutionSecondaryAction extends StatelessWidget {
+  const _ExecutionSecondaryAction({
+    required this.label,
+    required this.onPressed,
+  });
+
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = ThemeScope.of(context).colors;
+    return Semantics(
+      button: true,
+      label: label,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onPressed,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+            child: Text(
+              label,
+              style: AionText.body.copyWith(
+                color: c.textSecondary,
+                decoration: TextDecoration.underline,
+              ),
+            ),
+          ),
         ),
       ),
     );

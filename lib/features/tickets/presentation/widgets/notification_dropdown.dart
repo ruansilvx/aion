@@ -446,6 +446,14 @@ class _NotificationDropdownRowState extends State<_NotificationDropdownRow> {
       PhosphorIcons.warningCircleLight,
       (c) => c.warning,
     ),
+    NotificationKind.executionEscalationExhausted => (
+      PhosphorIcons.warningLight,
+      (c) => c.danger,
+    ),
+    NotificationKind.executionEscalationPaused => (
+      PhosphorIcons.warningCircleLight,
+      (c) => c.warning,
+    ),
     NotificationKind.executionFailed => (
       PhosphorIcons.xCircleLight,
       (c) => c.danger,

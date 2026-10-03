@@ -5175,6 +5175,7 @@ PROMOTION: NOT YET
         executionAwaitingReview: current.executionAwaitingReview,
         executionFailureReason: current.executionFailureReason,
         executionFailureIsPlanDefect: current.executionFailureIsPlanDefect,
+        executionLadderStop: current.executionLadderStop,
         executionCanRetry: current.executionCanRetry,
         executionLiveActivity: current.executionLiveActivity,
       ),
@@ -6196,11 +6197,11 @@ PROMOTION: NOT YET
                 createdAt: DateTime.now(),
               ),
             );
-            _emitTransientError(TicketsErrorReason.executionVerificationFailed);
+            _emitTransientError(TicketsErrorReason.executionEscalationPaused);
             await _recordNotification(
               ticketId: task.id,
-              kind: NotificationKind.executionVerificationFailed,
-              message: _l10n.notificationExecutionVerificationFailed,
+              kind: NotificationKind.executionEscalationPaused,
+              message: _l10n.notificationExecutionEscalationPaused,
             );
             break;
           }
@@ -6777,6 +6778,215 @@ PROMOTION: NOT YET
   /// for a human to start the final attempt (`AIO-3057`).
   static const _escalationPausedCommentPrefix = 'Escalation paused:';
 
+  /// The `## Execution observations` section of the Archived-stage context
+  /// (`AIO-3057`): which of [parent]'s coding-execution Tasks (or [parent]
+  /// itself, for a Bug) needed the escalation ladder, read from the markers the
+  /// ladder left in each Task's most recent execution chat. `null` when none
+  /// did, so a clean cycle's context is unchanged.
+  Future<String?> _executionObservationsSection(Ticket parent) async {
+    final commentRepo = _commentRepository;
+    if (commentRepo == null) return null;
+    final executables = <Ticket>[];
+    if (parent.type == TicketType.bug) {
+      executables.add(parent);
+    } else {
+      final children = await _repository.getTicketsByParent(
+        parent.id,
+        types: [TicketType.story, ...TicketTypeHierarchy.executableTypes],
+      );
+      for (final child in children) {
+        if (child.type == TicketType.story) {
+          executables.addAll(
+            await _repository.getTicketsByParent(
+              child.id,
+              types: TicketTypeHierarchy.executableTypes,
+            ),
+          );
+        } else {
+          executables.add(child);
+        }
+      }
+    }
+    final lines = <String>[];
+    for (final ticket in executables) {
+      final chat = await _mostRecentExecutionChat(ticket.id);
+      if (chat == null) continue;
+      final notes = <String>[];
+      for (final c in _oldestFirst(
+        await commentRepo.getCommentsForTicket(chat.id),
+      )) {
+        if (c.authorType != CommentAuthorType.system) continue;
+        String? note;
+        if (c.content.startsWith('Model escalation:')) {
+          note = 'escalated ${c.content.split(' after ').first.substring('Model escalation: '.length)}';
+        } else if (c.content.startsWith(_planRewriteCommentPrefix)) {
+          note = 'the plan check rewrote the Task description';
+        } else if (c.content.startsWith(_storyChangeCommentPrefix)) {
+          note = 'the plan check requested a Story change';
+        } else if (c.content.startsWith(_storyChangeApprovedCommentPrefix)) {
+          note = 'the Story change was approved';
+        } else if (c.content.startsWith(_storyChangeRejectedCommentPrefix)) {
+          note = 'the Story change was rejected';
+        } else if (c.content.startsWith(_escalationExhaustedCommentPrefix)) {
+          note = 'the escalation ladder was exhausted at least once';
+        }
+        if (note != null && !notes.contains(note)) notes.add(note);
+      }
+      if (notes.isNotEmpty) {
+        lines.add('- ${ticket.ticketId} "${ticket.title}": ${notes.join('; ')}');
+      }
+    }
+    if (lines.isEmpty) return null;
+    return [
+      '## Execution observations',
+      '',
+      'These Tasks needed more than the configured Execution model to '
+          'finish. Mention the pattern in the spec ticket if it looks '
+          'systematic:',
+      '',
+      ...lines,
+    ].join('\n');
+  }
+
+  /// Test-only seam onto [_assembleStageContext] (`AIO-3057`'s execution
+  /// observations are otherwise reachable only by advancing a whole cycle to
+  /// Archived).
+  @visibleForTesting
+  Future<String> debugAssembleStageContext(Ticket parent, SddStage stage) =>
+      _assembleStageContext(parent, stage);
+
+  /// Prefixes of the comments recording a human's answer to a Story change
+  /// request (`AIO-3057`); they follow the `Escalation exhausted:` stop
+  /// comment and must not hide it from the failure banner.
+  static const _storyChangeApprovedCommentPrefix = 'Story change approved:';
+  static const _storyChangeRejectedCommentPrefix = 'Story change rejected:';
+
+  /// [comments] oldest-first, ties broken by their original order (a bare
+  /// `sort` is not stable, and run comments are posted microseconds apart).
+  List<TicketComment> _oldestFirst(List<TicketComment> comments) {
+    final indexed = [for (var i = 0; i < comments.length; i++) (i, comments[i])]
+      ..sort((a, b) {
+        final byTime = a.$2.createdAt.compareTo(b.$2.createdAt);
+        return byTime != 0 ? byTime : a.$1.compareTo(b.$1);
+      });
+    return [for (final e in indexed) e.$2];
+  }
+
+  bool _isStoryChangeResolution(TicketComment c) =>
+      c.content.startsWith(_storyChangeApprovedCommentPrefix) ||
+      c.content.startsWith(_storyChangeRejectedCommentPrefix);
+
+  /// Index in [sorted] (oldest-first) of the newest comment that is not a
+  /// Story change resolution — the comment that actually describes how the run
+  /// stopped.
+  int _effectiveStopIndex(List<TicketComment> sorted) {
+    var i = sorted.length - 1;
+    while (i > 0 && _isStoryChangeResolution(sorted[i])) {
+      i--;
+    }
+    return i;
+  }
+
+  /// The escalation-ladder stop [taskId]'s most recent execution chat ended
+  /// in, or `null` (`AIO-3057`). A change request is pending only while the
+  /// `Story change requested:` comment is the one immediately before the
+  /// `Escalation exhausted:` comment and no approve/reject follows it.
+  Future<ExecutionLadderStop?> _computeLadderStop(String taskId) async {
+    final commentRepo = _commentRepository;
+    if (commentRepo == null) return null;
+    final chat = await _mostRecentExecutionChat(taskId);
+    if (chat == null) return null;
+    final sorted = _oldestFirst(await commentRepo.getCommentsForTicket(chat.id));
+    if (sorted.isEmpty) return null;
+    final i = _effectiveStopIndex(sorted);
+    final stop = sorted[i];
+    if (stop.authorType != CommentAuthorType.system) return null;
+    if (stop.content.startsWith(_escalationPausedCommentPrefix)) {
+      return const ExecutionLadderStop(ExecutionLadderStopKind.paused);
+    }
+    if (!stop.content.startsWith(_escalationExhaustedCommentPrefix)) {
+      return null;
+    }
+    String? pending;
+    final answered = i != sorted.length - 1;
+    if (!answered &&
+        i > 0 &&
+        sorted[i - 1].content.startsWith(_storyChangeCommentPrefix)) {
+      pending = sorted[i - 1].content
+          .substring(_storyChangeCommentPrefix.length)
+          .trim();
+    }
+    return ExecutionLadderStop(
+      ExecutionLadderStopKind.exhausted,
+      storyChangeRequest: pending,
+    );
+  }
+
+  /// Approves [task]'s pending Story change request (`AIO-3057`): appends the
+  /// request's "was -> now, because" bullets to the plan it targets as an
+  /// "Approved plan corrections" section (the parent Story's description for a
+  /// Task, the ticket's own description for a Bug or an orphan Task) — the
+  /// original text is kept, and the section says the corrections supersede
+  /// any conflicting text above. Records the decision as a comment and a
+  /// `planRepair` decision-log row. A no-op when no request is pending.
+  Future<void> approveStoryChangeRequest(Ticket task) =>
+      _resolveStoryChange(task, approve: true);
+
+  /// Rejects [task]'s pending Story change request, leaving every description
+  /// unchanged, and records the decision (`AIO-3057`). A no-op when no
+  /// request is pending.
+  Future<void> rejectStoryChangeRequest(Ticket task) =>
+      _resolveStoryChange(task, approve: false);
+
+  Future<void> _resolveStoryChange(Ticket task, {required bool approve}) async {
+    final commentRepo = _commentRepository;
+    if (commentRepo == null) return;
+    final stop = await _computeLadderStop(task.id);
+    final request = stop?.storyChangeRequest;
+    final chat = await _mostRecentExecutionChat(task.id);
+    if (request == null || chat == null) return;
+    Ticket? target;
+    if (approve) {
+      target = task;
+      final parentId = task.parentId;
+      if (task.type == TicketType.task && parentId != null) {
+        target = await _repository.getTicketById(parentId) ?? task;
+      }
+      final date = DateTime.now().toIso8601String().substring(0, 10);
+      final updated = target.copyWith(
+        description: () =>
+            '${(target!.description ?? '').trimRight()}\n\n'
+            '## Approved plan corrections ($date)\n\n'
+            'A human approved these corrections; they supersede any '
+            'conflicting text above.\n\n$request',
+      );
+      await _repository.updateTicket(updated);
+      unawaited(_triggerEmbeddingRegen(updated));
+      target = updated;
+    }
+    await commentRepo.addComment(
+      TicketComment(
+        id: '',
+        ticketId: chat.id,
+        content: approve
+            ? '$_storyChangeApprovedCommentPrefix appended to ${target!.ticketId}.'
+            : '$_storyChangeRejectedCommentPrefix no plan was changed.',
+        authorType: CommentAuthorType.system,
+        createdAt: DateTime.now(),
+      ),
+    );
+    await _decisionLogService?.record(
+      ticketId: task.id,
+      source: 'planRepair',
+      sourceDetail: approve
+          ? 'story change approved'
+          : 'story change rejected',
+      gateResult: approve ? 'fired' : 'declined',
+      detail: request,
+    );
+    await getTicketById(task.id);
+  }
+
   /// Stops a coding-execution run whose escalation ladder ran out
   /// (`AIO-3057`): posts the lead report ([PlanCheckPrompt.leadReport]) as an
   /// [_escalationExhaustedCommentPrefix] comment, records an
@@ -6810,11 +7020,11 @@ PROMOTION: NOT YET
       gateResult: 'declined',
       detail: report,
     );
-    _emitTransientError(TicketsErrorReason.executionVerificationFailed);
+    _emitTransientError(TicketsErrorReason.executionEscalationExhausted);
     await _recordNotification(
       ticketId: task.id,
-      kind: NotificationKind.executionVerificationFailed,
-      message: _l10n.notificationExecutionVerificationFailed,
+      kind: NotificationKind.executionEscalationExhausted,
+      message: _l10n.notificationExecutionEscalationExhausted,
     );
   }
 
@@ -6966,6 +7176,7 @@ PROMOTION: NOT YET
         executionAwaitingReview: current.executionAwaitingReview,
         executionFailureReason: current.executionFailureReason,
         executionFailureIsPlanDefect: current.executionFailureIsPlanDefect,
+        executionLadderStop: current.executionLadderStop,
         executionCanRetry: current.executionCanRetry,
         executionLiveActivity: activity,
       ),
@@ -8272,9 +8483,8 @@ PROMOTION: NOT YET
         'Execution ended without a clear result — retry to try again.';
     final comments = await commentRepo.getCommentsForTicket(executionChat.id);
     if (comments.isEmpty) return (stalledMessage, true);
-    final mostRecent = comments.reduce(
-      (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
-    );
+    final sorted = _oldestFirst(comments);
+    final mostRecent = sorted[_effectiveStopIndex(sorted)];
     final isSystemOrAi =
         mostRecent.authorType == CommentAuthorType.system ||
         mostRecent.authorType == CommentAuthorType.ai;
@@ -10240,6 +10450,14 @@ PROMOTION: NOT YET
           'not a proposal or an implementation.',
         );
     } else if (stage == SddStage.verifying || stage == SddStage.archived) {
+      if (stage == SddStage.archived) {
+        final observations = await _executionObservationsSection(parent);
+        if (observations != null) {
+          buffer
+            ..writeln()
+            ..writeln(observations);
+        }
+      }
       if (parent.type == TicketType.bug) {
         // A Bug is a leaf — it never has Story/Task children, so the
         // epic/story branch below (which looks up exactly those) would
@@ -11114,6 +11332,7 @@ PROMOTION: NOT YET
       var executionAwaitingReview = false;
       String? executionFailureReason;
       var executionFailureIsPlanDefect = false;
+      ExecutionLadderStop? executionLadderStop;
       var executionCanRetry = false;
       String? executionPrSubLine;
       if (ticket.type.isExecutable) {
@@ -11174,6 +11393,7 @@ PROMOTION: NOT YET
             executionFailureReason = reason;
             executionFailureIsPlanDefect =
                 reason?.startsWith(_planDefectCommentPrefix) ?? false;
+            executionLadderStop = await _computeLadderStop(ticket.id);
             executionCanRetry = canRetry;
           }
         }
@@ -11258,6 +11478,7 @@ PROMOTION: NOT YET
           executionAwaitingReview: executionAwaitingReview,
           executionFailureReason: executionFailureReason,
           executionFailureIsPlanDefect: executionFailureIsPlanDefect,
+          executionLadderStop: executionLadderStop,
           executionCanRetry: executionCanRetry,
           executionPrSubLine: executionPrSubLine,
           isAdvancingStage: isAdvancingStage,
