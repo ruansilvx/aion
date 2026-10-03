@@ -158,17 +158,15 @@ class EscalationLadder {
   /// A machine-readable line to append to a stop comment so a resumed run can
   /// restore this ladder (`[ladder: rung=capable failures=1]`), or `null` when
   /// the ladder is untouched (still on [ExecutionRung.execution] with no
-  /// failures) or no longer resumable (past the implement rungs).
+  /// failures).
   String? get stateMarker {
-    if (_rung != ExecutionRung.execution && _rung != ExecutionRung.capable) {
-      return null;
-    }
     if (_rung == ExecutionRung.execution && _failuresOnRung == 0) return null;
     return '[ladder: rung=${_rung.name} failures=$_failuresOnRung]';
   }
 
   static final _markerPattern = RegExp(
-    r'\[ladder: rung=(execution|capable) failures=(\d+)\]\s*$',
+    r'\[ladder: rung=(execution|capable|planCheck|finalExecution) '
+    r'failures=(\d+)\]\s*$',
   );
 
   /// [comment] without its trailing [stateMarker] line, for showing a stop
@@ -179,9 +177,11 @@ class EscalationLadder {
 
   /// Restores a ladder from [lastComment], the execution chat's most recent
   /// comment, if it ends with a [stateMarker] line; otherwise a fresh ladder
-  /// on [ExecutionRung.execution]. A restored [ExecutionRung.capable] falls
-  /// back to a fresh ladder when [capableUsable] is `false` (settings changed
-  /// since the marker was written).
+  /// on [ExecutionRung.execution]. A restored rung falls back to a fresh
+  /// ladder when it is no longer usable ([ExecutionRung.capable] without
+  /// [capableUsable], [ExecutionRung.planCheck]/[ExecutionRung.finalExecution]
+  /// without [planCheckAvailable]) — settings changed since the marker was
+  /// written.
   factory EscalationLadder.resume({
     required bool capableUsable,
     bool planCheckAvailable = true,
@@ -199,7 +199,13 @@ class EscalationLadder {
       );
     }
     final rung = ExecutionRung.values.byName(match.group(1)!);
-    if (rung == ExecutionRung.capable && !capableUsable) {
+    final unusable = switch (rung) {
+      ExecutionRung.capable => !capableUsable,
+      ExecutionRung.planCheck ||
+      ExecutionRung.finalExecution => !planCheckAvailable,
+      ExecutionRung.execution => false,
+    };
+    if (unusable) {
       return EscalationLadder(
         capableUsable: capableUsable,
         planCheckAvailable: planCheckAvailable,

@@ -14574,8 +14574,9 @@ void main() {
       );
 
       blocTest<TicketsCubit, TicketsState>(
-        'auto confidence retries a failing verify gate up to the cap, then '
-        'escalates to a failure comment + toast, without ever pushing',
+        'auto confidence retries a failing verify gate up to the ladder budget, '
+        'then the Frontier plan check ends the run with an exhausted '
+        'lead-report comment + toast, without ever pushing',
         build: buildCubit,
         setUp: () {
           // Every model reply — implement or verify — reports the same
@@ -14598,15 +14599,17 @@ void main() {
             cubit.changeTicketStatus(taskNoStory, 'inProgress'),
         wait: const Duration(milliseconds: 50),
         verify: (_) {
-          // 1 initial attempt + 2 automatic retries (the cap) = 3
-          // implement-then-verify pairs = 6 model turns.
-          verify(() => agentClient.run(any())).called(6);
+          // 2 self-verify failures spend the Execution rung (every tier
+          // resolves to the same model here, so Capable is skipped); then
+          // the Frontier plan check — 5 model turns — finds nothing it can
+          // prove and the run stops with an exhausted lead report.
+          verify(() => agentClient.run(any())).called(5);
           verifyNever(() => gitClient.push(any(), any()));
           verify(
             () => commentRepository.addComment(
               any(
                 that: predicate<TicketComment>(
-                  (c) => c.content.startsWith('Execution failed verification:'),
+                  (c) => c.content.startsWith('Escalation exhausted:'),
                 ),
               ),
             ),
@@ -20515,6 +20518,271 @@ void main() {
       final requests = capturedRequests();
       // First run: 4 calls on Haiku. Second run starts fresh on Haiku too.
       expect(requests.take(6).map((r) => r.model).toSet(), {_haiku.modelId});
+    });
+
+    // ---- Frontier plan check (AIO-3064, AIO-3065) ----
+
+    void stubFrontier(AgentModelDescriptor model) {
+      when(
+        () => modelRoutingRepository.getModelForPhase(ModelPhase.frontier),
+      ).thenAnswer((_) async => model);
+      when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+    }
+
+    const rewriteReply =
+        '## Suspected Causes\n- The Task names lib/gone.dart\n\n'
+        '## Revised Task Description\nREVISED_DESC_MARKER use lib/real.dart\n\n'
+        'PLAN CHECK: TASK REWRITE';
+    const okReply =
+        '## Suspected Causes\n- CAUSE_MARKER flaky fixture\n\n'
+        'PLAN CHECK: OK';
+    const storyChangeReply =
+        '## Story Change Request\n'
+        '- was: edit gone.dart -> now: edit real.dart, because gone.dart is '
+        'deleted\n\n'
+        'PLAN CHECK: STORY CHANGE';
+
+    test('auto: after the implement rungs, a Frontier plan check rewrites '
+        'the Task description and one final Execution attempt on the '
+        'rewritten description opens the PR (AIO-3064)', () async {
+      stubRetryConfidence(AutomationConfidence.auto);
+      stubCapable(_haiku);
+      stubFrontier(_opus);
+      final log = stubbedDecisionLogService();
+      answerByCall(
+        (call) => switch (call) {
+          2 || 4 => selfVerifyFailedReply,
+          5 => rewriteReply,
+          7 => selfVerifyPassedReply,
+          8 => approvedReply,
+          _ => implementReply,
+        },
+      );
+
+      final cubit = buildCubit(decisionLogService: log);
+      addTearDown(cubit.close);
+      await cubit.retryCodingExecution(taskNoStory);
+      await settle();
+
+      final requests = capturedRequests();
+      expect(requests, hasLength(8));
+      final check = requests[4];
+      expect(check.model, _opus.modelId);
+      expect(check.readOnlyTools, isTrue);
+      expect(check.toolsEnabled, isFalse);
+      expect(
+        check.prompt,
+        allOf([
+          contains('planning reviewer'),
+          contains('1. [execution model]'),
+          contains('PLAN CHECK: TASK REWRITE'),
+        ]),
+      );
+      // The final attempt runs on Execution, with the rewritten description.
+      expect(requests[5].model, _haiku.modelId);
+      expect(requests[5].prompt, contains('REVISED_DESC_MARKER'));
+      final updated =
+          verify(() => repository.updateTicket(captureAny())).captured.single
+              as Ticket;
+      expect(updated.description, contains('REVISED_DESC_MARKER'));
+      expect(
+        capturedComments().any(
+          (c) => c.content.startsWith(
+            'Task description rewritten by the plan check:',
+          ),
+        ),
+        isTrue,
+      );
+      verify(
+        () => log.record(
+          ticketId: taskNoStory.id,
+          source: 'planRepair',
+          sourceDetail: 'task description rewritten',
+          gateResult: 'fired',
+          detail: any(named: 'detail'),
+        ),
+      ).called(1);
+      verify(() => gitClient.push(any(), any())).called(1);
+    });
+
+    test('a plan check that proves nothing stops the run with an exhausted '
+        'lead report: no final attempt, no PR, logged (AIO-3064, '
+        'AIO-3065)', () async {
+      stubRetryConfidence(AutomationConfidence.auto);
+      stubCapable(_haiku);
+      stubFrontier(_opus);
+      final log = stubbedDecisionLogService();
+      answerByCall(
+        (call) => switch (call) {
+          2 || 4 => selfVerifyFailedReply,
+          5 => okReply,
+          _ => implementReply,
+        },
+      );
+
+      final cubit = buildCubit(decisionLogService: log);
+      addTearDown(cubit.close);
+      await cubit.retryCodingExecution(taskNoStory);
+      await settle();
+
+      expect(capturedRequests(), hasLength(5));
+      verifyNever(() => gitClient.push(any(), any()));
+      verifyNever(() => repository.updateTicket(any()));
+      final report = capturedComments().lastWhere(
+        (c) => c.content.startsWith('Escalation exhausted:'),
+      );
+      expect(
+        report.content,
+        allOf([
+          contains('- execution model failed self-verify:'),
+          contains('CAUSE_MARKER flaky fixture'),
+        ]),
+      );
+      verify(
+        () => log.record(
+          ticketId: taskNoStory.id,
+          source: 'escalationExhausted',
+          gateResult: 'declined',
+          detail: any(named: 'detail'),
+        ),
+      ).called(1);
+    });
+
+    test('a Story change verdict never edits any ticket: it posts the '
+        'change request, then the exhausted report (AIO-3064)', () async {
+      stubRetryConfidence(AutomationConfidence.auto);
+      stubCapable(_haiku);
+      stubFrontier(_opus);
+      answerByCall(
+        (call) => switch (call) {
+          2 || 4 => selfVerifyFailedReply,
+          5 => storyChangeReply,
+          _ => implementReply,
+        },
+      );
+
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      await cubit.retryCodingExecution(taskNoStory);
+      await settle();
+
+      expect(capturedRequests(), hasLength(5));
+      verifyNever(() => repository.updateTicket(any()));
+      final contents = capturedComments().map((c) => c.content).toList();
+      final changeIndex = contents.indexWhere(
+        (c) => c.startsWith('Story change requested:'),
+      );
+      expect(changeIndex, isNonNegative);
+      expect(contents[changeIndex], contains('edit real.dart'));
+      expect(
+        contents.indexWhere((c) => c.startsWith('Escalation exhausted:')),
+        greaterThan(changeIndex),
+      );
+    });
+
+    test('the final attempt failing self-verify exhausts the ladder: the '
+        'lead report notes the rewrite (AIO-3065)', () async {
+      stubRetryConfidence(AutomationConfidence.auto);
+      stubCapable(_haiku);
+      stubFrontier(_opus);
+      answerByCall(
+        (call) => switch (call) {
+          2 || 4 || 7 => selfVerifyFailedReply,
+          5 => rewriteReply,
+          _ => implementReply,
+        },
+      );
+
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      await cubit.retryCodingExecution(taskNoStory);
+      await settle();
+
+      expect(capturedRequests(), hasLength(7));
+      verifyNever(() => gitClient.push(any(), any()));
+      final report = capturedComments().lastWhere(
+        (c) => c.content.startsWith('Escalation exhausted:'),
+      );
+      expect(report.content, contains('rewrote the Task description'));
+    });
+
+    test('a Frontier model without tool access means no plan check: the '
+        'pre-ladder retry budget applies (AIO-3064)', () async {
+      stubRetryConfidence(AutomationConfidence.auto);
+      stubCapable(_haiku);
+      // frontier left unstubbed -> unresolvable -> no plan check
+      answerByCall(
+        (call) => call.isEven ? selfVerifyFailedReply : implementReply,
+      );
+
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      await cubit.retryCodingExecution(taskNoStory);
+      await settle();
+
+      expect(capturedRequests(), hasLength(6));
+      expect(
+        capturedComments().any(
+          (c) => c.content.startsWith('Escalation exhausted:'),
+        ),
+        isFalse,
+      );
+    });
+
+    test('gated: every rung waits — the plan check, then the final attempt '
+        'after a rewrite (AIO-3064)', () async {
+      stubRetryConfidence(AutomationConfidence.gated);
+      stubCapable(_haiku);
+      stubFrontier(_opus);
+      answerByCall(
+        (call) => switch (call) {
+          2 || 4 => selfVerifyFailedReply,
+          5 => rewriteReply,
+          7 => selfVerifyPassedReply,
+          8 => approvedReply,
+          _ => implementReply,
+        },
+      );
+
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      String lastStop() => capturedComments()
+          .lastWhere(
+            (c) =>
+                c.content.startsWith('Execution failed verification:') ||
+                c.content.startsWith('Escalation paused:'),
+          )
+          .content;
+
+      await cubit.retryCodingExecution(taskNoStory); // calls 1-2
+      await settle();
+      expect(lastStop(), endsWith('[ladder: rung=execution failures=1]'));
+      clearInteractions(commentRepository);
+
+      await cubit.retryCodingExecution(taskNoStory); // calls 3-4
+      await settle();
+      var stop = lastStop();
+      expect(stop, contains('The next retry runs the Frontier plan check.'));
+      expect(stop, endsWith('[ladder: rung=planCheck failures=0]'));
+      clearInteractions(commentRepository);
+
+      await cubit.retryCodingExecution(taskNoStory); // call 5: plan check
+      await settle();
+      stop = lastStop();
+      expect(stop, startsWith('Escalation paused:'));
+      expect(stop, endsWith('[ladder: rung=finalExecution failures=0]'));
+      clearInteractions(commentRepository);
+
+      await cubit.retryCodingExecution(taskNoStory); // calls 6-8
+      await settle();
+
+      final requests = verify(
+        () => agentClient.run(captureAny()),
+      ).captured.cast<AgentRequest>();
+      expect(requests, hasLength(8));
+      expect(requests[4].readOnlyTools, isTrue);
+      verify(() => gitClient.push(any(), any())).called(1);
     });
   });
 

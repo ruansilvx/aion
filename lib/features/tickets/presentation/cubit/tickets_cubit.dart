@@ -106,6 +106,7 @@ import 'package:aion/features/tickets/presentation/cubit/codebase_analysis_statu
 import 'package:aion/features/tickets/presentation/cubit/escalation_ladder.dart';
 import 'package:aion/features/tickets/presentation/cubit/in_flight_execution_run.dart';
 import 'package:aion/features/tickets/presentation/cubit/pending_tool_proposal.dart';
+import 'package:aion/features/tickets/presentation/cubit/plan_check.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_context_enricher.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_crud_tool_definitions.dart';
 import 'package:aion/features/tickets/presentation/cubit/ticket_estimation_suggester.dart';
@@ -115,6 +116,20 @@ import 'package:aion/features/tickets/presentation/cubit/ticket_rollup_recompute
 import 'package:aion/features/tickets/presentation/cubit/tickets_repo_sync_status.dart';
 import 'package:aion/features/tickets/presentation/cubit/tickets_state.dart';
 import 'package:aion/l10n/generated/app_localizations_en.dart';
+
+/// How one Frontier plan check turn ended (`AIO-3057`), as seen by
+/// `TicketsCubit._runCodingExecution`.
+enum _PlanCheckOutcome {
+  /// The Task description was rewritten; a final Execution attempt follows.
+  rewrote,
+
+  /// The check ended the run (no provable defect, a Story change request, or
+  /// a hard turn error) — the stop has already been recorded.
+  stopped,
+
+  /// The user cancelled the run during the check.
+  cancelled,
+}
 
 /// Loads, lists, and creates tickets via [TicketRepository]. Root-scoped —
 /// provided once at the app root, not per-screen. Every list-shaped repository
@@ -5806,6 +5821,10 @@ PROMOTION: NOT YET
   /// applies per rung. Under `gated` retry confidence a failure stops with a
   /// `[ladder: ...]` marker the next run resumes from (see
   /// [_buildEscalationLadder]); under `manual` the ladder is not consulted.
+  /// When both implement rungs are spent, a read-only Frontier plan check
+  /// (`runPlanCheck`) either rewrites the Task description (then one final
+  /// Execution attempt), files a Story change request for a human, or finds
+  /// nothing provable; every dead end stops via [_stopLadderExhausted].
   ///
   /// If a PR was confirmed (see [_executionSucceededWithPr]) and
   /// [_automationSettingsRepository] is configured, flips [task] straight
@@ -5975,6 +5994,12 @@ PROMOTION: NOT YET
       // newest — a gated stop's ladder marker (AIO-3057) is only resumable
       // while it is still the last comment.
       final resumeComment = await _lastCommentContent(chat.id);
+      final ladder = await _buildEscalationLadder(resumeComment);
+      if (ladder.rung == ExecutionRung.finalExecution) {
+        // Resuming after a plan-check rewrite: the passed-in Task may predate
+        // the rewritten description.
+        task = await _repository.getTicketById(task.id) ?? task;
+      }
       var prompt = await _assembleExecutionContext(
         task,
         handoffSummary: handoffSummary,
@@ -6016,6 +6041,119 @@ PROMOTION: NOT YET
         chat.id,
       );
 
+      // The latest Frontier plan check (`AIO-3057`), for the final lead report.
+      PlanCheckResult? lastPlanCheck;
+
+      // One read-only Frontier turn over the Task description and its plan
+      // source. Applies a Task rewrite, hands a Story change request to a
+      // human, or stops the run; the stop is recorded here, so the caller only
+      // acts on the outcome.
+      Future<_PlanCheckOutcome> runPlanCheck() async {
+        final planPrompt = PlanCheckPrompt.build(
+          title: task.title,
+          description: task.description,
+          planSection: await _specPlanSection(task),
+          failures: ladder.trail,
+        );
+        final (planModel, planProvider) = await _resolveModelAndProvider(
+          ModelPhase.frontier,
+        );
+        final planResult = await _runTurnRetryingDuplicateToolUseId(
+          chat.id,
+          () {
+            final planRunId = _uuid.v4();
+            _inFlightRuns[task.id] = InFlightExecutionRun(
+              planRunId,
+              planProvider,
+            );
+            // Read-only, no Aion ticket tools: the plan check reports, it
+            // never mutates tickets itself.
+            return ChatCubit.runChatTurn(
+              client: planProvider.client,
+              provider: planProvider,
+              commentRepo: commentRepo,
+              ticketRepository: _repository,
+              chatTicketId: chat.id,
+              prompt: planPrompt,
+              model: planModel,
+              runId: planRunId,
+              readOnlyTools: true,
+              workingDirectory: worktreePath,
+              onChunk: onChunk,
+              onToolUse: onToolUse,
+              onConsumptionSignal: onConsumptionSignal,
+            );
+          },
+        );
+        if (planResult is ChatTurnCancelled) {
+          branchShouldSurvive = true;
+          await _handleExecutionCancelled(task, chat, planResult);
+          return _PlanCheckOutcome.cancelled;
+        }
+        // A hard error: `runChatTurn` already posted the failure comment.
+        if (planResult is! ChatTurnSuccess) return _PlanCheckOutcome.stopped;
+        await _addExecutionTokens(task.id, chat.id);
+
+        final check = PlanCheckResult.parse(await _lastCommentContent(chat.id));
+        lastPlanCheck = check;
+        final revised = check.revisedDescription;
+        if (check.verdict == PlanCheckVerdict.taskRewrite &&
+            revised != null &&
+            revised != task.description?.trim()) {
+          final before = task.description ?? '';
+          final rewritten = task.copyWith(description: () => revised);
+          await updateTicket(rewritten);
+          task = rewritten;
+          await commentRepo.addComment(
+            TicketComment(
+              id: '',
+              ticketId: chat.id,
+              content:
+                  '$_planRewriteCommentPrefix\n\n${check.summary}\n\n'
+                  '### Before\n\n$before\n\n### After\n\n$revised',
+              authorType: CommentAuthorType.system,
+              createdAt: DateTime.now(),
+            ),
+          );
+          await _decisionLogService?.record(
+            ticketId: task.id,
+            source: 'planRepair',
+            sourceDetail: 'task description rewritten',
+            gateResult: 'fired',
+            detail: 'before:\n$before\n\nafter:\n$revised',
+          );
+          ladder.onPlanRewritten();
+          return _PlanCheckOutcome.rewrote;
+        }
+        if (check.verdict == PlanCheckVerdict.storyChange) {
+          await commentRepo.addComment(
+            TicketComment(
+              id: '',
+              ticketId: chat.id,
+              content:
+                  '$_storyChangeCommentPrefix\n\n${check.storyChangeRequest}',
+              authorType: CommentAuthorType.system,
+              createdAt: DateTime.now(),
+            ),
+          );
+          await _decisionLogService?.record(
+            ticketId: task.id,
+            source: 'planRepair',
+            sourceDetail: 'story change requested',
+            gateResult: 'pending',
+            detail: check.storyChangeRequest,
+          );
+        }
+        await _stopLadderExhausted(
+          task: task,
+          chat: chat,
+          trail: ladder.trail,
+          check: check,
+          rewriteApplied: false,
+        );
+        return _PlanCheckOutcome.stopped;
+      }
+
       // Resolved once, up front: the per-Task verify gate below needs it
       // every attempt (to diff against), and the post-loop push/PR path
       // reuses it. A cheap, idempotent read against the pristine checkout.
@@ -6024,7 +6162,6 @@ PROMOTION: NOT YET
       // into the PR body once verified (AIO-3003).
       String? reviewerSuggestions;
 
-      final ladder = await _buildEscalationLadder(resumeComment);
       var attempt = 0;
       var verified = false;
       // Each turn call below already retries itself in place on the
@@ -6035,6 +6172,40 @@ PROMOTION: NOT YET
       // dartdoc (AIO-2839).
       var duplicateToolUseIdRecoveryAttempted = false;
       while (true) {
+        if (ladder.rung == ExecutionRung.planCheck) {
+          final planOutcome = await runPlanCheck();
+          if (planOutcome != _PlanCheckOutcome.rewrote) break;
+          attempt = 0;
+          final confidenceAfterRewrite =
+              await _effectiveCodingExecutionRetryConfidence(
+                automationRepo,
+                attempt,
+              );
+          if (confidenceAfterRewrite != AutomationConfidence.auto) {
+            // gated/manual: every escalation waits for the human, including
+            // the final attempt on the rewritten description.
+            await commentRepo.addComment(
+              TicketComment(
+                id: '',
+                ticketId: chat.id,
+                content:
+                    '$_escalationPausedCommentPrefix the plan check rewrote '
+                    'the Task description. The next retry makes one final '
+                    'attempt on it.\n\n${ladder.stateMarker}',
+                authorType: CommentAuthorType.system,
+                createdAt: DateTime.now(),
+              ),
+            );
+            _emitTransientError(TicketsErrorReason.executionVerificationFailed);
+            await _recordNotification(
+              ticketId: task.id,
+              kind: NotificationKind.executionVerificationFailed,
+              message: _l10n.notificationExecutionVerificationFailed,
+            );
+            break;
+          }
+          prompt = await _assembleExecutionContext(task);
+        }
         final (implementModel, implementProvider) =
             await _resolveModelAndProvider(ladder.implementPhase);
         final implementResult = await _runTurnRetryingDuplicateToolUseId(
@@ -6302,6 +6473,17 @@ PROMOTION: NOT YET
             selfVerifyFailed && retryConfidence != AutomationConfidence.manual
             ? ladder.onSelfVerifyFailed(failureReason)
             : null;
+        if (ladderStep == LadderStep.giveUp && ladder.planCheckAvailable) {
+          // The final attempt after a plan rewrite failed too.
+          await _stopLadderExhausted(
+            task: task,
+            chat: chat,
+            trail: ladder.trail,
+            check: lastPlanCheck,
+            rewriteApplied: rungBefore == ExecutionRung.finalExecution,
+          );
+          break;
+        }
         DecisionOutcome? retryOutcome;
         if (shouldRetry) {
           retryOutcome = await _evaluateDecisionGraph(
@@ -6331,7 +6513,8 @@ PROMOTION: NOT YET
           outcome: retryOutcome?.name,
           gateResult: retryGateResult,
         );
-        if (ladderStep == LadderStep.escalate) {
+        if (ladderStep == LadderStep.escalate ||
+            ladderStep == LadderStep.runPlanCheck) {
           await _decisionLogService?.record(
             ticketId: task.id,
             source: 'modelEscalation',
@@ -6343,7 +6526,8 @@ PROMOTION: NOT YET
           );
         }
         if (shouldRetry) {
-          if (ladderStep == LadderStep.escalate) {
+          if (ladderStep == LadderStep.escalate ||
+              ladderStep == LadderStep.runPlanCheck) {
             await commentRepo.addComment(
               TicketComment(
                 id: '',
@@ -6364,9 +6548,13 @@ PROMOTION: NOT YET
         }
 
         final ladderMarker = ladder.stateMarker;
-        final escalationNote = ladderStep == LadderStep.escalate
-            ? '\n\nThe next retry escalates to the ${ladder.rung.name} model.'
-            : '';
+        final escalationNote = switch (ladderStep) {
+          LadderStep.escalate =>
+            '\n\nThe next retry escalates to the ${ladder.rung.name} model.',
+          LadderStep.runPlanCheck =>
+            '\n\nThe next retry runs the Frontier plan check.',
+          _ => '',
+        };
         await commentRepo.addComment(
           TicketComment(
             id: '',
@@ -6571,6 +6759,65 @@ PROMOTION: NOT YET
     }
   }
 
+  /// Prefix of the system comment [_runCodingExecution] posts when the
+  /// Frontier plan check rewrites a Task's description (`AIO-3057`).
+  static const _planRewriteCommentPrefix =
+      'Task description rewritten by the plan check:';
+
+  /// Prefix of the system comment carrying a Frontier plan check's Story
+  /// change request for a human to approve (`AIO-3057`). The body is the
+  /// reviewer's "was -> now, because (evidence)" bullets, verbatim.
+  static const _storyChangeCommentPrefix = 'Story change requested:';
+
+  /// Prefix of the stop comment for an exhausted escalation ladder
+  /// (`AIO-3057`); its body is [PlanCheckPrompt.leadReport].
+  static const _escalationExhaustedCommentPrefix = 'Escalation exhausted:';
+
+  /// Prefix of the stop comment posted when a plan-check rewrite is waiting
+  /// for a human to start the final attempt (`AIO-3057`).
+  static const _escalationPausedCommentPrefix = 'Escalation paused:';
+
+  /// Stops a coding-execution run whose escalation ladder ran out
+  /// (`AIO-3057`): posts the lead report ([PlanCheckPrompt.leadReport]) as an
+  /// [_escalationExhaustedCommentPrefix] comment, records an
+  /// `escalationExhausted` decision-log row, and raises the failure toast and
+  /// notification. A later manual retry carries no ladder marker, so it
+  /// restarts at Execution.
+  Future<void> _stopLadderExhausted({
+    required Ticket task,
+    required Ticket chat,
+    required List<LadderFailure> trail,
+    required PlanCheckResult? check,
+    required bool rewriteApplied,
+  }) async {
+    final report = PlanCheckPrompt.leadReport(
+      trail: trail,
+      check: check,
+      rewriteApplied: rewriteApplied,
+    );
+    await _commentRepository?.addComment(
+      TicketComment(
+        id: '',
+        ticketId: chat.id,
+        content: '$_escalationExhaustedCommentPrefix\n\n$report',
+        authorType: CommentAuthorType.system,
+        createdAt: DateTime.now(),
+      ),
+    );
+    await _decisionLogService?.record(
+      ticketId: task.id,
+      source: 'escalationExhausted',
+      gateResult: 'declined',
+      detail: report,
+    );
+    _emitTransientError(TicketsErrorReason.executionVerificationFailed);
+    await _recordNotification(
+      ticketId: task.id,
+      kind: NotificationKind.executionVerificationFailed,
+      message: _l10n.notificationExecutionVerificationFailed,
+    );
+  }
+
   /// Builds this run's [EscalationLadder] (`AIO-3057`): resumes the rung and
   /// failure count from [resumeComment] (the execution chat's newest comment
   /// before this run posted anything) when it still ends with a ladder marker,
@@ -6579,10 +6826,13 @@ PROMOTION: NOT YET
   /// escalating changes nothing) and its provider supports
   /// [ToolAccessTier.full] (coding execution needs file/git/bash tools, which a
   /// `noTools`-only provider such as the Messages API cannot give). Any failure
-  /// resolving the Capable model leaves the rung unusable rather than failing
-  /// the run.
+  /// resolving the Capable model leaves the rung unusable, and one resolving
+  /// the Frontier model (or a Frontier provider without
+  /// [ToolAccessTier.full]) leaves the plan check unavailable, rather than
+  /// failing the run.
   Future<EscalationLadder> _buildEscalationLadder(String? resumeComment) async {
     var capableUsable = false;
+    var planCheckAvailable = false;
     try {
       final executionModel = await _resolveModel(ModelPhase.execution);
       final (capableModel, capableProvider) = await _resolveModelAndProvider(
@@ -6599,12 +6849,22 @@ PROMOTION: NOT YET
       // longer registered) just means no Capable rung — it must never stop
       // the run itself from starting.
     }
-    // No Frontier plan check yet (Story AIO-3062): once the implement rungs
-    // are spent the ladder says giveUp and the pre-ladder retry decision
-    // (decision graph, then stop) applies unchanged.
+    try {
+      // The plan check reads the worktree, which needs a provider with tool
+      // access; without one the ladder says giveUp when its implement rungs
+      // are spent and the pre-ladder retry decision applies unchanged.
+      final (_, frontierProvider) = await _resolveModelAndProvider(
+        ModelPhase.frontier,
+      );
+      planCheckAvailable = frontierProvider.supportedToolAccessTiers.contains(
+        ToolAccessTier.full,
+      );
+    } catch (_) {
+      // Same reasoning: an unresolvable Frontier model means no plan check.
+    }
     return EscalationLadder.resume(
       capableUsable: capableUsable,
-      planCheckAvailable: false,
+      planCheckAvailable: planCheckAvailable,
       lastComment: resumeComment,
     );
   }
@@ -8021,6 +8281,8 @@ PROMOTION: NOT YET
     if (isSystemOrAi &&
         (mostRecent.content.startsWith('Execution failed verification:') ||
             mostRecent.content.startsWith(_planDefectCommentPrefix) ||
+            mostRecent.content.startsWith(_escalationExhaustedCommentPrefix) ||
+            mostRecent.content.startsWith(_escalationPausedCommentPrefix) ||
             mostRecent.content.startsWith('Execution failed:'))) {
       // The ladder's resume marker is machine state, not part of the message.
       return (EscalationLadder.stripMarker(mostRecent.content), true);

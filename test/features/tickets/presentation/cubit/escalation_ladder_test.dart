@@ -80,13 +80,40 @@ void main() {
   });
 
   group('EscalationLadder state marker', () {
-    test('is null before any failure and after the implement rungs', () {
+    test('is null before any failure; later rungs are resumable too', () {
       final ladder = EscalationLadder(capableUsable: false);
       expect(ladder.stateMarker, isNull);
       ladder
         ..onSelfVerifyFailed('a')
         ..onSelfVerifyFailed('b');
-      expect(ladder.stateMarker, isNull);
+      expect(ladder.stateMarker, '[ladder: rung=planCheck failures=0]');
+      ladder.onPlanRewritten();
+      expect(ladder.stateMarker, '[ladder: rung=finalExecution failures=0]');
+    });
+
+    test('resumes at the plan check and the final attempt', () {
+      expect(
+        EscalationLadder.resume(
+          capableUsable: false,
+          lastComment: 'x\n\n[ladder: rung=planCheck failures=0]',
+        ).rung,
+        ExecutionRung.planCheck,
+      );
+      expect(
+        EscalationLadder.resume(
+          capableUsable: false,
+          lastComment: 'x\n\n[ladder: rung=finalExecution failures=0]',
+        ).rung,
+        ExecutionRung.finalExecution,
+      );
+      expect(
+        EscalationLadder.resume(
+          capableUsable: false,
+          planCheckAvailable: false,
+          lastComment: 'x\n\n[ladder: rung=planCheck failures=0]',
+        ).rung,
+        ExecutionRung.execution,
+      );
     });
 
     test('round-trips a mid-rung failure count', () {
