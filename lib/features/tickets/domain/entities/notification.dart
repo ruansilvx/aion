@@ -18,6 +18,16 @@ enum NotificationKind {
   /// has to resolve it. Added for `AIO-3050`.
   executionPlanDefect,
 
+  /// A coding-execution run exhausted its escalation ladder (Execution ->
+  /// Capable -> Frontier plan check -> final attempt) without a passing
+  /// self-verify — a human has to act on the lead report. Added for `AIO-3057`.
+  executionEscalationExhausted,
+
+  /// A coding-execution run paused after the Frontier plan check rewrote the
+  /// Task description, waiting for a human to start the final attempt (gated
+  /// or manual retry confidence). Added for `AIO-3057`.
+  executionEscalationPaused,
+
   /// A coding-execution run failed for an infra/setup reason (worktree,
   /// push, PR-open failure) before verification was even reached.
   executionFailed,

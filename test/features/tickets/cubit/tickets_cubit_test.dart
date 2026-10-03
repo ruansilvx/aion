@@ -20784,6 +20784,270 @@ void main() {
       expect(requests[4].readOnlyTools, isTrue);
       verify(() => gitClient.push(any(), any())).called(1);
     });
+
+    // ---- Surfacing, approval and recording (AIO-3067-3069) ----
+
+    TicketComment sys(String content, int second) => TicketComment(
+      id: 'c$second',
+      ticketId: dummyExecutionChatTicket.id,
+      content: content,
+      authorType: CommentAuthorType.system,
+      createdAt: DateTime(2026, 1, 1, 0, 0, second),
+    );
+
+    void stubComments(List<TicketComment> comments) => when(
+      () => commentRepository.getCommentsForTicket(dummyExecutionChatTicket.id),
+    ).thenAnswer((_) async => comments);
+
+    Future<TicketDetailLoaded> loadDetail() async {
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+      await cubit.getTicketById(taskNoStory.id);
+      return cubit.state as TicketDetailLoaded;
+    }
+
+    const changeRequest =
+        'Story change requested:\n\n- was: A -> now: B, because C';
+
+    test('a pending Story change request is read from the comment right '
+        'before the exhausted stop (AIO-3067)', () async {
+      stubComments([
+        sys(changeRequest, 1),
+        sys('Escalation exhausted:\n\nthe lead report', 2),
+      ]);
+
+      final detail = await loadDetail();
+
+      expect(
+        detail.executionFailureReason,
+        'Escalation exhausted:\n\nthe lead report',
+      );
+      expect(
+        detail.executionLadderStop,
+        const ExecutionLadderStop(
+          ExecutionLadderStopKind.exhausted,
+          storyChangeRequest: '- was: A -> now: B, because C',
+        ),
+      );
+    });
+
+    test('an exhausted stop without a request, and a paused stop, are '
+        'recognized (AIO-3067)', () async {
+      stubComments([sys('Escalation exhausted:\n\nreport', 1)]);
+      expect(
+        (await loadDetail()).executionLadderStop,
+        const ExecutionLadderStop(ExecutionLadderStopKind.exhausted),
+      );
+
+      stubComments([
+        sys('Escalation paused: rewritten\n\n[ladder: rung=finalExecution failures=0]', 1),
+      ]);
+      final paused = await loadDetail();
+      expect(
+        paused.executionLadderStop,
+        const ExecutionLadderStop(ExecutionLadderStopKind.paused),
+      );
+      // The resume marker is machine state, not banner text.
+      expect(paused.executionFailureReason, isNot(contains('[ladder:')));
+    });
+
+    test('a request answered by a later comment is no longer pending, and '
+        'the banner still shows the stop (AIO-3067)', () async {
+      stubComments([
+        sys(changeRequest, 1),
+        sys('Escalation exhausted:\n\nthe lead report', 2),
+        sys('Story change rejected: no plan was changed.', 3),
+      ]);
+
+      final detail = await loadDetail();
+
+      expect(
+        detail.executionFailureReason,
+        'Escalation exhausted:\n\nthe lead report',
+      );
+      expect(
+        detail.executionLadderStop,
+        const ExecutionLadderStop(ExecutionLadderStopKind.exhausted),
+      );
+    });
+
+    test('a stale request from an earlier run is not pending behind a newer '
+        'stop (AIO-3067)', () async {
+      stubComments([
+        sys(changeRequest, 1),
+        sys('Escalation exhausted:\n\nfirst', 2),
+        sys('Execution failed verification:\n\nlater failure', 3),
+        sys('Escalation exhausted:\n\nsecond', 4),
+      ]);
+
+      expect(
+        (await loadDetail()).executionLadderStop,
+        const ExecutionLadderStop(ExecutionLadderStopKind.exhausted),
+      );
+    });
+
+    test('approve appends the request to the parent Story as an Approved plan '
+        'corrections section, answers it, logs it and clears the pending '
+        'state (AIO-3068)', () async {
+      final parentTask = Ticket(
+        id: taskNoStory.id,
+        ticketId: taskNoStory.ticketId,
+        type: TicketType.task,
+        title: taskNoStory.title,
+        status: 'inProgress',
+        parentId: storyForExecution.id,
+        createdAt: taskNoStory.createdAt,
+        updatedAt: taskNoStory.updatedAt,
+      );
+      when(() => repository.getTicketById(taskNoStory.id)).thenAnswer(
+        (_) async => parentTask.copyWith(status: 'inProgress'),
+      );
+      final storyWithPlan = storyForExecution.copyWith(
+        description: () => 'STORY_PLAN_MARKER original plan',
+      );
+      when(
+        () => repository.getTicketById(storyForExecution.id),
+      ).thenAnswer((_) async => storyWithPlan);
+      when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+      stubComments([
+        sys(changeRequest, 1),
+        sys('Escalation exhausted:\n\nthe lead report', 2),
+      ]);
+      final log = stubbedDecisionLogService();
+      final cubit = buildCubit(decisionLogService: log);
+      addTearDown(cubit.close);
+
+      await cubit.approveStoryChangeRequest(parentTask);
+
+      final updated =
+          verify(() => repository.updateTicket(captureAny())).captured.single
+              as Ticket;
+      expect(updated.id, storyForExecution.id);
+      expect(
+        updated.description,
+        allOf([
+          startsWith('STORY_PLAN_MARKER original plan'),
+          contains('## Approved plan corrections ('),
+          contains('supersede any conflicting text above'),
+          contains('- was: A -> now: B, because C'),
+        ]),
+      );
+      final answer = verify(
+        () => commentRepository.addComment(captureAny()),
+      ).captured.cast<TicketComment>().single;
+      expect(answer.content, startsWith('Story change approved:'));
+      expect(answer.content, contains(storyForExecution.ticketId));
+      verify(
+        () => log.record(
+          ticketId: taskNoStory.id,
+          source: 'planRepair',
+          sourceDetail: 'story change approved',
+          gateResult: 'fired',
+          detail: '- was: A -> now: B, because C',
+        ),
+      ).called(1);
+    });
+
+    test('approve on an orphan Task or a Bug corrects that ticket itself '
+        '(AIO-3068)', () async {
+      when(() => repository.updateTicket(any())).thenAnswer((_) async {});
+      stubComments([
+        sys(changeRequest, 1),
+        sys('Escalation exhausted:\n\nthe lead report', 2),
+      ]);
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      await cubit.approveStoryChangeRequest(taskNoStory);
+
+      final updated =
+          verify(() => repository.updateTicket(captureAny())).captured.single
+              as Ticket;
+      expect(updated.id, taskNoStory.id);
+      expect(updated.description, contains('## Approved plan corrections ('));
+    });
+
+    test('reject changes no description but records the answer and logs it '
+        '(AIO-3068)', () async {
+      stubComments([
+        sys(changeRequest, 1),
+        sys('Escalation exhausted:\n\nthe lead report', 2),
+      ]);
+      final log = stubbedDecisionLogService();
+      final cubit = buildCubit(decisionLogService: log);
+      addTearDown(cubit.close);
+
+      await cubit.rejectStoryChangeRequest(taskNoStory);
+
+      verifyNever(() => repository.updateTicket(any()));
+      final answer = verify(
+        () => commentRepository.addComment(captureAny()),
+      ).captured.cast<TicketComment>().single;
+      expect(answer.content, startsWith('Story change rejected:'));
+      verify(
+        () => log.record(
+          ticketId: taskNoStory.id,
+          source: 'planRepair',
+          sourceDetail: 'story change rejected',
+          gateResult: 'declined',
+          detail: '- was: A -> now: B, because C',
+        ),
+      ).called(1);
+    });
+
+    test('approve and reject are no-ops when nothing is pending '
+        '(AIO-3068)', () async {
+      stubComments([sys('Escalation exhausted:\n\nthe lead report', 1)]);
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      await cubit.approveStoryChangeRequest(taskNoStory);
+      await cubit.rejectStoryChangeRequest(taskNoStory);
+
+      verifyNever(() => repository.updateTicket(any()));
+      verifyNever(() => commentRepository.addComment(any()));
+    });
+
+    test('the Archived-stage context lists Tasks that needed the ladder and '
+        'is unchanged for a clean cycle (AIO-3069)', () async {
+      when(
+        () => repository.getTicketsByParent(
+          storyForExecution.id,
+          types: any(named: 'types'),
+        ),
+      ).thenAnswer((_) async => [taskNoStory]);
+      stubComments([
+        sys('Model escalation: execution -> capable after 2 consecutive self-verify failures.', 1),
+        sys('Task description rewritten by the plan check:\n\nwhy', 2),
+        sys('Escalation exhausted:\n\nreport', 3),
+      ]);
+      final cubit = buildCubit();
+      addTearDown(cubit.close);
+
+      final context = await cubit.debugAssembleStageContext(
+        storyForExecution,
+        SddStage.archived,
+      );
+      expect(
+        context,
+        allOf([
+          contains('## Execution observations'),
+          contains(
+            '- ${taskNoStory.ticketId} "${taskNoStory.title}": '
+            'escalated execution -> capable; '
+            'the plan check rewrote the Task description; '
+            'the escalation ladder was exhausted at least once',
+          ),
+        ]),
+      );
+
+      stubComments([sys('Execution failed verification:\n\nplain', 1)]);
+      final clean = await cubit.debugAssembleStageContext(
+        storyForExecution,
+        SddStage.archived,
+      );
+      expect(clean, isNot(contains('Execution observations')));
+    });
   });
 
   group('parallel-work scheduling/cancellation/restore', () {

@@ -58,6 +58,7 @@ Widget _wrap({
   int? executionQueuePosition,
   String? executionFailureReason,
   bool executionFailureIsPlanDefect = false,
+  ExecutionLadderStop? executionLadderStop,
   bool canAdvanceSddStage = false,
   String? sddStageBlockReason,
   AutomationConfidence? automationConfidence,
@@ -71,6 +72,7 @@ Widget _wrap({
     executionQueuePosition: executionQueuePosition,
     executionFailureReason: executionFailureReason,
     executionFailureIsPlanDefect: executionFailureIsPlanDefect,
+    executionLadderStop: executionLadderStop,
     canAdvanceSddStage: canAdvanceSddStage,
     sddStageBlockReason: sddStageBlockReason,
   );
@@ -834,6 +836,96 @@ void main() {
 
       expect(find.text('Verification failed — PR not opened'), findsOneWidget);
       expect(find.text('Plan defect — PR not opened'), findsNothing);
+    });
+  });
+
+  group('_ExecutionActionBanner escalation-ladder stops (AIO-3067, AIO-3068)', () {
+    final stoppedTask = Ticket(
+      id: 'task-stopped',
+      ticketId: 'AIO-71',
+      type: TicketType.task,
+      title: 'A stopped Task',
+      status: 'inProgress',
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    );
+
+    testWidgets('an exhausted ladder gets its own title with Retry offered', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          ticket: stoppedTask,
+          ticketsCubit: ticketsCubit,
+          executionFailureReason: 'Escalation exhausted:\n\nlead report',
+          executionLadderStop: const ExecutionLadderStop(
+            ExecutionLadderStopKind.exhausted,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Escalation exhausted — PR not opened'), findsOneWidget);
+      expect(find.text('Verification failed — PR not opened'), findsNothing);
+      expect(find.text('Retry'), findsOneWidget);
+      expect(find.text('Approve change'), findsNothing);
+    });
+
+    testWidgets('a paused ladder says the final attempt is waiting', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          ticket: stoppedTask,
+          ticketsCubit: ticketsCubit,
+          executionFailureReason: 'Escalation paused: the plan check rewrote',
+          executionLadderStop: const ExecutionLadderStop(
+            ExecutionLadderStopKind.paused,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Escalation paused — final attempt waiting'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a pending Story change request shows its bullets with '
+        'Approve and Reject wired to the cubit', (tester) async {
+      when(
+        () => ticketsCubit.approveStoryChangeRequest(any()),
+      ).thenAnswer((_) async {});
+      when(
+        () => ticketsCubit.rejectStoryChangeRequest(any()),
+      ).thenAnswer((_) async {});
+      await tester.pumpWidget(
+        _wrap(
+          ticket: stoppedTask,
+          ticketsCubit: ticketsCubit,
+          executionFailureReason: 'Escalation exhausted:\n\nlead report',
+          executionLadderStop: const ExecutionLadderStop(
+            ExecutionLadderStopKind.exhausted,
+            storyChangeRequest: '- was: edit gone.dart -> now: edit real.dart',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('The plan check asks to change the plan'), findsOneWidget);
+      expect(
+        find.text('- was: edit gone.dart -> now: edit real.dart'),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('Approve change'));
+      await tester.pump();
+      verify(() => ticketsCubit.approveStoryChangeRequest(stoppedTask)).called(1);
+
+      await tester.tap(find.text('Reject'));
+      await tester.pump();
+      verify(() => ticketsCubit.rejectStoryChangeRequest(stoppedTask)).called(1);
     });
   });
 }
