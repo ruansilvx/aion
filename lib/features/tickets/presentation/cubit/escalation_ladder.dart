@@ -77,8 +77,10 @@ class EscalationLadder {
     this.threshold = 2,
     ExecutionRung startRung = ExecutionRung.execution,
     int startFailures = 0,
+    List<LadderFailure> initialTrail = const [],
   }) : _rung = startRung,
-       _failuresOnRung = startFailures;
+       _failuresOnRung = startFailures,
+       _trail = [...initialTrail];
 
   /// Whether [ExecutionRung.capable] is a real escalation target.
   final bool capableUsable;
@@ -94,7 +96,7 @@ class EscalationLadder {
 
   ExecutionRung _rung;
   int _failuresOnRung;
-  final List<LadderFailure> _trail = [];
+  final List<LadderFailure> _trail;
 
   /// The rung the next implement (or plan-check) turn runs on.
   ExecutionRung get rung => _rung;
@@ -102,7 +104,9 @@ class EscalationLadder {
   /// Counted self-verify failures on the current rung.
   int get failuresOnRung => _failuresOnRung;
 
-  /// Every counted failure so far this run, oldest first.
+  /// Every counted failure so far this escalation episode — including those
+  /// of earlier runs a gated stop ended, recovered by [EscalationLadder.resume]
+  /// — oldest first.
   List<LadderFailure> get trail => List.unmodifiable(_trail);
 
   /// The [ModelPhase] the next implement and self-verify turns must resolve
@@ -164,6 +168,44 @@ class EscalationLadder {
     return '[ladder: rung=${_rung.name} failures=$_failuresOnRung]';
   }
 
+  /// Prefix of the comment that ends an escalation episode: the ladder ran
+  /// out and a human took over. `TicketsCubit` posts it; [resume] treats it as
+  /// the point after which earlier failures no longer belong to the trail.
+  static const exhaustedCommentPrefix = 'Escalation exhausted:';
+
+  /// A tag line for a stop comment recording one counted self-verify failure
+  /// that happened on [rung], so a later run can rebuild [trail].
+  static String failureTag(ExecutionRung rung) =>
+      '[ladder-failure: rung=${rung.name}]';
+
+  static final _failurePattern = RegExp(
+    r'^Execution failed verification:\n\n([\s\S]*?)'
+    r'(?:\n\nThe next retry (?:escalates to the \w+ model|runs the Frontier '
+    r'plan check)\.)?\n\n\[ladder-failure: rung=(execution|capable|'
+    r'finalExecution)\]',
+  );
+
+  /// The counted failures recorded in [comments] (oldest first): every stop
+  /// comment carrying a [failureTag], restarting after any comment that ends
+  /// an episode ([exhaustedCommentPrefix] or an opened PR).
+  static List<LadderFailure> _trailFrom(List<String> comments) {
+    var trail = <LadderFailure>[];
+    for (final c in comments) {
+      if (c.startsWith(exhaustedCommentPrefix) ||
+          c.startsWith('EXECUTION: PR_OPENED')) {
+        trail = [];
+        continue;
+      }
+      final m = _failurePattern.firstMatch(c);
+      if (m != null) {
+        trail.add(
+          LadderFailure(ExecutionRung.values.byName(m.group(2)!), m.group(1)!),
+        );
+      }
+    }
+    return trail;
+  }
+
   static final _markerPattern = RegExp(
     r'\[ladder: rung=(execution|capable|planCheck|finalExecution) '
     r'failures=(\d+)\]\s*$',
@@ -173,11 +215,12 @@ class EscalationLadder {
   /// comment to the user — the marker is machine-readable resume state, not
   /// part of the failure message.
   static String stripMarker(String comment) =>
-      comment.replaceFirst(RegExp(r'\s*\[ladder: [^\]]*\]\s*$'), '');
+      comment.replaceAll(RegExp(r'\s*\[ladder(?:-failure)?: [^\]]*\]'), '');
 
-  /// Restores a ladder from [lastComment], the execution chat's most recent
-  /// comment, if it ends with a [stateMarker] line; otherwise a fresh ladder
-  /// on [ExecutionRung.execution]. A restored rung falls back to a fresh
+  /// Restores a ladder from [comments] (the execution chat's comment
+  /// contents, oldest first) if the newest ends with a [stateMarker] line —
+  /// rebuilding [trail] from the failure tags of the episode so far;
+  /// otherwise a fresh ladder on [ExecutionRung.execution]. A restored rung falls back to a fresh
   /// ladder when it is no longer usable ([ExecutionRung.capable] without
   /// [capableUsable], [ExecutionRung.planCheck]/[ExecutionRung.finalExecution]
   /// without [planCheckAvailable]) — settings changed since the marker was
@@ -185,12 +228,12 @@ class EscalationLadder {
   factory EscalationLadder.resume({
     required bool capableUsable,
     bool planCheckAvailable = true,
-    String? lastComment,
+    List<String> comments = const [],
     int threshold = 2,
   }) {
-    final match = lastComment == null
+    final match = comments.isEmpty
         ? null
-        : _markerPattern.firstMatch(lastComment);
+        : _markerPattern.firstMatch(comments.last);
     if (match == null) {
       return EscalationLadder(
         capableUsable: capableUsable,
@@ -218,6 +261,7 @@ class EscalationLadder {
       threshold: threshold,
       startRung: rung,
       startFailures: int.parse(match.group(2)!),
+      initialTrail: _trailFrom(comments),
     );
   }
 }

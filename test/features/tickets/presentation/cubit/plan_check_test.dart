@@ -82,6 +82,16 @@ void main() {
       expect(r.verdict, PlanCheckVerdict.ok);
     });
 
+    test('asOk keeps the reply and causes but drops the verdict', () {
+      final r = PlanCheckResult.parse(
+        '## Suspected Causes\nwhy\n\n## Revised Task Description\nnew\n\n'
+        'PLAN CHECK: TASK REWRITE',
+      ).asOk();
+      expect(r.verdict, PlanCheckVerdict.ok);
+      expect(r.revisedDescription, isNull);
+      expect(r.suspectedCauses, 'why');
+    });
+
     test('summary falls back to the truncated raw reply', () {
       final r = PlanCheckResult.parse('${'y' * 1500}\nPLAN CHECK: OK');
       expect(r.summary.length, lessThan(1100));

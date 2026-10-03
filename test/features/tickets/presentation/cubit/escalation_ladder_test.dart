@@ -95,14 +95,14 @@ void main() {
       expect(
         EscalationLadder.resume(
           capableUsable: false,
-          lastComment: 'x\n\n[ladder: rung=planCheck failures=0]',
+          comments: ['x\n\n[ladder: rung=planCheck failures=0]'],
         ).rung,
         ExecutionRung.planCheck,
       );
       expect(
         EscalationLadder.resume(
           capableUsable: false,
-          lastComment: 'x\n\n[ladder: rung=finalExecution failures=0]',
+          comments: ['x\n\n[ladder: rung=finalExecution failures=0]'],
         ).rung,
         ExecutionRung.finalExecution,
       );
@@ -110,7 +110,7 @@ void main() {
         EscalationLadder.resume(
           capableUsable: false,
           planCheckAvailable: false,
-          lastComment: 'x\n\n[ladder: rung=planCheck failures=0]',
+          comments: ['x\n\n[ladder: rung=planCheck failures=0]'],
         ).rung,
         ExecutionRung.execution,
       );
@@ -123,7 +123,7 @@ void main() {
       expect(marker, '[ladder: rung=execution failures=1]');
       final resumed = EscalationLadder.resume(
         capableUsable: true,
-        lastComment: 'Execution failed verification:\n\nboom\n\n$marker',
+        comments: ['Execution failed verification:\n\nboom\n\n$marker'],
       );
       expect(resumed.rung, ExecutionRung.execution);
       expect(resumed.failuresOnRung, 1);
@@ -136,7 +136,7 @@ void main() {
         ..onSelfVerifyFailed('b');
       final resumed = EscalationLadder.resume(
         capableUsable: true,
-        lastComment: 'x\n\n${ladder.stateMarker}',
+        comments: ['x\n\n${ladder.stateMarker}'],
       );
       expect(resumed.rung, ExecutionRung.capable);
       expect(resumed.failuresOnRung, 0);
@@ -153,11 +153,58 @@ void main() {
       expect(EscalationLadder.stripMarker('plain'), 'plain');
     });
 
+    test('resume rebuilds the failure trail from tagged stop comments, '
+        'restarting after an exhausted episode', () {
+      final tag = EscalationLadder.failureTag(ExecutionRung.execution);
+      final resumed = EscalationLadder.resume(
+        capableUsable: true,
+        comments: [
+          'Execution failed verification:\n\nold\n\n$tag\n\n'
+              '[ladder: rung=execution failures=1]',
+          'Escalation exhausted:\n\nreport',
+          'Execution failed verification:\n\nfirst\n\n$tag\n\n'
+              '[ladder: rung=execution failures=1]',
+          'unrelated comment',
+          'Execution failed verification:\n\nsecond\n\n'
+              'The next retry escalates to the capable model.\n\n$tag\n\n'
+              '[ladder: rung=capable failures=0]',
+        ],
+      );
+      expect(resumed.rung, ExecutionRung.capable);
+      expect(resumed.trail.map((f) => f.reason), ['first', 'second']);
+      expect(resumed.trail.map((f) => f.rung), [
+        ExecutionRung.execution,
+        ExecutionRung.execution,
+      ]);
+    });
+
+    test('an untagged stop adds nothing to the trail', () {
+      final resumed = EscalationLadder.resume(
+        capableUsable: true,
+        comments: [
+          'Execution failed verification:\n\nmechanical mismatch\n\n'
+              '[ladder: rung=execution failures=1]',
+        ],
+      );
+      expect(resumed.trail, isEmpty);
+    });
+
+    test('stripMarker removes the failure tag and the state marker', () {
+      expect(
+        EscalationLadder.stripMarker(
+          'Execution failed verification:\n\nboom\n\n'
+          '${EscalationLadder.failureTag(ExecutionRung.capable)}\n\n'
+          '[ladder: rung=capable failures=1]',
+        ),
+        'Execution failed verification:\n\nboom',
+      );
+    });
+
     test('resume without a marker starts fresh on Execution', () {
       expect(
         EscalationLadder.resume(
           capableUsable: true,
-          lastComment: 'Escalation exhausted: nothing to resume',
+          comments: ['Escalation exhausted: nothing to resume'],
         ).rung,
         ExecutionRung.execution,
       );
@@ -171,7 +218,7 @@ void main() {
       expect(
         EscalationLadder.resume(
           capableUsable: true,
-          lastComment: '[ladder: rung=capable failures=0]\n\nlater text',
+          comments: ['[ladder: rung=capable failures=0]\n\nlater text'],
         ).rung,
         ExecutionRung.execution,
       );
@@ -180,7 +227,7 @@ void main() {
     test('a restored Capable rung falls back when Capable is now unusable', () {
       final resumed = EscalationLadder.resume(
         capableUsable: false,
-        lastComment: 'x\n\n[ladder: rung=capable failures=1]',
+        comments: ['x\n\n[ladder: rung=capable failures=1]'],
       );
       expect(resumed.rung, ExecutionRung.execution);
       expect(resumed.failuresOnRung, 0);

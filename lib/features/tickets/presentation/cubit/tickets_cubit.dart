@@ -5994,8 +5994,13 @@ PROMOTION: NOT YET
       // Read before this run's own prompt comment below becomes the chat's
       // newest — a gated stop's ladder marker (AIO-3057) is only resumable
       // while it is still the last comment.
-      final resumeComment = await _lastCommentContent(chat.id);
-      final ladder = await _buildEscalationLadder(resumeComment);
+      final resumeComments = [
+        for (final c in _oldestFirst(
+          await commentRepo.getCommentsForTicket(chat.id),
+        ))
+          c.content,
+      ];
+      final ladder = await _buildEscalationLadder(resumeComments);
       if (ladder.rung == ExecutionRung.finalExecution) {
         // Resuming after a plan-check rewrite: the passed-in Task may predate
         // the rewritten description.
@@ -6095,12 +6100,16 @@ PROMOTION: NOT YET
         if (planResult is! ChatTurnSuccess) return _PlanCheckOutcome.stopped;
         await _addExecutionTokens(task.id, chat.id);
 
-        final check = PlanCheckResult.parse(await _lastCommentContent(chat.id));
-        lastPlanCheck = check;
+        var check = PlanCheckResult.parse(await _lastCommentContent(chat.id));
         final revised = check.revisedDescription;
+        // A "rewrite" that changes nothing proves nothing: treat it as OK so
+        // the lead report doesn't claim a rewrite that never happened.
         if (check.verdict == PlanCheckVerdict.taskRewrite &&
-            revised != null &&
-            revised != task.description?.trim()) {
+            revised == task.description?.trim()) {
+          check = check.asOk();
+        }
+        lastPlanCheck = check;
+        if (check.verdict == PlanCheckVerdict.taskRewrite && revised != null) {
           final before = task.description ?? '';
           final rewritten = task.copyWith(description: () => revised);
           await updateTicket(rewritten);
@@ -6549,6 +6558,11 @@ PROMOTION: NOT YET
         }
 
         final ladderMarker = ladder.stateMarker;
+        // Tags this stop as one counted self-verify failure on the rung it
+        // happened on, so a later gated run can rebuild the failure trail.
+        final failureTag = ladderStep == null
+            ? ''
+            : '\n\n${EscalationLadder.failureTag(rungBefore)}';
         final escalationNote = switch (ladderStep) {
           LadderStep.escalate =>
             '\n\nThe next retry escalates to the ${ladder.rung.name} model.',
@@ -6563,6 +6577,7 @@ PROMOTION: NOT YET
             content:
                 'Execution failed verification:\n\n$failureReason'
                 '$escalationNote'
+                '$failureTag'
                 '${ladderMarker == null ? '' : '\n\n$ladderMarker'}',
             authorType: CommentAuthorType.system,
             createdAt: DateTime.now(),
@@ -6772,7 +6787,8 @@ PROMOTION: NOT YET
 
   /// Prefix of the stop comment for an exhausted escalation ladder
   /// (`AIO-3057`); its body is [PlanCheckPrompt.leadReport].
-  static const _escalationExhaustedCommentPrefix = 'Escalation exhausted:';
+  static const _escalationExhaustedCommentPrefix =
+      EscalationLadder.exhaustedCommentPrefix;
 
   /// Prefix of the stop comment posted when a plan-check rewrite is waiting
   /// for a human to start the final attempt (`AIO-3057`).
@@ -6781,7 +6797,7 @@ PROMOTION: NOT YET
   /// The `## Execution observations` section of the Archived-stage context
   /// (`AIO-3057`): which of [parent]'s coding-execution Tasks (or [parent]
   /// itself, for a Bug) needed the escalation ladder, read from the markers the
-  /// ladder left in each Task's most recent execution chat. `null` when none
+  /// ladder left in every one of each Task's execution chats. `null` when none
   /// did, so a clean cycle's context is unchanged.
   Future<String?> _executionObservationsSection(Ticket parent) async {
     final commentRepo = _commentRepository;
@@ -6809,12 +6825,17 @@ PROMOTION: NOT YET
     }
     final lines = <String>[];
     for (final ticket in executables) {
-      final chat = await _mostRecentExecutionChat(ticket.id);
-      if (chat == null) continue;
+      final chats = (await _repository.getTicketsByParent(
+        ticket.id,
+        types: const [TicketType.chat],
+      )).where((c) => c.title.startsWith('Coding Execution — ')).toList()
+        ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
       final notes = <String>[];
-      for (final c in _oldestFirst(
-        await commentRepo.getCommentsForTicket(chat.id),
-      )) {
+      final comments = <TicketComment>[
+        for (final chat in chats)
+          ..._oldestFirst(await commentRepo.getCommentsForTicket(chat.id)),
+      ];
+      for (final c in comments) {
         if (c.authorType != CommentAuthorType.system) continue;
         String? note;
         if (c.content.startsWith('Model escalation:')) {
@@ -7029,9 +7050,10 @@ PROMOTION: NOT YET
   }
 
   /// Builds this run's [EscalationLadder] (`AIO-3057`): resumes the rung and
-  /// failure count from [resumeComment] (the execution chat's newest comment
-  /// before this run posted anything) when it still ends with a ladder marker,
-  /// otherwise starts fresh on [ExecutionRung.execution]. The Capable rung is
+  /// failure count from [resumeComments] (the execution chat's comments,
+  /// oldest first, read before this run posted anything) when the newest still
+  /// ends with a ladder marker — and the failure trail from their failure
+  /// tags — otherwise starts fresh on [ExecutionRung.execution]. The Capable rung is
   /// only usable when its model differs from the Execution model (otherwise
   /// escalating changes nothing) and its provider supports
   /// [ToolAccessTier.full] (coding execution needs file/git/bash tools, which a
@@ -7040,7 +7062,9 @@ PROMOTION: NOT YET
   /// the Frontier model (or a Frontier provider without
   /// [ToolAccessTier.full]) leaves the plan check unavailable, rather than
   /// failing the run.
-  Future<EscalationLadder> _buildEscalationLadder(String? resumeComment) async {
+  Future<EscalationLadder> _buildEscalationLadder(
+    List<String> resumeComments,
+  ) async {
     var capableUsable = false;
     var planCheckAvailable = false;
     try {
@@ -7075,7 +7099,7 @@ PROMOTION: NOT YET
     return EscalationLadder.resume(
       capableUsable: capableUsable,
       planCheckAvailable: planCheckAvailable,
-      lastComment: resumeComment,
+      comments: resumeComments,
     );
   }
 
